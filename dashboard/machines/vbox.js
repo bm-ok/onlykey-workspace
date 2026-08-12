@@ -185,6 +185,24 @@ const start = (name, type = 'gui') => run(['startvm', name, '--type', type], { t
 const stop = (name, force = false) =>
   run(['controlvm', name, force ? 'poweroff' : 'acpipowerbutton'], { tags: [name] })
 
+// What the machine has on screen, right now.
+//
+// The one thing that answers a question nothing else here can: an install says
+// nothing for twenty-five minutes, and until it finishes there is no agent, no
+// log line and no way to tell "working" from "stuck on a prompt nobody is
+// watching". Before this, the only way to look was to open VirtualBox by hand --
+// which is exactly the reaching-around this app exists to remove.
+//
+// Only while it is running: there is no screen otherwise, and VirtualBox says so
+// in its own words, which are worse than these.
+async function screenshot (name, file) {
+  if (await isOff(name)) {
+    throw new Error(`"${name}" is not running, so it has nothing on screen.`)
+  }
+  await run(['controlvm', name, 'screenshotpng', file], { quiet: true, tags: [name] })
+  return file
+}
+
 // ---- snapshots -------------------------------------------------------
 
 async function snapshots (name) {
@@ -239,6 +257,6 @@ module.exports = {
   listAll, runningAll, info, exists, state, isOff,
   waitForState, waitUntilOff, waitUntilUnlocked,
   isos, bridges, hostAddress,
-  start, stop, snapshots, takeSnapshot, restoreSnapshot, destroy,
+  start, stop, screenshot, snapshots, takeSnapshot, restoreSnapshot, destroy,
   OFF_STATES
 }

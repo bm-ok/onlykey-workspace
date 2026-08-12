@@ -169,6 +169,39 @@ function ask ({ title, plain, cost, fields = [], confirm, danger, onYes, extra }
   ;(first || yes).focus()
 }
 
+// A picture, shown at the size it was taken and no larger.
+//
+// Read here rather than sent through the action, because this window is on the
+// same machine that wrote the file -- so the action returns a path, which is
+// what the command line wants anyway, and the two callers each take the form
+// that suits them instead of one carrying a megabyte of base64 for the other.
+//
+// A data URI rather than file://, which an app page loaded from disk treats as a
+// different origin and refuses often enough not to rely on.
+function showImage ({ title, file, note }) {
+  const fsMod = require('node:fs')
+  let src
+  try {
+    src = `data:image/png;base64,${fsMod.readFileSync(file).toString('base64')}`
+  } catch (e) {
+    return oops(new Error(`The picture was taken but could not be read back: ${e.message}`))
+  }
+
+  const close = () => overlay.remove()
+  const overlay = el('div', { className: 'dlg-overlay' },
+    el('div', { className: 'dlg', style: 'max-width: 90vw' },
+      el('div', { className: 'dlg-title', textContent: title }),
+      el('img', { src, style: 'max-width:100%; max-height:70vh; display:block; border:1px solid var(--line); border-radius:6px' }),
+      // Said, and selectable, because the whole point of keeping the file is
+      // being able to go and find it.
+      el('p', { className: 'note mono', style: 'margin-top:10px; user-select:text', textContent: file }),
+      note ? el('p', { className: 'note', textContent: note }) : null,
+      el('div', { className: 'dlg-actions' }, el('button', { className: 'btn', textContent: 'Close', onclick: close }))))
+
+  overlay.onclick = e => { if (e.target === overlay) close() }
+  document.body.append(overlay)
+}
+
 // ---- the machines ----------------------------------------------------
 //
 // Only machines this app made ever appear here. Anything else on the host is
@@ -312,6 +345,22 @@ function vmActions () {
     // Only when it is dialled in, because that is where the address comes from.
     // Disabled rather than hidden while it is not: a button that vanishes reads
     // as a feature that does not exist, and the reason is worth saying.
+    // The only way to see a machine that is not talking yet -- which is most of
+    // an install, and exactly when somebody wants to know whether it is working.
+    el('button', {
+      className: 'btn',
+      textContent: 'See its screen',
+      disabled: !v.running,
+      title: v.running ? '' : 'It has to be running to have a screen',
+      onclick: () => api('vmScreenshot', { name: v.name })
+        .then(r => showImage({
+          title: `${v.name}, just now`,
+          file: r.file,
+          note: 'Kept, not just shown — the path is in the live log too.'
+        }))
+        .catch(oops)
+    }),
+
     // ONE button, and it asks a question only once.
     //
     // A machine on a branch stays on it until it is clean, so there is nothing

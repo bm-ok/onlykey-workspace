@@ -17,6 +17,7 @@ const path = require('node:path')
 const log = require('./core/log')
 const ipc = require('./core/ipc')
 const keys = require('./core/keys')
+const data = require('./core/data')
 const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
@@ -136,6 +137,31 @@ const actions = {
   vmStart: { about: 'Start a virtual machine', takes: ['name', 'type'], run: ({ name, type }) => { vms.get(name); return vbox.start(name, type === 'headless' ? 'headless' : 'gui') } },
   vmStop: { about: 'Shut a virtual machine down, or pull its power', takes: ['name', 'force'], run: ({ name, force }) => { vms.get(name); return vbox.stop(name, !!force) } },
   vmInfo: { about: 'Everything VirtualBox knows about one machine', takes: ['name'], run: ({ name }) => { vms.get(name); return vbox.info(name) } },
+
+  // A picture of what a machine has on screen.
+  //
+  // For the long silence: an install reports nothing for twenty-five minutes,
+  // and until it ends there is no agent to ask and no log line to read. This is
+  // the difference between "still working" and "stopped at a prompt nobody is
+  // watching", and until now the only way to tell was to open VirtualBox.
+  //
+  // KEPT, not streamed and thrown away. Written into the app's own data
+  // directory -- outside the repository, where git has nothing to decide -- and
+  // the path goes into the live log, because a file somebody cannot find is one
+  // that may as well not have been written.
+  vmScreenshot: {
+    about: "A picture of what a machine has on screen right now, saved and logged",
+    takes: ['name'],
+    run: async ({ name }) => {
+      vms.get(name)
+      const dir = data.sub('screenshots')
+      const file = path.join(dir, `${name}-${data.stamp()}.png`)
+      await vbox.screenshot(name, file)
+      const bytes = fs.statSync(file).size
+      log.on('vm', name).good(`screen saved to ${file}`)
+      return { file, bytes, dir }
+    }
+  },
 
   vmSnapshots: { about: 'The snapshots a machine has, and which one it is on', takes: ['name'], run: ({ name }) => { vms.get(name); return vbox.snapshots(name) } },
   vmSnapshotTake: {

@@ -23,10 +23,12 @@ const os = require('node:os')
 const path = require('node:path')
 const crypto = require('node:crypto')
 const { execFileSync } = require('node:child_process')
+const data = require('./data')
 
-const DIR = process.env.OKC_KEYS || (process.platform === 'win32'
-  ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'okc-dashboard')
-  : path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'okc-dashboard'))
+// The same per-user data directory everything else here uses, and for the same
+// reasons -- which now live in one file rather than being restated wherever they
+// happen to matter.
+const DIR = process.env.OKC_KEYS || data.DIR
 
 const file = name => path.join(DIR, name)
 const CA_KEY = () => file('ca.key')
