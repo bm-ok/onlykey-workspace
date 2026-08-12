@@ -1,15 +1,13 @@
 'use strict'
 
-// The API, and the page in front of it.
+// The API. It hosts no page.
 //
-// This is a library with an entry point, not a script: NW.js starts it inside its
-// own Node context (see main.js) so the app is one process, and `node server.js`
-// starts the same thing headlessly. Either way there is exactly one server and
-// exactly one API, so the window, a browser and a machine being provisioned are
-// all clients of the same thing.
+// NW.js opens the window from disk as an app page, and that page requires this
+// module and calls the same `actions` table directly -- one process, no socket in
+// between. So the HTTP side exists for exactly one client: a machine being
+// provisioned, which fetches its scripts over it and reports back the same way.
 //
-// A machine being provisioned is the reason this is an HTTP server rather than
-// function calls inside the window.
+// `node server.js` runs the same thing with no window, for driving it by hand.
 
 const http = require('node:http')
 const fs = require('node:fs')
@@ -23,9 +21,6 @@ const scripts = require('./machines/scripts')
 const machines = require('./machines/store')
 const { provision, reach } = require('./machines/provision')
 const editor = require('./machines/editor')
-
-const UI = path.join(__dirname, 'ui')
-const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript' }
 
 const started = new Date().toISOString()
 
@@ -228,10 +223,10 @@ function handler (req, res) {
     return
   }
 
-  const file = path.join(UI, url.pathname === '/' ? 'index.html' : path.normalize(url.pathname))
-  if (!file.startsWith(UI) || !fs.existsSync(file)) return res.writeHead(404).end('Not found')
-  res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'text/plain' })
-  fs.createReadStream(file).pipe(res)
+  // No page here. NW.js opens the window from disk, so this server exists only for
+  // a machine being provisioned.
+  res.writeHead(404, { 'content-type': 'text/plain' })
+  res.end('This is the API. The window is not served from here.\n')
 }
 
 // 127.0.0.1 by default. A guest on a bridged adapter cannot reach loopback, so

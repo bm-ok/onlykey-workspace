@@ -2,8 +2,10 @@
   "name": "okc-dashboard",
   "version": "0.0.1",
   "private": true,
-  "description": "Pick a task, work, offer, review, accept. Nothing reaches your branch unread.",
-  "main": "ui/boot.html",
+  "description": "Make a virtual machine, set it up, snapshot it, throw it away.",
+
+  "//main": "An app page, loaded from disk. That is what makes NW.js behave normally: the page gets node, and the SDK build gives it a right-click Inspect of its own. Served over http instead it would be a remote page, which gets neither -- which is why nothing here has to hand-write a context menu.",
+  "main": "ui/index.html",
   "node-main": "main.js",
   "window": {
     "title": "Dashboard",
@@ -12,6 +14,7 @@
     "min_width": 900,
     "min_height": 600
   },
+  "//chromium-args": "Required. It selects the older window implementation, under which Window.get() does not exist -- so nothing here calls a window API, and dialogs are in-page overlays because native confirm() silently returns false under it.",
   "chromium-args": "--disable-features=nw2",
   "scripts": {
     "start": "node tools/nw.js",

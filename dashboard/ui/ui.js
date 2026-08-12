@@ -1,22 +1,26 @@
 'use strict'
 
-// The window. Four tabs: the machines, the live log, the provisioning scripts,
-// and every action the server has.
+// The window. Three tabs: the machines, the live log, and every action the server
+// has. How a machine gets set up is not one of them -- that is internal, and lives
+// in provision/ as shell scripts.
 //
 // The rule it is written against: an answer belongs where the person was already
 // looking. Results appear in the notice bar next to the button that caused them,
 // and anything irreversible says in plain words what will and will not happen
 // before it does it.
 
+// An app page, so it has node. It requires the app and calls the same actions the
+// API exposes -- no fetch, no origin, no port, nothing to reconnect.
+//
+// require() in a page resolves against the app root, where package.json and
+// server.js are.
+const app = require('./server')
+const liveLog = require('./core/log')
+
 const api = async (name, args = {}) => {
-  const res = await fetch(`/api/${name}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(args)
-  })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || 'Something went wrong')
-  return data
+  const action = app.actions[name]
+  if (!action) throw new Error(`No action called "${name}"`)
+  return action.run(args)
 }
 
 const keep = kids => kids.flat(9).filter(k => k !== null && k !== undefined && k !== false && k !== '')
@@ -59,7 +63,6 @@ document.querySelectorAll('.tab').forEach(b => {
     document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === b))
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${view}`))
     if (view === 'live') clearBadge()
-    if (view === 'scripts') loadScript().catch(oops)
   }
 })
 const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).click()
@@ -345,25 +348,6 @@ $('add-vm-open').onclick = () => api('vmIsos').then(isos => ask({
   }
 })).catch(oops)
 
-// ---- Provisioning ----------------------------------------------------
-
-async function loadScript () {
-  const { stages } = await api('vmScripts')
-  const select = $('script-stage')
-  if (!select.options.length) {
-    fill(select, ...Object.keys(stages).map(s => el('option', { value: s, textContent: `${s} — ${stages[s]}` })))
-    select.onchange = () => loadScript().catch(oops)
-  }
-  const v = latest.vms.find(x => x.name === picked) || latest.vms[0]
-  if (!v) {
-    $('script-file').textContent = ''
-    return fill($('script-body'), 'Make a virtual machine first — a script is rendered for a particular one.')
-  }
-  const out = await api('vmScript', { name: v.name, stage: select.value || 'unattended' })
-  $('script-file').textContent = `${out.file} — as ${v.name} receives it`
-  fill($('script-body'), out.script)
-}
-
 // ---- All actions -----------------------------------------------------
 
 async function paintActions () {
@@ -417,17 +401,13 @@ $('log-follow').onchange = e => { follow = e.target.checked; paintLog() }
 $('log-find').oninput = e => { find = e.target.value.trim().toLowerCase(); paintLog() }
 $('log-clear').onclick = () => api('logClear').then(() => { lines.length = 0; paintLog() }).catch(oops)
 
-const stream = new EventSource('/api/log/stream')
-stream.onopen = () => $('link-dot').classList.add('live')
-stream.onerror = () => $('link-dot').classList.remove('live')
-stream.onmessage = m => {
-  const e = JSON.parse(m.data)
+function onLine (e) {
   lines.push(e)
   if (lines.length > 2000) lines.splice(0, lines.length - 2000)
   paintLog()
 
-  // A guest reporting in changes what the machine list should say, and the
-  // install takes long enough that nobody should have to reload to find out.
+  // A guest reporting in changes what the machine list should say, and an install
+  // takes long enough that nobody should have to reload to find out.
   if (e.tags.includes('guest')) draw().catch(() => {})
 
   if (view !== 'live') {
@@ -438,6 +418,16 @@ stream.onmessage = m => {
     badge.className = `tab-badge${unseenBad ? ' bad' : ''}`
   }
 }
+
+// Says so in the same log as everything else, which also proves the window and the
+// server are sharing one node context rather than each holding its own copy.
+liveLog.on('window').good('window opened')
+
+// Everything already logged, then everything from here on.
+lines.push(...liveLog.all())
+paintLog()
+liveLog.subscribe(onLine)
+$('link-dot').classList.add('live')
 
 // ---- draw ------------------------------------------------------------
 
@@ -478,18 +468,21 @@ async function draw () {
   }
 
   paintVms()
-  if (view === 'scripts') loadScript().catch(() => {})
 }
+
+// ---- right-click, and devtools ---------------------------------------
+//
+// NW.js ships no context menu at all, so right-click does nothing until one is
+// built. This works now only because the page is opened from disk: a page loaded
+// over http is a "remote" page and gets none of the nw.* APIs, whatever it is
+// whitelisted for, so there was no way to open an inspector from one.
 
 // ---- capture ----------------------------------------------------------
 //
 // Ctrl+Shift+D copies what is on screen -- the rendered DOM, not the source -- to
 // the clipboard, and saves the same thing to state/capture.html.
 
-document.addEventListener('keydown', async e => {
-  if (!(e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd'))) return
-  e.preventDefault()
-
+async function capture () {
   const css = [...document.styleSheets].map(sheet => {
     try { return [...sheet.cssRules].map(r => r.cssText).join('\n') } catch { return '' }
   }).join('\n')
@@ -502,6 +495,13 @@ document.addEventListener('keydown', async e => {
     say(`Copied to the clipboard, and saved ${bytes} bytes to ${file}`)
   } catch (err) {
     oops(err)
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+    e.preventDefault()
+    capture()
   }
 })
 

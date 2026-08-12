@@ -22,7 +22,6 @@
          arriving behind it is announced, and a failure differently from
          ordinary chatter. -->
     <button class="tab" data-view="live">Live <span class="tab-badge hidden" id="live-badge"></span></button>
-    <button class="tab" data-view="scripts">Provisioning</button>
     <button class="tab" data-view="actions">All actions</button>
   </nav>
   <div class="topright muted" id="topright"></div>
@@ -87,23 +86,6 @@
          filter without being registered. -->
     <div id="log-tags" class="chips"></div>
     <div id="live" class="console tall"></div>
-  </section>
-
-  <!-- ---------------- Provisioning ---------------- -->
-  <section class="view" id="view-scripts">
-    <p class="note">
-      The shell scripts in <code>provision/</code>, exactly as a machine receives
-      them &mdash; values filled in, everything else passed through. They are meant
-      to be swapped: <code>toolchain.sh</code> is the one that says what a machine
-      is <em>for</em>, and the other three only make it exist and be reachable.
-    </p>
-    <div class="sync-head">
-      <div class="sync-controls" style="margin-left:0">
-        <select id="script-stage"></select>
-        <span class="muted mono" id="script-file"></span>
-      </div>
-    </div>
-    <pre id="script-body" class="console tall"></pre>
   </section>
 
   <!-- ---------------- All actions ---------------- -->
