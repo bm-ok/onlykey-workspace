@@ -210,17 +210,37 @@ function showImage ({ title, file, note }) {
 let picked = null
 let latest = { available: false, vms: [] }
 
-const deleteVm = v => ask({
-  title: `Delete ${v.name}?`,
-  plain: ['No other virtual machine on this computer is touched.'],
-  cost: `${v.name} and its disks are deleted, and it is removed from this list.`,
-  confirm: 'Delete it',
-  danger: true,
-  onYes: () => api('vmRemove', { name: v.name }).then(() => {
-    if (picked === v.name) picked = null
-    say(`${v.name} deleted`)
-  })
-})
+// What the machine is holding, said in the dialog that would destroy it.
+//
+// Asked first and awaited, so the sentence is in front of the person BEFORE they
+// decide rather than in the log afterwards. It costs a second on a machine that
+// is dialled in and nothing at all on one that is not.
+//
+// Three different sentences, because there are three different situations and
+// only one of them is "nothing to lose". A machine that could not be asked is
+// the important one: it is off, which is exactly the state of a machine nobody
+// has looked at recently, and reporting that as "nothing" would be this app
+// asserting something it never checked.
+const holdingLine = holds => holds.asked
+  ? (holds.summary ? `${holds.summary} — all of it goes.` : 'It is holding nothing that is not already here.')
+  : `It could not be asked what it is holding: ${holds.why} So this may be discarding work that exists nowhere else.`
+
+const deleteVm = v => api('vmHolds', { name: v.name })
+  .catch(() => ({ asked: false, why: 'asking it failed.' }))
+  .then(holds => ask({
+    title: `Delete ${v.name}?`,
+    plain: [
+      'No other virtual machine on this computer is touched.',
+      holdingLine(holds)
+    ],
+    cost: `${v.name} and its disks are deleted, and it is removed from this list.`,
+    confirm: 'Delete it',
+    danger: true,
+    onYes: () => api('vmRemove', { name: v.name }).then(() => {
+      if (picked === v.name) picked = null
+      say(`${v.name} deleted`)
+    })
+  }))
 
 // What a machine is for is the question a column of names cannot answer, and it is
 // not derivable from anything -- so it is asked for and kept, and it belongs on the
@@ -525,10 +545,18 @@ async function paintSnapshots () {
             // question about discarding work has even been asked.
             disabled: v.running,
             title: v.running ? 'Shut it down first — VirtualBox will not restore a snapshot while it is running' : '',
-            onclick: () => ask({
+            onclick: () => api('vmHolds', { name: v.name })
+              .catch(() => ({ asked: false, why: 'asking it failed.' }))
+              .then(holds => ask({
               title: `Go back to "${x.name}"?`,
               plain: [
                 'The machine must be shut down for this.',
+                // The same sentence the delete dialog uses, for the same reason:
+                // this discards the disk, and what is on the disk is the
+                // question. A machine that has to be shut down before restoring
+                // is often already off, which is precisely when it cannot be
+                // asked -- so that case says so rather than saying nothing.
+                holdingLine(holds),
                 // The permission moves with the disk, and it is not obvious that
                 // it does. Worth saying here, because going back to a point from
                 // before any work started is how a machine ends up allowed to
@@ -542,7 +570,7 @@ async function paintSnapshots () {
                 .then(r => say(r.branch
                   ? `Back at "${x.name}" — ${v.name} may push ${r.branch}`
                   : `Back at "${x.name}" — ${v.name} may push nothing until it is set up again`))
-            })
+              })).catch(oops)
           }))))
     : el('p', { className: 'empty', textContent: 'None yet.' }))
 }

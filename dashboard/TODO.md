@@ -29,23 +29,6 @@ re-run fixes it.
 at the very end.
 
 
-Say what a destructive action would destroy
--------------------------------------------
-
-**Go back to it** says *everything that changed is discarded*. **Delete it** says
-*its disks are deleted*. Neither says **what**, and the machine can be asked in
-about a second:
-
-    local-repo-a: on fix/try-one, 3 commits not pushed, 2 files changed
-
-So the dialog could say "runner2 has 3 commits that exist nowhere else". Today it
-says nothing, which reads as nothing to lose.
-
-The corollary matters as much: **a machine that is not dialled in cannot be
-asked**, and the dialog has to say *that* rather than stay quiet. Silence must not
-be able to mean two different things.
-
-
 Prove that a restored snapshot moves the branch with it
 -------------------------------------------------------
 

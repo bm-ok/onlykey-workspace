@@ -315,9 +315,25 @@ const actions = {
       // checked rather than assumed. Putting the token in the command instead
       // would send a machine its own secret back over the channel and leave it in
       // the log line describing what was run.
-      return channel.run(name,
-        `curl -fsSL --cacert "$OKC_CA" -u "$OKC_VM:$OKC_TOKEN" '${url}' -o /tmp/okc-again.sh && ${run}`,
-        { what: `${file} again${needsRoot ? ' (with sudo)' : ''}` })
+      try {
+        return await channel.run(name,
+          `curl -fsSL --cacert "$OKC_CA" -u "$OKC_VM:$OKC_TOKEN" '${url}' -o /tmp/okc-again.sh && ${run}`,
+          { what: `${file} again${needsRoot ? ' (with sudo)' : ''}` })
+      } catch (e) {
+        // first-boot.sh restarts the agent, which ends the connection this was
+        // sent over -- so the one script that sets a machine up completely always
+        // reports failure, having usually succeeded.
+        //
+        // It is not turned into success, because this genuinely cannot know: the
+        // machine stopped talking half way through and nothing here saw the end.
+        // Saying what happened and that the outcome is unknown is the true
+        // answer, and inventing a verdict either way is the thing being removed.
+        if (/hung up|no longer managed|was deleted/.test(e.message)) {
+          log.on('vm', name).info(`${name} restarted its agent, which ended the connection this was sent over — expected for ${file}. It carried on running there; watch for it to dial back in.`)
+          return { file, finished: 'unknown', why: 'the machine restarted its agent, so this connection ended before the script did' }
+        }
+        throw e
+      }
     }
   },
 
@@ -492,6 +508,87 @@ const actions = {
       log.on('vm', name).good(`${name} may now push ${on}, and nothing else`)
 
       return { branch: on, folder: folder || workspace.folderFor(vm.spec), repos: found.map(r => r.name), cut, output: r.output }
+    }
+  },
+
+  // What a machine is holding that exists nowhere else.
+  //
+  // For the two actions that destroy a machine's disk. "Everything since is
+  // discarded" and "its disks are deleted" are both true and neither says WHAT,
+  // so the question they raise -- is there work in there? -- is left to be
+  // answered by remembering. This asks the machine instead, which takes about a
+  // second.
+  //
+  // NOT ASKED is its own answer and is reported as one. A machine that is not
+  // dialled in cannot be asked, and if that returned an empty list it would read
+  // as "nothing to lose" -- which is the most dangerous thing this could say,
+  // because a machine that is off is exactly the one nobody has looked at
+  // recently. Silence must not be able to mean two different things.
+  vmHolds: {
+    about: 'What a machine is holding that is not here: commits not pushed, and files not committed',
+    takes: ['name'],
+    run: async ({ name }) => {
+      const vm = vms.get(name)
+      if (!channel.connected(name)) {
+        return { asked: false, why: `"${name}" is not dialled in, so it cannot be asked what it is holding.`, repos: [] }
+      }
+
+      const folder = (vm.spec && vm.spec.folder) || workspace.FOLDER
+      // One line per repository, in a shape that is read rather than parsed out
+      // of prose -- and nothing at all when there is no workspace, which is a
+      // real answer and not a failure.
+      const script = `set -u
+WS="${folder}"
+[ -d "$WS" ] || exit 0
+for d in "$WS"/*/; do
+  [ -d "$d/.git" ] || continue
+  cd "$d" || continue
+  name=$(basename "$d")
+  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+  # A repository with no upstream has nothing to be ahead OF, so counting
+  # @{upstream}..HEAD fails and answers zero -- which reads as nothing to lose
+  # about a repository whose every commit exists only here. Untracked means all
+  # of it, not none of it.
+  if git rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
+    ahead=$(git rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo 0)
+    tracked=yes
+  else
+    ahead=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+    tracked=no
+  fi
+  dirty=$(git status --porcelain 2>/dev/null | grep -c . || echo 0)
+  echo "okc-holds|$name|$branch|$ahead|$dirty|$tracked"
+done`
+
+      const r = await channel.run(name, script, { what: 'what it is holding', timeout: 60000 })
+      const repos = String(r.output || '').split('\n')
+        .map(l => l.trim()).filter(l => l.startsWith('okc-holds|'))
+        .map(l => l.split('|'))
+        .map(([, repo, branch, ahead, dirty, tracked]) => ({
+          repo,
+          branch,
+          ahead: Number(ahead) || 0,
+          dirty: Number(dirty) || 0,
+          // Whether those commits are counted against a copy here or are simply
+          // all of them. It changes what the number means, so it travels with it.
+          tracked: tracked !== 'no'
+        }))
+
+      const commits = repos.reduce((n, r) => n + r.ahead, 0)
+      const files = repos.reduce((n, r) => n + r.dirty, 0)
+      return {
+        asked: true,
+        repos,
+        commits,
+        files,
+        // Said once, here, so every caller says it the same way.
+        summary: commits || files
+          ? [
+              commits ? `${commits} commit${commits === 1 ? ' that exists' : 's that exist'} nowhere else` : null,
+              files ? `${files} file${files === 1 ? '' : 's'} changed and not committed` : null
+            ].filter(Boolean).join(', ')
+          : null
+      }
     }
   },
 
