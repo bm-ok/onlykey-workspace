@@ -41,7 +41,24 @@ function parse (argv) {
       if (next === undefined || next.startsWith('--')) raw = 'true'
       else { raw = next; i++ }
     }
-    try { args[key] = JSON.parse(raw) } catch { args[key] = raw }
+    try {
+      args[key] = JSON.parse(raw)
+    } catch (e) {
+      // A value that OPENS like JSON and does not parse is a mistake, not a
+      // string. Falling back silently sent `vmCreate` a string where it wanted
+      // an object, and what came back was "give it a name" -- an error about the
+      // wrong thing entirely, pointing at a field that was in fact right there.
+      //
+      // It happens for a real reason on Windows: a shell eats the backslashes in
+      // an embedded path, so `C:\\Users` arrives as `C:\Users` and `\U` is not a
+      // valid escape. Say that here, where it can still be acted on.
+      if (/^\s*[{[]/.test(raw)) {
+        throw new Error(`--${key} looks like JSON but did not parse: ${e.message}\n` +
+          '  If it contains a Windows path, use forward slashes: C:/Users/... — a shell\n' +
+          '  eats the backslashes before this ever sees them.')
+      }
+      args[key] = raw
+    }
   }
   return { args, flags }
 }
