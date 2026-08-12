@@ -6,41 +6,32 @@ that describes how any of this works — if something here is finished, it belon
 there and should leave this file. Anything left in here long enough to go stale
 was probably never going to be done.
 
-Ordered by what to do next, not by size.
-
 
 Waiting on a restart
 --------------------
 
-The window loads `server.js` at startup, so four committed changes are not doing
-anything yet:
+The window loads `server.js` at startup, so these are committed and inert:
 
-* `logWatch` — follow the live log instead of polling
-* `/run/sshd` before `sshd -t`, so ssh hardening survives an install
-* `/provision/*` authentication, and the install ticket
-* `vmScreenshot`
-
-**`runner2` will lose its connection when this lands**, because its scripts
-predate the authentication. `vmSetupAgain --name runner2` puts it back — a minute,
-not another install. Its ssh is unhardened for the same reason, and the same
-re-run fixes it.
+* `vmRotateToken` — give a machine a new token without rebuilding it
+* the "may push X, but its work is on Y" line in the two dialogs that ask
+* dropping a machine's session when its power is pulled or it is rolled back
 
 **Never restart while a machine is installing.** The install fetches its scripts
 at the very end.
 
 
-Prove that a restored snapshot moves the branch with it
--------------------------------------------------------
+Nothing else is outstanding
+---------------------------
 
-Restoring is now the **only** way off a branch, so this is load-bearing and has
-only been reasoned about. The drill, about five minutes with nothing lost:
+Everything on the previous list is done, and each was checked by running it
+rather than by reading it. The snapshot drill passed in all three directions,
+the actions are off the network entirely, the destructive dialogs say what they
+would destroy, ssh hardening survives an install, and the debris is cleared.
 
-1. snapshot `runner1` — records `fix/try-one`
-2. restore `base` — branch should clear, and a push should then be refused
-3. restore the new snapshot — `fix/try-one` should come back
-
-`base` predates the feature and has no record, which is why it should resolve to
-*nothing*: unknown means may-push-nothing, recoverable in one click.
+What remains is the "Honest gaps" section of `README.md`, which is a different
+kind of thing: what has never been tried, rather than what is half-built. No
+server image has been installed, the source-build fallback in a project script
+has never run, and nothing here has been left running for days.
 
 
 Where the machines are
@@ -50,6 +41,12 @@ Volatile, and the first thing to check rather than trust:
 
     okc.js vmList --json
 
-At the time of writing: `runner1` off, hardened, on `fix/try-one`, has a `base`
-snapshot. `runner2` up and connected, built from nothing over TLS, **ssh not
-hardened**.
+At the time of writing: `runner1` off, restored to the `on-fix-try-one`
+snapshot, hardened, recording `fix/try-one` as what it may push. `runner2` up
+and connected, built from nothing over TLS, ssh hardened, with no workspace set
+up on it.
+
+**`fix/try-one` no longer exists in the workspace repositories** — it was test
+debris and was deleted. `runner1` still claims the name, which is deliberate
+rather than stale: setting it up again cuts the branch afresh from `master`, and
+the claim stops another machine taking the name meanwhile.
