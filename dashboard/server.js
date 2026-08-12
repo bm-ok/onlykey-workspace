@@ -27,6 +27,7 @@ const machines = require('./machines/store')
 const { provision, reach } = require('./machines/provision')
 const editor = require('./machines/editor')
 const repos = require('./repos/serve')
+const busy = require('./machines/busy')
 const branches = require('./repos/branches')
 const workspace = require('./repos/workspace')
 
@@ -103,11 +104,11 @@ const actions = {
   // is not in its own registry, because these actions can destroy one.
   vmList: { about: 'The virtual machines this app made, with live state and stage', run: () => vms.all() },
   vmCreate: { about: 'Make a virtual machine and its disk', takes: ['vm'], run: ({ vm }) => provisioner.create(vm || {}) },
-  vmInstall: { about: 'Install an operating system, unattended, and run its provisioning scripts', takes: ['name'], run: ({ name }) => provisioner.install(name, { port, caPort }) },
+  vmInstall: { about: 'Install an operating system, unattended, and run its provisioning scripts', takes: ['name'], run: ({ name }) => busy.during(name, 'being installed', () => provisioner.install(name, { port, caPort })) },
   vmRemove: {
     about: 'Delete a virtual machine and its disks, and forget it',
     takes: ['name'],
-    run: async ({ name }) => {
+    run: ({ name }) => busy.during(name, 'being deleted', async () => {
       vms.get(name)                      // refuses anything this app did not make
       // Before the machine goes, so nothing is left holding a session for something
       // that no longer exists -- and so a new machine of the same name cannot
@@ -115,7 +116,7 @@ const actions = {
       channel.drop(name, 'was deleted')
       const out = await vbox.destroy(name)
       return { ...out, ...vms.forget(name) }
-    }
+    })
   },
   vmForget: {
     about: 'Stop managing a virtual machine without deleting it',
@@ -134,8 +135,8 @@ const actions = {
       return vms.update(name, { description: String(description).trim() })
     }
   },
-  vmStart: { about: 'Start a virtual machine', takes: ['name', 'type'], run: ({ name, type }) => { vms.get(name); return vbox.start(name, type === 'headless' ? 'headless' : 'gui') } },
-  vmStop: { about: 'Shut a virtual machine down, or pull its power', takes: ['name', 'force'], run: ({ name, force }) => { vms.get(name); return vbox.stop(name, !!force) } },
+  vmStart: { about: 'Start a virtual machine', takes: ['name', 'type'], run: ({ name, type }) => { vms.get(name); return busy.during(name, 'being started', () => vbox.start(name, type === 'headless' ? 'headless' : 'gui')) } },
+  vmStop: { about: 'Shut a virtual machine down, or pull its power', takes: ['name', 'force'], run: ({ name, force }) => { vms.get(name); return busy.during(name, 'being shut down', () => vbox.stop(name, !!force)) } },
   vmInfo: { about: 'Everything VirtualBox knows about one machine', takes: ['name'], run: ({ name }) => { vms.get(name); return vbox.info(name) } },
 
   // A picture of what a machine has on screen.
@@ -167,7 +168,7 @@ const actions = {
   vmSnapshotTake: {
     about: 'Take a snapshot, with a title of your choosing',
     takes: ['name', 'title', 'description'],
-    run: async ({ name, title, description }) => {
+    run: ({ name, title, description }) => busy.during(name, 'being snapshotted', async () => {
       vms.get(name)
       if (!title || !title.trim()) throw new Error('Give the snapshot a title, so it means something when you come back to it.')
       // Refused while it is running. VirtualBox would store the machine's memory
@@ -185,7 +186,7 @@ const actions = {
         snapshots: { ...(vm.snapshots || {}), [title.trim()]: vm.branch || null }
       })
       return vbox.snapshots(name)
-    }
+    })
   },
   // The point of a base snapshot is somewhere to get back to, and getting back to
   // one needs the machine off -- so this shuts it down, snapshots, and starts it
@@ -194,7 +195,7 @@ const actions = {
   vmBaseSnapshot: {
     about: 'Shut a machine down, snapshot it as a clean starting point, and start it again',
     takes: ['name', 'title'],
-    run: async ({ name, title = 'base' }) => {
+    run: ({ name, title = 'base' }) => busy.during(name, 'being snapshotted', async () => {
       const vm = vms.get(name)
       const to = log.on('vm', name)
       const wasRunning = !await vbox.isOff(name)
@@ -237,13 +238,13 @@ const actions = {
         to.info('started again; it will dial back in shortly')
       }
       return { ...await vbox.snapshots(name), baseSnapshot: title, restarted: wasRunning }
-    }
+    })
   },
 
   vmSnapshotRestore: {
     about: 'Go back to a snapshot, discarding everything since',
     takes: ['name', 'title'],
-    run: async ({ name, title }) => {
+    run: ({ name, title }) => busy.during(name, 'being restored', async () => {
       const vm = vms.get(name)
       if (!await vbox.isOff(name)) throw new Error('Shut the machine down first — VirtualBox will not restore a snapshot while it is running.')
       await vbox.restoreSnapshot(name, title)
@@ -271,7 +272,7 @@ const actions = {
           : `${name} is back at "${title}", which predates any workspace — it may push nothing until it is set up again`)
       }
       return { ...await vbox.snapshots(name), branch }
-    }
+    })
   },
 
   // What the dial-in makes possible.
