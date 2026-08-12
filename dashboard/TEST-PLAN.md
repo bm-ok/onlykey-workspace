@@ -188,6 +188,55 @@ normally, having accomplished nothing. That is precisely why `delivered` is read
 from the branch and never from the run, and this is the evidence rather than the
 argument. `taskJudge` refused the branch for the same reason.
 
+### 0. A machine built from nothing, and given its first credential — 2026-08-12
+
+**Proves the one path nothing else touches.** Every other drill starts from a
+machine that already exists, so the install, the provisioning scripts, the
+install ticket and the project's own `extra*` scripts are exercised by nothing
+else at all. They are also the parts that fail *silently* — twenty-five minutes
+of quiet, then either a machine or nothing.
+
+Delete it and make it again, through the same actions the window uses:
+
+    okc.js vmIsos ; okc.js hostKeys ; okc.js vmBridges    what the dialog offers
+    okc.js vmHolds  --name <machine>                      what the delete dialog asks first
+    okc.js vmRemove --name <machine>
+    okc.js vmCreate --vm '{...}'                          iso as a SUBSTRING, never a Windows path
+    okc.js vmInstall --name <machine>
+
+**Watch the log, not the return values.** `okc.js logWatch`. The return value of
+`vmInstall` is a URL; everything that matters afterwards arrives in the log, and
+several things are visible nowhere else: the install ticket being spent, the
+*project's* copies of `extra.sh` and `extra-user.sh` being served rather than the
+app's, and `online` arriving before `dialled in`.
+
+**`online` and `connected` are different claims.** The first is the setup script
+reporting it finished, over the provisioning channel. The second is the agent
+holding a session. Between them, nothing can be run on the machine and it says
+so. Do not read the first as the second.
+
+**A pass is what is ON the machine afterwards**, asked of the machine:
+
+    node -v ; command -v claude && claude --version
+    ls $HOME/.claude/.credentials.json     # must NOT exist
+    sudo -n true
+
+That third line is the point of doing this at all. A freshly built machine has
+never been signed in, which is the only condition under which handing it a
+credential proves anything — every other proof used a machine with history.
+Keep the other machines back with `vmForTasks --enabled false`, queue a task,
+and let the queue hand it the credential as an ordinary step.
+
+**Two things must not happen during this drill:** do not restart the dashboard
+(the install fetches its scripts from this host at the very END, so a restart
+throws away twenty-five minutes), and do not read "it is taking a while" as
+progress. Take a screenshot — it is the only thing that can tell an installer
+copying files from one sitting at a boot menu.
+
+**Timings from the last run**, worth comparing against: create to installing
+instantly, installer copying files at ~10 minutes, `first-boot.sh` fetched at
+18, provisioning scripts 18–19, `online` at 19:30, `dialled in` at 20:00.
+
 ### 5. The round trip — 2026-08-12
 
 Task written, given to a machine, worked under a contract, committed, pushed,
