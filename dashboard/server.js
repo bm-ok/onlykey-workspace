@@ -77,6 +77,18 @@ const actions = {
     takes: ['name'],
     run: ({ name }) => { channel.drop(name, 'is no longer managed here'); return vms.forget(name) }
   },
+  // A note for the person, not for the machine: what this one is for, which is the
+  // question a list of names cannot answer. Kept in the registry beside the machine
+  // rather than in VirtualBox, because it is this app's own record and a machine
+  // that is only defined -- with nothing in VirtualBox to describe -- still needs it.
+  vmDescribe: {
+    about: 'Set the note shown beside a machine in the list',
+    takes: ['name', 'description'],
+    run: ({ name, description = '' }) => {
+      vms.get(name)                      // refuses anything this app did not make
+      return vms.update(name, { description: String(description).trim() })
+    }
+  },
   vmStart: { about: 'Start a virtual machine', takes: ['name', 'type'], run: ({ name, type }) => { vms.get(name); return vbox.start(name, type === 'headless' ? 'headless' : 'gui') } },
   vmStop: { about: 'Shut a virtual machine down, or pull its power', takes: ['name', 'force'], run: ({ name, force }) => { vms.get(name); return vbox.stop(name, !!force) } },
   vmInfo: { about: 'Everything VirtualBox knows about one machine', takes: ['name'], run: ({ name }) => { vms.get(name); return vbox.info(name) } },
@@ -88,6 +100,14 @@ const actions = {
     run: async ({ name, title, description }) => {
       vms.get(name)
       if (!title || !title.trim()) throw new Error('Give the snapshot a title, so it means something when you come back to it.')
+      // Refused while it is running. VirtualBox would store the machine's memory
+      // beside its disk, so the snapshot arrives the size of the machine's RAM --
+      // and it is a picture of something caught mid-thought rather than a point
+      // worth coming back to. vmBaseSnapshot is the one that takes a running
+      // machine, because it shuts it down first and starts it again after.
+      if (!await vbox.isOff(name)) {
+        throw new Error('Shut the machine down first — a snapshot taken while it is running stores its memory too, which makes it enormous. "Make a clean starting point" does the shutting down for you.')
+      }
       await vbox.takeSnapshot(name, title.trim(), description || '')
       const vm = vms.get(name)
       if (!vm.baseSnapshot) vms.update(name, { baseSnapshot: title.trim() })

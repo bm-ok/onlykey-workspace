@@ -55,7 +55,11 @@ live log, from inside the machine, while it happens.
 
 That is two actions, not one — make, then install — because they fail differently
 and the second is the one that takes half an hour. If the install will not start,
-the machine still exists and the button to try again is right there.
+the machine still exists and `vmInstall` will try again without remaking it.
+
+Neither has a button of its own in the window any more: making a machine already
+installs on its own, and both remain as actions, listed with everything else in
+**All actions**. Removing a button is not the same as removing what it did.
 
 **The server listens on every interface, and that is deliberate.** A guest reaches
 this host by its network address; loopback would be useless to it. So the two
@@ -149,10 +153,10 @@ command is for, so changing what a machine does never means replacing anything
 inside it. Each machine gets its own token when it is made, so it can only ever
 dial in as itself.
 
-What that buys is the fast path: **Set it up again** re-runs the setup on a live
-machine in a minute, where reinstalling to try a change takes half an hour — and
-nobody iterates on a half-hour loop. The machine fetches the script fresh, so an
-edit made since it was built is included.
+What that buys is the fast path: `vmSetupAgain` re-runs the setup on a live machine
+in a minute, where reinstalling to try a change takes half an hour — and nobody
+iterates on a half-hour loop. The machine fetches the script fresh, so an edit made
+since it was built is included.
 
 
 The window keeps up on its own
@@ -171,6 +175,14 @@ looked at.
 
 One draw at a time. A draw asks VirtualBox about every machine, so a request
 arriving mid-draw is remembered and run once rather than overlapping.
+
+**A draw that changes nothing does nothing.** Each panel keeps a signature of
+everything it reads and skips the repaint entirely while that has not moved. This
+is not about speed: replacing a node destroys any selection inside it, so a value
+polled every three seconds could not be selected long enough to copy, and refilling
+the log sent the scrollback to the top. A signature has to name every field its
+panel uses, including ones only a click handler reads — miss one and the panel
+silently stops updating, which is a worse fault than the flicker it fixes.
 
 
 The shape

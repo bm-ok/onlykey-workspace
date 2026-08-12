@@ -40,6 +40,38 @@ const $ = id => document.getElementById(id)
 // spread at each call site that someone will forget.
 const fill = (node, ...kids) => node.replaceChildren(...keep(kids))
 
+// ---- drawing only what moved -----------------------------------------
+//
+// A repaint that changes nothing is not free. replaceChildren swaps in new nodes
+// even when the new ones are identical, and a selection lives on the exact nodes
+// it was made in -- so text being read out of a panel is deselected by the next
+// poll, and a value that is polled every three seconds cannot be copied at all.
+// Setting textContent to the string it already holds does the same thing: the
+// text node is replaced, and it visibly flickers.
+//
+// So a panel is drawn from a signature of everything it reads, and does nothing
+// at all while that has not moved.
+//
+// The signature has to name every field the panel uses -- including the ones only
+// a click handler reads, because a stale handler is captured in the nodes that
+// were not redrawn. Getting that wrong makes a panel silently stop updating,
+// which is worse than the flicker it fixes, so each signature is defined beside
+// the code that reads those fields rather than centrally.
+const drawnFrom = new Map()
+const changed = (key, value) => {
+  const now = JSON.stringify(value)
+  if (drawnFrom.get(key) === now) return false
+  drawnFrom.set(key, now)
+  return true
+}
+
+const setText = (node, text) => { if (node.textContent !== text) node.textContent = text }
+
+// Everything any machine panel reads, including what its click handlers close
+// over: `running` decides whether a button starts or stops, and `description`
+// is carried into the configure dialog.
+const vmKey = v => v && [v.name, v.state, v.stage, v.live, v.running, v.connected, v.baseSnapshot, v.description || '']
+
 // ---- the notice bar ---------------------------------------------------
 
 let noticeTimer
@@ -74,12 +106,24 @@ const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).clic
 // costs when that cannot be undone, and any fields it needs. A confirm() would
 // reduce all of that to a sentence and an OK button.
 
-function ask ({ title, plain, cost, fields = [], confirm, danger, onYes }) {
+// `extra` is a second way out: one more button beside the confirm, for a dialog
+// where the other thing you might have come to do is not a variation of the
+// confirm but its opposite. It closes this dialog and does its own asking, so
+// something irreversible still states its cost on its own screen rather than
+// borrowing the consent given to whatever was on this one.
+function ask ({ title, plain, cost, fields = [], confirm, danger, onYes, extra }) {
   const errBox = el('p', { className: 'dlg-err hidden' })
   const inputs = {}
 
   const yes = el('button', { className: `btn ${danger ? 'danger' : 'ok'}`, textContent: confirm })
   const no = el('button', { className: 'btn', textContent: 'Never mind' })
+  const other = extra
+    ? el('button', {
+        className: `btn ${extra.danger ? 'danger' : ''}`,
+        textContent: extra.label,
+        onclick: () => { close(); extra.onClick() }
+      })
+    : null
 
   const overlay = el('div', { className: 'dlg-overlay' },
     el('div', { className: 'dlg' },
@@ -101,7 +145,7 @@ function ask ({ title, plain, cost, fields = [], confirm, danger, onYes }) {
         return el('div', {}, el('label', { textContent: f.label }), input)
       }),
       errBox,
-      el('div', { className: 'dlg-actions' }, no, yes)))
+      el('div', { className: 'dlg-actions' }, no, other, yes)))
 
   const close = () => overlay.remove()
   no.onclick = close
@@ -145,8 +189,27 @@ const deleteVm = v => ask({
   })
 })
 
-// The card carries identity, state and its own trash can. Everything else lives
-// in the one Actions panel rather than being repeated per row.
+// What a machine is for is the question a column of names cannot answer, and it is
+// not derivable from anything -- so it is asked for and kept, and it belongs on the
+// row rather than behind a selection.
+const configVm = v => ask({
+  title: `Configure ${v.name}`,
+  plain: [
+    'The note is yours: it appears beside this machine in the list and changes nothing about the machine.',
+    'Everything else about a machine is settled when it is made.'
+  ],
+  fields: [{ name: 'description', label: 'Note', value: v.description || '', placeholder: 'what this one is for' }],
+  confirm: 'Save',
+  // Deleting is the other reason to open this, and it is deliberately not the
+  // confirm: it asks again on its own screen, where it can state what it costs.
+  extra: { label: 'Delete it', danger: true, onClick: () => deleteVm(v) },
+  onYes: f => api('vmDescribe', { name: v.name, description: f.description })
+    .then(() => say(f.description ? `Note saved for ${v.name}` : `Note cleared for ${v.name}`))
+})
+
+// The card carries identity, its note, state, and the way in to both settling that
+// note and deleting it. Everything else lives in the one Actions panel rather than
+// being repeated per row.
 const vmCard = v => el('div', {
   className: `card pick${picked === v.name ? ' on' : ''}`,
   onclick: () => { picked = v.name; paintVms() }
@@ -154,13 +217,14 @@ const vmCard = v => el('div', {
   el('div', { className: 'card-title' },
     el('span', { className: 'mono', textContent: v.name }),
     el('button', {
-      className: 'trash',
-      title: `Delete ${v.name}`,
-      textContent: '🗑',
-      // Or selecting the row would also fire, and a click meant for the bin would
+      className: 'cog',
+      title: `Configure ${v.name}`,
+      textContent: '⚙',
+      // Or selecting the row would also fire, and a click meant for this would
       // change what the panels are pointing at underneath the dialog.
-      onclick: e => { e.stopPropagation(); deleteVm(v) }
+      onclick: e => { e.stopPropagation(); configVm(v) }
     })),
+  v.description ? el('div', { className: 'card-sub', textContent: v.description }) : null,
   el('div', { className: 'badges' },
     el('span', { className: `badge ${v.running ? 'ok' : ''}`, textContent: v.running ? 'running' : v.state }),
     el('span', { className: `badge ${v.stage === 'ready' ? 'ok' : v.stage === 'defined' ? 'bad' : 'run'}`, textContent: v.stage }),
@@ -173,10 +237,18 @@ function vmActions () {
   const v = latest.vms.find(x => x.name === picked)
   const go = (name, args, msg) => () => { showTab('live'); api(name, args).then(() => { say(msg); return draw() }).catch(oops) }
 
-  $('actions-context').textContent = v ? `— ${v.name}` : '— nothing selected'
+  setText($('actions-context'), v ? `— ${v.name}` : '— nothing selected')
   if (!v) {
-    return fill(box, el('p', { className: 'empty', textContent: 'Pick a machine on the left, or make one with the + above it.' }))
+    if (changed('actions', null)) fill(box, el('p', { className: 'empty', textContent: 'Pick a machine on the left, or make one with the + above it.' }))
+    return
   }
+
+  // Every button below is built from these: `running`, `live` and `baseSnapshot`
+  // decide what is shown and what is disabled, and `running` is also read by a
+  // click handler, where it picks between stopping and starting. A button left
+  // standing with a stale one would do the wrong thing without saying so, which
+  // is why the signature is the whole of vmKey rather than only what is visible.
+  if (!changed('actions', vmKey(v))) return
 
   fill(box, el('div', { className: 'row' },
     el('button', {
@@ -207,7 +279,11 @@ function vmActions () {
     el('button', {
       className: 'btn',
       textContent: 'Take a snapshot',
-      disabled: !v.live,
+      // Off only. A running machine would have its memory stored too, and the
+      // server refuses it for that reason -- this is the same rule said early, so
+      // the answer arrives before the dialog is filled in rather than after.
+      disabled: !v.live || v.running,
+      title: v.running ? 'Shut it down first — a snapshot of a running machine stores its memory too, which makes it enormous' : '',
       onclick: () => ask({
         title: `Snapshot ${v.name}`,
         plain: ['A snapshot is a point you can come back to.', 'Taking one changes nothing about the machine as it is now.'],
@@ -221,62 +297,11 @@ function vmActions () {
       })
     }),
 
-    v.spec && v.spec.iso
-      ? el('button', {
-          className: 'btn',
-          textContent: 'Install the operating system',
-          disabled: !v.live || v.running,
-          onclick: () => ask({
-            title: `Install an operating system on ${v.name}?`,
-            plain: [
-              'It installs on its own, with nobody watching, and takes a long while.',
-              'It fetches its provisioning scripts from here as it finishes, and reports back into the live log.',
-              'A window will open so you can see it happening.'
-            ],
-            cost: 'Anything already on this machine\'s disk is overwritten.',
-            confirm: 'Install it',
-            danger: true,
-            onYes: () => { showTab('live'); return api('vmInstall', { name: v.name }).then(() => say('Installing — watch the live log')) }
-          })
-        })
-      : null,
-
-    // Only offered when the machine is dialled in, because otherwise there is
-    // nothing to run it on. This is the fast path: re-running the setup on a live
-    // machine takes a minute, where reinstalling to try a change takes half an
-    // hour, and nobody iterates on a half-hour loop.
-    v.connected
-      ? el('button', {
-          className: 'btn',
-          textContent: 'Set it up again',
-          onclick: () => ask({
-            title: `Run the setup again on ${v.name}?`,
-            plain: [
-              'It fetches the script fresh and runs it, so any edit since the machine was built is included.',
-              'Nothing is reinstalled and the machine keeps running.',
-              'Output appears in the live log as it happens.'
-            ],
-            fields: [{
-              name: 'stage',
-              label: 'Which script',
-              value: 'toolchain',
-              options: [
-                { value: 'toolchain', label: 'toolchain.sh — the baseline, as root' },
-                { value: 'toolchainUser', label: "toolchain-user.sh — the baseline, as the user" },
-                { value: 'extra', label: "extra.sh — this project's additions, as root" },
-                { value: 'extraUser', label: "extra-user.sh — this project's additions, as the user" },
-                { value: 'firstBoot', label: 'first-boot.sh — ssh, your key, the agent, then all of the above' }
-              ]
-            }],
-            confirm: 'Run it',
-            onYes: f => {
-              showTab('live')
-              return api('vmSetupAgain', { name: v.name, stage: f.stage })
-                .then(r => say(r.code === 0 ? 'It finished' : `It exited ${r.code} — see the log`, r.code === 0 ? 'ok' : 'bad'))
-            }
-          })
-        })
-      : null,
+    // "Install the operating system" and "Set it up again" were here. Both remain
+    // as actions -- vmInstall and vmSetupAgain -- and the All actions tab still
+    // lists them, because removing a button is not the same as removing what it
+    // did. Making a machine still installs on its own, which was always the path
+    // these two were the retry for.
 
     v.live && !v.baseSnapshot
       ? el('button', {
@@ -307,13 +332,24 @@ function vmActions () {
 // question you have before you decide to restore one.
 async function paintSnapshots () {
   const v = latest.vms.find(x => x.name === picked)
-  $('snap-context').textContent = ''
-  if (!v || !v.live) return fill($('snapshots'), el('p', { className: 'empty', textContent: 'No machine selected.' }))
+  if (!v || !v.live) {
+    setText($('snap-context'), '')
+    if (changed('snapshots', null)) fill($('snapshots'), el('p', { className: 'empty', textContent: 'No machine selected.' }))
+    return
+  }
 
   let s
-  try { s = await api('vmSnapshots', { name: v.name }) } catch { return fill($('snapshots'), el('p', { className: 'empty', textContent: 'Could not read its snapshots.' })) }
+  try {
+    s = await api('vmSnapshots', { name: v.name })
+  } catch {
+    setText($('snap-context'), '')
+    if (changed('snapshots', 'unreadable')) fill($('snapshots'), el('p', { className: 'empty', textContent: 'Could not read its snapshots.' }))
+    return
+  }
 
-  $('snap-context').textContent = `— ${s.snapshots.length}`
+  setText($('snap-context'), `— ${s.snapshots.length}`)
+  if (!changed('snapshots', [v.name, s])) return
+
   fill($('snapshots'), s.snapshots.length
     ? s.snapshots.map(x => el('div', { className: 'card' },
         el('div', { className: 'card-title' },
@@ -338,7 +374,10 @@ async function paintSnapshots () {
 function paintDetails () {
   const v = latest.vms.find(x => x.name === picked)
   const box = $('details')
-  if (!v) return fill(box, el('p', { className: 'empty', textContent: 'No machine selected.' }))
+  if (!v) {
+    if (changed('details', null)) fill(box, el('p', { className: 'empty', textContent: 'No machine selected.' }))
+    return
+  }
 
   const spec = v.spec || {}
   const rows = [
@@ -364,14 +403,22 @@ function paintDetails () {
       ['its addresses', (facts.addresses || []).join(', ') || 'unknown'])
   }
 
+  // The rows themselves are the signature: they are already the finished strings,
+  // so nothing this panel shows can move without the signature moving with it.
+  // This is the table people copy values out of, so it must hold still.
+  if (!changed('details', [v.name, rows])) return
+
   fill(box, el('table', { className: 'kv' }, ...rows.map(([k, val]) =>
     el('tr', {}, el('th', { textContent: k }), el('td', { className: 'mono', textContent: String(val) })))))
 }
 
 function paintVms () {
-  fill($('vms'), latest.vms.length
-    ? latest.vms.map(vmCard)
-    : el('p', { className: 'empty', textContent: latest.available ? 'None yet. The + above makes one.' : 'VirtualBox was not found.' }))
+  // `picked` is in the signature because it decides which card is highlighted.
+  if (changed('vms', [latest.available, picked, latest.vms.map(vmKey)])) {
+    fill($('vms'), latest.vms.length
+      ? latest.vms.map(vmCard)
+      : el('p', { className: 'empty', textContent: latest.available ? 'None yet. The + above makes one.' : 'VirtualBox was not found.' }))
+  }
   vmActions()
   paintDetails()
   paintSnapshots().catch(() => {})
@@ -477,13 +524,27 @@ const lineNode = e => el('div', { className: `line ${e.level}` },
 function paintLog () {
   const box = $('live')
   const visible = lines.filter(shown)
-  fill(box, visible.slice(-800).map(lineNode))
-  if (follow) box.scrollTop = box.scrollHeight
-  $('live-context').textContent = `— ${visible.length} of ${lines.length} lines`
+  const slice = visible.slice(-800)
+
+  // An entry never changes after it is logged, so the ids in view say exactly
+  // what is drawn. Worth guarding twice over: this runs per line rather than per
+  // poll, and refilling the box also sent the scrollback to the top, so reading
+  // anything above the fold during an install was impossible.
+  if (changed('log', slice.map(e => e.id))) {
+    fill(box, slice.map(lineNode))
+    if (follow) box.scrollTop = box.scrollHeight
+  } else if (follow) {
+    box.scrollTop = box.scrollHeight
+  }
+
+  setText($('live-context'), `— ${visible.length} of ${lines.length} lines`)
 
   const counts = new Map()
   for (const e of lines) for (const t of e.tags) counts.set(t, (counts.get(t) || 0) + 1)
-  fill($('log-tags'), [...counts.entries()].sort((a, b) => b[1] - a[1])
+  const ordered = [...counts.entries()].sort((a, b) => b[1] - a[1])
+  if (!changed('logTags', [ordered, [...off].sort()])) return
+
+  fill($('log-tags'), ordered
     .map(([tag, n]) => el('button', {
       className: 'chip' + (off.has(tag) ? '' : ' on'),
       onclick: () => { off.has(tag) ? off.delete(tag) : off.add(tag); paintLog() }
@@ -553,22 +614,27 @@ async function drawOnce () {
     picked = latest.vms.length ? latest.vms[0].name : null
   }
 
-  $('vbox-path').textContent = status.virtualbox || ''
-  $('topright').textContent = latest.vms.length
+  // A path worth copying, so it must not be replaced under a selection.
+  setText($('vbox-path'), status.virtualbox || '')
+  setText($('topright'), latest.vms.length
     ? `${latest.vms.length} machine${latest.vms.length === 1 ? '' : 's'} this app made`
-    : 'no machines yet'
+    : 'no machines yet')
 
   const gone = latest.vms.filter(v => !v.live)
   $('trouble').classList.toggle('hidden', !gone.length)
-  fill($('trouble'), gone.map(v => el('div', {},
-    el('strong', { textContent: `${v.name} is in this list but VirtualBox has no such machine. ` }),
-    el('span', { textContent: 'It was deleted elsewhere, or never finished being made. Delete it here to tidy up.' }))))
+  if (changed('trouble', [!!status.virtualbox, gone.map(v => v.name)])) {
+    fill($('trouble'), gone.map(v => el('div', {},
+      el('strong', { textContent: `${v.name} is in this list but VirtualBox has no such machine. ` }),
+      el('span', { textContent: 'It was deleted elsewhere, or never finished being made. Delete it here to tidy up.' }))))
 
-  if (!status.virtualbox) {
+    if (!status.virtualbox) {
+      $('trouble').classList.remove('hidden')
+      fill($('trouble'), el('div', {},
+        el('strong', { textContent: 'VirtualBox was not found. ' }),
+        el('span', { textContent: 'Nothing here can make or start a machine until it is installed.' })))
+    }
+  } else if (!status.virtualbox) {
     $('trouble').classList.remove('hidden')
-    fill($('trouble'), el('div', {},
-      el('strong', { textContent: 'VirtualBox was not found. ' }),
-      el('span', { textContent: 'Nothing here can make or start a machine until it is installed.' })))
   }
 
   paintVms()
