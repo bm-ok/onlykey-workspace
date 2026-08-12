@@ -435,7 +435,11 @@ async function paintSnapshots () {
   }
 
   setText($('snap-context'), `— ${s.snapshots.length}`)
-  if (!changed('snapshots', [v.name, s])) return
+  // `running` is in here because the buttons below are disabled by it. It is not
+  // shown anywhere in this panel, which is exactly why it is easy to leave out --
+  // and leaving it out would freeze the buttons in whatever state the machine
+  // was in when the list was last drawn.
+  if (!changed('snapshots', [v.name, v.running, s])) return
 
   fill($('snapshots'), s.snapshots.length
     ? s.snapshots.map(x => el('div', { className: 'card' },
@@ -446,13 +450,29 @@ async function paintSnapshots () {
           el('button', {
             className: 'btn',
             textContent: 'Go back to it',
+            // VirtualBox will not restore under a running machine, and the
+            // server says so -- but only after the dialog has been read and
+            // confirmed, which is the wrong end. Said here instead, before the
+            // question about discarding work has even been asked.
+            disabled: v.running,
+            title: v.running ? 'Shut it down first — VirtualBox will not restore a snapshot while it is running' : '',
             onclick: () => ask({
               title: `Go back to "${x.name}"?`,
-              plain: ['The machine must be shut down for this.'],
+              plain: [
+                'The machine must be shut down for this.',
+                // The permission moves with the disk, and it is not obvious that
+                // it does. Worth saying here, because going back to a point from
+                // before any work started is how a machine ends up allowed to
+                // push a branch it no longer has.
+                `What ${v.name} is allowed to push goes back with it — to whatever was set when "${x.name}" was taken.`
+              ],
               cost: `Everything that changed on ${v.name} since "${x.name}" is discarded.`,
               confirm: 'Go back to it',
               danger: true,
-              onYes: () => api('vmSnapshotRestore', { name: v.name, title: x.name }).then(() => say(`Back at "${x.name}"`))
+              onYes: () => api('vmSnapshotRestore', { name: v.name, title: x.name })
+                .then(r => say(r.branch
+                  ? `Back at "${x.name}" — ${v.name} may push ${r.branch}`
+                  : `Back at "${x.name}" — ${v.name} may push nothing until it is set up again`))
             })
           }))))
     : el('p', { className: 'empty', textContent: 'None yet.' }))
