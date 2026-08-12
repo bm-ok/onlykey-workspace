@@ -597,31 +597,19 @@ const actions = {
 
 // ---- serving ----------------------------------------------------------
 
-const body = req => new Promise((resolve, reject) => {
-  let s = ''
-  req.on('data', c => { s += c; if (s.length > 1 << 20) reject(new Error('Too much data')) })
-  req.on('end', () => { try { resolve(s ? JSON.parse(s) : {}) } catch { reject(new Error('That was not valid JSON')) } })
-})
-
-// A machine being provisioned reaches us across the network, so we cannot only
-// listen on loopback. But the actions can delete a virtual machine, so they are
-// not offered across the network either.
+// This port is for machines. Two things are on it, and both name the machine
+// they are for and make it prove that:
 //
-// Three answers to "who is this for", because there turned out to be three
-// questions:
+//   /provision/*  a machine's own setup scripts, and its progress. Proved with
+//                 the machine's token, or -- while it is still being installed
+//                 and has no token yet -- the install ticket it was given on the
+//                 installer's command line.
+//   /git/*        the repositories, proved with the same token.
 //
-//   /provision/*  anyone. All a guest can do with it is read its own setup
-//                 scripts and report progress.
-//   /git/*        a machine THIS APP MADE, proving it with the token it was
-//                 given when it was made -- the same secret it dials in with.
-//                 These are the actual source, not a setup script, so "anyone"
-//                 is too many; and a guest reaches us across the network, so
-//                 "loopback only" is nobody.
-//   /api/*        loopback only. These can delete a machine.
-const isLocal = req => {
-  const from = req.socket.remoteAddress || ''
-  return from === '127.0.0.1' || from === '::1' || from === '::ffff:127.0.0.1'
-}
+// There is deliberately no third entry. The actions used to be here behind a
+// loopback check, and both the check and `body()` that parsed their arguments
+// went with them: dead the moment the route did, and a helper kept "in case"
+// is how a route grows back.
 
 // Which machine is asking, by the token it was made with, or null.
 //
@@ -871,59 +859,29 @@ function handler (req, res) {
     return
   }
 
-  // ---- the live log --------------------------------------------------
-
   if (url.pathname.startsWith('/git/')) return gitRoute(req, res, url)
 
-  if (url.pathname === '/api/log/stream') {
-    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
-    for (const e of log.since(url.searchParams.get('since'))) res.write(`data: ${JSON.stringify(e)}\n\n`)
-    const stop = log.subscribe(e => res.write(`data: ${JSON.stringify(e)}\n\n`))
-    const beat = setInterval(() => res.write(': beat\n\n'), 25000)
-    req.on('close', () => { stop(); clearInterval(beat) })
-    return
-  }
-
-  // ---- the actions ---------------------------------------------------
-
-  if (url.pathname.startsWith('/api/')) {
-    if (!isLocal(req)) {
-      log.on('server').warn(`refused ${url.pathname} from ${req.socket.remoteAddress} — the actions are for this machine only`)
-      res.writeHead(403, { 'content-type': 'text/plain' }).end('the actions are for this machine only\n')
-      return
-    }
-    const name = url.pathname.slice(5)
-    const action = actions[name]
-    const send = (code, obj) => {
-      res.writeHead(code, { 'content-type': 'application/json' })
-      res.end(JSON.stringify(obj))
-    }
-    if (!action) return send(404, { error: `No action called "${name}"`, actions: Object.keys(actions) })
-    // A streaming action has no single answer to put in a response body. Said
-    // rather than left to fail as `action.run is not a function`, which is this
-    // app's internals arriving where somebody asked a question.
-    if (!action.run) return send(400, { error: `"${name}" streams rather than answers once. Follow it over the local socket instead: node tools/okc.js ${name}` })
-
-    // GET is allowed for reading, so the boot page and curl can ask without
-    // constructing a body.
-    const args = req.method === 'GET'
-      ? Promise.resolve(Object.fromEntries(url.searchParams))
-      : body(req)
-
-    args.then(a => action.run(a))
-      .then(out => send(200, out))
-      .catch(e => {
-        // Messages are written for the person, so they are what the page shows.
-        log.on('error').bad(`${name}: ${e.message}`)
-        send(400, { error: e.message })
-      })
-    return
-  }
-
-  // No page here. NW.js opens the window from disk, so this server exists only for
-  // a machine being provisioned.
+  // ---- and nothing else ----------------------------------------------
+  //
+  // THE ACTIONS ARE NOT HERE. They were, on /api/*, answering loopback only --
+  // and that check was the entire thing standing between anything that could
+  // reach this port and an action that deletes a machine.
+  //
+  // A check is a line of code. It is right until somebody edits it, and it has
+  // to keep being right for as long as the route exists. The actions now live on
+  // a local socket, which cannot be reached from another machine at all: no
+  // address to compare, no interface to bind by accident, nothing to keep
+  // enforcing. The strongest version of a check is not needing one.
+  //
+  // That is the answer to a real question rather than a tidy-up. A machine here
+  // may be running something that would start another machine if it could, and
+  // "it cannot reach the actions" is a better sentence when nothing has to be
+  // asked.
+  //
+  // What is left on this port is only what a machine legitimately needs, and
+  // every bit of it now says which machine it is for and proves it.
   res.writeHead(404, { 'content-type': 'text/plain' })
-  res.end('This is the API. The window is not served from here.\n')
+  res.end('This serves machines: their setup scripts and their repositories.\nThe actions are not on this port at all.\n')
 }
 
 // Listens on every interface, because a guest on a bridged adapter reaches this

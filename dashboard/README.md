@@ -7,7 +7,6 @@ framework.
 
     npm install             once, for NW.js (the SDK build, so devtools exist)
     npm start               the app window
-    npm run headless        the API alone, with no window and no UI
     npm run cli             every action, from a terminal
     npm test                checks it stayed generic
 
@@ -63,16 +62,24 @@ installs on its own, and both remain as actions, listed with everything else in
 **All actions**. Removing a button is not the same as removing what it did.
 
 **The server listens on every interface, and that is deliberate.** A guest reaches
-this host by its network address; loopback would be useless to it. So the paths
-are split by who each is for, and there turned out to be three questions:
+this host by its network address; loopback would be useless to it. **This port is
+for machines**, and there are two things on it — both of which name the machine
+they are for and make it prove that:
 
-    /provision/*   anyone -- a guest reading its own scripts and reporting
-    /git/*         a machine this app made, proving it with its own token
-    /api/*         this machine only; these can delete a machine
+    /provision/*   a machine's own scripts and its progress
+    /git/*         the repositories
 
-The first of those is the loose one, and it is the subject of an honest gap
-below: it answers *anyone*, including a machine asking for another machine's
-scripts, which carry that machine's token.
+**The actions are not on it at all.** They were, behind a check that the caller
+was loopback — and that check was the only thing standing between anything able
+to reach the port and an action that deletes a machine. A check is a line of
+code: right until somebody edits it, and it has to keep being right for as long
+as the route exists. The actions live on a local socket now, which cannot be
+reached from another machine at all, so there is no address to compare and
+nothing to keep enforcing. The strongest version of a check is not needing one.
+
+That answers a real question rather than tidying: a machine here may be running
+something that would start or delete another machine if it could, and *it cannot
+reach the actions* is a better sentence when nothing has to be asked.
 
 
 Provisioning is four scripts, meant to be swapped
@@ -525,16 +532,6 @@ what is still not proven.
   deleted within an hour. Nothing here has been left running for days, and the
   reconnect logic has only been exercised by restarting the app and rebooting a
   machine, not by a network that goes away for a long time.
-* **A machine can read another machine's token.** `/provision/*` authenticates
-  nothing, so anything that can reach this host can ask for any machine's
-  `first-boot.sh` and read the `OKC_TOKEN` in it — and then dial in as that
-  machine and push to its branch. Encryption fixed who can read it *in transit*
-  and did nothing about who can ask. The same absence lets anything mark a
-  machine as reported through `/provision/report`, or write lines into the live
-  log attributed to a machine it is not, through `/provision/say`.
-* **The actions are still reachable over HTTP.** `/api/*` answers loopback only,
-  which is a check standing where nothing needs to stand: the command line now
-  goes over a local socket, so the route exists only to be refused.
 
 
 What was learned the hard way

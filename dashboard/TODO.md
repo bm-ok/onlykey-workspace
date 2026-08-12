@@ -29,18 +29,6 @@ re-run fixes it.
 at the very end.
 
 
-Take the actions off HTTP
--------------------------
-
-`/api/*` still answers on 7373, loopback only. That check now guards a door
-nobody uses: the command line has been on the local socket for hours, and the
-window calls the actions table in-process.
-
-This is the thing a machine must not be able to reach — an agent inside a VM
-starting or deleting another VM — and "there is no route" is a stronger answer
-than "a line of code compares an address". Deleting the route is the whole task.
-
-
 Say what a destructive action would destroy
 -------------------------------------------
 
@@ -70,14 +58,6 @@ only been reasoned about. The drill, about five minutes with nothing lost:
 
 `base` predates the feature and has no record, which is why it should resolve to
 *nothing*: unknown means may-push-nothing, recoverable in one click.
-
-
-Delete `npm run headless`
--------------------------
-
-The operator does not use it and does not want it. A mode nobody runs is a mode
-nobody tests, and the command line now covers what it was for. It is still in
-`package.json` and named in the README.
 
 
 Smaller, and named so they are not rediscovered

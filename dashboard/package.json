@@ -16,7 +16,6 @@
   "//chromium-args": "Deliberately none. The previous version passed --disable-features=nw2, which selects the older window implementation -- and under it NW.js's own nw.Window shim throws 'getRoutingID is not a function' on every page load, and native confirm() silently returns false. Nothing here needs the flag, so it is gone and both of those go with it. If something ever does need it, expect that error back.",
   "scripts": {
     "start": "node tools/nw.js",
-    "headless": "node server.js",
     "test": "node test/generic-test.js",
     "cli": "node tools/okc.js"
   },
