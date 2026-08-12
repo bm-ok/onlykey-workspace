@@ -14,10 +14,6 @@ list: not what is missing, but what is unproven.
 Outstanding
 -----------
 
-* **Only one machine has ever been in the pool at a time.** Everything about
-  the queue that concerns *choosing* between machines is therefore unexercised:
-  two tasks starting at once, and a machine being picked when several are free.
-
 * **Nothing has been left running for days.** Every run so far has been minutes.
   A worker that hits a token refresh, a network drop or a full disk mid-task has
   never been observed.
@@ -78,6 +74,8 @@ under a contract, committed, pushed, and arrived here as `d8b18a2` on
 `task/first-round-trip` — then read as a diff and accepted. That was the last
 joint: work went out and nothing had ever come back before.
 
+**Two machines worked at once.** #8 and #9 were queued together, taken in the same tick by the two rebuilt runners, and both delivered — the credential, the workspace and the dispatch interleaving across both machines. Until tonight there had never been two machines in the pool, so everything about CHOOSING between them was unexercised.
+
 **A machine built from nothing did work, credential and all.** `runner1` was
 deleted, remade, installed, provisioned, snapshotted and then given a queued
 task — and the credential reached it through the queue's ordinary path rather
@@ -115,8 +113,11 @@ installed by `extra-user.sh` rather than by hand, and it had never been signed
 in. Its predecessor had accumulated a hand-installed worker, a snapshot tree
 with two entries called `base`, and disks merged twice in one afternoon.
 
-`runner2` is the older build and still carries some of that history. Rebuilding
-it is the obvious next step and nothing depends on it.
+`runner2`**Both** were deleted and rebuilt tonight, eighteen to twenty minutes each, and
+neither has anything on it that a script did not put there. Their resting state
+is off, on one snapshot called , claiming nothing and holding nothing —
+the credential arrives only when the queue gives them work, and leaves before
+they shut down.
 
 **`task/first-round-trip` exists in both repositories, carrying one commit in
 `local-repo-a`.** It is accepted but not merged, which is the intended shape: a
