@@ -497,6 +497,8 @@ function paintTasks () {
         : el('p', { className: 'empty', textContent: 'No tasks yet. Write one with +.' }))
     }
 
+    paintQueue()
+
     const task = tasks.find(t => t.id === pickedTask)
     setText($('task-context'), task ? `— #${task.number}  ${task.id}` : '— nothing selected')
     paintTaskDetail(task)
@@ -511,6 +513,41 @@ function paintTasks () {
       fill($('tasks'), el('p', { className: 'empty', textContent: `The board could not be read: ${e.message}` }))
     }
   })
+}
+
+// What the queue is doing, and why it is not doing anything.
+//
+// Shown only when there is something to say — work waiting, work running, or a
+// machine held back. An empty queue with everything free is the ordinary state
+// and does not need a panel announcing it.
+//
+// The REASONS are the point. "Nothing is queued" and "everything is queued and
+// no machine can take it" look identical from outside and want opposite
+// responses, and the four ways a machine can be unavailable each want a
+// different one: release it, snapshot it, put it back in the pool, or wait.
+function paintQueue () {
+  api('queueState').then(q => {
+    const held = q.machines.filter(m => !m.free)
+    const worth = q.waiting.length || q.inFlight.length || held.some(m => /kept back/.test(m.why))
+    $('queue').classList.toggle('hidden', !worth)
+    if (!worth || !changed('queue', q)) return
+
+    fill($('queue'), el('div', { className: 'card' },
+      el('div', { className: 'card-title' },
+        el('span', { textContent: 'The queue' }),
+        el('span', {
+          className: `badge ${q.inFlight.length ? 'run' : q.waiting.length ? 'warn' : 'muted'}`,
+          textContent: q.inFlight.length ? `${q.inFlight.length} running` : q.waiting.length ? `${q.waiting.length} waiting` : 'idle'
+        })),
+      ...q.inFlight.map(f => el('div', { className: 'card-sub', textContent: `${f.task} on ${f.machine}` })),
+      ...q.waiting.map(w => el('div', { className: 'card-sub muted', textContent: `#${w.number} ${w.title} — waiting` })),
+      // Only the ones that cannot take work. A list of free machines is noise
+      // on the normal case and makes the exception harder to find.
+      ...held.map(m => el('div', { className: 'card-sub muted', textContent: `${m.name} ${m.why}` })),
+      q.machines.some(m => m.free) || !q.waiting.length
+        ? null
+        : el('div', { className: 'card-sub bad', textContent: 'Nothing can take it. It stays queued until something can.' })))
+  }).catch(() => { /* the board already says if the dashboard is unreachable */ })
 }
 
 function paintTaskDetail (task) {
@@ -626,6 +663,16 @@ function paintHistory (task) {
               el('span', { className: `badge ${badge(a)}`, textContent: a.state === 'gone' ? 'machine no longer has it' : a.state })),
             el('div', { className: 'card-sub mono', textContent: a.run }),
             el('div', { className: 'card-sub muted', textContent: a.at ? new Date(a.at).toLocaleString() : '' }),
+            // Where the minutes actually went. A total says nothing about
+            // whether the machine took eight of them to boot, and half of every
+            // task here is the machine being made ready.
+            a.spent
+              ? el('div', { className: 'card-sub muted', textContent: Object.entries(a.spent)
+                  .filter(([k]) => k !== 'total')
+                  .map(([k, ms]) => `${k} ${Math.round(ms / 1000)}s`).join(' · ') +
+                  (a.spent.total ? `  —  ${Math.round(a.spent.total / 1000)}s in all` : '') })
+              : null,
+            a.failed ? el('div', { className: 'card-sub bad', textContent: a.failed }) : null,
             // Only when there is something kept to read. A button that opens
             // nothing is worse than no button.
             a.kept
@@ -1144,6 +1191,33 @@ function vmActions () {
       onclick: go(v.running ? 'vmStop' : 'vmStart', { name: v.name }, v.running ? 'Asked it to shut down' : 'Starting it')
     }),
 
+    // Only when it is on a branch, because that is the only time the question
+    // exists — and it is asked as "why is this machine stuck", which is this
+    // panel's question rather than the branch list's.
+    v.branch
+      ? el('button', {
+          className: 'btn',
+          textContent: `Let go of ${v.branch}`,
+          disabled: !v.connected,
+          title: v.connected
+            ? 'Only if it is holding nothing — it will be asked'
+            : 'It has to be dialled in to be asked what it is holding',
+          onclick: () => ask({
+            title: `Let ${v.name} off ${v.branch}?`,
+            plain: [
+              'The machine is asked what it is holding first, and this is refused if anything is uncommitted or unpushed.',
+              'Nothing on the machine changes. It stops being the machine that owns this branch, so another one can take it and this one can be given other work.',
+              'Anything it already pushed is here and is not touched.'
+            ],
+            confirm: 'Let it go',
+            onYes: async () => {
+              const r = await api('vmRelease', { name: v.name })
+              say(r.note || `${v.name} let go of ${r.was}.`)
+            }
+          })
+        })
+      : null,
+
     v.running
       ? el('button', {
           className: 'btn danger',
@@ -1398,6 +1472,30 @@ async function paintSnapshots () {
                   ? `Back at "${x.name}" — ${v.name} may push ${r.branch}`
                   : `Back at "${x.name}" — ${v.name} may push nothing until it is set up again`))
               })).catch(oops)
+          }),
+
+          // Throwing one away had no button at all, which is how a machine
+          // ends up with two snapshots called the same thing and no way to
+          // resolve it from the window.
+          el('button', {
+            className: 'btn danger',
+            textContent: 'Throw it away',
+            disabled: v.running,
+            title: v.running ? 'Shut it down first' : '',
+            onclick: () => ask({
+              title: `Throw away "${x.name}"?`,
+              plain: [
+                'The snapshot goes; the machine keeps its current disk. What was recorded at that point is merged into what came after it.',
+                x.name === v.baseSnapshot
+                  ? `This is ${v.name}'s base — the point the queue returns it to. Without one it cannot be made clean, so the queue will stop using it.`
+                  : 'This is not the base snapshot, so nothing the queue relies on changes.'
+              ],
+              cost: `There is no way back to "${x.name}" afterwards.`,
+              confirm: 'Throw it away',
+              danger: true,
+              onYes: () => api('vmSnapshotDelete', { name: v.name, title: x.name })
+                .then(() => say(`"${x.name}" is gone.`))
+            })
           }))))
     : el('p', { className: 'empty', textContent: 'None yet.' }))
 }
@@ -1634,7 +1732,15 @@ $('link-dot').classList.add('live')
 // ---- draw ------------------------------------------------------------
 
 async function drawOnce () {
-  const [list, status] = await Promise.all([api('vmList'), api('status')])
+  // The queue is asked here as well as in its own panel, because the banner
+  // needs it: a machine the queue is driving is not an idle machine, and
+  // nagging about one would train the operator to ignore the banner.
+  const [list, status, running] = await Promise.all([
+    api('vmList'),
+    api('status'),
+    api('queueState').catch(() => ({ inFlight: [] }))
+  ])
+  const busyMachines = new Set((running.inFlight || []).map(f => f.machine))
   latest = list
 
   // Reconcile the selection against what actually exists, every time, before
@@ -1683,7 +1789,29 @@ async function drawOnce () {
     ...stuck.map(r => [
       `${r.repo} is on "${r.on}" here with uncommitted changes. `,
       `A machine working on "${r.on}" cannot push while that is true, and its own error will not say why. Commit or discard them, or put ${r.repo} back on ${r.home}.`
-    ])
+    ]),
+
+    // A machine left on, doing nothing, holding a credential.
+    //
+    // Said because nothing else says it. A runner's natural state is off; one
+    // that is up and idle looks exactly like one that is working, and that is
+    // how a machine stayed on for hours holding a token while every panel
+    // reported it as healthy. It was noticed by eye.
+    //
+    // The credential is the part that makes this worth a banner rather than a
+    // note: an idle machine is the one case where a token is exposed for no
+    // reason at all — nothing is using it, and it will keep not being used
+    // until somebody looks.
+    ...latest.vms
+      .filter(v => v.running &&
+        !busyMachines.has(v.name) &&        // the queue is using it
+        v.forTasks !== false &&             // somebody said keep this one back
+        v.stage !== 'installing')           // it is being built
+      .map(v => v.holdsCredential
+        ? [`${v.name} is on, doing nothing, and holding a worker credential. `,
+            'A runner rests off and holding nothing. Take the credential back and shut it down, or give it something to do.']
+        : [`${v.name} is on and doing nothing. `,
+            'A runner rests off — the queue starts one when there is work. Shut it down, or give it something to do.'])
   ].filter(Boolean)
 
   $('trouble').classList.toggle('hidden', !trouble.length)

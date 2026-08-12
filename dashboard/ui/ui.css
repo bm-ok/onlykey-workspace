@@ -239,6 +239,7 @@ main { padding: 16px; }
 .card.on { border-color: var(--accent); background: var(--panel-2); }
 .card-title { font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .card-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.card-sub.bad { color: var(--fail); }
 
 .panel {
   background: var(--panel);
