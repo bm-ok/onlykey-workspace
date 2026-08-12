@@ -239,6 +239,10 @@ async function destroy (name) {
     to.info(`${name} does not exist in VirtualBox; nothing to delete`)
     return { existed: false }
   }
+  // Asked before it is unregistered, because afterwards there is nothing left to
+  // ask.
+  const folder = await machineFolder(name)
+
   const s = await state(name)
   if (!OFF_STATES.has(s)) {
     to.warn(`powering ${name} off (was "${s}")`)
@@ -248,8 +252,54 @@ async function destroy (name) {
   await waitUntilUnlocked(name)
   await retrying(() => run(['unregistervm', name, '--delete'], { timeout: 180000, tags: [name] }),
     { what: 'unregistervm', tags: [name] })
+
+  const left = folder ? sweepUp(folder, to) : []
   to.good(`${name} and its disks are gone.`)
-  return { existed: true }
+  return { existed: true, folder, left }
+}
+
+const machineFolder = async name => {
+  try { return path.dirname((await info(name)).CfgFile || '') || null } catch { return null }
+}
+
+// What `unregistervm --delete` does not take with it.
+//
+// It removes the disks and the .vbox file, and leaves the machine's folder
+// holding whatever else ended up there -- for an unattended install that is the
+// generated seed, the grub config, the aux ISO and `vboxpostinstall.sh`, which
+// contains the whole bootstrap command line. So "and its disks are gone" was
+// true and the folder stayed behind, accumulating one set per machine ever
+// built.
+//
+// That is worth more than tidiness: the bootstrap command is the one place
+// anything can be handed to a machine that has nothing yet, so whatever is put
+// there outlives the machine unless something removes it.
+//
+// DELIBERATELY NARROW. Only files VirtualBox generated for this machine, and
+// only then the folder itself if nothing else is in it. Anything unrecognised
+// is left alone and named in the log -- deleting a directory is not a thing to
+// be approximately right about, and somebody may have put a file in there.
+const GENERATED = /^(Unattended-.*|.*\.vbox(-prev)?|.*\.viso)$/i
+
+function sweepUp (folder, to) {
+  let names
+  try { names = fs.readdirSync(folder) } catch { return [] }
+
+  for (const entry of names) {
+    const full = path.join(folder, entry)
+    try {
+      if (entry === 'Logs' && fs.statSync(full).isDirectory()) { fs.rmSync(full, { recursive: true, force: true }); continue }
+      if (GENERATED.test(entry) && fs.statSync(full).isFile()) fs.unlinkSync(full)
+    } catch { /* named below if it is still there */ }
+  }
+
+  let left = []
+  try { left = fs.readdirSync(folder) } catch { return [] }
+  if (!left.length) {
+    try { fs.rmdirSync(folder); return [] } catch { /* said below */ }
+  }
+  if (left.length) to.warn(`${folder} still holds ${left.join(', ')} — not this app's to delete, so it was left`)
+  return left
 }
 
 module.exports = {
