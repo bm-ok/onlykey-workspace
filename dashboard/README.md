@@ -223,13 +223,51 @@ undone, and sometimes fields. A native `confirm()` holds none of that.
 Honest gaps
 -----------
 
-* **No install has been watched all the way to a login prompt.** The mechanics are
-  verified: a machine is created, started, and told where to fetch its scripts; all
-  four are served over the real network address as valid shell with the right values
-  in them; and a guest's reports and output arrive in the live log. What has not
-  been sat through is the twenty-odd minutes in between.
-* **The operating system install depends on the image.** `VBoxManage unattended
-  install` drives the installer, and an image it does not understand will not
-  install unattended however correct everything here is.
-* **`toolchain.sh` installs a compiler and little else.** It is a starting point,
-  not a recommendation.
+Two machines have been built end to end and checked ON the machine afterwards, not
+from the log: Ubuntu 26.04 and 24.04. Both installed unattended, ran all four
+provisioning scripts, rebooted and dialled in as the ordinary user. What follows is
+what is still not proven.
+
+* **Only Ubuntu desktop images have been used.** `VBoxManage unattended install`
+  drives the installer, and an image it does not understand will not install
+  unattended however correct everything here is. A server image has never been tried.
+* **The source-build fallback in a project script has never run.** Where a tool came
+  from the distribution on both images, the path that builds one from source was
+  never taken, so it is untested.
+* **Nothing has run for long.** Machines have been created, provisioned, used and
+  deleted within an hour. Nothing here has been left running for days, and the
+  reconnect logic has only been exercised by restarting the app and rebooting a
+  machine, not by a network that goes away for a long time.
+* **The window is the only interface.** `npm run headless` serves the API alone, so
+  with no window there is no UI at all.
+* **The project's own scripts are not in git.** `workspace/` is ignored, so
+  `workspace/provision/*.sh` exist only on disk — including the reasoning about why
+  a memory setting is needed and why the USB gadget is deliberately absent. One
+  `.gitignore` line would keep them; until then they are the only unversioned part
+  of the system.
+
+
+What was learned the hard way
+----------------------------
+
+Written down because each cost real time, and each is invisible in the code that
+now looks obvious.
+
+* **A script that overwrites the file it is running from.** Bash reads a script by
+  byte offset, so the overwritten file carried on at the old offset inside new
+  content: part of it ran twice and everything after it silently never ran. Hence
+  one bootstrap script, and stages written somewhere else entirely.
+* **`sshd -t` needs host keys.** During an install they do not exist yet, so the
+  check failed for a reason that had nothing to do with the config being tested —
+  and the config was deleted as a result. It passed on one image and failed on
+  another purely by timing.
+* **`.bashrc` returns immediately when not interactive.** Anything added to it is
+  therefore invisible to a command sent to the machine, while looking perfectly
+  correct in an interactive shell. This caught both node and `DISPLAY`, separately,
+  the second time after the lesson was already written down three files away.
+* **A destroyed machine keeps its connection.** A VM killed mid-flight sends no FIN,
+  so the socket looks healthy forever — and a new machine of the same name inherited
+  it and reported itself provisioned. Silence is not the same as health, so a session
+  that says nothing is now treated as gone.
+* **Checking the wrong shell proves nothing.** Every check that matters asks a login
+  shell, because that is what a dispatched command gets.
