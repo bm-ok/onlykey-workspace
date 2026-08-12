@@ -234,6 +234,39 @@ credential store holds it instead, in one file the machine could already read, a
 the remotes stay clean enough to show anybody.
 
 
+A machine pushes its branch, and nothing else
+---------------------------------------------
+
+Work comes back the way it went out. A machine may push **exactly the branch it
+was set up on**; master stays readable and is never writable — not by convention,
+by refusal:
+
+    remote: refused master: runner1 may only push fix/try-one here.
+    remote: nothing was taken. your commits are still here, on your own copy.
+
+**The branch is read from the registry, not from the push.** The machine knows
+which branch it is on and is exactly the thing the rule is about, which
+disqualifies it as the source. It is recorded when the workspace is set up, and
+`null` — a machine that never got one — may push nothing at all.
+
+**Where the rule runs is what makes it one.** `receive-pack` is started here, so
+the hook runs here, in a directory no guest can reach. `core.hooksPath` points
+git at the app's own hook rather than one inside the repository, so nothing is
+written into the repositories being protected — they stay ordinary checkouts that
+git, VS Code and a person at a terminal all see identically.
+
+Two more rules are git's own settings rather than hook logic, because git already
+does them and a second implementation is only a chance to be wrong: history that
+arrived in storage cannot be **rewritten** (`denyNonFastForwards`) or **removed**
+(`denyDeletes`) from the far end.
+
+What is deliberately *not* here is rewriting a push in flight. `receive-pack`
+hooks can only accept or reject a ref — never rename one — so "push master and it
+lands on the right branch" would mean receiving into a per-machine repository and
+fetching out of it, which discards the name the pusher chose without telling
+anybody. Refusing says the same thing at the moment it can still be acted on.
+
+
 Then open it in the editor, in the machine
 ------------------------------------------
 
@@ -315,6 +348,7 @@ The shape
       serve.js      the workspace's repositories, over git's smart http
       branches.js   one branch name across every repository, cut here
       workspace.js  the script that lays a machine's workspace out
+      hooks/        what a push is allowed to be. Runs HERE, not in a guest
     provision/      the swappable scripts above
     tools/nw.js     finds the NW.js binary and launches the app
 
