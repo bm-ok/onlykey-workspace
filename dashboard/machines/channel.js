@@ -20,20 +20,37 @@ const log = require('../core/log')
 // cannot exhaust memory here.
 const MAX_LINE = 4 * 1024 * 1024
 
-const agents = new Map()   // vm name -> { socket, since, from, facts }
+const agents = new Map()   // vm name -> { socket, since, from, facts, lastSeen }
 let server = null
 let jobSeq = 0
-const jobs = new Map()     // job id -> { resolve, reject, lines }
+const jobs = new Map()     // job id -> { vm, resolve, reject, lines }
+
+// How long a machine may say nothing before it is assumed gone. The agent sends a
+// beat every 20 seconds, so three missed beats.
+const SILENT_TOO_LONG = 70000
 
 const newToken = () => crypto.randomBytes(24).toString('hex')
 
 // ---- listening --------------------------------------------------------
 
-// Every interface, for the same reason the API is: a machine reaches this host by
-// its network address. A guest cannot say anything until it proves it holds the
-// token for the machine it claims to be, and the token was generated per machine
-// when it was made.
+// A machine that stops answering has to be noticed, because TCP will not notice for
+// us: one killed mid-sentence leaves a socket that looks perfectly healthy.
+function watchForSilence () {
+  setInterval(() => {
+    const now = Date.now()
+    for (const [name, agent] of agents) {
+      if (now - agent.lastSeen > SILENT_TOO_LONG) {
+        dropAgent(name, `has said nothing for ${Math.round((now - agent.lastSeen) / 1000)}s, so it is treated as gone`)
+      }
+    }
+  }, 15000).unref()
+}
+
+// Every interface, for the same reason the API is: a machine reaches this host by its
+// network address. A guest can say nothing until it proves it holds the token for the
+// machine it claims to be, and that token was generated per machine when it was made.
 function listen ({ port = Number(process.env.OKC_CHANNEL_PORT || 7374), tokenFor }) {
+  watchForSilence()
   return new Promise((resolve, reject) => {
     server = net.createServer(socket => onConnection(socket, tokenFor))
     server.once('error', reject)
@@ -44,9 +61,34 @@ function listen ({ port = Number(process.env.OKC_CHANNEL_PORT || 7374), tokenFor
   })
 }
 
+// Everything that ends a session, in one place, so nothing is half-forgotten.
+//
+// Rejecting the pending jobs matters as much as closing the socket: a job whose
+// machine has gone will never be answered, and without this it sat until its timeout
+// -- so asking a destroyed machine to do something appeared to hang rather than to
+// fail.
+function dropAgent (name, why) {
+  const agent = agents.get(name)
+  if (agent) {
+    agents.delete(name)
+    try { agent.socket.destroy() } catch { /* already gone */ }
+  }
+  for (const [id, job] of jobs) {
+    if (job.vm === name) {
+      jobs.delete(id)
+      job.reject(new Error(`"${name}" ${why}, so the command was not finished.`))
+    }
+  }
+  if (agent) log.on('vm', name, 'channel').warn(`${name} ${why}`)
+  return !!agent
+}
+
 function onConnection (socket, tokenFor) {
   const from = `${socket.remoteAddress}:${socket.remotePort}`
   socket.setNoDelay(true)
+  // So the operating system notices a peer that vanished without saying goodbye. A
+  // VM being destroyed sends no FIN, and without this the socket looks open forever.
+  socket.setKeepAlive(true, 20000)
 
   let buffer = ''
   let vm = null
@@ -86,28 +128,30 @@ function onConnection (socket, tokenFor) {
         if (!expected || msg.token !== expected) return goodbye(`claimed to be "${msg.vm}" without the right token`)
 
         vm = msg.vm
+        // A second machine claiming the same name replaces the first. Usually this is
+        // the same machine reconnecting after a reboot.
         const had = agents.get(vm)
-        if (had && had.socket !== socket) had.socket.destroy()
-        agents.set(vm, { socket, since: new Date().toISOString(), from, facts: msg.facts || {} })
+        if (had && had.socket !== socket) dropAgent(vm, 'was replaced by a new connection')
+        agents.set(vm, { socket, since: new Date().toISOString(), from, facts: msg.facts || {}, lastSeen: Date.now() })
         log.on('vm', vm, 'channel').good(`${vm} dialled in from ${socket.remoteAddress}`)
         send({ type: 'hi' })
         continue
       }
 
+      // Anything at all counts as a sign of life, not only a beat.
+      const agent = agents.get(vm)
+      if (agent) agent.lastSeen = Date.now()
       handle(vm, msg)
     }
   })
 
-  const drop = () => {
-    if (vm && agents.get(vm) && agents.get(vm).socket === socket) {
-      agents.delete(vm)
-      // Not an error: a machine rebooting looks exactly like this, and it will be
-      // back.
-      log.on('vm', vm, 'channel').info(`${vm} hung up`)
-    }
+  // Not an error: a machine rebooting looks exactly like this, and it will be back.
+  // Through dropAgent, so anything waiting on it is told rather than left waiting.
+  const gone = () => {
+    if (vm && agents.get(vm) && agents.get(vm).socket === socket) dropAgent(vm, 'hung up')
   }
-  socket.on('close', drop)
-  socket.on('error', drop)
+  socket.on('close', gone)
+  socket.on('error', gone)
 }
 
 // What a dialled-in machine can say. Deliberately little: it reports output and
@@ -164,6 +208,7 @@ function run (name, command, { what = 'command', timeout = 30 * 60 * 1000 } = {}
     }, timeout)
 
     jobs.set(job, {
+      vm: name,
       lines: [],
       resolve: out => { clearTimeout(give_up); resolve(out) },
       reject: err => { clearTimeout(give_up); reject(err) }
@@ -179,4 +224,4 @@ const close = () => {
   return new Promise(r => (server ? server.close(r) : r()))
 }
 
-module.exports = { listen, close, connected, list, run, newToken }
+module.exports = { listen, close, connected, list, run, newToken, drop: dropAgent }

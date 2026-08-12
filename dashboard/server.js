@@ -64,11 +64,19 @@ const actions = {
     takes: ['name'],
     run: async ({ name }) => {
       vms.get(name)                      // refuses anything this app did not make
+      // Before the machine goes, so nothing is left holding a session for something
+      // that no longer exists -- and so a new machine of the same name cannot
+      // inherit it.
+      channel.drop(name, 'was deleted')
       const out = await vbox.destroy(name)
       return { ...out, ...vms.forget(name) }
     }
   },
-  vmForget: { about: 'Stop managing a virtual machine without deleting it', takes: ['name'], run: ({ name }) => vms.forget(name) },
+  vmForget: {
+    about: 'Stop managing a virtual machine without deleting it',
+    takes: ['name'],
+    run: ({ name }) => { channel.drop(name, 'is no longer managed here'); return vms.forget(name) }
+  },
   vmStart: { about: 'Start a virtual machine', takes: ['name', 'type'], run: ({ name, type }) => { vms.get(name); return vbox.start(name, type === 'headless' ? 'headless' : 'gui') } },
   vmStop: { about: 'Shut a virtual machine down, or pull its power', takes: ['name', 'force'], run: ({ name, force }) => { vms.get(name); return vbox.stop(name, !!force) } },
   vmInfo: { about: 'Everything VirtualBox knows about one machine', takes: ['name'], run: ({ name }) => { vms.get(name); return vbox.info(name) } },
