@@ -2,12 +2,27 @@
   "name": "okc-dashboard",
   "version": "0.0.1",
   "private": true,
-  "description": "Pick a task, work, offer, review, accept. Nothing reaches your main branch unread.",
-  "main": "server.js",
+  "description": "Pick a task, work, offer, review, accept. Nothing reaches your branch unread.",
+  "main": "ui/boot.html",
+  "node-main": "main.js",
+  "window": {
+    "title": "Dashboard",
+    "width": 1280,
+    "height": 860,
+    "min_width": 900,
+    "min_height": 600
+  },
+  "chromium-args": "--disable-features=nw2",
   "scripts": {
-    "start": "node server.js",
+    "start": "node tools/nw.js",
+    "headless": "node server.js",
     "okc": "node cli.js",
     "test": "node test/contract-test.js && node test/loop-test.js"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "nw": "^0.114.1"
+  }
 }

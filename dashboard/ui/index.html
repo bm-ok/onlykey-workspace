@@ -3,111 +3,120 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Work</title>
-<link rel="stylesheet" href="/ui.css">
+<!-- Not the name of any one project. The tool serves an ecosystem and names it in
+     the header; baking one into the chrome is how a window title goes on saying
+     the wrong thing while the workspace serves something else. -->
+<title>Dashboard</title>
+<link rel="stylesheet" href="ui.css">
 </head>
 <body>
 
-<header>
-  <h1>Work</h1>
-  <p id="where">…</p>
+<header class="topbar">
+  <div class="brand">
+    <span class="dot" id="link-dot" title="live log stream"></span>
+    <strong>Dashboard</strong>
+    <!-- Which ecosystem this is serving, and where it lives. Everything on every
+         tab comes from it, and it has to be visible without opening JSON. -->
+    <span class="muted" id="ecosystem"></span>
+    <span class="muted mono" id="workspace"></span>
+  </div>
+  <nav class="tabs">
+    <button class="tab active" data-view="ops">Operations</button>
+    <!-- The badge is what makes a tab you cannot see safe to have: output
+         arriving behind it is announced, and a failure differently from
+         ordinary chatter. -->
+    <button class="tab" data-view="live">Live <span class="tab-badge hidden" id="live-badge"></span></button>
+    <button class="tab" data-view="work">Work</button>
+    <button class="tab" data-view="actions">All actions</button>
+  </nav>
+  <div class="topright muted" id="topright"></div>
 </header>
 
-<nav id="tabs">
-  <button data-tab="loop" class="on">Work</button>
-  <button data-tab="machines">Machines</button>
-  <button data-tab="log">Live log</button>
-</nav>
+<!-- The answer to a button press, in the same place as the button. Reporting a
+     result somewhere the operator is not looking reads exactly like nothing
+     having happened. -->
+<div id="notice" class="notice hidden"></div>
 
-<!-- Absent repos are said out loud: a tool that looks healthy while pointing at
-     nothing is the failure this prevents. -->
-<section id="trouble" hidden></section>
+<!-- Above everything: a repo that is not where the project says it is makes every
+     other answer on the page unreliable. -->
+<div id="trouble" class="stale-banner hidden"></div>
 
-<div class="tab" data-tab="loop">
-  <section>
-    <h2>What you are working on</h2>
-    <div id="doing-list"></div>
-  </section>
-  <section>
-    <h2>What is worth doing</h2>
-    <div id="task-list"></div>
-  </section>
-  <section>
-    <h2>Finished</h2>
-    <div id="past-list"></div>
-  </section>
-</div>
+<main>
 
-<div class="tab" data-tab="machines" hidden>
-  <section>
-    <h2>Machines</h2>
-    <div id="machine-list"></div>
-    <details id="add-machine">
-      <summary>Add a machine</summary>
-      <div class="form">
-        <label>Name <input id="m-name" placeholder="dev box"></label>
-        <label>Where is it
-          <select id="m-kind">
-            <option value="local">This machine</option>
-            <option value="ssh">Another machine, over ssh</option>
-          </select>
-        </label>
-        <label id="m-host-wrap" hidden>Address <input id="m-host" placeholder="user@127.0.0.1 -p 2222"></label>
-        <label>Folder to open <input id="m-path" placeholder="/home/you/work"></label>
-        <label>VS Code command <input id="m-editor" placeholder="leave empty to find it automatically"></label>
-        <label>Virtual machine name <input id="m-vm" placeholder="leave empty if it is not a VM"></label>
-        <div class="row"><button id="m-add">Add it</button></div>
+  <!-- ---------------- Operations ---------------- -->
+  <section class="view active" id="view-ops">
+    <div class="cols">
+
+      <div class="col narrow">
+        <h2>Virtual machines</h2>
+        <div id="vms" class="stack"></div>
+        <button class="btn wide" id="add-vm-open">Make one</button>
       </div>
-    </details>
-  </section>
 
-  <section>
-    <h2>Virtual machines</h2>
-    <div id="vm-list"></div>
-    <details id="add-vm">
-      <summary>Make a new virtual machine</summary>
-      <div class="form">
-        <label>Name <input id="vm-name" placeholder="dev1"></label>
-        <label>Memory, in MB <input id="vm-memory" type="number" value="4096"></label>
-        <label>Processors <input id="vm-cpus" type="number" value="2"></label>
-        <label>Disk, in GB <input id="vm-disk" type="number" value="30"></label>
-        <label>ssh reaches it on port <input id="vm-ssh" type="number" value="2222"></label>
-        <label>Installer image, if you have one <input id="vm-iso" placeholder="C:\path\to\ubuntu.iso"></label>
-        <p class="hint">This makes the machine and its disk. It does not install an operating system — attach an installer above and boot it.</p>
-        <div class="row"><button id="vm-add">Make it</button></div>
+      <div class="col">
+        <!-- Actions act on the SELECTED virtual machine, so one set of buttons
+             serves every one of them instead of each card carrying its own copy. -->
+        <h2>Actions <span class="muted" id="actions-context">— nothing selected</span></h2>
+        <div id="machine-actions" class="panel"></div>
+
+        <h2>Tasks <span class="muted" id="tasks-context"></span></h2>
+        <div id="tasks" class="stack"></div>
       </div>
-    </details>
-  </section>
-</div>
 
-<div class="tab" data-tab="log" hidden>
-  <section>
-    <h2>Live log</h2>
-    <div class="row" id="log-tags"></div>
-    <div class="row logbar">
-      <label class="inline"><input type="checkbox" id="log-follow" checked> Follow</label>
-      <input id="log-find" placeholder="find text">
-      <button class="quiet" id="log-clear">Clear</button>
-      <span id="log-count" class="hint"></span>
+      <div class="col wide">
+        <h2>In flight</h2>
+        <div id="doing" class="stack"></div>
+      </div>
+
     </div>
-    <div id="log"></div>
   </section>
-</div>
 
-<dialog id="ask">
-  <h3 id="ask-title"></h3>
-  <div id="ask-body"></div>
-  <label id="ask-note-wrap" hidden>
-    <span>In one line, what did you check?</span>
-    <input id="ask-note" autocomplete="off" placeholder="read both diffs, the wording is accurate">
-  </label>
-  <p id="ask-error" hidden></p>
-  <div class="row">
-    <button id="ask-no" class="quiet">Never mind</button>
-    <button id="ask-yes"></button>
-  </div>
-</dialog>
+  <!-- ---------------- Live ----------------
+       Never torn down and never stops appending. Its whole value is that it is
+       watching while you are doing something else, so a stream that dropped
+       while the view was hidden would lose exactly the output you switched away
+       to cause. The element stops being displayed; the subscription is global. -->
+  <section class="view" id="view-live">
+    <div class="sync-head">
+      <h2>Live <span class="muted" id="live-context"></span></h2>
+      <div class="sync-controls">
+        <label class="inline"><input type="checkbox" id="log-follow" checked> Follow</label>
+        <input id="log-find" placeholder="find text">
+        <button class="btn" id="log-clear">Clear</button>
+      </div>
+    </div>
+    <!-- Built from the tags actually present, so a new tag anywhere becomes a
+         filter without being registered. -->
+    <div id="log-tags" class="chips"></div>
+    <div id="live" class="console tall"></div>
+  </section>
 
-<script src="/ui.js"></script>
+  <!-- ---------------- Work ---------------- -->
+  <section class="view" id="view-work">
+    <div class="cols">
+      <div class="col">
+        <h2>Attempts</h2>
+        <div id="work-list" class="stack"></div>
+      </div>
+      <div class="col wide">
+        <h2 id="work-detail-title">Select an attempt</h2>
+        <div id="work-detail"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------- All actions ---------------- -->
+  <section class="view" id="view-actions">
+    <p class="note">
+      Every capability this server has, generated from <code>/api/actions</code> &mdash;
+      the same table the window and the cli both work from. Nothing can exist
+      without appearing here.
+    </p>
+    <div id="action-list"></div>
+  </section>
+
+</main>
+
+<script src="ui.js"></script>
 </body>
 </html>

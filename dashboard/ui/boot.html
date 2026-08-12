@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dashboard — starting</title>
+<style>
+  body {
+    margin: 0; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: #0e1116; color: #d7dee8;
+    font: 13px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .box { text-align: center; max-width: 560px; padding: 24px; }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  .muted { color: #7d8998; }
+  .spinner {
+    width: 22px; height: 22px; margin: 0 auto 16px;
+    border: 2px solid #2a323d; border-top-color: #4aa3ff;
+    border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  pre {
+    text-align: left; background: #0a0d12; border: 1px solid #2a323d;
+    border-radius: 6px; padding: 12px; margin-top: 16px;
+    font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+    white-space: pre-wrap; color: #ffa198;
+  }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="spinner" id="spinner"></div>
+  <h1 id="headline">Starting the dashboard</h1>
+  <div class="muted" id="detail">booting the server inside NW.js…</div>
+  <pre id="error" class="hidden"></pre>
+</div>
+
+<script>
+// NW.js loads this page as the app entry while main.js boots the server in the
+// Node context. Once the server answers we navigate to it, so the real UI is
+// served over http -- the same origin and the same page a plain browser gets.
+// One UI, one origin, no second code path.
+
+const url = `http://127.0.0.1:${Number(localStorage.getItem('okc.port')) || 7373}/`
+document.getElementById('detail').textContent = `waiting for ${url}`
+
+const started = Date.now()
+
+function showError (headline, message) {
+  document.getElementById('spinner').classList.add('hidden')
+  document.getElementById('headline').textContent = headline
+  document.getElementById('detail').textContent = ''
+  const box = document.getElementById('error')
+  box.classList.remove('hidden')
+  box.textContent = message
+}
+
+async function poll () {
+  try {
+    const res = await fetch(url + 'api/status', { cache: 'no-store' })
+    if (res.ok) return location.replace(url)
+  } catch {
+    // not up yet
+  }
+  if (Date.now() - started > 30000) {
+    return showError('The server did not come up',
+      `Nothing is answering at ${url} after 30 seconds.\n\n` +
+      'The reason is in the NW.js devtools console, or run the same server\n' +
+      'without the window to see it directly:\n\n  npm run headless')
+  }
+  setTimeout(poll, 250)
+}
+
+poll()
+</script>
+</body>
+</html>
