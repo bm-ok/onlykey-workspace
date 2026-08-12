@@ -49,6 +49,13 @@ They are deliberately separate, and each answers a different question:
   window, the command line and the next person at once. If you need something
   the CLI cannot do, **add an action** — do not reach around it, and do not call
   `VBoxManage` yourself.
+* **Two managers, meeting at one point.** `machines/` is one half; `tasks/` is
+  the other, and they touch only where a task is *given* to a machine. A task
+  knows the name of its machine and nothing else about it; a machine knows
+  nothing about tasks. That is what lets a machine be destroyed mid-task.
+* **Nothing is fetched at run time.** What this uses beyond NW.js is checked in
+  under `vendors/` — see `vendors/README.md`. `package.json` has no
+  dependencies and that is a property worth keeping.
 * **The window is an app page**, loaded from disk by NW.js. It has node and its
   own Inspect, and it calls the action table in-process. There is no `/api`; the
   ports this app listens on are for machines.
@@ -92,6 +99,26 @@ not a fix to this tool.
     okc.js vmCreate --vm '{...}'
     okc.js vmInstall --name runner2
 
+## The queue runs whether or not you are watching
+
+`tasks/queue.js` is started by the server, not the window, and ticks every
+fifteen seconds. Two things follow that catch people out:
+
+* **A restart interrupts running work.** The queue adopts what was in flight —
+  waits on the run if it is alive, keeps the log, puts the machine away — and
+  re-queues anything that had not dispatched yet. That is recovery, not a
+  reason to restart casually: **never during an install**, and not during a
+  drill you are measuring.
+* **Every step goes through the actions.** The queue drives the same surface a
+  person does, so every refusal still applies. Do not give it a private path to
+  the machines; the second set of rules is always the one that turns out to be
+  wrong.
+
+A machine is put back to **off, on its base snapshot, claiming nothing, holding
+nothing** after every task. If you change that, check the queue still has
+anything free: a machine that still claims a branch is correctly never picked
+up, and the failure looks exactly like a queue that has gone quiet.
+
 ## Changing the window
 
 * **Only update an element that changed.** Rewriting text that is identical
@@ -102,6 +129,19 @@ not a fix to this tool.
   snapshot of a running machine stores its RAM; both refuse, and the button says
   why rather than going quiet.
 * `nw.Shell.openExternal` is how a link reaches the user's real browser.
+* **Use the class names that exist.** CSS has no undefined-name error, so a
+  misspelt class is the quietest failure available here: task cards were given
+  `picked` when the stylesheet has `pick` and `on`, and the result was a list
+  that worked and looked dead. Grep `ui.css` before inventing one.
+* **Code that is read gets an editor, not a `<pre>`.** `codeBlock()` wraps the
+  vendored Ace, read-only. A hundred lines of undifferentiated JavaScript is
+  something a person scrolls past and approves anyway.
+* **A dialog is bounded and scrolls in the middle.** Title and buttons are
+  pinned; use `console read` rather than `console tall` inside one, or the
+  confirm button lands below the bottom of a fixed overlay.
+* **Say when a panel is broken.** `paintTasks` used to swallow its errors and
+  draw nothing, which looks exactly like having nothing to show — and that is
+  the question somebody is asking when they look at an empty tab.
 
 ## Things that cost real time here
 

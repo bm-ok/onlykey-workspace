@@ -1,6 +1,6 @@
 ---
 name: supervisor
-description: Help run the dashboard - give work to runner VMs and supervise it. Set a machine up on a branch, sign a worker in or hand it a saved credential, dispatch a task it does unattended, watch its Claude session as it works, check what it is holding, and report progress. Use when asked to run something on a runner, start or babysit work in a VM, check on a runner, or get a progress report. To change the dashboard itself, use the "dashboard" skill instead.
+description: Help run the dashboard - put work through runner VMs and supervise it. Write a task and queue it so the next free machine takes it, runs it unattended and shuts down; or give one to a named machine. Watch a worker's Claude session, read what came back on its branch, judge it, keep a machine out of the pool, and report progress. Use when asked to run something on a runner, queue or dispatch work, check on a runner or the queue, or get a progress report. To change the dashboard itself, use the "dashboard" skill instead.
 ---
 
 # Running work through the dashboard
@@ -57,56 +57,105 @@ dashboard, so it is never out of date and this file cannot be either. Exit codes
 `0` fine, `1` refused, `3` nothing listening (start the window with `npm start`
 in `dashboard/`).
 
-## 1. Get a machine ready
+## 1. The normal path: write it, queue it, leave it
+
+**Work waits for a machine; a machine does not wait for work.** A queued task
+names no machine. The first one that is free takes it, brings itself to a known
+state, does the one task, and shuts down again — so a runner's natural state is
+**off**, and everything below happens without you choosing anything.
 
 ```bash
-okc.js vmList --json                    # name, state, connected, holdsCredential
+okc.js tasks                            # the board, newest first
+okc.js taskCreate --task '{"title":"...","branch":"fix/the-thing","brief":"..."}'
+okc.js taskQueue  --id 3                # no machine is named
+okc.js queueState                       # what is waiting, what is running, who could take it
+```
+
+A task is referred to by its **number**, its uid, or its slug — all three work,
+so `--id 3` and `--id fix-the-thing` are the same task.
+
+What the queue then does, per task, with nothing asked of you:
+
+    rolled back to base -> started -> dialled in -> credential -> workspace on
+    its branch -> dispatched -> run ends -> log kept here -> credential taken
+    back -> shut down -> rolled back -> free again
+
+**Read `queueState` before assuming a queue is stuck.** It says why each machine
+is not free, and the reasons are different problems: it claims a branch, it has
+no base snapshot, it is kept back, it is already doing something.
+
+## 2. When you do want to choose the machine
+
+Rare, and it is the exception rather than the shortcut. A machine kept warm on
+purpose, or one you are watching:
+
+```bash
+okc.js taskGive --id 3 --name runner1   # skips the queue; the machine must be up
+```
+
+The pieces underneath, for when something needs doing by hand:
+
+```bash
 okc.js vmStart --name runner1
+okc.js vmWorkspace --name runner1 --branch fix/the-thing
+okc.js vmCredentialsPut --name runner1
+okc.js vmEditor --name runner1          # opens it in VS Code over ssh
 ```
 
 **Started is not ready.** A machine boots for a minute or two before its agent
-dials in, and every action that talks to a guest refuses until it has. Wait on
-the fact, not on a sleep:
+dials in, and every action that talks to a guest refuses until it has. Note also
+that **`online` and `connected` are different claims** — the first is the setup
+script reporting it finished, the second is the agent holding a session.
 
 ```bash
 until okc.js vmList --json | grep -q '"runner1"[^}]*"connected": *true'; do sleep 10; done
 ```
 
-Then give it a workspace. One branch, every repository, remotes pointing back
-here:
+## 3. Machines, and keeping one back
 
 ```bash
-okc.js gitBranches --json               # what exists, and which are taken
-okc.js vmWorkspace --name runner1 --branch fix/the-thing
-okc.js vmEditor --name runner1          # opens it in VS Code over ssh
+okc.js vmForTasks --name runner1 --enabled false   # the queue will not touch it
+okc.js vmRelease  --name runner1                   # let it off its branch, if it is clean
 ```
 
-## 2. Give it a credential
+`vmForTasks` is the one **decision** about the pool; everything else that keeps a
+machine out is a fact about it. Use it before working on a machine by hand,
+because the queue is otherwise entitled to any machine that looks idle — and
+"looks idle" is exactly what a machine you are about to use looks like. It does
+**not** interrupt a task already running on it.
 
-A worker cannot do anything signed out. Either sign this one in:
+`vmRelease` is the other half of "a machine stays on its branch until it is
+clean". It asks the machine, and refuses if it cannot be reached to be asked or
+if anything is uncommitted or unpushed.
 
-```bash
-okc.js vmAuthBegin  --name runner1      # prints the URL for the user to open
-okc.js vmAuthCode   --name runner1 --code <what the page gave them>
-okc.js vmAuthStatus --name runner1
-```
+## 4. Credentials
 
-…or hand it the one already kept on this host, which is the normal path once a
-single machine has been signed in:
+A worker cannot do anything signed out, and **the queue handles this for you** —
+it hands a credential over before dispatch and takes it back before shutdown, so
+a machine at rest holds nothing. You only touch these when working by hand, or
+when this host holds no credential at all yet:
 
 ```bash
 okc.js credentialsHeld
-okc.js vmCredentialsPut --name runner1
-okc.js vmCredentialsForget --name runner1     # when the machine is done with it
+okc.js vmAuthBegin  --name runner1      # prints the URL for the user to open
+okc.js vmAuthCode   --name runner1 --code <what the page gave them>
+okc.js vmCredentialsGrab   --name runner1     # take it and keep it here
+okc.js vmCredentialsPut    --name runner1
+okc.js vmCredentialsForget --name runner1
 ```
 
 **A machine holding a credential cannot be snapshotted, and the refusal is
 deliberate.** A snapshot would keep a copy of the token for as long as the
-snapshot exists. `vmCredentialsForget` first, then snapshot. Do not look for a
-way around this; the first time it was tested it had not been wired up, and the
-test itself produced exactly the snapshot it exists to prevent.
+snapshot exists. Take it back first. Do not look for a way around this; the
+first time it was tested it had not been wired up, and the test itself produced
+exactly the snapshot it exists to prevent — then the same hole turned out to be
+open along a second path a fortnight's worth of confidence later.
 
-## 3. Dispatch, and let go
+## 5. Dispatch by hand, and let go
+
+Underneath a queued task is a dispatch, and it is worth knowing because that is
+what a run record is. Use it directly only when there is no task to attach the
+work to.
 
 ```bash
 MSYS_NO_PATHCONV=1 okc.js vmDispatch --name runner1 \
@@ -149,7 +198,20 @@ thing worth knowing — a file written, a question asked, a verdict, a run
 finishing, the channel dropping, the session going quiet — and nothing else. Then
 events arrive as notifications instead of a timer that mostly wakes into nothing.
 
-Read on demand between events:
+Read on demand between events. **Per task** is usually what you want, because a
+task outlives the machine that did it:
+
+```bash
+okc.js taskProgress --id 3            # every attempt, and what its worker is doing NOW
+okc.js taskLog      --id 3 --run run-2026-08-12T20-32-58
+okc.js taskArtifact --id 3            # what actually arrived on the branch
+```
+
+`taskProgress` also **pulls a finished run's log onto this host and keeps it**,
+which matters because the machine is the disposable half: rolled back or
+deleted, it takes its own copy with it. `taskLog` reads the kept one.
+
+Per machine, when there is no task or the machine is still up:
 
 ```bash
 okc.js vmSessions   --name runner1 --json
@@ -157,6 +219,11 @@ okc.js vmSessionTail --name runner1 --session 09458b48 --since 0 --limit 40
 okc.js vmRuns       --name runner1 --json
 okc.js vmRunOutput  --name runner1 --run run-2026-08-12T18-40-11 --lines 60
 ```
+
+**A queued task's machine will not be up when you look.** It is shut down and
+rolled back the moment the run ends, so `vmRuns` will say `gone` and the
+session will not exist. That is the normal, correct end state — read the task,
+not the machine.
 
 **Keep the bookmark.** `vmSessionTail` returns `bookmark`; pass it back as
 `--since` next time so each report is a delta. `--since` is a **line number in
@@ -192,9 +259,10 @@ all.
 
 ## Rules the dashboard enforces, so do not fight them
 
-* **A machine stays on its branch until it is clean.** There is no way to move
-  it, on purpose. The only way off is restoring a snapshot taken before that
-  branch — and that discards everything since.
+* **A machine stays on its branch until it is clean.** Both halves are real:
+  it cannot be moved while it is holding anything, and `vmRelease` lets it go
+  once it is holding nothing. The other way off is restoring a snapshot from
+  before that branch, which discards everything since.
 * **The default branch is protected** and is not offered. Work is merged into it
   on this host, never done on a machine.
 * **One machine per branch.** A second is refused by name.
@@ -203,6 +271,12 @@ all.
 * **Snapshots need the machine shut down** — `vmBaseSnapshot` does the shutting
   down and starting again for you — **and a machine holding a credential is
   refused outright.**
+* **A snapshot name must be unused on that machine.** VirtualBox allows two with
+  one name and everything here restores by name, so a second `base` makes every
+  later restore a coin toss. Refused at the source.
+* **Nothing unapproved runs.** Pre-defined tasks are written by a model and
+  approved by a person, in the window. You may write one and ask for it to be
+  read; you may not approve it, and `plannedRun` refuses either way.
 
 If an action refuses, read the message: it says what to do instead. Do not work
 around it, and do not reach for `VBoxManage` or ssh to get past it.
@@ -232,6 +306,15 @@ around it, and do not reach for `VBoxManage` or ssh to get past it.
 **`"runner1" is not dialled in`** — it is booting, or it was force-stopped and
 the channel has not timed out yet. `vmList` shows state and `connected`
 separately; trust `state` first.
+
+**A queued task never gets picked up** — `okc.js queueState`. It says why each
+machine is not free, and the four reasons want four different responses: it
+claims a branch (`vmRelease`, if it is clean), it has no base snapshot (take
+one), it is kept back (`vmForTasks --enabled true`), or it is already busy.
+
+**A task is `done` but delivered nothing** — that is a real outcome, not a
+fault. The run ended; nothing arrived on the branch. A worker refused by the
+push hook looks exactly like this. Read `taskLog` for what it actually did.
 
 **`vmSessions` returns nothing after a dispatch** — Claude Code has not written
 its transcript yet, or it is not installed on that machine. Check with
