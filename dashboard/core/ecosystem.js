@@ -32,7 +32,9 @@ function load (nameOrPath) {
   eco.id = nameOrPath
   eco.file = file
   eco.repos = (eco.repos || []).map(r => ({
-    base: 'master',
+    // The one branch work happens on. There is no base/work split -- see
+    // CONTRACT.md, "Isolation".
+    branch: 'master',
     ...r,
     // Relative to the ecosystem file, so a pack can be moved without editing it.
     dir: path.resolve(path.dirname(file), r.path)
@@ -44,7 +46,6 @@ function load (nameOrPath) {
     checks: [],
     ...t
   }))
-  eco.sandbox = eco.sandbox || { kind: 'local' }
   return eco
 }
 

@@ -3,11 +3,9 @@
   "about": "Two repositories on this machine with no remotes at all. This is the ecosystem the tool is developed against, on purpose: nothing project-specific can be leaned on, because none of it is here.",
 
   "repos": [
-    { "name": "repo-a", "path": "../../workspace/local-repo-a", "base": "master" },
-    { "name": "repo-b", "path": "../../workspace/local-repo-b", "base": "master" }
+    { "name": "repo-a", "path": "../../workspace/local-repo-a", "branch": "master" },
+    { "name": "repo-b", "path": "../../workspace/local-repo-b", "branch": "master" }
   ],
-
-  "sandbox": { "kind": "local" },
 
   "tasks": [
     {

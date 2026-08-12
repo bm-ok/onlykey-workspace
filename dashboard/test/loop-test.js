@@ -1,11 +1,12 @@
 'use strict'
 
-// Test 2 from CONTRACT.md: the whole loop, against repos that have no remotes,
-// no second machine and nothing project-specific in them.
+// The loop, plus the two properties that replaced the branch:
 //
-// It builds its own throwaway repos rather than using `workspace/`, for two
-// reasons: a test must not merge into anything you care about, and pointing the
-// tool at a set of repos it has never seen is exactly the claim being tested.
+//   * throwing away moves HEAD in no repo, and is recoverable
+//   * an accept that cannot complete moves HEAD in no repo at all
+//
+// It builds its own throwaway repos: a test must not commit to anything you care
+// about, and pointing the tool at repos it has never seen is part of the claim.
 
 const fs = require('node:fs')
 const os = require('node:os')
@@ -16,14 +17,21 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-loop-'))
 process.env.OKC_STATE = path.join(root, 'state')
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'pipe' }).toString().trim()
+const dirOf = name => path.join(root, name)
+const headOf = name => git(dirOf(name), 'rev-parse', 'HEAD')
+const readme = name => path.join(dirOf(name), 'readme.md')
 
 function repo (name) {
-  const dir = path.join(root, name)
+  const dir = dirOf(name)
   fs.mkdirSync(dir)
   git(dir, 'init', '-q', '-b', 'master')
   git(dir, 'config', 'user.email', 'test@example.invalid')
   git(dir, 'config', 'user.name', 'loop test')
-  fs.writeFileSync(path.join(dir, 'readme.md'), '')
+  // This machine has autocrlf on globally, which would hand back "start\r\n"
+  // from a restore and make the assertions below about line endings, not about
+  // the tool.
+  git(dir, 'config', 'core.autocrlf', 'false')
+  fs.writeFileSync(path.join(dir, 'readme.md'), 'start\n')
   git(dir, 'add', '-A')
   git(dir, 'commit', '-qm', 'init')
   return dir
@@ -36,7 +44,6 @@ const ecoFile = path.join(root, 'throwaway.json')
 fs.writeFileSync(ecoFile, JSON.stringify({
   name: 'Throwaway',
   repos: [{ name: 'one', path: './one' }, { name: 'two', path: './two' }],
-  sandbox: { kind: 'local' },
   tasks: [{
     id: 'describe',
     title: 'Say what these are for',
@@ -49,78 +56,108 @@ const work = require('../core/work')
 let step = 0
 const ok = msg => console.log(`  ${++step}. ${msg}`)
 const fail = msg => { console.error(`\nFAIL — ${msg}`); process.exit(1) }
+const edit = (name, text) => fs.writeFileSync(readme(name), text)
+const refuses = (p, what) => p.then(() => fail(`${what} should refuse`), e => e)
 
 ;(async () => {
   console.log(`Loop test in ${root}\n`)
 
   // pick ---------------------------------------------------------------
   const tasks = work.tasks(ecoFile)
-  if (tasks.length !== 1 || tasks[0].repos.length !== 2) fail('a task with no repos listed should span all of them')
+  if (tasks[0].repos.length !== 2) fail('a task with no repos listed should span all of them')
   ok('the task list spans both repos without saying so')
 
+  const before = { one: headOf('one'), two: headOf('two') }
   const item = await work.start(ecoFile, 'describe')
-  for (const r of ['one', 'two']) {
-    if (git(path.join(root, r), 'rev-parse', '--abbrev-ref', 'HEAD') !== item.branch) fail(`${r} is not on the work branch`)
-  }
-  ok(`both repos handed over on ${item.branch}, nobody typed a branch name`)
+  if (headOf('one') !== before.one) fail('starting must not create a commit')
+  if (git(dirOf('one'), 'branch', '--show-current') !== 'master') fail('starting must not create or switch branches')
+  ok('started: no branch cut, no commit, HEAD unmoved in both repos')
 
-  // offering nothing --------------------------------------------------
-  await work.offer(item.id).then(
-    () => fail('offering with nothing committed should refuse'),
-    e => ok(`offering empty work refuses, in plain words: "${e.message.slice(0, 48)}..."`))
+  await refuses(work.offer(item.id), 'offering with nothing changed')
+  ok('offering an untouched tree refuses')
+
+  await refuses(work.start(ecoFile, 'describe'), 'a second attempt in the same repos')
+  ok('a second attempt in the same repos refuses — one tree, one attempt')
 
   // work ---------------------------------------------------------------
-  for (const r of ['one', 'two']) {
-    const dir = path.join(root, r)
-    fs.writeFileSync(path.join(dir, 'readme.md'), `${r} holds the ${r} half.\n`)
-    git(dir, 'add', '-A')
-    git(dir, 'commit', '-qm', 'describe it')
-  }
-  ok('work committed in both repos')
+  edit('one', 'one holds the first half.\n')
+  edit('two', 'two holds the second half.\n')
+  fs.writeFileSync(path.join(dirOf('one'), 'new-file.txt'), 'brand new\n')
 
-  // offer --------------------------------------------------------------
   const offered = await work.offer(item.id)
-  if (offered.status !== 'offered') fail('status should be offered')
-  if (offered.checks.some(c => !c.ok)) fail(`a declared check failed: ${JSON.stringify(offered.checks)}`)
-  ok(`offered, and the ecosystem's own check ran: "${offered.checks[0].name}" passed`)
+  if (offered.checks.length !== 2) fail(`the check should run in both repos, got ${offered.checks.length}`)
+  if (offered.checks.some(c => !c.ok)) fail('the declared check should pass')
+  ok('offered; the ecosystem check ran in both repos')
 
-  // review -------------------------------------------------------------
   const r = await work.review(item.id)
-  if (!r.canAccept) fail('a set with both repos ready should be acceptable')
-  if (r.parts.length !== 2 || !r.parts.every(p => p.files.includes('readme.md'))) fail('review should show what changed, per repo')
-  ok('review shows the change itself, not a pointer to a record')
+  if (!r.canAccept) fail('both repos have changes, so this should be acceptable')
+  if (!r.parts.find(p => p.repo === 'one').files.some(f => f.path === 'new-file.txt')) {
+    fail('review must include files that did not exist before')
+  }
+  ok('review shows the change itself, new files included')
+
+  // property: throwing away moves no HEAD, and is recoverable ----------
+  const thrown = await work.discard(item.id)
+  if (headOf('one') !== before.one || headOf('two') !== before.two) fail('throwing away must not move HEAD')
+  if (fs.readFileSync(readme('one'), 'utf8') !== 'start\n') fail('throwing away should restore the tree')
+  if (fs.existsSync(path.join(dirOf('one'), 'new-file.txt'))) fail('throwing away should remove new files')
+  if (!thrown.saved.length || !fs.existsSync(thrown.saved[0].file)) fail('the attempt should have been saved first')
+  ok('thrown away: HEAD unmoved in both, tree restored, attempt saved to a patch')
+
+  await work.putBack(item.id)
+  if (fs.readFileSync(readme('one'), 'utf8') !== 'one holds the first half.\n') fail('put back should restore the edit')
+  if (!fs.existsSync(path.join(dirOf('one'), 'new-file.txt'))) fail('put back should restore new files')
+  if (headOf('one') !== before.one) fail('put back must not move HEAD')
+  ok('put back: every file returned, including the new one, HEAD still unmoved')
 
   // accept -------------------------------------------------------------
-  await work.accept(item.id, 'ok').then(
-    () => fail('accepting without a real note should refuse'),
-    () => ok('accepting without saying what you checked refuses'))
+  await refuses(work.accept(item.id, 'ok'), 'accepting without a real note')
+  ok('accepting without saying what you checked refuses')
 
   const done = await work.accept(item.id, 'read both diffs, wording is accurate')
-  if (done.landed.length !== 2) fail('both repos should have landed')
+  if (done.landed.length !== 2) fail('both repos should have committed')
   for (const name of ['one', 'two']) {
-    const dir = path.join(root, name)
-    if (git(dir, 'rev-parse', '--abbrev-ref', 'HEAD') !== 'master') fail(`${name} should be back on master`)
-    const log = git(dir, 'log', '--format=%s', 'master')
-    if (log.split('\n').length !== 2) fail(`${name}: master should have one new commit, got ${log.split('\n').length - 1}`)
-    if (!git(dir, 'log', '-1', '--format=%B', 'master').includes('Reviewed: read both diffs')) fail(`${name}: reviewer note missing from history`)
-    if (fs.readFileSync(path.join(dir, 'readme.md'), 'utf8').trim() === '') fail(`${name}: the change did not land`)
+    const log = git(dirOf(name), 'log', '--format=%s', 'master').split('\n')
+    if (log.length !== 2) fail(`${name}: expected one new commit, got ${log.length - 1}`)
+    if (!git(dirOf(name), 'log', '-1', '--format=%B').includes('Reviewed: read both diffs')) {
+      fail(`${name}: the reviewer note is not in the history`)
+    }
+    if (git(dirOf(name), 'status', '--porcelain') !== '') fail(`${name}: tree should be clean after accepting`)
   }
-  ok('landed on master as one squashed commit per repo, reviewer note in the history')
+  ok('accepted: one commit per repo on the one branch, reviewer note in the history')
 
-  // a set does not half-land -------------------------------------------
-  const partial = await work.start(ecoFile, 'describe')
-  const dir = path.join(root, 'one')
-  fs.appendFileSync(path.join(dir, 'readme.md'), 'more\n')
-  git(dir, 'add', '-A')
-  git(dir, 'commit', '-qm', 'only one side')
-  const pr = await work.review(partial.id)
-  if (pr.canAccept) fail('a set where only one repo has work must not be acceptable')
-  ok('a task spanning two repos will not land when only one has work')
+  // property: an accept that cannot complete moves no HEAD -------------
+  // Both repos genuinely ready, then one is made impossible to commit. The
+  // assertion is not "it fails cleanly" -- it is that HEAD moved in neither.
+  const two = await work.start(ecoFile, 'describe')
+  edit('one', 'a real change in one\n')
+  edit('two', 'a real change in two\n')
 
-  await work.discard(partial.id)
-  if (git(dir, 'rev-parse', '--abbrev-ref', 'HEAD') !== 'master') fail('throwing away should put you back on your own branch')
-  ok('thrown away, both repos back on master')
+  const ready = await work.review(two.id)
+  if (!ready.canAccept) fail('both repos are ready, so canAccept should be true')
+
+  const at = { one: headOf('one'), two: headOf('two') }
+  // A pre-commit hook that refuses. Nothing about the change is wrong; the commit
+  // simply cannot happen, which is the case canAccept can never see.
+  const hooks = path.join(dirOf('two'), '.git', 'hooks')
+  fs.mkdirSync(hooks, { recursive: true })
+  fs.writeFileSync(path.join(hooks, 'pre-commit'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+
+  const err = await refuses(work.accept(two.id, 'checked both, committing now'), 'an accept that cannot complete')
+  if (headOf('one') !== at.one) fail(`repo one moved to ${headOf('one')} — this is the half-land the set rule exists to prevent`)
+  if (headOf('two') !== at.two) fail('repo two moved despite its commit failing')
+  if (work.find(two.id).status === 'accepted') fail('state says accepted while nothing was committed')
+  ok('an accept that cannot complete: HEAD moved in neither repo, state not marked accepted')
+  ok(`and it says why: "${err.message.slice(0, 60)}..."`)
+
+  if (git(dirOf('one'), 'status', '--porcelain') === '') fail('the rolled-back work should still be in the tree')
+  ok('the rolled-back work is still there, not lost')
+
+  fs.rmSync(path.join(hooks, 'pre-commit'))
+  const finally_ = await work.accept(two.id, 'hook fixed, checked both again')
+  if (finally_.landed.length !== 2) fail('after the obstacle is gone, accepting should work')
+  ok('with the obstacle removed, the same attempt accepts and lands in both')
 
   fs.rmSync(root, { recursive: true, force: true })
-  console.log('\nPASS — pick, work, offer, review, accept, against repos it had never seen.')
+  console.log('\nPASS — one branch, no history rewritten, nothing half-landed.')
 })().catch(e => { console.error(`\nERROR — ${e.stack}`); process.exit(1) })
