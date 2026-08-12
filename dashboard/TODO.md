@@ -74,7 +74,12 @@ under a contract, committed, pushed, and arrived here as `d8b18a2` on
 `task/first-round-trip` — then read as a diff and accepted. That was the last
 joint: work went out and nothing had ever come back before.
 
-**Two machines worked at once.** #8 and #9 were queued together, taken in the same tick by the two rebuilt runners, and both delivered — the credential, the workspace and the dispatch interleaving across both machines. Until tonight there had never been two machines in the pool, so everything about CHOOSING between them was unexercised.
+**Two machines worked at once.** #8 and #9 were queued together, taken in the
+same tick by the two rebuilt runners, and both delivered — `3372dde` by
+`runner1` and `635f542` by `runner2`. The log interleaves them: credentials at
+:28 and :32, workspaces at :33 and :40, dispatches at :34 and :48. Until
+tonight there had never been two machines in the pool, so everything about
+*choosing* between them was reasoning rather than evidence.
 
 **A machine built from nothing did work, credential and all.** `runner1` was
 deleted, remade, installed, provisioned, snapshotted and then given a queued
@@ -107,17 +112,15 @@ called `base` that predates any branch, claiming nothing, holding no credential,
 and both free to the queue. That is the resting state the whole design is
 arranged around.
 
-**`runner1` was deleted and rebuilt from nothing**, twenty minutes end to end,
-and it is the first machine here built entirely by the tool: the worker was
-installed by `extra-user.sh` rather than by hand, and it had never been signed
-in. Its predecessor had accumulated a hand-installed worker, a snapshot tree
-with two entries called `base`, and disks merged twice in one afternoon.
+**Both were deleted and rebuilt tonight**, twenty minutes and eighteen minutes,
+and neither has anything on it that a script did not put there — the worker is
+installed by `extra-user.sh` rather than by hand, and neither has ever been
+signed in. The credential arrives only when the queue gives them work, and
+leaves before they shut down.
 
-`runner2`**Both** were deleted and rebuilt tonight, eighteen to twenty minutes each, and
-neither has anything on it that a script did not put there. Their resting state
-is off, on one snapshot called , claiming nothing and holding nothing —
-the credential arrives only when the queue gives them work, and leaves before
-they shut down.
+What they replaced is the reason: `runner1` had a hand-installed worker, a
+snapshot tree carrying two entries called `base`, and disks merged twice in one
+afternoon. `runner2` was the older build and carried some of the same history.
 
 **`task/first-round-trip` exists in both repositories, carrying one commit in
 `local-repo-a`.** It is accepted but not merged, which is the intended shape: a
