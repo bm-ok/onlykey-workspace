@@ -132,18 +132,56 @@ function say (text, kind = 'ok') {
 }
 const oops = e => say(e.message, 'bad')
 
+// ---- where you were ---------------------------------------------------
+//
+// The window is restarted constantly -- every change to server.js needs one --
+// and it came back on the machines tab with nothing selected every time. So the
+// cost of a restart was not the four seconds, it was finding your place again,
+// and that is paid by whoever is working ON this tool rather than by the tool.
+//
+// localStorage rather than the data directory: this is where a person was
+// looking, which is a property of this window and of nothing else. The command
+// line has no view to restore and should not acquire one.
+//
+// Every read is guarded. A window that will not open because it could not
+// remember which tab was showing would be a poor trade for the convenience.
+const been = {
+  get (key, fallback) {
+    try {
+      const raw = localStorage.getItem(`okc.${key}`)
+      return raw === null ? fallback : JSON.parse(raw)
+    } catch { return fallback }
+  },
+  set (key, value) {
+    try { localStorage.setItem(`okc.${key}`, JSON.stringify(value)) } catch { /* private mode, or a full disk */ }
+  }
+}
+
 // ---- tabs -------------------------------------------------------------
 
-let view = 'ops'
+let view = been.get('view', 'ops')
 document.querySelectorAll('.tab').forEach(b => {
   b.onclick = () => {
     view = b.dataset.view
+    been.set('view', view)
     document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === b))
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${view}`))
     if (view === 'live') clearBadge()
   }
 })
 const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).click()
+
+// Applied immediately, before anything is drawn.
+//
+// Not through showTab(): that would clear the live badge as a side effect of
+// restoring a view somebody has not looked at yet, and would report output
+// arriving while the window was closed as though it had been read.
+;(() => {
+  const tab = document.querySelector(`.tab[data-view="${view}"]`)
+  if (!tab) { view = 'ops'; return }
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === tab))
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${view}`))
+})()
 
 // ---- the dialog ------------------------------------------------------
 //
@@ -382,7 +420,7 @@ function paintKeys () {
 // transcript says it did. The branch is the work. Where they disagree the branch
 // is right, and a panel that mixed the two would let the account win.
 
-let pickedTask = null
+let pickedTask = been.get('task', null)
 let taskList = []
 
 // What a task's card and its detail panel read, including what the buttons close
@@ -405,7 +443,14 @@ const STATE_BADGE = {
 function paintTasks () {
   Promise.all([api('tasks'), api('planned')]).then(([{ tasks }, plan]) => {
     taskList = tasks
-    if (!tasks.some(t => t.id === pickedTask)) pickedTask = tasks.length ? tasks[0].id : null
+    // Reconciled against what exists, for the same reason the machine selection
+    // is: a task remembered from the last window may have been thrown away
+    // since, and falling back to the newest is better than a panel showing
+    // nothing with no explanation.
+    if (!tasks.some(t => t.id === pickedTask)) {
+      pickedTask = tasks.length ? tasks[0].id : null
+      been.set('task', pickedTask)
+    }
 
     // ASKED FOR HERE, where it can be seen.
     //
@@ -439,7 +484,7 @@ function paintTasks () {
         // like a control reads as broken, and is reported as "not selectable".
         ? tasks.map(t => el('div', {
             className: `card pick${t.id === pickedTask ? ' on' : ''}`,
-            onclick: () => { pickedTask = t.id; draw() }
+            onclick: () => { pickedTask = t.id; been.set('task', pickedTask); draw() }
           },
           el('div', { className: 'card-title' },
             el('span', {}, el('span', { className: 'muted mono', textContent: '#' + t.number + ' ' }), t.title),
@@ -921,7 +966,7 @@ function askForCode (name, url) {
 // Only machines this app made ever appear here. Anything else on the host is
 // invisible to every action, because these actions can delete one.
 
-let picked = null
+let picked = been.get('vm', null)
 let latest = { available: false, vms: [] }
 
 // What the machine is holding, said in the dialog that would destroy it.
@@ -985,7 +1030,7 @@ const configVm = v => ask({
 // being repeated per row.
 const vmCard = v => el('div', {
   className: `card pick${picked === v.name ? ' on' : ''}`,
-  onclick: () => { picked = v.name; paintVms() }
+  onclick: () => { picked = v.name; been.set('vm', picked); paintVms() }
 },
   el('div', { className: 'card-title' },
     el('span', { className: 'mono', textContent: v.name }),
@@ -1541,8 +1586,13 @@ async function drawOnce () {
   // selected that no longer exists -- and both leave the panels stranded until a
   // click. So: after loading, the selection names a machine in the list, or is
   // null because the list is empty.
+  // A remembered selection is checked against what exists, exactly like any
+  // other: a machine can be deleted between one window and the next, and coming
+  // back to a name that is gone is the same stranded state as never having
+  // chosen. Remembering does not get to skip the reconciliation.
   if (!latest.vms.some(v => v.name === picked)) {
     picked = latest.vms.length ? latest.vms[0].name : null
+    been.set('vm', picked)
   }
 
   // A path worth copying, so it must not be replaced under a selection.
