@@ -199,6 +199,41 @@ that becomes — so the worker never types a branch name, and cannot type one th
 picks a gentler review than the change deserves.
 
 
+The host is the storage, and nothing lands on master
+----------------------------------------------------
+
+The repositories here are where work is kept, audited, and pushed onward from
+later. So a machine never works on a default branch, and it is not asked to
+remember not to: **the branch is cut here first, and the machine arrives with it
+already checked out.** There is no moment at which the obvious thing to do —
+commit, push — reaches master.
+
+    pick a branch  ->  cut here where missing  ->  machine clones onto it  ->  open
+
+**One name across every repository.** A change spans repositories — the fix in
+one, the test that pins it in another — and matching names are what make those
+one unit of work rather than several to be remembered together. So the dialog
+asks for a branch, not a folder: which folder is the same answer every time, and
+which work is the actual decision.
+
+Cutting a branch touches no other ref and no working tree, so master is never
+written to. Existing branches are listed with the repositories they are in, and
+picking one carries on with it.
+
+**A machine's copy is never reset to this one.** On a second visit the host's
+copy is behind by exactly the commits made in the machine and not yet pushed, so
+resetting to it would throw away the work that made the name worth returning to.
+An existing local branch is checked out as it stands; uncommitted changes make
+git refuse the switch, which is also right — that is somebody's work, and this is
+a button rather than a decision to discard it.
+
+**The token is not in any remote URL.** It would work, and it would then be in
+`git remote -v`, in `.git/config`, and in every error git prints about that
+remote — which is where a secret gets copied into a screenshot. Git's own
+credential store holds it instead, in one file the machine could already read, and
+the remotes stay clean enough to show anybody.
+
+
 Then open it in the editor, in the machine
 ------------------------------------------
 
@@ -276,7 +311,10 @@ The shape
       store.js      other machines, reachable over ssh
       provision.js  setup steps run on such a machine
       editor.js     open a folder in VS Code, here or over ssh
-    repos/serve.js  the workspace's repositories, over git's smart http
+    repos/
+      serve.js      the workspace's repositories, over git's smart http
+      branches.js   one branch name across every repository, cut here
+      workspace.js  the script that lays a machine's workspace out
     provision/      the swappable scripts above
     tools/nw.js     finds the NW.js binary and launches the app
 

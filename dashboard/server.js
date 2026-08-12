@@ -23,6 +23,8 @@ const machines = require('./machines/store')
 const { provision, reach } = require('./machines/provision')
 const editor = require('./machines/editor')
 const repos = require('./repos/serve')
+const branches = require('./repos/branches')
+const workspace = require('./repos/workspace')
 
 const started = new Date().toISOString()
 
@@ -254,6 +256,63 @@ const actions = {
   provision: { about: "Run a machine's setup steps, in order, stopping at the first failure", takes: ['id', 'steps'], run: ({ id, steps }) => provision(machines.get(id), steps) },
   openEditor: { about: 'Open a folder in VS Code, here or over ssh', takes: ['id', 'where'], run: ({ id, where }) => editor.openOn(machines.get(id), where) },
 
+  // Every branch across the workspace, so a machine can be pointed at work that
+  // already exists instead of a name being typed twice and spelled differently.
+  gitBranches: {
+    about: 'Every branch across the workspace repositories, and which have each',
+    run: () => branches.all()
+  },
+
+  // Lay out a machine's workspace: every repository, on one branch, pointed back
+  // here.
+  //
+  // The branch is cut HERE first, in each repository that does not have it, and
+  // the machine then checks out what already exists. Both halves matter. Cutting
+  // it here means the host is the storage: the work has somewhere to land, is
+  // listable before any machine has run, and survives the machine being deleted.
+  // And a machine that arrives to a branch already checked out has no moment
+  // where the obvious thing to do -- commit, push -- reaches a default branch.
+  //
+  // Creating a branch touches no other ref and no working tree, so the default
+  // branch here is not written to at any point.
+  vmWorkspace: {
+    about: "Set up a machine's workspace: every repository, on one branch, pointed back here",
+    takes: ['name', 'branch', 'folder'],
+    run: async ({ name, branch, folder }) => {
+      const vm = vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in. Start it and wait for it to connect.`)
+
+      const why = branches.nameIsOk(branch)
+      if (why) throw new Error(why)
+      const on = branch.trim()
+
+      const found = repos.list()
+      if (!found.length) throw new Error(`There are no repositories in ${repos.DIR} to set up.`)
+
+      const cut = branches.ensure(on)
+      const made = cut.filter(c => c.created)
+      const to = log.on('vm', name)
+      to.info(made.length
+        ? `cut "${on}" in ${made.map(c => c.repo).join(', ')}`
+        : `"${on}" already existed in every repository`)
+
+      const host = await vbox.hostAddress()
+      const script = workspace.script({
+        repos: found.map(r => r.name),
+        branch: on,
+        folder: folder || workspace.folderFor(vm.spec),
+        origin: `http://${host}:${port}`,
+        machine: name,
+        token: vm.spec.token
+      })
+
+      const r = await channel.run(name, script, { what: `setting up the workspace on ${on}`, timeout: 10 * 60 * 1000 })
+      if (r.code !== 0) throw new Error(`The workspace was not fully set up on ${name} — see the live log.`)
+
+      return { branch: on, folder: folder || workspace.folderFor(vm.spec), repos: found.map(r => r.name), cut, output: r.output }
+    }
+  },
+
   // Open a virtual machine's work in VS Code, over its own remote.
   //
   // The address is not configured, discovered or looked up: the machine dialled
@@ -284,12 +343,22 @@ const actions = {
       const user = facts.user || (vm.spec && vm.spec.user)
       if (!address || !user) throw new Error(`"${name}" has not said enough about itself yet to open it.`)
 
-      // Short, because this is a button. The default is measured in half hours,
-      // which is right for a setup script and wrong for something a person is
-      // waiting on with nothing on screen.
-      const dir = where || (vm.spec && vm.spec.folder) ||
-        (await channel.run(name, 'echo $HOME', { what: 'where its home is', timeout: 15000 }))
-          .output.trim().split('\n').pop().trim()
+      // Asked once, for one fixed thing, and joined here.
+      //
+      // The folder can be written `$HOME/workspace` -- that is what it is called
+      // in the script that makes it -- but a folder-uri needs a real path. The
+      // expansion is done in JS rather than by echoing the folder through a
+      // shell, because a folder can be typed in a dialog and interpolating that
+      // into a remote command is how a text field becomes a way to run things.
+      //
+      // Short timeout, because this is a button. The default is measured in half
+      // hours, which is right for a setup script and wrong for someone waiting
+      // with nothing on screen.
+      const home = (await channel.run(name, 'printf "%s\\n" "$HOME"', { what: 'where its home is', timeout: 15000 }))
+        .output.trim().split('\n').pop().trim()
+
+      const folder = where || (vm.spec && vm.spec.folder) || workspace.FOLDER
+      const dir = folder.replace(/^\$HOME\b/, home).replace(/^~(?=\/|$)/, home)
 
       return editor.open({ dir, remote: `${user}@${address}`, tags: [name] })
     }

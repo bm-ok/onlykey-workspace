@@ -312,23 +312,54 @@ function vmActions () {
     // Only when it is dialled in, because that is where the address comes from.
     // Disabled rather than hidden while it is not: a button that vanishes reads
     // as a feature that does not exist, and the reason is worth saying.
+    // The branch is asked for, not the folder. Which folder is not a decision
+    // anybody needs to make -- it is the same one every time -- and WHICH WORK is
+    // the decision, so that is what the dialog is about.
     el('button', {
       className: 'btn',
       textContent: 'Open in VS Code',
       disabled: !v.connected,
       title: v.connected ? '' : 'It has to be dialled in — that is where its address comes from',
-      onclick: () => ask({
+      onclick: () => api('gitBranches').then(({ repos, branches }) => ask({
         title: `Open ${v.name} in VS Code?`,
         plain: [
-          'It opens over VS Code\'s own remote, using the address the machine reported when it dialled in.',
-          'Its home folder, unless this machine\'s settings name another one.',
-          'A new window opens; this one is not replaced.'
+          `It sets up a workspace on ${v.name} holding ${repos.length ? repos.join(', ') : 'the workspace repositories'}, all on one branch, pointed back here.`,
+          'Pick a branch to carry on with, or type a name to start new work.',
+          'Nothing lands on a default branch: the branch is cut here first and the machine arrives with it already checked out.',
+          'Then a new window opens on it; this one is not replaced.'
         ],
-        fields: [{ name: 'where', label: 'Folder — leave empty for its home', placeholder: '/home/…' }],
-        confirm: 'Open it',
-        onYes: f => api('vmEditor', { name: v.name, where: f.where || undefined })
-          .then(r => say(`VS Code was asked to open ${r.opened} on ${r.on}`))
-      })
+        fields: [
+          {
+            name: 'existing',
+            label: branches.length ? 'Carry on with' : 'No branches yet — type one below',
+            value: '',
+            options: [
+              { value: '', label: branches.length ? '— start a new one —' : 'none yet' },
+              ...branches.map(b => ({
+                value: b.name,
+                // What a name means is which repositories are on it, so that is
+                // said here rather than discovered after picking.
+                label: b.missing.length ? `${b.name} — in ${b.in.join(', ')}` : `${b.name} — all of them`
+              }))
+            ]
+          },
+          { name: 'fresh', label: 'Or a new branch', placeholder: 'fix/the-thing' }
+        ],
+        confirm: 'Set it up and open it',
+        onYes: async f => {
+          const branch = f.fresh.trim() || f.existing
+          if (!branch) throw new Error('Pick a branch to carry on with, or type a name for a new one.')
+
+          showTab('live')
+          // Two calls, because they fail differently and only one of them is
+          // slow: setting up clones over the network, opening does not. If the
+          // setup fails there is nothing worth opening, and the reason is in the
+          // log rather than behind an editor window.
+          const w = await api('vmWorkspace', { name: v.name, branch })
+          const r = await api('vmEditor', { name: v.name })
+          say(`${v.name} is on ${w.branch} — VS Code opened ${r.opened}`)
+        }
+      })).catch(oops)
     }),
 
     v.live && !v.baseSnapshot
