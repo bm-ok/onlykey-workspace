@@ -3,7 +3,6 @@
   "version": "0.0.1",
   "private": true,
   "description": "Make a virtual machine, set it up, snapshot it, throw it away.",
-
   "//main": "An app page, loaded from disk. That is what makes NW.js behave normally: the page gets node, and the SDK build gives it a right-click Inspect of its own. Served over http instead it would be a remote page, which gets neither -- which is why nothing here has to hand-write a context menu.",
   "main": "ui/index.html",
   "node-main": "main.js",
@@ -18,7 +17,8 @@
   "scripts": {
     "start": "node tools/nw.js",
     "headless": "node server.js",
-    "test": "node test/generic-test.js"
+    "test": "node test/generic-test.js",
+    "cli": "node tools/okc.js"
   },
   "engines": {
     "node": ">=20"

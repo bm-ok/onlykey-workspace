@@ -14,6 +14,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const log = require('./core/log')
+const ipc = require('./core/ipc')
 const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
@@ -798,8 +799,29 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
       } catch (e) {
         log.on('channel').bad(`could not listen for machines dialling in: ${e.message}`)
       }
+
+      // The same actions, for something on this machine that is not the window.
+      // Not a port: a local socket cannot be reached from another machine at
+      // all, so there is no address to check and no rule to keep enforcing.
+      let local = null
+      try {
+        local = await ipc.listen(actions, { log })
+        log.on('ipc').good(`Listening on ${local.address} — the same actions, for the terminal`)
+      } catch (e) {
+        // Worth continuing without: the window is in-process and does not need
+        // it, so a dashboard with no command line is still a working dashboard.
+        log.on('ipc').warn(`no command line: ${e.message}`)
+      }
+
       log.on('server').good(`Listening on port ${port} — scripts for machines being provisioned; actions from this machine only`)
-      resolve({ server, port, host, url: `http://127.0.0.1:${port}/`, stop: () => server.close() })
+      resolve({
+        server,
+        port,
+        host,
+        url: `http://127.0.0.1:${port}/`,
+        ipc: local && local.address,
+        stop: () => { if (local) local.close(); return server.close() }
+      })
     })
   })
 }

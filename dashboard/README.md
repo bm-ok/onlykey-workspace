@@ -8,6 +8,7 @@ framework.
     npm install             once, for NW.js (the SDK build, so devtools exist)
     npm start               the app window
     npm run headless        the API alone, with no window and no UI
+    npm run cli             every action, from a terminal
     npm test                checks it stayed generic
 
 
@@ -322,6 +323,36 @@ things here were measured rather than assumed, each having produced exactly that
   reports success for a button that did nothing.
 
 
+A command line, over a socket with no address
+---------------------------------------------
+
+    node tools/okc.js                                 every action, listed
+    node tools/okc.js vmList
+    node tools/okc.js vmWorkspace --name runner1 --branch fix/thing
+    node tools/okc.js gitBranches --json              for a script
+
+**Generated from the actions table, not from a list kept beside it.** `okc` with
+no arguments asks the running dashboard what it can do, so an action that exists
+is listed and one that does not cannot be — the same reason the window builds its
+Actions tab from `/api/actions` rather than from a menu somebody maintains.
+
+**Over a local socket, not a port** — a Unix domain socket where there is one, a
+named pipe on Windows; node treats both as a path, so it is one implementation.
+The point is not speed. `/api/*` answering loopback only is a *check*: a line
+comparing an address, correct until somebody edits it, standing between a
+stranger on the network and actions that delete disks. A local socket cannot be
+reached from another machine at all — no address to get wrong, no interface bound
+by accident, no rule to keep enforcing. On Unix the socket is `0600`, because
+there its permissions are the whole of who may drive this.
+
+**It talks to a dashboard that is already running, and says so when there is not
+one.** It deliberately cannot start its own: a second copy would have its own
+empty registry of dialled-in machines and would report every machine as
+disconnected while it sat there connected to the real one — an answer that is
+confidently wrong rather than missing. A refusal exits non-zero, so a script
+driving this stops when something says no.
+
+
 The window keeps up on its own
 ------------------------------
 
@@ -355,6 +386,8 @@ The shape
     server.js       one flat table of actions; the API and nothing else
     ui/             the window: an app page, loaded from disk
     core/log.js     one tagged live log that everything writes into
+    core/ipc.js     the same actions, over a local socket, for the terminal
+    tools/okc.js    the command line, generated from the actions table
     machines/
       vbox.js       VirtualBox: state, snapshots, isos, bridges, delete
       vms.js        the registry of machines THIS APP MADE
@@ -418,8 +451,11 @@ what is still not proven.
   deleted within an hour. Nothing here has been left running for days, and the
   reconnect logic has only been exercised by restarting the app and rebooting a
   machine, not by a network that goes away for a long time.
-* **The window is the only interface.** `npm run headless` serves the API alone, so
-  with no window there is no UI at all.
+* **Nothing is encrypted on the wire.** A guest fetches its scripts and its
+  repositories over plain HTTP, and dials in over plain TCP — and it proves who it
+  is with a token, in both. So anyone able to watch the network between this host
+  and a machine can take that token and push as it. Both halves would have to
+  move together: TLS on one and not the other looks finished and is not.
 
 
 What was learned the hard way
