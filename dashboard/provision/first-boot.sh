@@ -125,8 +125,8 @@ report_stage () {
 
 # `|| true` throughout: a mirror being briefly unavailable should not abandon a
 # machine half-built. The checks afterwards decide whether it worked.
-apt-get update -y || true
-apt-get install -y openssh-server curl ca-certificates python3 || true
+apt-get -o DPkg::Lock::Timeout=600 update -y || true
+apt-get -o DPkg::Lock::Timeout=600 install -y openssh-server curl ca-certificates python3 || true
 
 systemctl enable --now ssh 2>/dev/null || systemctl enable --now sshd 2>/dev/null || true
 systemctl enable ssh 2>/dev/null || true

@@ -18,12 +18,12 @@ set -u
 say 'toolchain (root): starting'
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y || true
+apt-get -o DPkg::Lock::Timeout=600 update -y || true
 
 # --- packages ----------------------------------------------------------------
 
 say 'installing build tools, curl and git'
-apt-get install -y \
+apt-get -o DPkg::Lock::Timeout=600 install -y \
   build-essential make tar git curl wget unzip pkg-config ca-certificates \
   python3-pip python3-venv \
   usbutils kmod \
@@ -33,7 +33,7 @@ apt-get install -y \
 # --- docker ------------------------------------------------------------------
 
 say 'installing docker'
-if apt-get install -y docker.io docker-compose-v2 2>/dev/null || apt-get install -y docker.io; then
+if apt-get -o DPkg::Lock::Timeout=600 install -y docker.io docker-compose-v2 2>/dev/null || apt-get -o DPkg::Lock::Timeout=600 install -y docker.io; then
   systemctl enable docker 2>/dev/null || true
   systemctl start docker 2>/dev/null || true
   usermod -aG docker "$OKC_USER" || true
