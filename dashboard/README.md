@@ -49,7 +49,7 @@ starts it, installs the operating system unattended, and as that finishes the
 machine fetches its own scripts from here and runs them. Progress arrives in the
 live log, from inside the machine, while it happens.
 
-    make  ->  install  ->  unattended.sh  ->  first-boot.sh
+    make  ->  install  ->  first-boot.sh  ->  ssh, your key, the agent
                                           ->  toolchain.sh
                                           ->  installs normal-boot.sh for later
 
@@ -69,20 +69,30 @@ Provisioning is four scripts, meant to be swapped
 -------------------------------------------------
 
     provision/
-      unattended.sh   the installer is told about this one and nothing else;
-                      it decides what else to fetch and in what order
-      first-boot.sh   once: an ssh server, a key, and the agent -- everything
-                      needed to reach the machine at all
+      first-boot.sh   once, at the end of the install. The installer is told
+                      about this one and no other. It makes the machine
+                      reachable -- ssh, your key, the agent -- then hands over
+                      to toolchain.sh and installs normal-boot.sh for later
       toolchain.sh    THE ONE TO SWAP -- what the machine is for, as opposed
                       to making it exist
       normal-boot.sh  every boot, so it installs nothing and changes nothing
       agent.py        dials the dashboard and stays connected. Python 3
                       because Ubuntu already has it, standard library only
 
-Three of them do the same job every time — make a machine exist and be reachable.
-Only `toolchain.sh` is about what kind of machine it is, which is why it is a
-separate file rather than a section of another one. A machine's settings can name a
-different file for any stage.
+`first-boot.sh` is the only one the installer knows about; it decides what else runs
+and in what order. That is deliberate after a wrapper script caused a real bug: the
+installer downloaded the wrapper to `/root/okc-first-boot.sh` and a stage derived
+that same path, so bash — which reads a script by byte offset — carried on inside
+the new content, re-ran part of it and silently skipped everything after. One
+bootstrap file, and stages go to `/root/okc-stages/`.
+
+`toolchain.sh` is about what kind of machine it is, which is why it is a separate
+file rather than a section of another one. A machine's settings can name a different
+file for any stage.
+
+What ships in `toolchain.sh` is a GUI development box: autologin on X11, no screen
+lock or blanking, `DISPLAY=:0`, docker, and node through nvm as the user. Every part
+of it is the part you are expected to replace.
 
 Each is served with a header of `OKC_*` values and `say`/`report` helpers
 prepended, then passed through byte for byte. So every script is valid shell on

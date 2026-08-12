@@ -122,13 +122,28 @@ const actions = {
     }
   },
 
+  // Offered so a key can be picked rather than pasted. Public keys only: nothing
+  // here reads a private key, and there is no reason it ever should.
+  hostKeys: {
+    about: 'Public ssh keys on this machine, to authorise on a new machine',
+    run: async () => {
+      const dir = path.join(require('node:os').homedir(), '.ssh')
+      if (!fs.existsSync(dir)) return { keys: [] }
+      const keys = fs.readdirSync(dir).filter(f => f.endsWith('.pub')).map(f => {
+        const text = fs.readFileSync(path.join(dir, f), 'utf8').trim()
+        return { file: f, key: text, comment: text.split(/\s+/).slice(2).join(' ') || f }
+      })
+      return { keys }
+    }
+  },
+
   vmIsos: { about: 'Installer images VirtualBox already knows about', run: () => vbox.isos() },
   vmBridges: { about: 'Host network adapters a guest could be bridged onto', run: () => vbox.bridges() },
   vmScripts: { about: 'The provisioning scripts available to swap between', run: async () => ({ available: scripts.list(), stages: scripts.STAGES }) },
   vmScript: {
     about: 'One script a machine will receive, exactly as it will get it',
     takes: ['name', 'stage'],
-    run: async ({ name, stage = 'unattended' }) => {
+    run: async ({ name, stage = 'firstBoot' }) => {
       const vm = vms.get(name)
       let host = '127.0.0.1'
       try { host = await vbox.hostAddress() } catch { /* previewing should work with no network */ }

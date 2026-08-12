@@ -17,7 +17,20 @@ const channel = require('./channel')
 const STATE = process.env.OKC_STATE || path.join(__dirname, '..', 'state')
 const FILE = path.join(STATE, 'vms.json')
 
-const read = () => fs.existsSync(FILE) ? JSON.parse(fs.readFileSync(FILE, 'utf8')) : []
+// Tolerant on purpose. These files get hand-edited, and two ways of writing them
+// wrong are easy to hit: a byte-order mark, which JSON.parse rejects outright, and
+// a single entry saved as an object rather than a list. Neither should empty the
+// list of machines and make it look as though nothing was ever made.
+function read () {
+  if (!fs.existsSync(FILE)) return []
+  try {
+    const data = JSON.parse(fs.readFileSync(FILE, 'utf8').replace(/^\uFEFF/, ''))
+    return Array.isArray(data) ? data : [data]
+  } catch (e) {
+    log.on('vm').bad(`${FILE} could not be read (${e.message}). Fix or delete it; no machine is listed until then.`)
+    return []
+  }
+}
 
 const write = list => {
   fs.mkdirSync(STATE, { recursive: true })

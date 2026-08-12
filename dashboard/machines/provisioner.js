@@ -178,10 +178,10 @@ async function install (name, { port }) {
   if (!await vbox.isOff(name)) throw new Error(`"${name}" is running. Shut it down before installing.`)
 
   const host = await vbox.hostAddress()
-  // Only the first script is named here. What it then fetches and in what order
-  // is decided in unattended.sh, which is a file anyone can edit or replace --
-  // so changing how a machine is built never means touching this app.
-  const url = `http://${host}:${port}/provision/unattended.sh?vm=${encodeURIComponent(name)}`
+  // Only one script is named here. What it then fetches and in what order is
+  // decided in first-boot.sh, which anyone can edit or replace -- so changing how a
+  // machine is built never means touching this app.
+  const url = `http://${host}:${port}/provision/first-boot.sh?vm=${encodeURIComponent(name)}`
 
   // Every detail of the next few lines is load-bearing:
   //
@@ -197,12 +197,12 @@ async function install (name, { port }) {
   //   waste the entire install.
   const inner = [
     'for i in 1 2 3 4 5 6 7 8 9 10; do',
-    `curl -fsSL '${url}' -o /root/okc-first-boot.sh && break;`,
-    `wget -qO /root/okc-first-boot.sh '${url}' && break;`,
+    `curl -fsSL '${url}' -o /root/okc-bootstrap.sh && break;`,
+    `wget -qO /root/okc-bootstrap.sh '${url}' && break;`,
     "echo 'okc: the dashboard is not reachable yet, retrying in 10s';",
     'sleep 10;',
     'done;',
-    'bash /root/okc-first-boot.sh'
+    'bash /root/okc-bootstrap.sh'
   ].join(' ')
 
   const args = ['unattended', 'install', name,
@@ -227,7 +227,7 @@ async function install (name, { port }) {
   // The field lines below are where it actually appears, and those are always
   // redacted. Blanking the password everywhere as well is only safe when it is
   // long enough to be distinctive: a password of "okc" turned okc-flow.local into
-  // <hidden>-flow.local and okc-first-boot.sh into <hidden>-first-boot.sh, which
+  // <hidden>-flow.local and okc-bootstrap.sh into <hidden>-bootstrap.sh, which
   // makes the log lie about names for no security gain.
   const secrets = [spec.password].filter(s => s && s.length >= 8 && !name.includes(s))
   try {

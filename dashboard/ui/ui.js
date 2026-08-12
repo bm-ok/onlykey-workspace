@@ -252,12 +252,25 @@ function vmActions () {
           onclick: () => ask({
             title: `Run the setup again on ${v.name}?`,
             plain: [
-              'It fetches the setup script fresh and runs it, so any edit since it was built is included.',
+              'It fetches the script fresh and runs it, so any edit since the machine was built is included.',
               'Nothing is reinstalled and the machine keeps running.',
               'Output appears in the live log as it happens.'
             ],
+            fields: [{
+              name: 'stage',
+              label: 'Which script',
+              value: 'toolchain',
+              options: [
+                { value: 'toolchain', label: 'toolchain.sh — what the machine is for' },
+                { value: 'firstBoot', label: 'first-boot.sh — ssh, your key, the agent' }
+              ]
+            }],
             confirm: 'Run it',
-            onYes: () => { showTab('live'); return api('vmSetupAgain', { name: v.name, stage: 'toolchain' }).then(r => say(r.code === 0 ? 'Setup finished' : `Setup exited ${r.code} — see the log`, r.code === 0 ? 'ok' : 'bad')) }
+            onYes: f => {
+              showTab('live')
+              return api('vmSetupAgain', { name: v.name, stage: f.stage })
+                .then(r => say(r.code === 0 ? 'It finished' : `It exited ${r.code} — see the log`, r.code === 0 ? 'ok' : 'bad'))
+            }
           })
         })
       : null,
@@ -342,7 +355,7 @@ function paintVms () {
 // The settings are the previous version's, which were arrived at by running it:
 // 8 GB, 4 cpus, 60 GB, a named LTS image type, and bridged networking so the
 // guest can reach this app to fetch its scripts.
-$('add-vm-open').onclick = () => api('vmIsos').then(isos => ask({
+$('add-vm-open').onclick = () => Promise.all([api('vmIsos'), api('hostKeys')]).then(([isos, { keys }]) => ask({
   title: 'Make a virtual machine',
   plain: [
     'It makes the machine and its disk, then starts it and installs the operating system on its own.',
@@ -372,7 +385,16 @@ $('add-vm-open').onclick = () => api('vmIsos').then(isos => ask({
       ]
     },
     { name: 'user', label: 'User to create', value: 'okc' },
-    { name: 'password', label: 'Its password', value: 'okc' }
+    { name: 'password', label: 'Its password', value: 'okc' },
+    {
+      name: 'sshKey',
+      label: keys.length ? 'Authorise one of your ssh keys on it' : 'Your public ssh key — none found on this machine, so paste one',
+      value: keys.length ? keys[0].key : '',
+      options: keys.length
+        ? [...keys.map(k => ({ value: k.key, label: `${k.file} — ${k.comment}` })), { value: '', label: 'none, use the password' }]
+        : undefined,
+      placeholder: 'ssh-ed25519 AAAA...'
+    }
   ],
   confirm: 'Make it',
 

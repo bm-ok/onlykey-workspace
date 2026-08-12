@@ -18,7 +18,6 @@ const DIR = path.join(__dirname, '..', 'provision')
 // The stages, and which file each uses unless a VM says otherwise. Adding a stage
 // here is the only place a new one needs registering.
 const STAGES = {
-  unattended: 'unattended.sh',
   firstBoot: 'first-boot.sh',
   toolchain: 'toolchain.sh',
   normalBoot: 'normal-boot.sh',

@@ -17,7 +17,15 @@ const HERE = { id: 'here', name: 'This machine', kind: 'local', fixed: true }
 
 function all () {
   if (!fs.existsSync(FILE)) return [HERE]
-  const saved = JSON.parse(fs.readFileSync(FILE, 'utf8'))
+  let saved = []
+  try {
+    // Same tolerance as the machine registry: a byte-order mark or a lone object
+    // should not read as "there are none".
+    const data = JSON.parse(fs.readFileSync(FILE, 'utf8').replace(/^\uFEFF/, ''))
+    saved = Array.isArray(data) ? data : [data]
+  } catch (e) {
+    log.on('machines').bad(`${FILE} could not be read (${e.message}).`)
+  }
   return [HERE, ...saved.filter(m => m.id !== 'here')]
 }
 
