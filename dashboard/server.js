@@ -539,6 +539,65 @@ const actions = {
     }
   },
 
+  // Give a machine a new secret without rebuilding it.
+  //
+  // Until now the only answer to a leaked token was deleting the machine and
+  // waiting half an hour, which is a bad enough answer that it would not be
+  // used -- and an unusable remedy is the same as none.
+  //
+  // THE ORDER IS THE WHOLE THING. The machine has to be holding the new token
+  // before the registry expects it, because the registry is what its next
+  // connection is checked against: swap those and the machine is locked out by
+  // the very act meant to keep it working. So it is written on the machine
+  // first, recorded here second, and only then is the agent restarted -- which
+  // is the moment the old one stops being accepted.
+  //
+  // Refused when it is not dialled in, because there would be no way to deliver
+  // the new secret and the machine would be locked out permanently. That is a
+  // real limit and it is said, rather than half-done.
+  vmRotateToken: {
+    about: "Give a machine a new token, without rebuilding it",
+    takes: ['name'],
+    run: ({ name }) => busy.during(name, 'being given a new token', async () => {
+      const vm = vms.get(name)
+      if (!channel.connected(name)) {
+        throw new Error(`"${name}" is not dialled in, so a new token could not be delivered to it — and recording one here would lock it out for good. Start it, wait for it to connect, then try again.`)
+      }
+
+      const fresh = channel.newToken()
+      const host = await vbox.hostAddress()
+
+      // Both places the machine keeps it: the agent's environment, and git's
+      // credential store. Missing the second would leave a machine that can dial
+      // in and cannot push, which is a stranger state than being locked out.
+      const written = await channel.run(name, `set -u
+sudo -n sed -i "s|^OKC_TOKEN=.*|OKC_TOKEN=${fresh}|" /etc/okc-agent.env
+umask 077
+touch "$HOME/.git-credentials"
+tmp=$(mktemp)
+grep -vF '${host}:${port}' "$HOME/.git-credentials" > "$tmp" 2>/dev/null || true
+printf '%s\\n' 'https://${name}:${fresh}@${host}:${port}' >> "$tmp"
+mv "$tmp" "$HOME/.git-credentials"
+chmod 600 "$HOME/.git-credentials"
+echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
+
+      if (!/okc-rotated/.test(written.output || '')) {
+        throw new Error(`"${name}" did not confirm it had taken the new token, so nothing here was changed. It is still using the old one.`)
+      }
+
+      vms.update(name, { spec: { ...vm.spec, token: fresh } })
+      log.on('vm', name).good(`${name} has a new token; restarting its agent so it uses it`)
+
+      // Severs this connection by design: the agent comes back holding the new
+      // secret, and the old one stops working at that moment.
+      try {
+        await channel.run(name, 'sudo -n systemctl restart okc-agent', { what: 'restarting the agent on its new token', timeout: 30000 })
+      } catch { /* the restart is what ends the connection; not finishing is expected */ }
+
+      return { name, rotated: true, note: 'its agent was restarted and will dial back in with the new token' }
+    })
+  },
+
   // What a machine is holding that exists nowhere else.
   //
   // For the two actions that destroy a machine's disk. "Everything since is
@@ -604,11 +663,28 @@ done`
 
       const commits = repos.reduce((n, r) => n + r.ahead, 0)
       const files = repos.reduce((n, r) => n + r.dirty, 0)
+
+      // What it is ALLOWED to push, against what it is actually on.
+      //
+      // Those are different claims and only the first was ever recorded here.
+      // The details panel says "may push fix/thing", which is true and is a
+      // permission -- it says nothing about where the machine's work actually
+      // is. A machine sitting on another branch is not dangerous, because the
+      // push refuses; it is just a machine whose work has nowhere to go, and
+      // nothing said so until somebody tried.
+      //
+      // Only checked where it can be: here, where the machine has just answered.
+      const elsewhere = repos.filter(r => vm.branch && r.branch !== vm.branch)
       return {
         asked: true,
         repos,
         commits,
         files,
+        mayPush: vm.branch || null,
+        elsewhere: elsewhere.map(r => `${r.repo} is on ${r.branch}`),
+        adrift: elsewhere.length
+          ? `${name} may push ${vm.branch}, but ${elsewhere.map(r => `${r.repo} is on ${r.branch}`).join(' and ')} — work there cannot be pushed until it is on ${vm.branch}.`
+          : null,
         // Said once, here, so every caller says it the same way.
         summary: commits || files
           ? [

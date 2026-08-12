@@ -43,19 +43,6 @@ only been reasoned about. The drill, about five minutes with nothing lost:
 *nothing*: unknown means may-push-nothing, recoverable in one click.
 
 
-Smaller, and named so they are not rediscovered
------------------------------------------------
-
-* **A token cannot be rotated.** If one leaks the only remedy is deleting the
-  machine and building another.
-* **"may push X" is never compared to what the machine is actually on.** Harmless
-  today because the push refuses anyway, so it is self-correcting — but the panel
-  states something it has not checked.
-* **Test debris.** `fix/try-one` exists in both workspace repos, carrying
-  `vm-work.txt` from a test and `hello.md` from the operator. Clearing it takes
-  both.
-
-
 Where the machines are
 ----------------------
 

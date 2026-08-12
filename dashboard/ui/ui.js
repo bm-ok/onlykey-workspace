@@ -225,13 +225,19 @@ const holdingLine = holds => holds.asked
   ? (holds.summary ? `${holds.summary} — all of it goes.` : 'It is holding nothing that is not already here.')
   : `It could not be asked what it is holding: ${holds.why} So this may be discarding work that exists nowhere else.`
 
+// Said only when it is true, and only in the places that have just asked. A
+// machine on a branch it may not push is not in danger -- the push refuses --
+// but its work has nowhere to go, and nothing said so until somebody tried.
+const adriftLines = holds => holds.adrift ? [holds.adrift] : []
+
 const deleteVm = v => api('vmHolds', { name: v.name })
   .catch(() => ({ asked: false, why: 'asking it failed.' }))
   .then(holds => ask({
     title: `Delete ${v.name}?`,
     plain: [
       'No other virtual machine on this computer is touched.',
-      holdingLine(holds)
+      holdingLine(holds),
+      ...adriftLines(holds)
     ],
     cost: `${v.name} and its disks are deleted, and it is removed from this list.`,
     confirm: 'Delete it',
@@ -557,6 +563,7 @@ async function paintSnapshots () {
                 // is often already off, which is precisely when it cannot be
                 // asked -- so that case says so rather than saying nothing.
                 holdingLine(holds),
+                ...adriftLines(holds),
                 // The permission moves with the disk, and it is not obvious that
                 // it does. Worth saying here, because going back to a point from
                 // before any work started is how a machine ends up allowed to
