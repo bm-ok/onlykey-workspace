@@ -112,7 +112,39 @@ const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).clic
 // confirm but its opposite. It closes this dialog and does its own asking, so
 // something irreversible still states its cost on its own screen rather than
 // borrowing the consent given to whatever was on this one.
-function ask ({ title, plain, cost, fields = [], confirm, danger, onYes, extra }) {
+// Opened in the browser you actually use, not in this window.
+//
+// This page is an app page: an ordinary <a href> navigates the DASHBOARD to the
+// address, which replaces the window with a sign-in page and loses everything
+// on screen -- including the dialog waiting for the code. nw.Shell.openExternal
+// hands it to the operating system instead.
+//
+// The address is still shown as selectable text beside it, because a link that
+// silently fails to open leaves nothing to fall back on, and this one is the
+// only way to finish what was started on the machine.
+function externalLink (url) {
+  const open = () => {
+    // The current API first; `nw.gui` is the old name and is only reached if the
+    // global is missing, which would mean this is not the app page it thinks it
+    // is. Either way a failure says so rather than doing nothing, because a
+    // button that quietly does not work is the failure this whole window is
+    // written against.
+    try {
+      nw.Shell.openExternal(url)
+    } catch {
+      try { require('nw.gui').Shell.openExternal(url) } catch { say('Could not open a browser — copy the address below instead.', 'bad') }
+    }
+  }
+  return el('div', { style: 'margin: 4px 0 12px' },
+    el('button', { className: 'btn ok', textContent: 'Open the sign-in page', onclick: open }),
+    el('p', {
+      className: 'mono',
+      style: 'margin:8px 0 0; color:var(--muted); word-break:break-all; user-select:text',
+      textContent: url
+    }))
+}
+
+function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, extra }) {
   const errBox = el('p', { className: 'dlg-err hidden' })
   const inputs = {}
 
@@ -135,6 +167,7 @@ function ask ({ title, plain, cost, fields = [], confirm, danger, onYes, extra }
             el('ul', {}, ...plain.map(p => el('li', { textContent: p }))))
         : null,
       cost ? el('div', { className: 'dlg-cost' }, el('strong', { textContent: 'Cannot be undone: ' }), cost) : null,
+      link ? externalLink(link) : null,
       ...fields.map(f => {
         // A list of real choices beats a path to type out, and it cannot be typed
         // wrong.
@@ -268,10 +301,10 @@ function askForCode (name, url) {
   ask({
     title: `Sign ${name} in`,
     plain: [
-      'Open this address, approve it, and paste back what it gives you.',
-      `${name} is holding the sign-in open until you do.`,
-      url
+      'Open the sign-in page, approve it, and paste back what it gives you.',
+      `${name} is holding the sign-in open until you do — it is waiting on that page, not on this window.`
     ],
+    link: url,
     fields: [{ name: 'code', label: 'The code from that page', placeholder: 'paste it here' }],
     confirm: 'Finish signing in',
     extra: {
