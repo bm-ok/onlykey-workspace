@@ -221,9 +221,18 @@ async function install (name, { port, caPort }) {
     'for i in 1 2 3 4 5 6 7 8 9 10; do',
     `curl -fsSL '${caUrl}' -o /etc/okc/ca.pem && break;`,
     `wget -qO /etc/okc/ca.pem '${caUrl}' && break;`,
-    "echo 'okc: the dashboard is not reachable yet, retrying in 10s';",
+    "echo 'okc: could not fetch the certificate authority yet, retrying in 10s';",
     'sleep 10;',
     'done;',
+    // Told apart from a fingerprint that does not match, which is a different
+    // fault with a different cause. Without this, a file that was never fetched
+    // reaches the check below and is reported as an authority that "is not the
+    // one this machine was told to expect" -- an accusation about substitution,
+    // for a machine that simply had no way to download anything.
+    'if [ ! -s /etc/okc/ca.pem ]; then',
+    "echo 'okc: could not fetch the certificate authority at all -- neither curl nor wget worked here';",
+    'exit 1;',
+    'fi;',
     // Compared with a pipeline and a grep rather than a variable, because of the
     // rule above: no `$` survives to this side. `got=$(...)` would be expanded by
     // the outer shell and arrive empty, so the comparison would be between two
@@ -234,11 +243,39 @@ async function install (name, { port, caPort }) {
     "echo 'okc: REFUSED the certificate authority -- it is not the one this machine was told to expect';",
     'exit 1;',
     'fi;',
+    // BOTH tools here too, and this is the line that has to stay.
+    //
+    // curl is NOT in the installer's target on Ubuntu desktop. The original
+    // bootstrap had a wget fallback for exactly that reason; when this was
+    // rewritten for TLS the fallback survived on the fetch above and was dropped
+    // from this one, because wget spells its authority flag differently and
+    // translating it was one step more than copying it.
+    //
+    // What that cost is the shape worth remembering: the install ran for
+    // twenty-five minutes, the first fetch succeeded through wget, the
+    // fingerprint checked out, and then this loop said "the dashboard is not
+    // reachable yet" ten times -- a sentence about the network, describing a
+    // missing program, on a machine whose only symptom was an installer saying
+    // "Something went wrong". Nothing reached the live log, because the guest
+    // never got far enough to report anything.
+    //
+    // Neither is told to skip verification. --cacert and --ca-certificate are
+    // the same instruction spelled twice, which is the whole difference between
+    // this and the version that failed.
     'for i in 1 2 3 4 5 6 7 8 9 10; do',
     `curl -fsSL --cacert /etc/okc/ca.pem '${url}' -o /root/okc-bootstrap.sh && break;`,
-    "echo 'okc: the dashboard is not reachable yet, retrying in 10s';",
+    `wget -q --ca-certificate=/etc/okc/ca.pem -O /root/okc-bootstrap.sh '${url}' && break;`,
+    "echo 'okc: could not fetch the setup script yet, retrying in 10s';",
     'sleep 10;',
     'done;',
+    // Said here rather than left to bash. Without it the script simply runs a
+    // file that is not there, and the last words of a twenty-five minute install
+    // are "No such file or directory" and "exit code: 127" -- which describe the
+    // symptom and name neither the cause nor what state the machine is now in.
+    'if [ ! -s /root/okc-bootstrap.sh ]; then',
+    "echo 'okc: could not fetch the setup script -- the operating system is installed but nothing has been set up on it';",
+    'exit 1;',
+    'fi;',
     'bash /root/okc-bootstrap.sh'
   ].join(' ')
 
