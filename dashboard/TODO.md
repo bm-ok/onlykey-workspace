@@ -25,6 +25,38 @@ Outstanding
   touch the default branch are all proven from this host. No dispatched task has
   yet produced a commit and pushed it back, which is the thing the whole
   workspace half exists for.
+* **`vmDispatch --contract` has never been used.** It is the
+  `--append-system-prompt-file` path, and the file it is meant to be given is
+  the kind of thing `legacy/contracts/` holds. Nothing has been dispatched with
+  one, so the rules a worker is supposed to receive have never actually reached
+  one.
+* **`legacy/contracts/dashboard/supervisor-mode.md` is a stub** — checked, and
+  it is two sentences of generic filler about a "Workflow Dashboard" with no
+  rules in it at all. The real supervisor rules are in `legacy/PLAN.md`. Either
+  it gets written or it gets deleted; leaving it is worse than both, because it
+  reads as though a contract exists.
+
+
+Decisions waiting on the operator
+---------------------------------
+
+Not work, and not for a session to settle on its own.
+
+* **Nine commits have never been pushed.** `origin` is
+  `github.com/bm-ok/onlykey-workspace`, `main` is nine behind, and everything
+  from the README split through the worker half is local only. This was one of
+  the three things in the original handoff and it is the one that never got
+  answered.
+
+
+Housekeeping on the machines
+----------------------------
+
+* **Both runners are holding a credential**, so neither can be snapshotted.
+  `vmCredentialsForget` on whichever is not being used.
+* **`runner2` has no snapshots at all.** Its only one was the tainted one that
+  had to be deleted, so there is nothing to get back to. It wants a clean base
+  once the credential is off it.
 
 
 Nothing else is outstanding
@@ -69,6 +101,4 @@ rather than stale: setting it up again cuts the branch afresh from `master`, and
 the claim stops another machine taking the name meanwhile.
 
 **Both machines are holding a credential, so neither can be snapshotted.** That
-is the refusal working, not a problem to route around. `vmCredentialsForget`
-first, and `runner2` in particular wants a clean base taken once it has been
-given one.
+is the refusal working, not a problem to route around — see Housekeeping above.
