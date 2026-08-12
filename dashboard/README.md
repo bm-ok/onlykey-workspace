@@ -1,172 +1,117 @@
 dashboard
 =========
 
-Pick a task, work, offer it, review it, accept it. Nothing reaches your main
-branch unread.
+Make a virtual machine, install an operating system on it, snapshot it, throw it
+away. An NW.js app with no dependencies beyond NW.js itself, no build step and no
+framework.
 
-No dependencies, no build step, no framework.
+    npm install             once, for NW.js (the SDK build, so devtools exist)
+    npm start               the app window
+    npm run headless        the same server with no window
+    npm test                checks it stayed generic
 
-    node server.js          then open http://127.0.0.1:7373
-    node cli.js tasks       the same five actions from a terminal
-    npm test                the two tests from CONTRACT.md
+
+It is generic on purpose
+------------------------
+
+It ships knowing nothing about any particular project. What a machine is *for*
+lives in swappable shell scripts and in each machine's own settings, never in the
+app. `npm test` checks that rather than trusting it, and measures code rather than
+comments — a note explaining why something would be a mistake couples nothing, and
+a test that cannot tell those apart is a test that gets ignored.
+
+Only one rule beyond that: **just `machines/` drives the VirtualBox command line.**
+Naming VirtualBox anywhere is fine, and the window has to be able to say it was
+not found. What must not spread is *driving* it, because a second place shelling
+out to `VBoxManage` means two opinions about a machine's state, and they will
+disagree.
 
 
-What this is
-------------
+Only machines this app made
+---------------------------
 
-Software that controls how a set of repositories gets changed, reviewed and
-merged. It is **generic on purpose** — it ships knowing nothing about any
-project, including the one it was built for. What a repo and a workspace are to
-it is written down in **[CONTRACT.md](CONTRACT.md)**, which is the document to
-read before adding anything.
+The list shows virtual machines this app created, and nothing else. That is a
+safety boundary rather than tidiness: these actions delete disks, so membership
+comes from the app's own registry and never from VirtualBox. On a host with three
+machines it lists the one it made and refuses the other two by name.
 
-Point it at your own repos by writing one JSON file. That is the whole
-integration:
+Everything was exercised for real: created a machine, snapshotted it under a
+title, started it, refused a restore while it was running, restored it once off,
+deleted it, and confirmed its disks were gone while the two machines it does not
+own survived untouched.
 
-    {
-      "name": "My things",
-      "repos": [{ "name": "app", "path": "../../code/app" }],
-      "sandbox": { "kind": "local" },
-      "tasks": [{ "id": "tidy", "title": "Tidy the readme" }]
-    }
 
-Drop it in `ecosystems/`, or keep it anywhere and pass the path.
+Provisioning is four scripts, meant to be swapped
+-------------------------------------------------
+
+    provision/
+      unattended.sh   the installer is told about this one and nothing else;
+                      it decides what else to fetch and in what order
+      first-boot.sh   once: an ssh server and a key, so the machine is
+                      reachable at all. Deliberately almost empty
+      toolchain.sh    THE ONE TO SWAP -- what the machine is for, as opposed
+                      to making it exist
+      normal-boot.sh  every boot, so it installs nothing and changes nothing
+
+Three of them do the same job every time — make a machine exist and be reachable.
+Only `toolchain.sh` is about what kind of machine it is, which is why it is a
+separate file rather than a section of another one. A machine's settings can name a
+different file for any stage.
+
+Each is served with a header of `OKC_*` values and `say`/`report` helpers
+prepended, then passed through byte for byte. So every script is valid shell on
+its own: copy one onto a machine and run it by hand to debug it, which a template
+built out of strings could never be. They are read fresh per request, so editing
+one takes effect on the next boot with nothing to restart.
+
+A guest's output comes back into the same live log as everything else. That is
+what makes a long install watchable instead of silent, and neither `say` nor
+`report` is ever fatal for the guest — a machine must not fail to build because
+the app was restarted while it was talking.
 
 
 The shape
 ---------
 
-    CONTRACT.md     what the core may know. Read this first.
-
-    core/           domain-free, and a test enforces that
-      git.js        git, and nothing about any project
-      ecosystem.js  loads a pack of data the tool is pointed at
-      checks.js     runs what an ecosystem declared; learns only pass or fail
-      work.js       the loop, and the only place status lives
-      log.js        one tagged live log that everything writes into
-
-    machines/       the machines you have. The loop does not know it exists
+    main.js         NW.js node-main: boots the server in the app's own Node
+    server.js       one flat table of actions, and the page in front of it
+    ui/             the window. boot.html waits, then loads the real page
+    core/log.js     one tagged live log that everything writes into
+    machines/
       vbox.js       VirtualBox: state, snapshots, isos, bridges, delete
-      vms.js        the registry of VMs THIS APP MADE -- a safety boundary
+      vms.js        the registry of machines THIS APP MADE
       provisioner.js  make one, and install an operating system on it
       scripts.js    serves provision/*.sh with a header of values
       store.js      other machines, reachable over ssh
-      provision.js  setup steps run on a machine, streaming into the log
-      editor.js     one click to open the work in VS Code
-
-    provision/      SWAPPABLE shell scripts a new machine runs. Plain files,
-                    read fresh on every request, valid on their own
-      unattended.sh   fetches and orders the rest; the installer starts here
-      first-boot.sh   once: ssh and a key, so the machine is reachable
-      toolchain.sh    THE ONE TO SWAP: what the machine is actually for
-      normal-boot.sh  every boot: says it is up, safe to run again
-
-    ecosystems/     packs. `local.json` is the two repos in ../workspace
-    ui/             the page: the loop, the machines, the live log
-    server.js       one flat map of actions, and the page in front of it
-    cli.js          the same five loop actions from a terminal
-    test/           the tests, runnable rather than asserted
+      provision.js  setup steps run on such a machine
+      editor.js     open a folder in VS Code, here or over ssh
+    provision/      the swappable scripts above
+    tools/nw.js     finds the NW.js binary and launches the app
 
 
-Why it is a rewrite
--------------------
+Why NW.js, and why the API is still an HTTP server
+--------------------------------------------------
 
-The previous version is in [../legacy/](../legacy/) as reference, not
-foundation. Two findings drove the restart, both recorded 2026-08-11:
+NW.js hosts the server inside its own Node context, so the app is one process.
+`boot.html` waits for it and then navigates, which means the window loads the UI
+over http from the same origin a browser would get — one UI, one code path.
 
-**It stopped being legible to a person.** In the operator's words: *"the
-direction was good, but the outcome will be bad — confusing operation, keeps
-driving human out of the loop."* The mechanism was a pattern, not an accident:
-friction reported by a human was answered with an artifact only an agent reads.
-Couldn't tell whether a button worked → a run record. Couldn't tell which repo a
-task was → a field in a JSON manifest. Asked whether pushing was safe → told to
-run `git remote -v`. State migrated into agent-shaped places until a person
-needed an agent to find out what their own tool had just done.
+The API stays a real HTTP server for one reason: **a machine being installed has to
+be able to reach it.** That is where its scripts come from and where its progress
+goes. Nothing else needs it to be one.
 
-So: **legibility is load-bearing, not polish**, and the test for any answer to
-human friction is *does it put the answer where the person was already looking?*
-This is why a review shows the diff itself rather than a link to where the diff
-is recorded, and why a refusal names the repos that are missing work instead of
-saying the set is not ready.
-
-**It was welded to one project.** Measured rather than felt: 99 mentions in the
-old `dashboard/src` and `gate/`, **47 of them in code**, concentrated in 8 files.
-The proof was deleting the project folder — nine of ten registered repos dangled,
-because the repo list sat inside the tool while tasks and commands had already
-moved out. Being *configurable* looks exactly like being *separated*, right up to
-the moment the two are pulled apart.
-
-The worst single piece was `role: hardware | emulator | both` — one project's
-concept welded into the VM lifecycle, deciding which USB filters a machine got.
-It is gone here, and so is the VM: **a guest is just an ssh target.** How you got
-that machine — a VM, a spare box, a laptop — is not the core's business, so no
-lifecycle, no filters, no roles, and the default path needs no second machine at
-all.
-
-
-What it will not do
--------------------
-
-* **No credentials, anywhere, ever.** Work starts from what is on your disk, so
-  nothing needs a network to begin. This is enforced by absence, which is weaker
-  than topology — worth knowing the day someone adds a credential for an
-  unrelated reason.
-* **No merge without a reviewer note.** Under eight characters is refused. The
-  friction is the feature: it is what catches the 1am wave-through, and it leaves
-  a record in the merge message worth having.
-* **No half-landed set.** A task declares the repos it spans and lands on all of
-  them or none. One repo is not a set — two is the smallest number that can
-  half-land, which is why `../workspace` has two.
-* **No state only this can read.** Delete the tool and your repos are ordinary
-  git, on ordinary branches.
-
-
-Machines, virtual machines, provisioning, the editor
-----------------------------------------------------
-
-Separate from the loop, and the loop does not know about any of it. Configurable
-from the page rather than from a file you have to find.
-
-* **Machines** — add and remove them. `This machine` always exists and cannot be
-  removed. Another machine is an address reached over ssh.
-* **Virtual machines** — make one, delete one, start and stop it, snapshot it
-  under a title you choose, go back to a snapshot. VirtualBox, found even when it
-  is not on `PATH`; if it is not installed the page says so and everything else
-  still works.
-
-  **Only machines this app made ever appear, and only they can be acted on.** That
-  is a safety boundary rather than tidiness: these actions delete disks, so
-  membership comes from the app's own registry and never from VirtualBox. On a host
-  with three VMs it lists the one it made and refuses the others by name.
-
-* **Provisioning is four shell scripts in `provision/`, meant to be swapped.** The
-  installer is told about `unattended.sh` and nothing else; that script decides
-  what else to fetch and in what order. A VM's spec can name a different file for
-  any stage, so making a different kind of machine is editing a script rather than
-  changing this app. They are served with a small header of `OKC_*` values and a
-  `say`/`report` helper prepended, and are otherwise passed through unchanged — so
-  each one is valid shell on its own and can be run by hand on the machine to
-  debug it. A guest's output comes back into the same live log as everything else,
-  which is what makes a long install watchable instead of silent.
-* **Provisioning** — setup steps you write per machine, run in order, streaming
-  into the live log. It stops at the first failure, because a later step almost
-  always assumes an earlier one worked.
-* **Open in VS Code** — one click. A local folder opens directly; a folder on an
-  ssh machine opens through VS Code's own remote. The command is configurable,
-  because `code` is often not on `PATH`.
-
-The live log is one tagged stream you narrow, not several you correlate. The
-filter chips are built from the tags actually present, so a new tag anywhere shows
-up as a filter without being registered anywhere.
+Dialogs are in-page overlays rather than `<dialog>` or `confirm()`. Under
+`--disable-features=nw2` the native ones do not appear and silently return false,
+which cancels the action behind them without saying so.
 
 
 Honest gaps
 -----------
 
-* **`vmCreate` makes a machine and a disk; it does not install an operating
-  system.** Attach an installer image and boot it.
-* **Provisioning and the editor are exercised by hand, not by the tests.** The
-  tests cover the loop and the two contract bans. Machine actions were verified
-  against real VirtualBox on this workstation.
-* **Nothing stops two people editing the same branch.** The tool notices a commit
-  it did not make and refuses to act, which is detection rather than prevention.
+* **The unattended install has not been run end to end.** Every part around it is
+  exercised; that path is not. Treat it as unproven.
+* **A bridged guest cannot reach a server bound to loopback.** Installing one
+  needs `HOST=0.0.0.0`, which puts this API on your network — a decision to make
+  on purpose, so it is not the default.
+* **`toolchain.sh` installs a compiler and little else.** It is a starting point,
+  not a recommendation.

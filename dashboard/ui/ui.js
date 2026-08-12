@@ -1,20 +1,18 @@
 'use strict'
 
-// The window. Four tabs: Operations, Live, Work, All actions.
+// The window. Four tabs: the machines, the live log, the provisioning scripts,
+// and every action the server has.
 //
 // The rule it is written against: an answer belongs where the person was already
-// looking. Results of a button press appear in the notice bar next to the button,
-// a review shows the diff itself rather than a pointer to where it is recorded,
-// and anything that looks irreversible says in plain words what will and will not
-// happen before it does it.
-
-const ECOSYSTEM = new URLSearchParams(location.search).get('ecosystem') || 'local'
+// looking. Results appear in the notice bar next to the button that caused them,
+// and anything irreversible says in plain words what will and will not happen
+// before it does it.
 
 const api = async (name, args = {}) => {
   const res = await fetch(`/api/${name}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ecosystem: ECOSYSTEM, ...args })
+    body: JSON.stringify(args)
   })
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || 'Something went wrong')
@@ -34,9 +32,8 @@ const $ = id => document.getElementById(id)
 //
 // replaceChildren takes (...Node|string) and does NOT flatten: hand it an array
 // and the array is stringified, so a column of cards renders as the literal text
-// "[object HTMLDivElement]". Every call here passes lists and single nodes
-// interchangeably, so flattening belongs in one place rather than in a spread at
-// each call site that someone will forget.
+// "[object HTMLDivElement]". Flattening belongs in one place rather than in a
+// spread at each call site that someone will forget.
 const fill = (node, ...kids) => node.replaceChildren(...keep(kids))
 
 // ---- the notice bar ---------------------------------------------------
@@ -62,6 +59,7 @@ document.querySelectorAll('.tab').forEach(b => {
     document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === b))
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${view}`))
     if (view === 'live') clearBadge()
+    if (view === 'scripts') loadScript().catch(oops)
   }
 })
 const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).click()
@@ -69,8 +67,8 @@ const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).clic
 // ---- the dialog ------------------------------------------------------
 //
 // In-page rather than native: under NW.js with nw2 disabled, confirm() and
-// <dialog> do not appear, and silently return false -- which cancels the action
-// behind them without saying so.
+// <dialog> do not appear and silently return false, which cancels the action
+// behind them without saying so. One dialog, used by everything.
 
 function ask ({ title, plain, cost, fields = [], confirm, danger, onYes }) {
   const errBox = el('p', { className: 'dlg-err hidden' })
@@ -123,26 +121,17 @@ function ask ({ title, plain, cost, fields = [], confirm, danger, onYes }) {
   ;(first || yes).focus()
 }
 
-// ---- Operations: machines --------------------------------------------
-
-let picked = null
-let latest = { machines: [], vbox: { available: false, vms: [] } }
-
-// The folder the repos live in, worked out rather than configured. If they share
-// a parent that is the workspace; if they are scattered, the first one is the best
-// guess available and better than refusing to open anything.
-let workspaceDir = ''
-const parentOf = p => p.replace(/[\\/][^\\/]+[\\/]?$/, '')
-
+// ---- the machines ----------------------------------------------------
+//
 // Only machines this app made ever appear here. Anything else on the host is
 // invisible to every action, because these actions can delete one.
 
+let picked = null
+let latest = { available: false, vms: [] }
+
 const deleteVm = v => ask({
   title: `Delete ${v.name}?`,
-  plain: [
-    'Nothing in your repositories is affected.',
-    'No other virtual machine on this computer is touched.'
-  ],
+  plain: ['No other virtual machine on this computer is touched.'],
   cost: `${v.name} and its disks are deleted, and it is removed from this list.`,
   confirm: 'Delete it',
   danger: true,
@@ -156,7 +145,7 @@ const deleteVm = v => ask({
 // in the one Actions panel rather than being repeated per row.
 const vmCard = v => el('div', {
   className: `card pick${picked === v.name ? ' on' : ''}`,
-  onclick: () => { picked = v.name; paintMachines() }
+  onclick: () => { picked = v.name; paintVms() }
 },
   el('div', { className: 'card-title' },
     el('span', { className: 'mono', textContent: v.name }),
@@ -165,31 +154,21 @@ const vmCard = v => el('div', {
       title: `Delete ${v.name}`,
       textContent: '🗑',
       // Or selecting the row would also fire, and a click meant for the bin would
-      // change what the Actions panel is pointing at underneath the dialog.
+      // change what the panels are pointing at underneath the dialog.
       onclick: e => { e.stopPropagation(); deleteVm(v) }
     })),
   el('div', { className: 'badges' },
     el('span', { className: `badge ${v.running ? 'ok' : ''}`, textContent: v.running ? 'running' : v.state }),
-    el('span', { className: `badge ${v.stage === 'ready' ? 'ok' : v.stage === 'defined' ? 'bad' : 'run'}`, textContent: v.stage }),
-    v.baseSnapshot ? el('span', { className: 'badge', textContent: `snapshot: ${v.baseSnapshot}` }) : null))
+    el('span', { className: `badge ${v.stage === 'ready' ? 'ok' : v.stage === 'defined' ? 'bad' : 'run'}`, textContent: v.stage })))
 
-function machineActions () {
+function vmActions () {
   const box = $('machine-actions')
-  const v = latest.vbox.vms.find(x => x.name === picked)
+  const v = latest.vms.find(x => x.name === picked)
   const go = (name, args, msg) => () => { showTab('live'); api(name, args).then(() => { say(msg); return draw() }).catch(oops) }
-
-  // Opening the editor is about the work, not about a virtual machine, so it is
-  // here whether or not one is selected.
-  const editorButton = el('button', {
-    className: 'btn',
-    textContent: 'Open the work in VS Code',
-    onclick: go('openEditor', { id: 'here', where: workspaceDir }, 'VS Code was asked to open it')
-  })
 
   $('actions-context').textContent = v ? `— ${v.name}` : '— nothing selected'
   if (!v) {
-    return fill(box, el('div', { className: 'row' }, editorButton),
-      el('p', { className: 'empty', style: 'margin-top:8px', textContent: 'Pick a virtual machine on the left for the rest.' }))
+    return fill(box, el('p', { className: 'empty', textContent: 'Pick a machine on the left, or make one with the + above it.' }))
   }
 
   fill(box, el('div', { className: 'row' },
@@ -216,21 +195,18 @@ function machineActions () {
         })
       : null,
 
-    // A snapshot with no title is a snapshot nobody can choose between later, so
-    // the title is asked for rather than generated.
+    // A snapshot with no title is one nobody can choose between later, so the
+    // title is asked for rather than generated.
     el('button', {
       className: 'btn',
       textContent: 'Take a snapshot',
       disabled: !v.live,
       onclick: () => ask({
         title: `Snapshot ${v.name}`,
-        plain: [
-          'A snapshot is a point you can come back to.',
-          'Taking one changes nothing about the machine as it is now.'
-        ],
+        plain: ['A snapshot is a point you can come back to.', 'Taking one changes nothing about the machine as it is now.'],
         fields: [
           { name: 'title', label: 'Title for this snapshot', value: v.baseSnapshot ? '' : 'base', placeholder: 'clean install' },
-          { name: 'description', label: 'What is true at this point — optional', placeholder: 'ubuntu installed, nothing else' }
+          { name: 'description', label: 'What is true at this point — optional', placeholder: 'operating system installed, nothing else' }
         ],
         confirm: 'Take it',
         onYes: f => api('vmSnapshotTake', { name: v.name, title: f.title, description: f.description })
@@ -238,45 +214,98 @@ function machineActions () {
       })
     }),
 
-    el('button', {
-      className: 'btn',
-      textContent: 'Go back to a snapshot',
-      disabled: !v.live,
-      onclick: () => api('vmSnapshots', { name: v.name }).then(s => {
-        if (!s.snapshots.length) return say(`${v.name} has no snapshots yet`, 'bad')
-        ask({
-          title: `Go back to a snapshot of ${v.name}`,
-          plain: ['The machine must be shut down for this.'],
-          cost: 'Everything that changed since that snapshot is discarded.',
-          fields: [{
-            name: 'title',
-            label: 'Which one',
-            value: s.current || s.snapshots[0].name,
-            options: s.snapshots.map(x => ({ value: x.name, label: x.name + (x.name === s.current ? ' (current)' : '') }))
-          }],
-          confirm: 'Go back to it',
-          danger: true,
-          onYes: f => api('vmSnapshotRestore', { name: v.name, title: f.title }).then(() => say(`Back at "${f.title}"`))
+    v.spec && v.spec.iso
+      ? el('button', {
+          className: 'btn',
+          textContent: 'Install the operating system',
+          disabled: !v.live || v.running,
+          onclick: () => ask({
+            title: `Install an operating system on ${v.name}?`,
+            plain: [
+              'It installs on its own, with nobody watching, and takes a long while.',
+              'It fetches its provisioning scripts from here as it finishes, and reports back into the live log.',
+              'A window will open so you can see it happening.'
+            ],
+            cost: 'Anything already on this machine\'s disk is overwritten.',
+            confirm: 'Install it',
+            danger: true,
+            onYes: () => { showTab('live'); return api('vmInstall', { name: v.name }).then(() => say('Installing — watch the live log')) }
+          })
         })
-      }).catch(oops)
-    }),
+      : null,
 
-    el('button', { className: 'btn', textContent: 'Delete it', onclick: () => deleteVm(v) }),
-    editorButton))
+    el('button', { className: 'btn danger', textContent: 'Delete it', onclick: () => deleteVm(v) })))
 }
 
-function paintMachines () {
-  fill($('vms'), latest.vbox.available || latest.vbox.vms.length
-    ? (latest.vbox.vms.length
-        ? latest.vbox.vms.map(vmCard)
-        : el('p', { className: 'empty', textContent: 'None yet. The + above makes one.' }))
-    : el('p', { className: 'empty', textContent: 'VirtualBox was not found. Everything else works without it.' }))
-  machineActions()
+// Listed rather than hidden behind a dialog, because which snapshots exist is the
+// question you have before you decide to restore one.
+async function paintSnapshots () {
+  const v = latest.vms.find(x => x.name === picked)
+  $('snap-context').textContent = ''
+  if (!v || !v.live) return fill($('snapshots'), el('p', { className: 'empty', textContent: 'No machine selected.' }))
+
+  let s
+  try { s = await api('vmSnapshots', { name: v.name }) } catch { return fill($('snapshots'), el('p', { className: 'empty', textContent: 'Could not read its snapshots.' })) }
+
+  $('snap-context').textContent = `— ${s.snapshots.length}`
+  fill($('snapshots'), s.snapshots.length
+    ? s.snapshots.map(x => el('div', { className: 'card' },
+        el('div', { className: 'card-title' },
+          el('span', { className: 'mono', textContent: x.name }),
+          x.name === s.current ? el('span', { className: 'badge run', textContent: 'on this one' }) : null),
+        el('div', { className: 'row', style: 'margin-top:8px' },
+          el('button', {
+            className: 'btn',
+            textContent: 'Go back to it',
+            onclick: () => ask({
+              title: `Go back to "${x.name}"?`,
+              plain: ['The machine must be shut down for this.'],
+              cost: `Everything that changed on ${v.name} since "${x.name}" is discarded.`,
+              confirm: 'Go back to it',
+              danger: true,
+              onYes: () => api('vmSnapshotRestore', { name: v.name, title: x.name }).then(() => say(`Back at "${x.name}"`))
+            })
+          }))))
+    : el('p', { className: 'empty', textContent: 'None yet.' }))
+}
+
+function paintDetails () {
+  const v = latest.vms.find(x => x.name === picked)
+  const box = $('details')
+  if (!v) return fill(box, el('p', { className: 'empty', textContent: 'No machine selected.' }))
+
+  const spec = v.spec || {}
+  const rows = [
+    ['stage', v.stage],
+    ['state', v.state],
+    ['made', new Date(v.created).toLocaleString()],
+    ['snapshot to reset to', v.baseSnapshot || 'none yet'],
+    ['last heard from', v.reported ? new Date(v.reported).toLocaleString() : 'never'],
+    ['memory', `${spec.memoryMB} MB`],
+    ['processors', String(spec.cpus)],
+    ['disk', `${Math.round((spec.diskMB || 0) / 1024)} GB`],
+    ['network', spec.network === 'bridged' ? `bridged${spec.bridge ? ` on ${spec.bridge}` : ''}` : `nat, ssh on 127.0.0.1:${spec.sshPort}`],
+    ['user', spec.user],
+    ['installer image', spec.iso ? spec.iso.split(/[\\/]/).pop() : 'none'],
+    ['hostname', spec.hostname]
+  ]
+
+  fill(box, el('table', { className: 'kv' }, ...rows.map(([k, val]) =>
+    el('tr', {}, el('th', { textContent: k }), el('td', { className: 'mono', textContent: String(val) })))))
+}
+
+function paintVms () {
+  fill($('vms'), latest.vms.length
+    ? latest.vms.map(vmCard)
+    : el('p', { className: 'empty', textContent: latest.available ? 'None yet. The + above makes one.' : 'VirtualBox was not found.' }))
+  vmActions()
+  paintDetails()
+  paintSnapshots().catch(() => {})
 }
 
 // The settings are the previous version's, which were arrived at by running it:
 // 8 GB, 4 cpus, 60 GB, a named LTS image type, and bridged networking so the
-// guest can reach this app to fetch its setup.
+// guest can reach this app to fetch its scripts.
 $('add-vm-open').onclick = () => api('vmIsos').then(isos => ask({
   title: 'Make a virtual machine',
   plain: [
@@ -316,157 +345,23 @@ $('add-vm-open').onclick = () => api('vmIsos').then(isos => ask({
   }
 })).catch(oops)
 
-// ---- Operations: tasks and what is in flight -------------------------
+// ---- Provisioning ----------------------------------------------------
 
-const taskCard = t => el('div', { className: 'card' },
-  el('div', { className: 'card-title', textContent: t.title }),
-  t.detail ? el('div', { className: 'card-sub', textContent: t.detail }) : null,
-  el('div', { className: 'badges' },
-    ...t.repos.map(r => el('span', { className: 'badge', textContent: r })),
-    ...t.open.map(o => el('span', { className: 'badge warn', textContent: o.status }))),
-  el('div', { className: 'row', style: 'margin-top:8px' },
-    el('button', {
-      className: 'btn ok',
-      textContent: 'Work on this',
-      disabled: t.open.length > 0,
-      title: t.open.length ? 'Already open' : '',
-      onclick: () => ask({
-        title: t.title,
-        plain: [
-          'Work happens in your own copies, on the branch you are already on.',
-          'No branch is created and nothing is committed until you accept it.',
-          'You can throw the attempt away, and put it back afterwards.'
-        ],
-        confirm: 'Start',
-        onYes: () => api('start', { task: t.id }).then(() => say(`Started "${t.title}"`))
-      })
-    })))
-
-function inFlightCard (w) {
-  const detail = el('div')
-  const accept = el('button', { className: 'btn ok', textContent: 'Accept it', disabled: true })
-
-  const load = async () => {
-    const r = await api('review', { id: w.id })
-    fill(detail, reviewView(r))
-    accept.disabled = !r.canAccept
-    accept.title = r.canAccept ? '' : `Nothing has changed in ${r.missing.join(' or ')}`
-    return r
+async function loadScript () {
+  const { stages } = await api('vmScripts')
+  const select = $('script-stage')
+  if (!select.options.length) {
+    fill(select, ...Object.keys(stages).map(s => el('option', { value: s, textContent: `${s} — ${stages[s]}` })))
+    select.onchange = () => loadScript().catch(oops)
   }
-
-  accept.onclick = async () => {
-    const r = await api('review', { id: w.id })
-    ask({
-      title: 'Accept this work?',
-      plain: [
-        `This commits to ${r.parts.map(p => p.repo).join(' and ')} — one commit each, on the branch you are on.`,
-        'All of them or none: if any cannot commit, the others are undone.',
-        'Nothing is pushed anywhere.'
-      ],
-      fields: [{ name: 'note', label: 'In one line, what did you check?', placeholder: 'read both diffs, the wording is accurate' }],
-      confirm: 'Accept',
-      onYes: v => api('accept', { id: w.id, note: v.note }).then(() => say(`Accepted "${w.title}"`))
-    })
+  const v = latest.vms.find(x => x.name === picked) || latest.vms[0]
+  if (!v) {
+    $('script-file').textContent = ''
+    return fill($('script-body'), 'Make a virtual machine first — a script is rendered for a particular one.')
   }
-
-  const card = el('div', { className: 'card' },
-    el('div', { className: 'card-title' }, w.title,
-      el('span', { className: `badge ${w.status === 'offered' ? 'run' : ''}`, textContent: w.status })),
-    el('div', { className: 'card-sub', textContent: w.repos.join(', ') }),
-    el('div', { className: 'row', style: 'margin-top:8px' },
-      w.status === 'working'
-        ? el('button', {
-            className: 'btn',
-            textContent: 'I am done — offer it',
-            onclick: () => api('offer', { id: w.id }).then(() => { say('Offered for review'); return draw() }).catch(oops)
-          })
-        : accept,
-      el('button', { className: 'btn', textContent: 'What changed?', onclick: () => load().catch(oops) }),
-      el('button', {
-        className: 'btn danger',
-        textContent: 'Throw it away',
-        onclick: () => ask({
-          title: 'Throw this away?',
-          plain: [
-            'Your files go back to how they were at the last commit.',
-            'It is saved to a patch first, so you can put it back.',
-            'Nothing in the history changes — no commit is added, removed or rewritten.'
-          ],
-          confirm: 'Throw away',
-          danger: true,
-          onYes: () => api('discard', { id: w.id }).then(() => say('Thrown away, and saved so it can be put back'))
-        })
-      })),
-    detail)
-
-  if (w.status === 'offered') load().catch(() => {})
-  return card
-}
-
-const reviewView = r => el('div', {},
-  ...r.parts.map(p => el('div', { style: 'margin-top:8px' },
-    el('div', { className: 'card-title' },
-      el('span', { className: 'mono', textContent: p.repo }),
-      el('span', { className: `badge ${p.ready ? 'ok' : 'warn'}`, textContent: p.ready ? `${p.files.length} files` : 'nothing yet' })),
-    p.ready ? el('pre', { className: 'diff', textContent: [p.files.map(f => `${f.how}  ${f.path}`).join('\n'), '', p.stat].join('\n').trim() }) : null)),
-  r.moved.length
-    ? el('div', { className: 'dlg-cost', style: 'margin-top:10px' },
-        el('strong', { textContent: `${r.moved.join(' and ')} moved underneath this. ` }),
-        'Something committed there that this did not do. Nothing will change until that is dealt with.')
-    : null,
-  r.checksFailed.length
-    ? el('div', { className: 'dlg-cost', style: 'margin-top:10px' },
-        el('strong', { textContent: 'A check this project asked for did not pass. ' }),
-        r.checksFailed.map(c => `${c.repo}: ${c.name}`).join('; '))
-    : null)
-
-// ---- Work tab --------------------------------------------------------
-
-let openAttempt = null
-
-function paintWork (items) {
-  fill($('work-list'), items.length
-    ? items.map(w => el('div', {
-        className: `card pick${openAttempt === w.id ? ' on' : ''}`,
-        onclick: () => { openAttempt = w.id; drawWorkDetail(w) }
-      },
-        el('div', { className: 'card-title' }, w.title,
-          el('span', {
-            className: `badge ${w.status === 'accepted' ? 'ok' : w.status === 'thrown away' ? '' : 'run'}`,
-            textContent: w.status
-          })),
-        el('div', { className: 'card-sub mono', textContent: w.id })))
-    : el('p', { className: 'empty', textContent: 'Nothing yet.' }))
-
-  const still = items.find(w => w.id === openAttempt)
-  if (still) drawWorkDetail(still)
-}
-
-async function drawWorkDetail (w) {
-  $('work-detail-title').textContent = w.title
-  const box = $('work-detail')
-  const bits = [
-    el('div', { className: 'panel' },
-      el('div', { className: 'card-sub mono', textContent: w.id }),
-      el('div', { className: 'badges' },
-        el('span', { className: 'badge', textContent: w.status }),
-        ...w.repos.map(r => el('span', { className: 'badge', textContent: r }))),
-      w.note ? el('div', { className: 'card-sub', textContent: `Reviewed: ${w.note}` }) : null,
-      w.landed ? el('div', { className: 'card-sub mono', textContent: w.landed.map(l => `${l.repo} ${l.sha.slice(0, 8)}`).join('  ') }) : null,
-      w.status === 'thrown away'
-        ? el('div', { className: 'row', style: 'margin-top:8px' },
-            el('button', {
-              className: 'btn ok',
-              textContent: 'Put it back',
-              onclick: () => api('putBack', { id: w.id }).then(() => { say('Put back'); return draw() }).catch(oops)
-            }))
-        : null)
-  ]
-  fill(box, bits)
-
-  if (w.status === 'working' || w.status === 'offered') {
-    try { box.append(reviewView(await api('review', { id: w.id }))) } catch { /* it may have gone */ }
-  }
+  const out = await api('vmScript', { name: v.name, stage: select.value || 'unattended' })
+  $('script-file').textContent = `${out.file} — as ${v.name} receives it`
+  fill($('script-body'), out.script)
 }
 
 // ---- All actions -----------------------------------------------------
@@ -530,6 +425,11 @@ stream.onmessage = m => {
   lines.push(e)
   if (lines.length > 2000) lines.splice(0, lines.length - 2000)
   paintLog()
+
+  // A guest reporting in changes what the machine list should say, and the
+  // install takes long enough that nobody should have to reload to find out.
+  if (e.tags.includes('guest')) draw().catch(() => {})
+
   if (view !== 'live') {
     unseen++
     if (e.level === 'bad') unseenBad = true
@@ -542,58 +442,49 @@ stream.onmessage = m => {
 // ---- draw ------------------------------------------------------------
 
 async function draw () {
-  const [data, kit, status] = await Promise.all([api('overview'), api('machines'), api('status')])
-  latest = kit
+  const [list, status] = await Promise.all([api('vmList'), api('status')])
+  latest = list
 
   // Reconcile the selection against what actually exists, every time, before
   // anything that depends on it is painted.
   //
-  // The previous dashboard had a bug here worth not repeating: with machines
-  // present it never selected one at startup, so the actions and the task list
-  // rendered as though nothing were selected, and clicking the already-selected
-  // machine was the only way to get a correct page. Two causes look alike --
-  // nothing selected yet, and something selected that no longer exists (deleted,
-  // or gone from VirtualBox) -- and both leave the panel stranded until a click.
-  // So the rule is: after loading, the selection must name a machine in the list,
-  // or be null because the list is empty.
-  const present = kit.vbox.vms.some(v => v.name === picked)
-  if (!present) picked = kit.vbox.vms.length ? kit.vbox.vms[0].name : null
+  // The previous dashboard had a bug worth not repeating: with machines present it
+  // never selected one at startup, so the panels rendered as though nothing were
+  // selected and clicking the already-selected machine was the only way to get a
+  // correct page. Two causes look alike -- nothing selected yet, and something
+  // selected that no longer exists -- and both leave the panels stranded until a
+  // click. So: after loading, the selection names a machine in the list, or is
+  // null because the list is empty.
+  if (!latest.vms.some(v => v.name === picked)) {
+    picked = latest.vms.length ? latest.vms[0].name : null
+  }
 
-  const parents = [...new Set(data.repos.map(r => parentOf(r.dir)))]
-  workspaceDir = parents.length === 1 ? parents[0] : (data.repos[0] && data.repos[0].dir) || ''
+  $('vbox-path').textContent = status.virtualbox || ''
+  $('topright').textContent = latest.vms.length
+    ? `${latest.vms.length} machine${latest.vms.length === 1 ? '' : 's'} this app made`
+    : 'no machines yet'
 
-  $('ecosystem').textContent = data.ecosystem.name
-  $('workspace').textContent = data.ecosystem.file
-  $('topright').textContent = `${data.repos.length} repos · one branch`
+  const gone = latest.vms.filter(v => !v.live)
+  $('trouble').classList.toggle('hidden', !gone.length)
+  fill($('trouble'), gone.map(v => el('div', {},
+    el('strong', { textContent: `${v.name} is in this list but VirtualBox has no such machine. ` }),
+    el('span', { textContent: 'It was deleted elsewhere, or never finished being made. Delete it here to tidy up.' }))))
 
-  const missing = data.repos.filter(r => !r.present)
-  $('trouble').classList.toggle('hidden', !missing.length)
-  fill($('trouble'), missing.map(r => el('div', {},
-    el('strong', { textContent: `${r.name} is not where this project says it is. ` }),
-    el('span', { className: 'mono', textContent: r.dir }),
-    el('div', { className: 'muted', textContent: 'Tasks that need it will not start.' }))))
+  if (!status.virtualbox) {
+    $('trouble').classList.remove('hidden')
+    fill($('trouble'), el('div', {},
+      el('strong', { textContent: 'VirtualBox was not found. ' }),
+      el('span', { textContent: 'Nothing here can make or start a machine until it is installed.' })))
+  }
 
-  paintMachines()
-
-  $('tasks-context').textContent = `— ${data.tasks.length}`
-  fill($('tasks'), data.tasks.length
-    ? data.tasks.map(taskCard)
-    : el('p', { className: 'empty', textContent: 'This project lists no tasks yet.' }))
-
-  const doing = data.work.filter(w => w.status === 'working' || w.status === 'offered')
-  fill($('doing'), doing.length
-    ? doing.map(inFlightCard)
-    : el('p', { className: 'empty', textContent: 'Nothing in flight. Start a task in the middle column.' }))
-
-  paintWork(data.work)
-  if (status.serving && status.serving.error) say(status.serving.error, 'bad')
+  paintVms()
+  if (view === 'scripts') loadScript().catch(() => {})
 }
 
 // ---- capture ----------------------------------------------------------
 //
-// Ctrl+Shift+D copies what is on screen -- the rendered DOM, not the source --
-// to the clipboard, and saves the same thing to state/capture.html. Looking at
-// what a page actually became beats reading what it was supposed to become.
+// Ctrl+Shift+D copies what is on screen -- the rendered DOM, not the source -- to
+// the clipboard, and saves the same thing to state/capture.html.
 
 document.addEventListener('keydown', async e => {
   if (!(e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd'))) return

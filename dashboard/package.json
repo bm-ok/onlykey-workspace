@@ -16,8 +16,7 @@
   "scripts": {
     "start": "node tools/nw.js",
     "headless": "node server.js",
-    "okc": "node cli.js",
-    "test": "node test/contract-test.js && node test/loop-test.js"
+    "test": "node test/generic-test.js"
   },
   "engines": {
     "node": ">=20"

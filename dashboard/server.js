@@ -5,46 +5,50 @@
 // This is a library with an entry point, not a script: NW.js starts it inside its
 // own Node context (see main.js) so the app is one process, and `node server.js`
 // starts the same thing headlessly. Either way there is exactly one server and
-// exactly one API, so the window, a browser and a machine dialling in are all
-// clients of the same thing.
+// exactly one API, so the window, a browser and a machine being provisioned are
+// all clients of the same thing.
+//
+// A machine being provisioned is the reason this is an HTTP server rather than
+// function calls inside the window.
 
 const http = require('node:http')
 const fs = require('node:fs')
 const path = require('node:path')
 
-const work = require('./core/work')
-const eco = require('./core/ecosystem')
 const log = require('./core/log')
-const machines = require('./machines/store')
 const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
 const scripts = require('./machines/scripts')
+const machines = require('./machines/store')
 const { provision, reach } = require('./machines/provision')
 const editor = require('./machines/editor')
 
 const UI = path.join(__dirname, 'ui')
 const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript' }
 
+const started = new Date().toISOString()
+
+// The port we actually ended up on. A guest is told to fetch its scripts from
+// here, so this has to be what is really listening rather than a default.
+let port = Number(process.env.PORT || 7373)
+
 // ---- the actions ------------------------------------------------------
 //
 // One flat table: everything the tool can do, each with a line saying what it is
-// for. /api/actions serves this table, the window builds its own list of every
-// capability from it, and nothing can exist here without showing up there.
+// for. /api/actions serves this table and the window builds its own list of every
+// capability from it, so nothing can exist here without showing up there.
 
 const actions = {
   status: {
-    about: 'Is the server up, and what is it serving',
-    run: async ({ ecosystem = 'local' }) => {
-      let serving = null
-      try {
-        const e = eco.load(ecosystem)
-        serving = { id: e.id, name: e.name, repos: e.repos.length, file: e.file }
-      } catch (err) {
-        serving = { error: err.message }
-      }
-      return { ok: true, serving, ecosystems: eco.list(), started }
-    }
+    about: 'Is the server up, and what does it have to work with',
+    run: async () => ({
+      ok: true,
+      started,
+      port,
+      virtualbox: vbox.available() ? vbox.exe() : null,
+      mine: vms.read().length
+    })
   },
   actions: {
     about: 'Every action this server has, with what each is for',
@@ -53,37 +57,11 @@ const actions = {
     })
   },
 
-  overview: {
-    about: 'The tasks worth doing, the repos they need, and what is in flight',
-    run: async ({ ecosystem = 'local' }) => {
-      const e = eco.load(ecosystem)
-      return {
-        ecosystem: { id: e.id, name: e.name, about: e.about, file: e.file },
-        repos: await eco.health(e),
-        tasks: work.tasks(ecosystem),
-        work: work.all().sort((a, b) => b.started.localeCompare(a.started))
-      }
-    }
-  },
-
-  start: { about: 'Begin an attempt at a task', takes: ['task'], run: ({ ecosystem = 'local', task }) => work.start(ecosystem, task) },
-  offer: { about: 'Say an attempt is ready to be reviewed', takes: ['id'], run: ({ id }) => work.offer(id) },
-  review: { about: 'What an attempt actually changed', takes: ['id'], run: ({ id }) => work.review(id) },
-  accept: { about: 'Commit an attempt — all repos or none', takes: ['id', 'note'], run: ({ id, note }) => work.accept(id, note) },
-  discard: { about: 'Throw an attempt away, saving it to a patch first', takes: ['id'], run: ({ id }) => work.discard(id) },
-  putBack: { about: 'Restore an attempt that was thrown away', takes: ['id'], run: ({ id }) => work.putBack(id) },
-
-  machines: { about: 'The machines you have, and the virtual machines this app made', run: async () => ({ machines: machines.all(), vbox: await vms.all() }) },
-  machineAdd: { about: 'Add a machine', takes: ['machine'], run: ({ machine }) => machines.add(machine || {}) },
-  machineUpdate: { about: 'Change a machine', takes: ['id', 'patch'], run: ({ id, patch }) => machines.update(id, patch || {}) },
-  machineRemove: { about: 'Forget a machine — nothing on it is touched', takes: ['id'], run: ({ id }) => machines.remove(id) },
-  machineReach: { about: 'Does this machine answer', takes: ['id'], run: ({ id }) => reach(machines.get(id)) },
-
-  // Only ever the ones this app made. Everything below refuses a machine that is
-  // not in its own registry, because these actions can destroy one.
+  // Only ever the machines this app made. Everything here refuses a machine that
+  // is not in its own registry, because these actions can destroy one.
   vmList: { about: 'The virtual machines this app made, with live state and stage', run: () => vms.all() },
   vmCreate: { about: 'Make a virtual machine and its disk', takes: ['vm'], run: ({ vm }) => provisioner.create(vm || {}) },
-  vmInstall: { about: 'Install an operating system, unattended, and run its setup steps', takes: ['name'], run: ({ name }) => provisioner.install(name, { port }) },
+  vmInstall: { about: 'Install an operating system, unattended, and run its provisioning scripts', takes: ['name'], run: ({ name }) => provisioner.install(name, { port }) },
   vmRemove: {
     about: 'Delete a virtual machine and its disks, and forget it',
     takes: ['name'],
@@ -106,7 +84,6 @@ const actions = {
       vms.get(name)
       if (!title || !title.trim()) throw new Error('Give the snapshot a title, so it means something when you come back to it.')
       await vbox.takeSnapshot(name, title.trim(), description || '')
-      // The first snapshot becomes the one a reset returns to, unless one is set.
       const vm = vms.get(name)
       if (!vm.baseSnapshot) vms.update(name, { baseSnapshot: title.trim() })
       return vbox.snapshots(name)
@@ -125,10 +102,7 @@ const actions = {
 
   vmIsos: { about: 'Installer images VirtualBox already knows about', run: () => vbox.isos() },
   vmBridges: { about: 'Host network adapters a guest could be bridged onto', run: () => vbox.bridges() },
-  vmScripts: {
-    about: 'The provisioning scripts available to swap between',
-    run: async () => ({ available: scripts.list(), stages: scripts.STAGES })
-  },
+  vmScripts: { about: 'The provisioning scripts available to swap between', run: async () => ({ available: scripts.list(), stages: scripts.STAGES }) },
   vmScript: {
     about: 'One script a machine will receive, exactly as it will get it',
     takes: ['name', 'stage'],
@@ -140,11 +114,14 @@ const actions = {
     }
   },
 
-  provision: { about: 'Run a machine\'s setup steps, in order, stopping at the first failure', takes: ['id', 'steps'], run: ({ id, steps }) => provision(machines.get(id), steps) },
-  openEditor: { about: 'Open the work in VS Code, here or over ssh', takes: ['id', 'where'], run: ({ id, where }) => editor.open(machines.get(id), where) },
+  // Other machines, reached over ssh rather than made here.
+  machines: { about: 'Machines reachable over ssh, as opposed to ones this app made', run: async () => ({ machines: machines.all() }) },
+  machineAdd: { about: 'Add a machine', takes: ['machine'], run: ({ machine }) => machines.add(machine || {}) },
+  machineRemove: { about: 'Forget a machine — nothing on it is touched', takes: ['id'], run: ({ id }) => machines.remove(id) },
+  machineReach: { about: 'Does this machine answer', takes: ['id'], run: ({ id }) => reach(machines.get(id)) },
+  provision: { about: "Run a machine's setup steps, in order, stopping at the first failure", takes: ['id', 'steps'], run: ({ id, steps }) => provision(machines.get(id), steps) },
+  openEditor: { about: 'Open a folder in VS Code, here or over ssh', takes: ['id', 'where'], run: ({ id, where }) => editor.open(machines.get(id), where) },
 
-  // For looking at what the window actually rendered, rather than what the
-  // source says it should have. Ctrl+Shift+D in the window sends it here.
   capture: {
     about: 'Save what the window currently looks like, as rendered HTML',
     takes: ['html'],
@@ -164,12 +141,6 @@ const actions = {
 
 // ---- serving ----------------------------------------------------------
 
-const started = new Date().toISOString()
-
-// The port we actually ended up on. A guest is told to fetch its setup script
-// from here, so this has to be what is really listening rather than a default.
-let port = Number(process.env.PORT || 7373)
-
 const body = req => new Promise((resolve, reject) => {
   let s = ''
   req.on('data', c => { s += c; if (s.length > 1 << 20) reject(new Error('Too much data')) })
@@ -181,24 +152,20 @@ function handler (req, res) {
 
   // ---- what a guest talks to -----------------------------------------
   //
-  // These two are why the API is an HTTP server rather than function calls inside
-  // the window: a machine being installed has to be able to reach it. They are
-  // plain GETs with no body, because they are called by curl inside an installer.
+  // Plain GETs with no body, because they are called by curl inside an installer.
 
   if (url.pathname === '/provision/report') {
     const name = url.searchParams.get('vm') || ''
-    const stage = url.searchParams.get('stage') || 'running'
-    try { provisioner.report(name, stage) } catch { /* a report is never worth an error */ }
+    try { provisioner.report(name, url.searchParams.get('stage') || 'running') } catch { /* never worth an error */ }
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok\n')
     return
   }
 
   // A line from inside a machine, into the same live log as everything else. This
-  // is what makes a 25-minute install watchable instead of silent.
+  // is what makes a long install watchable instead of silent.
   if (url.pathname === '/provision/say') {
     const name = url.searchParams.get('vm') || ''
-    const text = url.searchParams.get('text') || ''
-    if (vms.read().some(v => v.name === name)) log.on('vm', name, 'guest').out(text)
+    if (vms.read().some(v => v.name === name)) log.on('vm', name, 'guest').out(url.searchParams.get('text') || '')
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok\n')
     return
   }
@@ -214,9 +181,6 @@ function handler (req, res) {
       log.on('vm', name, 'guest').good(`${name} asked for ${file}`)
       vbox.hostAddress().catch(() => '127.0.0.1').then(host => {
         res.writeHead(200, { 'content-type': 'text/x-shellscript' })
-        // A stage name resolves through the VM's own choice of script; an
-        // unrecognised filename is served as itself, which is what makes a script
-        // nobody registered still work.
         res.end(scripts.render(stage || file, vm, { hostAddress: host, port }))
       })
     } catch (e) {
@@ -226,8 +190,8 @@ function handler (req, res) {
     return
   }
 
-  // The live log. Server-sent events rather than a socket library: it is one
-  // direction and needs no dependency.
+  // ---- the live log --------------------------------------------------
+
   if (url.pathname === '/api/log/stream') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
     for (const e of log.since(url.searchParams.get('since'))) res.write(`data: ${JSON.stringify(e)}\n\n`)
@@ -236,6 +200,8 @@ function handler (req, res) {
     req.on('close', () => { stop(); clearInterval(beat) })
     return
   }
+
+  // ---- the actions ---------------------------------------------------
 
   if (url.pathname.startsWith('/api/')) {
     const name = url.pathname.slice(5)
@@ -268,11 +234,9 @@ function handler (req, res) {
   fs.createReadStream(file).pipe(res)
 }
 
-// 127.0.0.1 by default: nothing about this should be reachable from off the
-// machine unless somebody asks for that on purpose.
-// 0.0.0.0 is not the default, but it is what a guest needs: a VM on a bridged
-// adapter reaches this host by its network address, and 127.0.0.1 is useless to
-// it. Bind wider only when you mean to.
+// 127.0.0.1 by default. A guest on a bridged adapter cannot reach loopback, so
+// installing one needs HOST=0.0.0.0 -- which puts this API on the network, and is
+// therefore a decision to make on purpose rather than a default.
 function start ({ port: wanted = Number(process.env.PORT || 7373), host = process.env.HOST || '127.0.0.1' } = {}) {
   const server = http.createServer(handler)
   return new Promise((resolve, reject) => {
@@ -287,7 +251,6 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
 
 module.exports = { start, actions, handler }
 
-// Headless: the same server, without the window.
 if (require.main === module) {
   start()
     .then(s => console.log(`Open ${s.url}`))

@@ -349,6 +349,20 @@ pre.diff {
 
 /* ---------- all actions ---------- */
 
+/* ---- a machine's details ---- */
+
+table.kv { width: 100%; border-collapse: collapse; }
+table.kv th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+  padding: 3px 10px 3px 0;
+  white-space: nowrap;
+  vertical-align: top;
+  font-size: 12px;
+}
+table.kv td { padding: 3px 0; word-break: break-all; }
+
 .act {
   display: flex;
   gap: 12px;
