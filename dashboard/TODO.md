@@ -14,13 +14,6 @@ list: not what is missing, but what is unproven.
 Outstanding
 -----------
 
-* **`runner1` can never enter the queue's pool.** Its only snapshot was taken
-  while it was already on `fix/try-one`, so rolling back does not release the
-  claim — and a machine claiming a branch is correctly never free. It needs a
-  snapshot from before any workspace existed, which means taking the credential
-  back, rolling it to that snapshot, and taking a base there; or rebuilding it.
-  The queue says why rather than skipping it silently, but it is one machine
-  doing nothing.
 * **Only one machine has ever been in the pool at a time.** Everything about
   the queue that concerns *choosing* between machines is therefore unexercised:
   two tasks starting at once, and a machine being picked when several are free.
@@ -53,10 +46,9 @@ Not work, and not for a session to settle on its own.
 Housekeeping on the machines
 ----------------------------
 
-* **Both machines are holding a credential, so neither can be snapshotted.**
-  Deliberate rather than pending — each already has a clean snapshot from before
-  it held one. Taking a newer starting point means taking the credential back
-  first, which is the flow rather than an obstacle to it.
+* **Nothing.** Both runners are off, clean, claiming nothing, holding nothing,
+  and in the pool. Kept as a heading because this is the state to return them
+  to, not because there is anything to do.
 * **The task contract lives in `dashboard/state/`, which is runtime state and
   untracked.** It is project configuration and does not belong there; it was put
   where it was to prove the mechanism. Somewhere it can be version-controlled
@@ -110,24 +102,20 @@ Volatile, and the first thing to check rather than trust:
 
     okc.js vmList --json
 
-At the time of writing: **`runner1`** up and connected, holding the worker
-credential, Claude Code 2.1.228 installed, no runs left in `~/.okc-runs`, still
-recording `fix/try-one` as what it may push, with a clean `on-fix-try-one`
-snapshot taken before it ever held a credential. This is the working machine.
+At the time of writing **both runners are off**, each on a single snapshot
+called `base` that predates any branch, claiming nothing, holding no credential,
+and both free to the queue. That is the resting state the whole design is
+arranged around, and it is the first time the machines have actually been in it.
 
-**`runner2`** up and connected, holding a credential, claiming
-`drill/protected` — a branch that no longer exists here, because the drill that
-made it was cleaned up. Rolled back to `base` once already, which is what
-released its previous claim; that is the only way off a branch and it worked.
-It did the first real task and then drill 1.
+`runner1` reached it late: it had been stuck on `fix/try-one` since the
+afternoon, and its only snapshot recorded that branch, so rolling back could
+never release the claim. `vmRelease` is what freed it — the machine was holding
+nothing, which is exactly the condition the rule always named.
 
-**`fix/try-one` no longer exists in the workspace repositories** — it was test
-debris and was deleted. `runner1` still claims the name, which is deliberate
-rather than stale: setting it up again cuts the branch afresh from `master`, and
-the claim stops another machine taking the name meanwhile.
-
-**Neither machine can be snapshotted while it holds a credential.** That is the
-refusal working, not a problem to route around — see Housekeeping above.
+Taking its fresh `base` also revealed that it already had a `base` at the root
+of its snapshot tree, from much earlier. Two snapshots, one name, and every
+restore here is by name. Both older snapshots have been deleted and taking a
+duplicate name is refused now; see `LEARNED.md`.
 
 **`task/first-round-trip` exists in both repositories, carrying one commit in
 `local-repo-a`.** It is accepted but not merged, which is the intended shape: a

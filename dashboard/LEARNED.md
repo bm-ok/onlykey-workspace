@@ -169,9 +169,9 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   restores BY name -- the queue does it before every task -- so a second
   "base" turns every future restore into a coin toss between a clean starting
   point and whatever else was called base a month ago. Nothing announces it:
-  the restore succeeds, on the wrong disk. One machine ended up with  at
-  the root of its tree and  three levels down, and the only sign was a
-  duplicated line in a list.
+  the restore succeeds, on the wrong disk. One machine ended up with `base` at
+  the root of its tree and `base` three levels down, and the only sign of it
+  was a duplicated line in a list of names.
 * **A rule with no exit is not a rule, it is a trap.** "A machine stays on its
   branch until it is CLEAN" was enforced, and there was no way to say it was
   clean -- the only route off a branch was a rollback, which discards. So a
