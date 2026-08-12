@@ -96,9 +96,14 @@ around it.
 
 ## Before starting
 
-`dashboard/TODO.md` is what is outstanding and what state the machines were last
-left in. `dashboard/README.md` is how it all works. Read the first to find out
-where things stand; read the second before changing anything.
+Three documents, and they are deliberately separate:
+
+* `dashboard/TODO.md` — what is outstanding, and where the machines were last
+  left. Read this first to find out where things stand.
+* `dashboard/README.md` — how to use it. Read before changing anything.
+* `dashboard/LEARNED.md` — what went wrong before and what it taught. Read when
+  something looks oddly written, or before "simplifying" it: most of what looks
+  redundant in this codebase is load-bearing, and that file says why.
 
 ## When changing the dashboard itself
 
