@@ -159,6 +159,46 @@ iterates on a half-hour loop. The machine fetches the script fresh, so an edit m
 since it was built is included.
 
 
+The workspace's repositories, over http
+---------------------------------------
+
+A machine clones what it is going to work on from this app, over the same server
+it already fetches its scripts from. Node and git, nothing else: git's transport
+is a pair of programs — `upload-pack` reads, `receive-pack` writes — and the HTTP
+protocol is a thin wrapper around piping them.
+
+    git clone http://<machine>:<its token>@<host>:7373/git/<repo>
+
+Nothing here knows the name of a repository. It serves what it finds in
+`../workspace`, and `OKC_REPOS_DIR` moves that — the same arrangement as the
+provisioning scripts, read fresh per request, so adding a repository needs
+nothing restarted.
+
+**Why http rather than a writable shared folder.** A guest pushing to a mounted
+path runs `receive-pack` *itself*, on its own side of the share — so the
+repository's hooks execute in the guest, and the guest can rewrite them, because
+the mount is writable and they live inside it. Enforcement at that end is a
+request rather than a rule. Served over HTTP the pack programs run **here**, in a
+directory no guest can reach, and a refusal is a refusal — reported to the guest
+as a failed push, which is where the mistake was made.
+
+It also makes a push attributable. Each machine already has its own token; the
+same secret it dials in with is what it authenticates a clone with, so this is
+`runner1` asking, not whoever could reach the port. That is why the paths answer
+three different questions:
+
+    /provision/*   anyone -- a guest can only read its own scripts and report
+    /git/*         a machine this app made, proving it with its own token
+    /api/*         this machine only -- these can delete a machine
+
+**Cloning is built; pushing is not, and says so.** A `git-receive-pack` request
+is refused with that sentence rather than a 404, which would read as "no such
+repository". The shape it is being built towards: a guest pushes `master`,
+because that is what a worker naturally does, and the host decides which branch
+that becomes — so the worker never types a branch name, and cannot type one that
+picks a gentler review than the change deserves.
+
+
 The window keeps up on its own
 ------------------------------
 
@@ -200,6 +240,7 @@ The shape
       store.js      other machines, reachable over ssh
       provision.js  setup steps run on such a machine
       editor.js     open a folder in VS Code, here or over ssh
+    repos/serve.js  the workspace's repositories, over git's smart http
     provision/      the swappable scripts above
     tools/nw.js     finds the NW.js binary and launches the app
 

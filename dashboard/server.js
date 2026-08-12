@@ -22,6 +22,7 @@ const channel = require('./machines/channel')
 const machines = require('./machines/store')
 const { provision, reach } = require('./machines/provision')
 const editor = require('./machines/editor')
+const repos = require('./repos/serve')
 
 const started = new Date().toISOString()
 
@@ -267,6 +268,33 @@ const actions = {
   },
 
   logSince: { about: 'Log lines after an id, and every tag in use', takes: ['since'], run: ({ since }) => ({ entries: log.since(since), tags: log.tags() }) },
+  // What a machine could clone, and the address it would use. The address is
+  // built from the same host lookup a guest is given for its scripts, because a
+  // guest cannot reach us on loopback and an address that only works here is the
+  // one mistake this is easy to make.
+  gitRepos: {
+    about: 'The repositories in the workspace that a machine can clone, and where from',
+    takes: ['name'],
+    run: async ({ name }) => {
+      const found = repos.list()
+      let host = null
+      try { host = await vbox.hostAddress() } catch { /* said as null below */ }
+      const vm = name ? vms.get(name) : null
+      return {
+        from: repos.DIR,
+        host,
+        repos: found.map(r => ({
+          ...r,
+          // Only spelled out for a named machine: the token is that machine's,
+          // and a URL with somebody else's in it would not work anyway.
+          url: host && vm
+            ? `http://${vm.name}:${vm.spec.token}@${host}:${port}/git/${r.name}`
+            : host ? `http://<machine>:<its token>@${host}:${port}/git/${r.name}` : null
+        }))
+      }
+    }
+  },
+
   logClear: { about: 'Empty the live log', run: () => { log.clear(); return { cleared: true } } }
 }
 
@@ -282,12 +310,96 @@ const body = req => new Promise((resolve, reject) => {
 // listen on loopback. But the actions can delete a virtual machine, so they are
 // not offered across the network either.
 //
-// The split: /provision/* answers anyone, because that is what a guest needs and
-// all it can do is read its own scripts and report progress. /api/* answers
-// loopback only.
+// Three answers to "who is this for", because there turned out to be three
+// questions:
+//
+//   /provision/*  anyone. All a guest can do with it is read its own setup
+//                 scripts and report progress.
+//   /git/*        a machine THIS APP MADE, proving it with the token it was
+//                 given when it was made -- the same secret it dials in with.
+//                 These are the actual source, not a setup script, so "anyone"
+//                 is too many; and a guest reaches us across the network, so
+//                 "loopback only" is nobody.
+//   /api/*        loopback only. These can delete a machine.
 const isLocal = req => {
   const from = req.socket.remoteAddress || ''
   return from === '127.0.0.1' || from === '::1' || from === '::ffff:127.0.0.1'
+}
+
+// Which machine is asking, by the token it was made with, or null.
+//
+// HTTP Basic because it is the one scheme git speaks with nothing installed in
+// the guest: the credentials sit in the clone URL and git replays them on each
+// request. The machine's name is the username, so a push -- when there is one --
+// is attributable to a machine rather than to whoever could reach the port.
+function machineAsking (req) {
+  const m = /^Basic (.+)$/i.exec(req.headers.authorization || '')
+  if (!m) return null
+  const raw = Buffer.from(m[1], 'base64').toString('utf8')
+  const at = raw.indexOf(':')
+  if (at === -1) return null
+  const name = raw.slice(0, at)
+  const token = raw.slice(at + 1)
+  // From the registry, so a machine this app did not make has no token that
+  // works -- the same boundary every other action is drawn on.
+  const vm = vms.read().find(v => v.name === name)
+  return vm && vm.spec && vm.spec.token && vm.spec.token === token ? vm : null
+}
+
+// Serving the workspace's repositories. Read-only for now: cloning is built and
+// pushing is not, and the difference is stated rather than left to a 404 that
+// would read as "no such repository".
+function gitRoute (req, res, url) {
+  const who = machineAsking(req)
+  if (!who) {
+    // Git asks once with no credentials and expects to be challenged -- that is
+    // the handshake, and every ordinary clone does it. Warning about it puts a
+    // line that reads as a fault in front of the operator twice per clone, so
+    // only credentials that were OFFERED AND REFUSED are worth saying anything
+    // about.
+    if (req.headers.authorization) {
+      log.on('git').warn(`refused ${url.pathname} from ${req.socket.remoteAddress} — no machine of this app answers to that name and token`)
+    }
+    res.writeHead(401, {
+      'www-authenticate': 'Basic realm="the workspace repositories"',
+      'content-type': 'text/plain'
+    }).end('this asks for the name and token of a machine this app made\n')
+    return
+  }
+
+  // `<name>` and `<name>.git` are both spelled by git clients; the same
+  // repository answers to either.
+  const rest = url.pathname.slice('/git/'.length)
+  const cut = rest.indexOf('/')
+  const repo = (cut === -1 ? rest : rest.slice(0, cut)).replace(/\.git$/, '')
+  const tail = cut === -1 ? '' : rest.slice(cut)
+
+  const dir = repos.gitDirOf(repo)
+  if (!dir) {
+    res.writeHead(404, { 'content-type': 'text/plain' }).end(`no repository called "${repo}" in the workspace\n`)
+    return
+  }
+
+  const service = tail === '/info/refs'
+    ? url.searchParams.get('service')
+    : (tail === '/git-upload-pack' && 'git-upload-pack') || (tail === '/git-receive-pack' && 'git-receive-pack')
+
+  if (!repos.SERVICES[service]) {
+    res.writeHead(400, { 'content-type': 'text/plain' }).end('this serves git\'s smart http protocol and nothing else\n')
+    return
+  }
+
+  // Said plainly and with the right status, because the alternative is a machine
+  // reporting that a push failed for a reason nobody can act on.
+  if (service === 'git-receive-pack') {
+    log.on('git', who.name).warn(`${who.name} tried to push to ${repo}; pushing is not built yet`)
+    res.writeHead(403, { 'content-type': 'text/plain' })
+      .end('this server does not accept pushes yet — cloning is built, pushing is not\n')
+    return
+  }
+
+  if (tail === '/info/refs') return repos.advertise(res, { dir, service, repo })
+  return repos.rpc(req, res, { dir, service, repo })
 }
 
 function handler (req, res) {
@@ -350,6 +462,8 @@ function handler (req, res) {
   }
 
   // ---- the live log --------------------------------------------------
+
+  if (url.pathname.startsWith('/git/')) return gitRoute(req, res, url)
 
   if (url.pathname === '/api/log/stream') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
