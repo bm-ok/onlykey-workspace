@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Work</title>
+<link rel="stylesheet" href="/ui.css">
+</head>
+<body>
+
+<header>
+  <h1>Work</h1>
+  <p id="where">…</p>
+</header>
+
+<!-- Absent repos are said out loud. Silence there is what hid a whole seam
+     violation in the last version: nine of ten repos dangled and nothing
+     mentioned it. -->
+<section id="trouble" hidden></section>
+
+<main>
+  <section id="doing">
+    <h2>What you are working on</h2>
+    <div id="doing-list"></div>
+  </section>
+
+  <section id="pick">
+    <h2>What is worth doing</h2>
+    <div id="task-list"></div>
+  </section>
+
+  <section id="past">
+    <h2>Finished</h2>
+    <div id="past-list"></div>
+  </section>
+</main>
+
+<!-- Before anything that looks irreversible, plain words about what will and
+     will not happen. Hesitating to press a button is not caution, it is a
+     report that the blast radius was never made legible. -->
+<dialog id="ask">
+  <h3 id="ask-title"></h3>
+  <div id="ask-body"></div>
+  <label id="ask-note-wrap" hidden>
+    <span>In one line, what did you check?</span>
+    <input id="ask-note" autocomplete="off" placeholder="read both diffs, the wording is accurate">
+  </label>
+  <p id="ask-error" hidden></p>
+  <div class="row">
+    <button id="ask-no" class="quiet">Never mind</button>
+    <button id="ask-yes"></button>
+  </div>
+</dialog>
+
+<script src="/ui.js"></script>
+</body>
+</html>

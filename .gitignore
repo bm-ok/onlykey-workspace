@@ -1,0 +1,50 @@
+# The ecosystem source, brought in as read-only reference.
+#
+# Each of these is its own repository with its own history and remote; they are
+# components this workspace reads and drives, never files it owns. Committing
+# them here would fork them by accident.
+#
+# ANCHORED. Unanchored, `onlykey/` matches a directory of that name at ANY
+# depth -- which silently swallowed `ecosystem/onlykey/`, the tracked data that
+# describes this ecosystem's tasks and commands. Nothing errors when that
+# happens: the files exist, the tool loads them, and they are simply never
+# committed, so the fresh clone the seam exists to serve gets nothing.
+/onlykey/
+/workspace/
+
+# Node
+node_modules/
+npm-debug.log*
+*.tsbuildinfo
+
+# Local machine configuration -- names paths, VM names and a shared token that
+# are specific to one workstation. config.example.json is the tracked template.
+dashboard/config.json
+
+# Dashboard runtime state (run logs, transcripts, live output)
+dashboard/state/
+
+# Gate runtime state (declared sets, merge manifests). Same reasoning as above:
+# process state, not an artifact. The durable record of a merge is its merge
+# commit message, which lives in each repo's history alongside the change --
+# the manifest exists so recovery has exact SHAs rather than a reconstruction.
+gate/state/
+
+# A fork's own component addresses, and any repo that exists only on this
+# machine. Each ecosystem's repos.json is tracked and holds the upstream ones,
+# so pointing the gate at your forks by editing it would mean conflicting with
+# every upstream pull, forever, over a purely local change. URLs only --
+# structure stays tracked. ecosystem/repos.local.example.json is the template.
+#
+# Per ecosystem, beside the registry it overrides: one ecosystem's local
+# addresses must not apply to another's repos.
+ecosystem/*/repos.local.json
+
+# OS noise
+Thumbs.db
+.DS_Store
+desktop.ini
+push/
+scratch/
+legacy/
+

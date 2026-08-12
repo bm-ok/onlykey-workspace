@@ -1,0 +1,143 @@
+/* Light, and readable in either theme. No framework, nothing to build. */
+
+:root {
+  --bg: #fbfaf8;
+  --card: #ffffff;
+  --ink: #1a1a19;
+  --soft: #6b6b66;
+  --line: #e3e1dc;
+  --go: #1f6f43;
+  --go-ink: #ffffff;
+  --warn: #8a4b12;
+  --warn-bg: #fdf3e7;
+  --bad: #9b2c2c;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17171a;
+    --card: #1f1f23;
+    --ink: #ececea;
+    --soft: #a0a09a;
+    --line: #33333a;
+    --go: #4c9e6f;
+    --go-ink: #0d1a12;
+    --warn: #e0b070;
+    --warn-bg: #2b2317;
+    --bad: #e08585;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  padding: 2rem 1.25rem 5rem;
+  max-width: 46rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1 { font-size: 1.5rem; margin: 0; }
+h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--soft); margin: 2.25rem 0 0.75rem; }
+h3 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+
+header p { margin: 0.25rem 0 0; color: var(--soft); font-size: 0.9rem; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  margin-bottom: 0.6rem;
+}
+
+.card h4 { margin: 0; font-size: 1.02rem; font-weight: 600; }
+.card p { margin: 0.35rem 0 0; color: var(--soft); font-size: 0.92rem; }
+.card .row { margin-top: 0.85rem; }
+
+.row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+
+button {
+  font: inherit;
+  font-size: 0.92rem;
+  padding: 0.42rem 0.95rem;
+  border-radius: 7px;
+  border: 1px solid var(--go);
+  background: var(--go);
+  color: var(--go-ink);
+  cursor: pointer;
+}
+button:hover { filter: brightness(1.08); }
+button.quiet { background: transparent; color: var(--soft); border-color: var(--line); }
+button:disabled { opacity: 0.45; cursor: default; }
+
+.tag {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--soft);
+}
+.tag.go { color: var(--go); border-color: var(--go); }
+.tag.warn { color: var(--warn); border-color: var(--warn); }
+
+/* The change itself, not a pointer to where the change is recorded. */
+.what {
+  margin-top: 0.85rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+  font-size: 0.88rem;
+}
+.what b { font-weight: 600; }
+.what pre {
+  margin: 0.35rem 0 0.75rem;
+  padding: 0.6rem 0.7rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow-x: auto;
+  font: 12.5px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+  white-space: pre;
+}
+.where { font: 12.5px/1.5 ui-monospace, Consolas, monospace; color: var(--soft); }
+
+.note {
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.92rem;
+}
+.note b { display: block; margin-bottom: 0.2rem; }
+
+.empty { color: var(--soft); font-size: 0.92rem; padding: 0.2rem 0 0.6rem; }
+
+dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  max-width: 30rem;
+  padding: 1.4rem;
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+dialog ul { margin: 0.4rem 0 0; padding-left: 1.1rem; color: var(--soft); font-size: 0.92rem; }
+dialog li { margin: 0.2rem 0; }
+dialog label { display: block; margin-top: 1rem; font-size: 0.9rem; }
+dialog label span { display: block; margin-bottom: 0.3rem; color: var(--soft); }
+dialog input {
+  font: inherit;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+}
+dialog .row { margin-top: 1.2rem; justify-content: flex-end; }
+#ask-error { color: var(--bad); font-size: 0.9rem; margin: 0.75rem 0 0; }
