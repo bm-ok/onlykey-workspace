@@ -208,6 +208,18 @@ say 'tightening ssh'
 # and a machine with no host keys could not accept ssh anyway.
 ssh-keygen -A >/dev/null 2>&1 || say 'could not generate ssh host keys'
 
+# And the privilege separation directory, for the same reason and found the same
+# way. `sshd -t` refuses with "Missing privilege separation directory: /run/sshd"
+# when it is absent -- which it is during an install, because /run is a tmpfs
+# populated at boot and the ssh service is what normally creates this. So the
+# check failed, the config was deleted, and the machine came up with
+# `permitrootlogin without-password` while the install reported success.
+#
+# The same trap twice now: sshd -t answering about its own surroundings rather
+# than about the file being tested. Anything it needs is made first, so that when
+# it does refuse, the refusal is about the config.
+mkdir -p /run/sshd 2>/dev/null && chmod 0755 /run/sshd 2>/dev/null || say 'could not make /run/sshd'
+
 install -d -m 0755 /etc/ssh/sshd_config.d
 cat >/etc/ssh/sshd_config.d/10-okc.conf <<'SSHCFG'
 PermitRootLogin no
@@ -224,7 +236,20 @@ SSHCFG
 # not have revealed.
 if ssh_why=$(sshd -t 2>&1); then
   systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
-  say 'ssh is tightened: no root login, no empty passwords'
+
+  # READ BACK what sshd will actually use, rather than reporting that a file was
+  # written. Those are different claims, and the gap between them is where this
+  # went wrong twice: the file was written both times, and both times something
+  # else removed it or ignored it, while the log said the machine was tightened.
+  #
+  # Asked of sshd rather than of the file, because the file is our copy of the
+  # intention and this is the answer.
+  ssh_now=$(sshd -T 2>/dev/null | grep -i '^permitrootlogin' | awk '{print $2}')
+  if [ "$ssh_now" = "no" ]; then
+    say 'ssh is tightened: no root login, no empty passwords'
+  else
+    say "WARNING: ssh still says permitrootlogin=${ssh_now:-unknown}, so the machine is NOT tightened"
+  fi
 else
   rm -f /etc/ssh/sshd_config.d/10-okc.conf
   say "WARNING: ssh would not accept that config, so it was removed. sshd said: ${ssh_why:-nothing}"
