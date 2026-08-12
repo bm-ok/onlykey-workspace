@@ -141,7 +141,22 @@ h2:first-child { margin-top: 0; }
   max-width: 560px;
   width: 100%;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  /* Never taller than the screen. A dialog can carry a diff or a whole
+     definition, and those are as long as they are -- so without a ceiling the
+     confirm button lands below the bottom of a fixed overlay that does not
+     scroll, and the question cannot be answered at all. */
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  min-height: 0;
 }
+/* The part that moves. What is being READ scrolls; the title above it and the
+   buttons below it stay where they are, because they are the question. */
+.dlg-body { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+/* A block of text to read INSIDE a dialog, which cannot use the viewport height
+   the way a full-page console does -- the dialog is already bounded, and 100vh
+   inside it is what pushed the buttons off the screen. */
+.console.read { max-height: 44vh; white-space: pre; margin: 0; }
 .dlg-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 .dlg-heading {
   font-size: 10px;
@@ -160,13 +175,13 @@ h2:first-child { margin-top: 0; }
   margin-bottom: 12px;
 }
 .dlg-cost strong { color: var(--fail); }
-.dlg-err { color: var(--fail); margin: 0 0 12px; }
+.dlg-err { color: var(--fail); margin: 12px 0 0; flex: none; }
 /* Two ways into one dialog, when they are different acts rather than variations. */
-.dlg-tabs { display: flex; gap: 4px; margin: -4px 0 14px; border-bottom: 1px solid var(--line); }
+.dlg-tabs { display: flex; gap: 4px; margin: -4px 0 14px; border-bottom: 1px solid var(--line); flex: none; }
 .dlg-tab { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font: inherit; font-size: 12px; padding: 6px 10px; cursor: pointer; }
 .dlg-tab.active { color: var(--text); border-bottom-color: var(--accent); }
 .dlg-tab:hover { color: var(--text); }
-.dlg-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.dlg-actions { display: flex; gap: 8px; justify-content: flex-end; flex: none; padding-top: 12px; }
 .dlg input, .dlg select, .dlg textarea {
   width: 100%;
   background: #0d1117;

@@ -195,35 +195,46 @@ function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, e
       })
     : null
 
+  // The middle scrolls; the title and the buttons do not.
+  //
+  // A dialog can now carry a diff or a whole definition, and those are as long
+  // as they are -- so without this the confirm button ends up below the bottom
+  // of the screen, on a fixed overlay that does not scroll, and the dialog
+  // cannot be answered at all. The thing being read is what should move, not the
+  // question being asked about it.
+  const body = el('div', { className: 'dlg-body' },
+    plain && plain.length
+      ? el('div', {},
+          el('div', { className: 'dlg-heading', textContent: 'What this does' }),
+          el('ul', {}, ...plain.map(p => el('li', { textContent: p }))))
+      : null,
+    cost ? el('div', { className: 'dlg-cost' }, el('strong', { textContent: 'Cannot be undone: ' }), cost) : null,
+    link ? externalLink(link) : null)
+
   const overlay = el('div', { className: 'dlg-overlay' },
     el('div', { className: 'dlg' },
       el('div', { className: 'dlg-title', textContent: title }),
       _tabsBar || null,
-      plain && plain.length
-        ? el('div', {},
-            el('div', { className: 'dlg-heading', textContent: 'What this does' }),
-            el('ul', {}, ...plain.map(p => el('li', { textContent: p }))))
-        : null,
-      cost ? el('div', { className: 'dlg-cost' }, el('strong', { textContent: 'Cannot be undone: ' }), cost) : null,
-      link ? externalLink(link) : null,
-      ...fields.map(f => {
-        // A list of real choices beats a path to type out, and it cannot be typed
-        // wrong.
-        // Three kinds, because a brief is prose and a one-line input turns prose
-        // into a slot you scroll sideways through. What a worker is actually
-        // told is the most important text on this screen and it should be
-        // readable while it is being written.
-        const input = f.options
-          ? el('select', {}, ...f.options.map(o =>
-              el('option', { value: o.value, textContent: o.label, selected: o.value === f.value })))
-          : f.multiline
-            ? el('textarea', { placeholder: f.placeholder || '', value: f.value || '', rows: f.rows || 8 })
-            : el('input', { placeholder: f.placeholder || '', value: f.value || '', type: f.type || 'text' })
-        inputs[f.name] = input
-        return el('div', {}, el('label', { textContent: f.label }), input)
-      }),
+      body,
       errBox,
       el('div', { className: 'dlg-actions' }, no, other, yes)))
+
+  // Fields go in the scrolling half, after whatever explains them.
+  for (const f of fields) {
+    // A list of real choices beats a path to type out, and it cannot be typed
+    // wrong. Three kinds, because a brief is prose and a one-line input turns
+    // prose into a slot you scroll sideways through -- what a worker is actually
+    // told is the most important text on the screen and should be readable while
+    // it is being written.
+    const input = f.options
+      ? el('select', {}, ...f.options.map(o =>
+          el('option', { value: o.value, textContent: o.label, selected: o.value === f.value })))
+      : f.multiline
+        ? el('textarea', { placeholder: f.placeholder || '', value: f.value || '', rows: f.rows || 8 })
+        : el('input', { placeholder: f.placeholder || '', value: f.value || '', type: f.type || 'text' })
+    inputs[f.name] = input
+    body.append(el('div', {}, el('label', { textContent: f.label }), input))
+  }
 
   const close = () => overlay.remove()
   no.onclick = close
@@ -515,8 +526,8 @@ function showDiff (task, repo) {
     // Put in after the dialog exists rather than through a field, because a diff
     // is neither a bullet nor an input: it is long, it is read rather than
     // answered, and it needs to scroll and be selectable.
-    const dlg = document.querySelector('.dlg')
-    if (dlg) dlg.insertBefore(el('pre', { className: 'console tall', style: 'user-select:text', textContent: diff || 'no changes' }), dlg.querySelector('.dlg-actions'))
+    const body = document.querySelector('.dlg-body')
+    if (body) body.append(el('pre', { className: 'console read', style: 'user-select:text', textContent: diff || 'no changes' }))
   }).catch(oops)
 }
 
@@ -704,10 +715,10 @@ function readDefinition (which) {
 
     // Inserted after the dialog exists, for the same reason a diff is: source is
     // read, not answered, and it needs to scroll and be selectable.
-    const dlg = document.querySelector('.dlg')
-    if (dlg) {
-      dlg.insertBefore(el('div', { className: 'dlg-heading', textContent: 'What it does, exactly' }), dlg.querySelector('.dlg-err'))
-      dlg.insertBefore(el('pre', { className: 'console tall', style: 'user-select:text; margin-bottom:12px', textContent: t.source }), dlg.querySelector('.dlg-err'))
+    const body = document.querySelector('.dlg-body')
+    if (body) {
+      body.append(el('div', { className: 'dlg-heading', textContent: 'What it does, exactly' }))
+      body.append(el('pre', { className: 'console read', style: 'user-select:text; margin-bottom:12px', textContent: t.source }))
     }
   }).catch(oops)
 }
