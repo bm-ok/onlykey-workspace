@@ -35,8 +35,39 @@ const RUNS = '$HOME/.okc-runs'
 // Kept rather than streamed and dropped. "What actually ran" has no source but a
 // record of the run -- a claim in a transcript is the agent's account of itself,
 // and the two diverge.
+// A heredoc ends at its delimiter, wherever that appears. Text arriving here is
+// written by a person or by another agent, so "it will not contain that line" is
+// an assumption about somebody else's prose -- and the failure is not an error
+// but the rest of the text being executed as shell.
+function heredoc (path, body, tag) {
+  if (new RegExp(`^${tag}$`, 'm').test(body)) {
+    throw new Error(`That text contains a line reading exactly "${tag}", which is the marker used to send it to the machine. Change that line.`)
+  }
+  return `cat > ${path} <<'${tag}'\n${body}\n${tag}`
+}
+
+// Where a run's record lives on the machine. One directory per run: the prompt
+// as it was given, the rules it was given with, the script that ran, its output,
+// and the status written when it ends.
+//
+// Kept rather than streamed and dropped. "What actually ran" has no source but a
+// record of the run -- a claim in a transcript is the agent's account of itself,
+// and the two diverge.
 function script ({ id, task, folder, contract, resume }) {
   const dir = `${RUNS}/${id}`
+
+  // THE CONTRACT IS CARRIED, NOT REFERENCED.
+  //
+  // It used to be a path on the machine, which is why it was never once used:
+  // nothing here puts a file on a machine, so the flag named something that
+  // could not be made to exist. Now the text comes from this host and is written
+  // into the run's own directory.
+  //
+  // Which is the better arrangement anyway. Rules that govern a run belong beside
+  // that run, not in a file somewhere else that can be edited afterwards -- read
+  // six weeks later, a path proves nothing about what the worker was actually
+  // told, and the whole point of keeping a run record is that it cannot drift.
+  const rules = contract ? `${dir}/contract.md` : null
 
   return `set -u
 mkdir -p ${dir}
@@ -44,10 +75,8 @@ cd ${q(folder)} 2>/dev/null || cd "$HOME"
 
 # The task as written, byte for byte, so what was asked can be read back later
 # rather than reconstructed from a command line.
-cat > ${dir}/task.txt <<'OKC_TASK_EOF'
-${task}
-OKC_TASK_EOF
-
+${heredoc(`${dir}/task.txt`, task, 'OKC_TASK_EOF')}
+${rules ? `\n# The rules this run was given, kept with it.\n${heredoc(rules, contract, 'OKC_CONTRACT_EOF')}\n` : ''}
 if ! command -v claude >/dev/null 2>&1; then
   echo "okc: claude is not installed on this machine, so it cannot be given work"
   exit 1
@@ -78,7 +107,7 @@ cat > ${dir}/run.sh <<'OKC_RUN_EOF'
 # would have written is exactly what never got written.
 echo $$ > ${dir}/pid
 cd ${q(folder)} 2>/dev/null || cd "$HOME"
-claude -p "$(cat ${dir}/task.txt)" --dangerously-skip-permissions --output-format json${contract ? ` --append-system-prompt-file ${q(contract)}` : ''}${resume ? ` --resume ${q(resume)}` : ''} > ${dir}/out.log 2>&1
+claude -p "$(cat ${dir}/task.txt)" --dangerously-skip-permissions --output-format json${rules ? ` --append-system-prompt-file ${rules}` : ''}${resume ? ` --resume ${q(resume)}` : ''} > ${dir}/out.log 2>&1
 echo $? > ${dir}/status
 OKC_RUN_EOF
 

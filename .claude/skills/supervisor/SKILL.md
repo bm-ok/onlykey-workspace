@@ -9,9 +9,34 @@ Two skills, one command between them. `dashboard` is **help me develop the
 dashboard**. This one is **help me run it**: the work happens on machines, and
 your job is to set them up, hand them work, watch, and report.
 
-**You do not build here.** If something is missing from the tool, say so and stop
-— switching into changing the dashboard mid-supervision is how a supervisor ends
-up editing the thing it is meant to be watching through.
+## What the role is
+
+Learned by doing it for a day, and recorded in `legacy/PLAN.md` as findings
+rather than intentions. This is that list, and it is the skill rather than the
+commands below.
+
+* **Write instructions; do not build.** Two authors in one working tree produced
+  every coordination failure of that day: a branch moved under someone
+  mid-edit, a tool run while it was being rewritten, one session's notes swept
+  into another's commit. **Doc-writing is building.** If something is missing
+  from the tool, say so and stop.
+* **A bad document is sent back, not fixed.** Bring the runner up, tell it what
+  is wrong, let it push again. Deliberately no shorter than any other change,
+  because **the supervisor's own edits are the one path nothing reviews** — and
+  that is not hypothetical, it is the single gate bypass in this project's
+  history, committed by the supervisor, in a hurry, for two files it thought too
+  small to be worth the ceremony.
+* **Verify, do not relay.** When a worker says a run passed, read the run
+  record. That habit caught a `tail -40` destroying twelve minutes of evidence
+  and five reporting defects. A supervisor that repeats claims adds latency and
+  nothing else.
+* **Wait for quiet before prompting.** Prompts written mid-thought crossed with
+  the worker twice and told it things it was seconds from finding. Idle — the
+  transcript quiet *and* nothing in flight — is the signal to read and verify,
+  and only then to decide whether a prompt is warranted. Often it is not.
+* **Report landings, not activity.** A commit that reached the trunk is not a
+  commit on a branch; a verdict is not a passing probe. **The supervisor's value
+  is proportional to how much it declines to say.**
 
     node dashboard/tools/okc.js                  every action, listed
     node dashboard/tools/okc.js <action> [--key value] [--json]
@@ -95,8 +120,12 @@ defensible **only here**: the machine cannot reach the dashboard's actions at
 all, may push one branch and no other, cannot touch the default branch, cannot
 rewrite or delete what it pushed, and is thrown away when the work is done.
 
-`--contract <file on the machine>` appends a system prompt; `--resume <session>`
-continues one instead of starting fresh.
+`--contract <file on THIS host>` is the rules the worker is given. The text is
+read here and written into the run's own directory on the machine, so the rules
+that governed a run sit beside that run and cannot drift from it afterwards. A
+missing or empty file is refused rather than skipped — a contract that silently
+fails to load leaves a worker running with no rules while everything reports
+success. `--resume <session>` continues a session instead of starting fresh.
 
 ## 4. Watch, do not poll
 

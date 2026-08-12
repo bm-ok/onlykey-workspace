@@ -907,21 +907,40 @@ echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 
 
       const id = dispatch.newId()
       const where = guestPath(folder, '--folder') || (vm.spec && vm.spec.folder) || workspace.FOLDER
-      guestPath(contract, '--contract')
+
+      // The rules a worker is given, read HERE and carried with the task.
+      //
+      // A path on the machine was the old arrangement and the reason this was
+      // never used: nothing puts a file on a machine, so the flag named
+      // something no one could make exist. Read from this host, it is a file
+      // somebody can actually point at -- and refused by name when it is not
+      // there, because a contract that silently fails to load leaves a worker
+      // running with no rules while everything reports success.
+      let rules = null
+      if (contract) {
+        const at = path.resolve(String(contract))
+        if (!fs.existsSync(at)) throw new Error(`There is no contract at ${at}. It is read from this host, not from the machine.`)
+        rules = fs.readFileSync(at, 'utf8')
+        if (!rules.trim()) throw new Error(`The contract at ${at} is empty, and an empty contract is worse than none: it reads as though rules were applied.`)
+      }
       const to = log.on('vm', name)
 
-      const r = await channel.run(name, dispatch.script({ id, task: String(task), folder: where, contract, resume }),
+      const r = await channel.run(name, dispatch.script({ id, task: String(task), folder: where, contract: rules, resume }),
         { what: `dispatching ${id}`, timeout: 60000 })
 
       if (!/okc-dispatched/.test(r.output || '')) {
         throw new Error(`"${name}" did not start the work: ${String(r.output || '').trim().split('\n').pop() || 'it said nothing'}`)
       }
 
-      to.good(`${name} is working on ${id}`)
+      to.good(`${name} is working on ${id}${rules ? `, under ${path.basename(path.resolve(String(contract)))}` : ''}`)
       return {
         run: id,
         machine: name,
         folder: where,
+        // Said plainly, because "no rules" is the dangerous one and it is also
+        // the silent one -- a run without a contract looks exactly like a run
+        // with one from everywhere except here.
+        contract: rules ? path.resolve(String(contract)) : null,
         watch: `okc.js vmSessionTail --name ${name}`,
         note: 'started, not finished — read its session for progress and vmRuns for the outcome'
       }
