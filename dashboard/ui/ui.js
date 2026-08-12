@@ -343,50 +343,71 @@ function vmActions () {
           textContent: 'Open in VS Code',
           disabled: !v.connected,
           title: v.connected ? '' : 'It has to be dialled in — that is where its address comes from',
-          onclick: () => api('gitBranches').then(({ repos, branches }) => ask({
-            title: `Open ${v.name} in VS Code?`,
-            plain: [
-              `It sets up a workspace on ${v.name} holding ${repos.length ? repos.join(', ') : 'the workspace repositories'}, all on one branch, pointed back here.`,
-              'Pick a branch to carry on with, or type a name to start new work.',
-              'Nothing lands on a default branch: the branch is cut here first and the machine arrives with it already checked out.',
-              // Asked once, and said so while it is still a free choice. After
-              // this the machine is on that branch until it is rolled back to a
-              // point from before it, which is the only way off.
-              `${v.name} stays on whichever you pick until it goes back to a snapshot from before it.`,
-              'Then a new window opens on it; this one is not replaced.'
-            ],
-            fields: [
-              {
-                name: 'existing',
-                label: branches.length ? 'Carry on with' : 'No branches yet — type one below',
-                value: '',
-                options: [
-                  { value: '', label: branches.length ? '— start a new one —' : 'none yet' },
-                  ...branches.map(b => ({
-                    value: b.name,
-                    // What a name means is which repositories are on it, so that
-                    // is said here rather than discovered after picking.
-                    label: b.missing.length ? `${b.name} — in ${b.in.join(', ')}` : `${b.name} — all of them`
-                  }))
-                ]
-              },
-              { name: 'fresh', label: 'Or a new branch', placeholder: 'fix/the-thing' }
-            ],
-            confirm: 'Set it up and open it',
-            onYes: async f => {
-              const branch = f.fresh.trim() || f.existing
-              if (!branch) throw new Error('Pick a branch to carry on with, or type a name for a new one.')
+          onclick: () => api('gitBranches').then(({ repos, branches }) => {
+            // Two questions, kept apart, because the way out of each is
+            // different. A branch may not be AVAILABLE -- protected, or another
+            // machine has it -- and then the answer is to pick another one. Or
+            // it may not be RECLAIMABLE, meaning a checkout here has uncommitted
+            // work in it, and then the answer is in that working tree and this
+            // choice was fine.
+            const open = branches.filter(b => b.usable)
+            const taken = branches.filter(b => !b.available)
+            const stuck = branches.filter(b => b.available && !b.reclaimable)
 
-              showTab('live')
-              // Two calls, because they fail differently and only one of them is
-              // slow: setting up clones over the network, opening does not. If
-              // the setup fails there is nothing worth opening, and the reason is
-              // in the log rather than behind an editor window.
-              const w = await api('vmWorkspace', { name: v.name, branch })
-              const r = await api('vmEditor', { name: v.name })
-              say(`${v.name} is on ${w.branch} — VS Code opened ${r.opened}`)
-            }
-          })).catch(oops)
+            return ask({
+              title: `Open ${v.name} in VS Code?`,
+              plain: [
+                `It sets up a workspace on ${v.name} holding ${repos.length ? repos.join(', ') : 'the workspace repositories'}, all on one branch, pointed back here.`,
+                'Pick a branch to carry on with, or type a name to start new work.',
+                'Nothing lands on a default branch: the branch is cut here first and the machine arrives with it already checked out.',
+                // Asked once, and said so while it is still a free choice. After
+                // this the machine is on that branch until it is rolled back to a
+                // point from before it, which is the only way off.
+                `${v.name} stays on whichever you pick until it goes back to a snapshot from before it.`,
+                // What is missing from the list, and why -- otherwise a branch
+                // somebody knows exists is simply absent, which reads as a bug.
+                ...taken.map(b => b.protected
+                  ? `${b.name} is not offered: it is the default branch, and work is merged into it here rather than done on it.`
+                  : `${b.name} is not offered: ${b.heldBy} is working on it.`),
+                // Said differently on purpose. This one is not about the branch
+                // at all -- it is available, and something in a working tree
+                // here is in the way of using it.
+                ...stuck.map(b => `${b.name} is free, but ${b.blocked.join(' ')}`),
+                'Then a new window opens on it; this one is not replaced.'
+              ],
+              fields: [
+                {
+                  name: 'existing',
+                  label: open.length ? 'Carry on with' : 'Nothing to carry on with — type a name below',
+                  value: '',
+                  options: [
+                    { value: '', label: open.length ? '— start a new one —' : 'none available' },
+                    ...open.map(b => ({
+                      value: b.name,
+                      // What a name means is which repositories are on it, so
+                      // that is said here rather than discovered after picking.
+                      label: b.missing.length ? `${b.name} — in ${b.in.join(', ')}` : `${b.name} — all of them`
+                    }))
+                  ]
+                },
+                { name: 'fresh', label: 'Or a new branch', placeholder: 'fix/the-thing' }
+              ],
+              confirm: 'Set it up and open it',
+              onYes: async f => {
+                const branch = f.fresh.trim() || f.existing
+                if (!branch) throw new Error('Pick a branch to carry on with, or type a name for a new one.')
+
+                showTab('live')
+                // Two calls, because they fail differently and only one of them
+                // is slow: setting up clones over the network, opening does not.
+                // If the setup fails there is nothing worth opening, and the
+                // reason is in the log rather than behind an editor window.
+                const w = await api('vmWorkspace', { name: v.name, branch })
+                const r = await api('vmEditor', { name: v.name })
+                say(`${v.name} is on ${w.branch} — VS Code opened ${r.opened}`)
+              }
+            })
+          }).catch(oops)
         }),
 
     v.live && !v.baseSnapshot
@@ -731,20 +752,34 @@ async function drawOnce () {
     : 'no machines yet')
 
   const gone = latest.vms.filter(v => !v.live)
-  $('trouble').classList.toggle('hidden', !gone.length)
-  if (changed('trouble', [!!status.virtualbox, gone.map(v => v.name)])) {
-    fill($('trouble'), gone.map(v => el('div', {},
-      el('strong', { textContent: `${v.name} is in this list but VirtualBox has no such machine. ` }),
-      el('span', { textContent: 'It was deleted elsewhere, or never finished being made. Delete it here to tidy up.' }))))
+  // Only the dirty ones. A repository sitting on a review branch with nothing
+  // uncommitted is stepped off automatically the moment the branch is needed, so
+  // saying anything about it would be noise about something already handled.
+  const stuck = (status.repos || []).filter(r => !r.clean)
 
-    if (!status.virtualbox) {
-      $('trouble').classList.remove('hidden')
-      fill($('trouble'), el('div', {},
-        el('strong', { textContent: 'VirtualBox was not found. ' }),
-        el('span', { textContent: 'Nothing here can make or start a machine until it is installed.' })))
-    }
-  } else if (!status.virtualbox) {
-    $('trouble').classList.remove('hidden')
+  // Everything the banner can say, built as one list rather than three
+  // conditionals. The previous version wrote the machines in and then, if
+  // VirtualBox was missing, REPLACED them -- so the more serious problem hid the
+  // other one instead of joining it.
+  const trouble = [
+    !status.virtualbox
+      ? ['VirtualBox was not found. ', 'Nothing here can make or start a machine until it is installed.']
+      : null,
+    ...gone.map(v => [
+      `${v.name} is in this list but VirtualBox has no such machine. `,
+      'It was deleted elsewhere, or never finished being made. Delete it here to tidy up.'
+    ]),
+    ...stuck.map(r => [
+      `${r.repo} is on "${r.on}" here with uncommitted changes. `,
+      `A machine working on "${r.on}" cannot push while that is true, and its own error will not say why. Commit or discard them, or put ${r.repo} back on ${r.home}.`
+    ])
+  ].filter(Boolean)
+
+  $('trouble').classList.toggle('hidden', !trouble.length)
+  if (changed('trouble', trouble)) {
+    fill($('trouble'), trouble.map(([bold, rest]) => el('div', {},
+      el('strong', { textContent: bold }),
+      el('span', { textContent: rest }))))
   }
 
   paintVms()

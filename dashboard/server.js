@@ -47,7 +47,12 @@ const actions = {
       started,
       port,
       virtualbox: vbox.available() ? vbox.exe() : null,
-      mine: vms.read().length
+      mine: vms.read().length,
+      // Repositories left somewhere other than their default branch. Carried on
+      // the poll because a dirty one will refuse a push whose owner cannot
+      // possibly explain it, and the operator should meet that here rather than
+      // as a machine's confusing failure an hour later.
+      repos: (() => { try { return branches.blocking() } catch { return [] } })()
     })
   },
   actions: {
@@ -287,9 +292,32 @@ const actions = {
 
   // Every branch across the workspace, so a machine can be pointed at work that
   // already exists instead of a name being typed twice and spelled differently.
+  // The join between branches and machines happens here, not in repos/, which
+  // knows nothing about machines and should not start.
   gitBranches: {
-    about: 'Every branch across the workspace repositories, and which have each',
-    run: () => branches.all()
+    about: 'Every branch across the workspace repositories, which have each, and which are taken',
+    run: () => {
+      const all = branches.all()
+      const mine = vms.read()
+      return {
+        ...all,
+        branches: all.branches.map(b => {
+          const held = mine.find(v => v.branch === b.name)
+          const available = !b.protected && !held
+          return {
+            ...b,
+            heldBy: held ? held.name : null,
+            // Two questions, answered separately. `available` is whether this
+            // branch may be worked on at all; `reclaimable` is whether the host
+            // can get out of its way. Both must hold to use it, but they fail
+            // for different reasons and are fixed in different places, so
+            // `usable` is offered as well rather than instead.
+            available,
+            usable: available && b.reclaimable
+          }
+        })
+      }
+    }
   },
 
   // Lay out a machine's workspace: every repository, on one branch, pointed back
@@ -331,8 +359,36 @@ const actions = {
       if (why) throw new Error(why)
       const on = (asked || vm.branch).trim()
 
+      // One machine per branch.
+      //
+      // Two machines on one branch push to the same ref, so the second one to
+      // finish is refused as a non-fast-forward -- and its commits are then
+      // stranded: real work, on a branch it may push, that cannot land without a
+      // merge nobody asked for. That is the same "neither finished nor lost"
+      // state that moving a machine between branches produced, arriving by a
+      // different door.
+      //
+      // A branch is therefore CLAIMED by the machine set up on it, and released
+      // when that machine is rolled back to a point before it. Two runners on
+      // one task deliberately is a real thing to want, but it wants two branch
+      // names, not one branch and a race.
+      const held = vms.read().find(v => v.name !== name && v.branch === on)
+      if (held) {
+        throw new Error(`"${on}" is already being worked on by "${held.name}". Two machines on one branch race for the same ref and the loser's commits strand. Pick another branch, or roll "${held.name}" back to a point before it.`)
+      }
+
       const found = repos.list()
       if (!found.length) throw new Error(`There are no repositories in ${repos.DIR} to set up.`)
+
+      // If a repository here is sitting on this branch from a review, step it
+      // back onto its default so the machine can use it. Only when that working
+      // tree is clean -- otherwise it says whose work is in the way and stops,
+      // rather than this app deciding that a machine matters more than whatever
+      // somebody left half-done.
+      for (const f of branches.freeEverywhere(on)) {
+        if (f.busy) throw new Error(f.why)
+        if (f.freed) log.on('vm', name).info(`${f.repo} was on ${f.from} here; moved it back to ${f.to} so ${name} can use it`)
+      }
 
       const cut = branches.ensure(on)
       const made = cut.filter(c => c.created)
@@ -575,6 +631,39 @@ function gitRoute (req, res, url) {
         .end('no branch is recorded for this machine.\nset it up on a branch from the dashboard, then push again.\nnothing was taken - your commits are still on your own copy.\n')
       return
     }
+    // Checked again at the push, and not only when the machine was set up.
+    // A machine set up before this rule existed still carries whatever branch it
+    // was given, and a branch can become protected afterwards -- checking one
+    // out on the host is enough. The recorded permission is therefore not
+    // evidence on its own; it is re-read against the rule every time it is used.
+    const guarded = branches.whyProtected(who.branch)
+    if (guarded) {
+      log.on('git', who.name).warn(`${who.name} tried to push ${who.branch}, which is protected`)
+      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+        .end(`refused: ${who.branch} is protected and cannot be pushed to.\nnothing was taken - your commits are still on your own copy.\n`)
+      return
+    }
+
+    // Git refuses a push to a branch that is checked out, so a review left open
+    // here would fail the machine's push for a reason that has nothing to do
+    // with the machine -- and say so in terms of a configuration variable. If
+    // that checkout is clean it is worth nothing, so this steps off it. If it is
+    // not, the push is refused naming the work that is in the way, which is the
+    // one thing the machine's own error could never have said.
+    try {
+      for (const f of branches.freeEverywhere(who.branch)) {
+        if (f.busy) {
+          log.on('git', who.name).warn(f.why)
+          res.writeHead(409, { 'content-type': 'text/plain; charset=utf-8' })
+            .end(`refused: ${f.why}\nnothing was taken - your commits are still on your own copy.\n`)
+          return
+        }
+        if (f.freed) log.on('git', who.name).info(`${f.repo} was on ${f.from} here; moved it back to ${f.to} so the push can land`)
+      }
+    } catch (e) {
+      log.on('git', who.name).warn(`could not clear the way for ${who.branch}: ${e.message}`)
+    }
+
     env.OKC_ALLOW_BRANCH = who.branch
     env.OKC_MACHINE = who.name
   }
