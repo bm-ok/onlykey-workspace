@@ -136,7 +136,28 @@ const actions = {
     }
   },
   vmStart: { about: 'Start a virtual machine', takes: ['name', 'type'], run: ({ name, type }) => { vms.get(name); return busy.during(name, 'being started', () => vbox.start(name, type === 'headless' ? 'headless' : 'gui')) } },
-  vmStop: { about: 'Shut a virtual machine down, or pull its power', takes: ['name', 'force'], run: ({ name, force }) => { vms.get(name); return busy.during(name, 'being shut down', () => vbox.stop(name, !!force)) } },
+  // The session is dropped here, not left to time out.
+  //
+  // A machine whose power is pulled sends no FIN, so its socket looks perfectly
+  // healthy for the seventy seconds it takes silence to be noticed -- and in that
+  // window it is listed as connected, commands are dispatched to it, and they
+  // hang until the timeout. That is the same fault the README records about a
+  // destroyed machine, arriving by a path that had no `drop` in it: vmRemove had
+  // one and this did not.
+  //
+  // Dropped before the stop rather than after, because after is a race with how
+  // long VirtualBox takes.
+  vmStop: {
+    about: 'Shut a virtual machine down, or pull its power',
+    takes: ['name', 'force'],
+    run: ({ name, force }) => {
+      vms.get(name)
+      return busy.during(name, 'being shut down', () => {
+        channel.drop(name, force ? 'had its power pulled' : 'was asked to shut down')
+        return vbox.stop(name, !!force)
+      })
+    }
+  },
   vmInfo: { about: 'Everything VirtualBox knows about one machine', takes: ['name'], run: ({ name }) => { vms.get(name); return vbox.info(name) } },
 
   // A picture of what a machine has on screen.
@@ -247,6 +268,12 @@ const actions = {
     run: ({ name, title }) => busy.during(name, 'being restored', async () => {
       const vm = vms.get(name)
       if (!await vbox.isOff(name)) throw new Error('Shut the machine down first — VirtualBox will not restore a snapshot while it is running.')
+      // The disk is about to become a different disk, so whatever session is
+      // recorded for this machine describes something that will not exist in a
+      // moment. A machine stopped by pulling its power leaves one that looks
+      // healthy for over a minute, and a command sent into that window is
+      // dispatched to a socket nobody is on the other end of.
+      channel.drop(name, 'was rolled back to a snapshot')
       await vbox.restoreSnapshot(name, title)
 
       // The disk went back, so what this machine is allowed to push has to go
