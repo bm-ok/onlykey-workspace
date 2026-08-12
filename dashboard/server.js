@@ -578,6 +578,20 @@ const actions = {
     }
   },
 
+  // The only action that answers forever instead of once.
+  //
+  // An install is twenty-five minutes of silence and then everything at once, so
+  // asking repeatedly either misses it or spends the whole time asking. `stream`
+  // rather than `run` is what tells the socket to stay open; it is in this table
+  // like everything else, because this table is what says an action exists and
+  // one kept somewhere else would be missing from `okc` with no arguments.
+  logWatch: {
+    about: 'Follow the live log as it happens, until you stop it',
+    takes: ['since'],
+    stream: from => log.since(from || 0),
+    subscribe: log.subscribe
+  },
+
   logClear: { about: 'Empty the live log', run: () => { log.clear(); return { cleared: true } } }
 }
 
@@ -823,6 +837,10 @@ function handler (req, res) {
       res.end(JSON.stringify(obj))
     }
     if (!action) return send(404, { error: `No action called "${name}"`, actions: Object.keys(actions) })
+    // A streaming action has no single answer to put in a response body. Said
+    // rather than left to fail as `action.run is not a function`, which is this
+    // app's internals arriving where somebody asked a question.
+    if (!action.run) return send(400, { error: `"${name}" streams rather than answers once. Follow it over the local socket instead: node tools/okc.js ${name}` })
 
     // GET is allowed for reading, so the boot page and curl can ask without
     // constructing a body.

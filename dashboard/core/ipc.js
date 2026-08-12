@@ -95,6 +95,19 @@ async function answer (line, socket, actions, log) {
     return say(socket, { id: req.id ?? null, ok: false, error: `No action called "${req.action}"` })
   }
 
+  // One action answers forever instead of once.
+  //
+  // Everything else here is a question with an answer, which is the right shape
+  // for nearly all of it. Watching is not: an install is twenty-five minutes of
+  // nothing followed by everything at once, and asking repeatedly either misses
+  // it or spends the whole time asking. So this one keeps the socket and pushes.
+  //
+  // It stays in the actions table -- with `stream` instead of `run` -- because
+  // the table is what says an action exists. An action handled somewhere else
+  // and left out of it would be invisible to `okc` with no arguments, which is
+  // the one place anybody looks to find out what there is.
+  if (action.stream) return follow(req, socket, action)
+
   try {
     const result = await action.run(req.args || {})
     say(socket, { id: req.id ?? null, ok: true, result })
@@ -108,6 +121,34 @@ async function answer (line, socket, actions, log) {
 
 const say = (socket, obj) => { try { socket.write(JSON.stringify(obj) + '\n') } catch { /* gone */ } }
 
+// Everything already logged, then everything from here on.
+//
+// Both halves matter. Only the new ones and a watcher started a second late
+// misses the line it was started for; only the old ones and it is a poll wearing
+// a different name. The caller says where to carry on from with `since`, so a
+// watcher that reconnects does not repeat what it already showed.
+//
+// Unsubscribed when the socket goes, and not before -- a listener left attached
+// to a closed socket is a leak that grows every time somebody presses ctrl-c.
+function follow (req, socket, action) {
+  const from = Number((req.args || {}).since || 0)
+  const seen = new Set()
+
+  const send = entry => {
+    if (seen.has(entry.id)) return
+    seen.add(entry.id)
+    say(socket, { id: req.id ?? null, ok: true, event: entry })
+  }
+
+  for (const entry of action.stream(from)) send(entry)
+  const stop = action.subscribe(send)
+
+  const done = () => { try { stop() } catch { /* already gone */ } }
+  socket.on('close', done)
+  socket.on('error', done)
+  socket.on('end', done)
+}
+
 // ---- the client ------------------------------------------------------
 
 // Talks to a dashboard that is ALREADY RUNNING, and says so when there is not
@@ -117,27 +158,41 @@ const say = (socket, obj) => { try { socket.write(JSON.stringify(obj) + '\n') } 
 // registry of dialled-in machines, so every machine would report as not
 // connected while sitting there connected to the real one -- an answer that is
 // confidently wrong rather than missing.
-function call (action, args = {}, { timeout = 15 * 60 * 1000 } = {}) {
+function call (action, args = {}, { timeout = 15 * 60 * 1000, onEvent } = {}) {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection({ path: ADDRESS })
     let buf = ''
-    const timer = setTimeout(() => {
-      socket.destroy()
-      reject(new Error(`"${action}" did not answer within ${Math.round(timeout / 1000)}s.`))
-    }, timeout)
+    // A watch has no answer to wait for, so nothing to time out. Anything else
+    // does, and a caller left hanging on a dashboard that stopped replying is
+    // worse than one told it gave up.
+    const timer = onEvent
+      ? null
+      : setTimeout(() => {
+          socket.destroy()
+          reject(new Error(`"${action}" did not answer within ${Math.round(timeout / 1000)}s.`))
+        }, timeout)
 
-    const finish = (fn, value) => { clearTimeout(timer); socket.end(); fn(value) }
+    const finish = (fn, value) => { if (timer) clearTimeout(timer); socket.end(); fn(value) }
 
     socket.on('connect', () => socket.write(JSON.stringify({ id: 1, action, args }) + '\n'))
     socket.on('data', chunk => {
       buf += chunk
-      const cut = buf.indexOf('\n')
-      if (cut < 0) return
-      let reply
-      try { reply = JSON.parse(buf.slice(0, cut)) } catch { return finish(reject, new Error('the dashboard sent something that was not JSON')) }
-      if (reply.ok) finish(resolve, reply.result)
-      else finish(reject, Object.assign(new Error(reply.error || 'it refused, and did not say why'), { refused: true }))
+      let cut
+      while ((cut = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, cut)
+        buf = buf.slice(cut + 1)
+        if (!line.trim()) continue
+
+        let reply
+        try { reply = JSON.parse(line) } catch { return finish(reject, new Error('the dashboard sent something that was not JSON')) }
+
+        if (!reply.ok) return finish(reject, Object.assign(new Error(reply.error || 'it refused, and did not say why'), { refused: true }))
+        // A stream keeps going; a question is answered once and done.
+        if (onEvent && 'event' in reply) onEvent(reply.event)
+        else return finish(resolve, reply.result)
+      }
     })
+    socket.on('close', () => { if (onEvent) finish(resolve, { watched: true }) })
     socket.on('error', err => {
       clearTimeout(timer)
       const missing = err.code === 'ENOENT' || err.code === 'ECONNREFUSED'

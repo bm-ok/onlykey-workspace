@@ -109,6 +109,25 @@ async function main () {
   }
 
   try {
+    // Asked of the dashboard rather than kept in a list here, so a streaming
+    // action added later needs nothing changed in this file.
+    const { actions: known } = await ipc.call('actions')
+    const streams = known.some(a => a.name === action && /^Follow /.test(a.about || ''))
+
+    if (streams) {
+      // Printed as it arrives and never buffered: the entire point is watching
+      // something happen, and a line held back until the end is a line that
+      // arrived too late to be worth anything.
+      await ipc.call(action, args, {
+        onEvent: e => {
+          if (asJson) return console.log(JSON.stringify(e))
+          const tags = (e.tags || []).join(' ')
+          console.log(`${e.at.slice(11, 19)}  ${String(e.level).padEnd(5)}  ${tags.padEnd(18)}  ${e.text}`)
+        }
+      })
+      return 0
+    }
+
     show(await ipc.call(action, args), asJson)
     return 0
   } catch (e) {
