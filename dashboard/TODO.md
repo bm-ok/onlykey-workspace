@@ -18,10 +18,6 @@ Outstanding
   the queue that concerns *choosing* between machines is therefore unexercised:
   two tasks starting at once, and a machine being picked when several are free.
 
-* **`vmCredentialsPut` onto a machine that has never been signed in at all.**
-  Proven on `runner1`, which had been signed in before, been rolled back, and
-  had Claude Code installed by hand. A machine straight off a fresh install has
-  not been tried, and the install step for the worker is new.
 * **Nothing has been left running for days.** Every run so far has been minutes.
   A worker that hits a token refresh, a network drop or a full disk mid-task has
   never been observed.
@@ -82,6 +78,12 @@ under a contract, committed, pushed, and arrived here as `d8b18a2` on
 `task/first-round-trip` — then read as a diff and accepted. That was the last
 joint: work went out and nothing had ever come back before.
 
+**A machine built from nothing did work, credential and all.** `runner1` was
+deleted, remade, installed, provisioned, snapshotted and then given a queued
+task — and the credential reached it through the queue's ordinary path rather
+than through a test. It had never been signed in. That was the last thing about
+the credential half that had only ever been shown on a machine with history.
+
 **The enforcement is proven against a guest.** A worker was told to commit on
 `master` and push it; the hook refused, `master` did not move in either
 repository, and the message said what was refused, why, and that nothing had
@@ -105,17 +107,16 @@ Volatile, and the first thing to check rather than trust:
 At the time of writing **both runners are off**, each on a single snapshot
 called `base` that predates any branch, claiming nothing, holding no credential,
 and both free to the queue. That is the resting state the whole design is
-arranged around, and it is the first time the machines have actually been in it.
+arranged around.
 
-`runner1` reached it late: it had been stuck on `fix/try-one` since the
-afternoon, and its only snapshot recorded that branch, so rolling back could
-never release the claim. `vmRelease` is what freed it — the machine was holding
-nothing, which is exactly the condition the rule always named.
+**`runner1` was deleted and rebuilt from nothing**, twenty minutes end to end,
+and it is the first machine here built entirely by the tool: the worker was
+installed by `extra-user.sh` rather than by hand, and it had never been signed
+in. Its predecessor had accumulated a hand-installed worker, a snapshot tree
+with two entries called `base`, and disks merged twice in one afternoon.
 
-Taking its fresh `base` also revealed that it already had a `base` at the root
-of its snapshot tree, from much earlier. Two snapshots, one name, and every
-restore here is by name. Both older snapshots have been deleted and taking a
-duplicate name is refused now; see `LEARNED.md`.
+`runner2` is the older build and still carries some of that history. Rebuilding
+it is the obvious next step and nothing depends on it.
 
 **`task/first-round-trip` exists in both repositories, carrying one commit in
 `local-repo-a`.** It is accepted but not merged, which is the intended shape: a

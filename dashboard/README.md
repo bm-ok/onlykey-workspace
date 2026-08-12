@@ -865,6 +865,3 @@ ordinary user. What follows is what is still not proven.
   branch claim, the hook, the refusal to touch the default branch — is proven
   from this host. A task that produces a commit and pushes it back, which is
   what all of it is for, has not been run.
-* **A credential has only been restored to a machine that had had one before.**
-  `runner1` was signed in, rolled back, and had its worker installed by hand. A
-  machine straight off a fresh install has not been tried.
