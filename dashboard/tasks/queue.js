@@ -94,7 +94,29 @@ async function tick (actions, log) {
       // Claimed synchronously, before any await, so two ticks cannot hand the
       // same machine to two tasks.
       busyWith.set(next.name, `#${task.number}`)
-      run(actions, log, task, next.name).catch(e => log.on('queue', next.name).bad(e.message))
+      run(actions, log, task, next.name).catch(async e => {
+        log.on('queue', next.name).bad(`#${task.number} — ${e.message}`)
+        // A task whose setup failed has to LAND somewhere.
+        //
+        // It threw before it could be marked done, so it stayed in `given` for
+        // ever: not queued, so nothing would pick it up; not done, so the board
+        // showed it working with no worker anywhere; and on the next restart the
+        // queue would adopt it and put its machine away all over again.
+        //
+        // Marked done rather than re-queued, deliberately. The attempt happened
+        // and produced nothing, which is a true and useful thing to see -- and a
+        // task that re-queues itself onto a machine that just failed to boot
+        // does that for ever, quietly, with nobody deciding anything.
+        try {
+          await actions.taskUpdate.run({
+            id: task.id,
+            task: {
+              state: 'done',
+              attempts: [...(task.attempts || []), { machine: next.name, at: new Date().toISOString(), failed: e.message }]
+            }
+          })
+        } catch { /* the log already carries it */ }
+      })
     }
   } finally {
     running = false
@@ -106,6 +128,21 @@ async function tick (actions, log) {
 async function run (actions, log, task, machine) {
   const to = log.on('queue', machine)
   const id = task.id
+
+  // How long each part took, kept with the attempt.
+  //
+  // A total is nearly useless for finding a fault: "the task took nine minutes"
+  // says nothing about whether the machine took eight of them to boot. These are
+  // the numbers that make a slow step visible afterwards, when nobody was
+  // watching the log at the time -- which is most of the time, since the point of
+  // a queue is being able to walk away from it.
+  const spent = {}
+  const began = Date.now()
+  const phase = async (name, fn) => {
+    const at = Date.now()
+    try { return await fn() } finally { spent[name] = Date.now() - at }
+  }
+
   try {
     to.info(`#${task.number} "${task.title}" -> ${machine}`)
     await actions.taskUpdate.run({ id, task: { state: 'given', machine } })
@@ -116,11 +153,11 @@ async function run (actions, log, task, machine) {
     // would work and only this one is honest: a machine cleaned "afterwards" is
     // clean only if the last thing that touched it finished properly, and the
     // interesting failures are exactly the ones that did not.
-    await bringUp(actions, to, machine)
+    await phase('bringUp', () => bringUp(actions, to, machine))
 
     // --- give it the work -------------------------------------------------
-    await actions.vmCredentialsPut.run({ name: machine })
-    await actions.vmWorkspace.run({ name: machine, branch: task.branch, folder: task.folder || undefined })
+    await phase('credential', () => actions.vmCredentialsPut.run({ name: machine }))
+    await phase('workspace', () => actions.vmWorkspace.run({ name: machine, branch: task.branch, folder: task.folder || undefined }))
     const started = await actions.vmDispatch.run({
       name: machine,
       task: task.brief,
@@ -138,7 +175,7 @@ async function run (actions, log, task, machine) {
     })
 
     // --- wait for it ------------------------------------------------------
-    const outcome = await waitForRun(actions, to, machine, started.run)
+    const outcome = await phase('work', () => waitForRun(actions, to, machine, started.run))
 
     // Pulled across before the machine is touched again. taskProgress does this
     // too, but that only happens if somebody looks -- and this machine is about
@@ -152,9 +189,17 @@ async function run (actions, log, task, machine) {
     // arrived is read from the branch, and stays a separate question -- a task
     // can be done and have delivered nothing, which is exactly what a worker
     // that was refused by the hook looks like.
-    await actions.taskUpdate.run({ id, task: { state: 'done' } })
+    spent.total = Date.now() - began
+    const latest = (await actions.tasks.run({})).tasks.find(t => t.id === id)
+    const marked = (latest.attempts || []).map(a => a.run === started.run ? { ...a, spent } : a)
+    await actions.taskUpdate.run({ id, task: { state: 'done', attempts: marked } })
+
     to[art.delivered ? 'good' : 'warn'](
       `#${task.number} done — ${outcome.state}${outcome.exit === undefined ? '' : ` (exit ${outcome.exit})`} — ${art.summary}`)
+    // Said as one line rather than left in the record, because the record is
+    // read when somebody already suspects something; this is what tells them to.
+    to.info(`#${task.number} took ${secs(spent.total)} — ${Object.entries(spent)
+      .filter(([k]) => k !== 'total').map(([k, v]) => `${k} ${secs(v)}`).join(', ')}`)
   } finally {
     // ALWAYS, and in this order. A machine left on, holding a credential, is
     // the failure that costs something: the credential outlives the task in a
@@ -172,17 +217,34 @@ async function bringUp (actions, to, machine) {
   if (before.running) {
     to.info('shutting it down so it can be made clean')
     await actions.vmStop.run({ name: machine, force: true })
-    await settle(actions, machine, v => !v.running, 120000, 'it to stop')
+    await settle(actions, to, machine, v => !v.running, 120000, 'it to stop', 15000)
   }
 
-  to.info(`rolling back to "${before.baseSnapshot}"`)
-  await actions.vmSnapshotRestore.run({ name: machine, title: before.baseSnapshot })
+  // Rolled back only if it is not already there.
+  //
+  // putAway leaves a machine ON its base snapshot precisely so it is clean for
+  // the next task, and this then restored the same snapshot again five seconds
+  // later -- the same operation twice, back to back, on a machine VirtualBox had
+  // only just finished restoring. That is the shape of a race, and it produced
+  // one: a machine that started to a black screen and never booted.
+  //
+  // The check is cheap and the skip is safe: `current` is what VirtualBox says
+  // the machine is sitting on, not what this app believes.
+  const at = await actions.vmSnapshots.run({ name: machine })
+  if (at.current === before.baseSnapshot && !before.running) {
+    to.info(`already clean at "${before.baseSnapshot}"`)
+  } else {
+    to.info(`rolling back to "${before.baseSnapshot}"`)
+    await actions.vmSnapshotRestore.run({ name: machine, title: before.baseSnapshot })
+  }
 
   to.info('starting it')
   await actions.vmStart.run({ name: machine })
   // Started is not ready. Everything that talks to a guest refuses until it has
-  // dialled in, and a machine boots for a minute or two.
-  await settle(actions, machine, v => v.connected, 6 * 60000, 'it to dial in')
+  // dialled in, and a machine boots for a minute or two -- so this is the step
+  // most worth counting out loud, and the one that was silent for five minutes
+  // while a machine sat at a cursor.
+  await settle(actions, to, machine, v => v.connected, 6 * 60000, 'it to dial in', 60000)
 }
 
 // Back to its natural state: off, clean, holding nothing.
@@ -202,10 +264,27 @@ async function putAway (actions, log, machine) {
     await actions.vmCredentialsForget.run({ name: machine })
   } catch (e) { to.info(`its credential was already gone: ${e.message}`) }
 
+  // The button first, then the plug.
+  //
+  // `vmStop` presses the ACPI power button, which is right for a machine with an
+  // operating system on it and useless for one that never got that far -- there
+  // is nothing running to receive the press. A machine that failed to boot
+  // therefore sat "running" for the whole timeout and was then rolled back while
+  // still running, which fails too, and the machine stayed out of the pool.
+  //
+  // Waiting a short time and then pulling the plug is safe HERE in a way it
+  // would not be elsewhere: this machine is about to be rolled back to a
+  // snapshot, so an unfinished write is discarded either way.
   try {
     await actions.vmStop.run({ name: machine })
-    await settle(actions, machine, v => !v.running, 120000, 'it to stop')
-  } catch (e) { to.warn(`could not shut it down: ${e.message}`) }
+    await settle(actions, to, machine, v => !v.running, 45000, 'it to shut down', 15000)
+  } catch {
+    to.warn('it did not answer the power button; pulling the plug')
+    try {
+      await actions.vmStop.run({ name: machine, force: true })
+      await settle(actions, to, machine, v => !v.running, 60000, 'it to stop', 5000)
+    } catch (e) { to.warn(`could not stop it at all: ${e.message}`) }
+  }
 
   // ROLLED BACK AT REST, and this is what makes the pool work at all.
   //
@@ -234,14 +313,62 @@ async function putAway (actions, log, machine) {
 
 const wait = ms => new Promise(r => setTimeout(r, ms))
 
-async function settle (actions, machine, ok, timeout, what) {
-  const deadline = Date.now() + timeout
-  for (;;) {
-    const vm = (await actions.vmList.run({})).vms.find(v => v.name === machine)
-    if (vm && ok(vm)) return vm
-    if (Date.now() > deadline) throw new Error(`Waited ${Math.round(timeout / 60000)} minutes for ${what} and it did not happen`)
-    await wait(5000)
+const secs = ms => `${Math.round(ms / 1000)}s`
+
+// COUNTING OUT LOUD WHILE NOTHING HAPPENS.
+//
+// Every long step here is invisible from outside: a machine boots, or a worker
+// thinks, and the dashboard says one line at the start and one at the end. In
+// between there is no way to tell "still going" from "stuck", and the two want
+// opposite responses -- wait, or go and look. This afternoon that gap was five
+// minutes of a machine sitting at a black screen with nothing said about it.
+//
+// So a wait says how long it has been waiting, and says it louder once it has
+// gone past what the step USUALLY takes. `usual` is the interesting number, not
+// the timeout: a timeout is the point at which we give up, which is deliberately
+// generous, and a step running four times its normal length is worth knowing
+// about long before that.
+//
+// Cheap on purpose -- one line every 30 seconds, into the same live log as
+// everything else. A progress bar nobody is watching is not the point; a
+// timestamped trail somebody can read afterwards is.
+function ticking (to, what, { usual = 0, every = 30000 } = {}) {
+  const began = Date.now()
+  let said = 0
+  const timer = setInterval(() => {
+    const gone = Date.now() - began
+    if (gone - said < every) return
+    said = gone
+    if (usual && gone > usual * 2) to.warn(`still waiting for ${what} — ${secs(gone)}, and it usually takes about ${secs(usual)}`)
+    else to.info(`waiting for ${what} — ${secs(gone)}`)
+  }, 5000)
+  if (timer.unref) timer.unref()
+  return {
+    done: () => {
+      clearInterval(timer)
+      const gone = Date.now() - began
+      if (usual && gone > usual * 2) to.warn(`${what}: ${secs(gone)}, about ${Math.round(gone / usual)}x the usual ${secs(usual)}`)
+      return gone
+    }
   }
+}
+
+async function settle (actions, to, machine, ok, timeout, what, usual) {
+  const deadline = Date.now() + timeout
+  const tick = ticking(to, what, { usual })
+  try {
+    for (;;) {
+      const vm = (await actions.vmList.run({})).vms.find(v => v.name === machine)
+      if (vm && ok(vm)) return vm
+      if (Date.now() > deadline) {
+        // Named with the elapsed time as well as the limit, because "waited 6
+        // minutes" reads as a policy and "waited 6 minutes, having expected 40
+        // seconds" reads as the fault it is.
+        throw new Error(`Waited ${secs(Date.now() - deadline + timeout)} for ${what} and it did not happen${usual ? ` — it usually takes about ${secs(usual)}` : ''}`)
+      }
+      await wait(5000)
+    }
+  } finally { tick.done() }
 }
 
 // Until the run is over, however it ends.
@@ -252,17 +379,24 @@ async function settle (actions, machine, ok, timeout, what) {
 // an answer to.
 async function waitForRun (actions, to, machine, runId, hours = 6) {
   const deadline = Date.now() + hours * 3600000
-  for (;;) {
-    const { runs } = await actions.vmRuns.run({ name: machine })
-    const mine = (runs || []).find(r => r.id === runId)
-    if (mine && mine.state !== 'running') return mine
-    if (!mine) return { state: 'gone' }
-    if (Date.now() > deadline) {
-      to.warn(`giving up on ${runId} after ${hours} hours; the machine is being put away`)
-      return { state: 'abandoned' }
+  // No `usual` here, and that is the honest answer: a task is as long as the
+  // work is, and a five-minute one and a two-hour one are both ordinary. What
+  // can be said is how long it HAS been, which is what somebody deciding whether
+  // to go and look actually needs.
+  const tick = ticking(to, `${runId} to finish`, { every: 60000 })
+  try {
+    for (;;) {
+      const { runs } = await actions.vmRuns.run({ name: machine })
+      const mine = (runs || []).find(r => r.id === runId)
+      if (mine && mine.state !== 'running') return mine
+      if (!mine) return { state: 'gone' }
+      if (Date.now() > deadline) {
+        to.warn(`giving up on ${runId} after ${hours} hours; the machine is being put away`)
+        return { state: 'abandoned' }
+      }
+      await wait(15000)
     }
-    await wait(15000)
-  }
+  } finally { tick.done() }
 }
 
 // ---- picking up after a restart ---------------------------------------
@@ -279,6 +413,23 @@ async function waitForRun (actions, to, machine, runId, hours = 6) {
 // on if it is still alive, and the machine is put away either way.
 async function adopt (actions, log) {
   const { tasks } = await actions.tasks.run({})
+
+  // A task that was being SET UP when this stopped never became a run.
+  //
+  // It sat in `given` with no run id, which made it invisible to everything: the
+  // queue only looks at `queued`, adoption only looks for a run to wait on, and
+  // the board showed it working with no worker anywhere. Two of them accumulated
+  // in one afternoon, both from restarting the dashboard while a machine was
+  // booting.
+  //
+  // Put back in the queue rather than marked done, and the difference is real:
+  // nothing was dispatched, so no work happened and there is nothing to judge.
+  // Re-queueing loses nothing and re-running it is exactly what was wanted.
+  for (const t of tasks.filter(x => x.state === 'given' && !x.run)) {
+    log.on('queue').warn(`#${t.number} was being set up when this stopped, and never started — back in the queue`)
+    await actions.taskUpdate.run({ id: t.id, task: { state: 'queued', machine: null } }).catch(() => {})
+  }
+
   const midFlight = tasks.filter(t => t.state === 'given' && t.machine && t.run)
   for (const task of midFlight) {
     if (busyWith.has(task.machine)) continue
