@@ -158,6 +158,13 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   of which take the only account of what happened with them. Two rollbacks in
   one afternoon erased the logs of two runs whose results had already been
   reported, leaving a task saying work was done and nothing saying how.
+* **A pool that never fills is a pool that is never tested.** With machines to
+  spare, "queued" and "given out" are indistinguishable: every task starts at
+  once, so the ordering, the serialising and the cleanup between tasks are all
+  untried. The first queue here deadlocked after exactly one task per machine —
+  a finished machine still claimed its branch, a claimed branch is correctly
+  "not free", and from outside it looked like a queue that had simply gone
+  quiet. Nothing failed. Nothing said anything.
 * **Git Bash rewrites paths that look absolute.** `--folder /home/okc/work`
   arrives as `C:/Program Files/Git/home/okc/work`, which is a real path on this
   host, so nothing looks wrong anywhere: the machine cannot find it, falls back

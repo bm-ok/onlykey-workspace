@@ -14,6 +14,17 @@ list: not what is missing, but what is unproven.
 Outstanding
 -----------
 
+* **`runner1` can never enter the queue's pool.** Its only snapshot was taken
+  while it was already on `fix/try-one`, so rolling back does not release the
+  claim — and a machine claiming a branch is correctly never free. It needs a
+  snapshot from before any workspace existed, which means taking the credential
+  back, rolling it to that snapshot, and taking a base there; or rebuilding it.
+  The queue says why rather than skipping it silently, but it is one machine
+  doing nothing.
+* **Only one machine has ever been in the pool at a time.** Everything about
+  the queue that concerns *choosing* between machines is therefore unexercised:
+  two tasks starting at once, and a machine being picked when several are free.
+
 * **`vmCredentialsPut` onto a machine that has never been signed in at all.**
   Proven on `runner1`, which had been signed in before, been rolled back, and
   had Claude Code installed by hand. A machine straight off a fresh install has

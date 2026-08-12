@@ -83,6 +83,34 @@ held by the same machine, and the artifact showing both commits.
 **Watch the claim.** A second push onto a claimed branch is the case the claim
 exists for, and it has to succeed here while failing for a *different* machine.
 
+### 5b. The queue drains, one task at a time, through one machine
+
+**Proves the pool works when it is full**, which is the only condition under
+which a queue is a queue. With machines to spare, "queued" and "given out" are
+indistinguishable — every task starts immediately and the ordering, the
+serialising and the between-task cleanup are all untested.
+
+Queue three tasks with **one** usable machine and leave it alone.
+
+    okc.js taskQueue --id 4 ; okc.js taskQueue --id 5 ; okc.js taskQueue --id 6
+    okc.js queueState
+
+**A pass is four separate things**, and only the first is obvious:
+
+* All three finish, and none is skipped or lost.
+* They run **in order**, oldest first. The board reads newest-first and the
+  queue takes oldest-first; a drill that only checks "all three eventually
+  finished" would not notice if it were doing the newest first.
+* **One at a time.** Two tasks on one machine would race for its disk.
+* Between each, the machine goes **off, clean, and free again** — no branch, no
+  credential. If it does not, the second task never starts and nothing says why:
+  a machine that still claims a branch is correctly "not free", so the queue
+  quietly stops rather than failing.
+
+That last one is the reason this drill exists. The first version of the queue
+deadlocked after exactly one task per machine, and it looked from outside like a
+queue that had simply gone quiet.
+
 ### 4. Two runners at once
 
 **Proves the one-machine-per-branch claim under real concurrency**, rather than by
