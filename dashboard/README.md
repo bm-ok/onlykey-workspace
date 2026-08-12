@@ -502,6 +502,104 @@ reads the file itself, instead of a megabyte of base64 being carried to a caller
 that would only write it back out.
 
 
+Signing a worker in, once, for all of them
+------------------------------------------
+
+A machine that is going to do work needs a worker signed in on it, and signing
+in is a browser flow — which a machine being driven from here does not have.
+
+So the machine runs the sign-in and **this host relays it**. `vmAuthBegin`
+starts it and returns the URL; the Keys tab makes that URL clickable and opens
+it in the real browser with `nw.Shell.openExternal`; the page gives a code, and
+`vmAuthCode` hands it back. The sign-in stays alive across all of that, which is
+the part that took work: it is held open on a pty, its pid recorded, and the
+terminal escapes stripped out of everything read back from it.
+
+Doing that once per machine would be a browser flow per machine. Instead it is
+done **once**, and the result is moved:
+
+    vmCredentialsGrab   --name runner2      take it, and keep it here
+    vmCredentialsPut    --name runner1      hand it to another machine
+    vmCredentialsForget --name runner1      take it away again
+    credentialsHeld                         whether one is held, and from where
+
+Kept on this host **sealed with DPAPI**, so having the file is not enough: the
+key is derived from the logged-in account by the operating system and there is
+no key of ours stored next to it. That protects against the realistic threat —
+the file being read *somewhere else*, in a backup, a sync folder or a support
+bundle — and not against something already running as you, which nothing on a
+single-user desktop can. `credentialsHeld` reports `sealed` so the difference is
+legible rather than assumed.
+
+On the machine it is a plain file, and that is structural rather than an
+oversight: Claude Code reads it itself, as the user the worker runs as. So the
+defence is around it, in three places:
+
+* **Redacted at the boundary.** Transcripts and run output are pulled here and
+  *kept*, so a token that reaches a worker's output — an env dump, a stack
+  trace, a stray `cat` — is not a moment of exposure but a permanent filing.
+  It is cleaned on the way in, which is the only place it can be stopped.
+* **A machine holding one cannot be snapshotted.** A snapshot would keep a copy
+  for as long as the snapshot exists, outliving the task, the machine, and any
+  decision to revoke it. Both snapshot actions refuse, reading the fact from the
+  registry rather than from the machine — a snapshot is taken while the machine
+  is off, which is exactly when it cannot be asked.
+* **Nothing is passed with a task.** Dispatch carries no credential at all. An
+  environment assignment on the command that starts a run is inherited by the
+  worker and printable by it.
+
+
+Giving a machine work, and watching it do it
+--------------------------------------------
+
+    vmDispatch --name runner1 --task "..." [--folder ...] [--contract ...] [--resume ...]
+
+**Fire and forget, on purpose.** It returns a run id as soon as the work has
+started, not when it ends. A task runs for minutes or an hour; waiting for it
+would make one command look like a hang, hold the machine against anything else,
+and give no progress in the meantime. The run is detached with `nohup setsid`, so
+it outlives the connection that asked for it — the channel is how it was asked,
+not what holds it up.
+
+The worker runs with `--dangerously-skip-permissions`, which is the point rather
+than a shortcut: one that stops to ask cannot run unattended, and asking is what
+nobody is there for. It is defensible **here and nowhere else**, because of what
+this machine cannot do — it cannot reach these actions at all, may push one
+branch and no other, cannot touch the default branch, cannot rewrite or delete
+what it pushed, and is thrown away when the work is done.
+
+Each run keeps a record on the machine in `~/.okc-runs/<id>/`: the task as
+written, the script that ran, its pid, its output, and its exit status. Kept
+rather than streamed and dropped, because "what actually ran" has no other
+source — a claim in a transcript is the worker's account of itself, and the two
+diverge.
+
+    vmRuns      --name runner1              every run, newest first
+    vmRunOutput --name runner1 --run <id>   the tail of one run's raw output
+
+A run is `finished` with an exit code, `running` with a live process, or
+**`lost`** — no result, and nothing left to produce one. Three states rather than
+two because a missing status used to mean running, full stop, which is only true
+while something is alive to write one.
+
+Progress is **read**, as a delta:
+
+    vmSessions    --name runner1
+    vmSessionTail --name runner1 --session <id> --since <bookmark>
+
+`vmSessionTail` returns a `bookmark`, which is a line number in the worker's
+transcript; pass it back as `--since` and each report covers only what is new. A
+watcher that re-reads from the top spends its whole budget re-deriving what it
+already reported. It is strictly read-only, and it reports what is worth
+attention rather than everything: a read of a file is not news, a tool result is
+tens of kilobytes, and only the lines carrying a verdict come across.
+
+    vmHolds --name runner1
+
+What a machine has that this host does not: commits not pushed, files not
+committed, per repository. Nothing has landed until it is here.
+
+
 The window keeps up on its own
 ------------------------------
 
@@ -538,10 +636,14 @@ The shape
     core/ipc.js     the same actions, over a local socket, for the terminal
     core/keys.js    the certificate this host serves with, and its authority
     core/data.js    where anything produced by running goes -- outside the repo
+    core/secret.js  sealing what is worth keeping, and redacting what comes back
     tools/okc.js    the command line, generated from the actions table
     machines/
       vbox.js       VirtualBox: state, snapshots, isos, bridges, delete
       busy.js       one long operation at a time, per machine
+      auth.js       holding a browser sign-in open on a machine, on a pty
+      dispatch.js   giving a machine a task, and letting go of it
+      session.js    reading a worker's transcript back, as a delta
       vms.js        the registry of machines THIS APP MADE
       provisioner.js  make one, and install an operating system on it
       scripts.js    serves provision/*.sh with a header of values
@@ -604,3 +706,13 @@ ordinary user. What follows is what is still not proven.
   deleted within an hour. Nothing here has been left running for days, and the
   reconnect logic has only been exercised by restarting the app and rebooting a
   machine, not by a network that goes away for a long time.
+* **No dispatched worker has pushed anything.** The whole workspace half — the
+  branch claim, the hook, the refusal to touch the default branch — is proven
+  from this host. A task that produces a commit and pushes it back, which is
+  what all of it is for, has not been run.
+* **A credential has only been restored to a machine that had had one before.**
+  `runner1` was signed in, rolled back, and had its worker installed by hand. A
+  machine straight off a fresh install has not been tried.
+* **`lost` has never been observed.** The state was written from a run that
+  genuinely died, but that run predated the pid file it now depends on, so the
+  branch reporting it is reasoned rather than exercised.

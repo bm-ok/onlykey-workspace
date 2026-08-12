@@ -85,3 +85,42 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   already been taken and recorded. What it did not say was why the machine was now
   powered off. A failed operation whose real work succeeded reads as though nothing
   happened, which is the more expensive direction to be wrong in.
+* **`pkill -f` matches its own argument list.** A script that kills a pattern
+  finds itself, every time. It was fixed once by bracketing the pattern — which
+  worked, and then failed identically, because the literal appeared in *two*
+  places and only the first had been bracketed. A recorded pid and
+  `kill -- -PID` has no such failure mode. Bracketing is a trick that has to be
+  remembered everywhere; a pid is a fact.
+* **A pty returns drawing instructions, not text.** A sign-in URL scraped from
+  `script -qec` came back wrapped in OSC 8 hyperlink escapes and doubled — the
+  terminal's instructions for how to *render* a link, faithfully captured and
+  entirely unusable. Anything read from a pty is stripped before it is believed.
+* **`chmod 0600` on Windows is theatre.** It toggles the read-only bit and
+  nothing else. A credential written that way sat in plain text, protected by an
+  ACL and by nothing at rest — which is fine against another user and useless
+  against a backup, a sync folder, or a support bundle. It is sealed with DPAPI
+  now, and `sealed` reports which of the two actually happened rather than
+  implying the stronger one.
+* **The refusal that had never fired.** Snapshotting a machine that holds a
+  credential was refused in code, but the flag it reads was added after the only
+  machine holding one had already been given it — so the flag was false and the
+  first test of the refusal *created the very snapshot it exists to prevent*, and
+  reported success. A guard is not a guard until something has been refused by it.
+* **A quote inside a quoted argument ends that argument.** Every dispatched run
+  was built as `bash -c '…'` with a shell-quoted path interpolated into it, so
+  bash actually received `cd` with the remainder as positional parameters. Every
+  dispatch died instantly, leaving not even an empty output file — and a folder
+  with no spaces in it reassembled by accident, which is why it survived to the
+  first folder that had one. Generated shell goes into a file now: one layer of
+  quoting instead of three, and a record of what actually ran.
+* **A missing result is not a result that is still coming.** A run with no status
+  file was reported as running, which is true only while something is alive to
+  write one. A run that was killed — or that never started, which is how the
+  quoting bug above presented — waited forever, and a watcher waited with it.
+  Three states, and the pid is checked rather than assumed.
+* **Git Bash rewrites paths that look absolute.** `--folder /home/okc/work`
+  arrives as `C:/Program Files/Git/home/okc/work`, which is a real path on this
+  host, so nothing looks wrong anywhere: the machine cannot find it, falls back
+  to the home folder, and the work happens somewhere nobody asked for. It is
+  refused now, rather than guessed at, because guessing what was meant is how it
+  lands in a third wrong place.
