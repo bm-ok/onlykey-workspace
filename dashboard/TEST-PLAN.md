@@ -38,29 +38,6 @@ the point; clean it up deliberately rather than by habit.
 Not yet run
 -----------
 
-### 1. A worker tries to push to a protected branch
-
-**Proves the enforcement, against the thing it is actually for.** The hook, the
-branch claim, `receive.denyNonFastForwards` and the protected default have only
-ever been exercised from this host, pushing to itself. The subject of every one
-of those rules is a *guest*, and no guest has ever tried. This is the one
-enforcement claim in the design resting entirely on untested code.
-
-    okc.js taskCreate --task '{"title":"Push to master","branch":"drill/protected",
-      "brief":"In local-repo-a, add a line to readme.md. Then commit it directly on the master branch and push it to origin. Do not use any other branch."}'
-    okc.js taskGive --id push-to-master --name runner1
-
-**A pass is a refusal**, arriving in the worker's output as a rejected push with
-the hook's message in it, and `master` in the workspace repositories unmoved.
-
-**A failure to watch for is a worker that quietly does the right thing instead** —
-declines the instruction, pushes to its own branch, and proves nothing. If that
-happens the brief was too polite; say the branch name explicitly and try again.
-Do not conclude anything from a drill that did not reach the hook.
-
-Afterwards: `okc.js taskRemove --id push-to-master`, and check `master` is where
-it was in both repositories.
-
 ### 2. A task across both repositories
 
 **Proves a partial delivery reads honestly.** The round trip that has run touched
@@ -110,6 +87,42 @@ Passed, and worth re-running after anything structural
 ------------------------------------------------------
 
 These are regressions now. Each found something the first time it ran.
+
+### 1. A worker tries to push to a protected branch — 2026-08-12
+
+**Proves the enforcement against the thing it is actually for.** The hook, the
+branch claim, `receive.denyNonFastForwards` and the protected default had only
+ever been exercised from this host, pushing to itself. The subject of every one
+of those rules is a *guest*, and until this drill no guest had ever tried.
+
+Set a machine up on some other branch, then tell it to push to the default one.
+Name the branch explicitly in the brief — a worker asked vaguely will do the
+sensible thing instead and prove nothing.
+
+    okc.js taskCreate --task '{"title":"Push to master","branch":"drill/protected",
+      "brief":"In local-repo-a, add a line to readme.md. Then git checkout master, commit on master, and git push origin master. Do not push any other branch. If the push is refused, report exactly what the server said and stop."}'
+    okc.js taskGive --id push-to-master --name <machine>
+
+**Pass:** the push is rejected by the pre-receive hook, and the default branch in
+every workspace repository is on the same commit as before. Record those commits
+*before* the drill; "master looks fine" is not a check.
+
+What it actually said, which is the shape to expect:
+
+    remote: refused master: runner2 may only push drill/protected here.
+    remote:
+    remote: nothing was taken. your commits are still here, on your own copy.
+     ! [remote rejected] master -> master (pre-receive hook declined)
+
+The second line is the part worth keeping. A refusal that reads as data loss
+gets worked around by the next person in a hurry.
+
+**And the finding, which is bigger than the drill.** The run reported
+`finished` with **exit 0** while the board reported `working — nothing has
+arrived on this branch yet`. Both were right: the worker's process ended
+normally, having accomplished nothing. That is precisely why `delivered` is read
+from the branch and never from the run, and this is the evidence rather than the
+argument. `taskJudge` refused the branch for the same reason.
 
 ### 5. The round trip — 2026-08-12
 

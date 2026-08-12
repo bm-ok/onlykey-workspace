@@ -132,6 +132,13 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   in* — was one field deep in a machine's output. Now it is asked before
   anything is set up, and asked of the MACHINE rather than of the registry:
   there are three ways to be signed in and the registry knows about one.
+* **A clean exit is not a delivery.** A worker told to push to a protected branch
+  was refused by the hook, reported what happened, and its process ended
+  normally — so the run read `finished, exit 0` while nothing at all had
+  arrived. Every signal on the machine's side said success and every one of them
+  was true; the exit code is about the program, not about the work. This is why
+  `delivered` is read from the branch on this host and never from the run, and
+  the drill that proved the hook proved that at the same time.
 * **Git Bash rewrites paths that look absolute.** `--folder /home/okc/work`
   arrives as `C:/Program Files/Git/home/okc/work`, which is a real path on this
   host, so nothing looks wrong anywhere: the machine cannot find it, falls back

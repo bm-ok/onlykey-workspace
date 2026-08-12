@@ -79,6 +79,14 @@ under a contract, committed, pushed, and arrived here as `d8b18a2` on
 `task/first-round-trip` — then read as a diff and accepted. That was the last
 joint: work went out and nothing had ever come back before.
 
+**The enforcement is proven against a guest.** A worker was told to commit on
+`master` and push it; the hook refused, `master` did not move in either
+repository, and the message said what was refused, why, and that nothing had
+been taken. Every rule about pushing had until then been tested only by this
+host pushing to itself. The same drill showed a run reporting `exit 0` while
+nothing had arrived — which is exactly why `delivered` is read from the branch.
+See `TEST-PLAN.md`, drill 1.
+
 What remains beyond the list above is the "Honest gaps" section of `README.md`,
 which is a different kind of thing: what has never been tried, rather than what
 is half-built.
@@ -96,9 +104,11 @@ credential, Claude Code 2.1.228 installed, no runs left in `~/.okc-runs`, still
 recording `fix/try-one` as what it may push, with a clean `on-fix-try-one`
 snapshot taken before it ever held a credential. This is the working machine.
 
-**`runner2`** up and connected, **holding a credential again**, claiming
-`task/first-round-trip`, on a clean `base` snapshot taken while it held none.
-It did the first real task.
+**`runner2`** up and connected, holding a credential, claiming
+`drill/protected` — a branch that no longer exists here, because the drill that
+made it was cleaned up. Rolled back to `base` once already, which is what
+released its previous claim; that is the only way off a branch and it worked.
+It did the first real task and then drill 1.
 
 **`fix/try-one` no longer exists in the workspace repositories** — it was test
 debris and was deleted. `runner1` still claims the name, which is deliberate
