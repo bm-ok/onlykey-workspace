@@ -1167,9 +1167,16 @@ done`
   // having pushed nothing has produced nothing to judge.
 
   tasks: {
-    about: 'The board: every task, and whether its branch has anything on it yet',
+    about: 'The board: every task, newest first, and whether its branch has anything on it yet',
     run: () => {
-      const list = tasks.read()
+      // Newest first, and sorted HERE so the window and the command line agree.
+      // The file is append-ordered because that is how it is written; the order
+      // it should be read in is a different question, and answering it in two
+      // places is how two views of one board start disagreeing.
+      //
+      // By number rather than by a timestamp: it is the creation order by
+      // definition, it cannot tie, and it does not depend on a clock.
+      const list = [...tasks.read()].sort((a, b) => (b.number || 0) - (a.number || 0))
       return {
         tasks: list.map(t => {
           // Read per task rather than once, because each delivers on its own
