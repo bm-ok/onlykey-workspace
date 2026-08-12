@@ -10,7 +10,20 @@
 # happens: the files exist, the tool loads them, and they are simply never
 # committed, so the fresh clone the seam exists to serve gets nothing.
 /onlykey/
-/workspace/
+#
+# `/workspace/*` rather than `/workspace/`, because of the exception below. An
+# ignored DIRECTORY is never descended into, so a later `!` for something inside
+# it does nothing at all -- and does it silently. Ignoring the children instead
+# leaves the directory itself readable, so the negation can be seen.
+/workspace/*
+
+# The exception: this project's provisioning scripts, which the dashboard serves
+# on top of its own. They are the only part of the system that is ours to keep --
+# the rest of workspace/ is checkouts with their own remotes. Unversioned they
+# were also undocumented, since what they carry is the REASONING: why the memory
+# setting is needed at all, and why the USB gadget is deliberately absent so a
+# provisioning script stops reinventing it badly.
+!/workspace/provision/
 
 # Node
 node_modules/

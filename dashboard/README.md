@@ -240,11 +240,6 @@ what is still not proven.
   machine, not by a network that goes away for a long time.
 * **The window is the only interface.** `npm run headless` serves the API alone, so
   with no window there is no UI at all.
-* **The project's own scripts are not in git.** `workspace/` is ignored, so
-  `workspace/provision/*.sh` exist only on disk — including the reasoning about why
-  a memory setting is needed and why the USB gadget is deliberately absent. One
-  `.gitignore` line would keep them; until then they are the only unversioned part
-  of the system.
 
 
 What was learned the hard way
