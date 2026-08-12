@@ -28,11 +28,17 @@ say "work goes in $HOME/work"
 # Claude Code, installed for the user rather than system-wide, because node here
 # comes from nvm and a global install under nvm IS the user's.
 #
-# No credential is installed with it, deliberately. The dashboard passes one per
-# dispatch and it is never written to this machine's disk -- so a machine that is
-# deleted, snapshotted or copied takes nothing with it, and the host stays the
-# only durable holder. A key baked in here would end up in every snapshot of
-# every machine ever built from this point.
+# No credential is installed with it, deliberately -- a key baked in here would
+# end up in every snapshot of every machine ever built from this point. A
+# credential arrives later, if at all, by vmCredentialsPut, and is taken away
+# again by vmCredentialsForget.
+#
+# It does land on the machine's disk when it arrives, and that is not something
+# this script can change: Claude Code reads the file itself, as this user. What
+# is done about it is on the host side -- the dashboard records which machines
+# are holding one and REFUSES to snapshot those, because a snapshot would keep a
+# copy for as long as the snapshot exists, and it redacts anything credential-
+# shaped out of transcripts and run logs on the way back, because those are kept.
 #
 # In the PROJECT's script rather than the app's: the dashboard does not know what
 # a machine is for, and a machine that runs an agent is a choice this project

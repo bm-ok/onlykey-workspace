@@ -229,6 +229,16 @@ const restoreSnapshot = (name, snapshot) => run([
   'snapshot', name, 'restore', snapshot
 ], { tags: [name], timeout: 300000 })
 
+// Remove a snapshot, merging its disk back into the one before it.
+//
+// Long enough to need its own timeout: the merge is proportional to how much
+// changed while that snapshot was the current one, and the default would give up
+// part way through a merge -- which is the one moment a disk should not be left
+// alone.
+const deleteSnapshot = (name, title) =>
+  retrying(() => run(['snapshot', name, 'delete', title], { timeout: 900000, tags: [name] }),
+    { what: 'deleting a snapshot', tags: [name] })
+
 // ---- removing --------------------------------------------------------
 
 // Everything the VM owns, gone, media included -- otherwise practising
@@ -307,6 +317,6 @@ module.exports = {
   listAll, runningAll, info, exists, state, isOff,
   waitForState, waitUntilOff, waitUntilUnlocked,
   isos, bridges, hostAddress,
-  start, stop, screenshot, snapshots, takeSnapshot, restoreSnapshot, destroy,
+  start, stop, screenshot, snapshots, takeSnapshot, restoreSnapshot, deleteSnapshot, destroy,
   OFF_STATES
 }

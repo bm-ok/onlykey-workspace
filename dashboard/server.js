@@ -61,6 +61,26 @@ let caPort = Number(process.env.OKC_CA_PORT || 7375)
 // for. /api/actions serves this table and the window builds its own list of every
 // capability from it, so nothing can exist here without showing up there.
 
+// A snapshot of a machine holding a credential is a copy of that credential,
+// and it outlives everything: the task, the machine, and any decision to revoke
+// it. The design note this follows says it plainly -- the credential is part of
+// the task, never part of the snapshot -- and until now that was a sentence in a
+// log line rather than something that could not happen.
+//
+// READ FROM THE REGISTRY, not from the machine. A snapshot is taken while the
+// machine is OFF, which is exactly when it cannot be asked anything -- so the
+// fact is recorded when a credential is put there and cleared when it is taken
+// away, the same way the branch it may push is.
+//
+// A hard refusal rather than a warning. A warning about a secret is advice, and
+// the thing being prevented is silent and permanent.
+function refuseIfItHoldsACredential (name) {
+  const vm = vms.read().find(v => v.name === name)
+  if (vm && vm.holdsCredential) {
+    throw new Error(`"${name}" is holding a worker credential, and a snapshot would keep a copy of it for as long as the snapshot exists. Take it back first: vmCredentialsForget --name ${name}`)
+  }
+}
+
 const actions = {
   status: {
     about: 'Is the server up, and what does it have to work with',
@@ -204,6 +224,7 @@ const actions = {
       if (!await vbox.isOff(name)) {
         throw new Error('Shut the machine down first — a snapshot taken while it is running stores its memory too, which makes it enormous. "Make a clean starting point" does the shutting down for you.')
       }
+      refuseIfItHoldsACredential(name)
       await vbox.takeSnapshot(name, title.trim(), description || '')
       const vm = vms.get(name)
       vms.update(name, {
@@ -222,6 +243,7 @@ const actions = {
     takes: ['name', 'title'],
     run: ({ name, title = 'base' }) => busy.during(name, 'being snapshotted', async () => {
       const vm = vms.get(name)
+      refuseIfItHoldsACredential(name)
       const to = log.on('vm', name)
       const wasRunning = !await vbox.isOff(name)
 
@@ -263,6 +285,38 @@ const actions = {
         to.info('started again; it will dial back in shortly')
       }
       return { ...await vbox.snapshots(name), baseSnapshot: title, restarted: wasRunning }
+    })
+  },
+
+  // Throw a snapshot away.
+  //
+  // Added because a snapshot could be made and returned to but never removed --
+  // so a machine accumulated points nobody could clear, and, worse, a snapshot
+  // taken by mistake could not be undone. That is not academic: this was written
+  // immediately after taking one of a machine holding a credential, which is the
+  // one thing the refusal beside it exists to stop.
+  //
+  // The disks it owns go with it. VirtualBox merges the differencing image back
+  // into its parent rather than leaving it orphaned, which is why this can take a
+  // while on a machine with a long chain.
+  vmSnapshotDelete: {
+    about: 'Throw a snapshot away, merging its disk back',
+    takes: ['name', 'title'],
+    run: ({ name, title }) => busy.during(name, 'having a snapshot removed', async () => {
+      const vm = vms.get(name)
+      if (!title) throw new Error('Say which snapshot.')
+      await vbox.deleteSnapshot(name, title)
+
+      // What the registry recorded about it goes too, or the branch it named
+      // outlives the point it belonged to.
+      const kept = { ...(vm.snapshots || {}) }
+      delete kept[title]
+      vms.update(name, {
+        snapshots: kept,
+        baseSnapshot: vm.baseSnapshot === title ? null : vm.baseSnapshot
+      })
+      log.on('vm', name).good(`snapshot "${title}" is gone`)
+      return { ...await vbox.snapshots(name), removed: title }
     })
   },
 
@@ -760,6 +814,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
       // something stops working.
       fs.writeFileSync(path.join(dir, 'about.json'), JSON.stringify({ from: name, taken: new Date().toISOString() }, null, 2))
 
+      vms.update(name, { holdsCredential: true })
       log.on('vm', name).good('its worker credential was taken and kept on this host')
       return { from: name, kept: file, sealed, note: 'hand it to a machine with vmCredentialsPut, and take it away again with vmCredentialsForget' }
     }
@@ -788,7 +843,8 @@ chmod 600 "$HOME/.claude/.credentials.json"
 echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 60000 })
 
       if (!/okc-credential-placed/.test(r.output || '')) throw new Error(`"${name}" did not take the credential.`)
-      log.on('vm', name).warn(`${name} now holds a worker credential — take it back with vmCredentialsForget before snapshotting`)
+      vms.update(name, { holdsCredential: true })
+      log.on('vm', name).warn(`${name} now holds a worker credential — it cannot be snapshotted until that is taken back`)
       return { to: name, placed: true }
     }
   },
@@ -802,6 +858,7 @@ echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 
       const r = await channel.run(name, 'rm -f "$HOME/.claude/.credentials.json" && echo okc-credential-gone',
         { what: 'taking its worker credential away', timeout: 60000 })
       if (!/okc-credential-gone/.test(r.output || '')) throw new Error(`"${name}" still has it.`)
+      vms.update(name, { holdsCredential: false })
       log.on('vm', name).good(`${name} no longer holds a worker credential`)
       return { from: name, removed: true }
     }
@@ -878,7 +935,8 @@ echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 
       if (!run) throw new Error('Say which run.')
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
       const r = await channel.run(name, dispatch.output(run, lines), { what: `reading ${run}`, timeout: 60000 })
-      return { run, output: r.output }
+      // Same boundary as the transcript: this is kept, so it is cleaned first.
+      return { run, output: secret.redact(r.output) }
     }
   },
 

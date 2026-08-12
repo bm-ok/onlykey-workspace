@@ -18,6 +18,8 @@
 // spends its context re-deriving what it already reported -- which for an agent
 // is the whole cost, and for a long-running task is most of it.
 
+const secret = require('../core/secret')
+
 const CLIP = 200
 
 // Sent to the machine and read by node there. Fed through stdin as a heredoc so
@@ -150,7 +152,15 @@ const command = (mode, args = []) => `node - ${[mode, ...args].map(a => `'${Stri
 // it -- a motd, an nvm notice -- and a watcher that took the first line would
 // break on a machine somebody had customised.
 function answer (output) {
-  const lines = String(output || '').split('\n').map(l => l.trim()).filter(Boolean)
+  // REDACTED AT THE BOUNDARY, before anything is kept here.
+  //
+  // A worker can read its own credential -- it cannot authenticate otherwise --
+  // and it runs as the user that owns the file. So a token can reach its output
+  // through an env dump, a stack trace, or a stray `cat`, and this transcript is
+  // pulled to the host and kept. That makes it not a moment of exposure but a
+  // filing, permanently. Cleaned on the way in is the only place it can be
+  // stopped; anywhere later is after it has already been written down.
+  const lines = secret.redact(output).split('\n').map(l => l.trim()).filter(Boolean)
   for (let i = lines.length - 1; i >= 0; i--) {
     if (!lines[i].startsWith('{')) continue
     try { return JSON.parse(lines[i]) } catch { /* keep looking */ }
