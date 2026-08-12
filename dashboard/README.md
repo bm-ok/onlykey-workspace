@@ -41,6 +41,30 @@ deleted it, and confirmed its disks were gone while the two machines it does not
 own survived untouched.
 
 
+One click, then it builds itself
+--------------------------------
+
+**Make it** in the dialog does the whole thing: makes the machine and its disk,
+starts it, installs the operating system unattended, and as that finishes the
+machine fetches its own scripts from here and runs them. Progress arrives in the
+live log, from inside the machine, while it happens.
+
+    make  ->  install  ->  unattended.sh  ->  first-boot.sh
+                                          ->  toolchain.sh
+                                          ->  installs normal-boot.sh for later
+
+That is two actions, not one — make, then install — because they fail differently
+and the second is the one that takes half an hour. If the install will not start,
+the machine still exists and the button to try again is right there.
+
+**The server listens on every interface, and that is deliberate.** A guest reaches
+this host by its network address; loopback would be useless to it. So the two
+halves are split by what they can do: `/provision/*` answers anyone, because all a
+guest can do is read its own scripts and report progress, while `/api/*` — which
+can delete a machine — answers **this machine only** and returns 403 to anything
+else.
+
+
 Provisioning is four scripts, meant to be swapped
 -------------------------------------------------
 
@@ -120,10 +144,13 @@ undone, and sometimes fields. A native `confirm()` holds none of that.
 Honest gaps
 -----------
 
-* **The unattended install has not been run end to end.** Every part around it is
-  exercised; that path is not. Treat it as unproven.
-* **A bridged guest cannot reach a server bound to loopback.** Installing one
-  needs `HOST=0.0.0.0`, which puts this API on your network — a decision to make
-  on purpose, so it is not the default.
+* **No install has been watched all the way to a login prompt.** The mechanics are
+  verified: a machine is created, started, and told where to fetch its scripts; all
+  four are served over the real network address as valid shell with the right values
+  in them; and a guest's reports and output arrive in the live log. What has not
+  been sat through is the twenty-odd minutes in between.
+* **The operating system install depends on the image.** `VBoxManage unattended
+  install` drives the installer, and an image it does not understand will not
+  install unattended however correct everything here is.
 * **`toolchain.sh` installs a compiler and little else.** It is a starting point,
   not a recommendation.

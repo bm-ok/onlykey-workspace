@@ -313,9 +313,10 @@ function paintVms () {
 $('add-vm-open').onclick = () => api('vmIsos').then(isos => ask({
   title: 'Make a virtual machine',
   plain: [
-    'This makes the machine and its disk. It does not install anything yet.',
-    'Only machines made here ever appear in this list, and only they can be acted on.',
-    'Nothing else on this computer is touched.'
+    'It makes the machine and its disk, then starts it and installs the operating system on its own.',
+    'As that finishes it fetches its own setup scripts from here and runs them, reporting into the live log.',
+    'It takes a long while, and a window will open so you can watch.',
+    'Only machines made here ever appear in this list, and nothing else on this computer is touched.'
   ],
   fields: [
     { name: 'name', label: 'Name', placeholder: 'dev1' },
@@ -342,10 +343,22 @@ $('add-vm-open').onclick = () => api('vmIsos').then(isos => ask({
     { name: 'password', label: 'Its password', value: 'okc' }
   ],
   confirm: 'Make it',
-  onYes: f => {
+
+  // Make, then install. Two actions rather than one, because they fail differently
+  // and the second is the one that takes half an hour: if the install will not
+  // start, the machine still exists and the button to try again is right there.
+  onYes: async f => {
     showTab('live')
-    return api('vmCreate', { vm: { ...f, memoryMB: Number(f.memoryMB), cpus: Number(f.cpus), diskMB: Number(f.diskMB) } })
-      .then(() => { picked = f.name; say(`${f.name} created`) })
+    await api('vmCreate', { vm: { ...f, memoryMB: Number(f.memoryMB), cpus: Number(f.cpus), diskMB: Number(f.diskMB) } })
+    picked = f.name
+
+    if (!f.iso) {
+      say(`${f.name} made. It has no installer image, so there is nothing to install yet.`)
+      return
+    }
+
+    await api('vmInstall', { name: f.name })
+    say(`${f.name} is installing and will set itself up. Watch it here.`)
   }
 })).catch(oops)
 

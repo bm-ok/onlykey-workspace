@@ -142,6 +142,18 @@ const body = req => new Promise((resolve, reject) => {
   req.on('end', () => { try { resolve(s ? JSON.parse(s) : {}) } catch { reject(new Error('That was not valid JSON')) } })
 })
 
+// A machine being provisioned reaches us across the network, so we cannot only
+// listen on loopback. But the actions can delete a virtual machine, so they are
+// not offered across the network either.
+//
+// The split: /provision/* answers anyone, because that is what a guest needs and
+// all it can do is read its own scripts and report progress. /api/* answers
+// loopback only.
+const isLocal = req => {
+  const from = req.socket.remoteAddress || ''
+  return from === '127.0.0.1' || from === '::1' || from === '::ffff:127.0.0.1'
+}
+
 function handler (req, res) {
   const url = new URL(req.url, 'http://localhost')
 
@@ -199,6 +211,11 @@ function handler (req, res) {
   // ---- the actions ---------------------------------------------------
 
   if (url.pathname.startsWith('/api/')) {
+    if (!isLocal(req)) {
+      log.on('server').warn(`refused ${url.pathname} from ${req.socket.remoteAddress} — the actions are for this machine only`)
+      res.writeHead(403, { 'content-type': 'text/plain' }).end('the actions are for this machine only\n')
+      return
+    }
     const name = url.pathname.slice(5)
     const action = actions[name]
     const send = (code, obj) => {
@@ -229,17 +246,18 @@ function handler (req, res) {
   res.end('This is the API. The window is not served from here.\n')
 }
 
-// 127.0.0.1 by default. A guest on a bridged adapter cannot reach loopback, so
-// installing one needs HOST=0.0.0.0 -- which puts this API on the network, and is
-// therefore a decision to make on purpose rather than a default.
-function start ({ port: wanted = Number(process.env.PORT || 7373), host = process.env.HOST || '127.0.0.1' } = {}) {
+// Listens on every interface, because a guest on a bridged adapter reaches this
+// host by its network address and loopback would be useless to it. Safe to do only
+// because of the split above: what is reachable from the network is a guest asking
+// for its own scripts, never an action.
+function start ({ port: wanted = Number(process.env.PORT || 7373), host = process.env.HOST || '0.0.0.0' } = {}) {
   const server = http.createServer(handler)
   return new Promise((resolve, reject) => {
     server.once('error', reject)
     server.listen(wanted, host, () => {
       port = server.address().port
-      log.on('server').good(`Listening on http://${host}:${port}`)
-      resolve({ server, port, host, url: `http://${host}:${port}/`, stop: () => server.close() })
+      log.on('server').good(`Listening on port ${port} — scripts for machines being provisioned; actions from this machine only`)
+      resolve({ server, port, host, url: `http://127.0.0.1:${port}/`, stop: () => server.close() })
     })
   })
 }
