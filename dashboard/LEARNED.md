@@ -165,6 +165,20 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   a finished machine still claimed its branch, a claimed branch is correctly
   "not free", and from outside it looked like a queue that had simply gone
   quiet. Nothing failed. Nothing said anything.
+* **VirtualBox allows two snapshots with the same name.** Everything here
+  restores BY name -- the queue does it before every task -- so a second
+  "base" turns every future restore into a coin toss between a clean starting
+  point and whatever else was called base a month ago. Nothing announces it:
+  the restore succeeds, on the wrong disk. One machine ended up with  at
+  the root of its tree and  three levels down, and the only sign was a
+  duplicated line in a list.
+* **A rule with no exit is not a rule, it is a trap.** "A machine stays on its
+  branch until it is CLEAN" was enforced, and there was no way to say it was
+  clean -- the only route off a branch was a rollback, which discards. So a
+  machine that had finished, pushed everything and was carrying nothing held
+  its claim for ever, kept out of the queue and unable to be given anything
+  else. Half a rule reads as correctness right up until somebody needs the
+  other half.
 * **Git Bash rewrites paths that look absolute.** `--folder /home/okc/work`
   arrives as `C:/Program Files/Git/home/okc/work`, which is a real path on this
   host, so nothing looks wrong anywhere: the machine cannot find it, falls back

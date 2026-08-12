@@ -81,6 +81,29 @@ let caPort = Number(process.env.OKC_CA_PORT || 7375)
 //
 // A hard refusal rather than a warning. A warning about a secret is advice, and
 // the thing being prevented is silent and permanent.
+// A title that is already taken on this machine.
+//
+// VIRTUALBOX ALLOWS TWO SNAPSHOTS WITH THE SAME NAME, and everything here
+// restores BY NAME -- the queue does it before every task. So a second "base"
+// makes every future restore a coin toss between a clean starting point and
+// whatever else somebody called base a month ago, and nothing announces the
+// ambiguity: the restore succeeds, on the wrong disk.
+//
+// It happened here: a machine ended up with `base` at the root of its tree and
+// `base` three levels down. Refused at the source rather than resolved later,
+// because by the time it matters the two are indistinguishable to anybody
+// reading a list of names.
+async function refuseIfThatTitleIsTaken (name, title) {
+  const wanted = String(title || '').trim().toLowerCase()
+  const { snapshots = [] } = await vbox.snapshots(name)
+  const flat = []
+  const walk = list => list.forEach(s => { flat.push(s.name); if (s.children) walk(s.children) })
+  walk(snapshots)
+  if (flat.some(s => String(s).trim().toLowerCase() === wanted)) {
+    throw new Error(`"${name}" already has a snapshot called "${title}". VirtualBox would allow a second one, and then restoring by that name is a coin toss between them — pick another name, or throw the old one away first with vmSnapshotDelete.`)
+  }
+}
+
 function refuseIfItHoldsACredential (name) {
   const vm = vms.read().find(v => v.name === name)
   if (vm && vm.holdsCredential) {
@@ -187,6 +210,47 @@ const actions = {
     }
   },
 
+  // Let go of a branch, once there is nothing left on it to lose.
+  //
+  // THE RULE WAS ALWAYS "until it is clean" and only half of it existed. A
+  // machine stays on its branch until it is clean -- and the only way off was a
+  // rollback, which discards. So a machine that had finished, pushed everything
+  // and was carrying nothing still held its claim for ever, kept out of the
+  // queue and unable to be given anything else. That is not the rule being
+  // enforced, it is the rule with no exit.
+  //
+  // CLEAN IS ASKED, NOT ASSUMED, and asked of the machine. Nothing uncommitted
+  // and nothing unpushed, in every repository -- which is exactly what vmHolds
+  // answers, and it is refused outright if the machine cannot be reached to be
+  // asked. A claim released on a guess is how work that exists in one place
+  // stops existing anywhere.
+  vmRelease: {
+    about: 'Let a machine off its branch, once it is holding nothing',
+    takes: ['name'],
+    run: async ({ name }) => {
+      const vm = vms.get(name)
+      if (!vm.branch) return { name, branch: null, note: 'It was not on a branch.' }
+      if (!channel.connected(name)) {
+        throw new Error(`"${name}" is not dialled in, so it cannot be asked whether it is holding anything — and a claim released on a guess is how work stops existing anywhere. Start it first.`)
+      }
+
+      const holds = await actions.vmHolds.run({ name })
+      if (!holds.asked) throw new Error(`"${name}" could not be asked what it is holding: ${holds.why}`)
+      if (holds.summary) {
+        throw new Error(`"${name}" is still holding ${holds.summary}. Push it, or throw the machine away deliberately — this only releases a branch there is nothing left to lose on.`)
+      }
+
+      vms.update(name, { branch: null })
+      log.on('vm', name).good(`let go of ${vm.branch} — it was holding nothing`)
+      return {
+        name,
+        was: vm.branch,
+        branch: null,
+        note: `"${vm.branch}" is free for another machine, and this one can be given other work. Anything it pushed is still here.`
+      }
+    }
+  },
+
   // Whether the queue may use this machine at all.
   //
   // Everything else that keeps a machine out of the pool is a FACT about it --
@@ -285,6 +349,7 @@ const actions = {
     run: ({ name, title, description }) => busy.during(name, 'being snapshotted', async () => {
       vms.get(name)
       if (!title || !title.trim()) throw new Error('Give the snapshot a title, so it means something when you come back to it.')
+      await refuseIfThatTitleIsTaken(name, title)
       // Refused while it is running. VirtualBox would store the machine's memory
       // beside its disk, so the snapshot arrives the size of the machine's RAM --
       // and it is a picture of something caught mid-thought rather than a point
@@ -313,6 +378,10 @@ const actions = {
     run: ({ name, title = 'base' }) => busy.during(name, 'being snapshotted', async () => {
       const vm = vms.get(name)
       refuseIfItHoldsACredential(name)
+      // Before the machine is shut down, not after. This one takes a machine
+      // that is running and stops it first, so a refusal that came later would
+      // have already cost the operator their machine and everything on it.
+      await refuseIfThatTitleIsTaken(name, title)
       const to = log.on('vm', name)
       const wasRunning = !await vbox.isOff(name)
 
