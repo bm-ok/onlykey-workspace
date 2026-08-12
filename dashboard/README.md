@@ -55,7 +55,15 @@ live log, from inside the machine, while it happens.
 
 That is two actions, not one — make, then install — because they fail differently
 and the second is the one that takes half an hour. If the install will not start,
-the machine still exists and `vmInstall` will try again without remaking it.
+the machine still exists and `vmInstall` will try again without making it again.
+
+**Installing blanks the disk first, every time.** The boot order is disk before
+dvd, so a machine whose disk already boots never reaches the installer at all —
+it starts the operating system that is already there. Installing a second time
+therefore did nothing, while the dashboard reported *installing* and the machine
+sat at a login screen. Recreating the disk rather than reordering boot: an empty
+disk is not bootable, so the dvd is reached without touching the order, and the
+installer meets the same blank disk it met when the machine was new.
 
 Neither has a button of its own in the window any more: making a machine already
 installs on its own, and both remain as actions, listed with everything else in
@@ -68,6 +76,26 @@ they are for and make it prove that:
 
     /provision/*   a machine's own scripts and its progress
     /git/*         the repositories
+
+**Both name a machine and make it prove it is that machine**, which is a
+stronger question than whether it is a machine at all. Answering the weaker one
+was a real hole: a script carries the machine's token, so serving it to anything
+that asked meant any machine could read any other machine's secret and then *be*
+that machine — dial in as it, push to its branch. Encryption settled who could
+read it in transit and did nothing about who could ask.
+
+A built machine proves it with its token. One still being installed has no token
+yet — the script it is fetching is where the token comes from — so it carries an
+**install ticket**, made when the install starts and put on the installer's
+command line, the one channel that reaches a machine holding nothing. The ticket
+dies the moment the machine dials in, because the command line outlives the
+install: VirtualBox writes it into `vboxpostinstall.sh` in the machine's folder,
+where it stays. A token there would be a live secret in a plain file; a spent
+ticket opens nothing.
+
+`vmRotateToken` gives a machine a new one without rebuilding it. The order is
+the whole thing — the machine must hold the new token before the registry
+expects it, or it is locked out by the act meant to keep it working.
 
 **The actions are not on it at all.** They were, behind a check that the caller
 was loopback — and that check was the only thing standing between anything able
@@ -245,19 +273,14 @@ as a failed push, which is where the mistake was made.
 
 It also makes a push attributable. Each machine already has its own token; the
 same secret it dials in with is what it authenticates a clone with, so this is
-`runner1` asking, not whoever could reach the port. That is why the paths answer
-three different questions:
+`runner1` asking, not whoever could reach the port — which is the same question
+`/provision/*` asks, and for the same reason.
 
-    /provision/*   anyone -- a guest can only read its own scripts and report
-    /git/*         a machine this app made, proving it with its own token
-    /api/*         this machine only -- these can delete a machine
-
-**Cloning is built; pushing is not, and says so.** A `git-receive-pack` request
-is refused with that sentence rather than a 404, which would read as "no such
-repository". The shape it is being built towards: a guest pushes `master`,
-because that is what a worker naturally does, and the host decides which branch
-that becomes — so the worker never types a branch name, and cannot type one that
-picks a gentler review than the change deserves.
+**A guest never types a branch name.** It arrives with the right one already
+checked out, cut here before it ever sees the repositories — so it cannot pick
+one that gets a gentler review than the change deserves, and it cannot reach the
+default branch at all. What it may push is decided here and refused here; see
+below.
 
 
 The host is the storage, and nothing lands on master
@@ -390,20 +413,30 @@ A command line, over a socket with no address
     node tools/okc.js vmList
     node tools/okc.js vmWorkspace --name runner1 --branch fix/thing
     node tools/okc.js gitBranches --json              for a script
+    node tools/okc.js logWatch                        follow the log, live
+
+**One action answers forever instead of once.** An install is twenty-five
+minutes of silence and then everything at once, so asking repeatedly either
+misses it or spends the whole time asking — `logWatch` keeps the socket and
+prints each line as it arrives, from an id you give it or from the beginning.
+It is in the actions table like everything else, with `stream` instead of `run`,
+because that table is what says an action exists.
 
 **Generated from the actions table, not from a list kept beside it.** `okc` with
 no arguments asks the running dashboard what it can do, so an action that exists
 is listed and one that does not cannot be — the same reason the window builds its
-Actions tab from `/api/actions` rather than from a menu somebody maintains.
+Actions tab from the same table rather than from a menu somebody maintains.
 
 **Over a local socket, not a port** — a Unix domain socket where there is one, a
 named pipe on Windows; node treats both as a path, so it is one implementation.
-The point is not speed. `/api/*` answering loopback only is a *check*: a line
-comparing an address, correct until somebody edits it, standing between a
-stranger on the network and actions that delete disks. A local socket cannot be
-reached from another machine at all — no address to get wrong, no interface bound
-by accident, no rule to keep enforcing. On Unix the socket is `0600`, because
-there its permissions are the whole of who may drive this.
+The point is not speed. The actions used to be on `/api/*`, answering loopback
+only — and that was a *check*: a line comparing an address, correct until
+somebody edits it, standing between a stranger on the network and actions that
+delete disks. A local socket cannot be reached from another machine at all: no
+address to get wrong, no interface bound by accident, no rule to keep enforcing.
+The strongest version of a check is not needing one, so the route is gone rather
+than guarded. On Unix the socket is `0600`, because there its permissions are the
+whole of who may drive this.
 
 **It talks to a dashboard that is already running, and says so when there is not
 one.** It deliberately cannot start its own: a second copy would have its own
@@ -411,6 +444,36 @@ empty registry of dialled-in machines and would report every machine as
 disconnected while it sat there connected to the real one — an answer that is
 confidently wrong rather than missing. A refusal exits non-zero, so a script
 driving this stops when something says no.
+
+
+One long thing at a time, and it says what it would destroy
+-----------------------------------------------------------
+
+Snapshotting shuts a machine down, snapshots it and starts it again. Installing
+wipes its disk and drives an installer for half an hour. Restoring throws the
+disk away. Each is several VirtualBox commands with the machine unfinished in
+between, and a second one arriving in that window is answered by VirtualBox with
+a session lock error — a wall of COM text about an interface nobody asked about.
+
+So a second one is **refused here**, where the refusal can name the machine and
+what it is in the middle of. Refused rather than queued: waiting would mean a
+command that appears to hang for twenty-five minutes, and the honest answer to
+*start this machine* while it is being installed is no, not later. **Reads are
+never blocked** — asking a machine's state, or what it has on screen, is exactly
+what somebody does while something is taking a long time, and a lock that stops
+you looking is a lock that gets worked around.
+
+**And the two actions that destroy a disk say what is on it.** *Everything since
+is discarded* and *its disks are deleted* are both true and neither says what, so
+the machine is asked first — it answers in about a second:
+
+    1 commit that exists nowhere else, 1 file changed and not committed
+
+Three sentences, because there are three situations and only one of them is
+"nothing to lose". The third is the one that matters: **a machine that is not
+dialled in cannot be asked**, and reporting that as nothing would be an assertion
+about a machine that is off — precisely the one nobody has looked at recently. It
+says it could not ask. Silence must not be able to mean two different things.
 
 
 Seeing a machine that is not talking yet
@@ -471,6 +534,7 @@ The shape
     tools/okc.js    the command line, generated from the actions table
     machines/
       vbox.js       VirtualBox: state, snapshots, isos, bridges, delete
+      busy.js       one long operation at a time, per machine
       vms.js        the registry of machines THIS APP MADE
       provisioner.js  make one, and install an operating system on it
       scripts.js    serves provision/*.sh with a header of values
@@ -576,6 +640,32 @@ now looks obvious.
   host because Windows `curl` uses schannel and cannot take a private authority
   from `--cacert`. The guest — the only client that counts — had no trouble at
   all.
+* **`sshd -t` answers about its surroundings, not about the config.** Twice. It
+  needs host keys, and it needs `/run/sshd`, which does not exist during an
+  install because `/run` is a tmpfs the ssh service populates at boot. Both times
+  the check failed for a reason unrelated to the file being tested, the file was
+  deleted on the strength of it, and the machine came up with root able to log in
+  while the install reported success. Anything it needs is made first now, and
+  the step reads `permitrootlogin` back out of `sshd -T` afterwards — because
+  *the file was written* and *the machine is tightened* are different claims, and
+  the gap between them is where this went wrong both times.
+* **`curl` is not in the installer's target.** The bootstrap had a `wget`
+  fallback for that reason; a later rewrite kept it on one fetch and dropped it
+  from another, because wget spells its authority flag differently. The install
+  then failed after twenty-five minutes having printed "the dashboard is not
+  reachable" ten times — a sentence about the network, describing a missing
+  program.
+* **A message that names the wrong cause is worse than no message.** That same
+  failure said the dashboard was unreachable; a certificate never downloaded was
+  reported as one that "is not the one this machine was told to expect", which
+  is an accusation of substitution against a machine that could not download
+  anything. Missing and wrong are told apart now.
+* **Silence is not the same as health, and the timeout is only a backstop.** A
+  machine whose power is pulled sends no FIN, so its socket looks healthy for the
+  seventy seconds it takes silence to be noticed — and in that window it is
+  listed as connected and commands are dispatched into it. Every place that makes
+  a machine stop being itself has to say so; `vmRemove` did, `vmStop` and
+  `vmSnapshotRestore` did not.
 * **VirtualBox releases a lock after the command that took it has returned.** Taking
   a snapshot locks the machine, so starting it on the next line lost the race every
   time — and `SessionState` read `Unlocked` 100ms before the start was refused for
