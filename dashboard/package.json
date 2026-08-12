@@ -22,6 +22,7 @@
   "engines": {
     "node": ">=20"
   },
+  "//dependencies": "None, and that is a property worth keeping rather than an accident. What this app uses beyond NW.js is checked in under vendors/ -- currently the Ace editor -- because a dependency resolved by a package manager is whatever the registry served the day somebody last installed it, and the same window on another machine is then not the same window. See vendors/README.md.",
   "devDependencies": {
     "nw": "^0.114.1"
   }

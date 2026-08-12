@@ -2,8 +2,10 @@ dashboard
 =========
 
 Make a virtual machine, install an operating system on it, snapshot it, throw it
-away. An NW.js app with no dependencies beyond NW.js itself, no build step and no
-framework.
+away. An NW.js app with no build step, no framework, and nothing fetched at run
+time — what it uses beyond NW.js is checked in under `vendors/`, currently the
+Ace editor and nothing else. See `vendors/README.md` for why that is a
+directory rather than a dependency.
 
     npm install             once, for NW.js (the SDK build, so devtools exist)
     npm start               the app window
@@ -741,6 +743,8 @@ The shape
       store.js      what is to be done, who has it, and what was decided
       artifact.js   what came back: a branch, read the way a PR is read
     tools/okc.js    the command line, generated from the actions table
+    vendors/ace/    the editor, checked in. Code that is READ needs to look
+                    like code, or it gets approved without being read
     machines/
       vbox.js       VirtualBox: state, snapshots, isos, bridges, delete
       busy.js       one long operation at a time, per machine

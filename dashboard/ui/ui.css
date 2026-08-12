@@ -156,7 +156,20 @@ h2:first-child { margin-top: 0; }
 /* A block of text to read INSIDE a dialog, which cannot use the viewport height
    the way a full-page console does -- the dialog is already bounded, and 100vh
    inside it is what pushed the buttons off the screen. */
-.console.read { max-height: 44vh; white-space: pre; margin: 0; }
+/* The editor's own box. It carries its height inline -- ace measures its
+   container to lay itself out, so the height has to exist before ace does. */
+.code {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 0 0 12px;
+  max-height: 44vh;
+  min-height: 6rem;
+}
+/* Ace paints its own background; this keeps the seam from showing while it
+   initialises. */
+.code .ace_gutter { background: #0a0d12; }
+.code .ace_scroller { background: #0a0d12; }
 .dlg-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 .dlg-heading {
   font-size: 10px;

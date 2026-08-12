@@ -162,6 +162,12 @@
 
 </main>
 
+<!-- Checked in under vendors/, not installed. See vendors/README.md: this app
+     has no build step and fetches nothing at run time, so what is in the
+     repository is what runs. A plain script tag rather than require(), because
+     the src-noconflict build defines a global and asking node to resolve it
+     would only add a path that can be wrong. -->
+<script src="../vendors/ace/ace.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>

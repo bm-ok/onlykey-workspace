@@ -73,6 +73,51 @@ const setText = (node, text) => { if (node.textContent !== text) node.textConten
 // is carried into the configure dialog.
 const vmKey = v => v && [v.name, v.state, v.stage, v.live, v.running, v.connected, v.baseSnapshot, v.description || '', v.branch || '']
 
+// ---- code, for reading ------------------------------------------------
+//
+// Two things in this window are read carefully enough that a decision hangs on
+// them: the source of a pre-defined task, which somebody has to approve, and a
+// branch's diff, which somebody has to judge. Both were a `<pre>`, and a hundred
+// lines of undifferentiated JavaScript is not something a person reads — it is
+// something a person scrolls past and then approves anyway, which defeats the
+// point of putting it on the screen at all.
+//
+// Read-only, deliberately and in three ways: the content is not editable, the
+// cursor and active-line highlight are off so it does not invite a cursor, and
+// the syntax worker is not loaded. Nothing here is a place to write code.
+ace.config.set('basePath', '../vendors/ace/')
+
+function codeBlock (text, mode = 'javascript', { lines = 18 } = {}) {
+  const host = el('div', { className: 'code' })
+  // Sized before ace sees it. Ace measures its container to lay out, so a
+  // container with no height renders an editor with no rows in it — which looks
+  // exactly like an empty file.
+  host.style.height = `${Math.min(lines, Math.max(6, String(text || '').split('\n').length + 1)) * 1.5}em`
+
+  // After it is in the document, for the same reason.
+  queueMicrotask(() => {
+    if (!host.isConnected) return
+    const ed = ace.edit(host)
+    ed.setTheme('ace/theme/tomorrow_night')
+    ed.session.setMode(`ace/mode/${mode}`)
+    ed.session.setUseWorker(false)
+    ed.setValue(String(text == null ? '' : text), -1)
+    ed.setReadOnly(true)
+    ed.setOptions({
+      highlightActiveLine: false,
+      highlightGutterLine: false,
+      showPrintMargin: false,
+      fontSize: 12,
+      // Wrapped, because the alternative is a horizontal scrollbar on the thing
+      // somebody is meant to read every line of.
+      wrap: true,
+      showFoldWidgets: false
+    })
+    ed.renderer.$cursorLayer.element.style.display = 'none'
+  })
+  return host
+}
+
 // ---- the notice bar ---------------------------------------------------
 
 let noticeTimer
@@ -527,7 +572,7 @@ function showDiff (task, repo) {
     // is neither a bullet nor an input: it is long, it is read rather than
     // answered, and it needs to scroll and be selectable.
     const body = document.querySelector('.dlg-body')
-    if (body) body.append(el('pre', { className: 'console read', style: 'user-select:text', textContent: diff || 'no changes' }))
+    if (body) body.append(codeBlock(diff || 'no changes', 'diff', { lines: 22 }))
   }).catch(oops)
 }
 
@@ -718,7 +763,7 @@ function readDefinition (which) {
     const body = document.querySelector('.dlg-body')
     if (body) {
       body.append(el('div', { className: 'dlg-heading', textContent: 'What it does, exactly' }))
-      body.append(el('pre', { className: 'console read', style: 'user-select:text; margin-bottom:12px', textContent: t.source }))
+      body.append(codeBlock(t.source, 'javascript', { lines: 20 }))
     }
   }).catch(oops)
 }
