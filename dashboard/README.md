@@ -266,3 +266,13 @@ now looks obvious.
   that says nothing is now treated as gone.
 * **Checking the wrong shell proves nothing.** Every check that matters asks a login
   shell, because that is what a dispatched command gets.
+* **VirtualBox releases a lock after the command that took it has returned.** Taking
+  a snapshot locks the machine, so starting it on the next line lost the race every
+  time — and `SessionState` read `Unlocked` 100ms before the start was refused for
+  being locked, so asking was not enough either. Waiting and retrying are both
+  needed, because they cover different things.
+* **An error can name the half that did not matter.** That same failure said the
+  restart failed, which was true and harmless: the snapshot it exists to produce had
+  already been taken and recorded. What it did not say was why the machine was now
+  powered off. A failed operation whose real work succeeded reads as though nothing
+  happened, which is the more expensive direction to be wrong in.
