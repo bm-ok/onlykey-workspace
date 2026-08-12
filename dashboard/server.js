@@ -252,7 +252,44 @@ const actions = {
   machineRemove: { about: 'Forget a machine — nothing on it is touched', takes: ['id'], run: ({ id }) => machines.remove(id) },
   machineReach: { about: 'Does this machine answer', takes: ['id'], run: ({ id }) => reach(machines.get(id)) },
   provision: { about: "Run a machine's setup steps, in order, stopping at the first failure", takes: ['id', 'steps'], run: ({ id, steps }) => provision(machines.get(id), steps) },
-  openEditor: { about: 'Open a folder in VS Code, here or over ssh', takes: ['id', 'where'], run: ({ id, where }) => editor.open(machines.get(id), where) },
+  openEditor: { about: 'Open a folder in VS Code, here or over ssh', takes: ['id', 'where'], run: ({ id, where }) => editor.openOn(machines.get(id), where) },
+
+  // Open a virtual machine's work in VS Code, over its own remote.
+  //
+  // The address is not configured, discovered or looked up: the machine dialled
+  // in, so we already know where it is, and a machine that moved has already
+  // said so. That is why this needs it CONNECTED rather than merely running --
+  // running means VirtualBox has it powered on, which says nothing about there
+  // being an address to open.
+  //
+  // The folder is asked for rather than assumed. A home directory is `/home/<user>`
+  // on most machines and not on all of them, and the cost of guessing is a button
+  // that opens the wrong folder, or an empty one, without saying it did.
+  vmEditor: {
+    about: "Open a machine's work in VS Code, over ssh",
+    takes: ['name', 'where'],
+    run: async ({ name, where }) => {
+      const vm = vms.get(name)
+      const agent = channel.list().find(a => a.vm === name)
+      if (!agent) throw new Error(`"${name}" is not dialled in, so there is no address to open. Start it and wait for it to connect.`)
+
+      const facts = agent.facts || {}
+      // What it reported first; the socket it came in on is the fallback, since
+      // that is the address it actually reached us from.
+      const address = (facts.addresses || [])[0] || String(agent.from || '').replace(/:\d+$/, '')
+      const user = facts.user || (vm.spec && vm.spec.user)
+      if (!address || !user) throw new Error(`"${name}" has not said enough about itself yet to open it.`)
+
+      // Short, because this is a button. The default is measured in half hours,
+      // which is right for a setup script and wrong for something a person is
+      // waiting on with nothing on screen.
+      const dir = where || (vm.spec && vm.spec.folder) ||
+        (await channel.run(name, 'echo $HOME', { what: 'where its home is', timeout: 15000 }))
+          .output.trim().split('\n').pop().trim()
+
+      return editor.open({ dir, remote: `${user}@${address}`, tags: [name] })
+    }
+  },
 
   capture: {
     about: 'Save what the window currently looks like, as rendered HTML',

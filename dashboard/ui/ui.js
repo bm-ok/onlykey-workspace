@@ -303,6 +303,28 @@ function vmActions () {
     // did. Making a machine still installs on its own, which was always the path
     // these two were the retry for.
 
+    // Only when it is dialled in, because that is where the address comes from.
+    // Disabled rather than hidden while it is not: a button that vanishes reads
+    // as a feature that does not exist, and the reason is worth saying.
+    el('button', {
+      className: 'btn',
+      textContent: 'Open in VS Code',
+      disabled: !v.connected,
+      title: v.connected ? '' : 'It has to be dialled in — that is where its address comes from',
+      onclick: () => ask({
+        title: `Open ${v.name} in VS Code?`,
+        plain: [
+          'It opens over VS Code\'s own remote, using the address the machine reported when it dialled in.',
+          'Its home folder, unless this machine\'s settings name another one.',
+          'A new window opens; this one is not replaced.'
+        ],
+        fields: [{ name: 'where', label: 'Folder — leave empty for its home', placeholder: '/home/…' }],
+        confirm: 'Open it',
+        onYes: f => api('vmEditor', { name: v.name, where: f.where || undefined })
+          .then(r => say(`VS Code was asked to open ${r.opened} on ${r.on}`))
+      })
+    }),
+
     v.live && !v.baseSnapshot
       ? el('button', {
           className: 'btn',

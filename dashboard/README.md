@@ -199,6 +199,42 @@ that becomes — so the worker never types a branch name, and cannot type one th
 picks a gentler review than the change deserves.
 
 
+Then open it in the editor, in the machine
+------------------------------------------
+
+The other half of the same click. A machine clones the work from here, and **Open
+in VS Code** opens that work *inside the machine*, over VS Code's own remote — so
+the files being edited are the ones the machine will build and test, not a copy
+on this desktop.
+
+**The address is not configured, discovered or looked up.** The machine dialled
+in, so we already know where it is, and one that moved has already said so. That
+is why this needs it *connected* rather than merely running: running means
+VirtualBox has it powered on, which says nothing about there being an address.
+The folder is asked of the machine rather than assumed, because a home directory
+is `/home/<user>` on most machines and not on all, and the cost of guessing is a
+window that opens the wrong folder without saying so.
+
+One folder, not a generated multi-root workspace. VS Code finds every `.git`
+inside a folder and shows each repository's own status, so opening the tree that
+holds the clones gives all of them with nothing to generate — and the editor
+never has to know what the work spans.
+
+**This is the surface where a button most easily does nothing at all**, so three
+things here were measured rather than assumed, each having produced exactly that:
+
+* **`code` is often not on PATH, and Insiders is a different binary.** Looking
+  only for `code` finds nothing on a machine with a working editor installed.
+  Both names are looked for, where they actually install.
+* **Node refuses to spawn a `.cmd`** — `EINVAL`, thrown *synchronously*, before
+  any callback or `error` event, so error handling written the ordinary way never
+  runs. It goes through `cmd.exe` instead. Not `shell: true`: the editor installs
+  to a path with spaces and the shell splits it.
+* **Spawning is not opening.** `cmd.exe` starts perfectly well and only then
+  reports that what it was asked to run does not exist — so resolving on spawn
+  reports success for a button that did nothing.
+
+
 The window keeps up on its own
 ------------------------------
 
