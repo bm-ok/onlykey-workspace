@@ -23,6 +23,35 @@ say "extra (user): starting as $(id -un)"
 mkdir -p "$HOME/work"
 say "work goes in $HOME/work"
 
+# --- the worker that actually does the work -----------------------------------
+#
+# Claude Code, installed for the user rather than system-wide, because node here
+# comes from nvm and a global install under nvm IS the user's.
+#
+# No credential is installed with it, deliberately. The dashboard passes one per
+# dispatch and it is never written to this machine's disk -- so a machine that is
+# deleted, snapshotted or copied takes nothing with it, and the host stays the
+# only durable holder. A key baked in here would end up in every snapshot of
+# every machine ever built from this point.
+#
+# In the PROJECT's script rather than the app's: the dashboard does not know what
+# a machine is for, and a machine that runs an agent is a choice this project
+# makes.
+
+say 'installing the worker'
+if bash -lc 'command -v claude >/dev/null 2>&1'; then
+  say "claude is already here: $(bash -lc 'claude --version 2>/dev/null' | head -1)"
+else
+  # A login shell, so nvm's node and its global prefix are the ones used. Without
+  # it npm is either missing or the distribution's, and a global install lands
+  # somewhere root owns and the user cannot run.
+  if bash -lc 'npm install -g @anthropic-ai/claude-code >/dev/null 2>&1'; then
+    say "claude installed: $(bash -lc 'claude --version 2>/dev/null' | head -1)"
+  else
+    say 'WARNING: could not install claude -- this machine cannot be given work until it is'
+  fi
+fi
+
 # --- prove the machine is actually usable -------------------------------------
 #
 # Checked as the user, in a login shell, which is what a command sent to this machine

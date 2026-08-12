@@ -29,6 +29,7 @@ const editor = require('./machines/editor')
 const repos = require('./repos/serve')
 const busy = require('./machines/busy')
 const session = require('./machines/session')
+const dispatch = require('./machines/dispatch')
 const branches = require('./repos/branches')
 const workspace = require('./repos/workspace')
 
@@ -597,6 +598,178 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
       return { name, rotated: true, note: 'its agent was restarted and will dial back in with the new token' }
     })
+  },
+
+  // ---- authorising a worker -------------------------------------------
+  //
+  // The one credential that has to exist inside a machine. Everything else here
+  // is arranged so a runner holds none -- that is what makes the gate the only
+  // way work gets out -- and an agent breaks it, because it cannot work without
+  // being able to authenticate.
+  //
+  // THE HOST HOLDS IT; A MACHINE IS HANDED ONE. Not the reverse. A runner that
+  // logged in itself would leave the credential living there as a property of
+  // the machine, and machines here are snapshotted, copied and deleted. So one
+  // machine is signed in by a person, the credential is taken from it, and every
+  // other machine is given a copy when it needs one and stripped when it does
+  // not.
+  //
+  // Kept in the app's data directory, outside the repository, 0600 -- the same
+  // place as the certificate and for the same reason.
+  vmAuthStatus: {
+    about: "Whether a machine's worker is signed in",
+    takes: ['name'],
+    run: async ({ name }) => {
+      vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
+      const r = await channel.run(name, 'claude auth status 2>&1 | head -20; echo "---"; ls -l ~/.claude/.credentials.json 2>/dev/null || echo "no credential file"',
+        { what: 'checking its worker sign-in', timeout: 60000 })
+      return { name, status: r.output }
+    }
+  },
+
+  vmCredentialsGrab: {
+    about: 'Take the signed-in credential from a machine and keep it on this host',
+    takes: ['name'],
+    run: async ({ name }) => {
+      vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
+
+      // Printed rather than copied out of a path this host cannot see. base64 so
+      // a newline or a shell metacharacter in the file cannot change what
+      // arrives -- and so the value never appears as readable text in the live
+      // log, which is captured and kept.
+      const r = await channel.run(name, 'base64 -w0 ~/.claude/.credentials.json 2>/dev/null || echo OKC_NO_CREDENTIAL',
+        { what: 'taking its worker credential', timeout: 60000 })
+
+      const b64 = String(r.output || '').split('\n').map(s => s.trim()).filter(Boolean).pop() || ''
+      if (!b64 || b64 === 'OKC_NO_CREDENTIAL') {
+        throw new Error(`"${name}" has no worker credential to take. Sign in on that machine first: open it and run "claude auth login".`)
+      }
+
+      const dir = data.sub('credentials')
+      const file = path.join(dir, 'claude.json')
+      fs.writeFileSync(file, Buffer.from(b64, 'base64'))
+      try { fs.chmodSync(file, 0o600) } catch { /* best effort on Windows */ }
+
+      log.on('vm', name).good('its worker credential was taken and kept on this host')
+      return { from: name, kept: file, note: 'hand it to a machine with vmCredentialsPut, and take it away again with vmCredentialsForget' }
+    }
+  },
+
+  vmCredentialsPut: {
+    about: 'Hand this host\'s worker credential to a machine',
+    takes: ['name'],
+    run: async ({ name }) => {
+      vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
+
+      const file = path.join(data.sub('credentials'), 'claude.json')
+      if (!fs.existsSync(file)) {
+        throw new Error('This host has no worker credential yet. Sign in on one machine and take it with vmCredentialsGrab first.')
+      }
+
+      const b64 = fs.readFileSync(file).toString('base64')
+      const r = await channel.run(name, `set -u
+mkdir -p "$HOME/.claude"
+umask 077
+printf '%s' '${b64}' | base64 -d > "$HOME/.claude/.credentials.json"
+chmod 600 "$HOME/.claude/.credentials.json"
+echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 60000 })
+
+      if (!/okc-credential-placed/.test(r.output || '')) throw new Error(`"${name}" did not take the credential.`)
+      log.on('vm', name).warn(`${name} now holds a worker credential — take it back with vmCredentialsForget before snapshotting`)
+      return { to: name, placed: true }
+    }
+  },
+
+  vmCredentialsForget: {
+    about: 'Take the worker credential off a machine',
+    takes: ['name'],
+    run: async ({ name }) => {
+      vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
+      const r = await channel.run(name, 'rm -f "$HOME/.claude/.credentials.json" && echo okc-credential-gone',
+        { what: 'taking its worker credential away', timeout: 60000 })
+      if (!/okc-credential-gone/.test(r.output || '')) throw new Error(`"${name}" still has it.`)
+      log.on('vm', name).good(`${name} no longer holds a worker credential`)
+      return { from: name, removed: true }
+    }
+  },
+
+  // Give a machine a task and let go of it.
+  //
+  // Returns as soon as the work has STARTED, not when it ends. A task runs for
+  // minutes or an hour; waiting for it would make one command look like a hang,
+  // hold the machine against anything else, and give no progress at all in the
+  // meantime. Progress is read afterwards with vmSessionTail, which is a delta
+  // with a bookmark rather than a stream nobody is watching.
+  //
+  // The credential comes from THIS host's environment and is passed for the life
+  // of that one process. It is never written to the machine's disk, because a
+  // machine here is snapshotted, copied and deleted, and anything on its disk
+  // goes into all three.
+  vmDispatch: {
+    about: 'Give a machine a task to work on, and return without waiting for it',
+    takes: ['name', 'task', 'folder', 'contract', 'resume'],
+    run: async ({ name, task, folder, contract, resume }) => {
+      const vm = vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in, so it cannot be given work.`)
+      if (!task || !String(task).trim()) throw new Error('Say what the task is.')
+
+      const id = dispatch.newId()
+      const where = folder || (vm.spec && vm.spec.folder) || workspace.FOLDER
+      const to = log.on('vm', name)
+
+      const r = await channel.run(name, dispatch.script({ id, task: String(task), folder: where, contract, resume }),
+        { what: `dispatching ${id}`, timeout: 60000 })
+
+      if (!/okc-dispatched/.test(r.output || '')) {
+        throw new Error(`"${name}" did not start the work: ${String(r.output || '').trim().split('\n').pop() || 'it said nothing'}`)
+      }
+
+      to.good(`${name} is working on ${id}`)
+      return {
+        run: id,
+        machine: name,
+        folder: where,
+        watch: `okc.js vmSessionTail --name ${name}`,
+        note: 'started, not finished — read its session for progress and vmRuns for the outcome'
+      }
+    }
+  },
+
+  // What has been given to a machine, and what became of it.
+  //
+  // A run with no status is reported as `running` rather than as a missing
+  // field, because a caller that has to interpret an absence will eventually
+  // interpret it as finished.
+  vmRuns: {
+    about: 'The tasks given to a machine, and whether they are still going',
+    takes: ['name'],
+    run: async ({ name }) => {
+      vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in, so its runs cannot be read.`)
+      const r = await channel.run(name, dispatch.list(), { what: 'reading its runs', timeout: 60000 })
+      return { runs: dispatch.runs(r.output) }
+    }
+  },
+
+  // What a run's own process printed.
+  //
+  // Different from the session transcript, and worth both: the transcript says
+  // what the agent did, this says what happened to the program running it --
+  // which is where a crash before it ever started thinking appears.
+  vmRunOutput: {
+    about: "The tail of one task's raw output",
+    takes: ['name', 'run', 'lines'],
+    run: async ({ name, run, lines = 40 }) => {
+      vms.get(name)
+      if (!run) throw new Error('Say which run.')
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
+      const r = await channel.run(name, dispatch.output(run, lines), { what: `reading ${run}`, timeout: 60000 })
+      return { run, output: r.output }
+    }
   },
 
   // The Claude sessions running on a machine.
