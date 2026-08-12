@@ -124,7 +124,20 @@ const actions = {
       to.good(`"${title}" is now the point this machine can be returned to`)
 
       if (wasRunning) {
-        await vbox.start(name, 'gui')
+        // Taking the snapshot locks the machine itself, and VirtualBox releases
+        // that lock a moment AFTER the command has returned -- so starting
+        // straight away loses the race, and this failed every time with
+        // "already locked by a session". The snapshot was fine; only the restart
+        // was lost, which is the confusing part: the error names the harmless
+        // half and the machine is left off with no obvious reason why.
+        //
+        // Waited out and then retried, the same pair destroy() uses before
+        // unregistervm, because they cover different things: SessionState can
+        // still read "Unlocked" for the instant the lock lives, and it did here
+        // -- 100ms before the start was refused for being locked. So the wait is
+        // the ordinary path and the retry is what makes it true.
+        await vbox.waitUntilUnlocked(name)
+        await vbox.retrying(() => vbox.start(name, 'gui'), { what: 'starting it again', tags: [name] })
         to.info('started again; it will dial back in shortly')
       }
       return { ...await vbox.snapshots(name), baseSnapshot: title, restarted: wasRunning }
