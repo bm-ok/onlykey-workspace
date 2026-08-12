@@ -19,41 +19,106 @@ set -u
 say "first boot: making the machine reachable"
 report installing
 
+# One log for every script, root's and the user's alike. Created here, owned by the
+# user, so the user-half scripts can append to the same file instead of falling back
+# to /tmp and splitting the record in two.
+touch /var/log/okc-provision.log 2>/dev/null || true
+chown "$OKC_USER:$OKC_USER" /var/log/okc-provision.log 2>/dev/null || true
+chmod 0644 /var/log/okc-provision.log 2>/dev/null || true
+
 export DEBIAN_FRONTEND=noninteractive
 
-# --- fetch and run another script -------------------------------------------
+# --- fetching a stage --------------------------------------------------------
 #
-# Written to its own directory, NOT to /root/okc-<name>. The installer downloads
-# THIS script to a file in /root and is executing it right now; if a stage were
-# written to that same path, bash -- which reads a script incrementally by byte
-# offset -- would carry on at the old offset inside the new content. That produced
-# a partial re-run of this script's tail and silently skipped everything after it.
-stage () {
-  local script="$1"
-  local target="/root/okc-stages/$script"
-  install -d /root/okc-stages
+# Stages are written to their own directory, never to /root/okc-<name>. The installer
+# downloads THIS script to a file in /root and is executing it right now; a stage
+# written to that same path would overwrite it mid-run, and bash -- which reads a
+# script incrementally by byte offset -- would carry on at the old offset inside the
+# new content. That silently re-ran part of this file and skipped the rest.
+#
+# Returns 0 if fetched, 1 if it could not be, and 2 if there is no such script.
+# Telling those apart matters: some scripts are optional, and retrying ten times for
+# one that does not exist wastes a hundred seconds before saying so.
+fetch_stage () {
+  local script="$1" target="$2"
+  local url="$OKC_BASE/provision/$script?vm=$OKC_VM"
 
-  say "fetching $script"
-  local ok=""
+  local attempt code
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if curl -fsSL "$OKC_BASE/provision/$script?vm=$OKC_VM" -o "$target"; then ok=yes; break; fi
-    if wget -qO "$target" "$OKC_BASE/provision/$script?vm=$OKC_VM"; then ok=yes; break; fi
-    say "the dashboard is not answering yet; retrying in 10s"
+    # -w gives the status. Without -f a 404 body is written to the file, which is
+    # why it is only trusted when the code is 200.
+    code=$(curl -sS -o "$target" -w '%{http_code}' "$url" 2>/dev/null || echo 000)
+    [ "$code" = "200" ] && return 0
+    if [ "$code" = "404" ]; then
+      rm -f "$target"
+      return 2
+    fi
+    say "the dashboard is not answering yet (got $code); retrying in 10s"
     sleep 10
   done
 
-  if [ -z "$ok" ]; then
-    say "gave up fetching $script"
-    return 1
-  fi
+  say "gave up fetching $script"
+  return 1
+}
 
-  say "running $script"
+# Run as root. For anything system-wide: packages, services, /etc.
+stage () {
+  local script="$1"
+  install -d -m 0700 /root/okc-stages
+  local target="/root/okc-stages/$script"
+
+  fetch_stage "$script" "$target"
+  local got=$?
+  [ $got -eq 0 ] || return $got
+
+  say "running $script as root"
   if bash "$target"; then
     say "$script finished"
   else
     say "$script failed"
     return 1
   fi
+}
+
+# Run as the user. For anything that belongs to them: their shell files, their
+# home, anything installed per-user.
+#
+# Genuinely as the user, not root pretending. Doing this work as root and fixing
+# ownership afterwards is how a root-owned file ends up in a home directory, where
+# it breaks things quietly -- dconf and anything else saving state write there.
+#
+# Under /tmp rather than /root, because the user cannot read /root at all.
+stage_user () {
+  local script="$1"
+  local dir=/tmp/okc-stages
+  install -d -m 0755 "$dir"
+  local target="$dir/$script"
+
+  fetch_stage "$script" "$target"
+  local got=$?
+  [ $got -eq 0 ] || return $got
+
+  chown "$OKC_USER:$OKC_USER" "$target"
+  chmod 0700 "$target"
+
+  say "running $script as $OKC_USER"
+  # A login shell, so it sees what the user's own shell would -- which is the whole
+  # point of running it as them.
+  if runuser -l "$OKC_USER" -c "bash '$target'"; then
+    say "$script finished"
+  else
+    say "$script failed"
+    return 1
+  fi
+}
+
+# Says what happened, including that there was nothing to do.
+report_stage () {
+  case "$2" in
+    0) : ;;   # it spoke for itself
+    2) say "there is no $1, so there is nothing to do for that" ;;
+    *) say "$1 did not finish; the machine is still usable" ;;
+  esac
 }
 
 # --- reachable ---------------------------------------------------------------
@@ -97,8 +162,17 @@ fi
 
 # --- sudo without a password -------------------------------------------------
 #
-# So the user can do privileged things unattended. The agent runs as root and does
-# not need this; a person or a script working as the user does.
+# Because everything here runs as the user -- the agent included -- and some of what
+# it is asked to do genuinely needs root. Nothing can type a password for it, so
+# without this an agent could not install a package or write to /etc at all.
+#
+# The point is that privilege is asked for per command rather than held all the time:
+# `sudo` where it is needed, ordinary user everywhere else.
+#
+# Passwordless is a deliberate trade, judged low risk because of what this machine is:
+# a throwaway. It exists to be provisioned, used and deleted, it holds nothing that
+# matters, and it can be rebuilt from nothing in one action. The thing being protected
+# by a sudo password -- a long-lived system with something to lose -- is not this.
 #
 # Validated before it is trusted, and discarded if it does not parse: an invalid
 # file in /etc/sudoers.d breaks sudo for everyone, and that machine has to be
@@ -160,6 +234,9 @@ OKC_VM=$OKC_VM
 OKC_TOKEN=$OKC_TOKEN
 OKC_HOST=$OKC_HOST
 OKC_CHANNEL_PORT=$OKC_CHANNEL_PORT
+# Who the agent runs commands as. It is root itself, so without this every command
+# sent here would be root's.
+OKC_USER=$OKC_USER
 ENV
 
   cat > /etc/systemd/system/okc-agent.service <<UNIT
@@ -169,6 +246,14 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# As the user, not root. Nothing the agent does needs root, and running it as root
+# only because it could is how work ends up owned by root in somebody's home.
+# Anything privileged says sudo in the command instead.
+User=$OKC_USER
+Group=$OKC_USER
+
+# Read by systemd, which is root, BEFORE dropping to the user -- so the token can
+# stay in a file the user cannot open.
 EnvironmentFile=/etc/okc-agent.env
 ExecStart=/usr/bin/python3 /usr/local/sbin/okc-agent.py
 # It reconnects on its own, but if it dies outright systemd should bring it back --
@@ -203,6 +288,10 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# As the user too. It reports in and reads a few facts; none of that needs root.
+User=$OKC_USER
+Group=$OKC_USER
+EnvironmentFile=/etc/okc-agent.env
 ExecStart=/usr/local/sbin/okc-normal-boot
 RemainAfterExit=no
 
@@ -216,9 +305,23 @@ fi
 
 # --- what this machine is for ------------------------------------------------
 #
-# Last, and allowed to fail: a machine with no toolchain is still a usable machine
-# that can be reached and re-provisioned, whereas one with no agent is not.
-stage toolchain.sh || say 'carrying on without the toolchain; run it again later'
+# Four scripts, in order, and every one allowed to fail: a machine with no toolchain
+# is still a usable machine that can be reached and provisioned again, whereas one
+# with no agent is not.
+#
+# Root and user are separate scripts rather than one script switching user
+# mid-flight. Which of the two something needs is not a detail -- packages and
+# services are root's, and a shell file or a per-user install is the user's, and
+# mixing them is how a home directory ends up owned by root.
+#
+# The app's pair first, so every machine has the same baseline. Then the project's
+# pair, which ADDS to it rather than replacing it.
+
+stage toolchain.sh;      report_stage 'the toolchain' $?
+stage_user toolchain-user.sh; report_stage "the user's toolchain" $?
+
+stage extra.sh;          report_stage "this project's extra setup" $?
+stage_user extra-user.sh;    report_stage "this project's extra user setup" $?
 
 say 'first boot finished'
 report online

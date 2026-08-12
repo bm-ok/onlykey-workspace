@@ -69,15 +69,18 @@ Provisioning is four scripts, meant to be swapped
 -------------------------------------------------
 
     provision/
-      first-boot.sh   once, at the end of the install. The installer is told
-                      about this one and no other. It makes the machine
-                      reachable -- ssh, your key, the agent -- then hands over
-                      to toolchain.sh and installs normal-boot.sh for later
-      toolchain.sh    THE ONE TO SWAP -- what the machine is for, as opposed
-                      to making it exist
-      normal-boot.sh  every boot, so it installs nothing and changes nothing
-      agent.py        dials the dashboard and stays connected. Python 3
-                      because Ubuntu already has it, standard library only
+      first-boot.sh      once, at the end of the install. The installer is told
+                         about this one and no other: it makes the machine
+                         reachable -- ssh, your key, sudo, the agent -- then
+                         runs the four below in order
+      toolchain.sh       the baseline, as ROOT: packages, docker, groups, the
+                         desktop
+      toolchain-user.sh  the baseline, as the USER: their shell files, node
+                         through nvm
+      normal-boot.sh     every boot, as the user. Installs nothing, changes
+                         nothing, safe to run hundreds of times
+      agent.py           dials the dashboard and stays connected, as the user.
+                         Python 3 because Ubuntu already has it
 
 `first-boot.sh` is the only one the installer knows about; it decides what else runs
 and in what order. That is deliberate after a wrapper script caused a real bug: the
@@ -89,23 +92,32 @@ bootstrap file, and stages go to `/root/okc-stages/`.
 `toolchain.sh` is about what kind of machine it is, which is why it is a separate
 file rather than a section of another one.
 
-**The project's own copy wins.** The app looks in `../workspace/provision` before its
-own `provision/`, so a script of the same name there is served instead — no change to
-the app, nothing to register. That is where anything project-specific belongs: a
-kernel module to build, a device to flash, a udev rule for one vendor id. It is also
-why the test that keeps the app generic does not scan that directory.
+**Root and user are separate scripts, and so are the app's and the project's.** Four
+run in order, and every one may be missing without breaking anything:
 
-    toolchain.sh   from the project     <- wins
-    first-boot.sh  from the app
-    normal-boot.sh from the app
-    agent.py       from the app
+    toolchain.sh        the app,     as root     the baseline
+    toolchain-user.sh   the app,     as the user
+    extra.sh            the project, as root     added on top
+    extra-user.sh       the project, as the user
 
-A machine's settings can also name a different file for any stage, and the log says
-whose copy it served.
+The project's are found in `../workspace/provision`, and they **add to** the app's
+rather than replacing them — so every machine gets the same baseline and a project
+only writes down what is only its own. Give a file the same name as one of the app's
+instead, and it replaces that one outright.
 
-What the app ships in `toolchain.sh` is a plain development box: build tools, docker,
-autologin on X11, no screen lock, `DISPLAY=:0`, and node through nvm as the user.
-Every part of it is the part you are expected to replace.
+Splitting root from user is not tidiness. Doing user-space work as root and fixing
+ownership afterwards is how a root-owned file ends up in a home directory, where it
+fails quietly — dconf and anything else saving state writes there.
+
+**Nothing runs as root that does not have to.** The agent runs as the ordinary user,
+both service units say so, and privilege is asked for per command with `sudo` — which
+is what a person at a terminal would type. That is also why the user gets passwordless
+sudo: an agent cannot type a password, and without it there would be no way to install
+a package at all. It is a deliberate trade, judged low risk because the machine is a
+throwaway that holds nothing and can be rebuilt in one action.
+
+The log says whose copy of a script it served, so an override is visible rather than
+discovered.
 
 Each is served with a header of `OKC_*` values and `say`/`report` helpers
 prepended, then passed through byte for byte. So every script is valid shell on

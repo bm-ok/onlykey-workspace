@@ -13,6 +13,12 @@ to install before it can run -- which matters when this is what runs first.
 The dashboard listens and this dials in, not the other way round: a reboot is then
 an ordinary reconnect, and the dashboard keeps the log across it.
 
+It runs as the ordinary user, never as root. Nothing it does needs root -- and being
+root only because you could is how a home directory ends up full of files its owner
+cannot manage. Anything privileged says `sudo` in the command, which works because
+provisioning gave that user passwordless sudo, and which is what a person at a
+terminal would type anyway.
+
 Configuration comes from the environment, written into its service unit by
 first-boot.sh:
 
@@ -55,7 +61,8 @@ def facts():
         "hostname": socket.gethostname(),
         "system": f"{platform.system()} {platform.release()}",
         "addresses": addresses,
-        "user": os.environ.get("USER") or os.environ.get("SUDO_USER") or "root",
+        # Who this is running as, which should not be root.
+        "user": os.environ.get("USER") or subprocess.run(["id", "-un"], capture_output=True, text=True).stdout.strip(),
     }
 
 
@@ -74,8 +81,14 @@ class Link:
 
 
 def run_command(link, job, command, what):
-    """Streams output as it happens rather than at the end, because a long step
-    with nothing on screen is indistinguishable from a hung one."""
+    """Streams output as it happens rather than at the end, because a long step with
+    nothing on screen is indistinguishable from a hung one.
+
+    A login shell, so the user's own environment applies -- their nvm-installed node,
+    and whatever their ~/.profile sets up. This process is already the user, so there
+    is nothing to drop to and no notion of "as root" here at all: anything needing
+    privilege says `sudo` in the command, which is what a person would type.
+    """
     link.send({"type": "out", "job": job, "text": f"$ {what}"})
     try:
         process = subprocess.Popen(
@@ -129,7 +142,12 @@ def session():
                     # answering anything else meanwhile.
                     threading.Thread(
                         target=run_command,
-                        args=(link, message["job"], message["command"], message.get("what", "command")),
+                        args=(
+                            link,
+                            message["job"],
+                            message["command"],
+                            message.get("what", "command"),
+                        ),
                         daemon=True,
                     ).start()
                 elif message.get("type") == "bye":

@@ -1,5 +1,7 @@
 #!/bin/bash
-# Run on every ordinary boot, as root, by the okc-boot service.
+# Run on every ordinary boot, as the USER, by the okc-boot service.
+#
+# Not as root: it reports in and reads a few facts, and none of that needs root.
 #
 # Not the same job as first-boot.sh and deliberately a different file: this one
 # runs hundreds of times and must be safe to run again, so it installs nothing and

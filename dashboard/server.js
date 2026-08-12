@@ -155,9 +155,20 @@ const actions = {
       // Fetched by the machine rather than pushed, so it gets exactly what a fresh
       // install would get -- including any edit made since it was built.
       const url = `http://${await vbox.hostAddress()}:${port}/provision/${file}?vm=${encodeURIComponent(name)}`
+
+      // Commands arrive as the user, so a script that touches /etc needs sudo -- the
+      // same thing a person would type. `sudo -n` rather than plain sudo so it fails
+      // saying it needs a password instead of waiting for one nobody will type.
+      // Under /tmp because the user cannot write /root.
+      const needsRoot = !file.endsWith('-user.sh')
+      const run = needsRoot
+        ? `sudo -n env OKC_QUIET_SAY=yes bash /tmp/okc-again.sh`
+        : `OKC_QUIET_SAY=yes bash /tmp/okc-again.sh`
+
       // OKC_QUIET_SAY: the agent already streams stdout, so the script should not
       // also post each line over HTTP or every one arrives twice.
-      return channel.run(name, `curl -fsSL '${url}' -o /root/okc-again.sh && OKC_QUIET_SAY=yes bash /root/okc-again.sh`, { what: `${file} again` })
+      return channel.run(name, `curl -fsSL '${url}' -o /tmp/okc-again.sh && ${run}`,
+        { what: `${file} again${needsRoot ? ' (with sudo)' : ''}` })
     }
   },
 

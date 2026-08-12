@@ -261,8 +261,11 @@ function vmActions () {
               label: 'Which script',
               value: 'toolchain',
               options: [
-                { value: 'toolchain', label: 'toolchain.sh — what the machine is for' },
-                { value: 'firstBoot', label: 'first-boot.sh — ssh, your key, the agent' }
+                { value: 'toolchain', label: 'toolchain.sh — the baseline, as root' },
+                { value: 'toolchainUser', label: "toolchain-user.sh — the baseline, as the user" },
+                { value: 'extra', label: "extra.sh — this project's additions, as root" },
+                { value: 'extraUser', label: "extra-user.sh — this project's additions, as the user" },
+                { value: 'firstBoot', label: 'first-boot.sh — ssh, your key, the agent, then all of the above' }
               ]
             }],
             confirm: 'Run it',

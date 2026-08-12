@@ -16,13 +16,16 @@ const path = require('node:path')
 // What the app ships.
 const DIR = path.join(__dirname, '..', 'provision')
 
-// What the project brings, and it wins.
+// What the project brings.
 //
-// This is the swappability actually being used rather than described: anything
-// project-specific -- a kernel module to build, a device to flash, a udev rule for
-// one vendor id -- belongs to the project, not to this app. Drop a script of the
-// same name in here and it is served instead, with no change to the app and nothing
-// to configure.
+// Two ways to use it, and they are different on purpose:
+//
+//   extra.sh          runs AFTER the app's toolchain, and adds to it. This is the
+//                     usual one: the app guarantees a baseline -- build tools,
+//                     docker, a desktop, node -- and the project adds what only it
+//                     needs. Nothing is duplicated and nothing is lost.
+//   any other name    replaces the app's file of that name outright, for when the
+//                     baseline itself is wrong for a project.
 //
 // Outside the app on purpose. It is also why the test that keeps the app generic
 // does not scan this directory: project-specific content is exactly what is
@@ -34,10 +37,19 @@ const searchPath = () => [WORKSPACE, DIR].filter(d => { try { return fs.existsSy
 
 // The stages, and which file each uses unless a VM says otherwise. Adding a stage
 // here is the only place a new one needs registering.
+// Root and user are separate stages, not one script switching user mid-flight.
+// Which of the two something needs is not a detail: packages and /etc are root's, a
+// shell file or a per-user install is the user's, and mixing them is how a home
+// directory ends up owned by root.
 const STAGES = {
   firstBoot: 'first-boot.sh',
   toolchain: 'toolchain.sh',
+  toolchainUser: 'toolchain-user.sh',
   normalBoot: 'normal-boot.sh',
+  // The project's additions, run after the app's. Usually only a project has these,
+  // and a machine works perfectly well without either.
+  extra: 'extra.sh',
+  extraUser: 'extra-user.sh',
   // Not shell, and served without a header for that reason -- its values arrive
   // through the service unit first-boot.sh writes for it.
   agent: 'agent.py'
@@ -70,6 +82,12 @@ function resolve (wanted) {
 
 // Where a script came from, so the log can say whose copy ran.
 const sourceOf = file => file.startsWith(WORKSPACE) ? 'the project' : 'the app'
+
+// Does a stage exist at all? extra.sh usually only exists for a project, and its
+// absence is normal rather than a problem.
+const has = (vm, stage) => {
+  try { fileFor(vm, stage); return true } catch { return false }
+}
 
 // Which file a VM gets for a stage: its own choice, or the default.
 const fileFor = (vm, stage) => {
@@ -150,4 +168,4 @@ const raw = (vm, stage) => fs.readFileSync(fileFor(vm, stage), 'utf8')
 // either the stage's default name or a swapped-in one.
 const stageOfFile = name => Object.keys(STAGES).find(s => STAGES[s] === name) || null
 
-module.exports = { render, raw, list, resolve, fileFor, sourceOf, STAGES, stageOfFile, DIR, WORKSPACE }
+module.exports = { render, raw, list, resolve, fileFor, has, sourceOf, STAGES, stageOfFile, DIR, WORKSPACE }
