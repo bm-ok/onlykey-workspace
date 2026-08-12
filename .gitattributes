@@ -16,3 +16,10 @@
 # The seed the unattended installer is handed, for the same reason.
 *.yaml text eol=lf
 *.yml text eol=lf
+
+# Git hooks, which have no extension by design -- git looks for `pre-receive`,
+# not `pre-receive.sh`. So the rules above miss them entirely, and the first
+# clone would hand git a shell script full of carriage returns. This one runs on
+# the HOST rather than in a guest, and it is what stops a push reaching master,
+# so it failing to run is the most expensive version of this mistake available.
+dashboard/repos/hooks/* text eol=lf
