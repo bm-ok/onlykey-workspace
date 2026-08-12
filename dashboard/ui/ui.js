@@ -70,7 +70,7 @@ const setText = (node, text) => { if (node.textContent !== text) node.textConten
 // Everything any machine panel reads, including what its click handlers close
 // over: `running` decides whether a button starts or stops, and `description`
 // is carried into the configure dialog.
-const vmKey = v => v && [v.name, v.state, v.stage, v.live, v.running, v.connected, v.baseSnapshot, v.description || '']
+const vmKey = v => v && [v.name, v.state, v.stage, v.live, v.running, v.connected, v.baseSnapshot, v.description || '', v.branch || '']
 
 // ---- the notice bar ---------------------------------------------------
 
@@ -312,20 +312,48 @@ function vmActions () {
     // Only when it is dialled in, because that is where the address comes from.
     // Disabled rather than hidden while it is not: a button that vanishes reads
     // as a feature that does not exist, and the reason is worth saying.
+    // Once a machine is on a branch, opening it again just opens it. No dialog,
+    // no question, nothing to get wrong -- closing the editor and clicking again
+    // is not a decision about which work to do, and asking would make it one.
+    // The setup runs again first because it is safe to (it never resets the
+    // machine's copy) and it repairs a workspace that is not there, which is
+    // exactly the state a machine is in after being rolled back.
+    v.connected && v.branch
+      ? el('button', {
+          className: 'btn',
+          textContent: 'Open in VS Code',
+          title: `${v.name} is set up on ${v.branch}`,
+          onclick: () => {
+            showTab('live')
+            return api('vmWorkspace', { name: v.name, branch: v.branch })
+              .then(() => api('vmEditor', { name: v.name }))
+              .then(r => say(`${v.name} is on ${v.branch} — VS Code opened ${r.opened}`))
+              .catch(oops)
+          }
+        })
+      : null,
+
     // The branch is asked for, not the folder. Which folder is not a decision
     // anybody needs to make -- it is the same one every time -- and WHICH WORK is
     // the decision, so that is what the dialog is about.
     el('button', {
       className: 'btn',
-      textContent: 'Open in VS Code',
+      textContent: v.branch ? 'Work on another branch' : 'Open in VS Code',
       disabled: !v.connected,
       title: v.connected ? '' : 'It has to be dialled in — that is where its address comes from',
       onclick: () => api('gitBranches').then(({ repos, branches }) => ask({
-        title: `Open ${v.name} in VS Code?`,
+        title: v.branch ? `Move ${v.name} to another branch?` : `Open ${v.name} in VS Code?`,
         plain: [
           `It sets up a workspace on ${v.name} holding ${repos.length ? repos.join(', ') : 'the workspace repositories'}, all on one branch, pointed back here.`,
           'Pick a branch to carry on with, or type a name to start new work.',
           'Nothing lands on a default branch: the branch is cut here first and the machine arrives with it already checked out.',
+          // Said only when there is something to lose track of. What moving
+          // costs is not the commits -- they stay on the machine -- but the
+          // permission: from here on it may only push the new one, so anything
+          // unpushed on the old branch waits until it is moved back.
+          ...(v.branch
+            ? [`${v.name} is on ${v.branch} now. Its commits stay on the machine, but it will only be able to push the new branch until you move it back.`]
+            : []),
           'Then a new window opens on it; this one is not replaced.'
         ],
         fields: [

@@ -113,7 +113,10 @@ const actions = {
       }
       await vbox.takeSnapshot(name, title.trim(), description || '')
       const vm = vms.get(name)
-      if (!vm.baseSnapshot) vms.update(name, { baseSnapshot: title.trim() })
+      vms.update(name, {
+        baseSnapshot: vm.baseSnapshot || title.trim(),
+        snapshots: { ...(vm.snapshots || {}), [title.trim()]: vm.branch || null }
+      })
       return vbox.snapshots(name)
     }
   },
@@ -143,7 +146,10 @@ const actions = {
       }
 
       await vbox.takeSnapshot(name, title, 'a clean starting point, taken once it was set up')
-      vms.update(name, { baseSnapshot: title })
+      vms.update(name, {
+        baseSnapshot: title,
+        snapshots: { ...(vm.snapshots || {}), [title]: vm.branch || null }
+      })
       to.good(`"${title}" is now the point this machine can be returned to`)
 
       if (wasRunning) {
@@ -171,10 +177,33 @@ const actions = {
     about: 'Go back to a snapshot, discarding everything since',
     takes: ['name', 'title'],
     run: async ({ name, title }) => {
-      vms.get(name)
+      const vm = vms.get(name)
       if (!await vbox.isOff(name)) throw new Error('Shut the machine down first — VirtualBox will not restore a snapshot while it is running.')
       await vbox.restoreSnapshot(name, title)
-      return vbox.snapshots(name)
+
+      // The disk went back, so what this machine is allowed to push has to go
+      // back with it. Restoring to a point taken before any workspace existed
+      // leaves a machine whose registry still names a branch -- a standing
+      // permission to push work that is no longer on the disk, which is the
+      // quiet kind of wrong: nothing fails, and the machine can put commits on a
+      // branch it has no copy of.
+      //
+      // A snapshot this app did not take -- one made in VirtualBox directly --
+      // is not in the map, and that reads as null rather than as "leave it
+      // alone". Unknown means may-push-nothing, which is recoverable in one
+      // click; the other way round is not.
+      const was = vm.branch || null
+      const now = (vm.snapshots || {})[title]
+      const branch = now === undefined ? null : now
+      vms.update(name, { branch })
+
+      const to = log.on('vm', name)
+      if (branch !== was) {
+        to.warn(branch
+          ? `${name} is back at "${title}" and may now push ${branch}, not ${was || 'nothing'}`
+          : `${name} is back at "${title}", which predates any workspace — it may push nothing until it is set up again`)
+      }
+      return { ...await vbox.snapshots(name), branch }
     }
   },
 
