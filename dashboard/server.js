@@ -186,6 +186,48 @@ const actions = {
       return vms.update(name, { description: String(description).trim() })
     }
   },
+
+  // Whether the queue may use this machine at all.
+  //
+  // Everything else that keeps a machine out of the pool is a FACT about it --
+  // it claims a branch, it has no base snapshot, it is mid-install. Those are
+  // discovered and they change on their own. This is a DECISION, and it is the
+  // only one a person can make about the pool: keep this machine for me.
+  //
+  // Wanted because the queue is otherwise entitled to any machine that looks
+  // idle, and "looks idle" is exactly what a machine somebody is about to use
+  // looks like. Rolling it back and handing it a task would discard whatever
+  // they had set up, and the first they would know is a clean disk.
+  //
+  // Default is IN. These are runners; a tool for running work should not need
+  // every machine enrolled by hand before it does anything. Opting out is the
+  // deliberate act, and it is recorded so it survives a restart.
+  vmForTasks: {
+    about: 'Let the queue use this machine, or keep it back for yourself',
+    takes: ['name', 'enabled'],
+    run: ({ name, enabled }) => {
+      const vm = vms.get(name)
+      const want = enabled === undefined
+        ? !(vm.forTasks === false)       // no argument means "toggle it"
+        : !(enabled === false || enabled === 'false' || enabled === 'no' || enabled === '0')
+      const now = vms.update(name, { forTasks: want })
+
+      // Said plainly, because taking a machine out does NOT stop what it is
+      // doing. A person clicking this while a task runs on it is asking for it
+      // back, and would otherwise assume it had been freed immediately.
+      const doing = queue.state().inFlight.find(f => f.machine === name)
+      log.on('vm', name).info(want ? 'available to the queue' : 'kept back from the queue')
+      return {
+        name,
+        forTasks: want,
+        note: want
+          ? 'The queue may pick this up when it is free and clean.'
+          : doing
+            ? `It is running ${doing.task} and will finish that first — this stops it being picked up again, it does not interrupt it.`
+            : 'The queue will not pick this up. Nothing else about it changes.'
+      }
+    }
+  },
   vmStart: { about: 'Start a virtual machine', takes: ['name', 'type'], run: ({ name, type }) => { vms.get(name); return busy.during(name, 'being started', () => vbox.start(name, type === 'headless' ? 'headless' : 'gui')) } },
   // The session is dropped here, not left to time out.
   //

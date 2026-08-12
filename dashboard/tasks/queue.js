@@ -60,6 +60,10 @@ const stop = () => { if (timer) { clearInterval(timer); timer = null } }
 // can take it" look identical from outside and want opposite responses.
 function availability (vms) {
   return vms.map(v => {
+    // A decision, checked before any of the facts. Someone has said keep this
+    // one back, and that outranks it merely looking idle -- which is exactly
+    // what a machine somebody is about to use looks like.
+    if (v.forTasks === false) return { name: v.name, free: false, why: 'is kept back from the queue' }
     if (busyWith.has(v.name)) return { name: v.name, free: false, why: `doing ${busyWith.get(v.name)}` }
     if (!v.baseSnapshot) return { name: v.name, free: false, why: 'has no base snapshot to come back to, so it cannot be made clean' }
     if (v.branch) return { name: v.name, free: false, why: `still claims ${v.branch}` }

@@ -71,7 +71,7 @@ const setText = (node, text) => { if (node.textContent !== text) node.textConten
 // Everything any machine panel reads, including what its click handlers close
 // over: `running` decides whether a button starts or stops, and `description`
 // is carried into the configure dialog.
-const vmKey = v => v && [v.name, v.state, v.stage, v.live, v.running, v.connected, v.baseSnapshot, v.description || '', v.branch || '']
+const vmKey = v => v && [v.name, v.state, v.stage, v.live, v.running, v.connected, v.baseSnapshot, v.description || '', v.branch || '', v.forTasks !== false]
 
 // ---- code, for reading ------------------------------------------------
 //
@@ -1095,7 +1095,11 @@ const vmCard = v => el('div', {
     el('span', {
       className: `badge ${v.stage === 'connected' || v.stage === 'ready' ? 'ok' : v.stage === 'defined' ? 'bad' : 'run'}`,
       textContent: v.stage
-    })))
+    }),
+    // Only when it is being kept back, because that is the surprising state.
+    // A badge on every machine saying it is available would be noise on the
+    // normal case and would make the exception harder to see, not easier.
+    v.forTasks === false ? el('span', { className: 'badge warn', textContent: 'not for tasks' }) : null))
 
 function vmActions () {
   const box = $('machine-actions')
@@ -1115,7 +1119,23 @@ function vmActions () {
   // is why the signature is the whole of vmKey rather than only what is visible.
   if (!changed('actions', vmKey(v))) return
 
+  const pooled = v.forTasks !== false
+
   fill(box, el('div', { className: 'row' },
+    // Whether the queue may have this machine. Beside the other things you do to
+    // a machine rather than buried in its settings, because it is the answer to
+    // "why has nothing picked this up" and to "why did that get wiped" -- and
+    // both are asked while looking at exactly this panel.
+    el('button', {
+      className: `btn ${pooled ? '' : 'ok'}`,
+      textContent: pooled ? 'Keep it back from tasks' : 'Let tasks use it',
+      title: pooled
+        ? 'The queue may roll this back and give it work when it is free'
+        : 'The queue will not touch this machine',
+      onclick: () => api('vmForTasks', { name: v.name, enabled: !pooled })
+        .then(r => { say(r.note); return draw() }).catch(oops)
+    }),
+
     el('button', {
       className: 'btn ok',
       textContent: v.running ? 'Shut it down' : 'Start it',
