@@ -17,6 +17,8 @@ should do. Two other documents sit beside it and are deliberately not this one:
                  look odd. Archaeology, not instructions
     TODO.md      what is outstanding right now, and where the machines were
                  last left. Working state, and the first thing to distrust
+    TEST-PLAN.md the end-to-end drills, what each proves, and when it last ran.
+                 Half of them pass by being REFUSED
 
 
 It is generic on purpose

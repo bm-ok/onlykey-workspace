@@ -32,6 +32,9 @@ They are deliberately separate, and each answers a different question:
 * `dashboard/LEARNED.md` — what went wrong before and what it taught. Read it
   **before "simplifying" anything**. Most of what looks redundant here is
   load-bearing and that file says why.
+* `dashboard/TEST-PLAN.md` — the end-to-end drills. Re-run the relevant ones
+  after anything structural, and add one whenever a change creates a claim that
+  code review cannot settle. **Half of them pass by being refused.**
 
 ## The rules the code is built to
 

@@ -6,6 +6,10 @@ that describes how any of this works — if something here is finished, it belon
 there and should leave this file. Anything left in here long enough to go stale
 was probably never going to be done.
 
+Something that needs *exercising* rather than building belongs in
+`TEST-PLAN.md`, which is where the four unrun drills went. It is a different
+list: not what is missing, but what is unproven.
+
 
 Outstanding
 -----------
