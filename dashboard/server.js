@@ -19,7 +19,7 @@ const machines = require('./machines/store')
 const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
-const firstboot = require('./machines/firstboot')
+const scripts = require('./machines/scripts')
 const { provision, reach } = require('./machines/provision')
 const editor = require('./machines/editor')
 
@@ -125,14 +125,18 @@ const actions = {
 
   vmIsos: { about: 'Installer images VirtualBox already knows about', run: () => vbox.isos() },
   vmBridges: { about: 'Host network adapters a guest could be bridged onto', run: () => vbox.bridges() },
+  vmScripts: {
+    about: 'The provisioning scripts available to swap between',
+    run: async () => ({ available: scripts.list(), stages: scripts.STAGES })
+  },
   vmScript: {
-    about: 'The setup script a machine will receive, exactly as it will get it',
-    takes: ['name'],
-    run: async ({ name }) => {
+    about: 'One script a machine will receive, exactly as it will get it',
+    takes: ['name', 'stage'],
+    run: async ({ name, stage = 'unattended' }) => {
       const vm = vms.get(name)
       let host = '127.0.0.1'
-      try { host = await vbox.hostAddress() } catch { /* previewing should still work offline */ }
-      return { script: firstboot.render(vm, { hostAddress: host, port }) }
+      try { host = await vbox.hostAddress() } catch { /* previewing should work with no network */ }
+      return { stage, file: path.basename(scripts.fileFor(vm, stage)), script: scripts.render(stage, vm, { hostAddress: host, port }) }
     }
   },
 
@@ -181,27 +185,44 @@ function handler (req, res) {
   // the window: a machine being installed has to be able to reach it. They are
   // plain GETs with no body, because they are called by curl inside an installer.
 
-  if (url.pathname === '/provision/first-boot.sh') {
-    const name = url.searchParams.get('vm') || ''
-    try {
-      const vm = vms.get(name)
-      log.on('vm', name, 'guest').good(`${name} asked for its setup script`)
-      vbox.hostAddress().catch(() => '127.0.0.1').then(host => {
-        res.writeHead(200, { 'content-type': 'text/x-shellscript' })
-        res.end(firstboot.render(vm, { hostAddress: host, port }))
-      })
-    } catch (e) {
-      log.on('vm', 'guest').bad(`something asked for a setup script as "${name}": ${e.message}`)
-      res.writeHead(404, { 'content-type': 'text/plain' }).end(`# ${e.message}\n`)
-    }
-    return
-  }
-
   if (url.pathname === '/provision/report') {
     const name = url.searchParams.get('vm') || ''
     const stage = url.searchParams.get('stage') || 'running'
     try { provisioner.report(name, stage) } catch { /* a report is never worth an error */ }
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok\n')
+    return
+  }
+
+  // A line from inside a machine, into the same live log as everything else. This
+  // is what makes a 25-minute install watchable instead of silent.
+  if (url.pathname === '/provision/say') {
+    const name = url.searchParams.get('vm') || ''
+    const text = url.searchParams.get('text') || ''
+    if (vms.read().some(v => v.name === name)) log.on('vm', name, 'guest').out(text)
+    res.writeHead(200, { 'content-type': 'text/plain' }).end('ok\n')
+    return
+  }
+
+  // Any script in provision/, by filename, so a swapped-in one is served the same
+  // way as a default. The name is resolved inside that folder and nowhere else.
+  if (url.pathname.startsWith('/provision/') && url.pathname.endsWith('.sh')) {
+    const file = path.basename(url.pathname)
+    const name = url.searchParams.get('vm') || ''
+    try {
+      const vm = vms.get(name)
+      const stage = scripts.stageOfFile(file)
+      log.on('vm', name, 'guest').good(`${name} asked for ${file}`)
+      vbox.hostAddress().catch(() => '127.0.0.1').then(host => {
+        res.writeHead(200, { 'content-type': 'text/x-shellscript' })
+        // A stage name resolves through the VM's own choice of script; an
+        // unrecognised filename is served as itself, which is what makes a script
+        // nobody registered still work.
+        res.end(scripts.render(stage || file, vm, { hostAddress: host, port }))
+      })
+    } catch (e) {
+      log.on('vm', 'guest').bad(`something asked for ${file} as "${name}": ${e.message}`)
+      res.writeHead(404, { 'content-type': 'text/plain' }).end(`# ${e.message}\n`)
+    }
     return
   }
 

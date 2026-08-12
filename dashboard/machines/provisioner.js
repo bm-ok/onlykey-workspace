@@ -175,7 +175,10 @@ async function install (name, { port }) {
   if (!await vbox.isOff(name)) throw new Error(`"${name}" is running. Shut it down before installing.`)
 
   const host = await vbox.hostAddress()
-  const url = `http://${host}:${port}/provision/first-boot.sh?vm=${encodeURIComponent(name)}`
+  // Only the first script is named here. What it then fetches and in what order
+  // is decided in unattended.sh, which is a file anyone can edit or replace --
+  // so changing how a machine is built never means touching this app.
+  const url = `http://${host}:${port}/provision/unattended.sh?vm=${encodeURIComponent(name)}`
 
   // Every detail of the next few lines is load-bearing:
   //

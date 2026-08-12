@@ -46,10 +46,20 @@ The shape
       log.js        one tagged live log that everything writes into
 
     machines/       the machines you have. The loop does not know it exists
-      store.js      add and remove them; editable from the page
-      vbox.js       virtual machines: make, delete, start, stop
-      provision.js  setup steps, run in order, streaming into the log
+      vbox.js       VirtualBox: state, snapshots, isos, bridges, delete
+      vms.js        the registry of VMs THIS APP MADE -- a safety boundary
+      provisioner.js  make one, and install an operating system on it
+      scripts.js    serves provision/*.sh with a header of values
+      store.js      other machines, reachable over ssh
+      provision.js  setup steps run on a machine, streaming into the log
       editor.js     one click to open the work in VS Code
+
+    provision/      SWAPPABLE shell scripts a new machine runs. Plain files,
+                    read fresh on every request, valid on their own
+      unattended.sh   fetches and orders the rest; the installer starts here
+      first-boot.sh   once: ssh and a key, so the machine is reachable
+      toolchain.sh    THE ONE TO SWAP: what the machine is actually for
+      normal-boot.sh  every boot: says it is up, safe to run again
 
     ecosystems/     packs. `local.json` is the two repos in ../workspace
     ui/             the page: the loop, the machines, the live log
@@ -119,9 +129,25 @@ from the page rather than from a file you have to find.
 
 * **Machines** — add and remove them. `This machine` always exists and cannot be
   removed. Another machine is an address reached over ssh.
-* **Virtual machines** — make one, delete one, start and stop it, read whether it
-  is running. VirtualBox, found even when it is not on `PATH`. If it is not
-  installed the page says so and everything else still works.
+* **Virtual machines** — make one, delete one, start and stop it, snapshot it
+  under a title you choose, go back to a snapshot. VirtualBox, found even when it
+  is not on `PATH`; if it is not installed the page says so and everything else
+  still works.
+
+  **Only machines this app made ever appear, and only they can be acted on.** That
+  is a safety boundary rather than tidiness: these actions delete disks, so
+  membership comes from the app's own registry and never from VirtualBox. On a host
+  with three VMs it lists the one it made and refuses the others by name.
+
+* **Provisioning is four shell scripts in `provision/`, meant to be swapped.** The
+  installer is told about `unattended.sh` and nothing else; that script decides
+  what else to fetch and in what order. A VM's spec can name a different file for
+  any stage, so making a different kind of machine is editing a script rather than
+  changing this app. They are served with a small header of `OKC_*` values and a
+  `say`/`report` helper prepended, and are otherwise passed through unchanged — so
+  each one is valid shell on its own and can be run by hand on the machine to
+  debug it. A guest's output comes back into the same live log as everything else,
+  which is what makes a long install watchable instead of silent.
 * **Provisioning** — setup steps you write per machine, run in order, streaming
   into the live log. It stops at the first failure, because a later step almost
   always assumes an earlier one worked.
