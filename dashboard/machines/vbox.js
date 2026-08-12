@@ -1,18 +1,23 @@
 'use strict'
 
-// The virtual machine manager: list them, make one, remove one, turn them on and
-// off.
+// VirtualBox, and nothing about any project.
 //
 // This lives outside core/ deliberately. A virtual machine is not a
-// project-specific idea, so the word is not banned here -- what was wrong before
-// was VM lifecycle welded into the work loop, so that the tool could not be used
-// without one. Here it is a thing you manage, and the loop does not know it
-// exists.
+// project-specific idea; what was wrong before was VM lifecycle welded into the
+// work loop so the tool could not be used without one. Here it is a thing you
+// manage and the loop does not know it exists.
+//
+// Two lessons from the previous version are kept because both cost real debugging
+// time: powered off is NOT the same as unlocked, and a single VirtualBox call is
+// not a real attempt.
 
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
+const { execFile } = require('node:child_process')
 const log = require('../core/log')
-const { run } = require('./run')
+
+const OFF_STATES = new Set(['poweroff', 'aborted', 'saved', 'aborted-saved'])
 
 // Installed but not on PATH is the normal case on Windows, so look where it
 // actually is before giving up.
@@ -24,103 +29,216 @@ const CANDIDATES = [
   '/usr/local/bin/VBoxManage'
 ].filter(Boolean)
 
-let cached
-function exe () {
-  if (cached) return cached
-  cached = CANDIDATES.find(p => { try { return fs.existsSync(p) } catch { return false } }) || 'VBoxManage'
-  return cached
+const there = p => { try { return fs.existsSync(p) } catch { return false } }
+const exe = () => CANDIDATES.find(there) || 'VBoxManage'
+const available = () => CANDIDATES.some(there)
+
+function run (args, { timeout = 120000, quiet = false, tags = [] } = {}) {
+  const to = log.on('vm', ...tags)
+  if (!quiet) to.info(`VBoxManage ${args.join(' ')}`)
+  return new Promise((resolve, reject) => {
+    execFile(exe(), args, { timeout, maxBuffer: 1 << 24 }, (err, stdout, stderr) => {
+      if (err) {
+        const why = (stderr || stdout || err.message).trim()
+        if (!quiet) to.bad(why.split('\n').slice(-2).join(' '))
+        const e = new Error(why)
+        e.stdout = stdout
+        e.stderr = stderr
+        return reject(e)
+      }
+      if (!quiet && stdout.trim()) to.out(stdout)
+      // Normalised here, once. VBoxManage emits CRLF on Windows, and every parser
+      // below splits on \n and anchors patterns with $ -- so a trailing \r made
+      // `list vms` match nothing and every machine look as though it did not
+      // exist. Fixing it per parser would mean remembering it per parser.
+      resolve(stdout.replace(/\r\n/g, '\n'))
+    })
+  })
 }
 
-const available = () => CANDIDATES.some(p => { try { return fs.existsSync(p) } catch { return false } })
-
-const vbox = (args, opts = {}) => run(exe(), args, { tags: ['vm'], ...opts })
+// VirtualBox loses races against its own session handling often enough that one
+// attempt is not a real attempt.
+async function retrying (fn, { attempts = 6, delay = 3000, what = 'operation', tags = [] } = {}) {
+  let last
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      last = err
+      const locked = /locked|INVALID_OBJECT_STATE|is not locked|being locked/i.test(`${err.stderr || ''}${err.message || ''}`)
+      if (!locked || i === attempts) throw err
+      log.on('vm', ...tags).warn(`${what} attempt ${i} hit a session lock; retrying in ${delay / 1000}s`)
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+  throw last
+}
 
 // ---- reading ----------------------------------------------------------
 
-async function list () {
-  if (!available()) return { available: false, vms: [] }
+const names = text => text.split('\n')
+  .map(l => (l.match(/^"(.*)"\s+\{(.+)\}$/) || []).slice(1))
+  .filter(m => m.length)
+  .map(([name, uuid]) => ({ name, uuid }))
 
-  const [defined, running] = await Promise.all([
-    vbox(['list', 'vms'], { quiet: true }),
-    vbox(['list', 'runningvms'], { quiet: true })
-  ])
-  const names = text => text.split('\n')
-    .map(l => (l.match(/^"(.*)"\s+\{(.+)\}$/) || []).slice(1))
-    .filter(m => m.length).map(([name, uuid]) => ({ name, uuid }))
+const listAll = async () => names(await run(['list', 'vms'], { quiet: true }))
+const runningAll = async () => names(await run(['list', 'runningvms'], { quiet: true }))
 
-  const up = new Set(names(running).map(v => v.name))
-  return {
-    available: true,
-    vms: names(defined).map(v => ({ ...v, running: up.has(v.name) }))
+async function info (name) {
+  const out = await run(['showvminfo', name, '--machinereadable'], { quiet: true })
+  const map = {}
+  for (const line of out.split('\n')) {
+    const m = /^"?([^"=]+)"?="?(.*?)"?$/.exec(line.trim())
+    if (m) map[m[1]] = m[2]
   }
+  return map
+}
+
+const exists = async name => (await listAll()).some(v => v.name === name)
+const state = async name => { try { return (await info(name)).VMState || 'unknown' } catch { return 'missing' } }
+const isOff = async name => OFF_STATES.has(await state(name))
+
+async function waitForState (name, ok, { timeout = 180000, interval = 2000 } = {}) {
+  const deadline = Date.now() + timeout
+  for (;;) {
+    if (ok(await state(name))) return true
+    if (Date.now() > deadline) return false
+    await new Promise(r => setTimeout(r, interval))
+  }
+}
+const waitUntilOff = (name, opts) => waitForState(name, s => OFF_STATES.has(s) || s === 'missing', opts)
+
+// Powered off is not unlocked. VirtualBox holds the session for a moment after a
+// VM stops, and while it is held `unregistervm` fails with
+// VBOX_E_INVALID_OBJECT_STATE. Waiting on the power state alone races it.
+async function waitUntilUnlocked (name, { timeout = 60000, interval = 2000 } = {}) {
+  const deadline = Date.now() + timeout
+  const to = log.on('vm', name)
+  for (;;) {
+    let session
+    try {
+      session = (await info(name)).SessionState || 'Unlocked'
+    } catch {
+      return // already gone, which is the outcome we wanted
+    }
+    if (session === 'Unlocked') return
+    if (Date.now() > deadline) {
+      to.warn(`session still "${session}" after ${Math.round(timeout / 1000)}s; trying anyway`)
+      return
+    }
+    to.info(`waiting for the VirtualBox session to unlock (currently "${session}")`)
+    await new Promise(r => setTimeout(r, interval))
+  }
+}
+
+// ISOs VirtualBox already knows about, so a person picks one instead of typing a
+// path.
+async function isos () {
+  if (!available()) return []
+  const out = await run(['list', 'dvds'], { quiet: true })
+  return out.split('\n')
+    .map(l => (/^Location:\s*(.+)$/.exec(l.trim()) || [])[1])
+    .filter(l => l && /\.iso$/i.test(l) && there(l))
+    .map(location => ({ location, name: path.basename(location) }))
+}
+
+// Which host adapters can be bridged, and what address a guest would reach us
+// on. A guest cannot use 127.0.0.1 to reach the host.
+async function bridges () {
+  if (!available()) return []
+  const out = await run(['list', 'bridgedifs'], { quiet: true })
+  const found = []
+  let current = null
+  for (const raw of out.split('\n')) {
+    const m = /^([A-Za-z]+):\s*(.*)$/.exec(raw.trim())
+    if (!m) continue
+    if (m[1] === 'Name') {
+      if (current) found.push(current)
+      current = { name: m[2].trim() }
+    } else if (current) {
+      if (m[1] === 'IPAddress') current.ip = m[2].trim()
+      if (m[1] === 'Status') current.status = m[2].trim()
+    }
+  }
+  if (current) found.push(current)
+  return found
+}
+
+// The address a guest must use to reach this dashboard.
+async function hostAddress () {
+  const up = (await bridges()).filter(b => b.status === 'Up' && b.ip && !b.ip.startsWith('169.254'))
+  if (up.length) return up[0].ip
+  for (const entries of Object.values(os.networkInterfaces())) {
+    for (const e of entries || []) {
+      if (e.family === 'IPv4' && !e.internal && !e.address.startsWith('169.254')) return e.address
+    }
+  }
+  throw new Error('Could not work out this machine\'s address on the network, so a guest would have no way to reach it.')
 }
 
 // ---- switching on and off --------------------------------------------
 
-const start = async name => {
-  log.on('vm', name).info(`Starting ${name}`)
-  await vbox(['startvm', name, '--type', 'headless'], { tags: ['vm', name] })
-  log.on('vm', name).good(`${name} is starting. Give it a moment before connecting.`)
-  return { started: name }
-}
+const start = (name, type = 'gui') => run(['startvm', name, '--type', type], { tags: [name] })
 
-// The button, not the plug. A guest that is mid-write should be allowed to
-// finish; pulling power is a separate, explicit choice.
-const stop = async (name, force = false) => {
-  const to = log.on('vm', name)
-  to.info(force ? `Powering ${name} off` : `Asking ${name} to shut down`)
-  await vbox(['controlvm', name, force ? 'poweroff' : 'acpipowerbutton'], { tags: ['vm', name] })
-  to.good(force ? `${name} is off.` : `${name} was asked to shut down.`)
-  return { stopped: name }
-}
+// The button, not the plug. A guest mid-write should be allowed to finish;
+// pulling power is a separate, explicit choice.
+const stop = (name, force = false) =>
+  run(['controlvm', name, force ? 'poweroff' : 'acpipowerbutton'], { tags: [name] })
 
-// ---- adding and removing ---------------------------------------------
+// ---- snapshots -------------------------------------------------------
 
-// Creates a registered VM with a disk and a port forward for ssh. It does not
-// install an operating system -- attach an installer and boot it, or attach a
-// disk that already has one.
-async function create ({ name, memory = 4096, cpus = 2, diskGb = 30, sshPort = 2222, iso = '' }) {
-  if (!available()) throw new Error('VirtualBox is not installed, or not where this expected to find it.')
-  if (!name || !/^[\w.-]+$/.test(name)) throw new Error('Give the machine a name using letters, numbers, dots or dashes.')
-
-  const to = log.on('vm', name)
-  const tags = ['vm', name]
-  to.info(`Creating ${name}`)
-
-  await vbox(['createvm', '--name', name, '--ostype', 'Ubuntu_64', '--register'], { tags })
-  await vbox(['modifyvm', name,
-    '--memory', String(memory), '--cpus', String(cpus),
-    '--nic1', 'nat', '--audio-driver', 'none', '--graphicscontroller', 'vmsvga'], { tags })
-  await vbox(['modifyvm', name,
-    '--natpf1', `ssh,tcp,127.0.0.1,${sshPort},,22`], { tags })
-
-  const info = await vbox(['showvminfo', name, '--machinereadable'], { quiet: true })
-  const folder = (info.match(/^CfgFile="(.*)"$/m) || [])[1]
-  const disk = path.join(path.dirname(folder || '.'), `${name}.vdi`)
-
-  await vbox(['createmedium', 'disk', '--filename', disk, '--size', String(diskGb * 1024)], { tags })
-  await vbox(['storagectl', name, '--name', 'SATA', '--add', 'sata', '--controller', 'IntelAhci'], { tags })
-  await vbox(['storageattach', name, '--storagectl', 'SATA', '--port', '0', '--device', '0',
-    '--type', 'hdd', '--medium', disk], { tags })
-
-  if (iso) {
-    await vbox(['storagectl', name, '--name', 'IDE', '--add', 'ide'], { tags })
-    await vbox(['storageattach', name, '--storagectl', 'IDE', '--port', '1', '--device', '0',
-      '--type', 'dvddrive', '--medium', iso], { tags })
+async function snapshots (name) {
+  try {
+    const out = await run(['snapshot', name, 'list', '--machinereadable'], { quiet: true })
+    const list = []
+    for (const line of out.split('\n')) {
+      const m = /^SnapshotName[^=]*="(.*)"$/.exec(line.trim())
+      if (m) list.push({ name: m[1] })
+    }
+    const current = (out.match(/^CurrentSnapshotName="(.*)"$/m) || [])[1]
+    return { snapshots: list, current: current || null }
+  } catch {
+    // No snapshots at all is an error from VBoxManage, not a problem here.
+    return { snapshots: [], current: null }
   }
-
-  to.good(`${name} created. ssh reaches it on 127.0.0.1:${sshPort} once an operating system is installed and running.`)
-  return { name, sshPort, disk, iso: iso || null }
 }
 
-// Deletes the VM and its disks. Said plainly because it is the one action here
-// that destroys something.
-async function remove (name) {
+const takeSnapshot = (name, snapshot, description = '') => run([
+  'snapshot', name, 'take', snapshot, ...(description ? ['--description', description] : [])
+], { tags: [name], timeout: 300000 })
+
+const restoreSnapshot = (name, snapshot) => run([
+  'snapshot', name, 'restore', snapshot
+], { tags: [name], timeout: 300000 })
+
+// ---- removing --------------------------------------------------------
+
+// Everything the VM owns, gone, media included -- otherwise practising
+// provisioning leaves a trail of orphaned disks.
+async function destroy (name) {
   const to = log.on('vm', name)
-  to.warn(`Deleting ${name} and its disks`)
-  await vbox(['unregistervm', name, '--delete'], { tags: ['vm', name] })
-  to.good(`${name} is gone.`)
-  return { removed: name }
+  if (!await exists(name)) {
+    to.info(`${name} does not exist in VirtualBox; nothing to delete`)
+    return { existed: false }
+  }
+  const s = await state(name)
+  if (!OFF_STATES.has(s)) {
+    to.warn(`powering ${name} off (was "${s}")`)
+    await stop(name, true).catch(() => {})
+    await waitUntilOff(name, { timeout: 120000 })
+  }
+  await waitUntilUnlocked(name)
+  await retrying(() => run(['unregistervm', name, '--delete'], { timeout: 180000, tags: [name] }),
+    { what: 'unregistervm', tags: [name] })
+  to.good(`${name} and its disks are gone.`)
+  return { existed: true }
 }
 
-module.exports = { available, list, start, stop, create, remove, exe }
+module.exports = {
+  available, exe, run, retrying,
+  listAll, runningAll, info, exists, state, isOff,
+  waitForState, waitUntilOff, waitUntilUnlocked,
+  isos, bridges, hostAddress,
+  start, stop, snapshots, takeSnapshot, restoreSnapshot, destroy,
+  OFF_STATES
+}

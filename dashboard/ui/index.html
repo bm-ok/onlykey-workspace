@@ -48,9 +48,13 @@
     <div class="cols">
 
       <div class="col narrow">
-        <h2>Virtual machines</h2>
+        <!-- The + belongs beside the thing it adds to, not below the list where
+             it competes with the list's own controls. -->
+        <h2 class="titlerow">
+          Virtual machines
+          <button class="plus" id="add-vm-open" title="Make a virtual machine">+</button>
+        </h2>
         <div id="vms" class="stack"></div>
-        <button class="btn wide" id="add-vm-open">Make one</button>
       </div>
 
       <div class="col">

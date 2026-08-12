@@ -89,7 +89,12 @@ function ask ({ title, plain, cost, fields = [], confirm, danger, onYes }) {
         : null,
       cost ? el('div', { className: 'dlg-cost' }, el('strong', { textContent: 'Cannot be undone: ' }), cost) : null,
       ...fields.map(f => {
-        const input = el('input', { placeholder: f.placeholder || '', value: f.value || '', type: f.type || 'text' })
+        // A list of real choices beats a path to type out, and it cannot be typed
+        // wrong.
+        const input = f.options
+          ? el('select', {}, ...f.options.map(o =>
+              el('option', { value: o.value, textContent: o.label, selected: o.value === f.value })))
+          : el('input', { placeholder: f.placeholder || '', value: f.value || '', type: f.type || 'text' })
         inputs[f.name] = input
         return el('div', {}, el('label', { textContent: f.label }), input)
       }),
@@ -129,15 +134,44 @@ let latest = { machines: [], vbox: { available: false, vms: [] } }
 let workspaceDir = ''
 const parentOf = p => p.replace(/[\\/][^\\/]+[\\/]?$/, '')
 
-// The card carries identity and state; the buttons live in one Actions panel so
-// there is a single copy of them rather than a set per row.
+// Only machines this app made ever appear here. Anything else on the host is
+// invisible to every action, because these actions can delete one.
+
+const deleteVm = v => ask({
+  title: `Delete ${v.name}?`,
+  plain: [
+    'Nothing in your repositories is affected.',
+    'No other virtual machine on this computer is touched.'
+  ],
+  cost: `${v.name} and its disks are deleted, and it is removed from this list.`,
+  confirm: 'Delete it',
+  danger: true,
+  onYes: () => api('vmRemove', { name: v.name }).then(() => {
+    if (picked === v.name) picked = null
+    say(`${v.name} deleted`)
+  })
+})
+
+// The card carries identity, state and its own trash can. Everything else lives
+// in the one Actions panel rather than being repeated per row.
 const vmCard = v => el('div', {
   className: `card pick${picked === v.name ? ' on' : ''}`,
   onclick: () => { picked = v.name; paintMachines() }
 },
   el('div', { className: 'card-title' },
     el('span', { className: 'mono', textContent: v.name }),
-    el('span', { className: `badge ${v.running ? 'ok' : ''}`, textContent: v.running ? 'running' : 'off' })))
+    el('button', {
+      className: 'trash',
+      title: `Delete ${v.name}`,
+      textContent: '🗑',
+      // Or selecting the row would also fire, and a click meant for the bin would
+      // change what the Actions panel is pointing at underneath the dialog.
+      onclick: e => { e.stopPropagation(); deleteVm(v) }
+    })),
+  el('div', { className: 'badges' },
+    el('span', { className: `badge ${v.running ? 'ok' : ''}`, textContent: v.running ? 'running' : v.state }),
+    el('span', { className: `badge ${v.stage === 'ready' ? 'ok' : v.stage === 'defined' ? 'bad' : 'run'}`, textContent: v.stage }),
+    v.baseSnapshot ? el('span', { className: 'badge', textContent: `snapshot: ${v.baseSnapshot}` }) : null))
 
 function machineActions () {
   const box = $('machine-actions')
@@ -145,8 +179,7 @@ function machineActions () {
   const go = (name, args, msg) => () => { showTab('live'); api(name, args).then(() => { say(msg); return draw() }).catch(oops) }
 
   // Opening the editor is about the work, not about a virtual machine, so it is
-  // here whether or not one is selected -- and it opens the folder the repos are
-  // in, which is the only folder a person on this page is ever asking for.
+  // here whether or not one is selected.
   const editorButton = el('button', {
     className: 'btn',
     textContent: 'Open the work in VS Code',
@@ -160,12 +193,14 @@ function machineActions () {
   }
 
   fill(box, el('div', { className: 'row' },
-    editorButton,
     el('button', {
-      className: 'btn',
+      className: 'btn ok',
       textContent: v.running ? 'Shut it down' : 'Start it',
+      disabled: !v.live,
+      title: v.live ? '' : 'VirtualBox has no machine by this name any more',
       onclick: go(v.running ? 'vmStop' : 'vmStart', { name: v.name }, v.running ? 'Asked it to shut down' : 'Starting it')
     }),
+
     v.running
       ? el('button', {
           className: 'btn danger',
@@ -180,59 +215,106 @@ function machineActions () {
           })
         })
       : null,
+
+    // A snapshot with no title is a snapshot nobody can choose between later, so
+    // the title is asked for rather than generated.
     el('button', {
-      className: 'btn danger',
-      textContent: 'Delete it',
+      className: 'btn',
+      textContent: 'Take a snapshot',
+      disabled: !v.live,
       onclick: () => ask({
-        title: `Delete ${v.name}?`,
-        plain: ['Nothing in your repositories is affected.'],
-        cost: 'The virtual machine and its disks are deleted.',
-        confirm: 'Delete it',
-        danger: true,
-        onYes: () => api('vmRemove', { name: v.name }).then(() => say(`${v.name} deleted`))
+        title: `Snapshot ${v.name}`,
+        plain: [
+          'A snapshot is a point you can come back to.',
+          'Taking one changes nothing about the machine as it is now.'
+        ],
+        fields: [
+          { name: 'title', label: 'Title for this snapshot', value: v.baseSnapshot ? '' : 'base', placeholder: 'clean install' },
+          { name: 'description', label: 'What is true at this point — optional', placeholder: 'ubuntu installed, nothing else' }
+        ],
+        confirm: 'Take it',
+        onYes: f => api('vmSnapshotTake', { name: v.name, title: f.title, description: f.description })
+          .then(() => say(`Snapshot "${f.title}" taken`))
       })
-    })))
+    }),
+
+    el('button', {
+      className: 'btn',
+      textContent: 'Go back to a snapshot',
+      disabled: !v.live,
+      onclick: () => api('vmSnapshots', { name: v.name }).then(s => {
+        if (!s.snapshots.length) return say(`${v.name} has no snapshots yet`, 'bad')
+        ask({
+          title: `Go back to a snapshot of ${v.name}`,
+          plain: ['The machine must be shut down for this.'],
+          cost: 'Everything that changed since that snapshot is discarded.',
+          fields: [{
+            name: 'title',
+            label: 'Which one',
+            value: s.current || s.snapshots[0].name,
+            options: s.snapshots.map(x => ({ value: x.name, label: x.name + (x.name === s.current ? ' (current)' : '') }))
+          }],
+          confirm: 'Go back to it',
+          danger: true,
+          onYes: f => api('vmSnapshotRestore', { name: v.name, title: f.title }).then(() => say(`Back at "${f.title}"`))
+        })
+      }).catch(oops)
+    }),
+
+    el('button', { className: 'btn', textContent: 'Delete it', onclick: () => deleteVm(v) }),
+    editorButton))
 }
 
 function paintMachines () {
-  fill($('vms'), latest.vbox.available
+  fill($('vms'), latest.vbox.available || latest.vbox.vms.length
     ? (latest.vbox.vms.length
         ? latest.vbox.vms.map(vmCard)
-        : el('p', { className: 'empty', textContent: 'VirtualBox is here; no virtual machines yet.' }))
+        : el('p', { className: 'empty', textContent: 'None yet. The + above makes one.' }))
     : el('p', { className: 'empty', textContent: 'VirtualBox was not found. Everything else works without it.' }))
   machineActions()
 }
 
-$('add-vm-open').onclick = () => ask({
+// The settings are the previous version's, which were arrived at by running it:
+// 8 GB, 4 cpus, 60 GB, a named LTS image type, and bridged networking so the
+// guest can reach this app to fetch its setup.
+$('add-vm-open').onclick = () => api('vmIsos').then(isos => ask({
   title: 'Make a virtual machine',
   plain: [
-    'This makes the machine and its disk.',
-    'It does not install an operating system — give it an installer image and boot it.',
-    'ssh will reach it on the port below once it is running.'
+    'This makes the machine and its disk. It does not install anything yet.',
+    'Only machines made here ever appear in this list, and only they can be acted on.',
+    'Nothing else on this computer is touched.'
   ],
   fields: [
     { name: 'name', label: 'Name', placeholder: 'dev1' },
-    { name: 'memory', label: 'Memory, in MB', value: '4096', type: 'number' },
-    { name: 'cpus', label: 'Processors', value: '2', type: 'number' },
-    { name: 'diskGb', label: 'Disk, in GB', value: '30', type: 'number' },
-    { name: 'sshPort', label: 'ssh port on this machine', value: '2222', type: 'number' },
-    { name: 'iso', label: 'Installer image, if you have one', placeholder: 'C:\\path\\to\\ubuntu.iso' }
+    {
+      name: 'iso',
+      label: isos.length ? 'Installer image' : 'Installer image — VirtualBox knows of none, so type a path',
+      value: isos.length ? isos[0].location : '',
+      options: isos.length ? [{ value: '', label: 'none for now' }, ...isos.map(i => ({ value: i.location, label: i.name }))] : undefined,
+      placeholder: 'C:\\path\\to\\ubuntu.iso'
+    },
+    { name: 'memoryMB', label: 'Memory, in MB', value: '8192', type: 'number' },
+    { name: 'cpus', label: 'Processors', value: '4', type: 'number' },
+    { name: 'diskMB', label: 'Disk, in MB', value: '61440', type: 'number' },
+    {
+      name: 'network',
+      label: 'Network',
+      value: 'bridged',
+      options: [
+        { value: 'bridged', label: 'bridged — it can reach this app' },
+        { value: 'nat', label: 'nat — private, with a forwarded ssh port' }
+      ]
+    },
+    { name: 'user', label: 'User to create', value: 'okc' },
+    { name: 'password', label: 'Its password', value: 'okc' }
   ],
   confirm: 'Make it',
-  onYes: v => {
+  onYes: f => {
     showTab('live')
-    return api('vmCreate', {
-      vm: {
-        name: v.name,
-        memory: Number(v.memory) || 4096,
-        cpus: Number(v.cpus) || 2,
-        diskGb: Number(v.diskGb) || 30,
-        sshPort: Number(v.sshPort) || 2222,
-        iso: v.iso
-      }
-    }).then(() => say(`${v.name} created`))
+    return api('vmCreate', { vm: { ...f, memoryMB: Number(f.memoryMB), cpus: Number(f.cpus), diskMB: Number(f.diskMB) } })
+      .then(() => { picked = f.name; say(`${f.name} created`) })
   }
-})
+})).catch(oops)
 
 // ---- Operations: tasks and what is in flight -------------------------
 
@@ -462,7 +544,20 @@ stream.onmessage = m => {
 async function draw () {
   const [data, kit, status] = await Promise.all([api('overview'), api('machines'), api('status')])
   latest = kit
-  if (!picked && kit.vbox.vms.length) picked = kit.vbox.vms[0].name
+
+  // Reconcile the selection against what actually exists, every time, before
+  // anything that depends on it is painted.
+  //
+  // The previous dashboard had a bug here worth not repeating: with machines
+  // present it never selected one at startup, so the actions and the task list
+  // rendered as though nothing were selected, and clicking the already-selected
+  // machine was the only way to get a correct page. Two causes look alike --
+  // nothing selected yet, and something selected that no longer exists (deleted,
+  // or gone from VirtualBox) -- and both leave the panel stranded until a click.
+  // So the rule is: after loading, the selection must name a machine in the list,
+  // or be null because the list is empty.
+  const present = kit.vbox.vms.some(v => v.name === picked)
+  if (!present) picked = kit.vbox.vms.length ? kit.vbox.vms[0].name : null
 
   const parents = [...new Set(data.repos.map(r => parentOf(r.dir)))]
   workspaceDir = parents.length === 1 ? parents[0] : (data.repos[0] && data.repos[0].dir) || ''
