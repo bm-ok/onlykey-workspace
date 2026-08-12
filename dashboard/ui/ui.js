@@ -163,7 +163,10 @@ const vmCard = v => el('div', {
     })),
   el('div', { className: 'badges' },
     el('span', { className: `badge ${v.running ? 'ok' : ''}`, textContent: v.running ? 'running' : v.state }),
-    el('span', { className: `badge ${v.stage === 'ready' ? 'ok' : v.stage === 'defined' ? 'bad' : 'run'}`, textContent: v.stage })))
+    el('span', { className: `badge ${v.stage === 'ready' ? 'ok' : v.stage === 'defined' ? 'bad' : 'run'}`, textContent: v.stage }),
+    // Dialled in is a stronger statement than running: the machine is up, its
+    // agent is talking, and things can be run on it.
+    v.connected ? el('span', { className: 'badge ok', textContent: 'connected' }) : null))
 
 function vmActions () {
   const box = $('machine-actions')
@@ -238,6 +241,27 @@ function vmActions () {
         })
       : null,
 
+    // Only offered when the machine is dialled in, because otherwise there is
+    // nothing to run it on. This is the fast path: re-running the setup on a live
+    // machine takes a minute, where reinstalling to try a change takes half an
+    // hour, and nobody iterates on a half-hour loop.
+    v.connected
+      ? el('button', {
+          className: 'btn',
+          textContent: 'Set it up again',
+          onclick: () => ask({
+            title: `Run the setup again on ${v.name}?`,
+            plain: [
+              'It fetches the setup script fresh and runs it, so any edit since it was built is included.',
+              'Nothing is reinstalled and the machine keeps running.',
+              'Output appears in the live log as it happens.'
+            ],
+            confirm: 'Run it',
+            onYes: () => { showTab('live'); return api('vmSetupAgain', { name: v.name, stage: 'toolchain' }).then(r => say(r.code === 0 ? 'Setup finished' : `Setup exited ${r.code} — see the log`, r.code === 0 ? 'ok' : 'bad')) }
+          })
+        })
+      : null,
+
     el('button', { className: 'btn danger', textContent: 'Delete it', onclick: () => deleteVm(v) })))
 }
 
@@ -293,6 +317,14 @@ function paintDetails () {
     ['installer image', spec.iso ? spec.iso.split(/[\\/]/).pop() : 'none'],
     ['hostname', spec.hostname]
   ]
+
+  if (v.connected && v.agent) {
+    const facts = v.agent.facts || {}
+    rows.push(
+      ['dialled in', `${new Date(v.agent.since).toLocaleTimeString()}, from ${v.agent.from}`],
+      ['it says it is', facts.hostname ? `${facts.hostname} — ${facts.system || ''}` : 'unknown'],
+      ['its addresses', (facts.addresses || []).join(', ') || 'unknown'])
+  }
 
   fill(box, el('table', { className: 'kv' }, ...rows.map(([k, val]) =>
     el('tr', {}, el('th', { textContent: k }), el('td', { className: 'mono', textContent: String(val) })))))

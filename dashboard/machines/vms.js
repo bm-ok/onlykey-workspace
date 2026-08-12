@@ -12,6 +12,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const log = require('../core/log')
 const vbox = require('./vbox')
+const channel = require('./channel')
 
 const STATE = process.env.OKC_STATE || path.join(__dirname, '..', 'state')
 const FILE = path.join(STATE, 'vms.json')
@@ -61,13 +62,14 @@ function forget (name) {
 // which one.
 function stageOf (vm, live) {
   if (!live) return 'defined'                    // we recorded it; VirtualBox has no such machine
+  if (channel.connected(vm.name)) return 'connected'  // its agent is talking to us now
   if (vm.baseSnapshot) return 'ready'            // has a snapshot to reset to
-  if (vm.reported) return 'online'               // the guest has dialled in at least once
+  if (vm.reported) return 'online'               // it has reported in at least once
   if (vm.installing) return 'installing'         // an unattended install was started
   return 'created'                               // exists, never heard from
 }
 
-const STAGES = ['defined', 'created', 'installing', 'online', 'ready']
+const STAGES = ['defined', 'created', 'installing', 'online', 'ready', 'connected']
 
 // The list the UI shows: ours only, with live state attached.
 async function all () {
@@ -88,7 +90,11 @@ async function all () {
       live,
       running: up.has(vm.name),
       state: live ? await vbox.state(vm.name) : 'missing',
-      stage: stageOf(vm, live)
+      stage: stageOf(vm, live),
+      // Whether its agent is talking to us right now, which is a different question
+      // from whether VirtualBox says it is powered on.
+      connected: channel.connected(vm.name),
+      agent: channel.list().find(a => a.vm === vm.name) || null
     })
   }
   return { available: true, vms }

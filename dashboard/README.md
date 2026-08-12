@@ -71,11 +71,13 @@ Provisioning is four scripts, meant to be swapped
     provision/
       unattended.sh   the installer is told about this one and nothing else;
                       it decides what else to fetch and in what order
-      first-boot.sh   once: an ssh server and a key, so the machine is
-                      reachable at all. Deliberately almost empty
+      first-boot.sh   once: an ssh server, a key, and the agent -- everything
+                      needed to reach the machine at all
       toolchain.sh    THE ONE TO SWAP -- what the machine is for, as opposed
                       to making it exist
       normal-boot.sh  every boot, so it installs nothing and changes nothing
+      agent.py        dials the dashboard and stays connected. Python 3
+                      because Ubuntu already has it, standard library only
 
 Three of them do the same job every time — make a machine exist and be reachable.
 Only `toolchain.sh` is about what kind of machine it is, which is why it is a
@@ -92,6 +94,30 @@ A guest's output comes back into the same live log as everything else. That is
 what makes a long install watchable instead of silent, and neither `say` nor
 `report` is ever fatal for the guest — a machine must not fail to build because
 the app was restarted while it was talking.
+
+
+The machine dials in
+--------------------
+
+Once a machine is up it connects back and stays connected, and the list says
+**connected** — which is a stronger statement than *running*, because it means the
+machine is talking and things can be run on it.
+
+**The dashboard listens and the machine dials in, not the other way round.** A
+reboot is then an ordinary reconnect rather than something anyone has to handle,
+and the log survives it. Newline-delimited JSON over plain TCP: no dependency, and
+trivial to re-implement in a guest in any language.
+
+The agent is deliberately dumb. It connects, runs what it is told, streams the
+output back and says what the exit code was. It knows nothing about what any
+command is for, so changing what a machine does never means replacing anything
+inside it. Each machine gets its own token when it is made, so it can only ever
+dial in as itself.
+
+What that buys is the fast path: **Set it up again** re-runs the setup on a live
+machine in a minute, where reinstalling to try a change takes half an hour — and
+nobody iterates on a half-hour loop. The machine fetches the script fresh, so an
+edit made since it was built is included.
 
 
 The window keeps up on its own

@@ -21,17 +21,20 @@ const STAGES = {
   unattended: 'unattended.sh',
   firstBoot: 'first-boot.sh',
   toolchain: 'toolchain.sh',
-  normalBoot: 'normal-boot.sh'
+  normalBoot: 'normal-boot.sh',
+  // Not shell, and served without a header for that reason -- its values arrive
+  // through the service unit first-boot.sh writes for it.
+  agent: 'agent.py'
 }
 
-const list = () => fs.existsSync(DIR) ? fs.readdirSync(DIR).filter(f => f.endsWith('.sh')).sort() : []
+const list = () => fs.existsSync(DIR) ? fs.readdirSync(DIR).filter(f => /\.(sh|py)$/.test(f)).sort() : []
 
 // Only ever a plain filename inside provision/. A spec is configuration, but it
 // is still not allowed to name a path -- "../../something" would otherwise serve
 // any file on the machine to a guest.
 function resolve (wanted) {
   const name = path.basename(String(wanted || ''))
-  if (!name.endsWith('.sh')) throw new Error(`"${wanted}" is not a shell script.`)
+  if (!/\.(sh|py)$/.test(name)) throw new Error(`"${wanted}" is not a provisioning script.`)
   const file = path.join(DIR, name)
   if (!file.startsWith(DIR) || !fs.existsSync(file)) throw new Error(`There is no provisioning script called "${name}".`)
   return file
@@ -48,7 +51,7 @@ const q = s => `'${String(s == null ? '' : s).split("'").join("'\\''")}'`
 // Values, and the two helpers every script uses. Prepended rather than
 // substituted into the script, so each file stays valid shell on its own and can
 // be run by hand on a machine to debug it.
-function header (vm, { hostAddress, port }) {
+function header (vm, { hostAddress, port, channelPort }) {
   const spec = (vm && vm.spec) || {}
   return `#!/bin/bash
 # ------------------------------------------------------------------------------
@@ -62,7 +65,12 @@ OKC_BASE=${q(`http://${hostAddress}:${port}`)}
 OKC_USER=${q(spec.user || 'okc')}
 OKC_SSH_KEY=${q(spec.sshKey || '')}
 OKC_REPROVISION_ON_BOOT=${q(spec.reprovisionOnBoot ? 'yes' : 'no')}
+# This machine's own secret, and the port it dials in on. It can only ever connect
+# as itself, because the dashboard checks this against the machine it claims to be.
+OKC_TOKEN=${q(spec.token || '')}
+OKC_CHANNEL_PORT=${q(channelPort)}
 export OKC_VM OKC_HOST OKC_PORT OKC_BASE OKC_USER OKC_SSH_KEY OKC_REPROVISION_ON_BOOT
+export OKC_TOKEN OKC_CHANNEL_PORT
 
 # Everything a script prints goes to one log on the machine and to the dashboard,
 # so the live log and the machine's own record say the same thing.
@@ -99,8 +107,11 @@ function render (stage, vm, where) {
   ].join('\n')
 }
 
+// Served exactly as it is on disk, for anything that is not shell.
+const raw = (vm, stage) => fs.readFileSync(fileFor(vm, stage), 'utf8')
+
 // Which stage a requested filename belongs to, so /provision/<file> works with
 // either the stage's default name or a swapped-in one.
 const stageOfFile = name => Object.keys(STAGES).find(s => STAGES[s] === name) || null
 
-module.exports = { render, list, resolve, fileFor, STAGES, stageOfFile, DIR }
+module.exports = { render, raw, list, resolve, fileFor, STAGES, stageOfFile, DIR }

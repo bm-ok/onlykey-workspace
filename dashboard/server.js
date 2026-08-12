@@ -18,6 +18,7 @@ const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
 const scripts = require('./machines/scripts')
+const channel = require('./machines/channel')
 const machines = require('./machines/store')
 const { provision, reach } = require('./machines/provision')
 const editor = require('./machines/editor')
@@ -27,6 +28,7 @@ const started = new Date().toISOString()
 // The port we actually ended up on. A guest is told to fetch its scripts from
 // here, so this has to be what is really listening rather than a default.
 let port = Number(process.env.PORT || 7373)
+let channelPort = Number(process.env.OKC_CHANNEL_PORT || 7374)
 
 // ---- the actions ------------------------------------------------------
 //
@@ -95,6 +97,31 @@ const actions = {
     }
   },
 
+  // What the dial-in makes possible.
+  vmAgents: { about: 'Which machines are dialled in right now, and what they say they are', run: async () => ({ agents: channel.list() }) },
+  vmRun: {
+    about: 'Run a command on a dialled-in machine and wait for it',
+    takes: ['name', 'command', 'what'],
+    run: ({ name, command, what }) => {
+      vms.get(name)
+      if (!command || !command.trim()) throw new Error('Say what to run.')
+      return channel.run(name, command, { what: what || command })
+    }
+  },
+  vmSetupAgain: {
+    about: 'Run the setup scripts again on a machine that is already up',
+    takes: ['name', 'stage'],
+    run: async ({ name, stage = 'toolchain' }) => {
+      const vm = vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in. Start it and wait for it to connect.`)
+      const file = path.basename(scripts.fileFor(vm, stage))
+      // Fetched by the machine rather than pushed, so it gets exactly what a fresh
+      // install would get -- including any edit made since it was built.
+      const url = `http://${await vbox.hostAddress()}:${port}/provision/${file}?vm=${encodeURIComponent(name)}`
+      return channel.run(name, `curl -fsSL '${url}' -o /root/okc-again.sh && bash /root/okc-again.sh`, { what: `${file} again` })
+    }
+  },
+
   vmIsos: { about: 'Installer images VirtualBox already knows about', run: () => vbox.isos() },
   vmBridges: { about: 'Host network adapters a guest could be bridged onto', run: () => vbox.bridges() },
   vmScripts: { about: 'The provisioning scripts available to swap between', run: async () => ({ available: scripts.list(), stages: scripts.STAGES }) },
@@ -105,7 +132,7 @@ const actions = {
       const vm = vms.get(name)
       let host = '127.0.0.1'
       try { host = await vbox.hostAddress() } catch { /* previewing should work with no network */ }
-      return { stage, file: path.basename(scripts.fileFor(vm, stage)), script: scripts.render(stage, vm, { hostAddress: host, port }) }
+      return { stage, file: path.basename(scripts.fileFor(vm, stage)), script: scripts.render(stage, vm, { hostAddress: host, port, channelPort }) }
     }
   },
 
@@ -177,6 +204,22 @@ function handler (req, res) {
     return
   }
 
+  // The agent, served exactly as it is on disk: it is python, so a shell header
+  // would break it. Its values reach it through the service unit instead.
+  if (url.pathname === '/provision/agent.py') {
+    const name = url.searchParams.get('vm') || ''
+    try {
+      const vm = vms.get(name)
+      log.on('vm', name, 'guest').good(`${name} asked for the agent`)
+      res.writeHead(200, { 'content-type': 'text/x-python' })
+      res.end(scripts.raw(vm, 'agent'))
+    } catch (e) {
+      res.writeHead(404, { 'content-type': 'text/plain' }).end(`# ${e.message}
+`)
+    }
+    return
+  }
+
   // Any script in provision/, by filename, so a swapped-in one is served the same
   // way as a default. The name is resolved inside that folder and nowhere else.
   if (url.pathname.startsWith('/provision/') && url.pathname.endsWith('.sh')) {
@@ -188,7 +231,7 @@ function handler (req, res) {
       log.on('vm', name, 'guest').good(`${name} asked for ${file}`)
       vbox.hostAddress().catch(() => '127.0.0.1').then(host => {
         res.writeHead(200, { 'content-type': 'text/x-shellscript' })
-        res.end(scripts.render(stage || file, vm, { hostAddress: host, port }))
+        res.end(scripts.render(stage || file, vm, { hostAddress: host, port, channelPort }))
       })
     } catch (e) {
       log.on('vm', 'guest').bad(`something asked for ${file} as "${name}": ${e.message}`)
@@ -254,8 +297,14 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
   const server = http.createServer(handler)
   return new Promise((resolve, reject) => {
     server.once('error', reject)
-    server.listen(wanted, host, () => {
+    server.listen(wanted, host, async () => {
       port = server.address().port
+      try {
+        const c = await channel.listen({ tokenFor: name => (vms.read().find(v => v.name === name) || {}).spec?.token })
+        channelPort = c.port
+      } catch (e) {
+        log.on('channel').bad(`could not listen for machines dialling in: ${e.message}`)
+      }
       log.on('server').good(`Listening on port ${port} — scripts for machines being provisioned; actions from this machine only`)
       resolve({ server, port, host, url: `http://127.0.0.1:${port}/`, stop: () => server.close() })
     })

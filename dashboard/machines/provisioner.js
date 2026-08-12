@@ -15,6 +15,7 @@ const path = require('node:path')
 const log = require('../core/log')
 const vbox = require('./vbox')
 const vms = require('./vms')
+const channel = require('./channel')
 
 // What a VM is, with everything optional filled in. One place, so a spec read
 // back later means the same thing as when it was made.
@@ -50,6 +51,8 @@ function fill (input = {}) {
     installAdditions: input.installAdditions !== false,
     baseSnapshot: input.baseSnapshot || 'base',
     sshKey: input.sshKey || '',
+    // Its own secret, per machine, so a machine can only ever dial in as itself.
+    token: input.token || channel.newToken(),
     // Declared, never assumed. An empty list means the concept does not apply.
     usb: Array.isArray(input.usb) ? input.usb : [],
     shares: Array.isArray(input.shares) ? input.shares : [],
