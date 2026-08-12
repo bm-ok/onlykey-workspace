@@ -17,15 +17,12 @@ something is missing here, ask the dashboard rather than trusting this.
 
 ## Do not reach around it
 
-There is an HTTP API on 7373. **Do not use it, and do not use `curl` against
-it.** It answers loopback only, it is being removed, and every rule the app
-enforces lives behind the actions table. `curl` also lies on this host: Windows
-`curl` uses schannel and cannot take a private authority from `--cacert`, so TLS
-that works perfectly will look broken.
+The ports this app listens on are for machines, not for you. **Do not drive
+`VBoxManage` directly either** — only `dashboard/machines/` may, and a second
+opinion about a machine's state is the bug that rule exists to prevent.
 
-**Do not drive `VBoxManage` directly either.** Only `dashboard/machines/` may,
-and a second opinion about a machine's state is the bug that rule exists to
-prevent. If something is missing, add an action.
+If something you need is missing, **add an action**. Then it exists for the
+window, the command line and the next person at once.
 
 The command line talks to a dashboard that is **already running** and refuses to
 start its own — a second copy has its own empty registry and reports every
