@@ -312,17 +312,24 @@ function vmActions () {
     // Only when it is dialled in, because that is where the address comes from.
     // Disabled rather than hidden while it is not: a button that vanishes reads
     // as a feature that does not exist, and the reason is worth saying.
-    // Once a machine is on a branch, opening it again just opens it. No dialog,
-    // no question, nothing to get wrong -- closing the editor and clicking again
-    // is not a decision about which work to do, and asking would make it one.
-    // The setup runs again first because it is safe to (it never resets the
-    // machine's copy) and it repairs a workspace that is not there, which is
-    // exactly the state a machine is in after being rolled back.
+    // ONE button, and it asks a question only once.
+    //
+    // A machine on a branch stays on it until it is clean, so there is nothing
+    // to decide on the way back in: opening again just opens. There was briefly
+    // a second button for moving to another branch, and it was a mistake --
+    // switching is how half-finished work stops being anywhere, sitting on a
+    // branch the machine may no longer push with nothing saying so. The way off
+    // a branch is back to a snapshot from before it, which is an action that
+    // states what it discards.
+    //
+    // The setup still runs on the way in, because it is safe to -- it never
+    // resets the machine's copy -- and it repairs a workspace that is not there,
+    // which is exactly the state a machine is in after being rolled back.
     v.connected && v.branch
       ? el('button', {
           className: 'btn',
           textContent: 'Open in VS Code',
-          title: `${v.name} is set up on ${v.branch}`,
+          title: `${v.name} is on ${v.branch}, and stays there until it is clean`,
           onclick: () => {
             showTab('live')
             return api('vmWorkspace', { name: v.name, branch: v.branch })
@@ -331,64 +338,56 @@ function vmActions () {
               .catch(oops)
           }
         })
-      : null,
+      : el('button', {
+          className: 'btn',
+          textContent: 'Open in VS Code',
+          disabled: !v.connected,
+          title: v.connected ? '' : 'It has to be dialled in — that is where its address comes from',
+          onclick: () => api('gitBranches').then(({ repos, branches }) => ask({
+            title: `Open ${v.name} in VS Code?`,
+            plain: [
+              `It sets up a workspace on ${v.name} holding ${repos.length ? repos.join(', ') : 'the workspace repositories'}, all on one branch, pointed back here.`,
+              'Pick a branch to carry on with, or type a name to start new work.',
+              'Nothing lands on a default branch: the branch is cut here first and the machine arrives with it already checked out.',
+              // Asked once, and said so while it is still a free choice. After
+              // this the machine is on that branch until it is rolled back to a
+              // point from before it, which is the only way off.
+              `${v.name} stays on whichever you pick until it goes back to a snapshot from before it.`,
+              'Then a new window opens on it; this one is not replaced.'
+            ],
+            fields: [
+              {
+                name: 'existing',
+                label: branches.length ? 'Carry on with' : 'No branches yet — type one below',
+                value: '',
+                options: [
+                  { value: '', label: branches.length ? '— start a new one —' : 'none yet' },
+                  ...branches.map(b => ({
+                    value: b.name,
+                    // What a name means is which repositories are on it, so that
+                    // is said here rather than discovered after picking.
+                    label: b.missing.length ? `${b.name} — in ${b.in.join(', ')}` : `${b.name} — all of them`
+                  }))
+                ]
+              },
+              { name: 'fresh', label: 'Or a new branch', placeholder: 'fix/the-thing' }
+            ],
+            confirm: 'Set it up and open it',
+            onYes: async f => {
+              const branch = f.fresh.trim() || f.existing
+              if (!branch) throw new Error('Pick a branch to carry on with, or type a name for a new one.')
 
-    // The branch is asked for, not the folder. Which folder is not a decision
-    // anybody needs to make -- it is the same one every time -- and WHICH WORK is
-    // the decision, so that is what the dialog is about.
-    el('button', {
-      className: 'btn',
-      textContent: v.branch ? 'Work on another branch' : 'Open in VS Code',
-      disabled: !v.connected,
-      title: v.connected ? '' : 'It has to be dialled in — that is where its address comes from',
-      onclick: () => api('gitBranches').then(({ repos, branches }) => ask({
-        title: v.branch ? `Move ${v.name} to another branch?` : `Open ${v.name} in VS Code?`,
-        plain: [
-          `It sets up a workspace on ${v.name} holding ${repos.length ? repos.join(', ') : 'the workspace repositories'}, all on one branch, pointed back here.`,
-          'Pick a branch to carry on with, or type a name to start new work.',
-          'Nothing lands on a default branch: the branch is cut here first and the machine arrives with it already checked out.',
-          // Said only when there is something to lose track of. What moving
-          // costs is not the commits -- they stay on the machine -- but the
-          // permission: from here on it may only push the new one, so anything
-          // unpushed on the old branch waits until it is moved back.
-          ...(v.branch
-            ? [`${v.name} is on ${v.branch} now. Its commits stay on the machine, but it will only be able to push the new branch until you move it back.`]
-            : []),
-          'Then a new window opens on it; this one is not replaced.'
-        ],
-        fields: [
-          {
-            name: 'existing',
-            label: branches.length ? 'Carry on with' : 'No branches yet — type one below',
-            value: '',
-            options: [
-              { value: '', label: branches.length ? '— start a new one —' : 'none yet' },
-              ...branches.map(b => ({
-                value: b.name,
-                // What a name means is which repositories are on it, so that is
-                // said here rather than discovered after picking.
-                label: b.missing.length ? `${b.name} — in ${b.in.join(', ')}` : `${b.name} — all of them`
-              }))
-            ]
-          },
-          { name: 'fresh', label: 'Or a new branch', placeholder: 'fix/the-thing' }
-        ],
-        confirm: 'Set it up and open it',
-        onYes: async f => {
-          const branch = f.fresh.trim() || f.existing
-          if (!branch) throw new Error('Pick a branch to carry on with, or type a name for a new one.')
-
-          showTab('live')
-          // Two calls, because they fail differently and only one of them is
-          // slow: setting up clones over the network, opening does not. If the
-          // setup fails there is nothing worth opening, and the reason is in the
-          // log rather than behind an editor window.
-          const w = await api('vmWorkspace', { name: v.name, branch })
-          const r = await api('vmEditor', { name: v.name })
-          say(`${v.name} is on ${w.branch} — VS Code opened ${r.opened}`)
-        }
-      })).catch(oops)
-    }),
+              showTab('live')
+              // Two calls, because they fail differently and only one of them is
+              // slow: setting up clones over the network, opening does not. If
+              // the setup fails there is nothing worth opening, and the reason is
+              // in the log rather than behind an editor window.
+              const w = await api('vmWorkspace', { name: v.name, branch })
+              const r = await api('vmEditor', { name: v.name })
+              say(`${v.name} is on ${w.branch} — VS Code opened ${r.opened}`)
+            }
+          })).catch(oops)
+        }),
 
     v.live && !v.baseSnapshot
       ? el('button', {

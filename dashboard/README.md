@@ -227,6 +227,25 @@ An existing local branch is checked out as it stands; uncommitted changes make
 git refuse the switch, which is also right — that is somebody's work, and this is
 a button rather than a decision to discard it.
 
+**A machine stays on its branch until it is clean, and there is no button to move
+it.** That is not tidiness. Switching is how half-finished work stops being
+anywhere: the commits would still be on the machine, on a branch it may no longer
+push, with nothing saying so — neither finished nor lost, which is the state that
+gets discovered weeks later. The only way off a branch is back to a snapshot from
+before it, which is an action that states plainly what it discards.
+
+So opening the editor asks which branch **once**. After that, opening again just
+opens — closing a window and clicking again is not a decision about which work to
+do, and asking would make it one. The refusal lives in the action and not only on
+the button, because the button is a courtesy and the action is the boundary.
+
+**What a machine may push follows the disk.** A snapshot records what it was
+allowed to push when it was taken, and restoring puts that back. A point from
+before any workspace existed has no record, which reads as *nothing* — a machine
+rolled back that far must be set up again before it can push. Unknown resolving
+to nothing is the direction that is cheap to be wrong in: one click recovers it,
+where a stale permission lets a machine put commits on a branch it no longer has.
+
 **The token is not in any remote URL.** It would work, and it would then be in
 `git remote -v`, in `.git/config`, and in every error git prints about that
 remote — which is where a secret gets copied into a screenshot. Git's own

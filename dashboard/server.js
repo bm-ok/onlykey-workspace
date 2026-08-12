@@ -311,9 +311,25 @@ const actions = {
       const vm = vms.get(name)
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in. Start it and wait for it to connect.`)
 
-      const why = branches.nameIsOk(branch)
+      // A machine stays on its branch until it is clean.
+      //
+      // Not a preference about tidiness: switching is how half-finished work
+      // stops being anywhere. The commits would still be on the machine, on a
+      // branch it may no longer push, and nothing would say so -- so the work is
+      // neither finished nor lost, which is the state that gets discovered weeks
+      // later. The only way off a branch is back to a snapshot from before it,
+      // which is an action that states plainly what it discards.
+      //
+      // Refused HERE and not only on the button, because the button is a
+      // courtesy and this is the boundary.
+      const asked = (branch || '').trim()
+      if (vm.branch && asked && asked !== vm.branch) {
+        throw new Error(`"${name}" is set up on ${vm.branch} and stays there until it is clean. To work on something else, go back to a snapshot taken before that branch — "Go back to it" says what it discards — or use another machine.`)
+      }
+
+      const why = branches.nameIsOk(asked || vm.branch)
       if (why) throw new Error(why)
-      const on = branch.trim()
+      const on = (asked || vm.branch).trim()
 
       const found = repos.list()
       if (!found.length) throw new Error(`There are no repositories in ${repos.DIR} to set up.`)
