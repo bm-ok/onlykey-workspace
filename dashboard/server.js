@@ -643,6 +643,52 @@ function machineAsking (req) {
   return vm && vm.spec && vm.spec.token && vm.spec.token === token ? vm : null
 }
 
+// Which machine is asking for a machine's scripts, or null.
+//
+// TWO WAYS TO PROVE IT, because a machine's life has two halves and only the
+// second has a secret in it.
+//
+// Once it has been built it holds its token, and that is the answer -- the same
+// credential /git/* already takes.
+//
+// Before that it holds nothing at all: the script it is fetching is where the
+// token comes from, which is the whole chicken-and-egg. So an install carries a
+// TICKET, made when the install starts and put on the installer's command line,
+// which is the one channel that reaches a machine with nothing on it.
+//
+// The ticket dies the moment the machine dials in. That matters because the
+// command line outlives the install -- VirtualBox writes it into
+// `vboxpostinstall.sh` in the machine's folder, where it sits for as long as the
+// machine exists. A token there would be a live secret in a plain file; a spent
+// ticket is a string that opens nothing.
+//
+// Named for a machine, always. "Is this a machine we know" is not the question;
+// "is this THAT machine" is, and answering the first was how one machine could
+// read another's token.
+function guestAsking (req, url) {
+  const name = url.searchParams.get('vm') || ''
+  if (!name) return null
+
+  let vm
+  try { vm = vms.get(name) } catch { return null }
+
+  const who = machineAsking(req)
+  if (who && who.name === name) return vm
+
+  const ticket = String(url.searchParams.get('ticket') || '')
+  if (ticket && vm.installTicket && ticket === vm.installTicket) return vm
+
+  return null
+}
+
+// One refusal, worded once. ASCII, because curl and wget put it in front of
+// somebody with no other information about what went wrong.
+function refuseGuest (res, name, why) {
+  log.on('provision').warn(`refused ${why} for "${name || 'no machine named'}"`)
+  res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' })
+    .end('this asks for the machine it is for, and proof of being that machine.\nan installing machine proves it with its install ticket; a built one with its token.\n')
+}
+
 // Serving the workspace's repositories. Read-only for now: cloning is built and
 // pushing is not, and the difference is stated rather than left to a 404 that
 // would read as "no such repository".
@@ -759,6 +805,7 @@ function handler (req, res) {
 
   if (url.pathname === '/provision/report') {
     const name = url.searchParams.get('vm') || ''
+    if (!guestAsking(req, url)) return refuseGuest(res, name, 'a progress report')
     try { provisioner.report(name, url.searchParams.get('stage') || 'running') } catch { /* never worth an error */ }
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok\n')
     return
@@ -766,9 +813,15 @@ function handler (req, res) {
 
   // A line from inside a machine, into the same live log as everything else. This
   // is what makes a long install watchable instead of silent.
+  //
+  // Authenticated like the rest, and it matters more here than it looks: this
+  // writes into the operator's log wearing a machine's name, so without it
+  // anything on the network could put convincing sentences in front of them and
+  // sign them as a machine it is not.
   if (url.pathname === '/provision/say') {
     const name = url.searchParams.get('vm') || ''
-    if (vms.read().some(v => v.name === name)) log.on('vm', name, 'guest').out(url.searchParams.get('text') || '')
+    if (!guestAsking(req, url)) return refuseGuest(res, name, 'a line for the log')
+    log.on('vm', name, 'guest').out(url.searchParams.get('text') || '')
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok\n')
     return
   }
@@ -777,11 +830,12 @@ function handler (req, res) {
   // would break it. Its values reach it through the service unit instead.
   if (url.pathname === '/provision/agent.py') {
     const name = url.searchParams.get('vm') || ''
+    const asking = guestAsking(req, url)
+    if (!asking) return refuseGuest(res, name, 'the agent')
     try {
-      const vm = vms.get(name)
       log.on('vm', name, 'guest').good(`${name} asked for the agent`)
       res.writeHead(200, { 'content-type': 'text/x-python' })
-      res.end(scripts.raw(vm, 'agent'))
+      res.end(scripts.raw(asking, 'agent'))
     } catch (e) {
       res.writeHead(404, { 'content-type': 'text/plain' }).end(`# ${e.message}
 `)
@@ -791,11 +845,19 @@ function handler (req, res) {
 
   // Any script in provision/, by filename, so a swapped-in one is served the same
   // way as a default. The name is resolved inside that folder and nowhere else.
+  //
+  // THIS is the one that mattered. A script carries the machine's token, so
+  // serving it to anyone that asked meant any machine could read any other
+  // machine's secret and then be that machine -- dial in as it, push to its
+  // branch. Encryption settled who could read it in transit and did nothing
+  // about who could ask for it.
   if (url.pathname.startsWith('/provision/') && url.pathname.endsWith('.sh')) {
     const file = path.basename(url.pathname)
     const name = url.searchParams.get('vm') || ''
+    const asking = guestAsking(req, url)
+    if (!asking) return refuseGuest(res, name, file)
     try {
-      const vm = vms.get(name)
+      const vm = asking
       const stage = scripts.stageOfFile(file)
       log.on('vm', name, 'guest').good(`${name} asked for ${file} (${scripts.sourceOf(scripts.fileFor(vm, scripts.stageOfFile(file) || file))}'s copy)`)
       vbox.hostAddress().catch(() => '127.0.0.1').then(host => {
@@ -907,7 +969,13 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
         caServer.listen(caPort, host, () => { caPort = caServer.address().port; done() })
       })
       try {
-        const c = await channel.listen({ tokenFor: name => (vms.read().find(v => v.name === name) || {}).spec?.token })
+        const c = await channel.listen({
+          tokenFor: name => (vms.read().find(v => v.name === name) || {}).spec?.token,
+          // A machine that has dialled in has its token, so the ticket that got
+          // it there is spent. Burned here rather than on a timer, because this
+          // is the only moment anything knows the install actually finished.
+          onHello: name => { try { vms.update(name, { installTicket: null }) } catch { /* it may already be gone */ } }
+        })
         channelPort = c.port
       } catch (e) {
         log.on('channel').bad(`could not listen for machines dialling in: ${e.message}`)

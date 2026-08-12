@@ -169,7 +169,7 @@ exec > >(tee -a "$OKC_LOG") 2>&1
 # Never fatal, and never noisy about it: a machine must not fail to build because
 # the dashboard was restarted while it was talking.
 report () {
-  curl -fsS --cacert "$OKC_CA" --max-time 5 "$OKC_BASE/provision/report?vm=$OKC_VM&stage=$1" >/dev/null 2>&1 || true
+  curl -fsS --cacert "$OKC_CA" -u "$OKC_VM:$OKC_TOKEN" --max-time 5 "$OKC_BASE/provision/report?vm=$OKC_VM&stage=$1" >/dev/null 2>&1 || true
 }
 
 # Echoed always. Sent over HTTP only when nothing else is carrying our output:
@@ -178,7 +178,7 @@ report () {
 say () {
   echo "okc: $*"
   if [ "\${OKC_QUIET_SAY:-no}" != "yes" ]; then
-    curl -fsS --cacert "$OKC_CA" --max-time 5 --get --data-urlencode "text=$*" \\
+    curl -fsS --cacert "$OKC_CA" -u "$OKC_VM:$OKC_TOKEN" --max-time 5 --get --data-urlencode "text=$*" \\
       "$OKC_BASE/provision/say?vm=$OKC_VM" >/dev/null 2>&1 || true
   fi
 }

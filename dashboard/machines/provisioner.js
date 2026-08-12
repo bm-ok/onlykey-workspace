@@ -224,10 +224,26 @@ async function install (name, { port, caPort }) {
   await blankTheDisk(name, spec, to)
 
   const host = await vbox.hostAddress()
+
+  // The one credential a machine with nothing on it can be given.
+  //
+  // Scripts carry the machine's token, so they cannot be handed to whoever asks
+  // -- but a machine being installed has no token yet to prove itself with. The
+  // ticket bridges exactly that gap: made here, carried on the installer's
+  // command line, and DEAD the moment the machine dials in, which is the moment
+  // it has a token instead.
+  //
+  // Made fresh per install rather than kept on the machine, because the command
+  // line outlives the install: VirtualBox writes it into `vboxpostinstall.sh` in
+  // the machine's folder, where it stays. A token there would be a live secret
+  // in a plain file; a spent ticket is a string that opens nothing.
+  const ticket = channel.newToken()
+  vms.update(name, { installTicket: ticket })
+
   // Only one script is named here. What it then fetches and in what order is
   // decided in first-boot.sh, which anyone can edit or replace -- so changing how a
   // machine is built never means touching this app.
-  const url = `https://${host}:${port}/provision/first-boot.sh?vm=${encodeURIComponent(name)}`
+  const url = `https://${host}:${port}/provision/first-boot.sh?vm=${encodeURIComponent(name)}&ticket=${ticket}`
 
   // The trust anchor, and the only one available at this moment.
   //

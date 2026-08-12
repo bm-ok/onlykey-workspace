@@ -63,11 +63,11 @@ function watchForSilence () {
 //
 // The same certificate the API serves with, and the machine checks it against
 // the authority it was given when it was built.
-function listen ({ port = Number(process.env.OKC_CHANNEL_PORT || 7374), tokenFor }) {
+function listen ({ port = Number(process.env.OKC_CHANNEL_PORT || 7374), tokenFor, onHello }) {
   watchForSilence()
   const creds = keys.ensure()
   return new Promise((resolve, reject) => {
-    server = tls.createServer({ key: creds.key, cert: creds.cert }, socket => onConnection(socket, tokenFor))
+    server = tls.createServer({ key: creds.key, cert: creds.cert }, socket => onConnection(socket, tokenFor, onHello))
     server.once('error', reject)
     server.listen(port, '0.0.0.0', () => {
       log.on('channel').good(`Listening on port ${port} — machines dial in here, over TLS`)
@@ -98,7 +98,7 @@ function dropAgent (name, why) {
   return !!agent
 }
 
-function onConnection (socket, tokenFor) {
+function onConnection (socket, tokenFor, onHello) {
   const from = `${socket.remoteAddress}:${socket.remotePort}`
   socket.setNoDelay(true)
   // So the operating system notices a peer that vanished without saying goodbye. A
@@ -149,6 +149,10 @@ function onConnection (socket, tokenFor) {
         if (had && had.socket !== socket) dropAgent(vm, 'was replaced by a new connection')
         agents.set(vm, { socket, since: new Date().toISOString(), from, facts: msg.facts || {}, lastSeen: Date.now() })
         log.on('vm', vm, 'channel').good(`${vm} dialled in from ${socket.remoteAddress}`)
+        // It has a token now, so whatever carried it here is spent. Told rather
+        // than inferred: this is the only moment anything knows a machine has
+        // finished being built, and the install ticket must not outlive it.
+        if (onHello) { try { onHello(vm) } catch { /* never worth dropping a session over */ } }
         send({ type: 'hi' })
         continue
       }
