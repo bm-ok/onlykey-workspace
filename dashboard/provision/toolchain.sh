@@ -88,6 +88,38 @@ else
   say 'no /etc/gdm3/custom.conf, so no autologin to configure — not a desktop image?'
 fi
 
+# --- no welcome wizard, no tour ----------------------------------------------
+#
+# "Welcome to Ubuntu" and the first-run setup wizard both open over the desktop on
+# first login and wait for somebody to click through them. On a machine nobody sits
+# at, that is a session permanently occupied by a dialog -- and anything driving the
+# GUI finds the wizard instead of what it expected.
+#
+# Purged rather than hidden, because a package that is not installed cannot come back
+# after an update.
+
+say 'removing the welcome wizard and the tour'
+apt-get -o DPkg::Lock::Timeout=600 purge -y gnome-initial-setup gnome-tour 2>/dev/null \
+  || say 'the welcome packages were not installed, or could not be removed'
+
+# Belt and braces: if either survives -- held by a dependency, or reinstalled later --
+# a matching file in /etc/xdg/autostart with Hidden=true stops it starting. This is
+# the documented way to suppress a system autostart entry, and it costs nothing when
+# the package is already gone.
+install -d -m 0755 /etc/xdg/autostart
+for entry in gnome-initial-setup-first-login gnome-tour; do
+  cat >"/etc/xdg/autostart/$entry.desktop" <<AUTOSTOP
+[Desktop Entry]
+Type=Application
+Name=$entry (disabled by okc)
+Exec=/bin/true
+Hidden=true
+X-GNOME-Autostart-enabled=false
+NoDisplay=true
+AUTOSTOP
+done
+say 'neither will start on login even if reinstalled'
+
 say 'turning off the screensaver, the lock screen and idle blanking'
 
 # A dconf SYSTEM database rather than per-user gsettings: it applies to whoever logs

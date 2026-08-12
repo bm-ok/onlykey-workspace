@@ -33,6 +33,19 @@ else
   say 'DISPLAY is already in .bashrc'
 fi
 
+# --- already welcomed ---------------------------------------------------------
+#
+# The packages are removed in the root half, but the wizard also keys off a marker in
+# the user's own config -- and if it is ever reinstalled, this is what stops it asking
+# again. A per-user file, written by the user, which is why it is here rather than
+# there.
+#
+# The file must contain "yes"; an empty file is not enough.
+
+mkdir -p "$HOME/.config"
+printf 'yes\n' >"$HOME/.config/gnome-initial-setup-done"
+say 'marked the welcome wizard as already done'
+
 # --- let root reach this display ----------------------------------------------
 #
 # The agent runs as root while the session belongs to this user, and the Xauthority
