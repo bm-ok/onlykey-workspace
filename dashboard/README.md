@@ -7,7 +7,7 @@ framework.
 
     npm install             once, for NW.js (the SDK build, so devtools exist)
     npm start               the app window
-    npm run headless        the same server with no window
+    npm run headless        the API alone, with no window and no UI
     npm test                checks it stayed generic
 
 
@@ -73,9 +73,9 @@ the app was restarted while it was talking.
 The shape
 ---------
 
-    main.js         NW.js node-main: boots the server in the app's own Node
-    server.js       one flat table of actions, and the page in front of it
-    ui/             the window. boot.html waits, then loads the real page
+    main.js         NW.js node-main: starts the API for machines to reach
+    server.js       one flat table of actions; the API and nothing else
+    ui/             the window: an app page, loaded from disk
     core/log.js     one tagged live log that everything writes into
     machines/
       vbox.js       VirtualBox: state, snapshots, isos, bridges, delete
@@ -89,20 +89,29 @@ The shape
     tools/nw.js     finds the NW.js binary and launches the app
 
 
-Why NW.js, and why the API is still an HTTP server
---------------------------------------------------
+An app page, not a web page
+--------------------------
 
-NW.js hosts the server inside its own Node context, so the app is one process.
-`boot.html` waits for it and then navigates, which means the window loads the UI
-over http from the same origin a browser would get — one UI, one code path.
+The window is opened from disk by NW.js as an **app page**, which is what makes
+NW.js behave normally: the page has node, so it requires this app and calls the
+same actions the API exposes — no fetch, no origin, no port, nothing to
+reconnect — and the SDK build gives it its own right-click Inspect.
 
-The API stays a real HTTP server for one reason: **a machine being installed has to
-be able to reach it.** That is where its scripts come from and where its progress
-goes. Nothing else needs it to be one.
+Serving the page over http instead makes it a *remote* page, and remote pages get
+neither. That is worth knowing because it looks like the tidier arrangement and
+costs both: the symptom is a window with no developer menu, and the temptation is
+to hand-write one rather than to notice why it is missing.
 
-Dialogs are in-page overlays rather than `<dialog>` or `confirm()`. Under
-`--disable-features=nw2` the native ones do not appear and silently return false,
-which cancels the action behind them without saying so.
+**The HTTP server is only the API.** It hosts no page at all — `/` says so. Its one
+client is a machine being provisioned, fetching its scripts and reporting progress,
+which is the only thing here that ever needed a socket.
+
+Two quirks come from `--disable-features=nw2`, which is required:
+
+* NW.js's own `nw.Window` shim throws `getRoutingID is not a function` on page
+  load. Nothing here calls that API, so it is noise.
+* Native `confirm()` silently returns false, which would cancel the action behind
+  it without saying so. Every dialog here is an in-page overlay for that reason.
 
 
 Honest gaps
