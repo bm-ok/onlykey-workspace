@@ -169,6 +169,32 @@ async function create (input) {
 
 // ---- getting an operating system onto it -----------------------------
 
+// Detach the disk, destroy it, make an empty one the same size, put it back.
+//
+// Three steps rather than one because VirtualBox will not delete a medium that
+// is attached to a machine, and will not attach one that does not exist. The
+// order is forced by that, not chosen.
+async function blankTheDisk (name, spec, to) {
+  const info = await vbox.info(name)
+  const disk = info['SATA-0-0'] || spec.disk
+  if (!disk || disk === 'none') {
+    to.warn('there is no disk attached to blank; installing onto whatever is there')
+    return
+  }
+
+  to.info(`blanking ${path.basename(disk)} so the installer starts from nothing`)
+  await vbox.run(['storageattach', name, '--storagectl', 'SATA', '--port', '0', '--device', '0',
+    '--type', 'hdd', '--medium', 'none'], { tags: [name] })
+  // --delete removes the file as well as the registry entry. Without it the next
+  // createmedium fails on a path that is still there, and VirtualBox keeps a
+  // registry full of media nobody can account for.
+  await vbox.run(['closemedium', 'disk', disk, '--delete'], { timeout: 300000, tags: [name] })
+  await vbox.run(['createmedium', 'disk', '--filename', disk, '--size', String(spec.diskMB), '--format', 'VDI'],
+    { timeout: 300000, tags: [name] })
+  await vbox.run(['storageattach', name, '--storagectl', 'SATA', '--port', '0', '--device', '0',
+    '--type', 'hdd', '--medium', disk], { tags: [name] })
+}
+
 async function install (name, { port, caPort }) {
   const vm = vms.get(name)
   const spec = vm.spec
@@ -177,6 +203,25 @@ async function install (name, { port, caPort }) {
   if (!spec.iso) throw new Error(`"${name}" has no installer image, so there is nothing to install.`)
   const iso = await resolveISO(spec.iso)
   if (!await vbox.isOff(name)) throw new Error(`"${name}" is running. Shut it down before installing.`)
+
+  // A BLANK DISK, every time, and this is not tidiness.
+  //
+  // The boot order is disk before dvd, so a machine whose disk already boots
+  // never reaches the installer at all -- it just starts the operating system
+  // that is already there. Installing a second time therefore did nothing, while
+  // the dashboard reported "installing" and the machine sat at a login screen.
+  // A whole class of confident wrong answer: the state said one thing, the
+  // screen said another, and nothing failed.
+  //
+  // It also makes the dialog's own sentence true. It says "Anything already on
+  // this machine's disk is overwritten", and until now that was only true the
+  // first time.
+  //
+  // Recreating rather than reordering boot: an empty disk is not bootable, so
+  // the dvd is reached without touching the order, and the installer meets the
+  // same blank disk it met when the machine was new -- no leftover partitions
+  // for it to have an opinion about.
+  await blankTheDisk(name, spec, to)
 
   const host = await vbox.hostAddress()
   // Only one script is named here. What it then fetches and in what order is
