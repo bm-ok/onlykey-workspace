@@ -198,6 +198,16 @@ fi
 # given, and turning it off here would lock out exactly that case.
 
 say 'tightening ssh'
+
+# Host keys first. `sshd -t` refuses to validate anything at all without them, and at
+# this point in an install they may not have been generated yet -- the package's own
+# setup does it later or on first boot. That made the check below fail for a reason
+# that had nothing to do with the config, and the config was then thrown away.
+#
+# `ssh-keygen -A` creates only the ones that are missing, so it is safe to run again,
+# and a machine with no host keys could not accept ssh anyway.
+ssh-keygen -A >/dev/null 2>&1 || say 'could not generate ssh host keys'
+
 install -d -m 0755 /etc/ssh/sshd_config.d
 cat >/etc/ssh/sshd_config.d/10-okc.conf <<'SSHCFG'
 PermitRootLogin no
@@ -205,14 +215,19 @@ PermitEmptyPasswords no
 MaxAuthTries 3
 LoginGraceTime 20
 SSHCFG
-# Checked before restarting. A bad config plus a restart is a machine with no ssh
-# at all, which is the one failure that cannot be fixed remotely.
-if sshd -t 2>/dev/null; then
+
+# Checked before restarting. A bad config plus a restart is a machine with no ssh at
+# all, which is the one failure that cannot be fixed remotely.
+#
+# The reason is captured and reported rather than swallowed: "did not check out" with
+# no detail is a guess, and this exact step failed once for a reason the message could
+# not have revealed.
+if ssh_why=$(sshd -t 2>&1); then
   systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
   say 'ssh is tightened: no root login, no empty passwords'
 else
   rm -f /etc/ssh/sshd_config.d/10-okc.conf
-  say 'WARNING: that ssh config did not check out, so it was removed'
+  say "WARNING: ssh would not accept that config, so it was removed. sshd said: ${ssh_why:-nothing}"
 fi
 
 # --- the agent that dials the dashboard --------------------------------------

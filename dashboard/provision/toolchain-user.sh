@@ -20,7 +20,19 @@ say "toolchain (user): starting as $(id -un) in $HOME"
 
 # --- DISPLAY for shells ------------------------------------------------------
 #
-# Guarded, because this is meant to be run again.
+# In BOTH files, and the second one is the one that matters.
+#
+# Ubuntu's .bashrc opens with `case $- in *i*) ;; *) return;; esac`, so for a
+# NON-interactive shell it returns before reaching anything added to it -- and a
+# command sent to this machine runs in exactly that kind of shell. Putting DISPLAY
+# only in .bashrc gave an interactive shell ":0" and a dispatched command an empty
+# variable, so anything driving the desktop failed while the desktop was working
+# perfectly.
+#
+# This is the same trap as nvm below, found the same way: by asking a login shell
+# rather than trusting an interactive one.
+#
+# Both guarded, because this is meant to be run again.
 
 if ! grep -q 'okc: DISPLAY' "$HOME/.bashrc" 2>/dev/null; then
   cat >>"$HOME/.bashrc" <<'BASHRC_ADD'
@@ -28,9 +40,18 @@ if ! grep -q 'okc: DISPLAY' "$HOME/.bashrc" 2>/dev/null; then
 # okc: DISPLAY so anything run from a shell can reach the desktop session.
 export DISPLAY=:0
 BASHRC_ADD
-  say 'added DISPLAY=:0 to .bashrc'
-else
-  say 'DISPLAY is already in .bashrc'
+  say 'added DISPLAY=:0 to .bashrc, for interactive shells'
+fi
+
+if ! grep -q 'okc: DISPLAY' "$HOME/.profile" 2>/dev/null; then
+  cat >>"$HOME/.profile" <<'PROFILE_DISPLAY'
+
+# okc: DISPLAY for non-interactive login shells as well.
+# .bashrc returns early when not interactive, so a command sent to this machine
+# would otherwise see no DISPLAY at all and be unable to reach the session.
+export DISPLAY=:0
+PROFILE_DISPLAY
+  say 'added DISPLAY=:0 to .profile, which is what dispatched commands read'
 fi
 
 # --- already welcomed ---------------------------------------------------------
