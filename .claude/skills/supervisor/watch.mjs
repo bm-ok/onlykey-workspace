@@ -99,12 +99,17 @@ async function tick () {
     if (first) continue
     if (was === undefined && run.state === 'running') { say(`START  run ${run.id}`); continue }
     if (was === run.state || run.state === 'running') continue
-    // `exit` is written only when the run ends, so a zero here is a real zero
-    // and not a default -- which matters, because a default would read as
-    // success for every run that died before it could write anything.
-    say(run.exit === 0
-      ? `DONE   run ${run.id} finished cleanly`
-      : `FAILED run ${run.id} ended with status ${run.exit}`)
+    // Three outcomes, not two. A lost run has no exit code at all, and saying
+    // it "ended with status null" describes a result it never produced -- which
+    // sends a supervisor looking for one. It is reported as what it is: gone,
+    // with nothing left to wait for.
+    //
+    // `exit` is written only when a run really ends, so a zero here is a real
+    // zero rather than a default. A default would read as success for every run
+    // that died before it could write anything, which is the majority of them.
+    if (run.state === 'lost') say(`LOST   run ${run.id} died without a result -- nothing is going to finish it`)
+    else if (run.exit === 0) say(`DONE   run ${run.id} finished cleanly`)
+    else say(`FAILED run ${run.id} ended with status ${run.exit}`)
   }
 
   // --- which session ------------------------------------------------------

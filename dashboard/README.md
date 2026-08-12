@@ -713,6 +713,3 @@ ordinary user. What follows is what is still not proven.
 * **A credential has only been restored to a machine that had had one before.**
   `runner1` was signed in, rolled back, and had its worker installed by hand. A
   machine straight off a fresh install has not been tried.
-* **`lost` has never been observed.** The state was written from a run that
-  genuinely died, but that run predated the pid file it now depends on, so the
-  branch reporting it is reasoned rather than exercised.

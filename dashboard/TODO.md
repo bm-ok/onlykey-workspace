@@ -17,10 +17,6 @@ Outstanding
 * **Nothing has been left running for days.** Every run so far has been minutes.
   A worker that hits a token refresh, a network drop or a full disk mid-task has
   never been observed.
-* **The `lost` run state has never been seen in the wild.** It was written from
-  a run that genuinely died, but that run predated the pid file, so the branch
-  that reports it is reasoned rather than exercised. Kill a running worker and
-  check `vmRuns` says `lost`.
 * **A worker has never pushed.** The hook, the branch claim and the refusal to
   touch the default branch are all proven from this host. No dispatched task has
   yet produced a commit and pushed it back, which is the thing the whole
@@ -75,6 +71,11 @@ Dispatch is proven end to end as well — task given, run detached, session
 appeared, file written, exit 0 — which is worth saying because until it was
 actually used, every dispatch it produced had been dying instantly. See
 `LEARNED.md`.
+
+`lost` has now been observed rather than reasoned about: a run was killed with
+its process group, `vmRuns` reported `lost`, and the watcher said so. Exercising
+it found that the watcher announced "ended with status null" — describing a
+result the run never produced, which sends a supervisor looking for one.
 
 What remains beyond the list above is the "Honest gaps" section of `README.md`,
 which is a different kind of thing: what has never been tried, rather than what
