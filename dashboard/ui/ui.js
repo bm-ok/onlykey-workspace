@@ -227,10 +227,16 @@ const vmCard = v => el('div', {
   v.description ? el('div', { className: 'card-sub', textContent: v.description }) : null,
   el('div', { className: 'badges' },
     el('span', { className: `badge ${v.running ? 'ok' : ''}`, textContent: v.running ? 'running' : v.state }),
-    el('span', { className: `badge ${v.stage === 'ready' ? 'ok' : v.stage === 'defined' ? 'bad' : 'run'}`, textContent: v.stage }),
-    // Dialled in is a stronger statement than running: the machine is up, its
-    // agent is talking, and things can be run on it.
-    v.connected ? el('span', { className: 'badge ok', textContent: 'connected' }) : null))
+    // Two badges, not three. There was a separate "connected" one beside this,
+    // on the condition `v.connected` -- but the stage IS "connected" whenever
+    // that is true, since stageOf tests the channel before anything else. So it
+    // never read as emphasis, only ever as the same word twice in a row. What
+    // the extra badge was carrying was its colour, and dialled in being a
+    // stronger statement than running is worth the green, so the stage takes it.
+    el('span', {
+      className: `badge ${v.stage === 'connected' || v.stage === 'ready' ? 'ok' : v.stage === 'defined' ? 'bad' : 'run'}`,
+      textContent: v.stage
+    })))
 
 function vmActions () {
   const box = $('machine-actions')

@@ -274,9 +274,13 @@ const actions = {
       if (!agent) throw new Error(`"${name}" is not dialled in, so there is no address to open. Start it and wait for it to connect.`)
 
       const facts = agent.facts || {}
-      // What it reported first; the socket it came in on is the fallback, since
-      // that is the address it actually reached us from.
-      const address = (facts.addresses || [])[0] || String(agent.from || '').replace(/:\d+$/, '')
+      // The address it DIALLED IN FROM, not the first one it lists about itself.
+      // Those are different questions: a machine reports every address it has,
+      // and once docker is installed that includes a bridge address like
+      // 172.17.0.1 which is real inside the machine and unreachable from here.
+      // The socket's far end is the one address proven to work in this
+      // direction, because a packet already came back along it.
+      const address = String(agent.from || '').replace(/:\d+$/, '') || (facts.addresses || [])[0]
       const user = facts.user || (vm.spec && vm.spec.user)
       if (!address || !user) throw new Error(`"${name}" has not said enough about itself yet to open it.`)
 
