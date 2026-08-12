@@ -1,0 +1,18 @@
+# These files are not read by the host. They are sent to a Linux guest and run
+# there, so their line endings are part of whether they work, not a preference.
+#
+# scripts.js reads each one off disk and passes it through byte for byte -- that
+# is deliberate, so a script stays valid shell you can copy onto a machine and
+# run by hand. It also means whatever git checked out is exactly what the guest
+# executes. On Windows core.autocrlf=true rewrites LF to CRLF ON CHECKOUT, so a
+# fresh clone would serve `#!/bin/bash\r` and the guest would answer `bad
+# interpreter: /bin/bash^M` -- a failure that appears only in a clone, never on
+# the machine the files were written on, and never in the diff.
+#
+# The blobs are stored LF already. This keeps the working copy that way too.
+*.sh text eol=lf
+*.py text eol=lf
+
+# The seed the unattended installer is handed, for the same reason.
+*.yaml text eol=lf
+*.yml text eol=lf
