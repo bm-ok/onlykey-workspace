@@ -1,118 +1,154 @@
 ---
 name: dashboard
-description: Drive the okc dashboard - make, install, watch and delete virtual machines, set a machine up on a branch, open it in VS Code, follow the live log, and take a picture of a machine's screen. Use whenever working on or with dashboard/, or when a task involves a runner VM, provisioning, the workspace repositories, or the git server.
+description: Help develop the dashboard - add or change an action, the window, the git server, provisioning scripts or the machine layer, and prove the change from the command line. Use when editing anything under dashboard/ or workspace/provision/, when an action is missing, when the window misbehaves, or when a change needs restarting and re-testing. To run work through a machine rather than change the tool, use the "supervisor" skill instead.
 ---
 
-# Driving the dashboard
+# Developing the dashboard
 
-Everything goes through **one command**, over a local socket:
+Two skills, one command between them. This one is **help me develop the
+dashboard** — changing the instrument. `supervisor` is **help me run it** —
+giving work to machines through it. They share `okc.js` and nothing else, and
+staying on one side of that line is the point: a supervisor that starts editing
+the tool is editing the thing it is meant to be watching through.
 
     node dashboard/tools/okc.js                    every action, listed
     node dashboard/tools/okc.js <action> [--key value]
     node dashboard/tools/okc.js <action> --json    for a script
 
-Run it with no arguments first. The list is **generated from the running
-dashboard**, so it is never out of date and this file cannot be either — if
-something is missing here, ask the dashboard rather than trusting this.
+Run it with no arguments first. That list is **generated from the running
+dashboard**, so it cannot go stale and neither can this file — if something here
+disagrees with it, the list is right.
 
-## Do not reach around it
+Exit codes: `0` fine, `1` refused, `3` nothing listening.
 
-The ports this app listens on are for machines, not for you. **Do not drive
-`VBoxManage` directly either** — only `dashboard/machines/` may, and a second
-opinion about a machine's state is the bug that rule exists to prevent.
+## Read these three first
 
-If something you need is missing, **add an action**. Then it exists for the
-window, the command line and the next person at once.
+They are deliberately separate, and each answers a different question:
 
-The command line talks to a dashboard that is **already running** and refuses to
-start its own — a second copy has its own empty registry and reports every
-machine as disconnected while it sits there connected to the real one. If it
-says nothing is listening, start the window with `npm start` in `dashboard/`.
+* `dashboard/TODO.md` — what is outstanding and where the machines were left.
+  **Start here**, because it says what state the world is in.
+* `dashboard/README.md` — how it is used, and its "Honest gaps" section. If a
+  change makes an entry there false, fix it in the same change.
+* `dashboard/LEARNED.md` — what went wrong before and what it taught. Read it
+  **before "simplifying" anything**. Most of what looks redundant here is
+  load-bearing and that file says why.
 
-Exit codes: `0` fine, `1` refused, `3` no dashboard running.
+## The rules the code is built to
 
-## Watching, rather than asking repeatedly
+* **Nothing may know about a particular project.** `npm test` in `dashboard/`
+  enforces it and also enforces that **only `machines/` drives `VBoxManage`**. A
+  second opinion about a machine's state is the bug that rule exists to prevent.
+* **Node and git, nothing else.** No external binary, no dependency. The git
+  server is git's own subcommands over http; the certificates use the openssl
+  that ships with git. If a change needs something installed, it is the wrong
+  change.
+* **One surface.** An action added to the table in `server.js` exists for the
+  window, the command line and the next person at once. If you need something
+  the CLI cannot do, **add an action** — do not reach around it, and do not call
+  `VBoxManage` yourself.
+* **The window is an app page**, loaded from disk by NW.js. It has node and its
+  own Inspect, and it calls the action table in-process. There is no `/api`; the
+  ports this app listens on are for machines.
 
-    node dashboard/tools/okc.js logWatch
+## Proving a change
 
-Streams the live log until stopped. Use this for anything slow. An install is
-about twenty-five minutes of complete silence followed by everything at once, so
-polling either misses it or spends the whole time asking.
+**Use the command line to do the actual task, not a smoke test.** A change is
+proven by running it the way it will be used. This has repeatedly been the
+difference between "it works" and "it printed something".
 
-    node dashboard/tools/okc.js logWatch --since 240   carry on from an id
+    npm test                    # in dashboard/ — generic, and machines-only VBoxManage
+    node --check <file>         # syntax, before restarting anything
 
-## Seeing a machine that is not talking
+Then restart, because **the window loads `server.js` at startup** and nothing you
+changed exists until it does:
 
-    node dashboard/tools/okc.js vmScreenshot --name runner2
+```bash
+# Windows: stop every nw process, then start again
+powershell -c "Get-Process -Name nw | Stop-Process -Force"
+npm start        # in dashboard/, backgrounded
+```
 
-The **only** thing that answers "is it working or stuck?" during an install,
-because until the agent connects there is no log line and nothing to ask. Saves a
-PNG under the app data directory and puts the path in the live log; read the file
-to look at it. This has already caught two silent failures that produced no log
-output at all.
+Wait for it by asking the dashboard, not by sleeping:
 
-## The usual flows
+```bash
+until node tools/okc.js 2>/dev/null | grep -q myNewAction; do sleep 1; done
+```
 
-Make a machine, from nothing:
+**Never restart while a machine is installing.** The install fetches its scripts
+from this host at the very end, twenty-five minutes in, and a restart at the
+wrong moment throws the whole install away.
 
-    okc.js vmCreate --vm '{"name":"runner2","iso":"24.04","network":"bridged","user":"okc","password":"okc","fullName":"okc","sshKey":"ssh-ed25519 AAAA..."}'
-    okc.js vmInstall --name runner2
+## Following the user's flow
 
-`iso` matches on a substring of an image VirtualBox already knows about, so
-`"24.04"` is enough — check with `vmIsos`. **Use a substring or forward slashes,
-never a Windows path with backslashes**: a shell eats them before the JSON is
-parsed.
-
-Start work on it:
-
-    okc.js vmWorkspace --name runner2 --branch fix/the-thing
-    okc.js vmEditor --name runner2
-
-Run something on it, or look around:
-
-    okc.js vmRun --name runner2 --what "check node" --command "node --version"
-    okc.js vmList --json
-    okc.js gitBranches --json
-
-Throw it away and start again — this is the flow to follow when an install
-fails, rather than installing over the top:
+When something fails, **do what they would do at the window**: delete the machine
+and its storage, then create it again. Do not install over the top and do not
+invent a repair path that has no button — a fix that only exists in a shell is
+not a fix to this tool.
 
     okc.js vmRemove --name runner2
     okc.js vmCreate --vm '{...}'
+    okc.js vmInstall --name runner2
 
-## Rules the dashboard will enforce, so do not fight them
+## Changing the window
 
-* **A machine stays on its branch until it is clean.** There is no way to move
-  it. The only way off is restoring a snapshot taken before that branch.
-* **The default branch is protected** and is not offered. Work is merged into it
-  here, never done on it.
-* **One machine per branch.** A second one is refused by name.
-* **A machine may push only the branch it was set up on**, and it cannot push at
-  all until it has been. Enforced by a hook on this host, not in the guest.
-* **Snapshots need the machine shut down**, and so does restoring one.
+* **Only update an element that changed.** Rewriting text that is identical
+  makes it flicker and **destroys the user's selection mid-copy** — a snapshot
+  count that ticks is uncopyable. Compare a signature of what you are about to
+  draw against what is there and return early.
+* **Disable what must not be clicked**, in the action *and* the button. A
+  snapshot of a running machine stores its RAM; both refuse, and the button says
+  why rather than going quiet.
+* `nw.Shell.openExternal` is how a link reaches the user's real browser.
 
-If an action refuses, read the message — it says what to do instead. Do not work
-around it.
+## Things that cost real time here
 
-## Before starting
+* **`$(...)` on a VirtualBox installer command line is expanded by VirtualBox
+  first.** A fingerprint check written that way compared empty to empty and
+  **passed**, accepting any authority. Build the command as a pipeline into
+  `grep -q` instead. The same expansion will eat it again inside a
+  `git commit -m` argument.
+* **ASCII only in anything git shows a remote.** Git relays hook messages as raw
+  bytes; an em-dash arrives as mojibake in the guest's terminal.
+* **`.gitattributes` pins `*.sh` and the hooks to `eol=lf`.** Without it a fresh
+  clone on Windows serves `#!/bin/bash\r` to a guest and nothing runs.
+* **An ignored *directory* is never descended into**, so a later `!` negation
+  inside it does nothing — silently. `/workspace/*` plus `!/workspace/provision/`
+  works; `/workspace/` plus a negation does not.
+* **Print generated shell before running it.** A `continue` outside a loop and a
+  self-matching `pkill -f` both survived review and died on the machine. `pkill`
+  matches its own argv — record a pid and `kill -- -PID`.
+* **A pty returns drawing instructions, not text.** Anything scraped from
+  `script -qec` needs the terminal escapes stripped, or a URL arrives wrapped and
+  doubled.
+* **Powered off is not unlocked**, and one `VBoxManage` call is not a real
+  attempt. Both are already handled in `machines/vbox.js`; do not undo them.
+* **A force-stop sends no FIN**, so a machine reads as connected for another
+  seventy seconds. Anything that stops or restores a machine must drop the
+  channel first.
+* **`chmod 0600` on Windows is theatre.** It toggles the read-only bit. At-rest
+  protection for anything worth keeping goes through `core/secret.js` (DPAPI).
 
-Three documents, and they are deliberately separate:
+## Provisioning scripts
 
-* `dashboard/TODO.md` — what is outstanding, and where the machines were last
-  left. Read this first to find out where things stand.
-* `dashboard/README.md` — how to use it. Read before changing anything.
-* `dashboard/LEARNED.md` — what went wrong before and what it taught. Read when
-  something looks oddly written, or before "simplifying" it: most of what looks
-  redundant in this codebase is load-bearing, and that file says why.
+`workspace/provision/*.sh` are the **project's** half; the app's own scripts do
+not know what a machine is for. They are checked in — `bash -n` them before
+committing, and remember that a header of `OKC_*` values and `say`/`report` is
+prepended by the dashboard, so those are defined even though nothing in the file
+defines them.
 
-## When changing the dashboard itself
+## Troubleshooting
 
-* `npm test` in `dashboard/` checks it stayed generic: nothing may know about a
-  particular project, and only `machines/` may drive `VBoxManage`.
-* **The window loads `server.js` at startup**, so any change to it needs the
-  dashboard restarted before it does anything.
-* **Never restart while a machine is installing.** The install fetches its
-  scripts at the very end.
-* `dashboard/README.md` is the only document, and its "Honest gaps" section is
-  the part most worth trusting — if a change makes an entry there false, fix it
-  in the same change.
+**`no dashboard is listening` (exit 3)** — start the window with `npm start` in
+`dashboard/`. The CLI refuses to start its own copy on purpose: a second one has
+an empty registry and reports every machine as disconnected while sitting beside
+the real one.
+
+**An action exists in `server.js` but not in the list** — the dashboard is still
+running the old code. Restart it.
+
+**`npm test` fails on a name** — something in the generic half learned a
+project's name. Move it to `workspace/provision/` or take a parameter.
+
+**A machine installs and then nothing happens** — `okc.js vmScreenshot --name X`.
+It is the only thing that answers "working or stuck" before the agent connects,
+and it has already caught two silent failures that produced no log output at all.

@@ -60,9 +60,31 @@ fi
 # cannot touch a default branch, cannot rewrite or delete what it has pushed, and
 # is thrown away when the work is done.
 #
+# WRITTEN TO A FILE AND RUN, rather than passed to "bash -c".
+#
+# It was bash -c once, and every dispatch it produced died instantly without
+# leaving so much as an empty out.log. A shell-quoted path is wrapped in single
+# quotes, and putting one inside a single-quoted -c argument ENDS that argument
+# -- so the command bash actually received was "cd", with the rest arriving as
+# positional parameters. A folder without spaces reassembled by accident and
+# hid it; the first folder with a space in it did not.
+#
+# A file has no such layer: it is written once, verbatim, by a heredoc whose
+# delimiter is quoted so nothing here expands. It is also the honest record of
+# what ran, sitting beside the task and the output.
+cat > ${dir}/run.sh <<'OKC_RUN_EOF'
+# Its own pid, first, so a run that dies can be told from one still going. Without
+# it a run that was killed reads as "running" forever, because the status file it
+# would have written is exactly what never got written.
+echo $$ > ${dir}/pid
+cd ${q(folder)} 2>/dev/null || cd "$HOME"
+claude -p "$(cat ${dir}/task.txt)" --dangerously-skip-permissions --output-format json${contract ? ` --append-system-prompt-file ${q(contract)}` : ''}${resume ? ` --resume ${q(resume)}` : ''} > ${dir}/out.log 2>&1
+echo $? > ${dir}/status
+OKC_RUN_EOF
+
 # Detached with nohup and its own session, so the run outlives the connection
 # that started it -- the channel is how it was asked, not what holds it up.
-nohup setsid bash -c 'cd ${q(folder)} 2>/dev/null || cd "$HOME"; claude -p "$(cat ${dir}/task.txt)" --dangerously-skip-permissions --output-format json${contract ? ` --append-system-prompt-file ${q(contract)}` : ''}${resume ? ` --resume ${q(resume)}` : ''} > ${dir}/out.log 2>&1; echo $? > ${dir}/status' > /dev/null 2>&1 &
+nohup setsid bash ${dir}/run.sh > /dev/null 2>&1 &
 
 # Recorded immediately, so a run that dies in its first second is still a run
 # that happened rather than a directory nobody can account for.
@@ -73,9 +95,16 @@ echo okc-dispatched ${id}`
 // Every run on the machine, newest first, with what became of it.
 //
 // `status` is written only when the run ends, so its absence is the answer to
-// "is it still going" -- and it is reported as `running` rather than as a
-// missing field, because a caller that has to interpret an absence will
-// eventually interpret it as finished.
+// "is it still going" -- and it is reported as a state rather than as a missing
+// field, because a caller that has to interpret an absence will eventually
+// interpret it as finished.
+//
+// THREE STATES, NOT TWO. A missing status used to mean running, full stop, which
+// is only true while something is still there to write one. A run that was killed
+// -- or that never started, which is how the quoting bug above presented -- has no
+// status and no process, and reporting that as "running" is a watcher that waits
+// forever for a result nobody is going to produce. So the pid is checked: no
+// status and nothing alive is `lost`, and says so.
 const list = () => `set -u
 [ -d ${RUNS} ] || exit 0
 for d in ${RUNS}/*/; do
@@ -85,7 +114,16 @@ for d in ${RUNS}/*/; do
   if [ -f "$d/status" ]; then
     state=finished
     code=$(cat "$d/status" 2>/dev/null || echo '?')
+  elif [ -f "$d/pid" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null; then
+    state=running
+    code=
+  elif [ -f "$d/pid" ]; then
+    state=lost
+    code=
   else
+    # No pid file yet. Either it is a second old, or it predates the pid being
+    # recorded at all -- both are indistinguishable from here, so neither is
+    # claimed.
     state=running
     code=
   fi

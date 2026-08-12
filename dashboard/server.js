@@ -81,6 +81,26 @@ function refuseIfItHoldsACredential (name) {
   }
 }
 
+// A path that is meant to be on the guest, checked for having been eaten on the
+// way here.
+//
+// Git Bash rewrites anything shaped like an absolute unix path in a command
+// line into a Windows one, so `--folder /home/okc/work` arrives as
+// `C:/Program Files/Git/home/okc/work`. Nothing rejects it: the machine simply
+// cannot find that directory, falls back to the home folder, and the work
+// happens somewhere nobody asked for -- silently, and looking like success.
+//
+// Caught here rather than fixed here, because guessing what was meant is how a
+// task lands in a third wrong place. `MSYS_NO_PATHCONV=1` or a leading `//` stops
+// the shell doing it.
+function guestPath (p, what) {
+  if (!p) return p
+  if (/^[A-Za-z]:[\\/]/.test(p) || p.includes('\\')) {
+    throw new Error(`"${p}" is a path on this host, not on the machine. If you are in Git Bash it rewrote ${what} on the way here; run it as MSYS_NO_PATHCONV=1 okc.js ... or write the path with two leading slashes.`)
+  }
+  return p
+}
+
 const actions = {
   status: {
     about: 'Is the server up, and what does it have to work with',
@@ -511,6 +531,7 @@ const actions = {
     run: async ({ name, branch, folder }) => {
       const vm = vms.get(name)
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in. Start it and wait for it to connect.`)
+      guestPath(folder, '--folder')
 
       // A machine stays on its branch until it is clean.
       //
@@ -885,7 +906,8 @@ echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 
       if (!task || !String(task).trim()) throw new Error('Say what the task is.')
 
       const id = dispatch.newId()
-      const where = folder || (vm.spec && vm.spec.folder) || workspace.FOLDER
+      const where = guestPath(folder, '--folder') || (vm.spec && vm.spec.folder) || workspace.FOLDER
+      guestPath(contract, '--contract')
       const to = log.on('vm', name)
 
       const r = await channel.run(name, dispatch.script({ id, task: String(task), folder: where, contract, resume }),
