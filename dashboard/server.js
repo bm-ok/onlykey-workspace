@@ -28,6 +28,7 @@ const { provision, reach } = require('./machines/provision')
 const editor = require('./machines/editor')
 const repos = require('./repos/serve')
 const busy = require('./machines/busy')
+const session = require('./machines/session')
 const branches = require('./repos/branches')
 const workspace = require('./repos/workspace')
 
@@ -596,6 +597,44 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
       return { name, rotated: true, note: 'its agent was restarted and will dial back in with the new token' }
     })
+  },
+
+  // The Claude sessions running on a machine.
+  //
+  // A runner runs Claude Code, and Claude Code writes everything it does to a
+  // transcript on that machine. Read over the channel, strictly read-only.
+  vmSessions: {
+    about: 'The Claude sessions on a machine, newest first',
+    takes: ['name'],
+    run: async ({ name }) => {
+      vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in, so its sessions cannot be read.`)
+      const r = await channel.run(name, session.command('list'), { what: 'reading its claude sessions', timeout: 60000 })
+      return session.answer(r.output)
+    }
+  },
+
+  // What a session has done since you last looked.
+  //
+  // A DELTA, and the bookmark is the point. `since` is a line number in the
+  // transcript and comes back as `bookmark`; pass it in next time. A watcher
+  // that re-reads from the top spends its whole context re-deriving what it
+  // already reported, which for a task running for an hour is most of it.
+  //
+  // Only what is worth reporting: what it ran, what it wrote, what it was asked,
+  // and the lines of a result that carry a verdict. A tool result is tens of
+  // kilobytes and almost none of it is news.
+  vmSessionTail: {
+    about: 'What a machine\'s Claude session has done since a bookmark',
+    takes: ['name', 'session', 'since', 'limit'],
+    run: async ({ name, session: which = '', since = 0, limit = 40 }) => {
+      vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in, so its session cannot be read.`)
+      const r = await channel.run(name, session.command('tail', [which, since, limit]), { what: 'reading its session', timeout: 120000 })
+      const out = session.answer(r.output)
+      if (!out.ok) throw new Error(out.error + (out.sessions ? ` — ${out.sessions.map(s => `${s.id.slice(0, 8)} (${s.title || 'untitled'})`).join(', ')}` : ''))
+      return out
+    }
   },
 
   // What a machine is holding that exists nowhere else.
