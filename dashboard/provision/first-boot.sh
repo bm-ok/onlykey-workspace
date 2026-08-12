@@ -283,7 +283,15 @@ UNIT
 
   systemctl daemon-reload 2>/dev/null || true
   systemctl enable okc-agent.service 2>/dev/null || true
-  systemctl start okc-agent.service 2>/dev/null || true
+  # RESTART, not start.
+  #
+  # `start` does nothing to a service that is already running, so re-running this
+  # on a live machine rewrote the agent and its environment and then left the old
+  # process running against them -- reporting success while changing nothing that
+  # was actually in effect. Found the hard way: after the channel moved to TLS the
+  # agent was reinstalled, said it had started, and went on failing to connect
+  # because the running copy was still the plain-socket one from before.
+  systemctl restart okc-agent.service 2>/dev/null || systemctl start okc-agent.service 2>/dev/null || true
   say 'the agent will dial in on the next boot'
 else
   say 'WARNING: could not fetch the agent, so this machine will not dial in'
