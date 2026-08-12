@@ -26,7 +26,9 @@ apt-get update -y || true
 
 say 'installing build tools, curl and git'
 apt-get install -y \
-  build-essential git curl wget unzip pkg-config ca-certificates \
+  build-essential make tar git curl wget unzip pkg-config ca-certificates \
+  python3-pip python3-venv \
+  usbutils kmod \
   x11-utils x11-xserver-utils dconf-cli \
   || say 'some packages did not install; carrying on'
 
@@ -45,6 +47,21 @@ if apt-get install -y docker.io docker-compose-v2 2>/dev/null || apt-get install
 else
   say 'WARNING: docker did not install'
 fi
+
+# --- device access -----------------------------------------------------------
+#
+# plugdev for USB devices, dialout for serial ports. Group membership is read when
+# a session starts, so like the docker group this applies at their next login.
+# Added even when nothing is plugged in: a machine that needs it later should not
+# need provisioning again to get it.
+
+if getent group plugdev >/dev/null 2>&1; then
+  usermod -aG plugdev "$OKC_USER" || true
+fi
+if getent group dialout >/dev/null 2>&1; then
+  usermod -aG dialout "$OKC_USER" || true
+fi
+say "$OKC_USER can reach usb and serial devices from their next login"
 
 # --- a desktop that stays logged in and never locks ---------------------------
 #

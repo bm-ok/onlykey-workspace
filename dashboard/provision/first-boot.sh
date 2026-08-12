@@ -72,16 +72,73 @@ else
   say 'WARNING: no ssh server, so nothing will be able to log in remotely'
 fi
 
+# Only written when there is a key to put in it. An authorized_keys that exists and
+# is empty reads as configured and authorises nobody, which gets diagnosed as "ssh
+# is broken" rather than "no key was ever installed".
 if [ -n "${OKC_SSH_KEY:-}" ]; then
   home="/home/$OKC_USER"
-  say "adding an ssh key for $OKC_USER"
-  install -d -m 700 "$home/.ssh"
-  # Appended, not overwritten: a machine may already have keys that matter.
-  printf '%s\n' "$OKC_SSH_KEY" >> "$home/.ssh/authorized_keys"
-  chmod 600 "$home/.ssh/authorized_keys"
+  say "adding your ssh key for $OKC_USER"
+  install -d -o "$OKC_USER" -g "$OKC_USER" -m 0700 "$home/.ssh"
+  AUTH="$home/.ssh/authorized_keys"
+  touch "$AUTH"
+  # Appended and de-duplicated. This script is meant to be run again, so it must
+  # neither pile up copies of the same key nor discard one added by hand.
+  if grep -qxF "$OKC_SSH_KEY" "$AUTH"; then
+    say 'your key was already there'
+  else
+    printf '%s\n' "$OKC_SSH_KEY" >>"$AUTH"
+    say 'your key is installed, so ssh and VS Code Remote can connect without a password'
+  fi
+  chmod 0600 "$AUTH"
   chown -R "$OKC_USER:$OKC_USER" "$home/.ssh"
 else
   say 'no ssh key was given, so a password is the only way in'
+fi
+
+# --- sudo without a password -------------------------------------------------
+#
+# So the user can do privileged things unattended. The agent runs as root and does
+# not need this; a person or a script working as the user does.
+#
+# Validated before it is trusted, and discarded if it does not parse: an invalid
+# file in /etc/sudoers.d breaks sudo for everyone, and that machine has to be
+# rescued from a console rather than fixed over ssh. Written under a temporary name
+# so a bad file is never in place even briefly.
+
+say "giving $OKC_USER sudo without a password"
+SUDO_TMP=/etc/sudoers.d/.okc-new
+printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$OKC_USER" >"$SUDO_TMP"
+chmod 0440 "$SUDO_TMP"
+if visudo -cf "$SUDO_TMP" >/dev/null 2>&1; then
+  mv "$SUDO_TMP" /etc/sudoers.d/50-okc
+  say 'sudo needs no password now'
+else
+  rm -f "$SUDO_TMP"
+  say 'WARNING: that sudoers file did not parse, so it was not installed'
+fi
+
+# --- tighten ssh -------------------------------------------------------------
+#
+# A drop-in rather than an edit to sshd_config, so a package upgrade does not fight
+# it. Password login is left ON deliberately: it is the only way in when no key was
+# given, and turning it off here would lock out exactly that case.
+
+say 'tightening ssh'
+install -d -m 0755 /etc/ssh/sshd_config.d
+cat >/etc/ssh/sshd_config.d/10-okc.conf <<'SSHCFG'
+PermitRootLogin no
+PermitEmptyPasswords no
+MaxAuthTries 3
+LoginGraceTime 20
+SSHCFG
+# Checked before restarting. A bad config plus a restart is a machine with no ssh
+# at all, which is the one failure that cannot be fixed remotely.
+if sshd -t 2>/dev/null; then
+  systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+  say 'ssh is tightened: no root login, no empty passwords'
+else
+  rm -f /etc/ssh/sshd_config.d/10-okc.conf
+  say 'WARNING: that ssh config did not check out, so it was removed'
 fi
 
 # --- the agent that dials the dashboard --------------------------------------

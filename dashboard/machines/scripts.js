@@ -13,7 +13,24 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
+// What the app ships.
 const DIR = path.join(__dirname, '..', 'provision')
+
+// What the project brings, and it wins.
+//
+// This is the swappability actually being used rather than described: anything
+// project-specific -- a kernel module to build, a device to flash, a udev rule for
+// one vendor id -- belongs to the project, not to this app. Drop a script of the
+// same name in here and it is served instead, with no change to the app and nothing
+// to configure.
+//
+// Outside the app on purpose. It is also why the test that keeps the app generic
+// does not scan this directory: project-specific content is exactly what is
+// supposed to be here.
+const WORKSPACE = process.env.OKC_PROVISION_DIR ||
+  path.join(__dirname, '..', '..', 'workspace', 'provision')
+
+const searchPath = () => [WORKSPACE, DIR].filter(d => { try { return fs.existsSync(d) } catch { return false } })
 
 // The stages, and which file each uses unless a VM says otherwise. Adding a stage
 // here is the only place a new one needs registering.
@@ -26,18 +43,33 @@ const STAGES = {
   agent: 'agent.py'
 }
 
-const list = () => fs.existsSync(DIR) ? fs.readdirSync(DIR).filter(f => /\.(sh|py)$/.test(f)).sort() : []
+// Every script available, and which copy of it would actually be used.
+function list () {
+  const seen = new Map()
+  for (const dir of searchPath()) {
+    for (const f of fs.readdirSync(dir).filter(f => /\.(sh|py)$/.test(f)).sort()) {
+      // First directory wins, and the workspace is first.
+      if (!seen.has(f)) seen.set(f, { file: f, from: dir === WORKSPACE ? 'the project' : 'the app' })
+    }
+  }
+  return [...seen.values()]
+}
 
-// Only ever a plain filename inside provision/. A spec is configuration, but it
-// is still not allowed to name a path -- "../../something" would otherwise serve
-// any file on the machine to a guest.
+// Only ever a plain filename, and only inside one of the directories above. A spec
+// is configuration, but it is still not allowed to name a path -- "../../something"
+// would otherwise serve any file on this machine to a guest.
 function resolve (wanted) {
   const name = path.basename(String(wanted || ''))
   if (!/\.(sh|py)$/.test(name)) throw new Error(`"${wanted}" is not a provisioning script.`)
-  const file = path.join(DIR, name)
-  if (!file.startsWith(DIR) || !fs.existsSync(file)) throw new Error(`There is no provisioning script called "${name}".`)
-  return file
+  for (const dir of searchPath()) {
+    const file = path.join(dir, name)
+    if (file.startsWith(dir) && fs.existsSync(file)) return file
+  }
+  throw new Error(`There is no provisioning script called "${name}".`)
 }
+
+// Where a script came from, so the log can say whose copy ran.
+const sourceOf = file => file.startsWith(WORKSPACE) ? 'the project' : 'the app'
 
 // Which file a VM gets for a stage: its own choice, or the default.
 const fileFor = (vm, stage) => {
@@ -118,4 +150,4 @@ const raw = (vm, stage) => fs.readFileSync(fileFor(vm, stage), 'utf8')
 // either the stage's default name or a swapped-in one.
 const stageOfFile = name => Object.keys(STAGES).find(s => STAGES[s] === name) || null
 
-module.exports = { render, raw, list, resolve, fileFor, STAGES, stageOfFile, DIR }
+module.exports = { render, raw, list, resolve, fileFor, sourceOf, STAGES, stageOfFile, DIR, WORKSPACE }

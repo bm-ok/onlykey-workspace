@@ -275,6 +275,28 @@ function vmActions () {
         })
       : null,
 
+    v.live && !v.baseSnapshot
+      ? el('button', {
+          className: 'btn',
+          textContent: 'Make a clean starting point',
+          onclick: () => ask({
+            title: `Snapshot ${v.name} as a clean starting point?`,
+            plain: [
+              'It shuts the machine down, takes the snapshot, and starts it again.',
+              'Shut down first because that is what makes the snapshot small and clean — a running one would store its memory too.',
+              'Afterwards you can return the machine to exactly this state whenever you like.'
+            ],
+            fields: [{ name: 'title', label: 'Call it', value: 'base' }],
+            confirm: 'Do it',
+            onYes: f => {
+              showTab('live')
+              return api('vmBaseSnapshot', { name: v.name, title: f.title || 'base' })
+                .then(() => say(`"${f.title || 'base'}" taken; ${v.name} can be returned to it`))
+            }
+          })
+        })
+      : null,
+
     el('button', { className: 'btn danger', textContent: 'Delete it', onclick: () => deleteVm(v) })))
 }
 

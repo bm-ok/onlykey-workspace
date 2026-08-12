@@ -86,6 +86,43 @@ const actions = {
       return vbox.snapshots(name)
     }
   },
+  // The point of a base snapshot is somewhere to get back to, and getting back to
+  // one needs the machine off -- so this shuts it down, snapshots, and starts it
+  // again. Doing it while running would store the memory too and make a much
+  // larger snapshot of a machine mid-thought.
+  vmBaseSnapshot: {
+    about: 'Shut a machine down, snapshot it as a clean starting point, and start it again',
+    takes: ['name', 'title'],
+    run: async ({ name, title = 'base' }) => {
+      const vm = vms.get(name)
+      const to = log.on('vm', name)
+      const wasRunning = !await vbox.isOff(name)
+
+      if (wasRunning) {
+        to.info('shutting down to take a clean snapshot')
+        await vbox.stop(name, false)
+        // Asked politely first. Only after waiting is the plug pulled, because a
+        // guest part-way through writing is what a clean snapshot must not capture.
+        if (!await vbox.waitUntilOff(name, { timeout: 120000 })) {
+          to.warn('it did not shut down in two minutes; pulling the power')
+          await vbox.stop(name, true).catch(() => {})
+          await vbox.waitUntilOff(name, { timeout: 60000 })
+        }
+        await vbox.waitUntilUnlocked(name)
+      }
+
+      await vbox.takeSnapshot(name, title, 'a clean starting point, taken once it was set up')
+      vms.update(name, { baseSnapshot: title })
+      to.good(`"${title}" is now the point this machine can be returned to`)
+
+      if (wasRunning) {
+        await vbox.start(name, 'gui')
+        to.info('started again; it will dial back in shortly')
+      }
+      return { ...await vbox.snapshots(name), baseSnapshot: title, restarted: wasRunning }
+    }
+  },
+
   vmSnapshotRestore: {
     about: 'Go back to a snapshot, discarding everything since',
     takes: ['name', 'title'],
@@ -141,7 +178,10 @@ const actions = {
 
   vmIsos: { about: 'Installer images VirtualBox already knows about', run: () => vbox.isos() },
   vmBridges: { about: 'Host network adapters a guest could be bridged onto', run: () => vbox.bridges() },
-  vmScripts: { about: 'The provisioning scripts available to swap between', run: async () => ({ available: scripts.list(), stages: scripts.STAGES }) },
+  vmScripts: {
+    about: 'The provisioning scripts available, and whether the project overrides one',
+    run: async () => ({ available: scripts.list(), stages: scripts.STAGES, projectDir: scripts.WORKSPACE })
+  },
   vmScript: {
     about: 'One script a machine will receive, exactly as it will get it',
     takes: ['name', 'stage'],
@@ -245,7 +285,7 @@ function handler (req, res) {
     try {
       const vm = vms.get(name)
       const stage = scripts.stageOfFile(file)
-      log.on('vm', name, 'guest').good(`${name} asked for ${file}`)
+      log.on('vm', name, 'guest').good(`${name} asked for ${file} (${scripts.sourceOf(scripts.fileFor(vm, scripts.stageOfFile(file) || file))}'s copy)`)
       vbox.hostAddress().catch(() => '127.0.0.1').then(host => {
         res.writeHead(200, { 'content-type': 'text/x-shellscript' })
         res.end(scripts.render(stage || file, vm, { hostAddress: host, port, channelPort }))

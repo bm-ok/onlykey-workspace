@@ -87,12 +87,25 @@ the new content, re-ran part of it and silently skipped everything after. One
 bootstrap file, and stages go to `/root/okc-stages/`.
 
 `toolchain.sh` is about what kind of machine it is, which is why it is a separate
-file rather than a section of another one. A machine's settings can name a different
-file for any stage.
+file rather than a section of another one.
 
-What ships in `toolchain.sh` is a GUI development box: autologin on X11, no screen
-lock or blanking, `DISPLAY=:0`, docker, and node through nvm as the user. Every part
-of it is the part you are expected to replace.
+**The project's own copy wins.** The app looks in `../workspace/provision` before its
+own `provision/`, so a script of the same name there is served instead — no change to
+the app, nothing to register. That is where anything project-specific belongs: a
+kernel module to build, a device to flash, a udev rule for one vendor id. It is also
+why the test that keeps the app generic does not scan that directory.
+
+    toolchain.sh   from the project     <- wins
+    first-boot.sh  from the app
+    normal-boot.sh from the app
+    agent.py       from the app
+
+A machine's settings can also name a different file for any stage, and the log says
+whose copy it served.
+
+What the app ships in `toolchain.sh` is a plain development box: build tools, docker,
+autologin on X11, no screen lock, `DISPLAY=:0`, and node through nvm as the user.
+Every part of it is the part you are expected to replace.
 
 Each is served with a header of `OKC_*` values and `say`/`report` helpers
 prepended, then passed through byte for byte. So every script is valid shell on
