@@ -48,11 +48,11 @@ Not work, and not for a session to settle on its own.
 Housekeeping on the machines
 ----------------------------
 
-* **Both runners are holding a credential**, so neither can be snapshotted.
-  `vmCredentialsForget` on whichever is not being used.
-* **`runner2` has no snapshots at all.** Its only one was the tainted one that
-  had to be deleted, so there is nothing to get back to. It wants a clean base
-  once the credential is off it.
+* **`runner1` is holding a credential, so it cannot be snapshotted.** That is
+  deliberate rather than pending: it is the working machine, and it already has
+  a clean `on-fix-try-one` snapshot taken before it ever held one. Nothing to do
+  unless it needs a newer starting point, which means taking the credential back
+  first.
 
 
 Nothing else is outstanding
@@ -90,16 +90,20 @@ Volatile, and the first thing to check rather than trust:
     okc.js vmList --json
 
 At the time of writing: **`runner1`** up and connected, holding the worker
-credential, Claude Code 2.1.228 installed, one finished run in `~/.okc-runs`,
-still recording `fix/try-one` as what it may push, with a clean
-`on-fix-try-one` snapshot taken before it ever held a credential.
-**`runner2`** up and connected, holding the worker credential, **and with no
-snapshots at all** — its only one was deleted, see below.
+credential, Claude Code 2.1.228 installed, no runs left in `~/.okc-runs`, still
+recording `fix/try-one` as what it may push, with a clean `on-fix-try-one`
+snapshot taken before it ever held a credential. This is the working machine.
+
+**`runner2`** up and connected, **not** holding a credential, on a clean `base`
+snapshot taken after the credential came off it. Its previous snapshot was the
+tainted one that had to be deleted, so for a while it had nothing to get back to
+at all. Claude Code is installed on it but it is signed out; `vmCredentialsPut`
+puts it back to work.
 
 **`fix/try-one` no longer exists in the workspace repositories** — it was test
 debris and was deleted. `runner1` still claims the name, which is deliberate
 rather than stale: setting it up again cuts the branch afresh from `master`, and
 the claim stops another machine taking the name meanwhile.
 
-**Both machines are holding a credential, so neither can be snapshotted.** That
-is the refusal working, not a problem to route around — see Housekeeping above.
+**`runner1` cannot be snapshotted while it holds a credential.** That is the
+refusal working, not a problem to route around — see Housekeeping above.
