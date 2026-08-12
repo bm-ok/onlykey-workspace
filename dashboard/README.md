@@ -63,11 +63,16 @@ installs on its own, and both remain as actions, listed with everything else in
 **All actions**. Removing a button is not the same as removing what it did.
 
 **The server listens on every interface, and that is deliberate.** A guest reaches
-this host by its network address; loopback would be useless to it. So the two
-halves are split by what they can do: `/provision/*` answers anyone, because all a
-guest can do is read its own scripts and report progress, while `/api/*` — which
-can delete a machine — answers **this machine only** and returns 403 to anything
-else.
+this host by its network address; loopback would be useless to it. So the paths
+are split by who each is for, and there turned out to be three questions:
+
+    /provision/*   anyone -- a guest reading its own scripts and reporting
+    /git/*         a machine this app made, proving it with its own token
+    /api/*         this machine only; these can delete a machine
+
+The first of those is the loose one, and it is the subject of an honest gap
+below: it answers *anyone*, including a machine asking for another machine's
+scripts, which carry that machine's token.
 
 
 Provisioning is four scripts, meant to be swapped
@@ -145,7 +150,7 @@ machine is talking and things can be run on it.
 
 **The dashboard listens and the machine dials in, not the other way round.** A
 reboot is then an ordinary reconnect rather than something anyone has to handle,
-and the log survives it. Newline-delimited JSON over plain TCP: no dependency, and
+and the log survives it. Newline-delimited JSON over TLS: no dependency, and
 trivial to re-implement in a guest in any language.
 
 The agent is deliberately dumb. It connects, runs what it is told, streams the
@@ -160,15 +165,63 @@ iterates on a half-hour loop. The machine fetches the script fresh, so an edit m
 since it was built is included.
 
 
-The workspace's repositories, over http
----------------------------------------
+Encrypted, and how a bare machine comes to trust it
+---------------------------------------------------
+
+Everything a machine says is over TLS: its scripts, its repositories, and the
+channel it dials in on. All of it against one certificate, made on first start
+and kept in the per-user data directory — outside the repository, where git has
+nothing to decide about it rather than being asked not to.
+
+**The reason is not eavesdropping in the abstract.** A machine's token decides
+what it may push, and it used to cross the network in clear twice over: baked
+into the script header that the installer fetched with plain `curl`, and sent
+again on every reconnect. The first of those happened on every machine ever
+built, as the first thing that happened.
+
+**One thing is served unencrypted, on a port of its own: `ca.pem`.** It has to
+be. A machine being installed holds nothing — no certificate, no authority,
+nothing to check anything against. What it *can* hold is a **fingerprint**,
+passed on the installer's command line, which is short and is not a secret. So
+the order is: fetch the authority in the clear, check it against that
+fingerprint, and only then fetch anything with something at stake in it.
+
+    installer command line ──fingerprint──┐
+    http  :7375  /ca.pem  ────────────────┴─> checked, or the install stops
+    https :7373  first-boot.sh, git        ──> only after that
+    tls   :7374  the channel
+
+**The fingerprint is deliberately not served beside the certificate.** Fetching
+both from the same unprotected place verifies nothing — whoever could substitute
+one could substitute the other, and the check would pass while being worthless.
+It has to arrive by a route that one cannot touch.
+
+**Nothing anywhere turns verification off.** Not `http.sslVerify=false` for git,
+not `CERT_NONE` in the agent. Those are the usual way a self-signed certificate
+is made to work, and each leaves the thing accepting *any* certificate — no
+better than the plaintext it replaced, while looking like it is.
+
+The certificate lasts a year and names this host's addresses in
+`subjectAltName`, not just a common name — clients have ignored the common name
+for this for years, and a CN-only certificate is the usual reason a self-signed
+setup fails with an error that never mentions names. It therefore stops working
+in two unrelated ways: it expires, on a known date with a month's warning; or
+this host's address moves and it no longer names where guests are told to go,
+which has no date and no warning at all. Both are read off the certificate and
+reported at startup and in `status`, and `tlsRegenerate` is the way out — never
+automatic, because a new authority drops the trust of every machine holding the
+old one.
+
+
+The workspace's repositories, over https
+----------------------------------------
 
 A machine clones what it is going to work on from this app, over the same server
 it already fetches its scripts from. Node and git, nothing else: git's transport
 is a pair of programs — `upload-pack` reads, `receive-pack` writes — and the HTTP
 protocol is a thin wrapper around piping them.
 
-    git clone http://<machine>:<its token>@<host>:7373/git/<repo>
+    git clone https://<machine>:<its token>@<host>:7373/git/<repo>
 
 Nothing here knows the name of a repository. It serves what it finds in
 `../workspace`, and `OKC_REPOS_DIR` moves that — the same arrangement as the
@@ -179,7 +232,7 @@ nothing restarted.
 path runs `receive-pack` *itself*, on its own side of the share — so the
 repository's hooks execute in the guest, and the guest can rewrite them, because
 the mount is writable and they live inside it. Enforcement at that end is a
-request rather than a rule. Served over HTTP the pack programs run **here**, in a
+request rather than a rule. Served over https the pack programs run **here**, in a
 directory no guest can reach, and a refusal is a refusal — reported to the guest
 as a failed push, which is where the mistake was made.
 
@@ -353,6 +406,25 @@ confidently wrong rather than missing. A refusal exits non-zero, so a script
 driving this stops when something says no.
 
 
+Seeing a machine that is not talking yet
+----------------------------------------
+
+An install says nothing for twenty-five minutes. There is no agent to ask and no
+log line to read, so *still working* and *stopped at a prompt nobody is watching*
+look exactly alike. **See its screen** — `vmScreenshot` — is the only thing that
+tells them apart, and before it existed the only way to look was to open
+VirtualBox by hand, which is the reaching-around this app exists to remove.
+
+The picture is **kept**, not shown and dropped: written into the data directory
+beside the certificate, and its path goes into the live log, because a file
+nobody can find may as well not have been written.
+
+The action returns that path rather than the image. Both callers are on the same
+machine as the file, so a terminal gets what it actually wants and the window
+reads the file itself, instead of a megabyte of base64 being carried to a caller
+that would only write it back out.
+
+
 The window keeps up on its own
 ------------------------------
 
@@ -387,6 +459,8 @@ The shape
     ui/             the window: an app page, loaded from disk
     core/log.js     one tagged live log that everything writes into
     core/ipc.js     the same actions, over a local socket, for the terminal
+    core/keys.js    the certificate this host serves with, and its authority
+    core/data.js    where anything produced by running goes -- outside the repo
     tools/okc.js    the command line, generated from the actions table
     machines/
       vbox.js       VirtualBox: state, snapshots, isos, bridges, delete
@@ -451,11 +525,16 @@ what is still not proven.
   deleted within an hour. Nothing here has been left running for days, and the
   reconnect logic has only been exercised by restarting the app and rebooting a
   machine, not by a network that goes away for a long time.
-* **Nothing is encrypted on the wire.** A guest fetches its scripts and its
-  repositories over plain HTTP, and dials in over plain TCP — and it proves who it
-  is with a token, in both. So anyone able to watch the network between this host
-  and a machine can take that token and push as it. Both halves would have to
-  move together: TLS on one and not the other looks finished and is not.
+* **A machine can read another machine's token.** `/provision/*` authenticates
+  nothing, so anything that can reach this host can ask for any machine's
+  `first-boot.sh` and read the `OKC_TOKEN` in it — and then dial in as that
+  machine and push to its branch. Encryption fixed who can read it *in transit*
+  and did nothing about who can ask. The same absence lets anything mark a
+  machine as reported through `/provision/report`, or write lines into the live
+  log attributed to a machine it is not, through `/provision/say`.
+* **The actions are still reachable over HTTP.** `/api/*` answers loopback only,
+  which is a check standing where nothing needs to stand: the command line now
+  goes over a local socket, so the route exists only to be refused.
 
 
 What was learned the hard way
@@ -482,6 +561,24 @@ now looks obvious.
   that says nothing is now treated as gone.
 * **Checking the wrong shell proves nothing.** Every check that matters asks a login
   shell, because that is what a dispatched command gets.
+* **A fallback is a guess, and a guess moves the error somewhere else.** The
+  command line treated a `--vm` value that failed to parse as JSON as a plain
+  string. What came back from `vmCreate` was "give it a name" — about the one
+  field that was correct — while the real fault was a shell eating the
+  backslashes in a Windows path three layers up.
+* **`systemctl start` does nothing to a service already running.** Re-running the
+  setup rewrote the agent and its environment, reported success, and left the
+  previous process running against neither. Everything it printed was true.
+* **A variable cannot survive a shell that has already expanded it.** The
+  installer's command runs inside a double-quoted argument VirtualBox expands
+  first, so `x=$(...)` arrives empty — and a fingerprint check written that way
+  compares empty to empty, *passes*, and accepts any authority at all. The
+  comment above that code is what caught it; the same expansion then ate the
+  example when it was written into a commit message with `-m`.
+* **The instrument can be the thing that is broken.** TLS looked broken from this
+  host because Windows `curl` uses schannel and cannot take a private authority
+  from `--cacert`. The guest — the only client that counts — had no trouble at
+  all.
 * **VirtualBox releases a lock after the command that took it has returned.** Taking
   a snapshot locks the machine, so starting it on the next line lost the race every
   time — and `SessionState` read `Unlocked` 100ms before the start was refused for
