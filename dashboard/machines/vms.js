@@ -49,7 +49,11 @@ const get = name => {
 function add (spec) {
   const list = read()
   if (list.some(v => v.name === spec.name)) throw new Error(`This app already has a virtual machine called "${spec.name}".`)
-  const vm = { name: spec.name, spec, created: new Date().toISOString(), baseSnapshot: null, reported: null }
+  // `branch` is the one this machine may push, and null means it may push
+  // nothing. Named here rather than appearing the first time one is set, so a
+  // machine that has never been set up reads as "not allowed yet" instead of as
+  // a field somebody forgot.
+  const vm = { name: spec.name, spec, created: new Date().toISOString(), baseSnapshot: null, reported: null, branch: null }
   write([...list, vm])
   return vm
 }

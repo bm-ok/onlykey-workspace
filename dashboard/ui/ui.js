@@ -444,6 +444,10 @@ function paintDetails () {
     ['state', v.state],
     ['made', new Date(v.created).toLocaleString()],
     ['snapshot to reset to', v.baseSnapshot || 'none yet'],
+    // What it may push, which is a different question from what it has checked
+    // out -- that one only the machine knows, and this is the one that is
+    // enforced.
+    ['may push', v.branch || 'nothing yet'],
     ['last heard from', v.reported ? new Date(v.reported).toLocaleString() : 'never'],
     ['memory', `${spec.memoryMB} MB`],
     ['processors', String(spec.cpus)],

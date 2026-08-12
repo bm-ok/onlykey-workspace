@@ -309,6 +309,14 @@ const actions = {
       const r = await channel.run(name, script, { what: `setting up the workspace on ${on}`, timeout: 10 * 60 * 1000 })
       if (r.code !== 0) throw new Error(`The workspace was not fully set up on ${name} — see the live log.`)
 
+      // Recorded, because this is what a push is checked against. The machine
+      // knows which branch it is on and cannot be trusted to say so -- being the
+      // thing the rule is about is exactly what disqualifies it as the source.
+      // Written after the setup rather than before: a machine that never got its
+      // workspace has not been given permission to push anything.
+      vms.update(name, { branch: on })
+      log.on('vm', name).good(`${name} may now push ${on}, and nothing else`)
+
       return { branch: on, folder: folder || workspace.folderFor(vm.spec), repos: found.map(r => r.name), cut, output: r.output }
     }
   },
@@ -499,24 +507,35 @@ function gitRoute (req, res, url) {
     return
   }
 
-  // Said plainly and with the right status, because the alternative is a machine
-  // reporting that a push failed for a reason nobody can act on.
+  // A push may only ever land on the branch this machine was set up on, and the
+  // rule is carried to git rather than checked here: the refs being pushed are
+  // inside the packfile stream, so reading them at this layer would mean
+  // implementing the protocol to find out. The hook sees them for free, and runs
+  // on this host, where no guest can edit or skip it.
   //
-  // ASCII ONLY, and that is not fussiness. Git relays a remote's message to the
-  // client as raw bytes and transcodes nothing, so the em-dash that used to be
-  // in this sentence reached the operator's terminal as `â` -- a sentence about
-  // something not being built yet, itself looking broken. Anything that crosses
-  // to a git client is written in ASCII; the live log is ours and keeps its
-  // punctuation.
+  // Refused before any of that when there is no branch recorded, so the failure
+  // is "you have not been set up" rather than a hook talking about a branch
+  // nobody chose.
+  //
+  // ASCII ONLY for anything that crosses to a git client, and that is not
+  // fussiness. Git relays a remote's message as raw bytes and transcodes
+  // nothing, so an em-dash in this sentence reached the operator's terminal as
+  // `â` -- a message about a refusal, itself looking broken. The live log is
+  // ours and keeps its punctuation.
+  const env = {}
   if (service === 'git-receive-pack') {
-    log.on('git', who.name).warn(`${who.name} tried to push to ${repo}; pushing is not built yet`)
-    res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
-      .end('this server does not accept pushes yet. cloning is built, pushing is not.\nyour commits are safe where they are - nothing here has taken them.\n')
-    return
+    if (!who.branch) {
+      log.on('git', who.name).warn(`${who.name} tried to push to ${repo} without being set up on a branch`)
+      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+        .end('no branch is recorded for this machine.\nset it up on a branch from the dashboard, then push again.\nnothing was taken - your commits are still on your own copy.\n')
+      return
+    }
+    env.OKC_ALLOW_BRANCH = who.branch
+    env.OKC_MACHINE = who.name
   }
 
-  if (tail === '/info/refs') return repos.advertise(res, { dir, service, repo })
-  return repos.rpc(req, res, { dir, service, repo })
+  if (tail === '/info/refs') return repos.advertise(res, { dir, service, repo, env })
+  return repos.rpc(req, res, { dir, service, repo, env })
 }
 
 function handler (req, res) {

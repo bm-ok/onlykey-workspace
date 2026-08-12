@@ -85,6 +85,25 @@ const SERVICES = {
   'git-receive-pack': 'receive-pack'
 }
 
+// What a write is allowed to be.
+//
+// `core.hooksPath` points git at the app's own hook rather than one inside the
+// repository being written to. Two things follow, and both matter: nothing is
+// ever written into the repositories -- they stay ordinary checkouts that git,
+// VS Code and a person at a terminal all see identically -- and the rule lives
+// somewhere no guest can reach, which is what makes it a rule.
+//
+// The other two are git's own, and they protect the thing that makes this
+// storage: history that arrived is not allowed to change or vanish. Enforced
+// here rather than in the hook because git already does it, and a second
+// implementation would only be a chance to get it wrong.
+const HOOKS = path.join(__dirname, 'hooks')
+const WRITE_CONFIG = [
+  '-c', `core.hooksPath=${HOOKS}`,
+  '-c', 'receive.denyNonFastForwards=true',
+  '-c', 'receive.denyDeletes=true'
+]
+
 const noCache = {
   'cache-control': 'no-cache, max-age=0, must-revalidate',
   expires: 'Fri, 01 Jan 1980 00:00:00 GMT',
@@ -97,8 +116,8 @@ const noCache = {
 // error page -- the client is already reading a body. Destroying the response is
 // then the honest move: git reports "the remote end hung up", which is true,
 // rather than a clean-looking empty result that reads as an empty repository.
-function pipeGit (res, args, { onExit } = {}) {
-  const git = spawn('git', args)
+function pipeGit (res, args, { onExit, env } = {}) {
+  const git = spawn('git', args, env ? { env: { ...process.env, ...env } } : undefined)
   git.on('error', err => {
     if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' }).end(`git could not be run: ${err.message}\n`)
     else res.destroy()
@@ -111,12 +130,18 @@ function pipeGit (res, args, { onExit } = {}) {
   return git
 }
 
+// The arguments for one service. A write carries the rules with it, so there is
+// no path that starts receive-pack without them.
+const argsFor = (service, dir, extra = []) => service === 'git-receive-pack'
+  ? [...WRITE_CONFIG, 'receive-pack', '--stateless-rpc', ...extra, dir]
+  : ['upload-pack', '--stateless-rpc', ...extra, dir]
+
 // Phase one: what refs are here, and what this server can do.
-function advertise (res, { dir, service, repo }) {
+function advertise (res, { dir, service, repo, env }) {
   res.writeHead(200, { 'content-type': `application/x-${service}-advertisement`, ...noCache })
   res.write(pkt(`# service=${service}\n`) + FLUSH)
   log.on('git', repo).info(`${repo}: advertising refs for ${service}`)
-  pipeGit(res, [SERVICES[service], '--stateless-rpc', '--advertise-refs', dir])
+  pipeGit(res, argsFor(service, dir, ['--advertise-refs']), { env })
 }
 
 // Phase two: the packfile itself, in whichever direction.
@@ -124,14 +149,15 @@ function advertise (res, { dir, service, repo }) {
 // The request body may be gzipped -- git compresses it when it is worth it, and
 // says so in a header. Piped through undecoded, git reads compressed bytes as
 // protocol and the clone fails in a way that points nowhere near the cause.
-function rpc (req, res, { dir, service, repo }) {
+function rpc (req, res, { dir, service, repo, env }) {
   res.writeHead(200, { 'content-type': `application/x-${service}-result`, ...noCache })
 
   const started = Date.now()
   const to = log.on('git', repo)
   to.info(`${repo}: ${service}`)
 
-  const git = pipeGit(res, [SERVICES[service], '--stateless-rpc', dir], {
+  const git = pipeGit(res, argsFor(service, dir), {
+    env,
     onExit: code => {
       const took = ((Date.now() - started) / 1000).toFixed(1)
       if (code === 0) to.good(`${repo}: ${service} finished in ${took}s`)
