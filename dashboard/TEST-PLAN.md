@@ -83,7 +83,7 @@ held by the same machine, and the artifact showing both commits.
 **Watch the claim.** A second push onto a claimed branch is the case the claim
 exists for, and it has to succeed here while failing for a *different* machine.
 
-### 5b. The queue drains, one task at a time, through one machine
+### 5b. The queue drains, one task at a time, through one machine — 2026-08-12
 
 **Proves the pool works when it is full**, which is the only condition under
 which a queue is a queue. With machines to spare, "queued" and "given out" are
@@ -110,6 +110,32 @@ Queue three tasks with **one** usable machine and leave it alone.
 That last one is the reason this drill exists. The first version of the queue
 deadlocked after exactly one task per machine, and it looked from outside like a
 queue that had simply gone quiet.
+
+**First run: passed on ordering and serialising, and found four faults.** #4
+delivered, #5 failed to boot and landed as *done, nothing delivered*, #6
+delivered. Taken oldest-first, one at a time, with the machine off and clean in
+between — and the machine ended off, on no branch, holding nothing.
+
+What it found, none of which was visible while it happened: every long wait was
+silent, so a machine sitting at a black screen for five minutes looked identical
+to one working; the same snapshot was restored twice within five seconds, once
+by the put-away and again by the next task's setup; `vmStop` presses ACPI, which
+a machine that never booted cannot answer, so it sat "running" through the whole
+timeout and was then rolled back while running; and a task whose *setup* failed
+was never marked as anything, so it stayed in `given` with no worker anywhere.
+
+**Do not restart the dashboard during this drill.** Doing so orphaned a task the
+same way, which is how that last fault was found twice. The recovery path now
+puts a task back in the queue if it never dispatched — but the drill measures
+the queue, not the recovery.
+
+**Read the timings afterwards, not just the outcome:**
+
+    #6 took 81s — bringUp 32s, credential 1s, workspace 6s, work 37s
+
+A total says nothing about where the time went. Half of every task here is the
+machine being made ready, and a boot that quietly grows from 30 seconds to five
+minutes is invisible in a number that only says "81s".
 
 ### 4. Two runners at once
 
