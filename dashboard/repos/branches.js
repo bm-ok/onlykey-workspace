@@ -105,6 +105,28 @@ function protectedBranches () {
   return [...why.values()]
 }
 
+// Where each protected branch actually IS, as a commit.
+//
+// "The default branch is protected" is a rule; "master is on 98c160a" is a fact,
+// and only the fact can be checked before and after something that was supposed
+// to be refused. Without it the only available test was looking at master and
+// finding it plausible, which is not a test -- a drill that proves a push was
+// rejected has to compare the same number twice.
+function defaultHeads () {
+  const out = []
+  for (const { name } of serve.list()) {
+    const branch = defaultOf(name)
+    const dir = serve.gitDirOf(name)
+    if (!branch || !dir) continue
+    let at = null
+    // An unborn default is a real state -- a repository with no commits yet --
+    // and reporting it as null says so rather than failing the read.
+    try { at = git(dir, ['rev-parse', branch]) } catch { /* nothing on it yet */ }
+    out.push({ repo: name, branch, at })
+  }
+  return out
+}
+
 const isProtected = branch => protectedBranches().some(p => p.branch === branch)
 
 // Said the same way wherever it is refused, so the reason does not get a
@@ -306,7 +328,7 @@ function ensure (branch) {
 }
 
 module.exports = {
-  all, ensure, nameIsOk, branchesIn, headOf,
+  all, ensure, nameIsOk, branchesIn, headOf, defaultHeads,
   defaultOf, protectedBranches, isProtected, whyProtected,
   isClean, freeIfBusy, freeEverywhere, blocking
 }

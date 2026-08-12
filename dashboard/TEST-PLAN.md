@@ -1,6 +1,16 @@
 Drills
 ======
 
+**Ten of these are now declared in code**, in `tasks/planned.js`, using the
+harness ported from test-moniker. They can be listed, approved and run from the
+window — `okc.js planned` shows which. This file stays as the reasoning: what
+each drill is for, the trap that made it worthless the first time, and what to
+put back afterwards. A definition says what runs; this says why it is worth
+running, and no assertion holds that.
+
+**A definition has to be approved before it runs**, by a person, in the window,
+after reading it. A model writes them; it cannot ratify its own.
+
 Things to run against this tool, and what each one proves. Not unit tests —
 `npm test` is that, and it only checks the code stayed generic. These are the
 end-to-end exercises that need real machines, and each exists because reading the

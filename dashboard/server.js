@@ -26,6 +26,9 @@ const scripts = require('./machines/scripts')
 const channel = require('./machines/channel')
 const tasks = require('./tasks/store')
 const artifact = require('./tasks/artifact')
+const harness = require('./tasks/harness')
+const approval = require('./tasks/approval')
+require('./tasks/planned')   // registers the drills with the harness
 const machines = require('./machines/store')
 const { provision, reach } = require('./machines/provision')
 const editor = require('./machines/editor')
@@ -496,6 +499,11 @@ const actions = {
       const mine = vms.read()
       return {
         ...all,
+        // Where each default branch actually is, as a commit. The rule is that
+        // nothing lands on it; this is the only way to CHECK that, before and
+        // after something that was supposed to be refused. Looking at master and
+        // finding it plausible is not a check.
+        defaultHeads: branches.defaultHeads(),
         branches: all.branches.map(b => {
           const held = mine.find(v => v.branch === b.name)
           const available = !b.protected && !held
@@ -1302,6 +1310,134 @@ done`
       })
       log.on('task', id).good(`${call}ed: ${art.summary}`)
       return decided
+    }
+  },
+
+  // ---- pre-defined work, declared the way tests are declared -------------
+  //
+  // The drills used to be prose in TEST-PLAN.md, which a person read and typed
+  // out. Prose cannot report a status, cannot be listed in a window, and rots
+  // against the code it describes. Declared with describe/it they can be
+  // enumerated, chosen, run one at a time, and watched.
+  //
+  // Listing must be free of side effects: opening the dialog is not consent to
+  // run anything.
+
+  planned: {
+    about: 'Pre-defined tasks and drills, whether each is approved, and its source',
+    run: () => {
+      const suites = harness.getRegisteredSuites().map(s => ({
+        ...s,
+        tests: s.tests.map(t => ({ ...t, ...approval.stateOf(s.name, t.name, t.fingerprint) }))
+      }))
+      const all = suites.flatMap(s => s.tests)
+      return {
+        suites,
+        approved: all.filter(t => t.approved).length,
+        waiting: all.filter(t => !t.approved && !t.lapsed).length,
+        lapsed: all.filter(t => t.lapsed).length,
+        note: 'A model writes these; a person approves them. Half pass by being REFUSED.'
+      }
+    }
+  },
+
+  // Ratifying a definition. A person's act, and the reason it is separate.
+  //
+  // The supervising model writes these -- that is what it is for -- and a
+  // definition it could also approve would be work reviewed by nobody. So the
+  // one thing it may not do is sign off its own writing, and this refuses to
+  // happen down the socket a supervisor drives.
+  plannedApprove: {
+    about: 'Approve a pre-defined task, after reading it. From the window only',
+    takes: ['suite', 'name', 'note'],
+    run: ({ suite, name, note, _overTheWire }) => {
+      if (_overTheWire) {
+        throw new Error('Approving is done in the window, by a person reading the definition. It is deliberately not available here — this is the socket a supervising session drives, and a definition approved by whatever wrote it has been reviewed by nobody.')
+      }
+      const found = harness.getRegisteredSuites()
+        .flatMap(s => s.tests.map(t => ({ suite: s.name, ...t })))
+        .find(t => t.name === name && (!suite || t.suite === suite))
+      if (!found) throw new Error(`Nothing registered called "${name}".`)
+      return approval.approve(found.suite, found.name, found.fingerprint, note)
+    }
+  },
+
+  plannedWithdraw: {
+    about: 'Take an approval back',
+    takes: ['suite', 'name'],
+    run: ({ suite, name, _overTheWire }) => {
+      if (_overTheWire) throw new Error('Withdrawing an approval is done in the window, for the same reason granting one is.')
+      return approval.withdraw(suite, name)
+    }
+  },
+
+  plannedRun: {
+    about: 'Run a pre-defined task or drill, and report what happened',
+    takes: ['name', 'suite', 'machine', 'minutes'],
+    run: async ({ name, suite, machine, minutes = 20 }) => {
+      // Named rather than "run everything". Some of these take ten minutes and
+      // occupy a machine, and a button that quietly starts all of them is a
+      // button nobody can safely press.
+      if (!name && !suite) throw new Error('Say which drill, or which suite. There is no "run all" here on purpose — some of these occupy a machine for ten minutes.')
+
+      // Nothing unapproved runs, whoever is asking.
+      //
+      // Checked here rather than only in the window, because the window is a
+      // courtesy and this is the boundary. A supervising session may pick from
+      // the plan and run it; what it may not do is run something a person has
+      // not read -- including something it wrote itself five minutes ago.
+      const registered = harness.getRegisteredSuites()
+        .flatMap(s => s.tests.map(t => ({ suite: s.name, ...t })))
+        .filter(t => (!name || t.name === name) && (!suite || t.suite === suite))
+      if (!registered.length) throw new Error(`Nothing matched${name ? ` "${name}"` : ''}${suite ? ` in "${suite}"` : ''}. Ask "planned" for the list.`)
+
+      const blocked = registered
+        .map(t => ({ ...t, ...approval.stateOf(t.suite, t.name, t.fingerprint) }))
+        .filter(t => !t.approved)
+      if (blocked.length) {
+        throw new Error(blocked.map(t => `"${t.name}" ${t.why}`).join('; ') + '. Approve it in the window, after reading what it does.')
+      }
+
+      const to = log.on('drill', ...(machine ? [machine] : []))
+      const okc = async (action, args = {}) => {
+        const found = actions[action]
+        if (!found) throw new Error(`No action called "${action}"`)
+        return found.run(args)
+      }
+
+      // Given to the tests rather than imported by them, so a drill polls
+      // through one shape and the timeout is stated in minutes where a person
+      // reads it instead of in milliseconds where a person mistypes it.
+      const waitFor = async (get, done, { what = 'something', minutes: mins = 10, every = 10000 } = {}) => {
+        const deadline = Date.now() + mins * 60000
+        for (;;) {
+          const seen = await get()
+          if (done(seen)) return seen
+          if (Date.now() > deadline) throw new Error(`Waited ${mins} minutes for ${what} and it did not happen`)
+          await new Promise(r => setTimeout(r, every))
+        }
+      }
+
+      const started = Date.now()
+      const result = await harness.run({
+        okc,
+        waitFor,
+        machine: machine || null,
+        log: line => to.info(String(line)),
+        timeoutMs: Math.max(1, Number(minutes) || 20) * 60000,
+        // Reported as it happens, into the same live log as everything else,
+        // because a drill that takes ten minutes and says nothing until the end
+        // is indistinguishable from one that has hung.
+        onTestUpdate: ({ testName, status, error }) => {
+          if (status === 'running') to.info(`running: ${testName}`)
+          else if (status === 'passed') to.good(`passed: ${testName}`)
+          else to.bad(`FAILED: ${testName} — ${String(error || '').split('\n')[0]}`)
+        },
+        testFilter: (t, s) => (!name || t === name) && (!suite || s === suite)
+      })
+
+      if (!result.suites.length) throw new Error(`Nothing matched${name ? ` "${name}"` : ''}${suite ? ` in "${suite}"` : ''}. Ask "planned" for the list.`)
+      return { ...result, seconds: Math.round((Date.now() - started) / 1000) }
     }
   },
 

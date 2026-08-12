@@ -644,6 +644,50 @@ Two things are reported separately that are easy to collapse into "no changes":
 a branch that was **never pushed** to a repository, and one that is **there and
 empty**. Only the first is a worker that failed to deliver.
 
+### Pre-defined work, and who is allowed to approve it
+
+The other half of the write-a-task dialog. **Writing** a task is authoring work;
+**picking** a pre-defined one is choosing from work that was decided in advance.
+
+The loop it exists for: the operator asks the supervising model to write a
+definition, the model writes it, **the operator reads it and approves it**, and
+only then can it be run — including by the model that wrote it.
+
+    okc.js planned                  what is registered, and what is approved
+    okc.js plannedRun --name "..."  run one, reporting per test as it goes
+
+Definitions are declared the way tests are, with `describe`/`it`, ported from
+[test-moniker](https://github.com/bm-ok/test-moniker). Registration is separate
+from execution, so they can be listed without being run — opening a dialog is
+not consent — and progress arrives through callbacks rather than being printed,
+which is what puts each test's status into the live log as it happens.
+
+Three things make the approval real rather than decorative:
+
+* **An approval is of a definition, not of a name.** It is recorded against a
+  fingerprint of the function that will run, and **lapses the moment that source
+  changes**. Otherwise the way around it is quiet and obvious: get something
+  modest approved, then edit what it does. "Never approved" and "approved, then
+  changed" are reported separately, because one is waiting to be read and the
+  other is a change waiting to be read.
+* **Approving happens in the window and nowhere else.** `plannedApprove` refuses
+  over the local socket, because that socket is what a supervising session
+  drives. It is a boundary rather than a proof — anyone at this keyboard can open
+  the window — and the person at the keyboard is exactly who approval is for.
+  What it stops is approval becoming a step inside an automated run.
+* **Nothing unapproved runs, whoever asks.** Checked in the action, not only on
+  the button.
+
+That is the supervisor's own rule applied one level up. A supervisor sends a bad
+document back rather than fixing it, because **the supervisor's own edits are the
+one path nothing reviews** — and a definition it wrote and approved itself would
+be that path, reopened.
+
+`assert.refuses` is the addition to the ported harness, and it is there because
+half of what this project must prove passes by being **stopped**. It matches the
+refusal's message as well as the fact of it: a refusal for the wrong reason is
+not a pass.
+
 ### Judging does not merge
 
 `taskJudge` records what a person decided and nothing else. Landing work is a

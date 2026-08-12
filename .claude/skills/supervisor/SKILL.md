@@ -15,6 +15,17 @@ Learned by doing it for a day, and recorded in `legacy/PLAN.md` as findings
 rather than intentions. This is that list, and it is the skill rather than the
 commands below.
 
+* **Pick from the plan; do not invent the work.** Pre-defined tasks exist so a
+  task is not made up at the moment of dispatch, reviewed by nobody, and then
+  judged by whoever wrote it. `okc.js planned` is the list.
+
+  **You may write a definition when asked to — you may not approve one.**
+  `plannedApprove` refuses over the socket you are on, deliberately: a
+  definition approved by whatever wrote it has been reviewed by nobody. Write
+  it, say it is waiting, and let the operator read it in the window. An approval
+  is recorded against the source and lapses if you edit it afterwards, so
+  changing an approved definition sends it back for reading rather than
+  inheriting the approval.
 * **Write instructions; do not build.** Two authors in one working tree produced
   every coordination failure of that day: a branch moved under someone
   mid-edit, a tool run while it was being rewritten, one session's notes swept

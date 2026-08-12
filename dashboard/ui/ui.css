@@ -161,6 +161,11 @@ h2:first-child { margin-top: 0; }
 }
 .dlg-cost strong { color: var(--fail); }
 .dlg-err { color: var(--fail); margin: 0 0 12px; }
+/* Two ways into one dialog, when they are different acts rather than variations. */
+.dlg-tabs { display: flex; gap: 4px; margin: -4px 0 14px; border-bottom: 1px solid var(--line); }
+.dlg-tab { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font: inherit; font-size: 12px; padding: 6px 10px; cursor: pointer; }
+.dlg-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.dlg-tab:hover { color: var(--text); }
 .dlg-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .dlg input, .dlg select, .dlg textarea {
   width: 100%;

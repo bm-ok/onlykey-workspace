@@ -144,9 +144,46 @@ function externalLink (url) {
     }))
 }
 
-function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, extra }) {
+// `tabs` is a second whole dialog behind the first, for when one button leads to
+// two genuinely different ways of doing the same thing -- writing a task from
+// nothing, or picking one that is already written down. They are not variations
+// of each other: different fields, different confirm, different consequence. A
+// single dialog trying to be both grows a mode switch and a set of fields that
+// are ignored half the time.
+//
+// Each tab is `{ label, plain, cost, fields, confirm, danger, onYes }` and the
+// outer arguments are the first tab's defaults.
+function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, extra, tabs, _tabsBar }) {
   const errBox = el('p', { className: 'dlg-err hidden' })
   const inputs = {}
+
+  // Rebuilt rather than hidden and shown, because a tab's fields are what get
+  // read on confirm: leaving the other tab's inputs in the tree means whichever
+  // was touched last decides what is submitted.
+  if (tabs && tabs.length) {
+    let open = 0
+    const draw = () => {
+      const t = tabs[open]
+      document.querySelectorAll('.dlg-overlay').forEach(o => o.remove())
+      ask({
+        title,
+        link,
+        plain: t.plain || plain,
+        cost: t.cost || cost,
+        fields: t.fields || [],
+        confirm: t.confirm || confirm,
+        danger: t.danger || danger,
+        onYes: t.onYes || onYes,
+        _tabsBar: el('div', { className: 'dlg-tabs' }, ...tabs.map((x, i) =>
+          el('button', {
+            className: `dlg-tab ${i === open ? 'active' : ''}`,
+            textContent: x.label,
+            onclick: () => { open = i; draw() }
+          })))
+      })
+    }
+    return draw()
+  }
 
   const yes = el('button', { className: `btn ${danger ? 'danger' : 'ok'}`, textContent: confirm })
   const no = el('button', { className: 'btn', textContent: 'Never mind' })
@@ -161,6 +198,7 @@ function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, e
   const overlay = el('div', { className: 'dlg-overlay' },
     el('div', { className: 'dlg' },
       el('div', { className: 'dlg-title', textContent: title }),
+      _tabsBar || null,
       plain && plain.length
         ? el('div', {},
             el('div', { className: 'dlg-heading', textContent: 'What this does' }),
@@ -493,31 +531,153 @@ function judgeTask (task) {
   })
 }
 
+// Two ways in, and they are deliberately not variations of each other.
+//
+// WRITING a task is authoring work. PICKING a pre-defined one is not: it is
+// choosing from work that has already been decided, written down, and reviewed
+// while nobody was in a hurry.
+//
+// That distinction is the point of the second tab rather than a convenience. A
+// supervisor -- a person or a session running this -- should be picking from the
+// plan, not inventing a task at the moment of dispatch, because a task invented
+// then has been reviewed by nobody and is judged afterwards by whoever wrote it.
+// Authoring belongs to the operator, at a keyboard, in the first tab.
 function newTask () {
-  api('gitBranches').then(({ branches: known, protected: guarded }) => {
+  Promise.all([api('gitBranches'), api('planned')]).then(([{ branches: known, protected: guarded }, plan]) => {
     const taken = new Set((guarded || []).map(g => g.branch))
+
+    // Flattened for a list. The suite is what a drill is FOR, so it travels with
+    // the name rather than being a heading somebody has to scroll back to.
+    // The approval state is in the label rather than beside it, because this is
+    // a dropdown and there is nowhere beside it. An unapproved drill is still
+    // listed: hiding it would leave a person wondering where the thing they
+    // asked for went, and the refusal on confirm says what to do.
+    const mark = t => t.approved ? 'approved' : t.lapsed ? 'CHANGED since you approved it' : 'not yet approved'
+    const choices = (plan.suites || []).flatMap(s =>
+      s.tests.map(t => ({ value: s.name + '::' + t.name, label: `${t.name}  [${mark(t)}]` })))
+
     ask({
-      title: 'Write a task',
+      title: 'A task for a worker',
+      tabs: [
+        {
+          label: 'Write a task',
+          plain: [
+            'A task is what a worker is told, and the branch it delivers on.',
+            'That branch is the artifact: it is what comes back, and what gets judged.',
+            'Nothing is given out yet — writing a task touches no machine.'
+          ],
+          fields: [
+            { name: 'title', label: 'Title', placeholder: 'Short enough to read in a list' },
+            { name: 'branch', label: 'Branch it delivers on', placeholder: 'fix/the-thing' },
+            { name: 'brief', label: 'The brief — what the worker is actually told', multiline: true, rows: 10, placeholder: 'Write it as instructions to somebody who cannot ask you a question.' },
+            { name: 'contract', label: 'Contract (a file on this host, optional)', placeholder: 'the rules the worker is given' },
+            { name: 'folder', label: 'Folder on the machine (optional)', placeholder: 'defaults to its workspace' }
+          ],
+          confirm: 'Write it',
+          onYes: async values => {
+            if (taken.has(values.branch)) throw new Error(`"${values.branch}" is protected here. Work is merged into it, never done on it.`)
+            const made = await api('taskCreate', { task: values })
+            pickedTask = made.id
+            say(`Task "${made.title}" written, delivering on ${made.branch}. Known branches: ${(known || []).length}.`)
+          }
+        },
+        {
+          label: `Pre-defined${plan.waiting + plan.lapsed ? ` (${plan.waiting + plan.lapsed} to read)` : ''}`,
+          plain: [
+            'Work decided in advance and written down, rather than invented at the moment of dispatch.',
+            'A model writes these when you ask it to. You approve them. Only then can one be run — including by the model that wrote it.',
+            'Half of them pass by being REFUSED: a drill that is stopped is a drill that passed.',
+            'This RUNS the one you pick. It is not written to the board first.'
+          ],
+          cost: choices.length
+            ? 'Some occupy a machine for several minutes and leave a branch behind. Progress goes to the live log.'
+            : null,
+          fields: choices.length
+            ? [
+                { name: 'pick', label: 'Which one', value: choices[0].value, options: choices },
+                {
+                  name: 'machine',
+                  label: 'On which machine (only some need one)',
+                  value: (latest.vms.find(v => v.connected) || {}).name || '',
+                  options: [{ value: '', label: 'none' }, ...latest.vms.filter(v => v.connected).map(v => ({ value: v.name, label: v.name }))]
+                }
+              ]
+            : [],
+          confirm: choices.length ? 'Run it' : 'Nothing is registered',
+          // The way to approve, and it is a second button rather than a
+          // checkbox beside the run: approving is reading, and it needs a
+          // screen of its own with the definition on it.
+          extra: choices.length ? { label: 'Read it…', onClick: () => readDefinition() } : null,
+          onYes: async ({ pick, machine }) => {
+            const cut = String(pick).indexOf('::')
+            const suite = String(pick).slice(0, cut)
+            const name = String(pick).slice(cut + 2)
+            showTab('live')
+            say(`Running "${name}" — watch the live log.`)
+            const r = await api('plannedRun', { suite, name, machine: machine || undefined })
+            say(r.failed
+              ? `${name}: ${r.failed} failed, ${r.passed} passed in ${r.seconds}s`
+              : `${name}: passed in ${r.seconds}s`, r.failed ? 'bad' : 'ok')
+          }
+        }
+      ]
+    })
+  }).catch(oops)
+}
+
+// Reading a definition, and deciding about it.
+//
+// THE DEFINITION IS ON THE SCREEN. That is the whole of this dialog: approving
+// something you have not read is not approval, and a button that says "approve"
+// beside a name is a button that gets pressed without anybody having looked. So
+// the source of what will actually run is here, and the button is underneath it.
+//
+// Only in the window. `plannedApprove` refuses over the socket, because that is
+// the socket a supervising model drives — and a model approving a definition it
+// wrote is the one path nothing reviews.
+function readDefinition (which) {
+  api('planned').then(plan => {
+    const all = (plan.suites || []).flatMap(s => s.tests.map(t => ({ suite: s.name, ...t })))
+    // Whatever most needs reading, when nothing was named: something changed
+    // since it was approved first, then something never read at all.
+    const t = (which && all.find(x => x.name === which)) ||
+      all.find(x => x.lapsed) || all.find(x => !x.approved) || all[0]
+    if (!t) return oops(new Error('Nothing is registered.'))
+
+    const others = all.filter(x => x.name !== t.name)
+
+    ask({
+      title: t.name,
       plain: [
-        'A task is what a worker is told, and the branch it delivers on.',
-        'That branch is the artifact: it is what comes back, and what gets judged.',
-        'Nothing is given out yet — writing a task touches no machine.'
+        `From "${t.suite}".`,
+        t.approved
+          ? `You approved this on ${new Date(t.at).toLocaleString()}.${t.note ? ` Note: ${t.note}` : ''}`
+          : `This ${t.why}`,
+        'An approval is recorded against this exact source and lapses if it changes, so approving cannot be inherited by a later edit.'
       ],
+      cost: t.approved ? null : 'Approving it means a supervising session may run it without asking you again.',
       fields: [
-        { name: 'title', label: 'Title', placeholder: 'Short enough to read in a list' },
-        { name: 'branch', label: 'Branch it delivers on', placeholder: 'fix/the-thing' },
-        { name: 'brief', label: 'The brief — what the worker is actually told', multiline: true, rows: 10, placeholder: 'Write it as instructions to somebody who cannot ask you a question.' },
-        { name: 'contract', label: 'Contract (a file on this host, optional)', placeholder: 'the rules the worker is given' },
-        { name: 'folder', label: 'Folder on the machine (optional)', placeholder: 'defaults to its workspace' }
-      ],
-      confirm: 'Write it',
-      onYes: async values => {
-        if (taken.has(values.branch)) throw new Error(`"${values.branch}" is protected here. Work is merged into it, never done on it.`)
-        const made = await api('taskCreate', { task: values })
-        pickedTask = made.id
-        say(`Task "${made.title}" written, delivering on ${made.branch}. Known branches: ${(known || []).length}.`)
+        { name: 'note', label: 'A note, if you want one on the record', value: t.note || '', placeholder: 'why this is alright to run' },
+        others.length
+          ? { name: 'next', label: 'Read another instead', value: '', options: [{ value: '', label: '— stay on this one —' }, ...others.map(o => ({ value: o.name, label: `${o.name} [${o.approved ? 'approved' : o.lapsed ? 'CHANGED' : 'not approved'}]` }))] }
+          : null
+      ].filter(Boolean),
+      confirm: t.approved ? 'Keep it approved' : 'Approve it',
+      extra: t.approved ? { label: 'Withdraw approval', danger: true, onClick: () => api('plannedWithdraw', { suite: t.suite, name: t.name }).then(() => say(`Approval withdrawn for "${t.name}".`)).catch(oops) } : null,
+      onYes: async ({ note, next }) => {
+        if (next) return setTimeout(() => readDefinition(next), 0)
+        await api('plannedApprove', { suite: t.suite, name: t.name, note })
+        say(`Approved "${t.name}".`)
       }
     })
+
+    // Inserted after the dialog exists, for the same reason a diff is: source is
+    // read, not answered, and it needs to scroll and be selectable.
+    const dlg = document.querySelector('.dlg')
+    if (dlg) {
+      dlg.insertBefore(el('div', { className: 'dlg-heading', textContent: 'What it does, exactly' }), dlg.querySelector('.dlg-err'))
+      dlg.insertBefore(el('pre', { className: 'console tall', style: 'user-select:text; margin-bottom:12px', textContent: t.source }), dlg.querySelector('.dlg-err'))
+    }
   }).catch(oops)
 }
 

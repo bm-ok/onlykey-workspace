@@ -109,7 +109,19 @@ async function answer (line, socket, actions, log) {
   if (action.stream) return follow(req, socket, action)
 
   try {
-    const result = await action.run(req.args || {})
+    // Marked as having come down the pipe.
+    //
+    // The window calls the same table in-process and this is absent there, which
+    // is the only place the two callers differ -- and one action needs that
+    // difference. Approving a pre-defined task is a HUMAN act ratifying
+    // something a model wrote, and this socket is exactly what a supervising
+    // model drives. Without this, a session could write a definition and then
+    // approve its own work, which is the one path nothing reviews.
+    //
+    // It is a boundary rather than a proof: anyone at this keyboard can open the
+    // window. That is fine -- the person at the keyboard is who approval is for.
+    // What it stops is approval happening as a step inside an automated run.
+    const result = await action.run({ ...(req.args || {}), _overTheWire: true })
     say(socket, { id: req.id ?? null, ok: true, result })
   } catch (e) {
     // The message and nothing else. A stack trace here would be this app's
