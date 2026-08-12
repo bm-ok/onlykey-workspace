@@ -106,12 +106,15 @@ to hand-write one rather than to notice why it is missing.
 client is a machine being provisioned, fetching its scripts and reporting progress,
 which is the only thing here that ever needed a socket.
 
-Two quirks come from `--disable-features=nw2`, which is required:
+**No `chromium-args`.** The previous version passed `--disable-features=nw2`, which
+selects the older window implementation — and under it NW.js's own `nw.Window` shim
+throws `getRoutingID is not a function` on every page load and native `confirm()`
+silently returns false. Nothing here needs the flag, so it is gone and both of
+those went with it. If something ever does need it, expect that error back.
 
-* NW.js's own `nw.Window` shim throws `getRoutingID is not a function` on page
-  load. Nothing here calls that API, so it is noise.
-* Native `confirm()` silently returns false, which would cancel the action behind
-  it without saying so. Every dialog here is an in-page overlay for that reason.
+Dialogs are still in-page overlays, but for their own reason rather than that one:
+each carries what the action does in plain words, what it costs when that cannot be
+undone, and sometimes fields. A native `confirm()` holds none of that.
 
 
 Honest gaps

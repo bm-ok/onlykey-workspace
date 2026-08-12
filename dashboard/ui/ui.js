@@ -69,9 +69,10 @@ const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).clic
 
 // ---- the dialog ------------------------------------------------------
 //
-// In-page rather than native: under NW.js with nw2 disabled, confirm() and
-// <dialog> do not appear and silently return false, which cancels the action
-// behind them without saying so. One dialog, used by everything.
+// One dialog, used by everything. In-page rather than native confirm() because it
+// carries what a native one cannot: what the action does in plain words, what it
+// costs when that cannot be undone, and any fields it needs. A confirm() would
+// reduce all of that to a sentence and an OK button.
 
 function ask ({ title, plain, cost, fields = [], confirm, danger, onYes }) {
   const errBox = el('p', { className: 'dlg-err hidden' })

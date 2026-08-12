@@ -119,9 +119,9 @@ h2:first-child { margin-top: 0; }
 .stale-banner strong { color: var(--fail); }
 
 /* ---------- dialog ----------
-   In-page, not native. Under NW.js with --disable-features=nw2 the native
-   confirm() does not appear -- it returns false and silently cancels the action
-   behind it. A gate on an action has to be as reliable as the action. */
+   In-page, not native: it has to carry plain words about what an action does, what
+   it costs when that cannot be undone, and sometimes fields. A native confirm()
+   holds none of that. */
 
 .dlg-overlay {
   position: fixed;
