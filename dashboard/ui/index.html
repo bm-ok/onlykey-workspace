@@ -21,7 +21,7 @@
          is machines; the other is work. They meet at exactly one point -- a
          task is given to a machine -- and nothing else crosses. -->
     <button class="tab active" data-view="ops">Virtual machines</button>
-    <button class="tab" data-view="tasks">Tasks</button>
+    <button class="tab" data-view="tasks">Tasks <span class="tab-badge hidden" id="tasks-badge"></span></button>
     <!-- The badge is what makes a tab you cannot see safe to have: output
          arriving behind it is announced, and a failure differently from
          ordinary chatter. -->
@@ -86,6 +86,11 @@
           Tasks
           <button class="plus" id="add-task-open" title="Write a task">+</button>
         </h2>
+        <!-- What is waiting on a person. Approval used to be reachable only
+             from inside the write-a-task dialog, which meant the window said
+             nothing while definitions piled up -- indistinguishable from there
+             being none. -->
+        <div id="approvals" class="hidden"></div>
         <div id="tasks" class="stack"></div>
       </div>
 

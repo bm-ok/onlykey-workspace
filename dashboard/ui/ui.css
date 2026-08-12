@@ -275,6 +275,8 @@ main { padding: 16px; }
 .badge.run { color: var(--accent); border-color: var(--accent); }
 /* A state nobody has acted on yet reads as quiet rather than as a warning. */
 .badge.muted { color: var(--muted); border-color: var(--line); }
+/* A card that is asking for something, rather than reporting something. */
+.card.wants { border-color: var(--warn); margin-bottom: 10px; }
 
 /* ---------- buttons ---------- */
 

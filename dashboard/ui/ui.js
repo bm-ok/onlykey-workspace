@@ -346,9 +346,32 @@ const STATE_BADGE = {
 }
 
 function paintTasks () {
-  api('tasks').then(({ tasks }) => {
+  Promise.all([api('tasks'), api('planned')]).then(([{ tasks }, plan]) => {
     taskList = tasks
     if (!tasks.some(t => t.id === pickedTask)) pickedTask = tasks.length ? tasks[0].id : null
+
+    // ASKED FOR HERE, where it can be seen.
+    //
+    // Approval was reachable only from inside the write-a-task dialog, three
+    // clicks in — so ten definitions could sit waiting and the window said
+    // nothing at all, which is indistinguishable from there being none. A
+    // decision that has to be sought out is a decision that does not get made.
+    const waiting = plan.waiting + plan.lapsed
+    if (changed('approvals', [plan.waiting, plan.lapsed])) {
+      fill($('approvals'), waiting
+        ? el('div', { className: 'card wants' },
+            el('div', { className: 'card-title' },
+              el('span', { textContent: `${waiting} pre-defined task${waiting === 1 ? '' : 's'} waiting for you` }),
+              el('span', { className: 'badge warn', textContent: 'needs reading' })),
+            el('div', { className: 'card-sub muted', textContent: plan.lapsed
+              ? `${plan.waiting} never read, ${plan.lapsed} changed since you approved them.`
+              : 'Written by a model. Nothing runs until you have read it and said so.' }),
+            el('button', { className: 'btn ok', style: 'margin-top:8px', textContent: 'Read them', onclick: () => readDefinition() }))
+        : null)
+      $('approvals').classList.toggle('hidden', !waiting)
+    }
+    setText($('tasks-badge'), waiting ? String(waiting) : '')
+    $('tasks-badge').classList.toggle('hidden', !waiting)
 
     if (changed('tasks', [tasks.map(taskKey), pickedTask])) {
       fill($('tasks'), tasks.length
@@ -368,7 +391,15 @@ function paintTasks () {
     setText($('task-context'), task ? `— ${task.id}` : '— nothing selected')
     paintTaskDetail(task)
     paintArtifact(task)
-  }).catch(() => { /* the board is not worth an error bar of its own */ })
+  }).catch(e => {
+    // SAID, not swallowed. This was quiet on purpose and that was wrong: a
+    // panel that shows nothing when it is broken looks exactly like a panel
+    // with nothing to show, and the difference is the whole question a person
+    // is asking when they look at an empty tab.
+    if (changed('tasks-error', e.message)) {
+      fill($('tasks'), el('p', { className: 'empty', textContent: `The board could not be read: ${e.message}` }))
+    }
+  })
 }
 
 function paintTaskDetail (task) {
