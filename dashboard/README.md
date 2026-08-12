@@ -646,6 +646,49 @@ Two things are reported separately that are easy to collapse into "no changes":
 a branch that was **never pushed** to a repository, and one that is **there and
 empty**. Only the first is a worker that failed to deliver.
 
+### The queue, and why a runner's natural state is off
+
+    okc.js taskQueue --id 3        put it in the queue; no machine is named
+    okc.js queueState              what is waiting, what is running, who could take work
+
+**Work waits for a machine; a machine does not wait for work.** A queued task
+names no machine — the first one that is free takes it — so which machine did
+the work is a fact recorded afterwards rather than a decision made in advance.
+That is what makes a second runner useful without anybody rebalancing anything.
+
+A machine is switched on because there is something to do, brought to a known
+state, given exactly one task, and switched off again. Between tasks nothing is
+running, nothing holds a credential, and nothing goes stale.
+
+    queued  ->  rolled back to base  ->  started  ->  dialled in
+            ->  credential  ->  workspace on its branch  ->  dispatched
+            ->  run ends  ->  log kept here  ->  credential taken back
+            ->  shut down  ->  rolled back  ->  free again
+
+**Rolled back at both ends, for two different reasons.** Before, because a
+machine cleaned only afterwards is clean only if the last thing that touched it
+finished properly — and the interesting failures are exactly the ones that did
+not. After, because a machine that has finished a task still *claims* that
+task's branch, and a claimed branch means not free. Without the second rollback
+the queue deadlocks after exactly one task per machine.
+
+**A machine with no base snapshot is never free.** There is nowhere clean to
+bring it back to, so it is left alone and says so.
+
+`done` means the run **ended** — not that it worked, and not that anybody has
+looked. Whether anything arrived is read from the branch and stays a separate
+question: a task can be done having delivered nothing, which is what a worker
+refused by the push hook looks like.
+
+**Every step goes through the actions**, so every refusal still applies. A
+scheduler with its own private path to the machines would be a second set of
+rules, and the second set is always the one that turns out to be wrong.
+
+If the dashboard is restarted mid-task, the queue **adopts** what was in flight:
+it waits on the run if it is still alive, keeps the log, and puts the machine
+away either way. It does not try to resume the worker — it is either still going
+or already gone, and neither can be re-entered from here.
+
 ### Pre-defined work, and who is allowed to approve it
 
 The other half of the write-a-task dialog. **Writing** a task is authoring work;
@@ -741,7 +784,12 @@ The shape
     core/secret.js  sealing what is worth keeping, and redacting what comes back
     tasks/
       store.js      what is to be done, who has it, and what was decided
+      queue.js      work waits for a machine; a machine does not wait for work
       artifact.js   what came back: a branch, read the way a PR is read
+      archive.js    a run's log, kept here, where the machine cannot take it
+      harness.js    describe/it, ported from test-moniker
+      planned.js    the drills, declared rather than written out in prose
+      approval.js   a model writes a definition; a person approves it
     tools/okc.js    the command line, generated from the actions table
     vendors/ace/    the editor, checked in. Code that is READ needs to look
                     like code, or it gets approved without being read

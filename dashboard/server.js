@@ -29,6 +29,7 @@ const artifact = require('./tasks/artifact')
 const harness = require('./tasks/harness')
 const approval = require('./tasks/approval')
 const archive = require('./tasks/archive')
+const queue = require('./tasks/queue')
 require('./tasks/planned')   // registers the drills with the harness
 const machines = require('./machines/store')
 const { provision, reach } = require('./machines/provision')
@@ -374,7 +375,18 @@ const actions = {
       const was = vm.branch || null
       const now = (vm.snapshots || {})[title]
       const branch = now === undefined ? null : now
-      vms.update(name, { branch })
+
+      // The credential goes back with the disk, and this is DERIVABLE rather
+      // than guessed: a machine holding one cannot be snapshotted at all, so
+      // every snapshot that exists was taken while the machine held nothing.
+      // Restoring any of them therefore lands on a disk with no credential file
+      // on it.
+      //
+      // It has to be said here or the registry goes on claiming the machine
+      // holds one for ever -- which refuses every future snapshot of it and,
+      // worse, keeps it out of the queue as a machine that needs tidying when it
+      // is already clean.
+      vms.update(name, { branch, holdsCredential: false })
 
       const to = log.on('vm', name)
       if (branch !== was) {
@@ -1189,10 +1201,16 @@ done`
             commits: art.commits,
             // What the board shows. The stored state says what a person decided;
             // this says what is true, and where they disagree the branch wins.
+            // Delivered outranks done, because it is the more informative of
+            // two true statements: a done task that delivered nothing and a
+            // done task that delivered are the same state and opposite
+            // outcomes, and the board should say which.
             reads: t.verdict ? t.state
               : art.delivered ? 'delivered'
-                : t.machine ? 'working'
-                  : 'draft'
+                : t.state === 'given' ? 'working'
+                  : t.state === 'queued' ? 'queued'
+                    : t.state === 'done' ? 'done, nothing delivered'
+                      : 'draft'
           }
         })
       }
@@ -1240,6 +1258,62 @@ done`
     about: 'Throw a task away. Its branch is untouched',
     takes: ['id'],
     run: ({ id }) => tasks.remove(id)
+  },
+
+  // ---- the queue ---------------------------------------------------------
+  //
+  // Work waits for a machine; a machine does not wait for work. A queued task
+  // names no machine -- the first one that is free takes it, and which one did
+  // the work is recorded afterwards rather than decided in advance.
+
+  taskQueue: {
+    about: 'Put a task in the queue. The next free machine takes it, runs it, and shuts down',
+    takes: ['id'],
+    run: async ({ id }) => {
+      const task = tasks.get(id)
+      if (task.verdict) throw new Error(`#${task.number} has already been judged. Write a new task rather than reopening a decided one.`)
+      const why = branches.nameIsOk(task.branch)
+      if (why) throw new Error(why)
+      const queued = tasks.update(id, { state: 'queued' })
+
+      // Said now rather than discovered in fifteen minutes' time. A task that
+      // can never be picked up looks exactly like one that is merely waiting,
+      // and the difference matters most when somebody has gone home.
+      const free = queue.availability((await actions.vmList.run({})).vms)
+      const can = free.filter(a => a.free)
+      log.on('task', task.id).good(`#${task.number} queued`)
+      return {
+        ...queued,
+        waitingFor: can.length ? null : free.map(a => `${a.name} ${a.why}`),
+        note: can.length
+          ? `${can.length} machine(s) can take it; the next tick picks it up.`
+          : 'Nothing can take it yet. It stays queued until something can.'
+      }
+    }
+  },
+
+  taskUnqueue: {
+    about: 'Take a task back out of the queue. Does not stop one already running',
+    takes: ['id'],
+    run: ({ id }) => {
+      const task = tasks.get(id)
+      if (task.state !== 'queued') throw new Error(`#${task.number} is "${task.state}", not queued. A task already given out is not called back by this — the worker is running and would have to be stopped on its machine.`)
+      return tasks.update(id, { state: 'draft' })
+    }
+  },
+
+  queueState: {
+    about: 'What the queue is doing, and which machines could take work',
+    run: async () => {
+      const { vms } = await actions.vmList.run({})
+      const { tasks: all } = await actions.tasks.run({})
+      return {
+        ...queue.state(),
+        waiting: all.filter(t => t.state === 'queued').map(t => ({ number: t.number, id: t.id, title: t.title, branch: t.branch })),
+        machines: queue.availability(vms),
+        every: `${queue.TICK / 1000}s`
+      }
+    }
   },
 
   // Hand a task to a machine: set its workspace up on the task's branch, then
@@ -2036,6 +2110,13 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
         // it, so a dashboard with no command line is still a working dashboard.
         log.on('ipc').warn(`no command line: ${e.message}`)
       }
+
+      // Started with the server, not with the window. A queued task should be
+      // picked up because this process is running, not because somebody has the
+      // dashboard open — the point of queueing work is that you can walk away
+      // from it.
+      queue.begin(actions, log)
+      log.on('queue').info(`watching for queued work every ${queue.TICK / 1000}s`)
 
       log.on('server').good(`Listening on port ${port} over TLS — scripts and repositories for machines being provisioned`)
       log.on('server').info(`The authority is published unencrypted on port ${caPort}, and is the only thing there`)

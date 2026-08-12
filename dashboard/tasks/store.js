@@ -32,7 +32,12 @@ const FILE = path.join(STATE, 'tasks.json')
 // and a branch's contents are facts elsewhere, and copying them here is how two
 // answers to one question start disagreeing. What is stored is what nothing else
 // can tell us: what was asked, who it went to, and what a human decided.
-const STORED = new Set(['draft', 'given', 'accepted', 'rejected'])
+// `done` means the run ENDED. Not that it worked, and not that anybody has
+// looked at it — it is the difference between a task still in flight and one
+// waiting for a verdict. Without it a finished task sits in `given` for ever,
+// and the queue picks it up again on every restart, puts its machine away
+// again, and reports the same completion as though it had just happened.
+const STORED = new Set(['draft', 'queued', 'given', 'done', 'accepted', 'rejected'])
 
 // TWO IDENTITIES, and they are for different readers.
 //

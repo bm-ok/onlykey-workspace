@@ -434,6 +434,9 @@ const taskKey = t => t && [
 
 const STATE_BADGE = {
   draft: 'muted',
+  queued: 'warn',
+  'done, nothing delivered': 'bad',
+  done: 'muted',
   working: 'warn',
   delivered: 'ok',
   accepted: 'ok',
@@ -544,12 +547,27 @@ function paintTaskDetail (task) {
     el('div', { id: 'task-history' }, el('p', { className: 'muted', textContent: '…' })),
 
     el('div', { className: 'row', style: 'margin-top:12px' },
-      // Giving it out is the one button on this side that touches a machine.
+      // Queueing is the ordinary way. A machine's natural state is off, so
+      // "give it to runner2, which is on and idle" is the unusual case that
+      // needs a machine kept warm on purpose — and it is offered second.
+      task.state === 'queued'
+        ? el('button', {
+            className: 'btn',
+            textContent: 'Take it out of the queue',
+            onclick: async () => { await api('taskUnqueue', { id: task.id }); say(`#${task.number} is back to a draft.`); draw() }
+          })
+        : el('button', {
+            className: 'btn ok',
+            textContent: 'Queue it',
+            disabled: !!task.verdict,
+            title: task.verdict ? 'This task has been judged' : 'The next free machine takes it, runs it, and shuts down',
+            onclick: () => queueTask(task)
+          }),
       el('button', {
-        className: 'btn ok',
-        textContent: task.machine ? 'Give it out again' : 'Give it to a machine',
+        className: 'btn',
+        textContent: task.machine ? 'Give it out again' : 'Give it to a machine now',
         disabled: !idle.length || !!task.verdict,
-        title: !idle.length ? 'No machine is dialled in' : task.verdict ? 'This task has been judged' : '',
+        title: !idle.length ? 'No machine is dialled in' : task.verdict ? 'This task has been judged' : 'Skips the queue and uses a machine that is already up',
         onclick: () => giveTask(task, idle)
       }),
       el('button', {
@@ -705,6 +723,29 @@ function showDiff (task, repo) {
     // answered, and it needs to scroll and be selectable.
     const body = document.querySelector('.dlg-body')
     if (body) body.append(codeBlock(diff || 'no changes', 'diff', { lines: 22 }))
+  }).catch(oops)
+}
+
+function queueTask (task) {
+  api('queueState').then(q => {
+    const can = q.machines.filter(m => m.free)
+    ask({
+      title: `Queue #${task.number} "${task.title}"`,
+      plain: [
+        'It waits here until a machine is free. No machine is chosen now — the first one that can take it does.',
+        'That machine is rolled back to its base snapshot before it starts, so the work begins on a clean machine every time.',
+        'When the run ends, its log is kept here, the credential is taken back, and the machine is shut down again.',
+        can.length
+          ? `Free right now: ${can.map(m => m.name).join(', ')}.`
+          : `Nothing can take it yet — ${q.machines.map(m => `${m.name} ${m.why}`).join('; ')}. It will wait.`
+      ],
+      cost: `The machine that takes it is rolled back to its base snapshot first. Anything on it that is not on a branch here is discarded.`,
+      confirm: 'Queue it',
+      onYes: async () => {
+        const r = await api('taskQueue', { id: task.id })
+        say(`#${task.number} queued. ${r.note}`)
+      }
+    })
   }).catch(oops)
 }
 
