@@ -22,6 +22,7 @@
          arriving behind it is announced, and a failure differently from
          ordinary chatter. -->
     <button class="tab" data-view="live">Live <span class="tab-badge hidden" id="live-badge"></span></button>
+    <button class="tab" data-view="keys">Keys</button>
     <button class="tab" data-view="actions">All actions</button>
   </nav>
   <div class="topright muted" id="topright"></div>
@@ -86,6 +87,27 @@
          filter without being registered. -->
     <div id="log-tags" class="chips"></div>
     <div id="live" class="console tall"></div>
+  </section>
+
+  <!-- ---------------- Keys ----------------
+       What this host holds so a machine does not have to. A worker cannot work
+       without being able to authenticate, and that is the one credential that
+       has to exist inside a machine -- so it is signed in once, taken, and
+       handed out per machine rather than living in any of them. -->
+  <section class="view" id="view-keys">
+    <div class="sync-head">
+      <h2>Worker sign-in <span class="muted" id="keys-context"></span></h2>
+      <div class="sync-controls">
+        <button class="btn ok" id="keys-get">Get Claude Code credentials</button>
+      </div>
+    </div>
+    <p class="note">
+      One machine is signed in by you; the credential is taken from it and kept
+      here. Every other machine is handed a copy when it needs one — so a
+      credential is part of a task rather than part of a machine, and a machine
+      that is deleted or snapshotted takes none with it.
+    </p>
+    <div id="keys" class="stack"></div>
   </section>
 
   <!-- ---------------- All actions ---------------- -->

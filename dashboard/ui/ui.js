@@ -1,8 +1,9 @@
 'use strict'
 
-// The window. Three tabs: the machines, the live log, and every action the server
-// has. How a machine gets set up is not one of them -- that is internal, and lives
-// in provision/ as shell scripts.
+// The window. Four tabs: the machines, the live log, the keys this host holds so
+// that machines do not have to, and every action the server has. How a machine
+// gets set up is not one of them -- that is internal, and lives in provision/ as
+// shell scripts.
 //
 // The rule it is written against: an answer belongs where the person was already
 // looking. Results appear in the notice bar next to the button that caused them,
@@ -200,6 +201,96 @@ function showImage ({ title, file, note }) {
 
   overlay.onclick = e => { if (e.target === overlay) close() }
   document.body.append(overlay)
+}
+
+// ---- keys ------------------------------------------------------------
+//
+// The sign-in is a conversation with a program running on a machine: it prints
+// an address, a person visits it, and a code comes back. So it is two dialogs
+// rather than one, and the machine holds its half open in between -- which is
+// the whole reason this is not a single button that either works or does not.
+
+function paintKeys () {
+  api('credentialsHeld').then(held => {
+    setText($('keys-context'), held.held ? `— taken from ${held.from}` : '— none yet')
+    if (!changed('keys', held)) return
+
+    fill($('keys'), held.held
+      ? el('div', { className: 'card' },
+          el('div', { className: 'card-title' },
+            el('span', { textContent: 'Claude Code' }),
+            el('span', { className: 'badge ok', textContent: 'held' })),
+          el('table', { className: 'kv', style: 'margin-top:8px' },
+            el('tr', {}, el('th', { textContent: 'taken from' }), el('td', { className: 'mono', textContent: held.from })),
+            el('tr', {}, el('th', { textContent: 'when' }), el('td', { className: 'mono', textContent: new Date(held.taken).toLocaleString() })),
+            // The path, not the contents. A page that shows a secret is a page
+            // that ends up in a screenshot.
+            el('tr', {}, el('th', { textContent: 'kept in' }), el('td', { className: 'mono', style: 'user-select:text', textContent: held.dir })),
+            el('tr', {}, el('th', { textContent: 'size' }), el('td', { className: 'mono', textContent: `${held.bytes} bytes` }))),
+          el('p', { className: 'note', style: 'margin-top:10px', textContent: 'Hand it to a machine with vmCredentialsPut, and take it back with vmCredentialsForget before snapshotting.' }))
+      : el('p', { className: 'empty', textContent: 'No worker credential yet. Get one from a machine that is running.' }))
+  }).catch(() => { /* the tab is not worth an error bar of its own */ })
+}
+
+// Ask which machine, sign in on it, then take what it got.
+function getCredentials () {
+  const running = latest.vms.filter(v => v.connected)
+  if (!running.length) {
+    return oops(new Error('No machine is dialled in. Start one and wait for it to connect — the sign-in happens on a machine, not here.'))
+  }
+
+  ask({
+    title: 'Get Claude Code credentials',
+    plain: [
+      'One machine signs in, and this host keeps what it gets.',
+      'It opens a sign-in on that machine and gives you an address to visit; the machine waits, holding it open, until you bring the code back.',
+      'Nothing is installed or changed on the machine beyond signing its worker in.'
+    ],
+    fields: [{
+      name: 'name',
+      label: 'Which machine signs in',
+      value: running[0].name,
+      options: running.map(v => ({ value: v.name, label: `${v.name} — ${v.description || v.stage}` }))
+    }],
+    confirm: 'Start the sign-in',
+    onYes: async f => {
+      const started = await api('vmAuthBegin', { name: f.name })
+      // A second dialog rather than a field on the first, because the address
+      // does not exist until the machine has been asked -- and a form that asks
+      // for a code before there is anything to get one from is a form nobody can
+      // fill in.
+      askForCode(f.name, started.url)
+    }
+  })
+}
+
+function askForCode (name, url) {
+  ask({
+    title: `Sign ${name} in`,
+    plain: [
+      'Open this address, approve it, and paste back what it gives you.',
+      `${name} is holding the sign-in open until you do.`,
+      url
+    ],
+    fields: [{ name: 'code', label: 'The code from that page', placeholder: 'paste it here' }],
+    confirm: 'Finish signing in',
+    extra: {
+      label: 'Give up',
+      onClick: () => api('vmAuthCancel', { name }).then(() => say(`the sign-in on ${name} was abandoned`)).catch(oops)
+    },
+    onYes: async f => {
+      if (!f.code) throw new Error('Paste the code from the sign-in page.')
+      await api('vmAuthCode', { name, code: f.code })
+      // Taken straight away rather than left for a second click. The reason the
+      // machine was signed in at all is so this host holds the result, and a
+      // credential left sitting on a machine is the thing this exists to avoid.
+      const kept = await api('vmCredentialsGrab', { name })
+      say(`${name} signed in, and its credential is kept here`)
+      showTab('keys')
+      paintKeys()
+      return kept
+    }
+  })
 }
 
 // ---- the machines ----------------------------------------------------
@@ -867,6 +958,7 @@ async function drawOnce () {
   }
 
   paintVms()
+  paintKeys()
 }
 
 // ---- right-click, and devtools ---------------------------------------
@@ -944,5 +1036,6 @@ async function sync () {
   setTimeout(sync, busy ? 3000 : 12000)
 }
 
+$('keys-get').onclick = () => getCredentials()
 paintActions().catch(oops)
 draw().then(sync).catch(e => say(e.message, 'bad'))

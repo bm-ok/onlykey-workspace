@@ -30,6 +30,7 @@ const repos = require('./repos/serve')
 const busy = require('./machines/busy')
 const session = require('./machines/session')
 const dispatch = require('./machines/dispatch')
+const auth = require('./machines/auth')
 const branches = require('./repos/branches')
 const workspace = require('./repos/workspace')
 
@@ -616,6 +617,70 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   //
   // Kept in the app's data directory, outside the repository, 0600 -- the same
   // place as the certificate and for the same reason.
+  // Start a sign-in on a machine and hand back the URL to visit.
+  //
+  // The dashboard does this rather than a person opening a terminal inside the
+  // machine, because a person in the machine is what everything else here
+  // replaced -- and because the sign-in is two exchanges with one process, which
+  // needs something to hold the process open between them.
+  vmAuthBegin: {
+    about: 'Start signing a machine\'s worker in, and return the URL to visit',
+    takes: ['name', 'wait'],
+    run: async ({ name, wait = 25 }) => {
+      vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
+
+      const seconds = Math.max(5, Math.min(Number(wait) || 25, 120))
+      const r = await channel.run(name, auth.begin(seconds), { what: 'starting a worker sign-in', timeout: (seconds + 30) * 1000 })
+      const out = auth.read(r.output)
+
+      if (out.url) {
+        log.on('vm', name).good(`${name} is waiting to be signed in — open ${out.url}`)
+        return { name, url: out.url, next: `visit it, then: okc.js vmAuthCode --name ${name} --code "<what it gives you>"`, log: out.log }
+      }
+
+      // No URL is not automatically a failure -- it may already be signed in, or
+      // it may have refused for a reason of its own. Its own words are the
+      // answer; guessing between those would be inventing one.
+      // The raw reply when the parsed one is empty. A message built only from
+      // fields that turned out to be blank says nothing at all, and the thing
+      // most likely to explain that is what actually came back.
+      throw new Error(`"${name}" did not offer a sign-in URL${out.finished ? ` (it exited ${out.exit})` : ''}.\nit said: ${out.log || '(nothing)'}\n${out.why || ''}${out.log || out.why ? '' : `\nraw reply:\n${String(r.output || '(empty)').slice(-800)}`}`)
+    }
+  },
+
+  vmAuthCode: {
+    about: 'Give a waiting machine the code from the sign-in page',
+    takes: ['name', 'code', 'wait'],
+    run: async ({ name, code, wait = 40 }) => {
+      vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
+      if (!code || !String(code).trim()) throw new Error('Say what the code is.')
+
+      const seconds = Math.max(5, Math.min(Number(wait) || 40, 120))
+      const r = await channel.run(name, auth.code(String(code).trim(), seconds), { what: 'finishing a worker sign-in', timeout: (seconds + 30) * 1000 })
+      const out = auth.read(r.output)
+
+      if (out.noPipe) throw new Error(`"${name}" is not waiting for a code. Start it again with vmAuthBegin.`)
+      if (out.finished && out.exit === 0) {
+        log.on('vm', name).good(`${name}'s worker is signed in`)
+        return { name, signedIn: true, next: `take it with: okc.js vmCredentialsGrab --name ${name}`, log: out.log }
+      }
+      throw new Error(`"${name}" did not finish signing in${out.finished ? ` (it exited ${out.exit})` : ' (it is still waiting)'}. It said:\n${out.log || '(nothing)'}`)
+    }
+  },
+
+  vmAuthCancel: {
+    about: 'Abandon a sign-in that is part-way through',
+    takes: ['name'],
+    run: async ({ name }) => {
+      vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
+      await channel.run(name, auth.cancel(), { what: 'abandoning a worker sign-in', timeout: 30000 })
+      return { name, cancelled: true }
+    }
+  },
+
   vmAuthStatus: {
     about: "Whether a machine's worker is signed in",
     takes: ['name'],
@@ -625,6 +690,33 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
       const r = await channel.run(name, 'claude auth status 2>&1 | head -20; echo "---"; ls -l ~/.claude/.credentials.json 2>/dev/null || echo "no credential file"',
         { what: 'checking its worker sign-in', timeout: 60000 })
       return { name, status: r.output }
+    }
+  },
+
+  // What this host holds, and where it came from.
+  //
+  // The credential itself is never returned -- not to the window, not to the
+  // command line. What a person needs to know is whether there is one, which
+  // machine it was taken from and when; the value is only ever handed to a
+  // machine that needs it. A page that displays a secret is a page that gets
+  // screenshotted.
+  credentialsHeld: {
+    about: 'Whether this host holds a worker credential, and where it came from',
+    run: () => {
+      const dir = data.sub('credentials')
+      const file = path.join(dir, 'claude.json')
+      if (!fs.existsSync(file)) return { held: false, dir }
+      let meta = {}
+      try { meta = JSON.parse(fs.readFileSync(path.join(dir, 'about.json'), 'utf8')) } catch { /* older ones have none */ }
+      const stat = fs.statSync(file)
+      return {
+        held: true,
+        dir,
+        file,
+        bytes: stat.size,
+        taken: meta.taken || stat.mtime.toISOString(),
+        from: meta.from || 'unknown'
+      }
     }
   },
 
@@ -651,6 +743,11 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
       const file = path.join(dir, 'claude.json')
       fs.writeFileSync(file, Buffer.from(b64, 'base64'))
       try { fs.chmodSync(file, 0o600) } catch { /* best effort on Windows */ }
+      // Beside it rather than inside it: which machine it came from and when.
+      // The file's own timestamp would answer the second and nothing answers the
+      // first, and "where did this come from" is the question asked when
+      // something stops working.
+      fs.writeFileSync(path.join(dir, 'about.json'), JSON.stringify({ from: name, taken: new Date().toISOString() }, null, 2))
 
       log.on('vm', name).good('its worker credential was taken and kept on this host')
       return { from: name, kept: file, note: 'hand it to a machine with vmCredentialsPut, and take it away again with vmCredentialsForget' }
