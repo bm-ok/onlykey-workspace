@@ -501,10 +501,17 @@ function gitRoute (req, res, url) {
 
   // Said plainly and with the right status, because the alternative is a machine
   // reporting that a push failed for a reason nobody can act on.
+  //
+  // ASCII ONLY, and that is not fussiness. Git relays a remote's message to the
+  // client as raw bytes and transcodes nothing, so the em-dash that used to be
+  // in this sentence reached the operator's terminal as `â` -- a sentence about
+  // something not being built yet, itself looking broken. Anything that crosses
+  // to a git client is written in ASCII; the live log is ours and keeps its
+  // punctuation.
   if (service === 'git-receive-pack') {
     log.on('git', who.name).warn(`${who.name} tried to push to ${repo}; pushing is not built yet`)
-    res.writeHead(403, { 'content-type': 'text/plain' })
-      .end('this server does not accept pushes yet — cloning is built, pushing is not\n')
+    res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+      .end('this server does not accept pushes yet. cloning is built, pushing is not.\nyour commits are safe where they are - nothing here has taken them.\n')
     return
   }
 
