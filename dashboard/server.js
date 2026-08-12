@@ -1314,10 +1314,10 @@ done`
       // exactly the one whose machine has not been touched yet.
       for (const a of withState) {
         if (a.state === 'running' || a.state === 'gone') continue
-        if (archive.has(id, a.run)) continue
+        if (archive.has(task.uid, a.run)) continue
         try {
           const out = await actions.vmRunOutput.run({ name: task.machine, run: a.run, lines: 2000 })
-          archive.keep(id, a.run, {
+          archive.keep(task.uid, a.run, {
             output: out.output || out.text || '',
             machine: task.machine,
             state: a.state,
@@ -1341,7 +1341,7 @@ done`
           live = { session: newest.id, title: newest.title, idle: newest.idle, entries: (tail && tail.entries) || [] }
         }
       }
-      return { task: id, attempts: withState.map(a => ({ ...a, kept: archive.has(id, a.run) })), live, why: null }
+      return { task: id, attempts: withState.map(a => ({ ...a, kept: archive.has(task.uid, a.run) })), live, why: null }
     }
   },
 
@@ -1355,10 +1355,14 @@ done`
     about: "One attempt's output, kept on this host so it survives the machine",
     takes: ['id', 'run', 'lines'],
     run: ({ id, run, lines }) => {
-      tasks.get(id)
-      const kept = archive.list(id)
-      if (!run) return { task: id, attempts: kept, note: kept.length ? 'ask for one by run id' : 'nothing has been kept for this task yet' }
-      return { task: id, ...archive.read(id, run, { lines }) }
+      // Filed under the uid, which is the one identity that never moves. A slug
+      // follows the title and a number only means something inside the current
+      // board, so either would orphan a task's logs the first time it was
+      // renamed or the board was rebuilt.
+      const task = tasks.get(id)
+      const kept = archive.list(task.uid)
+      if (!run) return { task: task.id, number: task.number, attempts: kept, note: kept.length ? 'ask for one by run id' : 'nothing has been kept for this task yet' }
+      return { task: task.id, number: task.number, ...archive.read(task.uid, run, { lines }) }
     }
   },
 

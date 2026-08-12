@@ -139,6 +139,25 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   was true; the exit code is about the program, not about the work. This is why
   `delivered` is read from the branch on this host and never from the run, and
   the drill that proved the hook proved that at the same time.
+* **A refusal for the wrong reason is not a pass.** A drill asserting that a
+  claimed branch is refused to a second machine was passing while proving
+  something else: the second machine was itself on a branch, so it was refused
+  for *that* — a rule that fires first, before the claim is ever consulted.
+  Caught only because the assertion matches the refusal's message rather than
+  the fact of one; a bare try/catch would have gone on agreeing indefinitely.
+* **A class name that exists nowhere fails silently, and looks like a dead
+  control.** Task cards were given `picked`; the stylesheet has `pick` and `on`.
+  The click worked and the panel beside it changed, but the list had no cursor,
+  no hover and no highlight — so the only visible evidence was that nothing
+  looked clickable, and it was reported as "not selectable". CSS has no
+  equivalent of an undefined-name error, which makes a misspelt class about the
+  quietest failure available in a window.
+* **A record that dies with the machine is not a record.** Run output lived in
+  `~/.okc-runs` on the machine that produced it — and a machine here is the
+  disposable half: rolled back, deleted, rebuilt, all correct things to do, all
+  of which take the only account of what happened with them. Two rollbacks in
+  one afternoon erased the logs of two runs whose results had already been
+  reported, leaving a task saying work was done and nothing saying how.
 * **Git Bash rewrites paths that look absolute.** `--folder /home/okc/work`
   arrives as `C:/Program Files/Git/home/okc/work`, which is a real path on this
   host, so nothing looks wrong anywhere: the machine cannot find it, falls back

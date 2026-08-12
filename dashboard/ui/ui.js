@@ -389,6 +389,7 @@ let taskList = []
 // over. A field missed here is a panel that silently stops updating, which is
 // worse than the flicker the signature exists to prevent.
 const taskKey = t => t && [
+  t.number,
   t.id, t.title, t.branch, t.state, t.reads, t.machine || '', t.run || '',
   t.delivered, t.artifact, t.contract || '', (t.verdict && t.verdict.call) || ''
 ]
@@ -431,12 +432,17 @@ function paintTasks () {
 
     if (changed('tasks', [tasks.map(taskKey), pickedTask])) {
       fill($('tasks'), tasks.length
+        // `pick` and `on`, which are the classes that exist. This said `picked`,
+        // a name nothing in the stylesheet matches — so the click worked, the
+        // panel changed, and the list gave no cursor, no hover and no highlight
+        // to say which one was chosen. A control that responds without looking
+        // like a control reads as broken, and is reported as "not selectable".
         ? tasks.map(t => el('div', {
-            className: `card ${t.id === pickedTask ? 'picked' : ''}`,
+            className: `card pick${t.id === pickedTask ? ' on' : ''}`,
             onclick: () => { pickedTask = t.id; draw() }
           },
           el('div', { className: 'card-title' },
-            el('span', { textContent: t.title }),
+            el('span', {}, el('span', { className: 'muted mono', textContent: '#' + t.number + ' ' }), t.title),
             el('span', { className: `badge ${STATE_BADGE[t.reads] || 'muted'}`, textContent: t.reads })),
           el('div', { className: 'card-sub mono', textContent: t.branch }),
           el('div', { className: 'card-sub muted', textContent: t.artifact })))
@@ -444,7 +450,7 @@ function paintTasks () {
     }
 
     const task = tasks.find(t => t.id === pickedTask)
-    setText($('task-context'), task ? `— ${task.id}` : '— nothing selected')
+    setText($('task-context'), task ? `— #${task.number}  ${task.id}` : '— nothing selected')
     paintTaskDetail(task)
     paintHistory(task)
     paintArtifact(task)

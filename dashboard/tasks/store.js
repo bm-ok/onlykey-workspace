@@ -34,6 +34,47 @@ const FILE = path.join(STATE, 'tasks.json')
 // can tell us: what was asked, who it went to, and what a human decided.
 const STORED = new Set(['draft', 'given', 'accepted', 'rejected'])
 
+// TWO IDENTITIES, and they are for different readers.
+//
+// `number` counts from 1 and never repeats, and it is what a person says out
+// loud: "what happened to 3". Short enough to type, ordered, and it says how
+// many pieces of work there have been, which a name cannot.
+//
+// `uid` is the durable one. It is what anything STORED points at -- the kept
+// logs in particular -- because a title can be edited and a slug derived from it
+// would then point somewhere else, silently orphaning everything filed under the
+// old one. A number cannot serve for that either: numbers are only unique within
+// this file, and this file can be deleted and rebuilt.
+//
+// The slug stays as `id` because it is what makes a command line readable, and
+// all three resolve to the same task.
+let counter = 0
+const uid = () => {
+  // Time-ordered and unique per task without pulling in a dependency for it.
+  // Sorting by uid therefore sorts by creation, which makes a directory of kept
+  // logs read in the order the work happened.
+  counter = (counter + 1) % 0x10000
+  return `${Date.now().toString(36)}${counter.toString(36).padStart(3, '0')}${Math.floor(Math.random() * 0x1000).toString(36).padStart(3, '0')}`
+}
+
+// Filled in for anything written before these existed, once, on the next read.
+//
+// A task record that predates a field is not a broken record -- it is a record
+// from before, and refusing to read it would throw away the history this file is
+// for. The uid of an older task is its slug, which is exactly right: that is
+// what its kept logs are already filed under, so migrating does not orphan them.
+function withIds (list) {
+  let changed = false
+  let next = Math.max(0, ...list.map(t => Number(t.number) || 0))
+  const done = list.map(t => {
+    if (t.number && t.uid) return t
+    changed = true
+    return { ...t, number: t.number || ++next, uid: t.uid || t.id }
+  })
+  if (changed) { try { write(done) } catch { /* readable either way; only not kept */ } }
+  return done
+}
+
 // Tolerant in the same way and for the same reasons as the machine registry: a
 // byte-order mark, or one entry saved as an object rather than a list. Neither
 // should empty the board and make it look as though no work was ever written
@@ -42,7 +83,7 @@ function read () {
   if (!fs.existsSync(FILE)) return []
   try {
     const data = JSON.parse(fs.readFileSync(FILE, 'utf8').replace(/^﻿/, ''))
-    return Array.isArray(data) ? data : [data]
+    return withIds(Array.isArray(data) ? data : [data])
   } catch (e) {
     log.on('task').bad(`${FILE} could not be read (${e.message}). Fix or delete it; no task is listed until then.`)
     return []
@@ -54,9 +95,14 @@ const write = list => {
   fs.writeFileSync(FILE, JSON.stringify(list, null, 2))
 }
 
-const get = id => {
-  const task = read().find(t => t.id === id)
-  if (!task) throw new Error(`There is no task called "${id}".`)
+// Any of the three, because a person types the number, a script keeps the uid,
+// and the slug is what reads well in a command. Refusing two of them would mean
+// remembering which one this particular call wanted.
+const get = ref => {
+  const want = String(ref == null ? '' : ref).trim()
+  const bare = want.replace(/^#/, '')
+  const task = read().find(t => t.id === want || t.uid === want || String(t.number) === bare)
+  if (!task) throw new Error(`There is no task "${ref}". Ask for the board to see what there is — a number, a uid or a name all work.`)
   return task
 }
 
@@ -77,8 +123,15 @@ function add (input) {
   const branch = String(input.branch || '').trim()
   if (!branch) throw new Error('Name the branch this task delivers on. That branch is the artifact, and a task with nowhere to deliver cannot be judged.')
 
+  const existing = read()
   const task = {
     id: newId(title),
+    // Counted from the highest ever used rather than from the length, so
+    // throwing task 2 away does not hand its number to the next one written.
+    // Two different pieces of work sharing a number is exactly what a number is
+    // for preventing.
+    number: Math.max(0, ...existing.map(t => Number(t.number) || 0)) + 1,
+    uid: uid(),
     title,
     brief,
     branch,
@@ -105,33 +158,43 @@ function add (input) {
     created: new Date().toISOString(),
     updated: new Date().toISOString()
   }
-  write([...read(), task])
-  log.on('task', task.id).good(`task "${title}" written, delivering on ${branch}`)
+  write([...existing, task])
+  log.on('task', task.id).good(`#${task.number} "${title}" written, delivering on ${branch}`)
   return task
 }
 
-function update (id, changes) {
+function update (ref, changes) {
+  // Resolved the same way everywhere, so a number works here exactly as it works
+  // for reading. Two lookup rules for one kind of thing is how "no task called
+  // 3" starts being an answer somebody has to interpret.
+  const found = get(ref)
   const list = read()
-  const i = list.findIndex(t => t.id === id)
-  if (i === -1) throw new Error(`There is no task called "${id}".`)
+  const i = list.findIndex(t => t.uid === found.uid)
   if (changes.state && !STORED.has(changes.state)) {
     throw new Error(`"${changes.state}" is not a state a task is put into. Working and delivered are read from the run and the branch, not set.`)
   }
-  list[i] = { ...list[i], ...changes, id, updated: new Date().toISOString() }
+  // The identities are pinned rather than merged: a caller passing a whole task
+  // object back would otherwise be able to renumber it, or hand it another
+  // task's uid, and the kept logs would follow.
+  list[i] = { ...list[i], ...changes, id: found.id, uid: found.uid, number: found.number, updated: new Date().toISOString() }
   write(list)
   return list[i]
 }
 
-function remove (id) {
-  const list = read()
-  const task = list.find(t => t.id === id)
-  if (!task) throw new Error(`There is no task called "${id}".`)
-  write(list.filter(t => t.id !== id))
-  log.on('task', id).good('task removed')
-  // Said rather than done. Deleting the branch would destroy the artifact, which
-  // is the one thing here nobody can rewrite -- and a task is a note about work,
-  // while the work itself is in the repositories.
-  return { removed: id, note: `The branch "${task.branch}" is untouched. Removing a task throws away what was asked, not what came back.` }
+function remove (ref) {
+  const task = get(ref)
+  write(read().filter(t => t.uid !== task.uid))
+  log.on('task', task.id).good(`#${task.number} removed`)
+  // Said rather than done, and now true of two things. Deleting the branch would
+  // destroy the artifact, which is the one thing here nobody can rewrite. The
+  // kept logs are left for the same reason: they are the account of what
+  // happened, filed under a uid that is not reused, so throwing away the note
+  // about the work does not throw away the evidence of it.
+  return {
+    removed: task.id,
+    number: task.number,
+    note: `The branch "${task.branch}" and the logs kept for it are untouched. Removing a task throws away what was asked, not what came back.`
+  }
 }
 
 module.exports = { read, write, get, add, update, remove, newId, FILE, STORED }
