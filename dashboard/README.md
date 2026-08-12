@@ -41,14 +41,21 @@ The shape
     core/           domain-free, and a test enforces that
       git.js        git, and nothing about any project
       ecosystem.js  loads a pack of data the tool is pointed at
-      sandbox.js    where work happens: your copies, or an ssh target
+      checks.js     runs what an ecosystem declared; learns only pass or fail
       work.js       the loop, and the only place status lives
+      log.js        one tagged live log that everything writes into
+
+    machines/       the machines you have. The loop does not know it exists
+      store.js      add and remove them; editable from the page
+      vbox.js       virtual machines: make, delete, start, stop
+      provision.js  setup steps, run in order, streaming into the log
+      editor.js     one click to open the work in VS Code
 
     ecosystems/     packs. `local.json` is the two repos in ../workspace
-    ui/             the page. Plain words, five actions
-    server.js       a local page and a handful of calls behind it
-    cli.js          the same five actions from a terminal
-    test/           the two tests, runnable rather than asserted
+    ui/             the page: the loop, the machines, the live log
+    server.js       one flat map of actions, and the page in front of it
+    cli.js          the same five loop actions from a terminal
+    test/           the tests, runnable rather than asserted
 
 
 Why it is a rewrite
@@ -104,15 +111,36 @@ What it will not do
   git, on ordinary branches.
 
 
+Machines, virtual machines, provisioning, the editor
+----------------------------------------------------
+
+Separate from the loop, and the loop does not know about any of it. Configurable
+from the page rather than from a file you have to find.
+
+* **Machines** — add and remove them. `This machine` always exists and cannot be
+  removed. Another machine is an address reached over ssh.
+* **Virtual machines** — make one, delete one, start and stop it, read whether it
+  is running. VirtualBox, found even when it is not on `PATH`. If it is not
+  installed the page says so and everything else still works.
+* **Provisioning** — setup steps you write per machine, run in order, streaming
+  into the live log. It stops at the first failure, because a later step almost
+  always assumes an earlier one worked.
+* **Open in VS Code** — one click. A local folder opens directly; a folder on an
+  ssh machine opens through VS Code's own remote. The command is configurable,
+  because `code` is often not on `PATH`.
+
+The live log is one tagged stream you narrow, not several you correlate. The
+filter chips are built from the tags actually present, so a new tag anywhere shows
+up as a filter without being registered anywhere.
+
+
 Honest gaps
 -----------
 
-* **The host fetches; it does not receive a push.** The old design argued the
-  guest should push, so publishing has a moment attached. Here the guest does
-  push — to a bare repo in its own home — and the host fetches from that, because
-  a workstation running an ssh server is a bigger ask than one ssh direction. The
-  moment is preserved; who initiates the last hop is not.
-* **The ssh sandbox is written but not yet exercised end to end.** The `local`
-  path is what the tests cover.
-* **No agent at the far end.** Deliberately last. The environment is the same
-  either way, so that step changes who is typing and nothing else.
+* **`vmCreate` makes a machine and a disk; it does not install an operating
+  system.** Attach an installer image and boot it.
+* **Provisioning and the editor are exercised by hand, not by the tests.** The
+  tests cover the loop and the two contract bans. Machine actions were verified
+  against real VirtualBox on this workstation.
+* **Nothing stops two people editing the same branch.** The tool notices a commit
+  it did not make and refuses to act, which is detection rather than prevention.

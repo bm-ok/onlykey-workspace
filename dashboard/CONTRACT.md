@@ -99,10 +99,19 @@ throwing an attempt away into a revert — losing both properties at once.
   is shared, their commits can land under you mid-attempt. The tool detects that
   and refuses to act; it cannot prevent it.
 
-**There is no sandbox concept, and no second machine.** Work happens in your
-copies. A remote worker would need branches or a transport, which is the
-machinery this section exists to say is gone — so if it is ever wanted, it is a
-new design and not a flag on this one.
+**There is no sandbox concept in the loop.** Work happens in your copies. A
+remote *worker* would need branches or a transport, which is the machinery this
+section exists to say is gone — so if that is ever wanted, it is a new design and
+not a flag on this one.
+
+Machines are a separate thing, and the distinction is the whole point of the
+earlier failure. `machines/` manages machines you have — add and remove them, run
+setup steps on them, start and stop virtual machines, open a folder in an editor.
+**The loop does not know it exists.** What was wrong before was not the word
+"VM"; it was VM lifecycle welded into the work loop, so the tool could not be used
+without one. So `machines/` may say `virtualbox`, and `core/` may not — the
+contract test scans `core/` only, and that asymmetry is deliberate rather than an
+oversight.
 
 
 An ecosystem

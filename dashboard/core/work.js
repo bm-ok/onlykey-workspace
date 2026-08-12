@@ -14,6 +14,7 @@ const path = require('node:path')
 const git = require('./git')
 const eco = require('./ecosystem')
 const checks = require('./checks')
+const log = require('./log')
 
 const STATE = process.env.OKC_STATE || path.join(__dirname, '..', 'state')
 const FILE = path.join(STATE, 'work.json')
@@ -89,7 +90,11 @@ async function start (ecosystemId, taskId) {
   }
 
   const startHead = {}
-  for (const r of repos) startHead[r.name] = await git.head(r.dir)
+  for (const r of repos) {
+    startHead[r.name] = await git.head(r.dir)
+    log.on('git', r.name).info(`${r.name} is on ${r.branch} at ${startHead[r.name].slice(0, 8)}`)
+  }
+  log.on('work').good(`Started "${t.title}" in ${repos.map(r => r.name).join(', ')}. No branch was cut and nothing was committed.`)
 
   return save({
     id: `${taskId}-${String(read().length + 1).padStart(3, '0')}`,
@@ -122,8 +127,12 @@ async function offer (id) {
   const t = eco.task(eco.load(item.ecosystem), item.task)
   item.checks = []
   for (const r of repos) {
-    for (const c of await checks.run(t.checks, r.dir)) item.checks.push({ repo: r.name, ...c })
+    for (const c of await checks.run(t.checks, r.dir)) {
+      item.checks.push({ repo: r.name, ...c })
+      log.on('check', r.name)[c.ok ? 'good' : 'bad'](`${c.name}${c.ok ? '' : ` — ${c.output.split('\n')[0]}`}`)
+    }
   }
+  log.on('work').info(`"${item.title}" is offered for review.`)
 
   item.status = 'offered'
   item.offered = new Date().toISOString()
@@ -186,7 +195,9 @@ async function accept (id, note) {
   try {
     for (const r of repos) {
       failed = r.name
-      made.push({ repo: r, sha: await git.commit(r.dir, message) })
+      const sha = await git.commit(r.dir, message)
+      made.push({ repo: r, sha })
+      log.on('git', r.name).good(`Committed ${sha.slice(0, 8)} on ${r.branch}`)
     }
     failed = null
   } catch (e) {
@@ -198,6 +209,7 @@ async function accept (id, note) {
       if (await git.head(m.repo.dir) === m.sha) {
         await git.rollback(m.repo.dir)
         undone.push(m.repo.name)
+        log.on('git', m.repo.name).warn(`Undid ${m.sha.slice(0, 8)} — the set could not complete, so nothing lands. Your work is still here.`)
       } else {
         stuck.push(`${m.repo.name} (${m.sha.slice(0, 8)})`)
       }
@@ -245,7 +257,11 @@ async function discard (id) {
     saved.push({ repo: r.name, file, files: a.files.length })
   }
 
-  for (const r of repos) await git.restore(r.dir)
+  for (const r of repos) {
+    await git.restore(r.dir)
+    log.on('git', r.name).info(`${r.name} is back at ${item.startHead[r.name].slice(0, 8)}. The branch did not move.`)
+  }
+  log.on('work').warn(`Threw away "${item.title}". Saved to ${dir} first — it can be put back.`)
 
   item.status = 'thrown away'
   item.saved = saved
