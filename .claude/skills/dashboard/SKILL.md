@@ -94,6 +94,12 @@ fails, rather than installing over the top:
 If an action refuses, read the message — it says what to do instead. Do not work
 around it.
 
+## Before starting
+
+`dashboard/TODO.md` is what is outstanding and what state the machines were last
+left in. `dashboard/README.md` is how it all works. Read the first to find out
+where things stand; read the second before changing anything.
+
 ## When changing the dashboard itself
 
 * `npm test` in `dashboard/` checks it stayed generic: nothing may know about a
