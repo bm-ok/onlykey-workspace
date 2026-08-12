@@ -29,6 +29,7 @@ import json
 import os
 import platform
 import socket
+import ssl
 import subprocess
 import sys
 import threading
@@ -38,6 +39,10 @@ VM = os.environ.get("OKC_VM", "")
 TOKEN = os.environ.get("OKC_TOKEN", "")
 HOST = os.environ.get("OKC_HOST", "")
 PORT = int(os.environ.get("OKC_CHANNEL_PORT", "7374"))
+# The authority that signed the dashboard's certificate. Written by first-boot.sh
+# after checking it against a fingerprint that arrived by another route, so this
+# file is trusted because of how it got here rather than because it is here.
+CA = os.environ.get("OKC_CA", "/etc/okc/ca.pem")
 
 # /bin/bash on any machine this actually runs on. Overridable so this file can be
 # exercised somewhere else -- a script that can only be tested by installing an
@@ -117,7 +122,25 @@ def beat(link, stop):
 
 
 def session():
-    sock = socket.create_connection((HOST, PORT), timeout=15)
+    raw = socket.create_connection((HOST, PORT), timeout=15)
+
+    # Encrypted, and VERIFIED against the authority this machine was given when it
+    # was built.
+    #
+    # The first thing sent below is this machine's token, which decides what it is
+    # allowed to push. On a plain socket that crossed the network in clear on
+    # every reconnect -- and a reboot is an ordinary reconnect, so it was not a
+    # rare event.
+    #
+    # check_hostname stays on and the mode stays CERT_REQUIRED. Turning either
+    # off is the usual way a self-signed certificate is made to "work", and it
+    # would leave this accepting any certificate at all -- which is no better than
+    # the plain socket it replaces, while looking like it is.
+    context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=CA)
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
+    sock = context.wrap_socket(raw, server_hostname=HOST)
+
     sock.settimeout(None)
     link = Link(sock)
     link.send({"type": "hello", "vm": VM, "token": TOKEN, "facts": facts()})

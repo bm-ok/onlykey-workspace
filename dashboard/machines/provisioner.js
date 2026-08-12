@@ -16,6 +16,7 @@ const log = require('../core/log')
 const vbox = require('./vbox')
 const vms = require('./vms')
 const channel = require('./channel')
+const keys = require('../core/keys')
 
 // What a VM is, with everything optional filled in. One place, so a spec read
 // back later means the same thing as when it was made.
@@ -168,7 +169,7 @@ async function create (input) {
 
 // ---- getting an operating system onto it -----------------------------
 
-async function install (name, { port }) {
+async function install (name, { port, caPort }) {
   const vm = vms.get(name)
   const spec = vm.spec
   const to = log.on('vm', name)
@@ -181,7 +182,21 @@ async function install (name, { port }) {
   // Only one script is named here. What it then fetches and in what order is
   // decided in first-boot.sh, which anyone can edit or replace -- so changing how a
   // machine is built never means touching this app.
-  const url = `http://${host}:${port}/provision/first-boot.sh?vm=${encodeURIComponent(name)}`
+  const url = `https://${host}:${port}/provision/first-boot.sh?vm=${encodeURIComponent(name)}`
+
+  // The trust anchor, and the only one available at this moment.
+  //
+  // A machine being installed holds nothing: no certificate, no authority,
+  // nothing to check anything against. But the script it is about to fetch
+  // carries its token, so fetching that in the clear -- or with verification
+  // turned off -- is exactly what all of this exists to stop.
+  //
+  // So the authority is fetched from the one unencrypted port and CHECKED
+  // against this fingerprint, which travels here instead: on the installer's
+  // command line, by a route nothing on the network can touch. It is not a
+  // secret, it is short, and it is the reason the unencrypted fetch is safe.
+  const tls = keys.ensure()
+  const caUrl = `http://${host}:${caPort}/ca.pem`
 
   // Every detail of the next few lines is load-bearing:
   //
@@ -195,10 +210,32 @@ async function install (name, { port }) {
   // * Retried, because this fetch is the single moment the whole install depends
   //   on this app being reachable. A restart or a slow network would otherwise
   //   waste the entire install.
+  //
+  // Two fetches now rather than one, and the order is the point: the authority
+  // first and unverified, then checked, and only then anything carrying a
+  // secret. If the check fails this stops -- it does not fall back to plain
+  // HTTP, because a fallback is a way to be pushed onto the unprotected path by
+  // whoever is doing the pushing.
   const inner = [
+    'mkdir -p /etc/okc;',
     'for i in 1 2 3 4 5 6 7 8 9 10; do',
-    `curl -fsSL '${url}' -o /root/okc-bootstrap.sh && break;`,
-    `wget -qO /root/okc-bootstrap.sh '${url}' && break;`,
+    `curl -fsSL '${caUrl}' -o /etc/okc/ca.pem && break;`,
+    `wget -qO /etc/okc/ca.pem '${caUrl}' && break;`,
+    "echo 'okc: the dashboard is not reachable yet, retrying in 10s';",
+    'sleep 10;',
+    'done;',
+    // Compared with a pipeline and a grep rather than a variable, because of the
+    // rule above: no `$` survives to this side. `got=$(...)` would be expanded by
+    // the outer shell and arrive empty, so the comparison would be between two
+    // empty strings -- which PASSES, and would have accepted any authority at all
+    // while looking like it checked.
+    "if ! openssl x509 -in /etc/okc/ca.pem -noout -fingerprint -sha256 | tr -d ':' | tr 'A-Z' 'a-z' | grep -q " +
+      `'${tls.fingerprint}'; then`,
+    "echo 'okc: REFUSED the certificate authority -- it is not the one this machine was told to expect';",
+    'exit 1;',
+    'fi;',
+    'for i in 1 2 3 4 5 6 7 8 9 10; do',
+    `curl -fsSL --cacert /etc/okc/ca.pem '${url}' -o /root/okc-bootstrap.sh && break;`,
     "echo 'okc: the dashboard is not reachable yet, retrying in 10s';",
     'sleep 10;',
     'done;',

@@ -26,7 +26,7 @@ const q = s => `'${String(s).replace(/'/g, `'\\''`)}'`
 // machine's business and not this app's.
 const FOLDER = '$HOME/workspace'
 
-function script ({ repos, branch, folder = FOLDER, origin, machine, token }) {
+function script ({ repos, branch, folder = FOLDER, origin, machine, token, ca, caFile = '/etc/okc/ca.pem' }) {
   const dir = folder || FOLDER
 
   // A real loop over the names, rather than the same block written out once per
@@ -81,6 +81,21 @@ failed=0
 WS="${dir}"
 branch=${q(branch)}
 ORIGIN=${q(origin)}
+OKC_CA_FILE=${q(caFile)}
+
+# The authority, written from here rather than fetched.
+#
+# This script arrives over the channel, which the machine already proved itself
+# on and which is itself encrypted -- so handing the certificate down that path
+# needs no fingerprint check. The install has to fetch and pin it because at that
+# point no such path exists yet; here one does, and using it is both simpler and
+# stronger.
+${ca ? `sudo -n mkdir -p "$(dirname "$OKC_CA_FILE")" 2>/dev/null || mkdir -p "$(dirname "$OKC_CA_FILE")" 2>/dev/null || true
+cat <<'OKC_CA_PEM' > /tmp/okc-ca.pem
+${String(ca).trim()}
+OKC_CA_PEM
+sudo -n install -m 0644 /tmp/okc-ca.pem "$OKC_CA_FILE" 2>/dev/null || install -m 0644 /tmp/okc-ca.pem "$OKC_CA_FILE" 2>/dev/null || true
+rm -f /tmp/okc-ca.pem` : '# no authority was supplied; whatever is already on this machine is used'}
 
 mkdir -p "$WS"
 cd "$WS" || { echo "could not use $WS"; exit 1; }
@@ -103,6 +118,14 @@ chmod 600 "$HOME/.git-credentials"
 # So a commit made here is attributable to the machine that made it, rather
 # than to whatever git guesses from the hostname -- and git refuses to commit
 # at all until it has these.
+# Git verifies the dashboard against the same authority everything else does.
+#
+# NOT http.sslVerify=false, which is how a self-signed certificate is usually
+# made to work and would leave git accepting any certificate at all -- including
+# one belonging to whoever is between this machine and the host, which is the
+# entire thing being defended against.
+git config --global http.sslCAInfo "$OKC_CA_FILE"
+
 git config --global user.name ${q(machine)} 2>/dev/null || true
 git config --global user.email ${q(`${machine}@localhost`)} 2>/dev/null || true
 git config --global --add safe.directory '*' 2>/dev/null || true

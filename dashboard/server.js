@@ -10,11 +10,13 @@
 // `node server.js` runs the same thing with no window, for driving it by hand.
 
 const http = require('node:http')
+const https = require('node:https')
 const fs = require('node:fs')
 const path = require('node:path')
 
 const log = require('./core/log')
 const ipc = require('./core/ipc')
+const keys = require('./core/keys')
 const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
@@ -33,6 +35,19 @@ const started = new Date().toISOString()
 // here, so this has to be what is really listening rather than a default.
 let port = Number(process.env.PORT || 7373)
 let channelPort = Number(process.env.OKC_CHANNEL_PORT || 7374)
+
+// The one thing served without encryption, on a port of its own.
+//
+// It has to be. A machine being built has nothing yet -- no certificate, no
+// authority, nothing to check anything against -- so the very first fetch cannot
+// be verified by any means it already holds. What it CAN hold is a fingerprint,
+// passed on the installer's command line, which is short and not a secret.
+//
+// So this serves exactly one thing: the authority's certificate, which is public
+// by design. Everything with anything at stake in it -- the machine's token, its
+// scripts, its repositories -- is on the encrypted port, fetched only once the
+// authority has been checked against that fingerprint.
+let caPort = Number(process.env.OKC_CA_PORT || 7375)
 
 // ---- the actions ------------------------------------------------------
 //
@@ -53,8 +68,28 @@ const actions = {
       // the poll because a dirty one will refuse a push whose owner cannot
       // possibly explain it, and the operator should meet that here rather than
       // as a machine's confusing failure an hour later.
-      repos: (() => { try { return branches.blocking() } catch { return [] } })()
+      repos: (() => { try { return branches.blocking() } catch { return [] } })(),
+      // Both ways the certificate stops working, checked against the address
+      // machines are actually told to use rather than against any address.
+      tls: await (async () => {
+        try { return keys.state(await vbox.hostAddress()) } catch { return keys.state(null) }
+      })()
     })
+  },
+
+  // The one way out of a certificate that no longer works -- expired, or no
+  // longer naming this host because its address moved.
+  //
+  // Never automatic. Regenerating drops the trust of every machine that was
+  // given the old authority, so it is a decision with a cost, and doing it
+  // quietly on a mismatch would break machines to fix a warning.
+  tlsRegenerate: {
+    about: 'Make a new certificate for this host — every machine must then be set up again',
+    run: async () => {
+      const made = keys.ensure({ force: true })
+      log.on('server').warn('A new certificate was made. Every machine has to be set up again before it can fetch or push.')
+      return { covers: made.covers, fingerprint: made.fingerprint, dir: made.dir, restart: 'restart the dashboard for it to be served' }
+    }
   },
   actions: {
     about: 'Every action this server has, with what each is for',
@@ -67,7 +102,7 @@ const actions = {
   // is not in its own registry, because these actions can destroy one.
   vmList: { about: 'The virtual machines this app made, with live state and stage', run: () => vms.all() },
   vmCreate: { about: 'Make a virtual machine and its disk', takes: ['vm'], run: ({ vm }) => provisioner.create(vm || {}) },
-  vmInstall: { about: 'Install an operating system, unattended, and run its provisioning scripts', takes: ['name'], run: ({ name }) => provisioner.install(name, { port }) },
+  vmInstall: { about: 'Install an operating system, unattended, and run its provisioning scripts', takes: ['name'], run: ({ name }) => provisioner.install(name, { port, caPort }) },
   vmRemove: {
     about: 'Delete a virtual machine and its disks, and forget it',
     takes: ['name'],
@@ -279,7 +314,7 @@ const actions = {
       const vm = vms.get(name)
       let host = '127.0.0.1'
       try { host = await vbox.hostAddress() } catch { /* previewing should work with no network */ }
-      return { stage, file: path.basename(scripts.fileFor(vm, stage)), script: scripts.render(stage, vm, { hostAddress: host, port, channelPort }) }
+      return { stage, file: path.basename(scripts.fileFor(vm, stage)), script: scripts.render(stage, vm, { hostAddress: host, port, channelPort, caPort, caFingerprint: keys.ensure().fingerprint }) }
     }
   },
 
@@ -399,13 +434,15 @@ const actions = {
         : `"${on}" already existed in every repository`)
 
       const host = await vbox.hostAddress()
+      const tls = keys.ensure()
       const script = workspace.script({
         repos: found.map(r => r.name),
         branch: on,
         folder: folder || workspace.folderFor(vm.spec),
-        origin: `http://${host}:${port}`,
+        origin: `https://${host}:${port}`,
         machine: name,
-        token: vm.spec.token
+        token: vm.spec.token,
+        ca: tls.ca.toString()
       })
 
       const r = await channel.run(name, script, { what: `setting up the workspace on ${on}`, timeout: 10 * 60 * 1000 })
@@ -723,7 +760,7 @@ function handler (req, res) {
       log.on('vm', name, 'guest').good(`${name} asked for ${file} (${scripts.sourceOf(scripts.fileFor(vm, scripts.stageOfFile(file) || file))}'s copy)`)
       vbox.hostAddress().catch(() => '127.0.0.1').then(host => {
         res.writeHead(200, { 'content-type': 'text/x-shellscript' })
-        res.end(scripts.render(stage || file, vm, { hostAddress: host, port, channelPort }))
+        res.end(scripts.render(stage || file, vm, { hostAddress: host, port, channelPort, caPort, caFingerprint: keys.ensure().fingerprint }))
       })
     } catch (e) {
       log.on('vm', 'guest').bad(`something asked for ${file} as "${name}": ${e.message}`)
@@ -788,11 +825,43 @@ function handler (req, res) {
 // because of the split above: what is reachable from the network is a guest asking
 // for its own scripts, never an action.
 function start ({ port: wanted = Number(process.env.PORT || 7373), host = process.env.HOST || '0.0.0.0' } = {}) {
-  const server = http.createServer(handler)
+  // Made on first start and kept. A machine is told to trust this authority, so
+  // this is also the moment its address is checked against what the certificate
+  // actually names -- see `status.tls`.
+  const tls = keys.ensure()
+
+  const server = https.createServer({ key: tls.key, cert: tls.cert }, handler)
+
+  // The authority, in the clear, and nothing else ever. Written as its own
+  // server rather than a path on the main one because a port cannot be both
+  // encrypted and not -- and because the list of things reachable without
+  // encryption should be visible in one place and be one item long.
+  // ONE file. Not the fingerprint beside it, deliberately.
+  //
+  // Serving both here would look convenient and would be a trap: anything
+  // fetching the authority and its fingerprint from the same unprotected place
+  // has verified nothing -- whoever could substitute one could substitute the
+  // other, and the check would pass while being worthless. The fingerprint has
+  // to arrive by a route this one cannot touch, which is the installer's command
+  // line, the window, or the command line here.
+  const caServer = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url && req.url.startsWith('/ca.pem')) {
+      res.writeHead(200, { 'content-type': 'application/x-pem-file' }).end(tls.ca)
+      return
+    }
+    res.writeHead(404, { 'content-type': 'text/plain' })
+      .end('this serves ca.pem and nothing else. everything else is on the encrypted port,\nand the fingerprint to check this against does not come from here.\n')
+  })
+
   return new Promise((resolve, reject) => {
     server.once('error', reject)
     server.listen(wanted, host, async () => {
       port = server.address().port
+
+      await new Promise(done => {
+        caServer.once('error', e => { log.on('server').bad(`could not publish the authority: ${e.message}`); done() })
+        caServer.listen(caPort, host, () => { caPort = caServer.address().port; done() })
+      })
       try {
         const c = await channel.listen({ tokenFor: name => (vms.read().find(v => v.name === name) || {}).spec?.token })
         channelPort = c.port
@@ -813,14 +882,27 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
         log.on('ipc').warn(`no command line: ${e.message}`)
       }
 
-      log.on('server').good(`Listening on port ${port} — scripts for machines being provisioned; actions from this machine only`)
+      log.on('server').good(`Listening on port ${port} over TLS — scripts and repositories for machines being provisioned`)
+      log.on('server').info(`The authority is published unencrypted on port ${caPort}, and is the only thing there`)
+
+      // Said at startup rather than discovered when a machine cannot connect.
+      // A certificate that no longer names this host's address fails as a
+      // verification error inside a guest, which points nowhere near the cause.
+      try {
+        const where = await vbox.hostAddress()
+        const s = keys.state(where)
+        if (!s.ok || s.expiringSoon) log.on('server').warn(s.why)
+        else log.on('server').info(`The certificate covers ${where} and is good for ${s.daysLeft} days`)
+      } catch { /* no address to check against yet; status reports it either way */ }
+
       resolve({
         server,
         port,
+        caPort,
         host,
-        url: `http://127.0.0.1:${port}/`,
+        url: `https://127.0.0.1:${port}/`,
         ipc: local && local.address,
-        stop: () => { if (local) local.close(); return server.close() }
+        stop: () => { if (local) local.close(); caServer.close(); return server.close() }
       })
     })
   })

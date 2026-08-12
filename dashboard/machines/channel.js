@@ -8,13 +8,18 @@
 // the log and the live view across it. If it were the other way round, every
 // reboot would be an error to handle.
 //
-// Newline-delimited JSON over plain TCP: no dependency, trivial to re-implement in
-// a guest in any language, and it survives a socket dying mid-line because the
-// framing is the newline.
+// Newline-delimited JSON over TLS: no dependency beyond what every language has,
+// trivial to re-implement in a guest, and it survives a socket dying mid-line
+// because the framing is the newline.
+//
+// Encrypted because the first thing a machine says here is its token. It was a
+// plain socket, so that secret crossed the network in clear on every reconnect --
+// and a reboot is an ordinary reconnect.
 
-const net = require('node:net')
+const tls = require('node:tls')
 const crypto = require('node:crypto')
 const log = require('../core/log')
+const keys = require('../core/keys')
 
 // A line big enough for a build's output chunk, small enough that a runaway guest
 // cannot exhaust memory here.
@@ -49,13 +54,23 @@ function watchForSilence () {
 // Every interface, for the same reason the API is: a machine reaches this host by its
 // network address. A guest can say nothing until it proves it holds the token for the
 // machine it claims to be, and that token was generated per machine when it was made.
+// ENCRYPTED, for the same reason the scripts are: the first thing a machine says
+// here is its token, and this used to be a plain socket -- so the secret that
+// decides what a machine may push crossed the network in clear on every
+// reconnect, and a reboot is an ordinary reconnect. Protecting the scripts and
+// not this would have looked finished and moved the exposure rather than
+// removing it.
+//
+// The same certificate the API serves with, and the machine checks it against
+// the authority it was given when it was built.
 function listen ({ port = Number(process.env.OKC_CHANNEL_PORT || 7374), tokenFor }) {
   watchForSilence()
+  const creds = keys.ensure()
   return new Promise((resolve, reject) => {
-    server = net.createServer(socket => onConnection(socket, tokenFor))
+    server = tls.createServer({ key: creds.key, cert: creds.cert }, socket => onConnection(socket, tokenFor))
     server.once('error', reject)
     server.listen(port, '0.0.0.0', () => {
-      log.on('channel').good(`Listening on port ${port} — machines dial in here`)
+      log.on('channel').good(`Listening on port ${port} — machines dial in here, over TLS`)
       resolve({ port })
     })
   })

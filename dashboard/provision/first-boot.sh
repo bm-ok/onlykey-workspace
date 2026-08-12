@@ -47,7 +47,7 @@ fetch_stage () {
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
     # -w gives the status. Without -f a 404 body is written to the file, which is
     # why it is only trusted when the code is 200.
-    code=$(curl -sS -o "$target" -w '%{http_code}' "$url" 2>/dev/null || echo 000)
+    code=$(curl -sS --cacert "$OKC_CA" -o "$target" -w '%{http_code}' "$url" 2>/dev/null || echo 000)
     [ "$code" = "200" ] && return 0
     if [ "$code" = "404" ]; then
       rm -f "$target"
@@ -238,7 +238,7 @@ fi
 
 say 'installing the agent that dials the dashboard'
 
-if curl -fsSL "$OKC_BASE/provision/agent.py?vm=$OKC_VM" -o /usr/local/sbin/okc-agent.py; then
+if curl -fsSL --cacert "$OKC_CA" "$OKC_BASE/provision/agent.py?vm=$OKC_VM" -o /usr/local/sbin/okc-agent.py; then
   chmod 755 /usr/local/sbin/okc-agent.py
 
   # The token goes in a file readable only by root, not into the unit, because
@@ -249,6 +249,7 @@ OKC_VM=$OKC_VM
 OKC_TOKEN=$OKC_TOKEN
 OKC_HOST=$OKC_HOST
 OKC_CHANNEL_PORT=$OKC_CHANNEL_PORT
+OKC_CA=$OKC_CA
 # Who the agent runs commands as. It is root itself, so without this every command
 # sent here would be root's.
 OKC_USER=$OKC_USER
@@ -293,7 +294,7 @@ fi
 # Installed rather than run: this boot has already had the whole first-boot
 # treatment, and normal-boot.sh is for the ordinary ones after it.
 
-if curl -fsSL "$OKC_BASE/provision/normal-boot.sh?vm=$OKC_VM" -o /usr/local/sbin/okc-normal-boot; then
+if curl -fsSL --cacert "$OKC_CA" "$OKC_BASE/provision/normal-boot.sh?vm=$OKC_VM" -o /usr/local/sbin/okc-normal-boot; then
   chmod +x /usr/local/sbin/okc-normal-boot
   cat > /etc/systemd/system/okc-boot.service <<UNIT
 [Unit]

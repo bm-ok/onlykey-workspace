@@ -100,7 +100,7 @@ const q = s => `'${String(s == null ? '' : s).split("'").join("'\\''")}'`
 // Values, and the two helpers every script uses. Prepended rather than
 // substituted into the script, so each file stays valid shell on its own and can
 // be run by hand on a machine to debug it.
-function header (vm, { hostAddress, port, channelPort }) {
+function header (vm, { hostAddress, port, channelPort, caPort, caFingerprint }) {
   const spec = (vm && vm.spec) || {}
   return `#!/bin/bash
 # ------------------------------------------------------------------------------
@@ -110,16 +110,55 @@ function header (vm, { hostAddress, port, channelPort }) {
 OKC_VM=${q(vm.name)}
 OKC_HOST=${q(hostAddress)}
 OKC_PORT=${q(port)}
-OKC_BASE=${q(`http://${hostAddress}:${port}`)}
+OKC_BASE=${q(`https://${hostAddress}:${port}`)}
 OKC_USER=${q(spec.user || 'okc')}
 OKC_SSH_KEY=${q(spec.sshKey || '')}
 OKC_REPROVISION_ON_BOOT=${q(spec.reprovisionOnBoot ? 'yes' : 'no')}
 # This machine's own secret, and the port it dials in on. It can only ever connect
 # as itself, because the dashboard checks this against the machine it claims to be.
+#
+# It reaches this script over TLS, which is the point: this line used to cross the
+# network in the clear on every machine ever built, as the first thing that
+# happened, because the installer fetched this file with plain curl.
 OKC_TOKEN=${q(spec.token || '')}
 OKC_CHANNEL_PORT=${q(channelPort)}
+
+# What proves the dashboard is the dashboard.
+#
+# OKC_CA is where the authority's certificate lives on this machine. Everything
+# that talks to the host passes it, so nothing here ever needs to be told to skip
+# verification -- which would have been the easy way to make a self-signed
+# certificate work and would have thrown away the entire reason for having one.
+#
+# The fingerprint is carried so any script can re-fetch the authority and check
+# it. The certificate is public and its address is unencrypted; this is what
+# makes fetching it from there safe.
+OKC_CA=/etc/okc/ca.pem
+OKC_CA_URL=${q(`http://${hostAddress}:${caPort}/ca.pem`)}
+OKC_CA_FINGERPRINT=${q(caFingerprint || '')}
+
 export OKC_VM OKC_HOST OKC_PORT OKC_BASE OKC_USER OKC_SSH_KEY OKC_REPROVISION_ON_BOOT
-export OKC_TOKEN OKC_CHANNEL_PORT
+export OKC_TOKEN OKC_CHANNEL_PORT OKC_CA OKC_CA_URL OKC_CA_FINGERPRINT
+
+# Fetches the authority if it is not here, and refuses it unless it is the one
+# the fingerprint names. Safe to call from anywhere, including before there is
+# any certificate on the machine at all.
+okc_ca () {
+  [ -s "$OKC_CA" ] && return 0
+  [ -n "$OKC_CA_FINGERPRINT" ] || return 1
+  mkdir -p "$(dirname "$OKC_CA")" 2>/dev/null || return 1
+  tmp=$(mktemp) || return 1
+  curl -fsS --max-time 20 "$OKC_CA_URL" -o "$tmp" || { rm -f "$tmp"; return 1; }
+  got=$(openssl x509 -in "$tmp" -noout -fingerprint -sha256 2>/dev/null | tr -d ':' | cut -d= -f2 | tr 'A-Z' 'a-z')
+  want=$(printf '%s' "$OKC_CA_FINGERPRINT" | tr -d ':' | tr 'A-Z' 'a-z')
+  if [ "$got" != "$want" ]; then
+    echo "okc: REFUSED the certificate authority -- it is not the one this machine was told to expect."
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$OKC_CA" && chmod 0644 "$OKC_CA"
+}
+okc_ca || true
 
 # Everything a script prints goes to one log on the machine and to the dashboard,
 # so the live log and the machine's own record say the same thing.
@@ -130,7 +169,7 @@ exec > >(tee -a "$OKC_LOG") 2>&1
 # Never fatal, and never noisy about it: a machine must not fail to build because
 # the dashboard was restarted while it was talking.
 report () {
-  curl -fsS --max-time 5 "$OKC_BASE/provision/report?vm=$OKC_VM&stage=$1" >/dev/null 2>&1 || true
+  curl -fsS --cacert "$OKC_CA" --max-time 5 "$OKC_BASE/provision/report?vm=$OKC_VM&stage=$1" >/dev/null 2>&1 || true
 }
 
 # Echoed always. Sent over HTTP only when nothing else is carrying our output:
@@ -139,7 +178,7 @@ report () {
 say () {
   echo "okc: $*"
   if [ "\${OKC_QUIET_SAY:-no}" != "yes" ]; then
-    curl -fsS --max-time 5 --get --data-urlencode "text=$*" \\
+    curl -fsS --cacert "$OKC_CA" --max-time 5 --get --data-urlencode "text=$*" \\
       "$OKC_BASE/provision/say?vm=$OKC_VM" >/dev/null 2>&1 || true
   fi
 }
