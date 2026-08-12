@@ -415,14 +415,25 @@ $('log-follow').onchange = e => { follow = e.target.checked; paintLog() }
 $('log-find').oninput = e => { find = e.target.value.trim().toLowerCase(); paintLog() }
 $('log-clear').onclick = () => api('logClear').then(() => { lines.length = 0; paintLog() }).catch(oops)
 
+// Anything that happened to a machine may have changed what the list should say --
+// a guest reporting in, a machine starting, one being deleted from elsewhere. It
+// was only guest lines before, so a machine deleted by another client sat in the
+// list looking alive until something else forced a redraw.
+//
+// Debounced, because creating a machine logs a couple of dozen lines in a second
+// and each one would otherwise mean asking VirtualBox for the whole list again.
+let refreshSoon
+const refresh = () => {
+  clearTimeout(refreshSoon)
+  refreshSoon = setTimeout(() => draw().catch(() => {}), 400)
+}
+
 function onLine (e) {
   lines.push(e)
   if (lines.length > 2000) lines.splice(0, lines.length - 2000)
   paintLog()
 
-  // A guest reporting in changes what the machine list should say, and an install
-  // takes long enough that nobody should have to reload to find out.
-  if (e.tags.includes('guest')) draw().catch(() => {})
+  if (e.tags.includes('vm') || e.tags.includes('guest')) refresh()
 
   if (view !== 'live') {
     unseen++
@@ -445,7 +456,7 @@ $('link-dot').classList.add('live')
 
 // ---- draw ------------------------------------------------------------
 
-async function draw () {
+async function drawOnce () {
   const [list, status] = await Promise.all([api('vmList'), api('status')])
   latest = list
 
@@ -519,5 +530,45 @@ document.addEventListener('keydown', e => {
   }
 })
 
+// ---- staying in sync -------------------------------------------------
+//
+// Two things keep the window honest, because either alone is not enough.
+//
+// The log covers anything this app did: it reacts at once, so a machine created or
+// deleted shows up immediately -- including when another client did it.
+//
+// The poll covers everything else, and there is plenty of it. A machine finishing
+// its install and powering itself off logs nothing here. Nor does starting or
+// stopping one in VirtualBox directly, or a snapshot taken outside. Without this
+// the window would show a machine as running long after it stopped.
+//
+// One draw at a time. A draw asks VirtualBox about every machine, so overlapping
+// them would multiply that for no benefit -- a request arriving mid-draw is
+// remembered and run once the current one finishes.
+let drawing = false
+let drawAgain = false
+
+async function draw () {
+  if (drawing) { drawAgain = true; return }
+  drawing = true
+  try {
+    await drawOnce()
+  } finally {
+    drawing = false
+    if (drawAgain) { drawAgain = false; draw() }
+  }
+}
+
+// Faster while something is happening, slower when nothing is. An install runs for
+// twenty minutes and its interesting moments are at the end, so a fixed slow poll
+// would make the finish look late; a fixed fast one would ask VirtualBox about
+// idle machines all day.
+async function sync () {
+  // Nothing to keep in sync with while the window is not being looked at.
+  if (!document.hidden) await draw().catch(() => {})
+  const busy = latest.vms.some(v => v.running || v.stage === 'installing')
+  setTimeout(sync, busy ? 3000 : 12000)
+}
+
 paintActions().catch(oops)
-draw().catch(e => say(e.message, 'bad'))
+draw().then(sync).catch(e => say(e.message, 'bad'))

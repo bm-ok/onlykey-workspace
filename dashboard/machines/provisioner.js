@@ -220,7 +220,13 @@ async function install (name, { port }) {
   // VBoxManage echoes back every value it was given, INCLUDING the password. The
   // log is kept and read later, so a secret reaching it is a secret permanently
   // written down.
-  const secrets = [spec.password].filter(Boolean)
+  //
+  // The field lines below are where it actually appears, and those are always
+  // redacted. Blanking the password everywhere as well is only safe when it is
+  // long enough to be distinctive: a password of "okc" turned okc-flow.local into
+  // <hidden>-flow.local and okc-first-boot.sh into <hidden>-first-boot.sh, which
+  // makes the log lie about names for no security gain.
+  const secrets = [spec.password].filter(s => s && s.length >= 8 && !name.includes(s))
   try {
     const out = await vbox.run(args, { timeout: 300000, quiet: true })
     for (let line of out.split('\n')) {

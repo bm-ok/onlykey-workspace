@@ -94,6 +94,24 @@ what makes a long install watchable instead of silent, and neither `say` nor
 the app was restarted while it was talking.
 
 
+The window keeps up on its own
+------------------------------
+
+Two things keep it honest, because neither is enough alone.
+
+The **log** covers anything this app did, and reacts at once — a machine created or
+deleted appears immediately, including when something other than the window did it.
+
+The **poll** covers everything else, and there is plenty of it: a machine finishing
+its install and powering itself off logs nothing here, and neither does starting or
+stopping one in VirtualBox directly. Every three seconds while something is
+running, every twelve when nothing is, and not at all while the window is not being
+looked at.
+
+One draw at a time. A draw asks VirtualBox about every machine, so a request
+arriving mid-draw is remembered and run once rather than overlapping.
+
+
 The shape
 ---------
 
