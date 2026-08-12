@@ -83,10 +83,15 @@ report () {
   curl -fsS --max-time 5 "$OKC_BASE/provision/report?vm=$OKC_VM&stage=$1" >/dev/null 2>&1 || true
 }
 
+# Echoed always. Sent over HTTP only when nothing else is carrying our output:
+# during an install nobody is listening to stdout, but when the agent runs a script
+# it already streams stdout -- and doing both put every line in the log twice.
 say () {
   echo "okc: $*"
-  curl -fsS --max-time 5 --get --data-urlencode "text=$*" \\
-    "$OKC_BASE/provision/say?vm=$OKC_VM" >/dev/null 2>&1 || true
+  if [ "\${OKC_QUIET_SAY:-no}" != "yes" ]; then
+    curl -fsS --max-time 5 --get --data-urlencode "text=$*" \\
+      "$OKC_BASE/provision/say?vm=$OKC_VM" >/dev/null 2>&1 || true
+  fi
 }
 `
 }

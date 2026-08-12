@@ -118,7 +118,9 @@ const actions = {
       // Fetched by the machine rather than pushed, so it gets exactly what a fresh
       // install would get -- including any edit made since it was built.
       const url = `http://${await vbox.hostAddress()}:${port}/provision/${file}?vm=${encodeURIComponent(name)}`
-      return channel.run(name, `curl -fsSL '${url}' -o /root/okc-again.sh && bash /root/okc-again.sh`, { what: `${file} again` })
+      // OKC_QUIET_SAY: the agent already streams stdout, so the script should not
+      // also post each line over HTTP or every one arrives twice.
+      return channel.run(name, `curl -fsSL '${url}' -o /root/okc-again.sh && OKC_QUIET_SAY=yes bash /root/okc-again.sh`, { what: `${file} again` })
     }
   },
 
