@@ -24,6 +24,8 @@ const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
 const scripts = require('./machines/scripts')
 const channel = require('./machines/channel')
+const tasks = require('./tasks/store')
+const artifact = require('./tasks/artifact')
 const machines = require('./machines/store')
 const { provision, reach } = require('./machines/provision')
 const editor = require('./machines/editor')
@@ -739,7 +741,16 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
       if (out.noPipe) throw new Error(`"${name}" is not waiting for a code. Start it again with vmAuthBegin.`)
       if (out.finished && out.exit === 0) {
-        log.on('vm', name).good(`${name}'s worker is signed in`)
+        // Recorded HERE too, and not only when this host hands a credential over.
+        //
+        // A machine that signs itself in is holding a token exactly as much as
+        // one that was given one, and the snapshot refusal reads this flag. It
+        // was set by vmCredentialsPut and vmCredentialsGrab and not by this,
+        // which left the original hole open through a second door: sign in on
+        // the machine, snapshot it, and the token is in the snapshot for as
+        // long as the snapshot exists.
+        vms.update(name, { holdsCredential: true })
+        log.on('vm', name).good(`${name}'s worker is signed in — it cannot be snapshotted until that credential is taken back`)
         return { name, signedIn: true, next: `take it with: okc.js vmCredentialsGrab --name ${name}`, log: out.log }
       }
       throw new Error(`"${name}" did not finish signing in${out.finished ? ` (it exited ${out.exit})` : ' (it is still waiting)'}. It said:\n${out.log || '(nothing)'}`)
@@ -904,6 +915,23 @@ echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 
       const vm = vms.get(name)
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in, so it cannot be given work.`)
       if (!task || !String(task).trim()) throw new Error('Say what the task is.')
+
+      // Asked before anything is set up, because a worker that cannot
+      // authenticate does not fail as "signed out" -- it fails as an api error
+      // in a json blob, minutes later, after a workspace has been laid out and
+      // a run recorded. The first task ever given out failed exactly that way,
+      // and nothing between the button and the log said the obvious thing.
+      //
+      // Asked of the MACHINE rather than read from the registry. A machine can
+      // be signed in three ways -- handed a credential, signed in on itself, or
+      // carrying a key in its environment -- and the registry only knows about
+      // the first. Refusing a machine that could in fact work is a worse fault
+      // than the one being fixed.
+      const able = await channel.run(name, 'if [ -s "$HOME/.claude/.credentials.json" ] || [ -n "${ANTHROPIC_API_KEY:-}" ]; then echo okc-can-authenticate; fi',
+        { what: 'checking its worker can authenticate', timeout: 30000 })
+      if (!/okc-can-authenticate/.test(able.output || '')) {
+        throw new Error(`"${name}"'s worker is signed out, so the work would fail the moment it started. Hand it the credential first: vmCredentialsPut --name ${name}`)
+      }
 
       const id = dispatch.newId()
       const where = guestPath(folder, '--folder') || (vm.spec && vm.spec.folder) || workspace.FOLDER
@@ -1114,6 +1142,166 @@ done`
             ].filter(Boolean).join(', ')
           : null
       }
+    }
+  },
+
+  // ---- tasks: what is to be done, and what came back ---------------------
+  //
+  // The other half of this tool. One side manages machines; this side manages
+  // work, and the two meet at exactly one point -- a task is GIVEN to a machine.
+  // Neither knows anything else about the other, which is what lets a machine be
+  // destroyed mid-task without the task going with it.
+  //
+  // THE ARTIFACT IS A BRANCH. A task is not done when its worker stops talking,
+  // it is done when something arrived here that can be read -- so `delivered` is
+  // read from the repositories rather than stored, and a run that exited cleanly
+  // having pushed nothing has produced nothing to judge.
+
+  tasks: {
+    about: 'The board: every task, and whether its branch has anything on it yet',
+    run: () => {
+      const list = tasks.read()
+      return {
+        tasks: list.map(t => {
+          // Read per task rather than once, because each delivers on its own
+          // branch. Cheap: these are local ref reads against bare repositories.
+          const art = artifact.read(t.branch)
+          return {
+            ...t,
+            delivered: art.delivered,
+            artifact: art.summary,
+            commits: art.commits,
+            // What the board shows. The stored state says what a person decided;
+            // this says what is true, and where they disagree the branch wins.
+            reads: t.verdict ? t.state
+              : art.delivered ? 'delivered'
+                : t.machine ? 'working'
+                  : 'draft'
+          }
+        })
+      }
+    }
+  },
+
+  taskCreate: {
+    about: 'Write a task: what the work is, and the branch it delivers on',
+    takes: ['task'],
+    run: ({ task }) => {
+      const input = typeof task === 'string' ? JSON.parse(task) : task
+      if (!input || typeof input !== 'object') throw new Error('Pass the task as an object.')
+      const why = branches.nameIsOk(String(input.branch || '').trim())
+      if (why) throw new Error(why)
+      if (input.contract) {
+        const at = path.resolve(String(input.contract))
+        if (!fs.existsSync(at)) throw new Error(`There is no contract at ${at}. It is read from this host when the task is given out.`)
+      }
+      return tasks.add(input)
+    }
+  },
+
+  taskUpdate: {
+    about: 'Change a task that has not been given out yet',
+    takes: ['id', 'task'],
+    run: ({ id, task }) => {
+      const changes = typeof task === 'string' ? JSON.parse(task) : task
+      const current = tasks.get(id)
+      // The brief and the branch are what a worker was told and where it
+      // delivered. Editing either after the fact rewrites the question a piece
+      // of work was the answer to, and a verdict then refers to something that
+      // was never asked.
+      if (current.machine && (changes.brief || changes.branch || changes.contract)) {
+        throw new Error(`"${id}" has already been given to ${current.machine}. What it was asked and where it delivers cannot change now — that would rewrite the question its work answers. Write a new task, or take the verdict on this one first.`)
+      }
+      if (changes.branch) {
+        const why = branches.nameIsOk(String(changes.branch).trim())
+        if (why) throw new Error(why)
+      }
+      return tasks.update(id, changes)
+    }
+  },
+
+  taskRemove: {
+    about: 'Throw a task away. Its branch is untouched',
+    takes: ['id'],
+    run: ({ id }) => tasks.remove(id)
+  },
+
+  // Hand a task to a machine: set its workspace up on the task's branch, then
+  // dispatch the brief under the task's contract.
+  //
+  // Both halves go through the actions that already own those rules rather than
+  // repeating them -- the branch claim, the protected default, the refusal to
+  // move a machine off its branch, and the contract being read from this host
+  // are all enforced in one place each, and this is a caller like any other.
+  taskGive: {
+    about: 'Give a task to a machine: set up its workspace, then dispatch the brief',
+    takes: ['id', 'name'],
+    run: async ({ id, name }) => {
+      const task = tasks.get(id)
+      if (!name) throw new Error('Say which machine is to do it.')
+      if (task.verdict) throw new Error(`"${id}" has already been judged. Write a new task rather than reopening a decided one.`)
+
+      await actions.vmWorkspace.run({ name, branch: task.branch, folder: task.folder || undefined })
+      const started = await actions.vmDispatch.run({
+        name,
+        task: task.brief,
+        folder: task.folder || undefined,
+        contract: task.contract || undefined
+      })
+
+      tasks.update(id, { state: 'given', machine: name, run: started.run })
+      log.on('task', id).good(`given to ${name} on ${task.branch}`)
+      return { ...started, task: id, branch: task.branch }
+    }
+  },
+
+  // What came back, read the way a pull request is read.
+  taskArtifact: {
+    about: "What arrived on a task's branch: commits and files, per repository",
+    takes: ['id'],
+    run: ({ id }) => artifact.read(tasks.get(id).branch)
+  },
+
+  taskDiff: {
+    about: 'One repository\'s changes on a task\'s branch, in full',
+    takes: ['id', 'repo', 'file'],
+    run: ({ id, repo, file }) => {
+      const task = tasks.get(id)
+      if (!repo) throw new Error('Say which repository.')
+      return { task: id, repo, branch: task.branch, file: file || null, diff: artifact.diff(repo, task.branch, file) }
+    }
+  },
+
+  // The judgement. A person's decision about work, recorded as a person's
+  // decision -- not a merge, and not a gate.
+  //
+  // Accepting does NOT land anything, which is deliberate. Merging is a separate
+  // act with its own rules, and a verdict that quietly merged would make reading
+  // the work and publishing it the same button. What this records is that
+  // somebody read it and what they thought.
+  taskJudge: {
+    about: 'Record a verdict on what a task delivered',
+    takes: ['id', 'verdict', 'note'],
+    run: ({ id, verdict, note }) => {
+      const task = tasks.get(id)
+      const call = String(verdict || '').toLowerCase()
+      if (call !== 'accept' && call !== 'reject') throw new Error('The verdict is "accept" or "reject".')
+
+      const art = artifact.read(task.branch)
+      // Refused rather than allowed with a warning. A verdict on an empty branch
+      // is a judgement of nothing, and it is indistinguishable afterwards from a
+      // judgement of something.
+      if (!art.delivered) throw new Error(`Nothing has arrived on "${task.branch}", so there is nothing to judge. A worker that finished without pushing has delivered nothing.`)
+      if (call === 'reject' && !String(note || '').trim()) {
+        throw new Error('Say why it was rejected. A rejection with no reason is sent back to a worker that cannot ask what was wrong.')
+      }
+
+      const decided = tasks.update(id, {
+        state: call === 'accept' ? 'accepted' : 'rejected',
+        verdict: { call, note: String(note || '').trim() || null, at: new Date().toISOString(), on: art.summary }
+      })
+      log.on('task', id).good(`${call}ed: ${art.summary}`)
+      return decided
     }
   },
 

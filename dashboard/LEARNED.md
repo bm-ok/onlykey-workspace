@@ -118,6 +118,20 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   write one. A run that was killed — or that never started, which is how the
   quoting bug above presented — waited forever, and a watcher waited with it.
   Three states, and the pid is checked rather than assumed.
+* **The same hole, through a second door.** Snapshotting a machine that holds a
+  credential is refused by reading a flag — and that flag was set when this host
+  *handed* a credential over, but not when a machine *signed itself in*. So the
+  guard that had been written, fixed, tested and documented was still wide open
+  along the other path into the same state. A guard on a fact must be set
+  everywhere the fact becomes true, and enumerating those is a separate job from
+  writing the guard.
+* **A signed-out worker does not fail as "signed out".** The first task ever
+  given out laid a workspace across every repository, dispatched, recorded a
+  run, and came back as an api error inside a json blob. Everything between the
+  button and that blob reported success, and the actual sentence — *Not logged
+  in* — was one field deep in a machine's output. Now it is asked before
+  anything is set up, and asked of the MACHINE rather than of the registry:
+  there are three ways to be signed in and the registry knows about one.
 * **Git Bash rewrites paths that look absolute.** `--folder /home/okc/work`
   arrives as `C:/Program Files/Git/home/okc/work`, which is a real path on this
   host, so nothing looks wrong anywhere: the machine cannot find it, falls back

@@ -17,20 +17,10 @@ Outstanding
 * **Nothing has been left running for days.** Every run so far has been minutes.
   A worker that hits a token refresh, a network drop or a full disk mid-task has
   never been observed.
-* **A worker has never pushed.** The hook, the branch claim and the refusal to
-  touch the default branch are all proven from this host. No dispatched task has
-  yet produced a commit and pushed it back, which is the thing the whole
-  workspace half exists for.
-* **`vmDispatch --contract` has never been used.** It is the
-  `--append-system-prompt-file` path, and the file it is meant to be given is
-  the kind of thing `legacy/contracts/` holds. Nothing has been dispatched with
-  one, so the rules a worker is supposed to receive have never actually reached
-  one.
-* **`legacy/contracts/dashboard/supervisor-mode.md` is a stub** — checked, and
-  it is two sentences of generic filler about a "Workflow Dashboard" with no
-  rules in it at all. The real supervisor rules are in `legacy/PLAN.md`. Either
-  it gets written or it gets deleted; leaving it is worse than both, because it
-  reads as though a contract exists.
+* **`legacy/contracts/dashboard/supervisor-mode.md` is still on disk.** Its rules
+  now live in the supervisor skill, which is where PLAN says supervisor mode is
+  entered. The file is two sentences of generic filler that nothing loads, and
+  deleting it needs a hand that is not this one — `legacy/` is untracked.
 
 
 Decisions waiting on the operator
@@ -48,11 +38,14 @@ Not work, and not for a session to settle on its own.
 Housekeeping on the machines
 ----------------------------
 
-* **`runner1` is holding a credential, so it cannot be snapshotted.** That is
-  deliberate rather than pending: it is the working machine, and it already has
-  a clean `on-fix-try-one` snapshot taken before it ever held one. Nothing to do
-  unless it needs a newer starting point, which means taking the credential back
-  first.
+* **Both machines are holding a credential, so neither can be snapshotted.**
+  Deliberate rather than pending — each already has a clean snapshot from before
+  it held one. Taking a newer starting point means taking the credential back
+  first, which is the flow rather than an obstacle to it.
+* **The task contract lives in `dashboard/state/`, which is runtime state and
+  untracked.** It is project configuration and does not belong there; it was put
+  where it was to prove the mechanism. Somewhere it can be version-controlled
+  would be better, since the rules a worker is given are worth a history.
 
 
 Nothing else is outstanding
@@ -77,6 +70,11 @@ its process group, `vmRuns` reported `lost`, and the watcher said so. Exercising
 it found that the watcher announced "ended with status null" — describing a
 result the run never produced, which sends a supervisor looking for one.
 
+**The round trip is closed.** A task was written, given to `runner2`, worked on
+under a contract, committed, pushed, and arrived here as `d8b18a2` on
+`task/first-round-trip` — then read as a diff and accepted. That was the last
+joint: work went out and nothing had ever come back before.
+
 What remains beyond the list above is the "Honest gaps" section of `README.md`,
 which is a different kind of thing: what has never been tried, rather than what
 is half-built.
@@ -94,16 +92,18 @@ credential, Claude Code 2.1.228 installed, no runs left in `~/.okc-runs`, still
 recording `fix/try-one` as what it may push, with a clean `on-fix-try-one`
 snapshot taken before it ever held a credential. This is the working machine.
 
-**`runner2`** up and connected, **not** holding a credential, on a clean `base`
-snapshot taken after the credential came off it. Its previous snapshot was the
-tainted one that had to be deleted, so for a while it had nothing to get back to
-at all. Claude Code is installed on it but it is signed out; `vmCredentialsPut`
-puts it back to work.
+**`runner2`** up and connected, **holding a credential again**, claiming
+`task/first-round-trip`, on a clean `base` snapshot taken while it held none.
+It did the first real task.
 
 **`fix/try-one` no longer exists in the workspace repositories** — it was test
 debris and was deleted. `runner1` still claims the name, which is deliberate
 rather than stale: setting it up again cuts the branch afresh from `master`, and
 the claim stops another machine taking the name meanwhile.
 
-**`runner1` cannot be snapshotted while it holds a credential.** That is the
+**Neither machine can be snapshotted while it holds a credential.** That is the
 refusal working, not a problem to route around — see Housekeeping above.
+
+**`task/first-round-trip` exists in both repositories, carrying one commit in
+`local-repo-a`.** It is accepted but not merged, which is the intended shape: a
+verdict is a person's decision, and landing work is a separate act.

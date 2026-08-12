@@ -17,7 +17,11 @@
     <span class="muted mono" id="vbox-path"></span>
   </div>
   <nav class="tabs">
+    <!-- Two managers, and the split is the shape of the whole tool. One side
+         is machines; the other is work. They meet at exactly one point -- a
+         task is given to a machine -- and nothing else crosses. -->
     <button class="tab active" data-view="ops">Virtual machines</button>
+    <button class="tab" data-view="tasks">Tasks</button>
     <!-- The badge is what makes a tab you cannot see safe to have: output
          arriving behind it is announced, and a failure differently from
          ordinary chatter. -->
@@ -64,6 +68,38 @@
       <div class="col wide">
         <h2>Details</h2>
         <div id="details" class="panel"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ---------------- Tasks ----------------
+       The work half. A task is written here, given to a machine, and judged on
+       what came back -- and what comes back is a BRANCH, read the way a pull
+       request is read. Nothing on this side drives a machine except the one
+       button that hands work over. -->
+  <section class="view" id="view-tasks">
+    <div class="cols">
+
+      <div class="col narrow">
+        <h2 class="titlerow">
+          Tasks
+          <button class="plus" id="add-task-open" title="Write a task">+</button>
+        </h2>
+        <div id="tasks" class="stack"></div>
+      </div>
+
+      <div class="col">
+        <h2>Task <span class="muted" id="task-context">— nothing selected</span></h2>
+        <div id="task-detail" class="panel"></div>
+      </div>
+
+      <div class="col wide">
+        <!-- The reviewer's view, and deliberately the last word: everything
+             else on this screen is somebody's account of the work, and this is
+             the work. -->
+        <h2>Artifact <span class="muted" id="artifact-context"></span></h2>
+        <div id="artifact" class="panel"></div>
       </div>
 
     </div>

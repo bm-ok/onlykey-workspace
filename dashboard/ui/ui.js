@@ -171,10 +171,16 @@ function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, e
       ...fields.map(f => {
         // A list of real choices beats a path to type out, and it cannot be typed
         // wrong.
+        // Three kinds, because a brief is prose and a one-line input turns prose
+        // into a slot you scroll sideways through. What a worker is actually
+        // told is the most important text on this screen and it should be
+        // readable while it is being written.
         const input = f.options
           ? el('select', {}, ...f.options.map(o =>
               el('option', { value: o.value, textContent: o.label, selected: o.value === f.value })))
-          : el('input', { placeholder: f.placeholder || '', value: f.value || '', type: f.type || 'text' })
+          : f.multiline
+            ? el('textarea', { placeholder: f.placeholder || '', value: f.value || '', rows: f.rows || 8 })
+            : el('input', { placeholder: f.placeholder || '', value: f.value || '', type: f.type || 'text' })
         inputs[f.name] = input
         return el('div', {}, el('label', { textContent: f.label }), input)
       }),
@@ -269,6 +275,250 @@ function paintKeys () {
           el('p', { className: 'note', style: 'margin-top:10px', textContent: 'Hand it to a machine with vmCredentialsPut, and take it back with vmCredentialsForget before snapshotting.' }))
       : el('p', { className: 'empty', textContent: 'No worker credential yet. Get one from a machine that is running.' }))
   }).catch(() => { /* the tab is not worth an error bar of its own */ })
+}
+
+// ---- tasks -----------------------------------------------------------
+//
+// The work half of the window. A task is written, given to a machine, and judged
+// on what came back -- and what comes back is a BRANCH.
+//
+// Which is why the artifact panel is read from the repositories on this host and
+// never from the machine. Everything else on this screen is somebody's account
+// of the work: the state a person set, the run the worker started, what its
+// transcript says it did. The branch is the work. Where they disagree the branch
+// is right, and a panel that mixed the two would let the account win.
+
+let pickedTask = null
+let taskList = []
+
+// What a task's card and its detail panel read, including what the buttons close
+// over. A field missed here is a panel that silently stops updating, which is
+// worse than the flicker the signature exists to prevent.
+const taskKey = t => t && [
+  t.id, t.title, t.branch, t.state, t.reads, t.machine || '', t.run || '',
+  t.delivered, t.artifact, t.contract || '', (t.verdict && t.verdict.call) || ''
+]
+
+const STATE_BADGE = {
+  draft: 'muted',
+  working: 'warn',
+  delivered: 'ok',
+  accepted: 'ok',
+  rejected: 'bad'
+}
+
+function paintTasks () {
+  api('tasks').then(({ tasks }) => {
+    taskList = tasks
+    if (!tasks.some(t => t.id === pickedTask)) pickedTask = tasks.length ? tasks[0].id : null
+
+    if (changed('tasks', [tasks.map(taskKey), pickedTask])) {
+      fill($('tasks'), tasks.length
+        ? tasks.map(t => el('div', {
+            className: `card ${t.id === pickedTask ? 'picked' : ''}`,
+            onclick: () => { pickedTask = t.id; draw() }
+          },
+          el('div', { className: 'card-title' },
+            el('span', { textContent: t.title }),
+            el('span', { className: `badge ${STATE_BADGE[t.reads] || 'muted'}`, textContent: t.reads })),
+          el('div', { className: 'card-sub mono', textContent: t.branch }),
+          el('div', { className: 'card-sub muted', textContent: t.artifact })))
+        : el('p', { className: 'empty', textContent: 'No tasks yet. Write one with +.' }))
+    }
+
+    const task = tasks.find(t => t.id === pickedTask)
+    setText($('task-context'), task ? `— ${task.id}` : '— nothing selected')
+    paintTaskDetail(task)
+    paintArtifact(task)
+  }).catch(() => { /* the board is not worth an error bar of its own */ })
+}
+
+function paintTaskDetail (task) {
+  if (!changed('task-detail', task && taskKey(task))) return
+  if (!task) return fill($('task-detail'), el('p', { className: 'empty', textContent: 'Select a task.' }))
+
+  const idle = latest.vms.filter(v => v.connected)
+
+  fill($('task-detail'),
+    el('table', { className: 'kv' },
+      el('tr', {}, el('th', { textContent: 'branch' }), el('td', { className: 'mono', style: 'user-select:text', textContent: task.branch })),
+      el('tr', {}, el('th', { textContent: 'state' }), el('td', {}, el('span', { className: `badge ${STATE_BADGE[task.reads] || 'muted'}`, textContent: task.reads }))),
+      el('tr', {}, el('th', { textContent: 'given to' }), el('td', { className: 'mono', textContent: task.machine || 'nobody yet' })),
+      el('tr', {}, el('th', { textContent: 'run' }), el('td', { className: 'mono', textContent: task.run || '—' })),
+      // Said whether or not there is one, because "no rules" is the dangerous
+      // reading and it is also the silent one: a task with no contract looks
+      // exactly like a task with one from everywhere except here.
+      el('tr', {}, el('th', { textContent: 'contract' }),
+        el('td', {}, task.contract
+          ? el('span', { className: 'mono', style: 'user-select:text', textContent: task.contract })
+          : el('span', { className: 'badge warn', textContent: 'none — the worker gets no rules' }))),
+      task.verdict
+        ? el('tr', {}, el('th', { textContent: 'verdict' }),
+            el('td', {}, el('span', { className: `badge ${task.verdict.call === 'accept' ? 'ok' : 'bad'}`, textContent: task.verdict.call }),
+              el('div', { className: 'muted', textContent: task.verdict.note || '' })))
+        : null),
+
+    el('div', { className: 'dlg-heading', style: 'margin-top:12px', textContent: 'The brief, as the worker gets it' }),
+    el('pre', { className: 'console short', style: 'user-select:text', textContent: task.brief }),
+
+    el('div', { className: 'row', style: 'margin-top:12px' },
+      // Giving it out is the one button on this side that touches a machine.
+      el('button', {
+        className: 'btn ok',
+        textContent: task.machine ? 'Give it out again' : 'Give it to a machine',
+        disabled: !idle.length || !!task.verdict,
+        title: !idle.length ? 'No machine is dialled in' : task.verdict ? 'This task has been judged' : '',
+        onclick: () => giveTask(task, idle)
+      }),
+      el('button', {
+        className: 'btn',
+        textContent: 'Judge it',
+        disabled: !task.delivered,
+        title: task.delivered ? '' : 'Nothing has arrived on this branch yet',
+        onclick: () => judgeTask(task)
+      }),
+      el('button', {
+        className: 'btn danger',
+        textContent: 'Throw it away',
+        onclick: () => ask({
+          title: `Throw away "${task.title}"?`,
+          plain: [
+            'Forgets what was asked, who it went to and any verdict.',
+            `Leaves the branch "${task.branch}" exactly as it is — the work that came back is not touched.`
+          ],
+          cost: 'The brief and the verdict are gone. What was delivered is not.',
+          confirm: 'Throw it away',
+          danger: true,
+          onYes: async () => { await api('taskRemove', { id: task.id }); pickedTask = null; say('Task removed. Its branch is untouched.') }
+        })
+      })))
+}
+
+// What actually arrived, read the way a pull request is read.
+function paintArtifact (task) {
+  setText($('artifact-context'), task ? `— ${task.branch}` : '')
+  if (!task) {
+    if (changed('artifact', null)) fill($('artifact'), el('p', { className: 'empty', textContent: 'Select a task.' }))
+    return
+  }
+
+  api('taskArtifact', { id: task.id }).then(art => {
+    if (!changed('artifact', [task.id, art])) return
+
+    const carrying = art.repos.filter(r => !r.missing && !r.empty)
+    fill($('artifact'),
+      el('p', { className: art.delivered ? 'note' : 'empty', textContent: art.summary }),
+
+      // Reported per repository, including the ones with nothing, because "the
+      // branch is not there" and "the branch is there and empty" mean different
+      // things about what happened and only one of them is a worker that failed
+      // to push.
+      ...art.repos.map(r => el('div', { className: 'card' },
+        el('div', { className: 'card-title' },
+          el('span', { className: 'mono', textContent: r.repo }),
+          el('span', {
+            className: `badge ${r.missing ? 'muted' : r.empty ? 'warn' : 'ok'}`,
+            textContent: r.missing ? 'never pushed' : r.empty ? 'nothing beyond ' + r.base : `+${r.added} −${r.removed}`
+          })),
+        r.missing || r.empty ? null : el('div', {},
+          el('div', { className: 'card-sub muted', textContent: `${r.ahead} commit${r.ahead === 1 ? '' : 's'} on top of ${r.base}` }),
+          ...r.commits.map(c => el('div', { className: 'card-sub' },
+            el('span', { className: 'mono', textContent: c.sha }),
+            el('span', { textContent: ' ' + c.subject }))),
+          r.more ? el('div', { className: 'card-sub muted', textContent: `and ${r.more} more` }) : null,
+          el('div', { className: 'card-sub muted', style: 'margin-top:6px', textContent: r.files.map(f => f.file).join(', ') + (r.moreFiles ? ` and ${r.moreFiles} more` : '') }),
+          el('button', {
+            className: 'btn', style: 'margin-top:8px', textContent: 'Read the changes',
+            onclick: () => showDiff(task, r.repo)
+          }))))
+    )
+  }).catch(() => { /* a branch that does not exist yet is not an error */ })
+}
+
+function showDiff (task, repo) {
+  api('taskDiff', { id: task.id, repo }).then(({ diff }) => {
+    ask({
+      title: `${repo} — ${task.branch}`,
+      plain: [`Everything this branch adds to ${repo}, against the branch it was cut from.`],
+      confirm: 'Done',
+      onYes: async () => {}
+    })
+    // Put in after the dialog exists rather than through a field, because a diff
+    // is neither a bullet nor an input: it is long, it is read rather than
+    // answered, and it needs to scroll and be selectable.
+    const dlg = document.querySelector('.dlg')
+    if (dlg) dlg.insertBefore(el('pre', { className: 'console tall', style: 'user-select:text', textContent: diff || 'no changes' }), dlg.querySelector('.dlg-actions'))
+  }).catch(oops)
+}
+
+function giveTask (task, idle) {
+  ask({
+    title: `Give "${task.title}" to a machine`,
+    plain: [
+      `Sets that machine's workspace up on ${task.branch}, in every repository.`,
+      'Then dispatches the brief and lets go — the work runs unattended and this returns as soon as it has started.',
+      task.contract ? 'The contract is read from this host and carried with the run.' : 'No contract: the worker is given no rules beyond the brief.'
+    ],
+    cost: 'The machine stays on this branch until it is clean. There is no way to move it off except going back to a snapshot from before.',
+    fields: [{
+      name: 'name',
+      label: 'Which machine does it',
+      value: (idle.find(v => v.name === task.machine) || idle[0]).name,
+      options: idle.map(v => ({ value: v.name, label: `${v.name} — ${v.description || v.stage}` }))
+    }],
+    confirm: 'Give it out',
+    onYes: async ({ name }) => {
+      const r = await api('taskGive', { id: task.id, name })
+      say(`${name} is working on ${task.title} — run ${r.run}`)
+    }
+  })
+}
+
+function judgeTask (task) {
+  ask({
+    title: `Judge "${task.title}"`,
+    plain: [
+      'Records what you decided about what arrived, and who decided it.',
+      'It does NOT merge anything. Landing work is a separate act with its own rules, and a verdict that quietly merged would make reading the work and publishing it the same button.'
+    ],
+    fields: [
+      { name: 'verdict', label: 'Verdict', value: 'accept', options: [{ value: 'accept', label: 'Accept' }, { value: 'reject', label: 'Reject — send it back' }] },
+      { name: 'note', label: 'Why (required to reject)', multiline: true, rows: 4, placeholder: 'What is wrong, in the words the worker will be given.' }
+    ],
+    confirm: 'Record it',
+    onYes: async ({ verdict, note }) => {
+      await api('taskJudge', { id: task.id, verdict, note })
+      say(`Recorded: ${verdict}ed.`)
+    }
+  })
+}
+
+function newTask () {
+  api('gitBranches').then(({ branches: known, protected: guarded }) => {
+    const taken = new Set((guarded || []).map(g => g.branch))
+    ask({
+      title: 'Write a task',
+      plain: [
+        'A task is what a worker is told, and the branch it delivers on.',
+        'That branch is the artifact: it is what comes back, and what gets judged.',
+        'Nothing is given out yet — writing a task touches no machine.'
+      ],
+      fields: [
+        { name: 'title', label: 'Title', placeholder: 'Short enough to read in a list' },
+        { name: 'branch', label: 'Branch it delivers on', placeholder: 'fix/the-thing' },
+        { name: 'brief', label: 'The brief — what the worker is actually told', multiline: true, rows: 10, placeholder: 'Write it as instructions to somebody who cannot ask you a question.' },
+        { name: 'contract', label: 'Contract (a file on this host, optional)', placeholder: 'the rules the worker is given' },
+        { name: 'folder', label: 'Folder on the machine (optional)', placeholder: 'defaults to its workspace' }
+      ],
+      confirm: 'Write it',
+      onYes: async values => {
+        if (taken.has(values.branch)) throw new Error(`"${values.branch}" is protected here. Work is merged into it, never done on it.`)
+        const made = await api('taskCreate', { task: values })
+        pickedTask = made.id
+        say(`Task "${made.title}" written, delivering on ${made.branch}. Known branches: ${(known || []).length}.`)
+      }
+    })
+  }).catch(oops)
 }
 
 // Ask which machine, sign in on it, then take what it got.
@@ -769,6 +1019,8 @@ function paintVms () {
   paintSnapshots().catch(() => {})
 }
 
+$('add-task-open').onclick = newTask
+
 // The settings are the previous version's, which were arrived at by running it:
 // 8 GB, 4 cpus, 60 GB, a named LTS image type, and bridged networking so the
 // guest can reach this app to fetch its scripts.
@@ -998,6 +1250,7 @@ async function drawOnce () {
 
   paintVms()
   paintKeys()
+  paintTasks()
 }
 
 // ---- right-click, and devtools ---------------------------------------

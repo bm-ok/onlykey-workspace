@@ -600,6 +600,60 @@ What a machine has that this host does not: commits not pushed, files not
 committed, per repository. Nothing has landed until it is here.
 
 
+Two managers, and one point where they meet
+-------------------------------------------
+
+The tool has two halves and the split is its shape. **Virtual machines** is one:
+make one, install it, snapshot it, throw it away. **Tasks** is the other: what is
+to be done, who is doing it, and what came back.
+
+They meet at exactly one point — a task is **given** to a machine — and nothing
+else crosses. A machine knows nothing about tasks; a task knows the name of the
+machine it went to and nothing else about it. That is what lets a machine be
+destroyed mid-task without the task going with it, and it is the correction of a
+previous version where the work loop could not be used without a VM at all.
+
+### The artifact is a branch
+
+A task delivers a **branch**, and that branch is what gets read — the way a pull
+request is read.
+
+    okc.js taskCreate --task '{"title":"...","branch":"fix/the-thing","brief":"...","contract":"..."}'
+    okc.js taskGive     --id <task> --name runner1
+    okc.js taskArtifact --id <task>
+    okc.js taskDiff     --id <task> --repo <repo>
+    okc.js taskJudge    --id <task> --verdict accept --note "..."
+
+`taskGive` does both halves through the actions that already own their rules — it
+sets the machine's workspace up on the task's branch, then dispatches the brief
+under the task's contract. The branch claim, the protected default, the refusal
+to move a machine off its branch and the contract being read from this host are
+each enforced in one place, and this is a caller like any other.
+
+**Delivered is not a state anybody sets.** It is read from the repositories here:
+a branch with commits on top of the default has delivered, and a worker that
+exited cleanly having pushed nothing has produced nothing to judge. The run's
+exit code says the program ended, not that work exists. Every reading is against
+the object database with an explicit `--git-dir` — nothing is checked out, because
+checking a branch out to review it would move HEAD in a repository that is being
+served, and would make the review branch look like the default one.
+
+Two things are reported separately that are easy to collapse into "no changes":
+a branch that was **never pushed** to a repository, and one that is **there and
+empty**. Only the first is a worker that failed to deliver.
+
+### Judging does not merge
+
+`taskJudge` records what a person decided and nothing else. Landing work is a
+separate act with its own rules, and a verdict that quietly merged would make
+reading the work and publishing it the same button. A rejection must say why —
+the note is what a worker is given, and a rejection with no reason is sent to
+something that cannot ask what was wrong.
+
+A verdict on an empty branch is refused rather than warned about: a judgement of
+nothing is indistinguishable afterwards from a judgement of something.
+
+
 The window keeps up on its own
 ------------------------------
 
@@ -637,6 +691,9 @@ The shape
     core/keys.js    the certificate this host serves with, and its authority
     core/data.js    where anything produced by running goes -- outside the repo
     core/secret.js  sealing what is worth keeping, and redacting what comes back
+    tasks/
+      store.js      what is to be done, who has it, and what was decided
+      artifact.js   what came back: a branch, read the way a PR is read
     tools/okc.js    the command line, generated from the actions table
     machines/
       vbox.js       VirtualBox: state, snapshots, isos, bridges, delete
