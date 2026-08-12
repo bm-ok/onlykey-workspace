@@ -80,14 +80,37 @@ describe('guards — the things that must be refused', () => {
       'A snapshot keeps a copy of the token for as long as the snapshot exists')
   })
 
-  it('a signed-out machine is not given work', async ({ okc, assert }) => {
+  it('a signed-out machine is not given work', async ({ okc, assert, log }) => {
     const { vms } = await okc('vmList')
-    const signedOut = vms.find(v => v.connected && !v.holdsCredential)
-    assert.ok(signedOut, 'This drill needs a connected machine that is signed out; there is none.')
-    await assert.refuses(
-      () => okc('vmDispatch', { name: signedOut.name, task: 'anything at all' }),
-      'signed out',
-      'Otherwise it fails as an api error minutes later, after a workspace has been laid out')
+
+    // Arranged rather than waited for.
+    //
+    // The first version required a connected machine that happened to be signed
+    // out, and on a working host there is never one -- so the drill reported
+    // "there was nothing to try it on", which is not evidence and sat in the
+    // results looking like a fault. A drill that only runs when the world
+    // happens to suit it is a drill that never runs.
+    //
+    // Safe to arrange: the credential is kept on this host, sealed, so taking it
+    // off a machine loses nothing and putting it back is one call. The finally
+    // is not optional -- leaving a machine signed out would break the next thing
+    // to use it, and blame something else.
+    const target = vms.find(v => v.connected && v.holdsCredential) || vms.find(v => v.connected)
+    assert.ok(target, 'This drill needs a machine dialled in; none is.')
+
+    const held = !!(target.holdsCredential)
+    if (held) {
+      log(`taking ${target.name}'s credential for the duration, and putting it back afterwards`)
+      await okc('vmCredentialsForget', { name: target.name })
+    }
+    try {
+      await assert.refuses(
+        () => okc('vmDispatch', { name: target.name, task: 'anything at all' }),
+        'signed out',
+        'Otherwise it fails as an api error minutes later, after a workspace has been laid out')
+    } finally {
+      if (held) await okc('vmCredentialsPut', { name: target.name })
+    }
   })
 
   it('a machine is not moved off the branch it is on', async ({ okc, assert }) => {

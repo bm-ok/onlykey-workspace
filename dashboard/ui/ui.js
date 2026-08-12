@@ -446,6 +446,7 @@ function paintTasks () {
     const task = tasks.find(t => t.id === pickedTask)
     setText($('task-context'), task ? `— ${task.id}` : '— nothing selected')
     paintTaskDetail(task)
+    paintHistory(task)
     paintArtifact(task)
   }).catch(e => {
     // SAID, not swallowed. This was quiet on purpose and that was wrong: a
@@ -486,6 +487,11 @@ function paintTaskDetail (task) {
     el('div', { className: 'dlg-heading', style: 'margin-top:12px', textContent: 'The brief, as the worker gets it' }),
     el('pre', { className: 'console short', style: 'user-select:text', textContent: task.brief }),
 
+    // What has become of it, and what is becoming of it. Filled in separately,
+    // because it asks the machine and the board must stay cheap to redraw.
+    el('div', { className: 'dlg-heading', style: 'margin-top:12px', textContent: 'Attempts' }),
+    el('div', { id: 'task-history' }, el('p', { className: 'muted', textContent: '…' })),
+
     el('div', { className: 'row', style: 'margin-top:12px' },
       // Giving it out is the one button on this side that touches a machine.
       el('button', {
@@ -517,6 +523,81 @@ function paintTaskDetail (task) {
           onYes: async () => { await api('taskRemove', { id: task.id }); pickedTask = null; say('Task removed. Its branch is untouched.') }
         })
       })))
+}
+
+// What has become of a task, and what is becoming of it.
+//
+// Its own request, throttled, because it asks the MACHINE and the board redraws
+// every few seconds. The board must stay cheap; this is one task at a time,
+// while somebody is looking at it.
+//
+// It also causes a finished run's log to be pulled here and kept — the machine
+// is the disposable half of this tool, and rolling one back takes the only
+// account of what happened with it unless somebody has copied it first.
+let historyAt = 0
+function paintHistory (task) {
+  const box = $('task-history')
+  if (!box) return
+  if (!task) return
+  // Ten seconds, not three. This is a guest round trip; the board is not.
+  if (Date.now() - historyAt < 10000 && drawnFrom.has('history-' + task.id)) return
+  historyAt = Date.now()
+
+  api('taskProgress', { id: task.id }).then(p => {
+    if (!changed('history-' + task.id, p)) return
+    const box2 = $('task-history')
+    if (!box2) return
+
+    const badge = a => a.state === 'running' ? 'run' : a.state === 'lost' ? 'bad' : a.exit === 0 ? 'ok' : 'bad'
+    fill(box2,
+      p.attempts.length
+        ? p.attempts.map((a, i) => el('div', { className: 'card' },
+            el('div', { className: 'card-title' },
+              el('span', { textContent: `attempt ${i + 1} — ${a.machine || 'unknown'}` }),
+              el('span', { className: `badge ${badge(a)}`, textContent: a.state === 'gone' ? 'machine no longer has it' : a.state })),
+            el('div', { className: 'card-sub mono', textContent: a.run }),
+            el('div', { className: 'card-sub muted', textContent: a.at ? new Date(a.at).toLocaleString() : '' }),
+            // Only when there is something kept to read. A button that opens
+            // nothing is worse than no button.
+            a.kept
+              ? el('button', { className: 'btn', style: 'margin-top:6px', textContent: 'Read its log', onclick: () => showLog(task, a.run) })
+              : el('div', { className: 'card-sub muted', textContent: a.state === 'running' ? 'still going; the log is kept when it ends' : 'no log was kept here' })))
+        : el('p', { className: 'empty', textContent: p.why || 'never given out' }),
+
+      // What it is doing NOW, which is the question a running task provokes and
+      // which nothing on this screen answered before.
+      p.live
+        ? el('div', { style: 'margin-top:10px' },
+            el('div', { className: 'dlg-heading', textContent: `Right now — ${p.live.title || 'working'}${typeof p.live.idle === 'number' ? `, quiet ${p.live.idle}s` : ''}` }),
+            el('div', { className: 'console short', style: 'user-select:text' },
+              ...(p.live.entries.length
+                ? p.live.entries.map(e => el('div', { className: 'line' },
+                    el('span', { className: 't', textContent: e.kind }),
+                    el('span', { textContent: e.text })))
+                : [el('div', { className: 'muted', textContent: 'nothing said yet' })])))
+        : null)
+  }).catch(e => {
+    const box2 = $('task-history')
+    if (box2 && changed('history-err-' + task.id, e.message)) {
+      fill(box2, el('p', { className: 'empty', textContent: `Could not be read: ${e.message}` }))
+    }
+  })
+}
+
+function showLog (task, run) {
+  api('taskLog', { id: task.id, run, lines: 400 }).then(l => {
+    ask({
+      title: `${task.title} — ${run}`,
+      plain: [
+        l.found ? `Kept on this host, so it survives the machine that produced it.` : 'Nothing was kept for that run.',
+        l.found ? `${l.lines} lines${l.more ? `, showing the last ${l.lines - l.more}` : ''}. Full file: ${l.file}` : ''
+      ].filter(Boolean),
+      confirm: 'Done',
+      onYes: async () => {}
+    })
+    const body = document.querySelector('.dlg-body')
+    if (body) body.append(codeBlock(l.text || '(nothing)', 'markdown', { lines: 22 }))
+  }).catch(oops)
 }
 
 // What actually arrived, read the way a pull request is read.

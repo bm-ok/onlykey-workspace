@@ -89,8 +89,18 @@ function add (input) {
     folder: input.folder ? String(input.folder) : null,
     state: 'draft',
     machine: null,
+    // The LAST run, kept for the things that only care about the latest.
     run: null,
     session: null,
+    // Every time this was given out, oldest first.
+    //
+    // A single `run` field was the first shape and it lost the history the
+    // moment a task was given out twice -- which is the ordinary case, not an
+    // edge one: a rejection sent back is a second attempt at the same task, and
+    // overwriting the first makes the record say the task was done once and
+    // cleanly. What actually happened to a piece of work is most of what a
+    // reviewer wants, and it is the part nothing else keeps.
+    attempts: [],
     verdict: null,
     created: new Date().toISOString(),
     updated: new Date().toISOString()

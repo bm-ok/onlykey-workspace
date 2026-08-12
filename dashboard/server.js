@@ -28,6 +28,7 @@ const tasks = require('./tasks/store')
 const artifact = require('./tasks/artifact')
 const harness = require('./tasks/harness')
 const approval = require('./tasks/approval')
+const archive = require('./tasks/archive')
 require('./tasks/planned')   // registers the drills with the harness
 const machines = require('./machines/store')
 const { provision, reach } = require('./machines/provision')
@@ -1257,9 +1258,107 @@ done`
         contract: task.contract || undefined
       })
 
-      tasks.update(id, { state: 'given', machine: name, run: started.run })
+      // Appended, never replaced. Giving a task out a second time is the
+      // ordinary case rather than an edge one -- a rejection sent back IS a
+      // second attempt -- and overwriting the first makes the record say the
+      // work was done once, cleanly.
+      tasks.update(id, {
+        state: 'given',
+        machine: name,
+        run: started.run,
+        attempts: [...(task.attempts || []), { run: started.run, machine: name, at: new Date().toISOString() }]
+      })
       log.on('task', id).good(`given to ${name} on ${task.branch}`)
-      return { ...started, task: id, branch: task.branch }
+      return { ...started, task: id, branch: task.branch, attempt: (task.attempts || []).length + 1 }
+    }
+  },
+
+  // What has happened to this task, and what is happening to it now.
+  //
+  // Separate from `tasks` because it asks the MACHINE, which costs a round trip
+  // and needs the machine dialled in. The board must stay cheap enough to redraw
+  // every few seconds; this is asked for one task at a time, when somebody is
+  // looking at it.
+  //
+  // History and activity in one answer because they are one question: "what has
+  // become of this" is not usefully split into what already happened and what is
+  // happening, and asking twice means two round trips to say one thing.
+  taskProgress: {
+    about: 'Every attempt at a task, and what its worker is doing right now',
+    takes: ['id', 'lines'],
+    run: async ({ id, lines = 12 }) => {
+      const task = tasks.get(id)
+      const attempts = task.attempts || (task.run ? [{ run: task.run, machine: task.machine }] : [])
+      if (!task.machine || !channel.connected(task.machine)) {
+        // A real answer rather than a failure. A machine that has been thrown
+        // away is the normal end of a task, and the attempts are still worth
+        // showing -- they are the record, and the machine was only ever where
+        // the work happened.
+        return { task: id, attempts, live: null, why: task.machine ? `"${task.machine}" is not dialled in` : 'it has not been given out yet' }
+      }
+
+      const runs = await actions.vmRuns.run({ name: task.machine })
+      const known = new Map((runs.runs || []).map(r => [r.id, r]))
+      const withState = attempts.map(a => ({ ...a, ...(known.get(a.run) || { state: 'gone' }) }))
+
+      // Pulled across the moment it is over, and never again.
+      //
+      // The machine is the disposable half of this tool: it gets rolled back,
+      // deleted, rebuilt, and each of those is a correct thing to do that takes
+      // the only account of what happened with it. Two rollbacks in one
+      // afternoon erased the record of two runs whose results had already been
+      // reported, leaving a task saying work was done and nothing saying how.
+      //
+      // Here rather than on a timer, because this is the moment somebody is
+      // looking at the task -- and a run nobody has looked at since it ended is
+      // exactly the one whose machine has not been touched yet.
+      for (const a of withState) {
+        if (a.state === 'running' || a.state === 'gone') continue
+        if (archive.has(id, a.run)) continue
+        try {
+          const out = await actions.vmRunOutput.run({ name: task.machine, run: a.run, lines: 2000 })
+          archive.keep(id, a.run, {
+            output: out.output || out.text || '',
+            machine: task.machine,
+            state: a.state,
+            exit: a.exit
+          })
+          log.on('task', id).info(`kept the log of ${a.run}, so it survives the machine`)
+        } catch (e) {
+          log.on('task', id).warn(`could not keep the log of ${a.run}: ${e.message}`)
+        }
+      }
+
+      // Only while something is actually running. Pulling a transcript is a
+      // guest round trip, and doing it for a finished task every time somebody
+      // clicks a card is paying for an answer that cannot change.
+      let live = null
+      if (withState.some(a => a.state === 'running')) {
+        const sessions = await actions.vmSessions.run({ name: task.machine })
+        const newest = ((sessions && sessions.sessions) || [])[0]
+        if (newest) {
+          const tail = await actions.vmSessionTail.run({ name: task.machine, session: newest.id, since: 0, limit: Number(lines) || 12 })
+          live = { session: newest.id, title: newest.title, idle: newest.idle, entries: (tail && tail.entries) || [] }
+        }
+      }
+      return { task: id, attempts: withState.map(a => ({ ...a, kept: archive.has(id, a.run) })), live, why: null }
+    }
+  },
+
+  // The kept log of one attempt, read from this host.
+  //
+  // Read from here and not from the machine, deliberately: the machine's copy is
+  // gone the first time it is rolled back, and this is the copy that is meant to
+  // outlive it. `vmRunOutput` still exists for looking at a run in flight, which
+  // is the only thing the machine can answer that this cannot.
+  taskLog: {
+    about: "One attempt's output, kept on this host so it survives the machine",
+    takes: ['id', 'run', 'lines'],
+    run: ({ id, run, lines }) => {
+      tasks.get(id)
+      const kept = archive.list(id)
+      if (!run) return { task: id, attempts: kept, note: kept.length ? 'ask for one by run id' : 'nothing has been kept for this task yet' }
+      return { task: id, ...archive.read(id, run, { lines }) }
     }
   },
 
@@ -1359,6 +1458,26 @@ done`
         .find(t => t.name === name && (!suite || t.suite === suite))
       if (!found) throw new Error(`Nothing registered called "${name}".`)
       return approval.approve(found.suite, found.name, found.fingerprint, note)
+    }
+  },
+
+  // Asking for a change to be looked at. The half a model IS allowed.
+  //
+  // Deliberately available over the socket, unlike approving. A model may edit a
+  // definition and may ask for the edit to be read; what it may not do is decide
+  // the edit is alright. Without this the change still lapses the approval, but
+  // it arrives as a bare "this is different" with the reason living in a chat
+  // log somebody may never see — so the reader is left diffing source in their
+  // head to work out whether they care.
+  plannedRequest: {
+    about: 'Ask for a changed definition to be read again, and say why',
+    takes: ['suite', 'name', 'why'],
+    run: ({ suite, name, why }) => {
+      const found = harness.getRegisteredSuites()
+        .flatMap(s => s.tests.map(t => ({ suite: s.name, ...t })))
+        .find(t => t.name === name && (!suite || t.suite === suite))
+      if (!found) throw new Error(`Nothing registered called "${name}".`)
+      return approval.request(found.suite, found.name, found.fingerprint, why)
     }
   },
 

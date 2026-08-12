@@ -49,20 +49,53 @@ function write (all) {
 function stateOf (suite, name, fingerprint) {
   const all = read()
   const rec = all[keyOf(suite, name)]
-  if (!rec) return { approved: false, lapsed: false, why: 'has never been approved' }
+  // What the model said when it changed this, if it said anything. Carried into
+  // every answer, because "changed" on its own tells a reader that something is
+  // different and nothing about what or why -- which leaves them diffing source
+  // in their head to find out whether they care.
+  const asked = rec && rec.request && rec.request.fingerprint === fingerprint ? rec.request : null
+
+  if (!rec) return { approved: false, lapsed: false, why: 'has never been approved', request: asked }
   if (rec.fingerprint !== fingerprint) {
     return {
       approved: false,
       lapsed: true,
       at: rec.at,
-      why: `was approved on ${new Date(rec.at).toLocaleDateString()} and has been changed since. Read it again.`
+      request: asked,
+      why: asked
+        ? `was approved on ${new Date(rec.at).toLocaleDateString()} and has been changed since. The reason given: ${asked.why}`
+        : `was approved on ${new Date(rec.at).toLocaleDateString()} and has been changed since, with no reason given. Read it again.`
     }
   }
-  return { approved: true, lapsed: false, at: rec.at, note: rec.note || null, why: null }
+  return { approved: true, lapsed: false, at: rec.at, note: rec.note || null, why: null, request: null }
+}
+
+// A model asking to have a change looked at.
+//
+// THIS IS THE HALF A MODEL IS ALLOWED. It may edit a definition and it may ask
+// for the edit to be read; it may not decide that the edit is alright. Recorded
+// against the NEW fingerprint, so a reason cannot outlive the change it explains
+// -- edit again and the reason goes stale with it.
+//
+// Kept beside the old approval rather than replacing it, because the reader
+// wants both: what they approved before, and what is being asked now.
+function request (suite, name, fingerprint, why) {
+  if (!String(why || '').trim()) throw new Error('Say why it changed. A request to re-read something, with no reason, is just the change arriving quietly.')
+  const all = read()
+  const key = keyOf(suite, name)
+  all[key] = {
+    ...(all[key] || { suite, name }),
+    request: { fingerprint, why: String(why).trim(), at: new Date().toISOString() }
+  }
+  write(all)
+  log.on('drill').warn(`re-reading asked for: ${name} — ${String(why).trim()}`)
+  return all[key].request
 }
 
 function approve (suite, name, fingerprint, note) {
   const all = read()
+  // The request is cleared, not kept. It was a question, and this is the answer;
+  // leaving it would make the next reader think something is still outstanding.
   all[keyOf(suite, name)] = {
     suite,
     name,
@@ -85,4 +118,4 @@ function withdraw (suite, name) {
   return { withdrawn: true }
 }
 
-module.exports = { read, stateOf, approve, withdraw, keyOf, FILE }
+module.exports = { read, stateOf, approve, request, withdraw, keyOf, FILE }
