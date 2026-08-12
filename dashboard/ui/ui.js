@@ -259,7 +259,13 @@ function paintKeys () {
             // The path, not the contents. A page that shows a secret is a page
             // that ends up in a screenshot.
             el('tr', {}, el('th', { textContent: 'kept in' }), el('td', { className: 'mono', style: 'user-select:text', textContent: held.dir })),
-            el('tr', {}, el('th', { textContent: 'size' }), el('td', { className: 'mono', textContent: `${held.bytes} bytes` }))),
+            // Which protection is actually holding, not which one was intended.
+            // "Encrypted for this account" and "the folder happens to be yours"
+            // are different answers to "is this safe here", and only one of them
+            // survives the file being copied somewhere else.
+            el('tr', {}, el('th', { textContent: 'at rest' }),
+              el('td', {}, el('span', { className: `badge ${held.sealed ? 'ok' : 'warn'}`, textContent: held.sealed ? 'sealed' : 'plain' }))),
+            el('tr', {}, el('th', { textContent: '' }), el('td', { className: 'muted', textContent: held.protection || '' }))),
           el('p', { className: 'note', style: 'margin-top:10px', textContent: 'Hand it to a machine with vmCredentialsPut, and take it back with vmCredentialsForget before snapshotting.' }))
       : el('p', { className: 'empty', textContent: 'No worker credential yet. Get one from a machine that is running.' }))
   }).catch(() => { /* the tab is not worth an error bar of its own */ })

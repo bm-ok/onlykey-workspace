@@ -18,6 +18,7 @@ const log = require('./core/log')
 const ipc = require('./core/ipc')
 const keys = require('./core/keys')
 const data = require('./core/data')
+const secret = require('./core/secret')
 const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
@@ -715,7 +716,14 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
         file,
         bytes: stat.size,
         taken: meta.taken || stat.mtime.toISOString(),
-        from: meta.from || 'unknown'
+        from: meta.from || 'unknown',
+        // Reported rather than claimed. "Sealed" and "the folder happens to be
+        // yours" are different protections, and a reader should be able to tell
+        // which one is holding.
+        sealed: secret.isSealed(file),
+        protection: secret.isSealed(file)
+          ? 'encrypted for this Windows account — the file alone is not enough'
+          : 'file permissions only — readable by anything running as you'
       }
     }
   },
@@ -741,8 +749,11 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
       const dir = data.sub('credentials')
       const file = path.join(dir, 'claude.json')
-      fs.writeFileSync(file, Buffer.from(b64, 'base64'))
-      try { fs.chmodSync(file, 0o600) } catch { /* best effort on Windows */ }
+      // Sealed on the way in, so what lands on disk is not the token. It was
+      // plain until somebody asked where it was kept, and the honest answer was
+      // "readable by anything running as you, or as an administrator, or by
+      // whatever backs this folder up".
+      const sealed = secret.write(file, Buffer.from(b64, 'base64'))
       // Beside it rather than inside it: which machine it came from and when.
       // The file's own timestamp would answer the second and nothing answers the
       // first, and "where did this come from" is the question asked when
@@ -750,7 +761,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
       fs.writeFileSync(path.join(dir, 'about.json'), JSON.stringify({ from: name, taken: new Date().toISOString() }, null, 2))
 
       log.on('vm', name).good('its worker credential was taken and kept on this host')
-      return { from: name, kept: file, note: 'hand it to a machine with vmCredentialsPut, and take it away again with vmCredentialsForget' }
+      return { from: name, kept: file, sealed, note: 'hand it to a machine with vmCredentialsPut, and take it away again with vmCredentialsForget' }
     }
   },
 
@@ -766,7 +777,9 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
         throw new Error('This host has no worker credential yet. Sign in on one machine and take it with vmCredentialsGrab first.')
       }
 
-      const b64 = fs.readFileSync(file).toString('base64')
+      // Opened here and nowhere else. It exists as cleartext for the length of
+      // this call and is never written back out in that form.
+      const b64 = secret.read(file).toString('base64')
       const r = await channel.run(name, `set -u
 mkdir -p "$HOME/.claude"
 umask 077
