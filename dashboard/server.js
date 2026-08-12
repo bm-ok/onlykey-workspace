@@ -294,7 +294,7 @@ const actions = {
       const file = path.basename(scripts.fileFor(vm, stage))
       // Fetched by the machine rather than pushed, so it gets exactly what a fresh
       // install would get -- including any edit made since it was built.
-      const url = `http://${await vbox.hostAddress()}:${port}/provision/${file}?vm=${encodeURIComponent(name)}`
+      const url = `https://${await vbox.hostAddress()}:${port}/provision/${file}?vm=${encodeURIComponent(name)}`
 
       // Commands arrive as the user, so a script that touches /etc needs sudo -- the
       // same thing a person would type. `sudo -n` rather than plain sudo so it fails
@@ -307,7 +307,16 @@ const actions = {
 
       // OKC_QUIET_SAY: the agent already streams stdout, so the script should not
       // also post each line over HTTP or every one arrives twice.
-      return channel.run(name, `curl -fsSL '${url}' -o /tmp/okc-again.sh && ${run}`,
+      //
+      // The credentials are the MACHINE'S OWN, read from its environment on its
+      // own side rather than written into this command. `$OKC_CA`, `$OKC_VM` and
+      // `$OKC_TOKEN` are left for the guest's shell to expand: the agent has them
+      // from its service unit and anything it dispatches inherits them, which was
+      // checked rather than assumed. Putting the token in the command instead
+      // would send a machine its own secret back over the channel and leave it in
+      // the log line describing what was run.
+      return channel.run(name,
+        `curl -fsSL --cacert "$OKC_CA" -u "$OKC_VM:$OKC_TOKEN" '${url}' -o /tmp/okc-again.sh && ${run}`,
         { what: `${file} again${needsRoot ? ' (with sudo)' : ''}` })
     }
   },
