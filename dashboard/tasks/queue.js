@@ -162,7 +162,8 @@ async function run (actions, log, task, machine) {
       name: machine,
       task: task.brief,
       folder: task.folder || undefined,
-      contract: task.contract || undefined
+      contract: task.contract || undefined,
+      shell: !!task.shell
     })
     const fresh = await actions.tasks.run({})
     const now = fresh.tasks.find(t => t.id === id) || task

@@ -1052,8 +1052,8 @@ echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 
   // goes into all three.
   vmDispatch: {
     about: 'Give a machine a task to work on, and return without waiting for it',
-    takes: ['name', 'task', 'folder', 'contract', 'resume'],
-    run: async ({ name, task, folder, contract, resume }) => {
+    takes: ['name', 'task', 'folder', 'contract', 'resume', 'shell'],
+    run: async ({ name, task, folder, contract, resume, shell }) => {
       const vm = vms.get(name)
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in, so it cannot be given work.`)
       if (!task || !String(task).trim()) throw new Error('Say what the task is.')
@@ -1069,7 +1069,10 @@ echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 
       // carrying a key in its environment -- and the registry only knows about
       // the first. Refusing a machine that could in fact work is a worse fault
       // than the one being fixed.
-      const able = await channel.run(name, 'if [ -s "$HOME/.claude/.credentials.json" ] || [ -n "${ANTHROPIC_API_KEY:-}" ]; then echo okc-can-authenticate; fi',
+      // A shell run has no worker in it, so being signed out is beside the
+      // point — refusing one would mean refusing a soak because a credential it
+      // will never touch is missing.
+      const able = shell ? { output: 'okc-can-authenticate' } : await channel.run(name, 'if [ -s "$HOME/.claude/.credentials.json" ] || [ -n "${ANTHROPIC_API_KEY:-}" ]; then echo okc-can-authenticate; fi',
         { what: 'checking its worker can authenticate', timeout: 30000 })
       if (!/okc-can-authenticate/.test(able.output || '')) {
         throw new Error(`"${name}"'s worker is signed out, so the work would fail the moment it started. Hand it the credential first: vmCredentialsPut --name ${name}`)
@@ -1095,7 +1098,7 @@ echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 
       }
       const to = log.on('vm', name)
 
-      const r = await channel.run(name, dispatch.script({ id, task: String(task), folder: where, contract: rules, resume }),
+      const r = await channel.run(name, dispatch.script({ id, task: String(task), folder: where, contract: rules, resume, shell: !!shell }),
         { what: `dispatching ${id}`, timeout: 60000 })
 
       if (!/okc-dispatched/.test(r.output || '')) {
@@ -1576,7 +1579,8 @@ done`
         name,
         task: task.brief,
         folder: task.folder || undefined,
-        contract: task.contract || undefined
+        contract: task.contract || undefined,
+      shell: !!task.shell
       })
 
       // Appended, never replaced. Giving a task out a second time is the

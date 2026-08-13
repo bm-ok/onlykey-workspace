@@ -175,6 +175,14 @@ function add (input) {
     // cannot change what a finished run was told.
     contract: input.contract ? String(input.contract) : null,
     folder: input.folder ? String(input.folder) : null,
+    // The brief is a SHELL COMMAND, not a prompt for a worker.
+    //
+    // For work that is about this machinery rather than about anything a worker
+    // would do: a soak that has to last a stated length of time, a drill that
+    // needs a run to exist. Involving a worker in those makes the answer depend
+    // on whether it felt like taking an hour, and bills somebody for the
+    // privilege.
+    shell: !!input.shell,
     state: 'draft',
     machine: null,
     // The LAST run, kept for the things that only care about the latest.

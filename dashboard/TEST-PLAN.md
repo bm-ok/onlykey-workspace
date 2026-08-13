@@ -132,6 +132,36 @@ branch has to be refused to a machine that is on *no* branch, because a machine
 already on one is refused for that first — a different rule than the one being
 tested.
 
+### 11. A soak, on a timer rather than on a worker — 2026-08-13
+
+**Proves the machinery holds over time**, which is the only question a soak
+asks. None of it is about a worker: what is watched is whether the run stays
+detached, the channel stays up, the record keeps being written, and the queue
+tidies up at the end.
+
+So it does not use one. A task with `shell: true` runs its brief as a **command**
+instead of giving it to a worker — a real run in every other respect, same run
+directory, same pid file, same status, same log kept here. Two reasons, and the
+second is what will keep this honest: a worker's duration depends on whether it
+felt like taking five minutes, and somebody is billed for the opinion.
+
+    okc.js taskCreate --task '{"title":"Soak","branch":"drill/soak","shell":true,
+      "brief":"...a loop that echoes every 30s for as long as you want..."}'
+    okc.js taskQueue --id <it>
+
+**Pass:** heartbeats spaced as asked, right through to the end, and the machine
+off and clean afterwards.
+
+**First run — five minutes, 2026-08-13.** Eleven heartbeats thirty seconds
+apart, `soak finished cleanly`, and the phase timings said where the rest of the
+wall-clock went: bringUp 30s, credential 1s, workspace 3s, work 308s, 343s in
+all. Both machines back at rest.
+
+**Have each heartbeat record something about its surroundings** — load average
+and free disk cost nothing and are the two numbers that would explain a long run
+going wrong. A soak that only says "alive" has proved the timer ran and nothing
+else.
+
 ### 5c. Two machines at once — 2026-08-12
 
 **Proves the pool chooses**, which nothing had exercised: until both runners

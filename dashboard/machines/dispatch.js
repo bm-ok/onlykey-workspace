@@ -47,7 +47,17 @@ function heredoc (path, body, tag) {
 // Kept rather than streamed and dropped. "What actually ran" has no source but a
 // record of the run -- a claim in a transcript is the agent's account of itself,
 // and the two diverge.
-function script ({ id, task, folder, contract, resume }) {
+// `shell` runs the brief AS A COMMAND instead of giving it to a worker.
+//
+// For exercising this machinery without a worker in it. A soak wants to know
+// what the queue, the channel, the run record and the put-away do over an hour;
+// none of that is about Claude, and involving one makes the answer depend on
+// whether it felt like taking an hour. A `sleep` is a duration you can state.
+//
+// It is a real run in every other respect -- same directory, same pid file, same
+// status, same detachment, same log kept here afterwards -- so what it proves
+// about the machinery is what a worker would have proved.
+function script ({ id, task, folder, contract, resume, shell }) {
   const dir = `${RUNS}/${id}`
 
   // THE CONTRACT IS CARRIED, NOT REFERENCED.
@@ -71,10 +81,10 @@ cd ${q(folder)} 2>/dev/null || cd "$HOME"
 # rather than reconstructed from a command line.
 ${heredoc(`${dir}/task.txt`, task, 'OKC_TASK_EOF')}
 ${rules ? `\n# The rules this run was given, kept with it.\n${heredoc(rules, contract, 'OKC_CONTRACT_EOF')}\n` : ''}
-if ! command -v claude >/dev/null 2>&1; then
+${shell ? '' : `if ! command -v claude >/dev/null 2>&1; then
   echo "okc: claude is not installed on this machine, so it cannot be given work"
   exit 1
-fi
+fi`}
 
 # --dangerously-skip-permissions is the point rather than a shortcut. A worker
 # that stops to ask cannot run unattended, and asking is exactly what nobody is
@@ -101,7 +111,9 @@ cat > ${dir}/run.sh <<'OKC_RUN_EOF'
 # would have written is exactly what never got written.
 echo $$ > ${dir}/pid
 cd ${q(folder)} 2>/dev/null || cd "$HOME"
-claude -p "$(cat ${dir}/task.txt)" --dangerously-skip-permissions --output-format json${rules ? ` --append-system-prompt-file ${rules}` : ''}${resume ? ` --resume ${q(resume)}` : ''} > ${dir}/out.log 2>&1
+${shell
+  ? `bash ${dir}/task.txt`
+  : `claude -p "$(cat ${dir}/task.txt)" --dangerously-skip-permissions --output-format json${rules ? ` --append-system-prompt-file ${rules}` : ''}${resume ? ` --resume ${q(resume)}` : ''}`} > ${dir}/out.log 2>&1
 echo $? > ${dir}/status
 OKC_RUN_EOF
 
