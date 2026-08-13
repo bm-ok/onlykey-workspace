@@ -193,25 +193,56 @@ function writeConfig (machines) {
   return CONFIG()
 }
 
-// One line in the operator's config, added once.
+// The same path, written the way an MSYS build of ssh understands it.
+//
+// `C:/Users/x` and `/c/Users/x` are the same file and neither program accepts
+// the other's spelling.
+const msys = p => slashes(p).replace(/^([A-Za-z]):/, (_, d) => `/${d.toLowerCase()}`)
+
+// TWO SPELLINGS OF ONE PATH, because there are two different `ssh` programs on a
+// Windows machine and they do not read the same string.
+//
+// Windows OpenSSH -- the one VS Code Remote runs -- wants `C:/Users/...`. The
+// `ssh` that comes with git is an MSYS build, and to it that is a RELATIVE path:
+// it looks for a file called `C:` inside `~/.ssh`, does not find one, and
+// carries on WITHOUT SAYING ANYTHING, because a missing include is not an error
+// in either program. So the alias simply is not there, and `ssh okc-runner2` --
+// which is what `vmShell` tells a person to type -- answers "could not resolve
+// hostname" as though the machine were the problem.
+//
+// Writing both lines costs nothing: each program reads the spelling it
+// understands and silently ignores the other, which is the same silence that
+// caused the bug, used deliberately this time.
+const includeLines = () => {
+  const win = slashes(CONFIG())
+  const nix = msys(CONFIG())
+  return win === nix ? [`Include "${win}"`] : [`Include "${win}"`, `Include "${nix}"`]
+}
+
+// The operator's config, given the lines it is missing.
 //
 // `Include` has to come before any `Host` block to apply to everything, which is
 // why it goes at the top. Adding it is the only edit this app ever makes to a
 // file it does not own, and it is idempotent.
+//
+// EACH LINE IS CHECKED SEPARATELY, so a config written before this knew about
+// the second spelling gets repaired rather than left half-working -- which is
+// the state every machine that already exists is in.
 function ensureInclude () {
   const user = USER_CONFIG()
-  const line = `Include "${CONFIG().replace(/\\/g, '/')}"`
   let current = ''
   try { current = fs.readFileSync(user, 'utf8') } catch { /* first time */ }
-  if (current.includes(CONFIG().replace(/\\/g, '/'))) return { added: false, file: user }
+
+  const missing = includeLines().filter(l => !current.includes(l))
+  if (!missing.length) return { added: false, file: user, lines: [] }
 
   fs.mkdirSync(path.dirname(user), { recursive: true })
-  fs.writeFileSync(user, `# Added by the dashboard, so its machines can be reached by name.\n${line}\n\n${current}`)
-  return { added: true, file: user }
+  fs.writeFileSync(user, `# Added by the dashboard, so its machines can be reached by name.\n${missing.join('\n')}\n\n${current}`)
+  return { added: true, file: user, lines: missing }
 }
 
 module.exports = {
   ensure, make, have, state, publicKey, fingerprint,
-  writeConfig, ensureInclude, aliasFor, CONFIG, USER_CONFIG,
+  writeConfig, ensureInclude, includeLines, aliasFor, CONFIG, USER_CONFIG,
   KEY, PUB, DIR
 }

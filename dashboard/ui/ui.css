@@ -441,3 +441,63 @@ table.kv td { padding: 3px 0; word-break: break-all; }
   font: inherit;
   font-size: 12px;
 }
+
+/* One pane per shell, stacked in the same box and shown one at a time. Hidden
+   with display:none rather than being removed, so a shell you switched away
+   from keeps its scrollback and whatever is still running in it. */
+.term-pane { display: none; height: 100%; }
+.term-pane.on { display: block; }
+
+.term-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 10px 0 6px;
+}
+.term-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px 6px 0 0;
+  border-bottom-color: transparent;
+  background: #0d1117;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.term-tab.on { color: var(--text); background: #0a0d12; border-color: var(--accent); }
+/* A session whose ssh has exited. Left in the strip on purpose -- whatever it
+   said before it died is the reason it died, and closing the tab for you would
+   take that away exactly when it is worth reading. */
+.term-tab.ended { text-decoration: line-through; opacity: .65; }
+.term-x {
+  background: none;
+  border: 0;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  opacity: .6;
+}
+.term-x:hover { opacity: 1; color: var(--fail); }
+
+/* Whether the worker on a machine could authenticate. */
+.authline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.authline.ok { border-left-color: var(--ok); }
+.authline strong { color: var(--text); }
+.btn.small { padding: 3px 8px; font-size: 11px; }

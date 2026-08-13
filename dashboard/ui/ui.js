@@ -1050,7 +1050,7 @@ function readDefinition (which) {
   }).catch(oops)
 }
 
-// ---- a shell on a machine ---------------------------------------------
+// ---- shells on machines ------------------------------------------------
 //
 // THE PTY IS AT THE FAR END. `ssh -tt` allocates one on the machine, which is
 // where the shell actually is; this side only moves bytes between a child
@@ -1063,36 +1063,48 @@ function readDefinition (which) {
 // does the same thing with the same key. What cannot be shared is the terminal —
 // the dashboard has none to hand over, and an interactive session needs the one
 // the person is sitting at.
-let term = null
-let termFit = null
-let termChild = null
-let termName = null
+//
+// SEVERAL AT ONCE, each its own tab. A terminal is mostly somewhere you wait —
+// for a build, for a sign-in, for an agent to say something — and needing a
+// second one while the first is busy is the ordinary case, not the exotic one.
+//
+// EACH TAB OWNS ITS OWN Terminal, WHICH IS ALSO THE FIX FOR A REAL BUG. The
+// first version made one widget and reused it. `onData` registers a handler and
+// hands back a disposable; reusing the widget meant registering again on every
+// open without ever disposing, so after closing one shell and opening another
+// each keystroke was written to stdin TWICE — once per session ever opened.
+// It looked like a stuck key rather than a leak, which is why it took a person
+// noticing rather than anything here reporting it. Nothing is shared between
+// shells now, so there is nothing left to leak.
+let shells = []
+let active = null
+let shellSeq = 0
 
-function termWrite (text) { if (term) term.write(text) }
+const shellFor = id => shells.find(s => s.id === id) || null
 
-function openTerminal (name) {
-  closeTerminal({ quiet: true })
-
+function openShell (name) {
   api('vmShell', { name }).then(where => {
     const { spawn } = require('node:child_process')
 
-    if (!term) {
-      term = new Terminal({
-        fontFamily: 'Consolas, "Cascadia Mono", monospace',
-        fontSize: 13,
-        // Matches the window rather than xterm's default black, so a terminal
-        // sitting in this page does not look like a hole cut in it.
-        theme: { background: '#0a0d12', foreground: '#c9d1d9', cursor: '#58a6ff' },
-        cursorBlink: true,
-        // Kept, because the whole point of a terminal is reading what went past.
-        scrollback: 5000
-      })
-      termFit = new FitAddon.FitAddon()
-      term.loadAddon(termFit)
-      term.open($('term'))
-    }
-    termFit.fit()
-    term.clear()
+    // Its own element, its own widget, its own child process. The element is
+    // what the tab switches between, so a hidden shell keeps its scrollback and
+    // its running command rather than being torn down and rebuilt.
+    const holder = el('div', { className: 'term-pane' })
+    $('term').append(holder)
+
+    const term = new Terminal({
+      fontFamily: 'Consolas, "Cascadia Mono", monospace',
+      fontSize: 13,
+      // Matches the window rather than xterm's default black, so a terminal
+      // sitting in this page does not look like a hole cut in it.
+      theme: { background: '#0a0d12', foreground: '#c9d1d9', cursor: '#58a6ff' },
+      cursorBlink: true,
+      // Kept, because the whole point of a terminal is reading what went past.
+      scrollback: 5000
+    })
+    const fit = new FitAddon.FitAddon()
+    term.loadAddon(fit)
+    term.open(holder)
 
     // -tt FORCES a pty even though our stdin is a pipe rather than a terminal.
     // Without it ssh notices there is no terminal here and runs the command
@@ -1105,47 +1117,142 @@ function openTerminal (name) {
       '-o', 'StrictHostKeyChecking=accept-new',
       where.target
     ]
-    termChild = spawn('ssh', args, { windowsHide: true })
-    termName = name
-    setText($('term-context'), `— ${where.target}${where.live ? '' : ' (last known address)'}`)
 
-    termChild.stdout.on('data', d => termWrite(d.toString('utf8')))
-    termChild.stderr.on('data', d => termWrite(d.toString('utf8')))
-    term.onData(d => { try { termChild && termChild.stdin.write(d) } catch { /* it has gone */ } })
+    const shell = {
+      id: ++shellSeq,
+      name,
+      target: where.target,
+      live: where.live,
+      term,
+      fit,
+      holder,
+      child: spawn('ssh', args, { windowsHide: true }),
+      // Every handler this shell registered, so closing it takes them with it.
+      off: [],
+      ended: false
+    }
+    shells.push(shell)
+
+    const write = t => { try { shell.child && shell.child.stdin.write(t) } catch { /* it has gone */ } }
+
+    shell.child.stdout.on('data', d => term.write(d.toString('utf8')))
+    shell.child.stderr.on('data', d => term.write(d.toString('utf8')))
+    shell.off.push(term.onData(write))
 
     // The remote pty is created at ssh's idea of our size, which is 80x24
     // because we have no terminal here. Telling the far end the real size is the
     // only way anything full-screen -- an editor, `less`, `top` -- lays out
     // correctly, and it has to be said again whenever the window changes.
-    const tellSize = () => {
-      if (!termChild || !term) return
-      try { termChild.stdin.write(`stty rows ${term.rows} cols ${term.cols} 2>/dev/null; clear\n`) } catch { /* as above */ }
-    }
-    setTimeout(tellSize, 700)
+    shell.off.push(term.onResize(() => write(`stty rows ${term.rows} cols ${term.cols} 2>/dev/null\n`)))
+    setTimeout(() => write(`stty rows ${term.rows} cols ${term.cols} 2>/dev/null; clear\n`), 700)
 
-    term.onResize(() => { try { termChild && termChild.stdin.write(`stty rows ${term.rows} cols ${term.cols} 2>/dev/null\n`) } catch { /* as above */ } })
-
-    termChild.on('close', code => {
-      termWrite(`\r\n\x1b[38;5;244m[the session ended${code ? ` — ssh exited ${code}` : ''}]\x1b[0m\r\n`)
-      termChild = null
-      setText($('term-context'), '— closed')
+    shell.child.on('close', code => {
+      term.write(`\r\n\x1b[38;5;244m[the session ended${code ? ` — ssh exited ${code}` : ''}]\x1b[0m\r\n`)
+      shell.child = null
+      shell.ended = true
+      // Left open on purpose. Whatever it said before it died is the reason it
+      // died, and closing the tab automatically would take that away at exactly
+      // the moment it is worth reading.
+      paintShellTabs()
     })
-    termChild.on('error', e => termWrite(`\r\n\x1b[31m[could not start ssh: ${e.message}]\x1b[0m\r\n`))
+    shell.child.on('error', e => term.write(`\r\n\x1b[31m[could not start ssh: ${e.message}]\x1b[0m\r\n`))
 
-    term.focus()
+    showShell(shell)
   }).catch(oops)
 }
 
-function closeTerminal ({ quiet = false } = {}) {
-  if (termChild) {
-    try { termChild.kill() } catch { /* already gone */ }
-    termChild = null
-  }
-  termName = null
-  if (!quiet) {
-    setText($('term-context'), '— closed')
-    termWrite('\r\n\x1b[38;5;244m[closed]\x1b[0m\r\n')
-  }
+function showShell (shell) {
+  active = shell || null
+  for (const s of shells) s.holder.classList.toggle('on', s === active)
+  paintShellTabs()
+  if (!active) return
+  // Fitted only once visible: a terminal laid out inside a hidden element
+  // measures zero and comes back at the wrong size.
+  try { active.fit.fit() } catch { /* not laid out yet */ }
+  active.term.focus()
+}
+
+function closeShell (shell) {
+  if (!shell) return
+  if (shell.child) { try { shell.child.kill() } catch { /* already gone */ } }
+  // Disposed EXPLICITLY, both the handlers and the widget. This is the half
+  // that was missing before: a killed child stops producing output, but a
+  // handler on a widget that outlives it goes on delivering keystrokes.
+  for (const d of shell.off) { try { d.dispose() } catch { /* already gone */ } }
+  try { shell.term.dispose() } catch { /* already gone */ }
+  shell.holder.remove()
+  shells = shells.filter(s => s !== shell)
+  if (active === shell) showShell(shells[shells.length - 1] || null)
+  else paintShellTabs()
+}
+
+function paintShellTabs () {
+  const bar = $('term-tabs')
+  bar.classList.toggle('hidden', !shells.length)
+  fill(bar, shells.map(s => el('span', {
+    className: `term-tab${s === active ? ' on' : ''}${s.ended ? ' ended' : ''}`,
+    onclick: () => showShell(s),
+    title: `${s.target}${s.ended ? ' — this session has ended' : ''}`
+  },
+  el('span', { textContent: `${s.name}${shells.filter(o => o.name === s.name).length > 1 ? ` #${s.id}` : ''}` }),
+  el('button', {
+    className: 'term-x',
+    textContent: '×',
+    title: 'close this shell',
+    onclick: e => { e.stopPropagation(); closeShell(s) }
+  }))))
+
+  setText($('term-context'), active
+    ? `— ${active.target}${active.live ? '' : ' (last known address)'}${active.ended ? ', ended' : ''}`
+    : '')
+  $('term-close').disabled = !active
+}
+
+// Whether the worker on the machine you are looking at can authenticate.
+//
+// HERE BECAUSE THIS IS WHERE IT BITES. Opening a shell on a fresh machine and
+// running `claude` gets a sign-in menu, because a runner's credential is handed
+// to it per task and taken back afterwards — so a machine sitting idle is
+// signed OUT by design, and the way to fix that was a command line only.
+//
+// Not probed. The dashboard already records who is holding one, because a
+// machine holding a credential is the thing that cannot be snapshotted.
+function paintTermAuth () {
+  const name = $('term-machine').value
+  const vm = latest.vms.find(v => v.name === name)
+  const box = $('term-auth')
+  if (!vm) { box.classList.add('hidden'); return }
+  box.classList.remove('hidden')
+
+  const held = latest.credentialsHeld || {}
+  if (!changed('term-auth', [name, vm.holdsCredential, !!held.held])) return
+
+  const has = vm.holdsCredential
+  fill(box, el('div', { className: `authline ${has ? 'ok' : ''}` },
+    el('strong', { textContent: has ? `claude is signed in on ${name}. ` : `claude is signed out on ${name}. ` }),
+    el('span', {
+      textContent: has
+        ? 'It is holding this host\'s worker credential, which also means it cannot be snapshotted until that is taken back.'
+        : held.held
+          ? 'A runner is handed a credential per task and it is taken back afterwards, so an idle one is signed out by design.'
+          : 'This host holds no worker credential either. Sign one machine in on the Keys tab first.'
+    }),
+    has
+      ? el('button', {
+          className: 'btn danger small',
+          textContent: 'Take it back',
+          onclick: () => api('vmCredentialsForget', { name })
+            .then(() => say(`${name} no longer holds a credential.`)).catch(oops)
+        })
+      : held.held
+        ? el('button', {
+            className: 'btn ok small',
+            textContent: 'Sign it in',
+            onclick: () => api('vmCredentialsPut', { name })
+              .then(() => say(`${name} can authenticate now. A claude already running will not notice — start it again.`))
+              .catch(oops)
+          })
+        : null))
 }
 
 function paintTerminal () {
@@ -1160,10 +1267,9 @@ function paintTerminal () {
     if (was && up.some(v => v.name === was)) pick.value = was
   }
   $('term-open').disabled = !up.length
-  $('term-close').disabled = !termChild
-  // Resized when the tab becomes visible: a terminal laid out while its panel
-  // was hidden measures zero and comes back the wrong size.
-  if (view === 'terminal' && termFit) { try { termFit.fit() } catch { /* not open yet */ } }
+  paintTermAuth()
+  // Refitted when the tab becomes visible, for the reason in showShell.
+  if (view === 'terminal' && active) { try { active.fit.fit() } catch { /* not open yet */ } }
 }
 
 // The two keys this app needs in order to be itself.
@@ -1843,9 +1949,13 @@ function paintVms () {
 }
 
 $('add-task-open').onclick = newTask
-$('term-open').onclick = () => openTerminal($('term-machine').value)
-$('term-close').onclick = () => closeTerminal()
-window.addEventListener('resize', () => { if (termFit && view === 'terminal') { try { termFit.fit() } catch {} } })
+$('term-open').onclick = () => openShell($('term-machine').value)
+$('term-close').onclick = () => closeShell(active)
+// The sign-in line is about the machine in the picker, not the one in the front
+// tab -- it is what you read BEFORE opening a shell, to know whether opening one
+// is worth doing.
+$('term-machine').onchange = () => paintTermAuth()
+window.addEventListener('resize', () => { if (active && view === 'terminal') { try { active.fit.fit() } catch { /* not laid out */ } } })
 
 // The settings are the previous version's, which were arrived at by running it:
 // 8 GB, 4 cpus, 60 GB, a named LTS image type, and bridged networking so the
@@ -2023,13 +2133,17 @@ async function drawOnce () {
   // The queue is asked here as well as in its own panel, because the banner
   // needs it: a machine the queue is driving is not an idle machine, and
   // nagging about one would train the operator to ignore the banner.
-  const [list, status, running] = await Promise.all([
+  const [list, status, running, held] = await Promise.all([
     api('vmList'),
     api('status'),
-    api('queueState').catch(() => ({ inFlight: [] }))
+    api('queueState').catch(() => ({ inFlight: [] })),
+    // Whether there is a credential to hand out at all, which is the difference
+    // between "sign this machine in" and "there is nothing to sign it in with".
+    api('credentialsHeld').catch(() => ({ held: false }))
   ])
   const busyMachines = new Set((running.inFlight || []).map(f => f.machine))
   latest = list
+  latest.credentialsHeld = held
 
   // Reconcile the selection against what actually exists, every time, before
   // anything that depends on it is painted.

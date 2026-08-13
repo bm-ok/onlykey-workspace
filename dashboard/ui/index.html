@@ -141,7 +141,11 @@
        A real shell on a machine, in the window. The pty is allocated at the FAR
        end by `ssh -tt` -- there is none on this side, and none is wanted: a
        local pty on Windows means a compiled native module, and this app has
-       none of those on purpose. -->
+       none of those on purpose.
+
+       Tabbed, because a terminal is mostly somewhere you WAIT -- for a build,
+       for a sign-in, for an agent to say something -- and needing a second one
+       while the first is busy is the ordinary case. -->
   <section class="view" id="view-terminal">
     <div class="sync-head">
       <h2>Terminal <span class="muted" id="term-context"></span></h2>
@@ -156,6 +160,13 @@
       <code>okc.js vmShell</code> and the same way VS Code connects — so if this
       works, those do.
     </p>
+    <!-- Whether the worker on the machine in the picker could authenticate, said
+         BEFORE a shell is opened. Running `claude` on an idle runner gets a
+         sign-in menu -- correctly, since a credential is handed out per task and
+         taken back after -- and until now the only way to change that was a
+         command line. -->
+    <div id="term-auth" class="hidden"></div>
+    <div id="term-tabs" class="term-tabs hidden"></div>
     <div id="term" class="term"></div>
   </section>
 

@@ -579,6 +579,52 @@ hole in one-surface: the command line half is `vmShell`, doing the same thing
 with the same key. What cannot be shared is the terminal itself -- the dashboard
 has none to hand over.
 
+**Several at once, each its own tab**, because a terminal is mostly somewhere you
+wait -- for a build, for a sign-in, for an agent to say something -- and needing
+a second one while the first is busy is the ordinary case. Each tab owns its own
+terminal widget, its own ssh, and its own handlers.
+
+That last part is not tidiness. The first version made ONE widget and reused it,
+and `onData` returns a disposable that was never disposed -- so after closing a
+shell and opening another, every keystroke was written to stdin once per session
+ever opened. It reads as a stuck key rather than as a leak, and nothing here
+reported it; a person noticed. A pane whose ssh has exited is struck through and
+LEFT IN THE STRIP, because whatever it said before it died is the reason it died.
+
+Whether the worker can authenticate is said here too
+----------------------------------------------------
+
+Opening a shell on an idle runner and typing `claude` gets a sign-in menu, and
+that is correct: a credential is handed to a machine per task and taken back
+afterwards, so a machine sitting idle is signed OUT by design. It is still a
+surprise every single time, and until now the only cure was a command line.
+
+So the Terminal tab says which it is for the machine in the picker, with the one
+button that changes it. Nothing is probed -- the dashboard already records who is
+holding a credential, because a machine holding one is the thing that cannot be
+snapshotted, and that is the same fact.
+
+A `claude` that is ALREADY RUNNING will not notice a credential appearing
+underneath it. Start it again.
+
+Two spellings of one path, in ssh config
+-----------------------------------------
+
+`vmShell` says the way in is `ssh okc-runner2`, and that alias comes from a
+config file of this app's own with one `Include` line added to `~/.ssh/config`.
+
+There are two different `ssh` programs on a Windows machine and THEY DO NOT READ
+THE SAME STRING. Windows OpenSSH -- the one VS Code Remote runs -- wants
+`C:/Users/...`. The `ssh` that ships with git is an MSYS build, and to it that is
+a RELATIVE path: it looks for a file called `C:` inside `~/.ssh`, does not find
+one, and carries on saying nothing, because a missing include is not an error in
+either program. The alias is then simply absent, and the command this tool told
+you to type answers "could not resolve hostname" as though the machine were at
+fault.
+
+Both lines are written. Each program reads the spelling it understands and
+ignores the other -- the same silence that caused the bug, used deliberately.
+
 Seeing a machine that is not talking yet
 ----------------------------------------
 
