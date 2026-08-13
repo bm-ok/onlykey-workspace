@@ -198,7 +198,9 @@ function groups () {
       // repositories still describes those three when a fourth arrives.
       missing: here.filter(r => !(r in on)),
       broken: parts.filter(p => p.stillHere && !p.there).map(p => `${p.branch} is gone from ${p.repo}`),
-      inUse: parts.length > 0 && parts.every(p => !p.stillHere || baselineOf(p.repo) === p.branch)
+      inUse: parts.length > 0 && parts.every(p => !p.stillHere || baselineOf(p.repo) === p.branch),
+      // Proposed for landing: `{ at, by, why }`, or null. See markGroup.
+      marked: g.marked || null
     }
   }).sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -225,9 +227,77 @@ function saveGroup (name, { on = null, why = null } = {}) {
   }
 
   const all = groupsFile()
-  all[title] = { on: chosen, why: why ? String(why).trim() : (all[title] || {}).why || null, made: (all[title] || {}).made || new Date().toISOString() }
+  // A group being rewritten keeps what it was marked as, because marking is a
+  // statement about the LINE and not about the particular branches in it today.
+  all[title] = {
+    on: chosen,
+    why: why ? String(why).trim() : (all[title] || {}).why || null,
+    made: (all[title] || {}).made || new Date().toISOString(),
+    marked: (all[title] || {}).marked || null
+  }
   writeGroups(all)
   return groups().find(g => g.name === title)
+}
+
+// ---- a line that is finished, and up to be landed ----------------------
+//
+// MARKING IS THE DIFFERENCE BETWEEN "work happens here" AND "this is what we
+// are proposing". A group's branches are protected the moment they are in a
+// group, so marking adds no protection of its own — what it adds is intent, and
+// intent is the thing a second person needs in order to know what they are
+// looking at. An unmarked group is where work is cut from. A marked one is a
+// proposal: it says somebody thinks this line is done, and it is the only kind
+// of group that appears on the left of a comparison.
+//
+// Unmarking is how work continues. Deleting the group is how it stops being a
+// line at all, and the two are deliberately separate: taking a proposal back is
+// ordinary, and dissolving the line is not.
+function markGroup (name, { why = null, by = null } = {}) {
+  const all = groupsFile()
+  const title = String(name || '').trim()
+  if (!(title in all)) throw new Error(`There is no group called "${title}".`)
+
+  const g = groups().find(x => x.name === title)
+  if (g.broken.length) {
+    throw new Error(`"${title}" cannot be proposed: ${g.broken.join('; ')}. A line with a branch missing from it is not a thing anybody can read.`)
+  }
+
+  all[title] = { ...all[title], marked: { at: new Date().toISOString(), by: by || null, why: why ? String(why).trim() : null } }
+  writeGroups(all)
+  return groups().find(x => x.name === title)
+}
+
+function unmarkGroup (name) {
+  const all = groupsFile()
+  const title = String(name || '').trim()
+  if (!(title in all)) throw new Error(`There is no group called "${title}".`)
+  all[title] = { ...all[title], marked: null }
+  writeGroups(all)
+  return groups().find(x => x.name === title)
+}
+
+// A finished branch, made into a line of its own.
+//
+// The branch is already one name across several repositories, which is exactly
+// what a group is — so this is less a conversion than saying out loud what the
+// branch already was. What it adds is a name that outlives the branch, and
+// protection: from here the branch is a link, and nothing is built directly on
+// it.
+//
+// IT MOVES NO BASELINE. `branchAsBaseline` is the act that re-aims the workspace
+// at a branch, and it is a much larger one — everything cut afterwards starts
+// there. Promoting a branch so it can be compared and landed should not quietly
+// do that too.
+function groupFromBranch (branch, { name = null, why = null } = {}) {
+  const row = all().branches.find(b => b.name === branch)
+  if (!row) throw new Error(`There is no branch called "${branch}".`)
+  if (!row.in.length) throw new Error(`"${branch}" is not in any repository here, so there is no line to make from it.`)
+
+  const title = String(name || branch).trim()
+  return saveGroup(title, {
+    on: Object.fromEntries(row.in.map(repo => [repo, branch])),
+    why: why || `the "${branch}" line`
+  })
 }
 
 // Every repository's baseline set at once, which is what a group is for.
@@ -420,6 +490,90 @@ function freeIfBusy (repo, branch) {
 // with it.
 function freeEverywhere (branch) {
   return serve.list().map(r => freeIfBusy(r.name, branch)).filter(r => r.freed || r.busy)
+}
+
+// ---- landing one branch into another, in one repository -----------------
+//
+// IN THE WORKING TREE, and not by moving a ref. Every repository here has a
+// checkout and it is sitting on the branch work lands into — so `fetch . a:b`,
+// the usual way to move a ref in a bare repository, is refused by git with a
+// message about a checked-out branch. Forcing the ref instead would leave the
+// files on disk describing a commit that is no longer at the head, which is a
+// repository that looks fine until somebody runs `git status` and cannot explain
+// it. A merge in the tree is what a person would do, and it is the thing whose
+// failure modes git already explains well.
+//
+// --no-ff DELIBERATELY. A line landing is an event: a fast-forward would leave
+// the target's history indistinguishable from the work having been done on it
+// directly, and the whole point of a line is that it is a thing that happened.
+//
+// A DRY RUN IS A DIFFERENT FUNCTION, not a flag on this one. A flag means the
+// same code path decides, at run time, whether it is pretending — and the way
+// that goes wrong is that it stops pretending.
+function landPlan (repo, base, head, { push = false } = {}) {
+  const dir = serve.gitDirOf(repo)
+  if (!dir) throw new Error(`There is no repository called "${repo}" here.`)
+  const at = pathOf(repo)
+  const bare = dir === at
+  const was = headOf(dir)
+
+  let ahead = 0
+  try { ahead = Number(git(dir, ['rev-list', '--count', `${base}..${head}`])) || 0 } catch { /* unrelated histories read as nothing to do */ }
+
+  // Would it conflict, asked without merging. `merge-tree --write-tree` performs
+  // the merge against the object database and writes the resulting tree,
+  // touching no ref and no working tree, then exits non-zero and names the files
+  // if it could not. That is the whole answer, and it is a read.
+  let conflicts = null
+  let unchecked = false
+  if (ahead) {
+    try {
+      git(dir, ['merge-tree', '--write-tree', base, head])
+    } catch (e) {
+      const said = String((e.stdout || '') + (e.stderr || '') + (e.message || ''))
+      if (/unknown option|usage: git merge-tree/i.test(said)) unchecked = true
+      else {
+        const named = said.split('\n').map(l => l.trim()).filter(l => /^CONFLICT/.test(l)).slice(0, 6)
+        conflicts = named.length ? named.join('; ') : 'it would conflict'
+      }
+    }
+  }
+
+  const dirty = ahead && !bare && !isClean(repo)
+
+  return {
+    repo,
+    base,
+    head,
+    ahead,
+    was,
+    bare,
+    conflicts,
+    unchecked,
+    dirty: !!dirty,
+    why: conflicts || (dirty ? `${repo} has uncommitted changes here, and landing merges in its working tree` : null),
+    // Word for word what landInto will run, in order.
+    commands: !ahead
+      ? []
+      : (was === base ? [] : [`git -C ${at} checkout ${base}`])
+          .concat([`git -C ${at} merge --no-ff --no-edit ${head}`])
+          .concat(push ? [`git -C ${at} push origin ${base}`] : [])
+  }
+}
+
+function landInto (repo, base, head) {
+  const plan = landPlan(repo, base, head)
+  if (plan.why) throw new Error(`${repo}: ${plan.why}`)
+  if (!plan.ahead) return { ...plan, moved: false }
+
+  const at = pathOf(repo)
+  if (plan.was !== base) gitIn(at, ['checkout', '--quiet', base])
+  gitIn(at, ['merge', '--no-ff', '--no-edit', head])
+  return { ...plan, moved: true, now: gitIn(at, ['rev-parse', base]) }
+}
+
+function pushLanded (repo, base) {
+  return gitIn(pathOf(repo), ['push', 'origin', base])
 }
 
 // Repositories sitting away from their default branch, and whether that can be
@@ -800,6 +954,8 @@ function remove (branch, { force = false } = {}) {
 module.exports = {
   all, ensure, remove, nameIsOk, branchesIn, headOf, defaultHeads, noteFor, notes, scopeOf,
   defaultOf, baselineOf, setBaseline, baselines, groups, saveGroup, useGroup, deleteGroup, inAnyGroup,
+  markGroup, unmarkGroup, groupFromBranch,
   protectedBranches, isProtected, whyProtected,
-  isClean, freeIfBusy, freeEverywhere, blocking
+  isClean, freeIfBusy, freeEverywhere, blocking,
+  landPlan, landInto, pushLanded
 }

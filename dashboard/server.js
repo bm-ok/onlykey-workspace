@@ -242,6 +242,52 @@ function rememberCredentialCheck (checked) {
   try { fs.writeFileSync(at, JSON.stringify({ ...meta, checked }, null, 2)) } catch { /* the answer still stands for this call */ }
 }
 
+// ---- reading two lines against each other ------------------------------
+//
+// A group is one branch per repository, so a pair of groups is a pair of
+// branches per repository — and only where BOTH name that repository. A line
+// that reached two repositories cannot land in a third, and a target that covers
+// a repository the source never touched has nothing to receive there. Neither is
+// an error; both are facts worth returning, because "why is this repository not
+// listed" is the first thing somebody asks.
+function twoLines (source, target) {
+  const all = branches.groups()
+  const from = all.find(g => g.name === String(source || '').trim())
+  const into = all.find(g => g.name === String(target || '').trim())
+  const known = all.map(g => g.name).join(', ') || 'none are named yet'
+  if (!from) throw new Error(`There is no line called "${source}". There is: ${known}.`)
+  if (!into) throw new Error(`There is no line called "${target}". There is: ${known}.`)
+  if (from.name === into.name) throw new Error(`"${from.name}" cannot be landed into itself.`)
+  if (from.broken.length) throw new Error(`"${from.name}" cannot be read: ${from.broken.join('; ')}.`)
+  if (into.broken.length) throw new Error(`"${into.name}" cannot be read: ${into.broken.join('; ')}.`)
+
+  const heads = new Map(from.on.filter(p => p.stillHere).map(p => [p.repo, p.branch]))
+  const bases = new Map(into.on.filter(p => p.stillHere).map(p => [p.repo, p.branch]))
+
+  const on = []
+  for (const [repo, head] of heads) {
+    if (!bases.has(repo)) continue
+    // The same branch on both sides is not a comparison, and git would answer
+    // "nothing", which reads as "this line is empty" rather than "these are the
+    // same thing". Kept in the list and marked, so the row can say which.
+    on.push({ repo, head, base: bases.get(repo), same: head === bases.get(repo) })
+  }
+
+  return {
+    source: from,
+    target: into,
+    on,
+    onlyInSource: [...heads.keys()].filter(r => !bases.has(r)),
+    onlyInTarget: [...bases.keys()].filter(r => !heads.has(r))
+  }
+}
+
+// A git helper lived here briefly, along with a conflict check. Both moved into
+// `repos/branches.js`, where git is already written -- and, more to the point,
+// where the function that RUNS the landing lives. The dry run and the act have
+// to be the same code or they drift, and the first sign of the drift is somebody
+// trusting the dry run.
+
 let wantedShot = null
 
 const actions = {
@@ -1353,10 +1399,22 @@ const actions = {
         // branch is a mistake worth seeing rather than a case to pick a winner in.
         const claims = board.filter(t => t.branch === b.name)
 
-        // What is on it, from the cache. A protected branch is the baseline
-        // everything else is measured against, so asking what it adds to itself
-        // is meaningless and is not asked.
-        const art = b.protected ? null : artifact.read(b.name)
+        // What is on it, from the cache.
+        //
+        // NOT ASKED OF A BASELINE, because a branch everything is measured
+        // against cannot be measured against itself — the answer is zero, and it
+        // is zero for a reason that says nothing about the branch.
+        //
+        // BUT ASKED OF A LINE. Being in a group protects a branch, and that used
+        // to be enough to stop this: promoting a finished branch so it could be
+        // landed made the board immediately report it as carrying nothing, with
+        // the summary of a default branch. The one branch somebody most wants to
+        // read is the one they have just proposed, and promoting it blinded the
+        // board to it. So the question is asked of what it IS — a baseline
+        // somewhere, or only a link in a line.
+        const guard = all.protected.find(p => p.branch === b.name) || {}
+        const isBaseline = (guard.asDefault || []).length > 0 || (guard.asBaseline || []).length > 0
+        const art = isBaseline ? null : artifact.read(b.name)
 
         // CONTAINED IN THE DEFAULT means every repository holding this branch
         // reports nothing beyond its default -- which is the same statement as
@@ -1402,7 +1460,7 @@ const actions = {
           tasks: claims.map(t => ({ id: t.id, number: t.number, title: t.title, state: t.state })),
           commits: art ? art.commits : 0,
           files: art ? art.files : 0,
-          summary: art ? art.summary : 'the default branch — everything else is measured against it',
+          summary: art ? art.summary : 'a baseline — everything else is measured against it',
           contained,
           // Made by this system and then forgotten: it carries work, and the task
           // that asked for it is gone. This is the one row that is genuinely hard
@@ -1779,6 +1837,225 @@ const actions = {
     run: ({ branch, repo, file }) => {
       if (!branch || !repo) throw new Error('Which branch, in which repository?')
       return { branch, repo, file: file || null, diff: artifact.diff(repo, branch, file) }
+    }
+  },
+
+  // ---- landing a line ----------------------------------------------------
+  //
+  // THE LAST JOINT. Work goes out to a machine, comes back on a branch, and gets
+  // read — and then stopped, because nothing here landed anything. Accepted work
+  // sat on its branch for ever and "into production" was a thing somebody did in
+  // another window with no record of it.
+  //
+  // A MERGE IS BETWEEN TWO LINES, not between two branches. A change spans
+  // repositories, so landing it is one decision with one answer, and doing it a
+  // repository at a time is how half a change lands. The source line is a group
+  // somebody has marked as a proposal; the target is the line it would go into.
+  //
+  // Read entirely from this host, like every other review here: `git merge` and
+  // `git push` are the only things below that write anything, they are named
+  // before they run, and they are refused as a set if any one of them would fail.
+
+  // Turning a finished branch into a line, so it can be proposed.
+  branchAsGroup: {
+    about: 'Make a line out of a branch, so it can be compared and landed. Moves no baseline',
+    takes: ['branch', 'name', 'why'],
+    run: ({ branch, name, why }) => {
+      const made = branches.groupFromBranch(branch, { name, why })
+      log.on('git').good(`"${made.name}" is a line now — ${made.on.map(p => `${p.repo}:${p.branch}`).join(', ')}`)
+      return {
+        ...made,
+        note: `"${made.name}" names ${made.on.map(p => p.repo).join(', ')} at "${branch}". Its branches are protected while it is a line. Nothing is counted from it until you say so.`
+      }
+    }
+  },
+
+  baselineGroupMark: {
+    about: 'Propose a line for landing. It appears on the left of a comparison and stays protected',
+    takes: ['name', 'why'],
+    run: ({ name, why, _overTheWire }) => {
+      const g = branches.markGroup(name, { why, by: _overTheWire ? 'the command line' : 'the window' })
+      log.on('git').good(`"${g.name}" is proposed for landing${why ? ` — ${String(why).trim()}` : ''}`)
+      return { ...g, note: `"${g.name}" is up to be landed. Compare it against the line it would go into, and unmark it to carry on working.` }
+    }
+  },
+
+  baselineGroupUnmark: {
+    about: 'Take a line back out of being proposed, so work on it can continue',
+    takes: ['name'],
+    run: ({ name }) => {
+      const g = branches.unmarkGroup(name)
+      log.on('git').warn(`"${g.name}" is no longer proposed`)
+      return { ...g, note: `"${g.name}" is a line again rather than a proposal. Its branches stay protected while it is a group at all — delete the group to build on them directly.` }
+    }
+  },
+
+  // What landing this line would be, read against the line it would land in.
+  mergeCompare: {
+    about: 'What one line carries that another does not: commits and changed files, per repository',
+    takes: ['source', 'target'],
+    run: ({ source, target }) => {
+      const pair = twoLines(source, target)
+      const repos = pair.on.map(({ repo, head, base }) => ({
+        ...artifact.inRepo(repo, head, base),
+        // Named on every row, because "which branch is this repository's half of
+        // the line" is the question a reader has to answer before anything else
+        // on the row means anything.
+        head,
+        onlyHere: !base
+      }))
+
+      const carrying = repos.filter(r => !r.missing && !r.noBase && !r.empty)
+      return {
+        source: pair.source.name,
+        target: pair.target.name,
+        // Repositories the two lines do not share, which is a real answer rather
+        // than an error: a line that reached two repositories cannot land in the
+        // third, and neither can it be said to be missing from it.
+        onlyInSource: pair.onlyInSource,
+        onlyInTarget: pair.onlyInTarget,
+        repos,
+        anything: carrying.length > 0,
+        commits: carrying.reduce((n, r) => n + r.ahead, 0),
+        files: carrying.reduce((n, r) => n + r.files.length + r.moreFiles, 0),
+        added: carrying.reduce((n, r) => n + r.added, 0),
+        removed: carrying.reduce((n, r) => n + r.removed, 0),
+        summary: carrying.length
+          ? `${carrying.reduce((n, r) => n + r.ahead, 0)} commit(s) in ${carrying.map(r => r.repo).join(', ')}`
+          : 'these two lines are the same'
+      }
+    }
+  },
+
+  mergeDiff: {
+    about: "One repository's changes between two lines, in full",
+    takes: ['source', 'target', 'repo', 'file'],
+    run: ({ source, target, repo, file }) => {
+      const pair = twoLines(source, target)
+      const part = pair.on.find(p => p.repo === repo)
+      if (!part) throw new Error(`"${repo}" is not in both lines. ${pair.source.name} and ${pair.target.name} share ${pair.on.map(p => p.repo).join(', ') || 'nothing'}.`)
+      return {
+        source: pair.source.name,
+        target: pair.target.name,
+        repo,
+        file: file || null,
+        base: part.base,
+        head: part.head,
+        diff: artifact.diff(repo, part.head, file, part.base)
+      }
+    }
+  },
+
+  // The two sides of one file, whole, for a view that shows them next to each
+  // other instead of as one stream of plus and minus.
+  mergeFile: {
+    about: 'One file as it is on each side of a comparison, for a side-by-side reading',
+    takes: ['source', 'target', 'repo', 'file'],
+    run: ({ source, target, repo, file }) => {
+      if (!file) throw new Error('Which file?')
+      const pair = twoLines(source, target)
+      const part = pair.on.find(p => p.repo === repo)
+      if (!part) throw new Error(`"${repo}" is not in both lines.`)
+      return {
+        source: pair.source.name,
+        target: pair.target.name,
+        ...artifact.sides(repo, part.head, file, part.base)
+      }
+    }
+  },
+
+  // ---- the dry run, and the thing it describes ---------------------------
+  //
+  // SAID BEFORE IT IS DONE, in the commands that will be run. Everything else in
+  // this app can be undone or is a read; landing changes branches that other
+  // people's work is measured against, and pushing puts it somewhere this app
+  // cannot reach to take it back. So the plan is a first-class answer: a person
+  // can read it, run it by hand instead, or press the button knowing exactly
+  // what the button is.
+  mergePlan: {
+    about: 'The exact git commands landing this line would run, without running any of them',
+    takes: ['source', 'target', 'push'],
+    run: ({ source, target, push = false }) => {
+      const pair = twoLines(source, target)
+      // WORD FOR WORD WHAT WILL RUN, and produced by the same function that will
+      // run it -- not written out again here. A dry run assembled separately from
+      // the thing it describes is a dry run that drifts, and the first sign of
+      // the drift is somebody trusting it.
+      const steps = pair.on.map(({ repo, head, base }) => branches.landPlan(repo, base, head, { push }))
+      const doing = steps.filter(s => s.ahead)
+      const trouble = doing.filter(s => s.why).map(s => `${s.repo}: ${s.why}`)
+
+      return {
+        source: pair.source.name,
+        target: pair.target.name,
+        push: !!push,
+        steps,
+        trouble,
+        can: !trouble.length && doing.length > 0,
+        note: trouble.length
+          ? `This would not land: ${trouble.join('; ')}. Nothing has been run.`
+          : doing.length
+            ? `${doing.length} repositor${doing.length === 1 ? 'y' : 'ies'} would move${push ? ', and then be pushed' : ''}. Nothing has been run.`
+            : 'There is nothing to land — the target already has everything.'
+      }
+    }
+  },
+
+  mergeLand: {
+    about: 'Run the plan: merge the source line into the target, in every repository, or none',
+    takes: ['source', 'target', 'push'],
+    run: async ({ source, target, push = false }) => {
+      const plan = await actions.mergePlan.run({ source, target, push })
+      if (!plan.can) throw new Error(plan.note)
+
+      // ALL OF THEM OR NONE — as far as that can be promised. Every repository
+      // was asked first, and one that would conflict or is dirty stops the whole
+      // thing before any of them move. What cannot be promised is atomicity
+      // across three repositories: if the second merge fails for a reason the
+      // check did not predict, the first has landed. So the failure says which
+      // ones moved rather than pretending none did.
+      const doing = plan.steps.filter(s => s.ahead)
+      const landed = []
+      try {
+        for (const step of doing) {
+          const done = branches.landInto(step.repo, step.base, step.head)
+          landed.push({ repo: done.repo, base: done.base, head: done.head, at: done.now })
+          log.on('git').good(`landed ${step.head} into ${step.base} in ${step.repo}`)
+        }
+      } catch (e) {
+        log.on('git').bad(`landing stopped: ${e.message}`)
+        throw new Error(landed.length
+          ? `${e.message}. ${landed.map(l => l.repo).join(', ')} landed, and ${plan.target} now holds them; the rest did not. Fix that repository and land again — the ones already in are skipped.`
+          : e.message)
+      }
+
+      const pushed = []
+      const failed = []
+      if (push) {
+        for (const step of doing) {
+          try {
+            branches.pushLanded(step.repo, step.base)
+            pushed.push(step.repo)
+            log.on('git').good(`pushed ${step.base} from ${step.repo}`)
+          } catch (e) {
+            // NOT FATAL, and not hidden. The merge is already in this host's
+            // repositories; a push that failed is a thing to do again, not a
+            // reason to pretend the landing did not happen.
+            failed.push(`${step.repo}: ${String(e.message || e).split('\n')[0]}`)
+            log.on('git').bad(`could not push ${step.base} from ${step.repo}: ${e.message}`)
+          }
+        }
+      }
+
+      return {
+        source: plan.source,
+        target: plan.target,
+        landed,
+        pushed,
+        failed,
+        note: `${plan.source} is in ${plan.target}: ${landed.map(l => `${l.repo} ${l.base} at ${String(l.at).slice(0, 8)}`).join(', ')}.` +
+          (push ? (failed.length ? ` Pushed ${pushed.join(', ') || 'nothing'}; ${failed.join('; ')}.` : ` Pushed ${pushed.join(', ')}.`) : '')
+      }
     }
   },
 
