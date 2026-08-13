@@ -30,6 +30,7 @@ const artifact = require('./tasks/artifact')
 const harness = require('./tasks/harness')
 const approval = require('./tasks/approval')
 const archive = require('./tasks/archive')
+const files = require('./tasks/files')
 const queue = require('./tasks/queue')
 require('./tasks/planned')   // registers the drills with the harness
 const machines = require('./machines/store')
@@ -1471,7 +1472,18 @@ echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 
       }
       const to = log.on('vm', name)
 
-      const r = await channel.run(name, dispatch.script({ id, task: String(task), folder: where, contract: rules, resume, shell: !!shell }),
+      // Where this host can be reached, worked out here rather than left for the
+      // guest to assemble. The machine already knows the address; what it does
+      // not know is which port artifacts go to, and telling it is cheaper than
+      // putting another value in its environment and re-provisioning to get it
+      // there.
+      let base = null
+      try {
+        const where2 = await vbox.hostAddress()
+        if (where2) base = `https://${where2}:${port}`
+      } catch { /* no address means no helper, and the run still runs */ }
+
+      const r = await channel.run(name, dispatch.script({ id, task: String(task), folder: where, contract: rules, resume, shell: !!shell, base }),
         { what: `dispatching ${id}`, timeout: 60000 })
 
       if (!/okc-dispatched/.test(r.output || '')) {
@@ -1948,21 +1960,43 @@ done`
       if (task.verdict) throw new Error(`"${id}" has already been judged. Write a new task rather than reopening a decided one.`)
 
       await actions.vmWorkspace.run({ name, branch: task.branch, folder: task.folder || undefined })
-      const started = await actions.vmDispatch.run({
-        name,
-        task: task.brief,
-        folder: task.folder || undefined,
-        contract: task.contract || undefined,
-      shell: !!task.shell
-      })
+
+      // WHOSE MACHINE THIS IS, RECORDED BEFORE THE WORK STARTS.
+      //
+      // The run begins the moment dispatch returns -- detached, immediately --
+      // and the first thing it may do is hand an artifact back. That arrives at
+      // a host which decides where to file it by asking which task this machine
+      // is running, so the answer has to exist BEFORE the question can be asked.
+      // Written afterwards, it was a race the run usually won: an artifact
+      // pushed two seconds in was refused with "this machine is not running a
+      // task", by a host that was about to record that it was.
+      //
+      // The run id is not known yet and does not need to be -- it is filled in
+      // below, and nothing between here and there reads it.
+      tasks.update(id, { state: 'given', machine: name })
+
+      let started
+      try {
+        started = await actions.vmDispatch.run({
+          name,
+          task: task.brief,
+          folder: task.folder || undefined,
+          contract: task.contract || undefined,
+          shell: !!task.shell
+        })
+      } catch (e) {
+        // Put back what was there. A task marked as running on a machine that
+        // never started it is worse than the race this fixes -- the queue would
+        // adopt it, wait for a run that does not exist, and put the machine away.
+        tasks.update(id, { state: task.state, machine: task.machine || null })
+        throw e
+      }
 
       // Appended, never replaced. Giving a task out a second time is the
       // ordinary case rather than an edge one -- a rejection sent back IS a
       // second attempt -- and overwriting the first makes the record say the
       // work was done once, cleanly.
       tasks.update(id, {
-        state: 'given',
-        machine: name,
         run: started.run,
         attempts: [...(task.attempts || []), { run: started.run, machine: name, at: new Date().toISOString() }]
       })
@@ -2110,6 +2144,44 @@ done`
         note: kept.length
           ? 'taskLog --id <task> --run <run> reads one; an orphaned uid is a folder under "where"'
           : 'nothing has been kept yet — a log is pulled across when a run finishes'
+      }
+    }
+  },
+
+  // What a task handed over that was not a commit.
+  //
+  // The branch answers "what did it write"; this answers "what did it BUILD", and
+  // for a task whose point is a binary those are different questions with
+  // different answers. Filed under the uid like the run logs, so throwing the
+  // task away does not orphan what it produced.
+  taskFiles: {
+    about: 'Files a task handed over — a built binary, an archive, anything a branch cannot hold',
+    takes: ['id'],
+    run: ({ id }) => {
+      if (!id) {
+        const all = files.everything()
+        const board = new Map(tasks.read().map(t => [t.uid, t]))
+        return {
+          tasks: all.map(a => {
+            const t = board.get(a.uid) || null
+            return { ...a, task: t ? t.id : null, number: t ? t.number : null, title: t ? t.title : null, orphaned: !t }
+          }),
+          bytes: all.reduce((n, a) => n + a.bytes, 0),
+          where: files.ROOT()
+        }
+      }
+      const task = tasks.get(id)
+      const kept = files.list(task.uid)
+      return {
+        task: task.id,
+        number: task.number,
+        branch: task.branch,
+        files: kept,
+        bytes: kept.reduce((n, f) => n + (f.bytes || 0), 0),
+        where: files.dirFor(task.uid),
+        note: kept.length
+          ? 'These are on this host, not on the machine — the machine was rolled back.'
+          : 'Nothing was handed over. A run hands a file over by calling "okc-artifact <file>", which is on its PATH.'
       }
     }
   },
@@ -2866,6 +2938,75 @@ function handler (req, res) {
     if (!guestAsking(req, url)) return refuseGuest(res, name, 'a line for the log')
     log.on('vm', name, 'guest').out(url.searchParams.get('text') || '')
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok\n')
+    return
+  }
+
+  // Handing something over that is not a commit.
+  //
+  // A machine pushes here; this decides where it lands. THE GUEST SENDS A NAME
+  // AND NOTHING ELSE -- no task, no branch, no directory -- because the host
+  // already knows which task that machine is running and is the only side that
+  // should be deciding. A guest that could name its destination could name
+  // somebody else's, and the defence against a path would then be a list of
+  // spellings of "the parent directory" that somebody has to keep complete.
+  //
+  // It is the same shape as everything else a guest talks to: prove which
+  // machine you are, then be told what you get.
+  if (url.pathname === '/artifact' && req.method === 'POST') {
+    const name = url.searchParams.get('vm') || ''
+    if (!guestAsking(req, url)) return refuseGuest(res, name, 'to hand over an artifact')
+
+    const called = url.searchParams.get('name') || ''
+    const why = files.whyNot(called)
+    if (why) {
+      res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end(`${why}\n`)
+      return
+    }
+
+    // WHICH TASK IT BELONGS TO IS NOT ASKED, IT IS LOOKED UP. A machine is
+    // running exactly one task or it is not running one at all, and an artifact
+    // from a machine doing nothing has nowhere to belong -- so that is refused
+    // with the reason rather than filed somewhere plausible.
+    //
+    // From the task record rather than from the queue, because the queue only
+    // knows about work IT dispatched: a task handed straight to a named machine
+    // with taskGive is just as real, and looking in the wrong place would have
+    // refused every artifact from one. Both paths write the same two fields.
+    const task = tasks.read().find(t => t.machine === name && t.state === 'given') || null
+    if (!task) {
+      res.writeHead(409, { 'content-type': 'text/plain; charset=utf-8' })
+        .end('this machine is not running a task, so there is nothing for an artifact to belong to.\n')
+      return
+    }
+
+    const chunks = []
+    let size = 0
+    let refused = false
+    req.on('data', chunk => {
+      if (refused) return
+      size += chunk.length
+      // Stopped at the door rather than after it is all in memory, because the
+      // point of a cap is not to have accepted the thing it refuses.
+      if (size > files.MOST) {
+        refused = true
+        res.writeHead(413, { 'content-type': 'text/plain; charset=utf-8' })
+          .end(`the most this takes is ${files.MOST / 1048576} MB\n`)
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      if (refused) return
+      try {
+        const kept = files.keep(task.uid, called, Buffer.concat(chunks), { run: task.run || null })
+        log.on('vm', name, 'guest').good(`handed over "${called}" (${Math.round(kept.bytes / 1024)} KB) for #${task.number}`)
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end('kept\n')
+      } catch (e) {
+        log.on('vm', name, 'guest').bad(`could not keep "${called}": ${e.message}`)
+        res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end(`${e.message}\n`)
+      }
+    })
     return
   }
 

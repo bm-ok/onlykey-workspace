@@ -57,7 +57,7 @@ function heredoc (path, body, tag) {
 // It is a real run in every other respect -- same directory, same pid file, same
 // status, same detachment, same log kept here afterwards -- so what it proves
 // about the machinery is what a worker would have proved.
-function script ({ id, task, folder, contract, resume, shell }) {
+function script ({ id, task, folder, contract, resume, shell, base }) {
   const dir = `${RUNS}/${id}`
 
   // THE CONTRACT IS CARRIED, NOT REFERENCED.
@@ -85,6 +85,34 @@ ${shell ? '' : `if ! command -v claude >/dev/null 2>&1; then
   echo "okc: claude is not installed on this machine, so it cannot be given work"
   exit 1
 fi`}
+${base ? `
+# HANDING BACK SOMETHING THAT IS NOT A COMMIT.
+#
+# A branch is the artifact for anything that is source, and the better one. This
+# is for what a branch cannot hold: a built binary, an archive -- the thing that
+# was the POINT of the task, whose source is only how it got made.
+#
+# It has to happen from inside the run, because the machine goes back to its base
+# snapshot when the work ends. A file left on the disk did not survive; a file
+# handed over did. So this is put on PATH for the run and a task can simply call
+# it, without knowing a URL, a port, or where on the host anything lands.
+#
+# The credential is the machine's own token, which is exactly what it already
+# uses to push commits -- git replays it from the remote URL on every push. This
+# adds no exposure that pushing did not already have.
+${heredoc(`${dir}/okc-artifact`, `#!/bin/sh
+# okc-artifact <file> [name] -- hand a file to the dashboard, where it is kept
+# against the task this run belongs to.
+set -eu
+[ $# -ge 1 ] || { echo "usage: okc-artifact <file> [name]" >&2; exit 2; }
+[ -f "$1" ] || { echo "okc-artifact: no such file: $1" >&2; exit 1; }
+exec curl -fsS --cacert "\${OKC_CA:-/etc/okc/ca.pem}" \\
+  -u "\${OKC_VM}:\${OKC_TOKEN}" \\
+  -X POST --data-binary @"$1" \\
+  "${base}/artifact?vm=\${OKC_VM}&name=\${2:-$(basename "$1")}"
+`, 'OKC_ART_EOF')}
+chmod +x ${dir}/okc-artifact
+` : ''}
 
 # --dangerously-skip-permissions is the point rather than a shortcut. A worker
 # that stops to ask cannot run unattended, and asking is exactly what nobody is
@@ -111,6 +139,10 @@ cat > ${dir}/run.sh <<'OKC_RUN_EOF'
 # would have written is exactly what never got written.
 echo $$ > ${dir}/pid
 cd ${q(folder)} 2>/dev/null || cd "$HOME"
+# The run's own directory first, so "okc-artifact" is a command a task can call
+# rather than a path it has to be told.
+PATH=${dir}:$PATH
+export PATH
 ${shell
   ? `bash ${dir}/task.txt`
   : `claude -p "$(cat ${dir}/task.txt)" --dangerously-skip-permissions --output-format json${rules ? ` --append-system-prompt-file ${rules}` : ''}${resume ? ` --resume ${q(resume)}` : ''}`} > ${dir}/out.log 2>&1

@@ -222,6 +222,7 @@ elsewhere -- and nothing it makes by running is in the working tree.
                    repository treats as default, what has been approved
     credentials/   the worker credential, sealed
     task-logs/     what a run left behind, kept where a machine cannot take it
+    artifacts/     what a task handed over that was not a commit
     window/        photographs of the window
     ca.pem, server.key, id_okc, ssh_config, known_hosts
 
@@ -243,6 +244,51 @@ The start that does it says so in the log.
 `OKC_STATE` still points the whole lot somewhere else, and when it is set nothing
 is moved -- somebody who has chosen where this goes is not helped by having their
 files relocated.
+
+Handing back something that is not a commit
+--------------------------------------------
+
+A branch is the artifact for anything that IS source, and it is the better one:
+reviewable, diffable, and already what a verdict is about. It is not everything.
+A firmware build produces a `.bin` that was the POINT of the task and whose
+source is only how it got made; a packaging task produces an archive. The branch
+held what went in and nothing held what came out.
+
+A run hands one over by calling a command that is already on its PATH:
+
+    okc-artifact build/firmware.bin
+
+That is the whole interface. The task does not know a URL, a port, or where on
+this host anything lands -- it names a file, and the host decides the rest.
+
+**The guest never supplies a path, only a name.** Which task an artifact belongs
+to is not asked for, it is LOOKED UP: a machine is running exactly one task or it
+is running none, and the host is the only side that should be deciding where
+something is filed. A guest that could name its destination could name somebody
+else's, and the defence against that would then be a list of spellings of "the
+parent directory" that somebody has to keep complete for ever. There is no
+directory component to traverse out of, because none is ever sent. A name with a
+path in it is refused with the reason; so is an unauthenticated push, and so is
+one from a machine that is not running anything.
+
+**Filed under the task's uid**, beside the run logs and for the same reason: a
+uid is never reused and never renamed, so throwing the task away does not orphan
+what it produced. Two deliveries of one name never overwrite each other -- two
+runs of one task both produce `firmware.bin`, and silently keeping the last one
+means the file on disk belongs to whichever finished last with nothing saying so.
+
+**The credential is the machine's own token** -- exactly what it already uses to
+push commits, which git replays from the remote URL on every push. This adds no
+exposure that pushing did not already have.
+
+ONE ORDERING MATTERS AND IT WAS WRONG. A run starts the moment dispatch returns,
+detached, and the first thing it may do is hand something back -- which arrives
+at a host that decides where to file it by asking which task the machine is
+running. So that has to be recorded BEFORE the work starts, not after. Written
+afterwards it was a race the run usually won, and an artifact pushed two seconds
+in was refused with "this machine is not running a task" by a host that was about
+to record that it was. The queue always had this right; giving a task straight to
+a named machine did not.
 
 Encrypted, and how a bare machine comes to trust it
 ---------------------------------------------------
