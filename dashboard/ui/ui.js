@@ -125,6 +125,503 @@ function codeBlock (text, mode = 'javascript', { lines = 18 } = {}) {
   return host
 }
 
+// The same, but it hands back the editor.
+//
+// `codeBlock` deliberately returns only a node — nothing needed the editor, and
+// not returning it kept every caller from reaching in. A side-by-side view does
+// need it: two editors have to be told about each other to scroll together, and
+// the rows that are additions have to be marked. So this is the same
+// construction with a way out, and `codeBlock` stays as it was for everything
+// that only wants to show text.
+function editorBlock (text, mode, { lines = 18, gutter = null, onReady = null } = {}) {
+  const host = el('div', { className: 'code' })
+  host.style.height = `${Math.min(lines, Math.max(6, String(text || '').split('\n').length + 1)) * 1.5}em`
+
+  queueMicrotask(() => {
+    if (!host.isConnected) return
+    const ed = ace.edit(host)
+    ed.setTheme('ace/theme/tomorrow_night')
+    ed.session.setMode(`ace/mode/${mode}`)
+    ed.session.setUseWorker(false)
+    ed.setValue(String(text == null ? '' : text), -1)
+    ed.setReadOnly(true)
+    ed.setOptions({
+      highlightActiveLine: false,
+      highlightGutterLine: false,
+      showPrintMargin: false,
+      fontSize: 12,
+      // NOT WRAPPED, for a side-by-side. Wrapping makes one row taller than its
+      // opposite number, and then the two columns say different things at the
+      // same height — which is the one thing this view exists to avoid.
+      wrap: false,
+      showFoldWidgets: false
+    })
+    ed.renderer.$cursorLayer.element.style.display = 'none'
+
+    // The line numbers of the ORIGINAL file, not of this pane. A side-by-side is
+    // built by padding both sides until they line up, so a pane's own row
+    // numbers count padding and are wrong in exactly the way that matters — you
+    // cannot use them to find the line in the file.
+    if (gutter) {
+      try {
+        ed.session.gutterRenderer = {
+          getWidth: (session, last, config) => (gutter.width || 4) * config.characterWidth,
+          getText: (session, row) => gutter.at[row] == null ? '' : String(gutter.at[row])
+        }
+      } catch { /* an Ace without a gutter renderer still shows its own numbers */ }
+    }
+
+    if (onReady) onReady(ed)
+  })
+  return host
+}
+
+// A unified diff, turned into rows that line up.
+//
+// BUILT FROM THE DIFF, not from the two whole files. Git has already done the
+// hard part — which lines correspond — and re-deriving that here would mean
+// writing a diff algorithm and getting a different answer from the one every
+// other view on this screen shows. What comes back is one row per displayed
+// line, each with a left and a right side, either of which can be absent: that
+// absence is what makes the columns align, and it is the whole trick.
+function alignDiff (text) {
+  const rows = []
+  let l = 0
+  let r = 0
+  let dels = []
+  let adds = []
+
+  // A run of removals followed by a run of additions is a change, and pairing
+  // them index by index is what puts the old line beside the new one. Runs of
+  // different lengths leave a blank on the shorter side.
+  const flush = () => {
+    const n = Math.max(dels.length, adds.length)
+    for (let i = 0; i < n; i++) {
+      rows.push({
+        left: dels[i] ? dels[i].text : null,
+        leftNo: dels[i] ? dels[i].no : null,
+        right: adds[i] ? adds[i].text : null,
+        rightNo: adds[i] ? adds[i].no : null,
+        kind: 'change'
+      })
+    }
+    dels = []
+    adds = []
+  }
+
+  for (const line of String(text || '').split('\n')) {
+    if (line.startsWith('@@')) {
+      flush()
+      const m = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
+      if (m) { l = Number(m[1]); r = Number(m[2]) }
+      rows.push({ left: line, leftNo: null, right: line, rightNo: null, kind: 'hunk' })
+      continue
+    }
+    // Everything before the first hunk is git's header — which file, what mode,
+    // which blobs. Worth keeping, and not a line of either side.
+    if (!rows.length && !line.startsWith('@@')) {
+      if (/^(diff |index |--- |\+\+\+ |new file|deleted file|similarity|rename |old mode|new mode|Binary )/.test(line)) continue
+    }
+    if (line.startsWith('-')) { dels.push({ text: line.slice(1), no: l++ }); continue }
+    if (line.startsWith('+')) { adds.push({ text: line.slice(1), no: r++ }); continue }
+    flush()
+    if (line.startsWith('\\')) continue // "\ No newline at end of file"
+    const text2 = line.startsWith(' ') ? line.slice(1) : line
+    rows.push({ left: text2, leftNo: l++, right: text2, rightNo: r++, kind: 'same' })
+  }
+  flush()
+  return rows
+}
+
+// ---- landing a line ----------------------------------------------------
+//
+// Which two lines are being compared, what is being read about them, and which
+// file. Module-level and remembered, because reading a change is not a thing
+// somebody finishes in one sitting and coming back to a blank pane is how a
+// review gets started again from the top.
+// The `let`s these use are declared beside the other remembered pane state,
+// further down, next to `branchPane` — they read from `been`, and `been` is
+// defined after this point in the file. The functions here are declarations and
+// hoist; a `const` does not, and putting them here threw
+// "Cannot access 'been' before initialization" on the first line of the page.
+
+function paintMerge () {
+  waiting('merge-summary', { cards: 1 })
+  api('baselineGroups').then(({ groups }) => {
+    const usable = (groups || []).filter(g => !g.broken.length)
+    const proposed = usable.filter(g => g.marked)
+
+    // NOTHING TO READ IS A STATE WORTH EXPLAINING, and it is the ordinary one:
+    // most of the time nothing is up for landing. A pane that says only "pick
+    // something" from two empty dropdowns is a pane nobody can act on.
+    if (!proposed.length) {
+      fill($('merge-summary'), el('div', { className: 'panel' },
+        el('p', { className: 'empty', textContent: usable.length
+          ? 'No line is proposed for landing.'
+          : 'No lines are named yet, so there is nothing that could be landed.' }),
+        el('p', { className: 'empty', textContent: 'A branch that carries finished work is made into a line — "Make it a line", on Overview — and then proposed here. Proposing changes nothing; it says somebody thinks it is done, and it is what puts it on the left below.' })))
+      fill($('merge-commits'), null)
+      fill($('merge-filelist'), null)
+      fill($('merge-diff'), null)
+      fill($('merge-actions'), null)
+      setText($('merge-state'), '')
+      paintMergePicks(proposed, usable)
+      return
+    }
+
+    if (!proposed.some(g => g.name === mergeSource)) mergeSource = proposed[0].name
+    const others = usable.filter(g => g.name !== mergeSource)
+    if (!others.some(g => g.name === mergeTarget)) {
+      // The line in use is what work is currently counted from, so it is the one
+      // a proposal almost always goes into. Guessed, not assumed — it is a
+      // dropdown, and being wrong costs one click.
+      mergeTarget = (others.find(g => g.inUse) || others[0] || {}).name || null
+    }
+    paintMergePicks(proposed, usable)
+
+    if (!mergeTarget) {
+      fill($('merge-summary'), el('div', { className: 'panel' },
+        el('p', { className: 'empty', textContent: 'There is no other line to land it into. Name the line it would go into on the Baselines tab.' })))
+      return
+    }
+
+    const marked = proposed.find(g => g.name === mergeSource)
+    setText($('merge-state'), marked && marked.marked
+      ? `proposed ${ago(marked.marked.at)}${marked.marked.why ? ` — ${marked.marked.why}` : ''}`
+      : '')
+
+    Promise.all([
+      api('mergeCompare', { source: mergeSource, target: mergeTarget }),
+      api('mergePlan', { source: mergeSource, target: mergeTarget })
+    ]).then(([cmp, plan]) => {
+      if (!changed('merge', [mergeSource, mergeTarget, mergeLook, mergeMode, cmp, plan])) return
+      mergeSeen = cmp
+      paintMergeSummary(cmp, plan)
+      paintMergeActions(cmp, plan)
+      paintMergeBody(cmp)
+    }).catch(oops)
+  }).catch(oops)
+}
+
+function paintMergePicks (proposed, usable) {
+  const pick = (box, list, value, onPick) => {
+    if (!changed(`${box}-list`, [list.map(g => g.name), value])) return
+    fill($(box), ...list.map(g => el('option', {
+      value: g.name,
+      textContent: `${g.name}${g.inUse ? ' — in use' : ''}${g.marked ? ' — proposed' : ''}`,
+      selected: g.name === value
+    })))
+    $(box).onchange = () => onPick($(box).value)
+  }
+  pick('merge-source', proposed, mergeSource, v => {
+    mergeSource = v; been.set('merge-source', v); mergePicked = null; changed('merge', null); paintMerge()
+  })
+  pick('merge-target', usable.filter(g => g.name !== mergeSource), mergeTarget, v => {
+    mergeTarget = v; been.set('merge-target', v); mergePicked = null; changed('merge', null); paintMerge()
+  })
+}
+
+function paintMergeSummary (cmp, plan) {
+  fill($('merge-summary'), el('div', { className: `card${plan.trouble.length ? ' warn' : ''}` },
+    el('div', { className: 'card-title' },
+      el('span', { textContent: cmp.summary }),
+      cmp.anything
+        ? el('span', { className: 'badge', textContent: `+${cmp.added} −${cmp.removed}` })
+        : null,
+      plan.can
+        ? el('span', { className: 'badge ok', textContent: 'lands cleanly' })
+        : plan.trouble.length
+          ? el('span', { className: 'badge bad', textContent: 'would not land' })
+          : el('span', { className: 'badge muted', textContent: 'nothing to land' })),
+    ...cmp.repos.map(r => el('div', { className: 'group-part' },
+      el('span', { className: 'mono', textContent: `${r.repo}  ${r.head} → ${r.base}` }),
+      el('span', {
+        className: r.missing ? 'muted' : r.noBase ? 'bad' : r.empty ? 'muted' : '',
+        textContent: r.missing ? 'not in this repository'
+          : r.noBase ? `${r.base} is not here`
+            : r.empty ? 'nothing to land'
+              : `${r.ahead} commit(s), +${r.added} −${r.removed}`
+      }))),
+    // Repositories one line reaches and the other does not. Said, because "why
+    // is that repository not listed" is the first question a reader has.
+    cmp.onlyInSource.length
+      ? el('div', { className: 'card-sub muted', textContent: `${cmp.onlyInSource.join(', ')} — in "${cmp.source}" only, so there is nowhere in "${cmp.target}" for it to land.` })
+      : null,
+    cmp.onlyInTarget.length
+      ? el('div', { className: 'card-sub muted', textContent: `${cmp.onlyInTarget.join(', ')} — in "${cmp.target}" only; this line never reached it.` })
+      : null,
+    plan.trouble.length
+      ? el('div', { className: 'card-sub bad', textContent: plan.trouble.join(' · ') })
+      : null))
+}
+
+function paintMergeActions (cmp, plan) {
+  fill($('merge-actions'),
+    el('button', {
+      className: 'btn ok',
+      textContent: 'Land it',
+      disabled: !plan.can,
+      title: plan.can ? 'Shows the exact commands first' : plan.note,
+      onclick: () => askToLand(cmp, false)
+    }),
+    el('button', {
+      className: 'btn',
+      textContent: 'Land it and push',
+      disabled: !plan.can,
+      title: plan.can ? 'The same, and then pushes each target branch to its origin' : plan.note,
+      onclick: () => askToLand(cmp, true)
+    }),
+    el('button', {
+      className: 'btn',
+      textContent: 'Show the commands',
+      title: 'The dry run on its own, run nothing',
+      onclick: () => showMergePlan(cmp, plan.push)
+    }),
+    el('button', {
+      className: 'btn danger',
+      textContent: 'Take it back',
+      title: 'Stop proposing this line, so work on it can continue',
+      onclick: () => ask({
+        title: `Stop proposing "${cmp.source}"?`,
+        plain: [
+          'It stops being a proposal and goes back to being a line.',
+          'Its branches stay protected, because they are still named in a group — that is what a line is. Delete the group on the Baselines tab to build on them directly again.',
+          'Nothing that has already landed is undone.'
+        ],
+        confirm: 'Take it back',
+        danger: true,
+        onYes: async () => {
+          const r = await api('baselineGroupUnmark', { name: cmp.source })
+          changed('merge', null); changed('baselines', null); changed('branches', null)
+          say(r.note)
+          return draw()
+        }
+      })
+    }))
+}
+
+// The dry run, as a thing to read rather than a thing to agree to.
+function showMergePlan (cmp, push) {
+  api('mergePlan', { source: cmp.source, target: cmp.target, push: !!push }).then(plan => {
+    ask({
+      title: `What landing "${plan.source}" would run`,
+      plain: [plan.note],
+      confirm: 'Close',
+      onYes: () => {},
+      extra: null
+    })
+    const body = document.querySelector('.dlg-body')
+    if (body) body.append(codeBlock(mergeCommandText(plan), 'markdown', { lines: 20 }))
+  }).catch(oops)
+}
+
+const mergeCommandText = plan => plan.steps.map(s => s.ahead
+  ? `# ${s.repo}${s.why ? `  —  ${s.why}` : ''}\n${s.commands.join('\n')}`
+  : `# ${s.repo}  —  nothing to do, ${s.base} already has everything on ${s.head}`).join('\n\n')
+
+function askToLand (cmp, push) {
+  api('mergePlan', { source: cmp.source, target: cmp.target, push }).then(plan => {
+    ask({
+      title: push ? `Land "${plan.source}" and push` : `Land "${plan.source}" into "${plan.target}"?`,
+      plain: [
+        `Every repository is merged with --no-ff, in its working tree on this host, so "${plan.target}" gains a commit saying this line landed.`,
+        'Every one of them was asked first: a repository that would conflict, or has uncommitted changes here, stops all of them before anything moves.',
+        push
+          ? 'Each target branch is then pushed to its origin. A push that fails does not undo the merge — it is a thing to do again, and it will say which repository.'
+          : 'Nothing is pushed anywhere. The merge is in this host\'s repositories only.',
+        'The source line is untouched and stays proposed. Take it back when you are done with it.'
+      ],
+      cost: push
+        ? 'This changes branches other work is measured against, and then puts them somewhere this app cannot reach to take them back.'
+        : 'This changes branches other work is measured against.',
+      // THE COMMANDS, IN THE CONFIRM. This is the one dialog in this window where
+      // the thing being agreed to is long enough that a summary would be a
+      // different statement — so it is not summarised.
+      confirm: push ? 'Run these, and push' : 'Run these',
+      danger: true,
+      onYes: async () => {
+        const r = await api('mergeLand', { source: cmp.source, target: cmp.target, push })
+        changed('merge', null); changed('branches', null); changed('baselines', null)
+        say(r.note, r.failed && r.failed.length ? 'bad' : undefined)
+        return draw()
+      }
+    })
+    const body = document.querySelector('.dlg-body')
+    if (body) body.append(codeBlock(mergeCommandText(plan), 'markdown', { lines: 14 }))
+  }).catch(oops)
+}
+
+// ---- what is in it: commits, and the files -----------------------------
+
+function paintMergeBody (cmp) {
+  document.querySelectorAll('#merge-tabs .subtab[data-look]').forEach(b => {
+    b.classList.toggle('active', b.dataset.look === mergeLook)
+    b.onclick = () => {
+      mergeLook = b.dataset.look
+      been.set('merge-look', mergeLook)
+      changed('merge', null)
+      paintMerge()
+    }
+  })
+  $('merge-commits').classList.toggle('hidden', mergeLook !== 'commits')
+  $('merge-files').classList.toggle('hidden', mergeLook !== 'files')
+
+  if (mergeLook === 'commits') return paintMergeCommits(cmp)
+  paintMergeFiles(cmp)
+}
+
+function paintMergeCommits (cmp) {
+  const carrying = cmp.repos.filter(r => !r.missing && !r.noBase && !r.empty)
+  fill($('merge-commits'), carrying.length
+    ? carrying.map(r => el('div', { className: 'carries' },
+        el('div', { className: 'carries-head' },
+          el('span', { textContent: r.repo }),
+          el('span', { className: 'muted', textContent: `${r.ahead} on top of ${r.base}` })),
+        ...r.commits.map(c => el('div', { className: 'merge-commit' },
+          el('span', { className: 'mono sha', textContent: c.sha }),
+          el('span', { className: 'subject', textContent: c.subject }),
+          el('span', { className: 'muted who', textContent: `${c.who}, ${ago(c.at)}` }))),
+        r.more ? el('div', { className: 'card-sub muted', textContent: `and ${r.more} more` }) : null))
+    : el('p', { className: 'empty', textContent: 'Nothing to land — these two lines carry the same commits.' }))
+}
+
+function paintMergeFiles (cmp) {
+  const carrying = cmp.repos.filter(r => !r.missing && !r.noBase && !r.empty)
+  if (!carrying.length) {
+    fill($('merge-filelist'), el('p', { className: 'empty', textContent: 'No files differ.' }))
+    fill($('merge-diff'), null)
+    setText($('merge-filename'), '')
+    return
+  }
+
+  if (!mergePicked || !carrying.some(r => r.repo === mergePicked.repo && r.files.some(f => f.file === mergePicked.file))) {
+    const first = carrying.find(r => r.files.length)
+    mergePicked = first ? { repo: first.repo, file: first.files[0].file } : null
+  }
+
+  fill($('merge-filelist'), ...carrying.map(r => el('div', {},
+    el('div', { className: 'merge-repo', textContent: `${r.repo} — ${r.files.length}${r.moreFiles ? `+${r.moreFiles}` : ''} file(s)` }),
+    ...r.files.map(f => el('button', {
+      className: `merge-file${mergePicked && mergePicked.repo === r.repo && mergePicked.file === f.file ? ' on' : ''}`,
+      onclick: () => { mergePicked = { repo: r.repo, file: f.file }; changed('merge-file', null); paintMergeFiles(cmp) },
+      title: f.file
+    },
+    // The path reads right-to-left so a long one keeps its FILENAME rather than
+    // its first directory. Truncating the other way hides the only part that
+    // tells two rows apart.
+    el('span', { className: 'path', textContent: f.file }),
+    f.binary
+      ? el('span', { className: 'muted', textContent: 'binary' })
+      : el('span', {}, el('span', { className: 'plus', textContent: `+${f.added}` }), ' ', el('span', { className: 'minus', textContent: `−${f.removed}` })))),
+    r.moreFiles ? el('div', { className: 'card-sub muted', style: 'padding:2px 6px', textContent: `and ${r.moreFiles} more not listed` }) : null)))
+
+  paintMergeDiff(cmp)
+}
+
+function paintMergeDiff (cmp) {
+  setText($('merge-filename'), mergePicked ? `${mergePicked.repo} · ${mergePicked.file}` : '')
+  $('merge-mode').textContent = mergeMode === 'sides' ? 'Unified' : 'Side by side'
+  $('merge-mode').onclick = () => {
+    mergeMode = mergeMode === 'sides' ? 'unified' : 'sides'
+    been.set('merge-mode', mergeMode)
+    changed('merge-file', null)
+    paintMergeDiff(cmp)
+  }
+  if (!mergePicked) return fill($('merge-diff'), null)
+  if (!changed('merge-file', [mergePicked, mergeMode, cmp.source, cmp.target])) return
+
+  waiting('merge-diff', { lines: 10 })
+  api('mergeDiff', { source: cmp.source, target: cmp.target, repo: mergePicked.repo, file: mergePicked.file })
+    .then(({ diff }) => {
+      if (mergeMode === 'unified') return fill($('merge-diff'), codeBlock(diff || 'no changes', 'diff', { lines: 30 }))
+      fill($('merge-diff'), sideBySide(diff))
+    })
+    .catch(oops)
+}
+
+// The two sides, lined up.
+function sideBySide (diff) {
+  const rows = alignDiff(diff)
+  if (!rows.length) return el('p', { className: 'empty', textContent: 'no changes' })
+
+  const left = rows.map(r => r.left == null ? '' : r.left).join('\n')
+  const right = rows.map(r => r.right == null ? '' : r.right).join('\n')
+  const lines = Math.min(34, Math.max(8, rows.length + 1))
+
+  // Scrolled together. Two columns that scroll independently are two views of
+  // two files, which is what this exists to stop being.
+  let a = null
+  let b = null
+  let syncing = false
+  const tie = () => {
+    if (!a || !b) return
+    const link = (from, to) => from.session.on('changeScrollTop', y => {
+      if (syncing) return
+      syncing = true
+      to.session.setScrollTop(y)
+      syncing = false
+    })
+    link(a, b)
+    link(b, a)
+  }
+
+  const marks = (ed, side) => {
+    const Range = ace.require('ace/range').Range
+    rows.forEach((r, i) => {
+      const mine = side === 'left' ? r.left : r.right
+      const theirs = side === 'left' ? r.right : r.left
+      if (r.kind !== 'change') return
+      // Absent on this side means the other side added or removed a line, and
+      // the blank is padding rather than an empty line in the file. Marked
+      // differently, because "there is nothing here" and "this line is gone"
+      // are different things to be told.
+      const cls = mine == null ? 'merge-pad' : (side === 'left' ? 'merge-removed' : 'merge-added')
+      if (mine == null && theirs == null) return
+      try { ed.session.addMarker(new Range(i, 0, i, Infinity), cls, 'fullLine') } catch { /* an Ace without Range: the text is still right */ }
+    })
+  }
+
+  // THE NUMBER AND THE SIGN, in the gutter, the way a diff is read everywhere
+  // else. The sign is the thing the eye actually uses — colour alone fails for
+  // anyone who cannot see the difference between the two greens, and it fails
+  // for everybody in a screenshot that has been through a chat window.
+  const gutterFor = side => {
+    const width = String(rows.length).length
+    return {
+      width: width + 2,
+      at: rows.map(r => {
+        const no = side === 'left' ? r.leftNo : r.rightNo
+        const mine = side === 'left' ? r.left : r.right
+        if (r.kind === 'hunk') return ''
+        if (no == null) return ''
+        const sign = r.kind !== 'change' ? ' ' : (mine == null ? ' ' : (side === 'left' ? '-' : '+'))
+        return `${String(no).padStart(width, ' ')} ${sign}`
+      })
+    }
+  }
+
+  const wasEmpty = rows.every(r => r.left == null || r.kind === 'hunk')
+  const nowEmpty = rows.every(r => r.right == null || r.kind === 'hunk')
+
+  return el('div', { className: 'merge-sides' },
+    el('div', { className: 'merge-side' },
+      el('div', { className: 'merge-side-head' },
+        el('span', { className: wasEmpty ? 'gone' : '', textContent: wasEmpty ? 'before — the file did not exist' : 'before' })),
+      editorBlock(left, 'text', {
+        lines,
+        gutter: gutterFor('left'),
+        onReady: ed => { a = ed; marks(ed, 'left'); tie() }
+      })),
+    el('div', { className: 'merge-side' },
+      el('div', { className: 'merge-side-head' },
+        el('span', { className: nowEmpty ? 'gone' : 'new', textContent: nowEmpty ? 'after — the file is gone' : 'after' })),
+      editorBlock(right, 'text', {
+        lines,
+        gutter: gutterFor('right'),
+        onReady: ed => { b = ed; marks(ed, 'right'); tie() }
+      })))
+}
+
 // ---- the notice bar ---------------------------------------------------
 
 let noticeTimer
@@ -1245,11 +1742,27 @@ let pickedBranch = been.get('branch', null)
 // left rather than at the beginning.
 let branchPane = been.get('branch-pane', 'overview')
 
-document.querySelectorAll('.subtab').forEach(b => {
+// Which two lines are being compared, what is being read about them, and which
+// file. Remembered, because reading a change is not something anybody finishes
+// in one sitting, and coming back to a blank pane is how a review gets started
+// again from the top. Declared here rather than beside the functions that use
+// them, because those sit above `been`.
+let mergeSource = been.get('merge-source', null)
+let mergeTarget = been.get('merge-target', null)
+let mergeLook = been.get('merge-look', 'commits')
+let mergeMode = been.get('merge-mode', 'sides')
+let mergePicked = null
+let mergeSeen = null
+
+// SCOPED TO THE ONES THAT NAME A PANE. `.subtab` is a look, and the Merge pane
+// has two of its own inside it for commits and files — caught by a document-wide
+// selector, those would set `branchPane` to undefined and blank the tab. The
+// styling is shared on purpose; what distinguishes them is what they carry.
+document.querySelectorAll('.subtab[data-pane]').forEach(b => {
   b.onclick = () => {
     branchPane = b.dataset.pane
     been.set('branch-pane', branchPane)
-    document.querySelectorAll('.subtab').forEach(x => x.classList.toggle('active', x === b))
+    document.querySelectorAll('.subtab[data-pane]').forEach(x => x.classList.toggle('active', x === b))
     document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === `pane-${branchPane}`))
     // Painted at once rather than on the next tick, or switching to a pane that
     // has never been drawn shows an empty one for up to three seconds.
@@ -1261,7 +1774,7 @@ document.querySelectorAll('.subtab').forEach(b => {
 ;(() => {
   const tab = document.querySelector(`.subtab[data-pane="${branchPane}"]`)
   if (!tab) { branchPane = 'overview'; return }
-  document.querySelectorAll('.subtab').forEach(x => x.classList.toggle('active', x === tab))
+  document.querySelectorAll('.subtab[data-pane]').forEach(x => x.classList.toggle('active', x === tab))
   document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === `pane-${branchPane}`))
 })()
 
@@ -1354,6 +1867,7 @@ function paintBranches () {
     // Only the pane on screen. The other two read git and would be paying for
     // answers nobody is looking at, three seconds at a time.
     if (branchPane === 'baselines') paintBaselines()
+    if (branchPane === 'merge') paintMerge()
     if (branchPane === 'protected') paintProtected(board)
   }).catch(oops)
 }
@@ -4032,9 +4546,42 @@ function shotIfAsked () {
       }
     }
 
+    // The Merge pane has a selection of its own: which of its two readings is
+    // open, and which file. `commits` / `files`, or `repo:path` to open a file.
+    if (want.pick && view === 'branches' && branchPane === 'merge') {
+      if (want.pick === 'commits' || want.pick === 'files') {
+        if (mergeLook !== want.pick) {
+          mergeLook = want.pick
+          been.set('merge-look', mergeLook)
+          changed('merge', null)
+          shotSettle = 2
+          paintBranches()
+          return
+        }
+      } else if (want.pick.includes(':')) {
+        const cut = want.pick.indexOf(':')
+        const wanted = { repo: want.pick.slice(0, cut), file: want.pick.slice(cut + 1) }
+        if (!mergePicked || mergePicked.repo !== wanted.repo || mergePicked.file !== wanted.file) {
+          mergePicked = wanted
+          mergeLook = 'files'
+          been.set('merge-look', mergeLook)
+          changed('merge', null)
+          changed('merge-file', null)
+          shotSettle = 3
+          paintBranches()
+          return
+        }
+      }
+    }
+
     // The same for a branch, by name. Two tabs are built around a list and a
     // detail panel, and only one of them could be reached from outside.
-    if (want.pick && view === 'branches' && pickedBranch !== want.pick) {
+    // NOT WHILE THE MERGE PANE IS OPEN, which has its own meaning for `pick`.
+    // Without this the Merge pane's "repo:file" was also read as a branch name,
+    // set as the selection, reset by the next paint because no such branch
+    // exists, and set again — a photograph that never arrived and a window that
+    // never settled, which looked like the pane being broken.
+    if (want.pick && view === 'branches' && branchPane !== 'merge' && pickedBranch !== want.pick) {
       pickedBranch = want.pick
       been.set('branch', pickedBranch)
       // The finder is cleared, or a branch that does not match whatever was last
