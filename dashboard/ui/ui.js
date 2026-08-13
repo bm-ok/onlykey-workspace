@@ -2076,11 +2076,30 @@ async function paintSnapshots () {
   // was in when the list was last drawn.
   if (!changed('snapshots', [v.name, v.running, s])) return
 
+  // INDENTED, BECAUSE SNAPSHOTS ARE A TREE.
+  //
+  // Five in a line and five taken from the same moment arrived here as the same
+  // flat list, and they are completely different situations: one is a history,
+  // the other is five alternatives branching off one point. VirtualBox's own
+  // window has always drawn this; the depth was in the data all along and was
+  // being parsed away.
+  //
+  // The current one is marked from `x.current`, which VirtualBox reports as a
+  // NODE. Comparing names would mark both of two snapshots that share one -- and
+  // it allows that, which this project has already been caught by.
   fill($('snapshots'), s.snapshots.length
-    ? s.snapshots.map(x => el('div', { className: 'card' },
+    ? [...s.snapshots.map(x => el('div', { className: 'card snap', style: `margin-left:${x.depth * 18}px` },
         el('div', { className: 'card-title' },
           el('span', { className: 'mono', textContent: x.name }),
-          x.name === s.current ? el('span', { className: 'badge run', textContent: 'on this one' }) : null),
+          x.current ? el('span', { className: 'badge run', textContent: 'on this one' }) : null,
+          // The dashboard's own idea, which is not VirtualBox's: the point the
+          // queue returns a machine to. Worth marking here because it is the one
+          // snapshot whose deletion changes what the queue can do.
+          x.name === v.baseSnapshot ? el('span', { className: 'badge ok', textContent: 'base' }) : null),
+        // When, which VBoxManage does not report and which is most of what
+        // somebody is asking: which of these is the one from before it broke.
+        x.taken ? el('div', { className: 'card-sub', textContent: `${new Date(x.taken).toLocaleString()} — ${ago(x.taken)}` }) : null,
+        x.description ? el('div', { className: 'card-sub', textContent: x.description }) : null,
         el('div', { className: 'row', style: 'margin-top:8px' },
           el('button', {
             className: 'btn',
@@ -2142,8 +2161,59 @@ async function paintSnapshots () {
               onYes: () => api('vmSnapshotDelete', { name: v.name, title: x.name })
                 .then(() => say(`"${x.name}" is gone.`))
             })
-          }))))
+          })))),
+
+      // The machine as it is NOW, under the snapshot it came from.
+      //
+      // VirtualBox's window ends the tree with this and marks it "(changed)".
+      // That flag is an API property its GUI reads and VBoxManage does not
+      // report -- but the flag is not the only way to know, and this host has
+      // better evidence than a flag anyway: THE MACHINE DIALLED IN AFTER THE
+      // SNAPSHOT WAS TAKEN. It booted and wrote to its disk, and we logged the
+      // moment it did. That is first-hand, not inferred.
+      //
+      // It stays changed until the disk is either thrown away, by going back to
+      // a snapshot, or captured, by taking a new one.
+      currentStateNode(v, s)
+      ].filter(Boolean)
     : el('p', { className: 'empty', textContent: 'None yet.' }))
+}
+
+// "3 days ago", because a date alone does not answer which of these is old.
+function ago (when) {
+  const secs = Math.max(0, Math.round((Date.now() - Date.parse(when)) / 1000))
+  const [n, unit] = secs < 90 ? [secs, 'second']
+    : secs < 5400 ? [Math.round(secs / 60), 'minute']
+      : secs < 172800 ? [Math.round(secs / 3600), 'hour']
+        : [Math.round(secs / 86400), 'day']
+  return `${n} ${unit}${n === 1 ? '' : 's'} ago`
+}
+
+// Where the machine actually is, at the end of the tree.
+//
+// CHANGED IS KNOWN RATHER THAN GUESSED. The machine dialled in at a moment this
+// host recorded; if that is after the current snapshot was taken, it booted and
+// wrote to its disk since, and the disk has moved on. No flag from VirtualBox is
+// needed to say so, and none is available -- `currentStateModified` is an API
+// property its GUI reads and VBoxManage does not report.
+//
+// The reverse is NOT claimed. Never having heard from a machine is not evidence
+// that nothing ran on it, only that nothing reached us, so that case says what
+// it knows and stops.
+function currentStateNode (v, s) {
+  const on = s.snapshots.find(x => x.current)
+  if (!on) return null
+
+  const heardAfter = v.reported && on.taken && Date.parse(v.reported) > Date.parse(on.taken)
+
+  return el('div', { className: `card snap current${heardAfter ? ' changed' : ''}`, style: `margin-left:${(on.depth + 1) * 18}px` },
+    el('div', { className: 'card-title' },
+      el('span', { textContent: 'Current state' }),
+      heardAfter ? el('span', { className: 'badge warn', textContent: 'changed' }) : null,
+      el('span', { className: `badge ${v.running ? 'ok' : ''}`, textContent: v.running ? 'running' : v.state })),
+    el('div', { className: 'card-sub', textContent: heardAfter
+      ? `It dialled in ${ago(v.reported)}, after "${on.name}" was taken — so it has booted and written to its disk since. That stays true until it is either thrown away, by going back to a snapshot, or captured, by taking a new one.`
+      : `Nothing here has heard from it since "${on.name}" was taken. That is not proof nothing ran on it — only that nothing reached this host.` }))
 }
 
 // Getting from a machine to the thing it is entangled with.

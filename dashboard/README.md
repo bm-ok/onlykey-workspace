@@ -690,6 +690,42 @@ from "runner2 is stuck" to the branch it is stuck on meant switching tabs and
 picking the same machine out of a second list. The branch, the task it is
 running, and a shell on it are all one click from the fact that mentions them.
 
+Snapshots are a tree, and are drawn as one
+-------------------------------------------
+
+They were read as a flat list of names, so five taken one after another and five
+taken from the SAME moment arrived identical. Those are completely different
+situations -- one is a history, the other is five alternatives branching off one
+point -- and which it is decides what deleting any of them costs.
+
+The depth was in the data the whole time. VirtualBox writes the path of child
+indices into the key itself:
+
+    SnapshotName="post-install"     the root
+    SnapshotName-1="setup"          its child
+    SnapshotName-1-1="node-setup"   and its child
+    SnapshotName-2="..."            a SECOND child of the root
+
+so the parent is the key with its last segment removed. The current one is found
+by , which names the exact key, NOT by matching the name --
+VirtualBox allows two snapshots to share a name, and this project has been caught
+by that once already.
+
+**When each was taken** is not reported by VBoxManage at all, which left "which
+of these is the one from before I broke it" unanswerable. VirtualBox keeps it in
+the machine own , where its GUI reads it from, so that is its record
+rather than a guess. Cached on the file size and modified time, because the panel
+redraws every three seconds and the file only changes when a snapshot does.
+
+**Current state, and whether it CHANGED.** VirtualBox marks this in its own
+window from an API property its GUI reads and VBoxManage does not report. The
+flag is not the only way to know, and this host has better evidence than a flag:
+THE MACHINE DIALLED IN AFTER THE SNAPSHOT WAS TAKEN, at a moment recorded here.
+It booted and wrote to its disk, and that stays true until the disk is either
+thrown away by going back to a snapshot or captured by taking a new one. The
+reverse is never claimed -- never having heard from a machine is not evidence
+that nothing ran on it, only that nothing reached us.
+
 The Branches tab
 ----------------
 

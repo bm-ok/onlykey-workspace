@@ -241,19 +241,126 @@ async function screenshot (name, file) {
 
 // ---- snapshots -------------------------------------------------------
 
+// SNAPSHOTS ARE A TREE, AND THE KEY NAMES SAY SO.
+//
+// This read every `SnapshotName...=` line, kept the name, and threw the rest of
+// the key away -- so five snapshots in a line and five taken from the same point
+// arrived here identical. They are completely different situations: one is a
+// history, the other is five alternatives branching off one moment, and which it
+// is decides what deleting any of them costs.
+//
+// The suffix IS the parentage. VirtualBox writes the path of child indices into
+// the key itself:
+//
+//     SnapshotName="post-install"           the root
+//     SnapshotName-1="setup"                its child
+//     SnapshotName-1-1="node-setup"         and its child
+//     SnapshotName-2="something else"       a SECOND child of the root
+//
+// so the depth is the number of segments and the parent is the key with the last
+// segment removed. Nothing has to be inferred from order or from names.
+//
+// THE CURRENT ONE IS FOUND BY NODE, NOT BY NAME. `CurrentSnapshotNode` names the
+// exact key, and that matters because VirtualBox allows two snapshots to have
+// the same name -- which this project has already been bitten by once. Matching
+// on the name would mark both, or the wrong one.
+// WHEN each snapshot was taken, which VBoxManage does not report at all.
+//
+// `snapshot list` gives names, uuids and descriptions and no times, so a list of
+// five points to come back to said nothing about which was oldest -- and "which
+// of these is the one from before I broke it" is most of what somebody is asking
+// when they read this panel.
+//
+// VirtualBox keeps it in the machine's own `.vbox`, which is where its GUI reads
+// it from, so this is its record rather than a guess. The path comes from
+// VBoxManage rather than being assembled from the machine's name, because a
+// machine's folder does not have to be named after it.
+//
+// CACHED ON THE FILE ITSELF. This is asked for on every draw of a panel that
+// redraws every three seconds; the file changes only when a snapshot is taken or
+// thrown away, and its size and modified time say so. Reading branches per draw
+// is what once put 94% of the window in `spawn`, and this is the same shape.
+const timesCache = new Map()
+
+async function snapshotTimes (name) {
+  try {
+    const cfg = (await info(name)).CfgFile
+    if (!cfg) return new Map()
+    const stat = fs.statSync(cfg)
+    const key = `${stat.mtimeMs}:${stat.size}`
+    const hit = timesCache.get(cfg)
+    if (hit && hit.key === key) return hit.times
+
+    const times = new Map()
+    const xml = fs.readFileSync(cfg, 'utf8')
+    for (const m of xml.matchAll(/<Snapshot\s+uuid="\{([^}]+)\}"[^>]*?timeStamp="([^"]+)"/g)) {
+      times.set(m[1], m[2])
+    }
+    timesCache.set(cfg, { key, times })
+    return times
+  } catch {
+    // Unreadable is not a failure: every snapshot simply has no time, which the
+    // panel shows as nothing rather than as an error about a file nobody asked
+    // about.
+    return new Map()
+  }
+}
+
 async function snapshots (name) {
   try {
     const out = await run(['snapshot', name, 'list', '--machinereadable'], { quiet: true })
-    const list = []
-    for (const line of out.split('\n')) {
-      const m = /^SnapshotName[^=]*="(.*)"$/.exec(line.trim())
-      if (m) list.push({ name: m[1] })
+
+    const byKey = new Map()
+    const field = (line, prefix) => {
+      const m = new RegExp(`^${prefix}((?:-\\d+)*)="(.*)"$`).exec(line)
+      return m ? { key: `SnapshotName${m[1]}`, path: m[1], value: m[2] } : null
     }
-    const current = (out.match(/^CurrentSnapshotName="(.*)"$/m) || [])[1]
-    return { snapshots: list, current: current || null }
+
+    for (const raw of out.split('\n')) {
+      const line = raw.trim()
+      for (const [prefix, into] of [['SnapshotName', 'name'], ['SnapshotUUID', 'uuid'], ['SnapshotDescription', 'description']]) {
+        const f = field(line, prefix)
+        if (!f) continue
+        if (!byKey.has(f.key)) byKey.set(f.key, { key: f.key, path: f.path })
+        byKey.get(f.key)[into] = f.value
+      }
+    }
+
+    const currentNode = (out.match(/^CurrentSnapshotNode="(.*)"$/m) || [])[1] || null
+    const current = (out.match(/^CurrentSnapshotName="(.*)"$/m) || [])[1] || null
+
+    const times = await snapshotTimes(name)
+
+    const list = [...byKey.values()].map(s => {
+      const parts = s.path ? s.path.slice(1).split('-') : []
+      return {
+        name: s.name,
+        uuid: s.uuid || null,
+        taken: (s.uuid && times.get(s.uuid)) || null,
+        description: s.description || '',
+        key: s.key,
+        // The key with its last segment removed, which is its parent's key.
+        parent: parts.length ? `SnapshotName${parts.length > 1 ? '-' + parts.slice(0, -1).join('-') : ''}` : null,
+        depth: parts.length,
+        current: !!currentNode && s.key === currentNode
+      }
+    })
+
+    // Depth first, so a list rendered in order already reads as the tree it is.
+    const order = []
+    const walk = parent => {
+      for (const s of list.filter(x => x.parent === parent)) { order.push(s); walk(s.key) }
+    }
+    walk(null)
+    // Anything the walk did not reach would be a key with a parent that is not
+    // there. It should not happen, and dropping it silently would be worse than
+    // showing it flat.
+    for (const s of list) if (!order.includes(s)) order.push(s)
+
+    return { snapshots: order, current, currentNode, deepest: order.reduce((n, s) => Math.max(n, s.depth), 0) }
   } catch {
     // No snapshots at all is an error from VBoxManage, not a problem here.
-    return { snapshots: [], current: null }
+    return { snapshots: [], current: null, currentNode: null, deepest: 0 }
   }
 }
 
