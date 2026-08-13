@@ -212,6 +212,36 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   the places numbers are used -- a commit message, a note, somebody asking what
   happened to eleven. An identity that has to survive deletion cannot be derived
   from what survived.
+* **A supervisor that cannot see the work must not conclude the work is over.**
+  The queue waited on a run by polling the machine, and a failed poll threw —
+  straight out of the wait, out of the task, and into the `finally` that puts a
+  machine away. So pulling the network cable for **one minute** powered the
+  machine off and rolled it back, mid-run, while the work itself was perfectly
+  fine: detached, still going, and destroyed by the thing supervising it. The
+  run is detached on purpose; an outage is something happening to the dashboard,
+  not to the work.
+* **A partitioned socket blocks for ever, and the agent had not learned what the
+  dashboard had.** This side already knew that silence is not health — a machine
+  whose power is pulled sends no FIN. The agent did not: it read with no
+  timeout, so a network that went away left `recv()` blocked indefinitely, and
+  its heartbeat thread returned on the first failed send without telling anyone.
+  The reconnect loop underneath was written correctly, retries for ever, and was
+  never reached. **A machine that lost the network never came back**, and nothing
+  in its log said why. Keepalive makes the read fail; a failed beat closes the
+  socket, which is the only thing that gets a blocking read to let go.
+* **`Wants=` does not mean "after".** The agent's unit said
+  `Wants=network-online.target`, which does not wait for the network so much as
+  **pull that target into the boot** — dragging in `NetworkManager-wait-online`
+  and blocking startup until it is satisfied or times out. The one service whose
+  job is to report that a machine is in trouble was the reason a machine in
+  trouble took longest to say so. It does not need the network up: it retries for
+  ever, and a reboot is an ordinary reconnect.
+* **Connected is not usable.** The agent dials in as soon as the network works,
+  which is a minute or more before anybody has a graphical session — so a machine
+  reported itself ready while still showing a splash screen, and anything needing
+  a display arrived too early and failed for a reason pointing nowhere near the
+  cause. Asked of logind, on every beat, because it starts false and becomes true
+  later: recorded once at hello it would have said "no desktop" for ever.
 * **Git Bash rewrites paths that look absolute.** `--folder /home/okc/work`
   arrives as `C:/Program Files/Git/home/okc/work`, which is a real path on this
   host, so nothing looks wrong anywhere: the machine cannot find it, falls back

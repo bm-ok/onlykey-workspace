@@ -29,6 +29,13 @@ What is drawn today is right; what is drawn tomorrow still needs a photograph.
 Outstanding
 -----------
 
+* **Both machines are running the OLD agent.** Tonight fixed three things in
+  it -- keepalive, a beat that tears the session down, and a unit that no longer
+  blocks the boot -- and none of that is on either runner: those files are
+  applied at install, or by vmSetupAgain, and neither has happened since. The
+  next rebuild picks them up; until then a machine that loses the network still
+  never comes back.
+
 * **Nothing has been left running for hours.** A five-minute soak passed on a
   timer; the overnight one is written and waiting as **#17**, ten hours of
   heartbeats, queue it at bedtime. What it is looking for is what only shows up
@@ -46,10 +53,24 @@ Not missing work — things that have been reasoned about rather than seen. The
 drills themselves live in `TEST-PLAN.md`, and all of them now pass, including
 the four that only have anything to look at while a machine is mid-work.
 
-* **`runner2` failed to boot for nine minutes this afternoon and it was never
-  explained.** The double rollback five seconds apart is the prime suspect and
-  has been fixed, but every boot since has been thirty seconds, which is
-  consistent with the fix rather than proof of it.
+* **A machine sometimes sits at the Ubuntu splash for ten minutes or more after
+  a restore, and this is now REPRODUCIBLE and unexplained.** Seen on `runner2`
+  this afternoon (nine minutes, then it came back) and on `runner1` tonight
+  (eleven minutes, still there when it was powered off). Both followed
+  force-stop → restore → start.
+
+  Two theories are dead. The double rollback was the first suspect and is fixed,
+  yet this happened after a single restore. `Wants=network-online.target` in the
+  agent unit was the second, and is also a real fault worth fixing — but it
+  would cost ninety seconds, not eleven minutes.
+
+  **What would settle it:** the boot messages rather than the splash. Ubuntu
+  hides them behind `quiet splash`; taking those off the kernel command line for
+  one boot would say which job is hanging, and `systemd-analyze blame` afterwards
+  would say how long everything took. Neither has been tried.
+
+  A machine in this state is recovered by powering it off; it costs nothing but
+  the ten minutes, and rebuilding one takes twenty.
 
 
 Debris

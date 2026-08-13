@@ -53,6 +53,38 @@ if not VM or not TOKEN or not HOST:
     sys.exit("okc-agent: needs OKC_VM, OKC_TOKEN and OKC_HOST")
 
 
+def desktop_ready():
+    """Whether there is a graphical session this user could actually be shown in.
+
+    BOOTED IS NOT USABLE, and until now nothing could tell the two apart. The
+    agent connects as soon as the network works, which is well before the
+    desktop exists -- so a machine reported itself ready while it was still
+    showing a splash screen, and anything that needs a display (opening an
+    editor, a browser sign-in) would arrive too early and fail for a reason that
+    pointed nowhere near the cause.
+
+    Asked of logind rather than guessed from an environment variable: this
+    process is a system service and has no DISPLAY of its own, so its own
+    environment says nothing about whether anybody has a desktop.
+    """
+    user = os.environ.get("USER") or ""
+    try:
+        out = subprocess.run(
+            ["loginctl", "list-sessions", "--no-legend"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+    except Exception:
+        return False
+    for line in out.splitlines():
+        # SESSION  UID  USER  SEAT  TTY -- a seated session is a desktop; an ssh
+        # login has no seat, and reporting one as a desktop would be the same
+        # false "ready" in a different costume.
+        parts = line.split()
+        if len(parts) >= 4 and parts[2] == user and parts[3].startswith("seat"):
+            return True
+    return False
+
+
 def facts():
     """Said at hello, so the dashboard can show what this machine actually is
     rather than only that something connected."""
@@ -68,6 +100,7 @@ def facts():
         "addresses": addresses,
         # Who this is running as, which should not be root.
         "user": os.environ.get("USER") or subprocess.run(["id", "-un"], capture_output=True, text=True).stdout.strip(),
+        "desktop": desktop_ready(),
     }
 
 
@@ -113,11 +146,27 @@ def run_command(link, job, command, what):
     link.send({"type": "done", "job": job, "code": process.returncode, "what": what})
 
 
-def beat(link, stop):
+def beat(link, stop, sock):
+    """Say we are alive, and TEAR THE SESSION DOWN when we cannot.
+
+    The old version returned when a beat failed, which ended this thread and
+    nothing else -- the main loop stayed blocked in recv() on a socket that was
+    never coming back, so the agent sat there for ever and the reconnect loop
+    below was never reached. A machine that lost the network never redialled,
+    and there was nothing in its log to say why.
+
+    Closing the socket is what makes recv() raise, which is the only way to get
+    the main loop out of a blocking read it has no timeout on.
+    """
     while not stop.wait(20):
         try:
-            link.send({"type": "beat"})
-        except Exception:
+            link.send({"type": "beat", "desktop": desktop_ready()})
+        except Exception as err:
+            print(f"okc-agent: beat failed ({err}); dropping the session", flush=True)
+            try:
+                sock.close()
+            except Exception:
+                pass
             return
 
 
@@ -141,12 +190,34 @@ def session():
     context.verify_mode = ssl.CERT_REQUIRED
     sock = context.wrap_socket(raw, server_hostname=HOST)
 
+    # KEEPALIVE, because a partitioned socket does not tell anyone.
+    #
+    # This reads with no timeout, which is right: the dashboard may say nothing
+    # for hours and that is not a fault. But it means a network that goes away
+    # leaves recv() blocked for ever -- TCP keeps the connection "established"
+    # until something tries to send and gives up, which by default takes about
+    # fifteen minutes and may never happen on an idle link.
+    #
+    # That is not hypothetical here: pulling this machine's cable for one minute
+    # left the agent stuck for ever, and the machine never redialled. The
+    # dashboard learned this same lesson about ITS side long ago -- silence is
+    # not health -- and this side had not.
+    #
+    # A minute of unanswered probes is enough to call it dead. Linux-specific
+    # options, guarded, because this agent runs where it is put.
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    for option, value in (("TCP_KEEPIDLE", 30), ("TCP_KEEPINTVL", 10), ("TCP_KEEPCNT", 3)):
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, option), value)
+        except Exception:
+            pass    # not this platform's spelling; the beat below still covers it
+
     sock.settimeout(None)
     link = Link(sock)
     link.send({"type": "hello", "vm": VM, "token": TOKEN, "facts": facts()})
 
     stop = threading.Event()
-    threading.Thread(target=beat, args=(link, stop), daemon=True).start()
+    threading.Thread(target=beat, args=(link, stop, sock), daemon=True).start()
 
     buffer = ""
     try:

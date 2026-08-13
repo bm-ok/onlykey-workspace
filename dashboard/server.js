@@ -317,6 +317,36 @@ const actions = {
       })
     }
   },
+  // Pull a machine's network cable, or plug it back in.
+  //
+  // For finding out what this app does when a machine goes away and comes back,
+  // which is not a hypothetical: a switch reboots, wifi drops, a laptop sleeps.
+  // Everything here reasons about that case rather than having seen it — the run
+  // is detached so it should survive, the agent should redial, the queue should
+  // keep waiting — and "should" is what drills are for.
+  //
+  // It does NOT drop the channel on this side. That is the point: the dashboard
+  // is left to notice on its own, exactly as it would if somebody tripped over a
+  // cable, rather than being told.
+  vmNetwork: {
+    about: "Connect or disconnect a machine's network cable, from outside it",
+    takes: ['name', 'connected'],
+    run: async ({ name, connected }) => {
+      vms.get(name)
+      if (await vbox.isOff(name)) throw new Error(`"${name}" is not running, so its cable is not plugged into anything.`)
+      const on = !(connected === false || connected === 'false' || connected === 'no' || connected === '0')
+      await vbox.setLink(name, on)
+      log.on('vm', name).warn(on ? 'network cable plugged back in' : 'network cable pulled out')
+      return {
+        name,
+        connected: on,
+        note: on
+          ? 'It will redial when it notices. Nothing here was told; the dashboard finds out the same way it would after a real outage.'
+          : 'The dashboard has not been told. It will keep believing this machine is connected until silence is noticed, which takes about seventy seconds.'
+      }
+    }
+  },
+
   vmInfo: { about: 'Everything VirtualBox knows about one machine', takes: ['name'], run: ({ name }) => { vms.get(name); return vbox.info(name) } },
 
   // A picture of what a machine has on screen.

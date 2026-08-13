@@ -283,8 +283,21 @@ ENV
   cat > /etc/systemd/system/okc-agent.service <<UNIT
 [Unit]
 Description=Dial the dashboard and stay connected
-After=network-online.target
-Wants=network-online.target
+
+# NOT network-online.target, and the Wants is the part that mattered.
+#
+# `Wants=network-online.target` does not mean "start me once the network is up";
+# it PULLS THAT TARGET IN, which on a desktop Ubuntu drags in
+# NetworkManager-wait-online and blocks the boot until it is satisfied or times
+# out. So this service was the reason a machine sat at the Ubuntu splash for
+# minutes -- and the worse the network, the longer it sat, which is exactly
+# backwards for the one service whose job is to report that the machine is
+# having trouble.
+#
+# It does not need the network to be up. It retries for ever with a backoff and
+# a reboot is an ordinary reconnect, so starting early and failing twice costs
+# nothing and starting late costs the operator their visibility.
+After=network.target
 
 [Service]
 # As the user, not root. Nothing the agent does needs root, and running it as root

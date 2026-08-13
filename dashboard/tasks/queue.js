@@ -391,9 +391,60 @@ async function waitForRun (actions, to, machine, runId, hours = 6) {
   // can be said is how long it HAS been, which is what somebody deciding whether
   // to go and look actually needs.
   const tick = ticking(to, `${runId} to finish`, { every: 60000 })
+
+  // A MACHINE THAT CANNOT BE ASKED IS NOT A MACHINE THAT HAS FINISHED.
+  //
+  // This waited by polling, and a failed poll threw -- straight out of here, out
+  // of the task, and into the `finally` that puts a machine away. So a fifteen
+  // second network blip powered the machine off and rolled it back, mid-run,
+  // while the work itself was perfectly fine: detached, still going, and about
+  // to be destroyed by the thing supervising it. Pulling the cable for one
+  // minute cost the whole task.
+  //
+  // The run is detached on purpose. An outage is something happening to the
+  // DASHBOARD, not to the work -- so being unable to see the work is a reason to
+  // look again, not a reason to end it. Patience here is bounded but generous:
+  // a machine that is really gone is noticed by the loop below eventually, and
+  // the cost of waiting too long is a machine held; the cost of giving up too
+  // early is somebody's afternoon.
+  const OUT_OF_TOUCH = 10 * 60000
+  let lostSince = 0
+
   try {
     for (;;) {
-      const { runs } = await actions.vmRuns.run({ name: machine })
+      let runs = null
+      try {
+        ({ runs } = await actions.vmRuns.run({ name: machine }))
+        if (lostSince) {
+          to.good(`${machine} is answering again after ${secs(Date.now() - lostSince)} — the run was never in doubt, only our view of it`)
+          lostSince = 0
+        }
+      } catch (e) {
+        // Cannot see it. Say so once, keep waiting, and give up only when it has
+        // been out of touch long enough to be genuinely gone rather than briefly
+        // unreachable.
+        // UNREACHABLE AND OFF ARE DIFFERENT. Patience is for a machine that has
+        // lost its network while carrying on working; a machine that is powered
+        // off is not working, and waiting ten minutes to admit that holds it out
+        // of the pool for no reason. VirtualBox can answer this without the
+        // guest's help, which is exactly why it is worth asking.
+        const still = (await actions.vmList.run({})).vms.find(v => v.name === machine)
+        if (!still || !still.running) {
+          to.warn(`${machine} is not running any more, so ${runId} is over however it ended`)
+          return { state: 'gone' }
+        }
+
+        if (!lostSince) {
+          lostSince = Date.now()
+          to.warn(`cannot reach ${machine} (${e.message}) — the run is detached and carries on regardless; waiting for it to come back`)
+        } else if (Date.now() - lostSince > OUT_OF_TOUCH) {
+          to.bad(`${machine} has been unreachable for ${Math.round((Date.now() - lostSince) / 60000)} minutes; giving up on ${runId}`)
+          return { state: 'unreachable' }
+        }
+        await wait(15000)
+        continue
+      }
+
       const mine = (runs || []).find(r => r.id === runId)
       if (mine && mine.state !== 'running') return mine
       if (!mine) return { state: 'gone' }

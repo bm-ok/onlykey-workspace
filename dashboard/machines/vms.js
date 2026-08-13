@@ -111,6 +111,14 @@ async function all () {
       // Whether its agent is talking to us right now, which is a different question
       // from whether VirtualBox says it is powered on.
       connected: channel.connected(vm.name),
+      // And a third question again: whether anybody has a DESKTOP on it.
+      //
+      // The agent starts as soon as the network works, which is a minute or two
+      // before a graphical session exists — so a machine reports itself
+      // connected while it is still showing a splash screen. Anything that needs
+      // a display, an editor or a browser sign-in, arrives too early and fails
+      // for a reason that points nowhere near the cause.
+      desktop: !!((channel.list().find(a => a.vm === vm.name) || {}).facts || {}).desktop,
       agent: channel.list().find(a => a.vm === vm.name) || null
     })
   }

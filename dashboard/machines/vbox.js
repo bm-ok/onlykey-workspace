@@ -108,9 +108,6 @@ async function waitForState (name, ok, { timeout = 180000, interval = 2000 } = {
 }
 const waitUntilOff = (name, opts) => waitForState(name, s => OFF_STATES.has(s) || s === 'missing', opts)
 
-// Powered off is not unlocked. VirtualBox holds the session for a moment after a
-// VM stops, and while it is held `unregistervm` fails with
-// VBOX_E_INVALID_OBJECT_STATE. Waiting on the power state alone races it.
 // POWERED OFF IS NOT READY, and this is the wait every caller that is about to
 // touch a machine's DISK has to do first.
 //
@@ -203,6 +200,21 @@ async function hostAddress () {
 const start = (name, type = 'gui') =>
   retrying(() => run(['startvm', name, '--type', type], { tags: [name] }),
     { what: 'starting the machine', tags: [name] })
+
+// Pull the machine's network cable, or plug it back in.
+//
+// Exists for one reason: to find out what this app does when a machine it is
+// watching goes away and comes back. That is not a hypothetical failure -- a
+// laptop sleeps, a switch reboots, wifi drops -- and everything here reasons
+// about it rather than having seen it: the run is detached so it "should"
+// survive, the agent "should" redial, the queue "should" keep waiting.
+//
+// The cable rather than the guest's own networking, deliberately. Turning an
+// interface off from inside is a different experiment: the machine knows it did
+// it, and can undo it. Unplugging it from out here is what the machine cannot
+// tell from the rest of the world disappearing.
+const setLink = (name, on) =>
+  run(['controlvm', name, 'setlinkstate1', on ? 'on' : 'off'], { tags: [name] })
 
 // The button, not the plug. A guest mid-write should be allowed to finish;
 // pulling power is a separate, explicit choice.
@@ -341,6 +353,6 @@ module.exports = {
   listAll, runningAll, info, exists, state, isOff,
   waitForState, waitUntilOff, waitUntilUnlocked,
   isos, bridges, hostAddress,
-  start, stop, screenshot, snapshots, takeSnapshot, restoreSnapshot, deleteSnapshot, destroy,
+  start, stop, setLink, screenshot, snapshots, takeSnapshot, restoreSnapshot, deleteSnapshot, destroy,
   OFF_STATES
 }

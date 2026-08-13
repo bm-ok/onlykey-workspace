@@ -197,7 +197,21 @@ function handle (vm, msg) {
   }
 
   if (msg.type === 'say') return to.out(msg.text || '')
-  if (msg.type === 'beat') return
+  // A beat carries one changing fact: whether the machine has a desktop yet.
+  //
+  // It has to come on the beat rather than only at hello, because it is FALSE
+  // when a machine first connects and becomes true a minute or two later — the
+  // agent starts as soon as the network works, which is well before anybody has
+  // a graphical session. Recorded at hello only, it would say "no desktop" for
+  // the rest of the machine's life.
+  if (msg.type === 'beat') {
+    const agent = agents.get(vm)
+    if (agent && agent.facts && typeof msg.desktop === 'boolean' && agent.facts.desktop !== msg.desktop) {
+      agent.facts.desktop = msg.desktop
+      to.info(msg.desktop ? 'its desktop session is up' : 'its desktop session has gone')
+    }
+    return
+  }
   to.info(JSON.stringify(msg).slice(0, 400))
 }
 
