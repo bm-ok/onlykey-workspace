@@ -29,6 +29,11 @@ const data = require('../core/data')
 // ref operations on a handful of repositories, they take milliseconds, and the
 // alternative is threading async through something that is really a lookup.
 function git (dir, args) {
+  // ANYTHING THAT WRITES DROPS THE MEMO BELOW, decided from the command rather
+  // than remembered by each caller. A cache that has to be invalidated by hand
+  // is a cache that is stale exactly where somebody forgot, and the forgetting
+  // happens in the change that adds the seventh writer, months later.
+  if (WRITES.test(args[0])) forgetRefs()
   return execFileSync('git', ['--git-dir', dir, ...args], {
     encoding: 'utf8',
     timeout: 30000,
@@ -36,14 +41,45 @@ function git (dir, args) {
   }).trim()
 }
 
-const branchesIn = dir =>
+const WRITES = /^(branch|checkout|switch|merge|fetch|push|update-ref|reset|commit|cherry-pick|rebase|tag)$/
+
+// ---- the two reads everything else is made of ---------------------------
+//
+// WHICH BRANCHES A REPOSITORY HAS, and WHICH ONE IT IS ON. Nearly every question
+// in this file decomposes into these two, and the window asks the whole board
+// every three seconds — so they were being answered from a fresh process over
+// and over inside a single draw: once in `all()`, again inside `groups()`, again
+// in `baselines()`, again per branch through `scopeOf`.
+//
+// A trace put 39% of the window's samples inside `spawn` while nothing was
+// happening. These two are what it was spawning.
+//
+// A second is the whole window: no single draw asks twice, and a branch cut by
+// something else shows up before anybody has read the sentence about it. Writes
+// through `git()` above clear it outright, so this process never reads its own
+// stale answer — which is the case that would actually be wrong rather than
+// merely late.
+const refs = new Map()
+const forgetRefs = () => refs.clear()
+
+function remember1s (key, make) {
+  const hit = refs.get(key)
+  if (hit && Date.now() - hit.at < 1000) return hit.value
+  const value = make()
+  refs.set(key, { at: Date.now(), value })
+  return value
+}
+
+const branchesIn = dir => remember1s(`branches ${dir}`, () =>
   git(dir, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])
-    .split('\n').map(s => s.trim()).filter(Boolean)
+    .split('\n').map(s => s.trim()).filter(Boolean))
 
 // Where a repository is right now. Read rather than assumed: `master` and `main`
 // are both common, and a repository that uses neither is not unusual.
 function headOf (dir) {
-  try { return git(dir, ['symbolic-ref', '--short', 'HEAD']) } catch { return null }
+  return remember1s(`head ${dir}`, () => {
+    try { return git(dir, ['symbolic-ref', '--short', 'HEAD']) } catch { return null }
+  })
 }
 
 // ---- the branch nothing may be built on --------------------------------
@@ -155,7 +191,22 @@ function groupsFile () {
   try { return JSON.parse(fs.readFileSync(GROUPS(), 'utf8').replace(/^﻿/, '')) || {} } catch { return {} }
 }
 
+// READ ONCE PER MOMENT, not once per caller.
+//
+// `groups()` asks git for every named repository's branches, and one board read
+// calls it several times over: `protectedBranches` through `inAnyGroup`, and
+// `scopeOf` once per branch that names a line. The answers are identical within
+// one draw, and the draw happens every three seconds.
+//
+// A second is the whole window. It is long enough that no single read asks twice
+// and short enough that a line changed in another process — or by the command
+// line — shows up before anybody has finished reading the sentence about it.
+// Cleared outright on write, so this process never sees its own stale answer.
+let groupsSeen = { at: 0, value: null }
+const forgetGroups = () => { groupsSeen = { at: 0, value: null } }
+
 function writeGroups (all) {
+  forgetGroups()
   try {
     fs.mkdirSync(STATE(), { recursive: true })
     fs.writeFileSync(GROUPS(), JSON.stringify(all, null, 2))
@@ -168,19 +219,42 @@ function writeGroups (all) {
 // quietly dropped -- it is the difference between "this line is finished" and
 // "somebody deleted a link in a chain".
 function groups () {
+  if (groupsSeen.value && Date.now() - groupsSeen.at < 1000) return groupsSeen.value
+  const value = readGroups()
+  groupsSeen = { at: Date.now(), value }
+  return value
+}
+
+function readGroups () {
   const all = groupsFile()
   const here = serve.list().map(r => r.name)
+
+  // EACH REPOSITORY'S BRANCH LIST READ ONCE, not once per line that names it.
+  //
+  // This asked git for a repository's branches inside the per-part loop, so
+  // three lines across three repositories was nine `for-each-ref` processes for
+  // three answers — and this function is called several times over during one
+  // board read, by `inAnyGroup`, `protectedBranches` and `whyProtected` in turn.
+  // A trace found 39% of the window's samples inside `spawn` with the window
+  // idle; fifteen of the eighteen processes one board read cost were this.
+  const listed = new Map()
+  const branchesOf = repo => {
+    if (listed.has(repo)) return listed.get(repo)
+    const dir = serve.gitDirOf(repo)
+    let names = []
+    try { names = dir ? branchesIn(dir) : [] } catch { names = [] }
+    listed.set(repo, names)
+    return names
+  }
+
   return Object.entries(all).map(([name, g]) => {
     const on = g.on || {}
-    const parts = Object.entries(on).map(([repo, branch]) => {
-      const dir = serve.gitDirOf(repo)
-      return {
-        repo,
-        branch,
-        there: !!dir && (() => { try { return branchesIn(dir).includes(branch) } catch { return false } })(),
-        stillHere: here.includes(repo)
-      }
-    })
+    const parts = Object.entries(on).map(([repo, branch]) => ({
+      repo,
+      branch,
+      there: branchesOf(repo).includes(branch),
+      stillHere: here.includes(repo)
+    }))
     return {
       name,
       why: g.why || null,
@@ -398,8 +472,12 @@ const isProtected = branch => protectedBranches().some(p => p.branch === branch)
 
 // Said the same way wherever it is refused, so the reason does not get a
 // different wording depending on which door it was met at.
-function whyProtected (branch) {
-  const p = protectedBranches().find(x => x.branch === branch)
+// The entry can be handed in by a caller that already has it. `all()` computes
+// the whole protected list once and then wanted a sentence per protected branch;
+// without this it recomputed the list — and every repository's branches with it —
+// once per branch.
+function whyProtected (branch, known = null) {
+  const p = known || protectedBranches().find(x => x.branch === branch)
   if (!p) return null
   const parts = [
     p.asDefault.length ? `the default branch of ${p.asDefault.join(', ')}` : null,
@@ -608,8 +686,21 @@ function all () {
         // is needed, so it stays available and nobody has to think about it.
         // Only work in the way makes a branch unusable, and then it is the work
         // that is named rather than the branch.
-        const stuck = p ? [] : serve.list()
-          .map(r => freeIfBusy(r.name, b.name))
+        // ONLY WHERE THIS BRANCH IS ACTUALLY CHECKED OUT, which this function
+        // already knows: the loop above recorded, per branch, the repositories
+        // whose HEAD is it.
+        //
+        // It used to ask every repository about every branch. `freeIfBusy` opens
+        // with `headOf(dir) !== branch` and returns — so for six branches across
+        // three repositories that was eighteen `git symbolic-ref` processes to
+        // learn one fact per repository, on every draw, three seconds apart. A
+        // trace put 39% of the window's samples inside `spawn` with nothing
+        // happening, and this was most of it.
+        //
+        // A branch that is not HEAD anywhere cannot be in the way anywhere, so
+        // the ones worth asking about are exactly `b.head` — usually none.
+        const stuck = p ? [] : b.head
+          .map(repo => freeIfBusy(repo, b.name))
           .filter(r => r.busy)
 
         // TWO questions, kept apart, because they have different answers and
@@ -649,7 +740,7 @@ function all () {
           protected: !!p,
           reclaimable: !stuck.length,
           blocked: stuck.length ? stuck.map(s => s.why) : null,
-          why: p ? whyProtected(b.name) : (stuck.length ? stuck[0].why : null)
+          why: p ? whyProtected(b.name, p) : (stuck.length ? stuck[0].why : null)
         }
       })
       .sort((a, b) => a.name.localeCompare(b.name))

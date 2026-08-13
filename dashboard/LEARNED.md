@@ -405,3 +405,30 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   calls is on a timer.** A new action is cheap to add and free to call from the
   command line, and neither of those says anything about what it costs three
   seconds at a time. Before wiring one into a paint function, ask what it spawns.
+
+* **The window redraws on a timer, so every question it asks is asked on a
+  timer — and the expensive ones decompose into the same two.** A second trace,
+  after the Merge pane was fixed, still put 39% of samples inside `spawn` with
+  nothing happening. It was not one greedy caller. It was `git for-each-ref` and
+  `git symbolic-ref`, asked over and over inside a SINGLE draw: once in `all()`,
+  again inside `groups()`, again in `baselines()`, again per branch through
+  `scopeOf`, and — worst — once per (branch, repository) pair by `freeIfBusy`,
+  which opens by comparing HEAD to the branch and returning. Eighteen processes
+  to learn three facts.
+
+  Three fixes, in order of how much they were worth: ask `freeIfBusy` only about
+  repositories where the branch actually IS checked out (`all()` already knew
+  which); let `groups()` read each repository's branches once instead of once per
+  named part; and memoise the two ref reads themselves for a second. 18 git
+  processes per board read became 6, and 0 for a second read within the same
+  second. Live, with the window open and untouched: 14 samples with a git process
+  alive became 6.
+
+  The memo is invalidated FROM `git()` ITSELF, by looking at the verb — branch,
+  checkout, merge, fetch, push, reset. A cache invalidated by hand at each call
+  site is stale exactly where somebody forgot, and the forgetting arrives with
+  the seventh writer, months later, in a change about something else.
+
+  The general lesson is about decomposition, not caching: a function that costs
+  one process is fine, and six of them in one draw are the same process six
+  times. Ask what a panel spawns, not what it calls.
