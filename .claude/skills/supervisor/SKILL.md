@@ -253,11 +253,15 @@ okc.js vmShell --name runner1                          # a shell inside it
 okc.js vmShell --name runner1 --command 'journalctl -u okc-agent -n 30'
 ```
 
-**`vmShell` is the back door, and it is the reason an ssh key goes onto every
-machine at build time.** Everything else here reaches a machine through its
-agent — which is exactly the thing that is broken when you most need to look.
-From this side a silent agent is indistinguishable from a dead machine; the
-difference is written in the guest's own journal.
+**`vmShell` is the back door.** Everything else here reaches a machine through
+its agent — which is exactly the thing that is broken when you most need to
+look. From this side a silent agent is indistinguishable from a dead machine;
+the difference is written in the guest's own journal.
+
+It works because **this host's public key is in the guest's `authorized_keys`**,
+put there at build time from `hostKeys`. The private key is the operator's own,
+already in `~/.ssh` here — so nothing is generated or stored to make ssh work,
+and `vmShell` is only a way in *from this machine*.
 
 That is not hypothetical. An agent was once found *awake*, correctly diagnosing
 its own lost connection, writing so to its journal — and stuck. Nothing on this

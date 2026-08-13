@@ -498,11 +498,22 @@ the thing that is broken when you most need to look inside. From this host a
 silent agent is indistinguishable from a dead machine, and the difference is
 written in the guest's own journal.
 
-That is why the ssh key is installed at build time rather than on request: the
-moment you need it is the moment nothing can be arranged. An agent was once
-found awake, correctly diagnosing its own lost connection, saying so in its
-journal — and stuck. Nothing on this side could have reported that; one
-`journalctl` did.
+**What makes it work is that THIS host's public key is in the machine's
+`authorized_keys`.** Not a key belonging to the machine — `hostKeys` reads the
+operator's own public key off this computer, the make-a-machine dialog offers
+it, and `first-boot.sh` appends it to the guest's `authorized_keys`. So the
+private key that opens every runner is the one already sitting in `~/.ssh` here,
+and no secret is generated, carried or stored to make that true.
+
+It is installed at build time rather than on request because the moment you need
+it is the moment nothing can be arranged. An agent was once found awake,
+correctly diagnosing its own lost connection, saying so in its journal — and
+stuck. Nothing on this side could have reported that; one `journalctl` did.
+
+Two consequences worth stating. **`vmShell` only works from the machine holding
+that private key** — it is not a way in from anywhere else, which is the right
+shape for a back door. And **the same key is what VS Code Remote uses**, so if
+one works the other does.
 
 **It works when the machine is not dialled in**, which is the entire point. The
 address is recorded every time a machine connects, and used long afterwards —
