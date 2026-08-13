@@ -29,12 +29,11 @@ What is drawn today is right; what is drawn tomorrow still needs a photograph.
 Outstanding
 -----------
 
-* **`runner1` is running the OLD agent.** `runner2` has tonight's three fixes —
-  a read timeout, a beat the dashboard answers, and a unit that no longer blocks
-  the boot — pushed with `vmSetupAgain --stage firstBoot` and proven by pulling
-  its cable. `runner1` has none of them, so it is still a machine that never
-  comes back from a network outage. It needs the same push, which needs it
-  started and dialled in — and it is the machine that would not boot.
+* **`runner1` is running an agent two fixes behind.** It never got the read
+  timeout or the unit change, and it has not got the TLS locking either — so it
+  is the only machine left that still drops its channel whenever a command
+  produces output. It needs the same push, which needs it started and dialled in,
+  and it is the machine that would not boot.
 
 * **Nothing has been left running for hours.** A five-minute soak passed on a
   timer; the overnight one is written and waiting as **#17**, ten hours of
@@ -53,13 +52,6 @@ Outstanding
   out of the pool but does not stop the queue putting away one it is already
   using. The likely shape is a task that says "leave it up when you are done",
   decided before it runs rather than after.
-
-* **The kept logs can only be reached through a task.** `taskLog` needs a task
-  id, and `taskRemove` deliberately leaves the logs behind — so the moment a
-  task is thrown away its logs become unreachable through the tool, while sitting
-  there on disk under a uid nobody can look up. Something should list what is
-  archived, and it is worth doing precisely because the evidence outliving the
-  note about it was the point.
 
 * **`taskUpdate` can force a task into any stored state.** It is bounded — the
   set is checked, and `working` and `delivered` are derived rather than settable

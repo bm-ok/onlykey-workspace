@@ -275,13 +275,33 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   reported as "claude doesn't work with the auth key", and every theory that
   started from the token was wrong. Handing over a credential now marks the
   wizard done in the same breath.
-* **An agent that runs your command cannot also answer your beats.** The channel
-  runs the command and replies to this host's liveness beats from the same loop,
-  so anything slow — one headless prompt was enough — looks exactly like a
-  machine that has died, and the connection is dropped out from under the work.
-  The machine redialled seconds later, which is what made it legible at all.
-  `vmShellRun` exists because of this: ssh needs no agent, holds its own
-  connection, and does not have to be alive in two ways at once.
+* **One TLS connection, two threads, and openssl allows neither.** The agent read
+  the socket on its main thread while the beat thread and every running command
+  wrote to it from others. There was a lock, and it was around sending only — so
+  writes could not corrupt each other, while a write could and did collide with
+  the blocking `recv`. Python does no locking for you here, and openssl does not
+  permit one connection to be used from two threads at once.
+
+  **The failure is not an error.** The TLS state machine is left inconsistent and
+  the connection is torn down CLEANLY, so both ends see an orderly shutdown and
+  each reports the other as having closed first. That is what made it so hard:
+  the dashboard logged "the machine closed it" while the machine's journal said
+  "the dashboard closed the connection", and both were telling the truth about
+  what they saw. Every theory built on believing one of them was wrong, and there
+  were four — a long command, `claude` specifically, a leaked file descriptor, a
+  throwing log subscriber.
+
+  The tell was the shape, not any one message: intermittent at roughly one run in
+  five, triggered by output rather than by duration, and stable for as long as
+  nothing ran. Idle, the only writer is one small beat every twenty seconds and
+  the odds of overlapping a read are slim; streaming output makes it likely.
+
+  Reads go through the same lock now, with `select` on the descriptor — which
+  touches no TLS state — so the lock is held only for the recv itself. The beat
+  thread no longer closes the socket either, because closing sends a close_notify,
+  which is one more use of the connection from one more thread. Ten commands and
+  twenty thousand streamed lines without a single reconnect, where before the
+  first or second command would take the channel down.
 * **Two `ssh` programs, one config file, and neither reads the other's paths.**
   Windows OpenSSH — the one VS Code Remote runs — takes `Include "C:/Users/..."`.
   Git's MSYS build reads that as RELATIVE, looks for a file called `C:` inside

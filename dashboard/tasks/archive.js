@@ -99,4 +99,38 @@ function read (task, run, { lines = 200 } = {}) {
   }
 }
 
-module.exports = { keep, list, read, has, dirFor, ROOT }
+// Everything kept, for every task there has ever been one for.
+//
+// THIS IS HOW A LOG STAYS REACHABLE AFTER ITS TASK IS GONE. Removing a task
+// deliberately leaves its logs -- the evidence is meant to outlive the note about
+// it -- but everything that reads them wanted a task id, and a task id is
+// precisely what has just been thrown away. So the record sat on disk, filed
+// under a uid nothing could look up, which is indistinguishable from having
+// deleted it.
+//
+// Read from the directory, never from the board, for the same reason `list` is.
+function everything () {
+  let uids = []
+  try {
+    uids = fs.readdirSync(ROOT(), { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name)
+  } catch { return [] }
+
+  return uids.map(uid => {
+    const runs = list(uid)
+    return {
+      uid,
+      runs: runs.length,
+      bytes: runs.reduce((n, r) => n + (r.bytes || 0), 0),
+      // Taken from the runs rather than from the folder's own timestamp, which
+      // changes when anything inside it is touched.
+      first: runs.map(r => r.kept).filter(Boolean).sort()[0] || null,
+      last: runs.map(r => r.kept).filter(Boolean).sort().pop() || null,
+      // Enough to recognise it by when the task record is gone, which is the
+      // case this exists for.
+      machines: [...new Set(runs.map(r => r.machine).filter(Boolean))],
+      dir: path.join(ROOT(), uid)
+    }
+  }).sort((a, b) => String(b.last || '').localeCompare(String(a.last || '')))
+}
+
+module.exports = { keep, list, read, has, everything, dirFor, ROOT }

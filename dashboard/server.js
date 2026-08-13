@@ -1888,6 +1888,45 @@ done`
     }
   },
 
+  // Every kept log, including the ones whose task no longer exists.
+  //
+  // WITHOUT THIS THEY WERE UNREACHABLE. `taskRemove` leaves the logs behind on
+  // purpose -- the evidence outliving the note about it is the point -- but
+  // `taskLog` needs a task id to find them, and a removed task's id is exactly
+  // what is gone. So the record sat on disk under a uid nothing could look up,
+  // which is the same as having deleted it, only more expensive.
+  //
+  // Each row says whether the board still knows the task, because that is the
+  // difference between "read it the ordinary way" and "this is all there is".
+  taskLogs: {
+    about: 'Every run log kept on this host, including tasks that were thrown away',
+    run: () => {
+      const board = new Map(tasks.read().map(t => [t.uid, t]))
+      const kept = archive.everything().map(a => {
+        const task = board.get(a.uid) || null
+        return {
+          ...a,
+          task: task ? task.id : null,
+          number: task ? task.number : null,
+          title: task ? task.title : null,
+          // Said plainly rather than left to be inferred from a null.
+          orphaned: !task
+        }
+      })
+      return {
+        kept,
+        tasks: kept.length,
+        runs: kept.reduce((n, k) => n + k.runs, 0),
+        bytes: kept.reduce((n, k) => n + k.bytes, 0),
+        orphaned: kept.filter(k => k.orphaned).length,
+        where: archive.ROOT(),
+        note: kept.length
+          ? 'taskLog --id <task> --run <run> reads one; an orphaned uid is a folder under "where"'
+          : 'nothing has been kept yet — a log is pulled across when a run finishes'
+      }
+    }
+  },
+
   // What came back, read the way a pull request is read.
   taskArtifact: {
     about: "What arrived on a task's branch: commits and files, per repository",

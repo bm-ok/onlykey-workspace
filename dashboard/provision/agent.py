@@ -28,6 +28,7 @@ first-boot.sh:
 import json
 import os
 import platform
+import select
 import socket
 import ssl
 import subprocess
@@ -105,17 +106,56 @@ def facts():
 
 
 class Link:
+    """One lock around EVERY use of the TLS socket, reads included.
+
+    OPENSSL DOES NOT ALLOW ONE CONNECTION TO BE USED FROM TWO THREADS AT ONCE,
+    and Python does no locking on your behalf. This had a lock, but only around
+    sending -- so writes could not corrupt each other, while a write from the
+    beat thread or from a running command could and did collide with the main
+    thread sitting in recv.
+
+    The result is not an error. The TLS state machine is left inconsistent and
+    the connection is torn down CLEANLY, so both ends see an orderly shutdown and
+    each reports the other as having closed first. Which is precisely the
+    symptom: a channel that dropped the moment a command produced output, one run
+    in four or five, indifferent to what the command was or how long it took, and
+    stable for as long as nothing was running -- because idle, the only writer is
+    one small beat every twenty seconds and the odds of overlapping a read are
+    slim. Streaming output makes it likely.
+
+    So reads go through here too. `select` waits on the file descriptor, which
+    touches no TLS state and therefore needs no lock; only the recv itself is
+    taken under it, briefly, so a writer is never held up for long.
+    """
+
     def __init__(self, sock):
         self.sock = sock
         self.lock = threading.Lock()
 
     def send(self, message):
         line = (json.dumps(message) + "\n").encode()
-        # Locked: output from a running command arrives from a worker thread while
-        # heartbeats go out from another, and two half-written lines would corrupt
-        # the framing for good.
         with self.lock:
             self.sock.sendall(line)
+
+    def receive(self):
+        """Bytes if any arrived, b"" if the far end closed, None if simply nothing yet."""
+        try:
+            ready, _, _ = select.select([self.sock], [], [], 0.5)
+        except Exception:
+            return b""
+
+        with self.lock:
+            # Decrypted bytes already buffered inside openssl will never make the
+            # descriptor readable, so select alone would leave them sitting there.
+            if not ready and not self.sock.pending():
+                return None
+            try:
+                # Short, because this is held under the lock. The long silence is
+                # measured by the caller against its own clock instead.
+                self.sock.settimeout(5)
+                return self.sock.recv(65536)
+            except (socket.timeout, TimeoutError):
+                return None
 
 
 def run_command(link, job, command, what):
@@ -191,8 +231,12 @@ def beat(link, stop, sock, heard):
 
     What settles it is expecting an ANSWER. The dashboard replies to every beat,
     so silence is measurable: if nothing has arrived for long enough, the far end
-    is gone whatever this socket believes, and closing it is the only way to get
-    the main loop out of a blocking read.
+    is gone whatever this socket believes.
+
+    IT NO LONGER CLOSES THE SOCKET ITSELF. Closing sends a TLS close_notify --
+    which is one more use of the connection from one more thread, the very thing
+    that was corrupting it. It raises a flag instead; the main loop is never more
+    than half a second from reading it, and closing is that loop's own job.
     """
     SILENCE = 70    # three missed answers, and a little slack for a slow host
 
@@ -201,22 +245,12 @@ def beat(link, stop, sock, heard):
             link.send({"type": "beat", "desktop": desktop_ready()})
         except Exception as err:
             print(f"okc-agent: beat failed ({err}); dropping the session", flush=True)
-            try:
-                sock.close()
-            except Exception:
-                pass
+            heard["give_up"] = "a beat could not be sent"
             return
 
         quiet = time.time() - heard["at"]
         if quiet > SILENCE:
-            print(
-                f"okc-agent: nothing from the dashboard for {int(quiet)}s; dropping the session",
-                flush=True,
-            )
-            try:
-                sock.close()
-            except Exception:
-                pass
+            heard["give_up"] = f"nothing from the dashboard for {int(quiet)}s"
             return
 
 
@@ -267,25 +301,39 @@ def session():
     # dashboard ANSWERS every beat, so this connection is never quiet for more
     # than twenty seconds while it is healthy -- a minute and a half of nothing
     # means the far end is gone, whatever the socket believes.
-    sock.settimeout(90)
-    heard = {"at": time.time()}
+    # A short timeout now, not ninety seconds. The long silence is measured
+    # against a clock in the loop below rather than by blocking, because a read
+    # that blocks for ninety seconds is a read that holds the TLS lock for ninety
+    # seconds -- and everything else here would have to wait for it.
+    sock.settimeout(5)
+    # When anything last arrived, and the reason the beat thread wants out. Shared
+    # rather than returned, because the thread that notices is not the thread that
+    # can act on it.
+    heard = {"at": time.time(), "give_up": None}
     link = Link(sock)
     link.send({"type": "hello", "vm": VM, "token": TOKEN, "facts": facts()})
 
     stop = threading.Event()
     threading.Thread(target=beat, args=(link, stop, sock, heard), daemon=True).start()
 
+    # A minute and a half of nothing at all, on a connection the dashboard
+    # answers every twenty seconds. Checked against the clock rather than by
+    # blocking, so noticing it costs nothing and holds nothing.
+    QUIET_TOO_LONG = 90
+
     buffer = ""
     try:
         while True:
-            try:
-                chunk = sock.recv(65536)
-            except (socket.timeout, TimeoutError):
-                # Ninety seconds without a word, on a connection that is answered
-                # every twenty. Returning here reconnects, which is the whole
-                # point: nothing else can free a blocked read.
-                print("okc-agent: the dashboard has gone quiet; reconnecting", flush=True)
+            if heard.get("give_up"):
+                print(f"okc-agent: {heard['give_up']}; reconnecting", flush=True)
                 return
+
+            chunk = link.receive()
+            if chunk is None:
+                if time.time() - heard["at"] > QUIET_TOO_LONG:
+                    print("okc-agent: the dashboard has gone quiet; reconnecting", flush=True)
+                    return
+                continue
             if not chunk:
                 # SAID OUT LOUD, because this is the branch that ends a session
                 # without anybody knowing. Both ends were reporting the other as
