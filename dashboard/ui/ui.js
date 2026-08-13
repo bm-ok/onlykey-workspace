@@ -1879,28 +1879,12 @@ function vmActions () {
         })
       : null,
 
-    // A snapshot with no title is one nobody can choose between later, so the
-    // title is asked for rather than generated.
-    el('button', {
-      className: 'btn',
-      textContent: 'Take a snapshot',
-      // Off only. A running machine would have its memory stored too, and the
-      // server refuses it for that reason -- this is the same rule said early, so
-      // the answer arrives before the dialog is filled in rather than after.
-      disabled: !v.live || v.running,
-      title: v.running ? 'Shut it down first — a snapshot of a running machine stores its memory too, which makes it enormous' : '',
-      onclick: () => ask({
-        title: `Snapshot ${v.name}`,
-        plain: ['A snapshot is a point you can come back to.', 'Taking one changes nothing about the machine as it is now.'],
-        fields: [
-          { name: 'title', label: 'Title for this snapshot', value: v.baseSnapshot ? '' : 'base', placeholder: 'clean install' },
-          { name: 'description', label: 'What is true at this point — optional', placeholder: 'operating system installed, nothing else' }
-        ],
-        confirm: 'Take it',
-        onYes: f => api('vmSnapshotTake', { name: v.name, title: f.title, description: f.description })
-          .then(() => say(`Snapshot "${f.title}" taken`))
-      })
-    }),
+    // "Take a snapshot" was here, among the things you do to a MACHINE. It is
+    // not one: it captures the machine's CURRENT STATE, which is a specific
+    // thing with a specific place in the snapshot tree, and that is where the
+    // button now lives -- on the card for the state it copies. See
+    // currentStateNode. This panel kept a button whose object was somewhere
+    // else on the screen entirely.
 
     // "Install the operating system" and "Set it up again" were here. Both remain
     // as actions -- vmInstall and vmSetupAgain -- and the All actions tab still
@@ -2074,7 +2058,11 @@ async function paintSnapshots () {
   // shown anywhere in this panel, which is exactly why it is easy to leave out --
   // and leaving it out would freeze the buttons in whatever state the machine
   // was in when the list was last drawn.
-  if (!changed('snapshots', [v.name, v.running, s])) return
+  //
+  // The rest arrived with the current-state card, which reads facts about the
+  // MACHINE and not only about its snapshots: when it last dialled in, whether
+  // it is live, and which snapshot the queue treats as its base.
+  if (!changed('snapshots', [v.name, v.running, v.live, v.state, v.reported, v.baseSnapshot, s])) return
 
   // INDENTED, BECAUSE SNAPSHOTS ARE A TREE.
   //
@@ -2087,11 +2075,15 @@ async function paintSnapshots () {
   // The current one is marked from `x.current`, which VirtualBox reports as a
   // NODE. Comparing names would mark both of two snapshots that share one -- and
   // it allows that, which this project has already been caught by.
-  fill($('snapshots'), s.snapshots.length
-    // The indent is only written when there IS one, because the connector rule
-    // keys off the attribute being present -- and a root at `margin-left:0px`
-    // would be given a line joining it to a parent it does not have.
-    ? [...s.snapshots.map(x => el('div', { className: 'card snap', ...(x.depth ? { style: `margin-left:${x.depth * 18}px` } : {}) },
+  // No "none yet" branch any more: a machine with no snapshots still has a
+  // current state, and that card is now the only place a first snapshot can be
+  // taken from.
+  //
+  // The indent is only written when there IS one, because the connector rule
+  // keys off the attribute being present -- and a root at `margin-left:0px`
+  // would be given a line joining it to a parent it does not have.
+  fill($('snapshots'),
+    [...s.snapshots.map(x => el('div', { className: 'card snap', ...(x.depth ? { style: `margin-left:${x.depth * 18}px` } : {}) },
         el('div', { className: 'card-title' },
           el('span', { className: 'mono', textContent: x.name }),
           x.current ? el('span', { className: 'badge run', textContent: 'on this one' }) : null,
@@ -2104,9 +2096,17 @@ async function paintSnapshots () {
         x.taken ? el('div', { className: 'card-sub', textContent: `${new Date(x.taken).toLocaleString()} — ${ago(x.taken)}` }) : null,
         x.description ? el('div', { className: 'card-sub', textContent: x.description }) : null,
         el('div', { className: 'row', style: 'margin-top:8px' },
-          el('button', {
+          // NOT OFFERED ON THE ONE THE MACHINE IS ALREADY ON, because there it
+          // is the same act as throwing away the current state -- and that is
+          // offered on the current state's own card, where its object is. Two
+          // buttons in different places doing one thing is how somebody ends up
+          // unsure which of them they actually want.
+          x.current ? null : el('button', {
             className: 'btn',
-            textContent: 'Go back to it',
+            // "Here", because the tree makes position mean something now: this
+            // is the node the machine is moved to, and everything below it is
+            // what that discards.
+            textContent: 'Revert to here',
             // VirtualBox will not restore under a running machine, and the
             // server says so -- but only after the dialog has been read and
             // confirmed, which is the wrong end. Said here instead, before the
@@ -2147,7 +2147,10 @@ async function paintSnapshots () {
           // resolve it from the window.
           el('button', {
             className: 'btn danger',
-            textContent: 'Throw it away',
+            // Names what it deletes. "Throw it away" beside "go back to it" left
+            // "it" doing two jobs in one row -- the snapshot, or everything
+            // since it -- and those are opposite operations.
+            textContent: 'Delete this snapshot',
             disabled: v.running,
             title: v.running ? 'Shut it down first' : '',
             onclick: () => ask({
@@ -2178,8 +2181,7 @@ async function paintSnapshots () {
       // It stays changed until the disk is either thrown away, by going back to
       // a snapshot, or captured, by taking a new one.
       currentStateNode(v, s)
-      ].filter(Boolean)
-    : el('p', { className: 'empty', textContent: 'None yet.' }))
+      ].filter(Boolean))
 }
 
 // "3 days ago", because a date alone does not answer which of these is old.
@@ -2203,20 +2205,104 @@ function ago (when) {
 // The reverse is NOT claimed. Never having heard from a machine is not evidence
 // that nothing ran on it, only that nothing reached us, so that case says what
 // it knows and stops.
+// A machine with NO snapshots still has a current state -- it is the whole of
+// what the machine is, with nothing recorded behind it. Returning nothing here
+// would have taken the only way to snapshot a fresh machine with it, since that
+// button now lives on this card.
 function currentStateNode (v, s) {
-  const on = s.snapshots.find(x => x.current)
-  if (!on) return null
+  const on = s.snapshots.find(x => x.current) || null
 
-  const heardAfter = v.reported && on.taken && Date.parse(v.reported) > Date.parse(on.taken)
+  const heardAfter = !!(on && v.reported && on.taken && Date.parse(v.reported) > Date.parse(on.taken))
+  const indent = on ? (on.depth + 1) * 18 : 0
 
-  return el('div', { className: `card snap current${heardAfter ? ' changed' : ''}`, style: `margin-left:${(on.depth + 1) * 18}px` },
+  return el('div', {
+    className: `card snap current${heardAfter ? ' changed' : ''}`,
+    ...(indent ? { style: `margin-left:${indent}px` } : {})
+  },
     el('div', { className: 'card-title' },
       el('span', { textContent: 'Current state' }),
       heardAfter ? el('span', { className: 'badge warn', textContent: 'changed' }) : null,
       el('span', { className: `badge ${v.running ? 'ok' : ''}`, textContent: v.running ? 'running' : v.state })),
-    el('div', { className: 'card-sub', textContent: heardAfter
-      ? `It dialled in ${ago(v.reported)}, after "${on.name}" was taken — so it has booted and written to its disk since. That stays true until it is either thrown away, by going back to a snapshot, or captured, by taking a new one.`
-      : `Nothing here has heard from it since "${on.name}" was taken. That is not proof nothing ran on it — only that nothing reached this host.` }))
+    el('div', { className: 'card-sub', textContent: !on
+      ? 'There are no snapshots, so this is the whole of the machine with nothing recorded behind it. Nothing can be gone back to until one is taken.'
+      : heardAfter
+        ? `It dialled in ${ago(v.reported)}, after "${on.name}" was taken — so it has booted and written to its disk since. That stays true until it is either thrown away, by going back to a snapshot, or captured, by taking a new one.`
+        : `Nothing here has heard from it since "${on.name}" was taken. That is not proof nothing ran on it — only that nothing reached this host.` }),
+
+    // CAPTURING IT IS AN ACTION ON THIS, not on the machine in general, so the
+    // button is on the card for the thing it copies rather than in a row of
+    // buttons about a machine. It was in that row, with its object somewhere
+    // else on the screen entirely -- and the sentence directly above says "or
+    // captured, by taking a new one" while offering no way to do it.
+    //
+    // A snapshot with no title is one nobody can choose between later, so the
+    // title is asked for rather than generated.
+    el('div', { className: 'row', style: 'margin-top:8px' },
+      el('button', {
+        className: 'btn',
+        textContent: 'Take a snapshot of it',
+        // Off only. A running machine would have its memory stored beside its
+        // disk, and the server refuses it for that reason -- said here so the
+        // answer arrives before the dialog is filled in rather than after.
+        disabled: !v.live || v.running,
+        title: v.running ? 'Shut it down first — a snapshot of a running machine stores its memory too, which makes it enormous' : '',
+        onclick: () => ask({
+          title: `Snapshot ${v.name} as it is now`,
+          plain: [
+            'A snapshot is a point you can come back to.',
+            'Taking one changes nothing about the machine as it is now.',
+            !on
+              ? 'It is the first, so it becomes the root of this machine\'s tree.'
+              : heardAfter
+                ? `It goes under "${on.name}", which is where the machine currently is, and becomes the point it comes back to instead.`
+                : `It goes under "${on.name}", which is where the machine currently is.`
+          ],
+          fields: [
+            { name: 'title', label: 'Title for this snapshot', value: v.baseSnapshot ? '' : 'base', placeholder: 'clean install' },
+            { name: 'description', label: 'What is true at this point — optional', placeholder: 'operating system installed, nothing else' }
+          ],
+          confirm: 'Take it',
+          onYes: f => api('vmSnapshotTake', { name: v.name, title: f.title, description: f.description })
+            .then(() => say(`Snapshot "${f.title}" taken`))
+        })
+      }),
+
+      // AND THROWING IT AWAY, which is the current state's own destructive act.
+      //
+      // It used to be "go back to it" on the snapshot the machine was already
+      // on, which is the same operation described from the wrong end -- the
+      // machine does not move, the changes since are discarded. Said as what it
+      // does to the thing it does it to.
+      //
+      // Only when there is something to discard: with nothing recorded behind
+      // it there is nowhere to go, and if nothing has run since the snapshot
+      // there is nothing to throw.
+      on && heardAfter
+        ? el('button', {
+            className: 'btn danger',
+            textContent: 'Throw it away',
+            disabled: v.running,
+            title: v.running ? 'Shut it down first — VirtualBox will not restore a snapshot while it is running' : '',
+            onclick: () => api('vmHolds', { name: v.name })
+              .catch(() => ({ asked: false, why: 'asking it failed.' }))
+              .then(holds => ask({
+                title: `Throw away everything since "${on.name}"?`,
+                plain: [
+                  `${v.name} goes back to "${on.name}" and stays there. The snapshot is not touched.`,
+                  holdingLine(holds),
+                  ...adriftLines(holds),
+                  `What ${v.name} is allowed to push goes back with it — to whatever was set when "${on.name}" was taken.`
+                ],
+                cost: `Everything that changed on ${v.name} since ${ago(on.taken)} is discarded.`,
+                confirm: 'Throw it away',
+                danger: true,
+                onYes: () => api('vmSnapshotRestore', { name: v.name, title: on.name })
+                  .then(r => say(r.branch
+                    ? `Back at "${on.name}" — ${v.name} may push ${r.branch}`
+                    : `Back at "${on.name}" — ${v.name} may push nothing until it is set up again`))
+              })).catch(oops)
+          })
+        : null))
 }
 
 // Getting from a machine to the thing it is entangled with.

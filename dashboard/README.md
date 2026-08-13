@@ -726,6 +726,25 @@ thrown away by going back to a snapshot or captured by taking a new one. The
 reverse is never claimed -- never having heard from a machine is not evidence
 that nothing ran on it, only that nothing reached us.
 
+**Every button is on the thing it acts on**, which took three goes to get right.
+
+    a snapshot        Revert to here      move the machine to this point
+                      Delete this snapshot  remove the point; the machine stays
+    current state     Take a snapshot of it capture where it is now
+                      Throw it away       discard everything since the snapshot
+
+"Take a snapshot" used to sit in the row of things you do to a MACHINE, with its
+object -- the current state -- somewhere else on the screen. And the snapshot the
+machine was already on offered "go back to it" while the current state below it
+offered nothing, which is one operation described from the wrong end: the machine
+does not move, the changes since are discarded. So "Revert to here" is not
+offered on the snapshot you are already at, because that is the current state's
+own act and it lives on the current state's card.
+
+There is ALWAYS a current state, including on a machine with no snapshots at all
+-- it is the whole of the machine with nothing recorded behind it, and it is the
+only place a first snapshot can be taken from.
+
 The Branches tab
 ----------------
 
