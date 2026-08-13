@@ -1092,7 +1092,9 @@ function paintBranches () {
     fill($('branch-counts'),
       chip(`${c.all} in all`, null),
       chip(`${c.claimed} claimed by a task`, 'ok'),
-      c.held ? chip(`${c.held} checked out on a machine`, 'ok') : null,
+      // "Claimed by", not "checked out on": the count includes machines that are
+      // switched off, and a claim outlives the machine being on.
+      c.held ? chip(`${c.held} claimed by a machine`, 'ok') : null,
       c.orphaned ? chip(`${c.orphaned} orphaned — work with no task`, 'bad') : null,
       c.spare ? chip(`${c.spare} spare — empty and unclaimed`, 'warn') : null)
 
@@ -1108,12 +1110,17 @@ function branchCard (b) {
   // What this branch IS, in one word, because that is the question. The order
   // matters: protected beats everything, and orphaned beats spare because
   // carrying work is the more important fact about it.
+  //
+  // "In use" and "claimed by a machine that is off" are DIFFERENT, and saying
+  // both with the same word was a small lie the tab told about a real state: a
+  // claim is a registry entry, and it outlives the machine being switched on.
   const [tag, kind] =
     b.protected ? ['protected', 'ok']
-      : b.heldBy ? ['in use', 'ok']
-        : b.tasks.length ? ['claimed', 'ok']
-          : b.orphaned ? ['orphaned', 'bad']
-            : ['spare', 'warn']
+      : b.heldRunning ? ['in use', 'ok']
+        : b.heldBy ? ['claimed by a machine, off', 'warn']
+          : b.tasks.length ? ['claimed', 'ok']
+            : b.orphaned ? ['orphaned', 'bad']
+              : ['spare', 'warn']
 
   return el('div', { className: 'card branch' },
     el('div', { className: 'card-title' },
@@ -1129,7 +1136,9 @@ function branchCard (b) {
       // touched three, not a fault.
       el('span', { className: 'muted', textContent: `in ${b.in.join(', ') || 'none'}` }),
       b.missing.length ? el('span', { className: 'muted', textContent: `not in ${b.missing.join(', ')}` }) : null,
-      b.heldBy ? el('span', { className: 'muted', textContent: `checked out on ${b.heldBy}` }) : null),
+      b.heldBy
+        ? el('span', { className: 'muted', textContent: b.heldRunning ? `checked out on ${b.heldBy}` : `${b.heldBy} claims it, and is off` })
+        : null),
 
     // Its tasks, as a way INTO the board rather than as text about it. The task
     // is where a verdict is given, and this tab deliberately does not duplicate
@@ -1151,6 +1160,21 @@ function branchCard (b) {
         disabled: !b.commits,
         onclick: () => showBranch(b)
       }),
+      // The way out of the one state that blocks deletion, offered where the
+      // block is explained rather than left as a command to go and find. It is
+      // only ever enabled when the machine is running, because that is the only
+      // time the machine can be asked what it is holding — and the note above
+      // already says to start it.
+      b.heldBy
+        ? el('button', {
+            className: 'btn',
+            textContent: `Let ${b.heldBy} go of it`,
+            disabled: !b.heldRunning,
+            onclick: () => api('vmRelease', { name: b.heldBy })
+              .then(r => say(r.note || `${b.heldBy} let go of ${b.name}.`))
+              .catch(oops)
+          })
+        : null,
       el('button', {
         className: 'btn danger',
         textContent: 'Delete it',

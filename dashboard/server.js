@@ -865,6 +865,13 @@ const actions = {
         return {
           ...b,
           heldBy: held ? held.name : null,
+          // WHETHER THAT MACHINE IS ACTUALLY RUNNING, which is a different fact
+          // and was being collapsed into the first one. A claim is a registry
+          // entry and outlives the machine being on -- so a powered-off runner
+          // still claiming a branch was reported as "checked out on runner2",
+          // with a warning about pulling the checkout out from under it. Both
+          // sentences describe something live, about a machine that is off.
+          heldRunning: !!(held && held.running),
           // The claim, flattened to what a list can show without a second lookup.
           tasks: claims.map(t => ({ id: t.id, number: t.number, title: t.title, state: t.state })),
           commits: art ? art.commits : 0,
@@ -887,7 +894,15 @@ const actions = {
           whyNot: b.protected
             ? branches.whyProtected(b.name)
             : held
-              ? `${held.name} is set up on this branch. Release it first, or the machine loses the checkout under it.`
+              ? (held.running
+                  // Running: deleting it really would pull the checkout out from
+                  // under whatever is happening on that machine right now.
+                  ? `${held.name} is set up on this branch and is running. Let it go of the branch first — deleting it now would take the checkout out from under it.`
+                  // Off: nothing is happening to take anything from. What stands
+                  // in the way is the CLAIM, and letting go of one needs the
+                  // machine started, because a claim is never dropped without
+                  // asking whether it is holding work that exists nowhere else.
+                  : `${held.name} still claims this branch, and it is powered off. Letting go of a claim means starting it first: nothing here drops one without asking the machine whether it is holding work that exists nowhere else.`)
               : !b.reclaimable
                 ? (b.blocked && b.blocked[0]) || 'something on this host is holding it'
                 : null
