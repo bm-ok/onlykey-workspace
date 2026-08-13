@@ -809,6 +809,25 @@ const actions = {
         throw e
       }
 
+      // CLAUDE IN THE EDITOR'S TERMINAL, which is half of what a person opens an
+      // editor for here. The queue does this before every worker run and the
+      // human path did not, so VS Code opened on a machine where `claude` still
+      // asked how to log in -- the same wizard problem as before, arrived at
+      // from the other side. A person then has one editor, one terminal, and no
+      // worker in it, which is the thing they came here to have.
+      //
+      // NOT FATAL. A host with no credential yet is an ordinary state -- it is
+      // literally step one of the Keys tab -- and it is no reason to withhold a
+      // machine somebody asked for. The editor still opens; the note says what
+      // they will find in the terminal.
+      let signedIn = false
+      try {
+        await actions.vmCredentialsPut.run({ name: on })
+        signedIn = true
+      } catch (e) {
+        log.on('vm', on).warn(`set up on "${branch}", but it has no worker credential: ${e.message}`)
+      }
+
       let opened = null
       let why = null
       try {
@@ -823,10 +842,11 @@ const actions = {
         name: on,
         branch,
         opened,
+        signedIn,
         editorFailed: why,
         note: why
           ? `${on} is set up on "${branch}" and is yours, but VS Code did not open: ${why}. Open it again from the machine, or work in it over ssh.`
-          : `${on} is set up on "${branch}" and yours until you give it back. Commit and push what you want to keep — giving it back rolls it back, and refuses while anything is uncommitted.`
+          : `${on} is set up on "${branch}" and yours until you give it back.${signedIn ? ' Claude is signed in there, so its integrated terminal can run it.' : ' Claude is NOT signed in there — get a credential on the Keys tab first.'} Commit and push what you want to keep — giving it back rolls it back, and refuses while anything is uncommitted.`
       }
     }
   },
@@ -2946,9 +2966,9 @@ done`
   // notices it on its next draw and answers. That is why it returns a path
   // rather than an image — the file appears a second or two later.
   windowShot: {
-    about: 'Ask the window to photograph itself, optionally on a given tab or tab/pane',
-    takes: ['note', 'view'],
-    run: ({ note, view }) => {
+    about: 'Ask the window to photograph itself, optionally on a given tab or tab/pane, with something picked',
+    takes: ['note', 'view', 'pick'],
+    run: ({ note, view, pick }) => {
       const file = path.join(data.sub('window'), `window-${data.stamp()}.png`)
       // WHICH TAB, because otherwise only the one that happens to be open can
       // ever be checked. The window is the single part of this that fails
@@ -2957,10 +2977,18 @@ done`
       // But a panel behind a tab nobody clicked is exactly as unverifiable as it
       // was before, and every new tab arrived that way: built, reasoned about,
       // and photographed only once somebody thought to switch to it.
-      wantedShot = { file, note: note || null, view: view || null, asked: Date.now() }
+      //
+      // AND WHICH ONE IS PICKED, for the same reason one step further in. Half
+      // this window is detail panels that show nothing until something in a list
+      // is selected, and from outside there was no way to say which -- so the
+      // photograph came back showing whichever row was last clicked by hand, and
+      // a panel that only appears for one kind of row could not be reached at
+      // all. `pick` is a task id or number; the window selects it before drawing.
+      wantedShot = { file, note: note || null, view: view || null, pick: pick == null ? null : String(pick), asked: Date.now() }
       return {
         file,
         view: view || null,
+        pick: pick == null ? null : String(pick),
         note: 'The window takes it on its next draw — up to twelve seconds if nobody is looking at it. Read the file once it appears.'
       }
     }

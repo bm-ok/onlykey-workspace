@@ -449,9 +449,24 @@ let taskList = []
 // What a task's card and its detail panel read, including what the buttons close
 // over. A field missed here is a panel that silently stops updating, which is
 // worse than the flicker the signature exists to prevent.
+// WHO DOES IT, and with what. The task carries a `worker` slot and until now
+// nothing on the screen said which one was set -- so a task written for a person
+// and a task written for Claude looked identical on the board, and the only way
+// to find out which was to give it to a machine and see what happened.
+//
+// `person` says VS Code specifically because that is what taskWorkOn opens, and
+// Claude runs in its integrated terminal there -- so a person task is not "no
+// worker", it is a person and Claude in the same window.
+const WORKERS = {
+  claude: { label: 'Claude', cls: 'run', long: 'Claude, run by the queue on a machine.' },
+  shell: { label: 'shell', cls: 'muted', long: 'A shell command on a machine, with no model involved.' },
+  person: { label: 'VS Code', cls: 'ok', long: 'You, in VS Code on the machine — with Claude in its integrated terminal.' }
+}
+const workerOf = t => WORKERS[t && t.worker] || WORKERS.claude
+
 const taskKey = t => t && [
   t.number,
-  t.id, t.title, t.branch, t.state, t.reads, t.machine || '', t.run || '',
+  t.id, t.title, t.branch, t.state, t.reads, t.machine || '', t.run || '', t.worker || '',
   t.delivered, t.artifact, t.contract || '', (t.verdict && t.verdict.call) || ''
 ]
 
@@ -516,7 +531,9 @@ function paintTasks (queued) {
             el('span', {}, el('span', { className: 'muted mono', textContent: '#' + t.number + ' ' }), t.title),
             el('span', { className: `badge ${STATE_BADGE[t.reads] || 'muted'}`, textContent: t.reads })),
           el('div', { className: 'card-sub mono', textContent: t.branch }),
-          el('div', { className: 'card-sub muted', textContent: t.artifact })))
+          el('div', { className: 'card-sub' },
+            el('span', { className: `badge ${workerOf(t).cls}`, textContent: workerOf(t).label }),
+            el('span', { className: 'muted', style: 'margin-left:6px', textContent: t.artifact }))))
         : el('p', { className: 'empty', textContent: 'No tasks yet. Write one with +.' }))
     }
 
@@ -587,6 +604,9 @@ function paintTaskDetail (task) {
     el('table', { className: 'kv' },
       el('tr', {}, el('th', { textContent: 'branch' }), el('td', { className: 'mono', style: 'user-select:text', textContent: task.branch })),
       el('tr', {}, el('th', { textContent: 'state' }), el('td', {}, el('span', { className: `badge ${STATE_BADGE[task.reads] || 'muted'}`, textContent: task.reads }))),
+      el('tr', {}, el('th', { textContent: 'worked by' }),
+        el('td', {}, el('span', { className: `badge ${workerOf(task).cls}`, textContent: workerOf(task).label }),
+          el('div', { className: 'muted', textContent: workerOf(task).long }))),
       el('tr', {}, el('th', { textContent: 'given to' }), el('td', { className: 'mono', textContent: task.machine || 'nobody yet' })),
       el('tr', {}, el('th', { textContent: 'run' }), el('td', { className: 'mono', textContent: task.run || '—' })),
       // Said whether or not there is one, because "no rules" is the dangerous
@@ -611,10 +631,24 @@ function paintTaskDetail (task) {
     el('div', { id: 'task-history' }, el('p', { className: 'muted', textContent: '…' })),
 
     el('div', { className: 'row', style: 'margin-top:12px' },
-      // Queueing is the ordinary way. A machine's natural state is off, so
-      // "give it to runner2, which is on and idle" is the unusual case that
-      // needs a machine kept warm on purpose — and it is offered second.
-      task.state === 'queued'
+      // THE WORKER SLOT DECIDES HOW IT STARTS, and until now nothing did.
+      //
+      // A task written for a person offered "Queue it" and "Give it to a machine
+      // now" — both of which dispatch Claude. So the board could hold a task that
+      // said VS Code and whose only two buttons handed it to a model, and a
+      // person task written for later had no way to be started as itself at all.
+      // Same shape as the buttons taken off the machines tab, arrived at from
+      // inside a task: the tool could do the thing, so the window offered it,
+      // without asking whether it was the thing this task said.
+      task.worker === 'person'
+        ? el('button', {
+            className: 'btn ok',
+            textContent: task.machine ? 'Open it again' : 'Work on it in VS Code',
+            disabled: !!task.verdict,
+            title: task.verdict ? 'This task has been judged' : 'A machine is brought up on its branch with VS Code open in it',
+            onclick: () => takeTaskByHand(task)
+          })
+        : task.state === 'queued'
         ? el('button', {
             className: 'btn',
             textContent: 'Take it out of the queue',
@@ -627,17 +661,33 @@ function paintTaskDetail (task) {
             title: task.verdict ? 'This task has been judged' : 'The next free machine takes it, runs it, and shuts down',
             onclick: () => queueTask(task)
           }),
-      el('button', {
-        className: 'btn',
-        textContent: task.machine ? 'Give it out again' : 'Give it to a machine now',
-        disabled: !idle.length || !!task.verdict,
-        title: !idle.length ? 'No machine is dialled in' : task.verdict ? 'This task has been judged' : 'Skips the queue and uses a machine that is already up',
-        onclick: () => giveTask(task, idle)
-      }),
+      // The other half of the person path: saying it is done. It is the exact
+      // counterpart of a worker's exit code, and without it on the task itself
+      // the only way to end one was from the machine that happened to be holding
+      // it — which is the machines tab deciding a task's fate again.
+      task.worker === 'person'
+        ? (task.machine
+            ? el('button', {
+                className: 'btn',
+                textContent: 'Finish it',
+                title: 'Gives the machine back and puts the task up for a verdict',
+                onclick: () => finishTaskByHand(task)
+              })
+            : null)
+        : el('button', {
+            className: 'btn',
+            textContent: task.machine ? 'Give it out again' : 'Give it to a machine now',
+            disabled: !idle.length || !!task.verdict,
+            title: !idle.length ? 'No machine is dialled in' : task.verdict ? 'This task has been judged' : 'Skips the queue and uses a machine that is already up',
+            onclick: () => giveTask(task, idle)
+          }),
       // Only while something is actually running, because that is the only time
       // it means anything — and it is the button somebody wants at the moment
       // they would otherwise be opening a shell on the guest.
-      task.reads === 'working'
+      // AND ONLY WHEN THERE IS A RUN TO STOP. A person's task reads as "working"
+      // the same way a worker's does, and there is no process on the other end of
+      // it -- "Stop it" would have killed nothing and reported the task lost.
+      task.reads === 'working' && task.run
         ? el('button', {
             className: 'btn danger',
             textContent: 'Stop it',
@@ -1843,6 +1893,59 @@ function askToUseAsBaseline (b) {
   })
 }
 
+// STARTING A PERSON'S TASK FROM THE TASK, which is where it belongs.
+//
+// The branch dialog can write one and start it in the same breath, and that only
+// covers work decided on at the moment it begins. A task written on Monday for
+// Thursday had no door: the Tasks tab offered to queue it or give it out, both of
+// which run Claude on it, and neither of which is what the task says.
+function takeTaskByHand (task) {
+  const free = (queueSays.size ? [...queueSays.values()] : []).filter(m => m.free)
+  ask({
+    title: `Work on #${task.number} yourself`,
+    plain: [
+      `A free machine is borrowed, brought up at its base snapshot, and set up with every repository checked out on "${task.branch}". VS Code then opens into it over ssh.`,
+      'Claude is signed in on it, so its integrated terminal can run one — the machine is yours and what you do in it is up to you.',
+      task.machine
+        ? `#${task.number} is already on ${task.machine}. This takes another machine, so give that one back first unless you meant to.`
+        : 'The task is marked as taken, on the machine that gets it.',
+      free.length
+        ? `Free right now: ${free.map(m => m.name).join(', ')}.`
+        : 'Nothing is free at the moment, so this will refuse and say why.'
+    ],
+    cost: 'It takes a minute or two to bring a machine up before the editor can open.',
+    confirm: 'Take a machine and open it',
+    onYes: async () => {
+      const r = await api('taskWorkOn', { id: task.id })
+      changed('tasks', null)
+      changed('branches', null)
+      say(r.note)
+      return draw()
+    }
+  })
+}
+
+// And ending it, which is the person's half of an exit code.
+function finishTaskByHand (task) {
+  ask({
+    title: `Finish #${task.number}?`,
+    plain: [
+      `${task.machine} goes back to its base snapshot and returns to the pool, and "${task.branch}" stops being claimed by it.`,
+      'It refuses while anything on the machine is uncommitted, because rolling back is how a machine is put away and uncommitted work does not survive it.',
+      'The task then stands where a worker\'s would: whatever is on the branch is what it delivered, and it is up to be judged.'
+    ],
+    cost: 'Anything on that machine that is not pushed is gone.',
+    confirm: 'Give it back',
+    onYes: async () => {
+      const r = await api('taskFinished', { id: task.id })
+      changed('tasks', null)
+      changed('branches', null)
+      say(r.note || `#${task.number} is finished and up for a verdict.`)
+      return draw()
+    }
+  })
+}
+
 // The machine YOU are working in on this branch, if there is one.
 //
 // Borrowed and set up on this branch are two different facts and both are
@@ -1871,18 +1974,47 @@ function workOnBranch (b) {
         : 'Nothing is free at the moment, so this will refuse and say why.'
     ],
     fields: [
-      { name: 'title', label: 'What are you doing', placeholder: 'the same sentence you would give a worker' }
+      { name: 'title', label: 'Called', placeholder: 'what this piece of work is' },
+      // THE BRIEF IS A SEPARATE FIELD, not the title used twice. A title is what
+      // the board calls it; a brief is what the work IS -- and it is the same
+      // field a worker would be given, which is the point of the human path
+      // being a task at all. Writing it also makes you say what you are doing
+      // before you start doing it, which is most of the value of a brief.
+      { name: 'brief', label: 'What the work is', placeholder: 'the same thing you would tell a worker', multiline: true, rows: 7 },
+      { name: 'start', label: 'Take a machine now', value: 'yes', options: [
+        { value: 'yes', label: 'Yes — bring one up and open VS Code' },
+        { value: 'no', label: 'No — just write it down for later' }
+      ] }
     ],
     cost: 'It takes a minute or two to bring a machine up before the editor can open.',
-    confirm: 'Take a machine and open it',
+    confirm: 'Save it',
     onYes: async f => {
-      if (!f.title || !f.title.trim()) throw new Error('Say what you are doing — it is what the task will be called.')
+      if (!f.title || !f.title.trim()) throw new Error('Say what this is called — it is what the board will show.')
+      if (!f.brief || !f.brief.trim()) throw new Error('Say what the work is. A task with no brief is a title nobody can act on later, including you.')
+
       const made = await api('taskCreate', {
-        task: { title: f.title.trim(), brief: f.title.trim(), branch: b.name, worker: 'person' }
+        task: { title: f.title.trim(), brief: f.brief.trim(), branch: b.name, worker: 'person' }
       })
       const task = made.task || made
-      const r = await api('taskWorkOn', { id: task.id })
-      say(r.note)
+      changed('branches', null)
+      changed('tasks', null)
+
+      if (f.start === 'no') {
+        say(`#${task.number} "${task.title}" is on the board, on "${b.name}". Start it when you want a machine.`)
+        return draw()
+      }
+
+      // THE TASK EXISTS EITHER WAY. Starting it can fail -- nothing free, a
+      // branch missing from a repository -- and a failure there must not read as
+      // "nothing happened", because the task is written down and will be sitting
+      // on the board wondering why it was not mentioned.
+      try {
+        const r = await api('taskWorkOn', { id: task.id })
+        say(r.note)
+      } catch (e) {
+        say(`#${task.number} is on the board, but no machine was taken: ${e.message}`, 'bad')
+      }
+      return draw()
     }
   })
 }
@@ -3502,6 +3634,22 @@ function shotIfAsked () {
       api('windowShotDone', { file: want.file, error: `there is no tab called "${wantView}"` })
       return
     }
+    // WHICH ROW, once the right tab is open. A detail panel that only exists for
+    // one kind of task -- a person's, with its own two buttons -- was reachable
+    // only by clicking that row by hand, which is the thing this whole mechanism
+    // exists to avoid. Taken by number or by id, because a number is what the
+    // board shows and an id is what every action takes.
+    if (want.pick && view === 'tasks') {
+      const t = (taskList || []).find(x => x.id === want.pick || String(x.number) === want.pick)
+      if (t && pickedTask !== t.id) {
+        pickedTask = t.id
+        been.set('task', pickedTask)
+        shotSettle = 2
+        paintTasks()
+        return
+      }
+    }
+
     if (shotSettle > 0) { shotSettle--; return }
 
     shotInFlight = true
