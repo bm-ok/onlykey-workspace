@@ -449,6 +449,20 @@ table.kv td { padding: 3px 0; word-break: break-all; }
   font-size: 12px;
 }
 
+/* What a machine was made with: real, copyable, and closed by default, because
+   it answers a question asked once. */
+.spec { margin-top: 12px; }
+.spec summary {
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 4px 0;
+}
+.spec summary:hover { color: var(--text); }
+.spec .kv { margin-top: 6px; }
+
 /* Branches. The card carries one badge saying what the branch IS, a row of facts
    about it, and its tasks as a way back into the board. */
 .card.branch .card-title span:first-child { font-size: 13px; }

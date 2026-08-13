@@ -77,6 +77,8 @@ const vmKey = v => v && [v.name, v.state, v.stage, v.live, v.running, v.connecte
 // show the queue's own verdict rather than working one out again -- see
 // queueWhy. Filled on every draw, from the same call the banner already makes.
 let queueSays = new Map()
+// And which task each machine is running, from the same answer.
+let queueBusy = new Map()
 
 // ---- code, for reading ------------------------------------------------
 //
@@ -2144,6 +2146,34 @@ async function paintSnapshots () {
     : el('p', { className: 'empty', textContent: 'None yet.' }))
 }
 
+// Getting from a machine to the thing it is entangled with.
+//
+// The tab knew about none of these. Branches links into Tasks; this linked
+// nowhere, so going from "runner2 is stuck" to the branch it is stuck on meant
+// switching tabs and picking the same machine out of a second list. That is the
+// same "three places knew and none of them met" problem, at the machine end.
+const goToBranch = branch => {
+  $('branch-find').value = branch
+  changed('branches', null)
+  showTab('branches')
+  paintBranches()
+}
+const goToTask = id => { pickedTask = id; been.set('task', id); showTab('tasks') }
+const goToShell = name => { showTab('terminal'); openShell(name) }
+
+// What this machine is doing, and what is standing in its way.
+//
+// IT WAS A SPEC SHEET. Eight of its thirteen rows -- memory, processors, disk,
+// network, user, installer image, hostname, when it was made -- cannot change
+// after the machine exists, and they had the widest panel in the window. The one
+// fact that decides everything, the branch it claims, was row five and worded as
+// a permission.
+//
+// The tab was built when a machine WAS the product, so it answers "what is this
+// machine". Tasks, branches, a terminal and a credential store arrived since,
+// and the question became "what is this machine doing, and what is in the way".
+// The spec is still here, one click away, because it is what people copy values
+// out of -- it is just no longer the answer to a question nobody asked.
 function paintDetails () {
   const v = latest.vms.find(x => x.name === picked)
   const box = $('details')
@@ -2153,41 +2183,97 @@ function paintDetails () {
   }
 
   const spec = v.spec || {}
-  const rows = [
-    ['stage', v.stage],
-    ['state', v.state],
-    ['made', new Date(v.created).toLocaleString()],
-    ['snapshot to reset to', v.baseSnapshot || 'none yet'],
-    // What it may push, which is a different question from what it has checked
-    // out -- that one only the machine knows, and this is the one that is
-    // enforced.
-    ['may push', v.branch || 'nothing yet'],
+  const facts = (v.agent && v.agent.facts) || {}
+  const doing = queueBusy.get(v.name) || null
+  const said = queueSays.get(v.name)
+  const claimed = doing ? taskById(doing) : null
+
+  // Live first, and in the order the questions are actually asked.
+  const now = [
+    ['power', v.running ? 'running' : v.state],
+    ['reachable', v.connected
+      ? `dialled in ${new Date(v.agent.since).toLocaleTimeString()}, from ${v.agent.from}`
+      : v.lastAddress ? `not dialled in — last seen at ${v.lastAddress}` : 'never dialled in'],
+    // Booted is not usable, and the agent reports the difference on every beat.
+    // It decided whether a sign-in or an editor would work at all, and until now
+    // it was collected and never shown.
+    v.connected ? ['desktop', v.desktop ? 'up — anything needing a screen will work' : 'not up yet'] : null,
+
+    ['doing', doing
+      ? link(claimed ? `#${claimed.number} ${claimed.title}` : doing, () => goToTask(doing))
+      : 'nothing'],
+    // The queue's own words, again, rather than a second opinion.
+    ['the queue', said ? (said.free ? 'free — the next task can take it' : said.why) : 'unknown'],
+
+    ['claims a branch', v.branch
+      ? link(v.branch, () => goToBranch(v.branch))
+      : 'nothing — it is free to be given any'],
+
+    // Never shown on this tab before. It is what stops a snapshot being taken,
+    // and it survived a host restart on a powered-off machine without this panel
+    // mentioning it once.
+    ['worker credential', v.holdsCredential
+      ? 'holding one — it cannot be snapshotted until that is taken back'
+      : 'none, which is the resting state'],
+
+    ['resets to', v.baseSnapshot || 'no base snapshot yet — it cannot be made clean'],
     ['last heard from', v.reported ? new Date(v.reported).toLocaleString() : 'never'],
+    v.connected ? ['it says it is', facts.hostname ? `${facts.hostname} — ${facts.system || ''}` : 'unknown'] : null,
+    v.connected ? ['its addresses', (facts.addresses || []).join(', ') || 'unknown'] : null
+  ].filter(Boolean)
+
+  const made = [
+    ['made', new Date(v.created).toLocaleString()],
     ['memory', `${spec.memoryMB} MB`],
     ['processors', String(spec.cpus)],
     ['disk', `${Math.round((spec.diskMB || 0) / 1024)} GB`],
     ['network', spec.network === 'bridged' ? `bridged${spec.bridge ? ` on ${spec.bridge}` : ''}` : `nat, ssh on 127.0.0.1:${spec.sshPort}`],
     ['user', spec.user],
     ['installer image', spec.iso ? spec.iso.split(/[\\/]/).pop() : 'none'],
-    ['hostname', spec.hostname]
+    ['hostname', spec.hostname],
+    ['stage', v.stage]
   ]
 
-  if (v.connected && v.agent) {
-    const facts = v.agent.facts || {}
-    rows.push(
-      ['dialled in', `${new Date(v.agent.since).toLocaleTimeString()}, from ${v.agent.from}`],
-      ['it says it is', facts.hostname ? `${facts.hostname} — ${facts.system || ''}` : 'unknown'],
-      ['its addresses', (facts.addresses || []).join(', ') || 'unknown'])
-  }
+  // Signed on the TEXT of every row rather than on the nodes, since a link is an
+  // object and would never compare equal -- which would repaint this panel three
+  // times a second and take the selection out of anything being copied.
+  const sign = [...now, ...made].map(([k, val]) => `${k}=${typeof val === 'string' ? val : val.textContent}`)
+  if (!changed('details', [v.name, sign])) return
 
-  // The rows themselves are the signature: they are already the finished strings,
-  // so nothing this panel shows can move without the signature moving with it.
-  // This is the table people copy values out of, so it must hold still.
-  if (!changed('details', [v.name, rows])) return
+  const table = rows => el('table', { className: 'kv' }, ...rows.map(([k, val]) =>
+    el('tr', {}, el('th', { textContent: k }),
+      el('td', { className: 'mono' }, typeof val === 'string' ? document.createTextNode(val) : val))))
 
-  fill(box, el('table', { className: 'kv' }, ...rows.map(([k, val]) =>
-    el('tr', {}, el('th', { textContent: k }), el('td', { className: 'mono', textContent: String(val) })))))
+  fill(box,
+    table(now),
+
+    // The ways out of this panel, beside the facts that send you there.
+    el('div', { className: 'row', style: 'margin-top:10px' },
+      el('button', {
+        className: 'btn',
+        textContent: 'Open a shell',
+        disabled: !(v.connected || v.lastAddress),
+        title: (v.connected || v.lastAddress) ? '' : 'It has to have dialled in once for its address to be known',
+        onclick: () => goToShell(v.name)
+      }),
+      v.branch ? el('button', { className: 'btn', textContent: 'Its branch', onclick: () => goToBranch(v.branch) }) : null,
+      doing ? el('button', { className: 'btn', textContent: 'Its task', onclick: () => goToTask(doing) }) : null),
+
+    // Closed, because it answers a question asked once: what was this made with.
+    el('details', { className: 'spec' },
+      el('summary', { textContent: 'How it was made' }),
+      table(made)))
 }
+
+// A fact you can follow. Deliberately a button rather than an anchor: there is
+// nowhere to navigate to, and an <a href> in an app page is how a window ends up
+// replacing itself with a broken URL.
+const link = (text, onclick) => el('button', { className: 'linky mono', textContent: text, onclick })
+
+// From the list the Tasks tab already fetched. Asking the `tasks` action again
+// here would read every branch out of git a second time on every draw, which is
+// the thing queueState exists to avoid.
+const taskById = id => (taskList || []).find(t => t.id === id) || null
 
 function paintVms () {
   // `picked` is in the signature because it decides which card is highlighted.
@@ -2408,6 +2494,7 @@ async function drawOnce () {
   latest = list
   latest.credentialsHeld = held
   queueSays = new Map((running.machines || []).map(m => [m.name, m]))
+  queueBusy = new Map((running.inFlight || []).map(f => [f.machine, f.task]))
 
   // Reconcile the selection against what actually exists, every time, before
   // anything that depends on it is painted.

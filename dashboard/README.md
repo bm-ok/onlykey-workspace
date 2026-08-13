@@ -662,6 +662,34 @@ fault.
 Both lines are written. Each program reads the spelling it understands and
 ignores the other -- the same silence that caused the bug, used deliberately.
 
+The machines tab answers what a machine is DOING
+-------------------------------------------------
+
+It was the first tab, built when a machine was the whole product, so it answered
+"what is this machine". Its details panel was a spec sheet: eight of thirteen
+rows -- memory, processors, disk, network, user, installer image, hostname, when
+it was made -- cannot change after the machine exists, and they had the widest
+panel in the window. The one fact that decides everything, the branch it claims,
+was row five and worded as a permission.
+
+Tasks, branches, a terminal and a credential store arrived since, and the
+question became "what is this machine doing, and what is in the way". So the
+panel leads with what changes: whether it is reachable, whether its DESKTOP is up
+(collected on every beat and never once shown), what it is running, what the
+QUEUE says about it in the queue own words, what branch it claims, and whether it
+is holding a worker credential -- which is what stops a snapshot being taken, and
+which survived a host restart on a powered-off machine without this panel
+mentioning it.
+
+The spec is still there, one click away under "How it was made". It is what
+people copy values out of; it is just not the answer to a question anybody asks
+twice.
+
+AND IT LINKS OUT NOW. Branches links into Tasks; this linked nowhere, so getting
+from "runner2 is stuck" to the branch it is stuck on meant switching tabs and
+picking the same machine out of a second list. The branch, the task it is
+running, and a shell on it are all one click from the fact that mentions them.
+
 The Branches tab
 ----------------
 
