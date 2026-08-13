@@ -130,7 +130,12 @@
       <div class="col narrow">
         <h2 class="titlerow">
           Branches
+          <span class="grow"></span>
           <label class="inline mine"><input type="checkbox" id="branch-mine" checked> ours</label>
+          <!-- Making one is a deliberate act with a reason now. It used to happen
+               as a side effect of setting a machine up, from whatever string a
+               task carried — so a typo made a branch instead of an error. -->
+          <button class="plus" id="add-branch-open" title="Cut a branch, with a reason">+</button>
         </h2>
         <input id="branch-find" class="finder" placeholder="find a branch">
         <div id="branch-counts" class="chips"></div>

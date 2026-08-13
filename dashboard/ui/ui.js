@@ -1095,8 +1095,12 @@ function paintBranches () {
     const find = $('branch-find').value.trim().toLowerCase()
     const mine = $('branch-mine').checked
     const rows = board.branches
-      .filter(b => !mine || oursOnly(b))
-      .filter(b => !find || b.name.toLowerCase().includes(find))
+      // THE SELECTED ONE IS ALWAYS SHOWN, whatever the filter says. Two columns
+      // describe it, and a selection you cannot see is worse than a row the
+      // filter would rather hide -- the panels then look like they belong to
+      // something else on screen, or to nothing.
+      .filter(b => b.name === pickedBranch || !mine || oursOnly(b))
+      .filter(b => b.name === pickedBranch || !find || b.name.toLowerCase().includes(find))
 
     // Against the WHOLE board rather than the filtered rows: typing in the
     // finder should not silently move the selection to something else.
@@ -1161,6 +1165,16 @@ function branchActions (b) {
   if (!changed('branch-actions', b)) return
 
   fill(box,
+    // WHY IT EXISTS, first, because it is the thing that cannot be worked out
+    // from anything else on this screen. Absent on every branch cut before a
+    // reason was required, and that absence is shown rather than hidden: "nobody
+    // recorded this" is the honest state of most of the board, and it is exactly
+    // what made one of them impossible to account for.
+    el('p', { className: b.note ? 'note' : 'note muted' },
+      b.note
+        ? `${b.note.reason} — ${b.note.by || 'made'} ${b.note.made ? ago(b.note.made) : ''}`
+        : 'No reason was recorded. It was cut before that was required, or by something other than this app.'),
+
     el('div', { className: 'branch-facts' },
       el('span', { className: b.commits ? 'strong' : 'muted', textContent: b.commits ? `${b.commits} commit(s) ahead` : 'nothing beyond the default' }),
       el('span', { className: 'muted', textContent: `in ${b.in.join(', ') || 'none'}` }),
@@ -1170,6 +1184,17 @@ function branchActions (b) {
     b.whyNot ? el('p', { className: 'note', textContent: b.whyNot }) : null,
 
     el('div', { className: 'row', style: 'margin-top:10px' },
+      // USING IT, which is the other half of making branches deliberate: a
+      // branch is cut here and then given to a machine, rather than conjured by
+      // the act of setting one up.
+      !b.protected && !b.heldBy
+        ? el('button', {
+            className: 'btn ok',
+            textContent: 'Give it to a machine',
+            onclick: () => giveBranchToMachine(b)
+          })
+        : null,
+
       // The way out of the one state that blocks deletion, offered where the
       // block is explained. Enabled only while the machine is running, because
       // that is the only time it can be asked what it is holding.
@@ -1357,6 +1382,59 @@ function showDiffOf (branch, repo) {
     const body = document.querySelector('.dlg-body')
     if (body) body.append(codeBlock(diff || 'no changes', 'diff', { lines: 22 }))
   }).catch(oops)
+}
+
+// Cutting one, with the reason as a required field rather than a nicety.
+//
+// The dialog says what the reason is FOR, because "why does this exist" is a
+// question asked months later by somebody deciding whether to delete it -- and
+// the answer costs one sentence now and cannot be reconstructed then.
+function newBranch () {
+  ask({
+    title: 'Cut a branch',
+    plain: [
+      'It is cut in every repository that does not already have it, from wherever that repository currently is.',
+      'Nothing is built on it until it is given to a machine, and creating it moves no other branch and touches no working tree.'
+    ],
+    fields: [
+      { name: 'branch', label: 'Name', placeholder: 'task/what-it-is-for' },
+      { name: 'reason', label: 'What is it for', placeholder: 'why this exists, for whoever finds it later' }
+    ],
+    confirm: 'Cut it',
+    onYes: async f => {
+      const r = await api('branchCreate', { branch: f.branch, reason: f.reason })
+      pickedBranch = r.branch
+      been.set('branch', r.branch)
+      changed('branches', null)
+      say(r.already ? `"${r.branch}" already existed everywhere.` : `Cut "${r.branch}" in ${r.made.join(', ')}.`)
+    }
+  })
+}
+
+// Handing a branch to a machine, from the branch's end.
+//
+// vmWorkspace is the same action the Tasks side calls; what is different here is
+// only which of the two you happened to be looking at when you decided.
+function giveBranchToMachine (b) {
+  const can = latest.vms.filter(v => v.connected)
+  ask({
+    title: `Give "${b.name}" to a machine`,
+    plain: [
+      'Every repository is checked out on this branch, pointed back at this host, and the machine is allowed to push this branch and no other.',
+      can.length
+        ? 'A machine stays on its branch until it is clean, so this is not a thing to undo casually.'
+        : 'Nothing is dialled in. Start a machine and wait for it to connect.'
+    ],
+    fields: can.length
+      ? [{ name: 'name', label: 'Machine', value: can[0].name, options: can.map(v => ({ value: v.name, label: `${v.name}${v.branch ? ` — already on ${v.branch}` : ''}` })) }]
+      : [],
+    confirm: can.length ? 'Set it up' : 'Done',
+    onYes: async f => {
+      if (!can.length) return
+      await api('vmWorkspace', { name: f.name, branch: b.name })
+      say(`${f.name} is set up on "${b.name}".`)
+    }
+  })
 }
 
 // Deleting a branch is the only way work made here is ever unmade, so the dialog
@@ -2597,6 +2675,7 @@ function paintVms () {
 }
 
 $('add-task-open').onclick = newTask
+$('add-branch-open').onclick = newBranch
 $('term-open').onclick = () => openShell($('term-machine').value)
 $('term-close').onclick = () => closeShell(active)
 // The sign-in line is about the machine in the picker, not the one in the front

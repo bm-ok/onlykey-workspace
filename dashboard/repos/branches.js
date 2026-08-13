@@ -300,6 +300,43 @@ function nameIsOk (branch) {
   }
 }
 
+// ---- why a branch exists ------------------------------------------------
+//
+// Nothing recorded this, and the cost showed up as a branch nobody could
+// account for: `drill/cable-pull`, pointing at exactly the same commit as
+// master in both repositories, left behind by a drill about the NETWORK that
+// never committed anything. It looked identical to a branch somebody cut on
+// purpose and abandoned, and telling those apart mattered before deleting it.
+//
+// A reason is cheap to write once and impossible to reconstruct later.
+const NOTES = () => path.join(STATE, 'branches.json')
+
+function notes () {
+  try { return JSON.parse(fs.readFileSync(NOTES(), 'utf8').replace(/^﻿/, '')) || {} } catch { return {} }
+}
+
+function noteFor (branch) {
+  return notes()[branch] || null
+}
+
+function note (branch, entry) {
+  const all = notes()
+  all[branch] = { ...(all[branch] || {}), ...entry }
+  try {
+    fs.mkdirSync(STATE, { recursive: true })
+    fs.writeFileSync(NOTES(), JSON.stringify(all, null, 2))
+  } catch { /* the branch is still cut; only the note is not kept */ }
+  return all[branch]
+}
+
+const forget = branch => {
+  const all = notes()
+  if (!(branch in all)) return false
+  delete all[branch]
+  try { fs.writeFileSync(NOTES(), JSON.stringify(all, null, 2)) } catch { /* as above */ }
+  return true
+}
+
 // Cut the branch in every repository that does not have it yet, from wherever
 // that repository currently is.
 //
@@ -308,10 +345,20 @@ function nameIsOk (branch) {
 // branch is left exactly as it is -- that is what picking an existing name means,
 // and rewinding it to today's HEAD would silently discard the work that made the
 // name worth reusing.
-function ensure (branch) {
+//
+// A REASON IS REQUIRED, and that is the hardening. Branches were only ever
+// created as a SIDE EFFECT of setting a machine up, from whatever string a task
+// happened to carry -- so a typo did not fail, it made a branch, and the
+// workspace was then built on a name nobody meant. Every branch on the board
+// arrived that way, which is why none of them could say what they were for.
+function ensure (branch, { reason = null, by = null } = {}) {
   const why = nameIsOk(branch)
   if (why) throw new Error(why)
   const name = branch.trim()
+
+  if (!reason || !String(reason).trim()) {
+    throw new Error(`Say what "${name}" is for. A branch with no reason is one nobody can account for later — which is how a workspace ends up with names that cannot be told apart from mistakes.`)
+  }
 
   // Refused here as well as at the dialog and at the push, because this is the
   // function that would otherwise CREATE the situation -- recording a machine
@@ -320,12 +367,27 @@ function ensure (branch) {
   const guarded = whyProtected(name)
   if (guarded) throw new Error(guarded)
 
-  return serve.list().map(({ name: repo }) => {
+  const cut = serve.list().map(({ name: repo }) => {
     const dir = serve.gitDirOf(repo)
     const had = branchesIn(dir).includes(name)
     if (!had) git(dir, ['branch', name])
     return { repo, branch: name, created: !had, from: had ? null : headOf(dir) }
   })
+
+  // Recorded once, when it is first cut, and never overwritten afterwards. A
+  // branch reused for a second task keeps the reason it was made for -- that is
+  // what reusing a name means, and replacing it would erase the only account of
+  // why the name exists at all.
+  if (!noteFor(name)) {
+    note(name, {
+      reason: String(reason).trim(),
+      by: by || null,
+      made: new Date().toISOString(),
+      cutIn: cut.filter(c => c.created).map(c => c.repo)
+    })
+  }
+
+  return cut
 }
 
 // Take a branch out of every repository that has it.
@@ -369,11 +431,15 @@ function remove (branch, { force = false } = {}) {
   }
 
   if (!done.length) throw new Error(`No repository here has a branch called "${name}".`)
-  return { branch: name, deletedFrom: done, steppedOff: stepped.filter(s => s.freed) }
+  // The note goes with it, or a branch cut again under the same name later would
+  // inherit an account of something else entirely.
+  const had = noteFor(name)
+  forget(name)
+  return { branch: name, deletedFrom: done, steppedOff: stepped.filter(s => s.freed), was: had }
 }
 
 module.exports = {
-  all, ensure, remove, nameIsOk, branchesIn, headOf, defaultHeads,
+  all, ensure, remove, nameIsOk, branchesIn, headOf, defaultHeads, noteFor, notes,
   defaultOf, protectedBranches, isProtected, whyProtected,
   isClean, freeIfBusy, freeEverywhere, blocking
 }

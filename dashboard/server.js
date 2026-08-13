@@ -884,6 +884,10 @@ const actions = {
           // with a warning about pulling the checkout out from under it. Both
           // sentences describe something live, about a machine that is off.
           heldRunning: !!(held && held.running),
+          // Why it exists, when anybody said. Absent on every branch cut before
+          // that was required, which is itself worth showing rather than hiding:
+          // "nobody recorded this" is the honest state of most of the board.
+          note: branches.noteFor(b.name),
           // The claim, flattened to what a list can show without a second lookup.
           tasks: claims.map(t => ({ id: t.id, number: t.number, title: t.title, state: t.state })),
           commits: art ? art.commits : 0,
@@ -953,6 +957,41 @@ const actions = {
     run: ({ branch }) => {
       if (!branch) throw new Error('Which branch?')
       return artifact.read(branch, { fresh: true })
+    }
+  },
+
+  // Cut a branch, deliberately, with a reason.
+  //
+  // THE ONLY WAY ONE IS MADE NOW. Setting a machine up used to do it as a side
+  // effect, from whatever string a task carried, so a typo produced a branch
+  // rather than an error and nothing anywhere recorded what any of them were
+  // for. `drill/cable-pull` is the monument to that: pointing at the same commit
+  // as master in both repositories, left by a drill about the network, and
+  // indistinguishable on a list from a branch somebody meant.
+  //
+  // The reason is required by `ensure` rather than checked here, because this is
+  // not the only caller and a rule that lives at one door is not a rule.
+  branchCreate: {
+    about: 'Cut a branch across every repository, with a reason it exists',
+    takes: ['branch', 'reason'],
+    run: ({ branch, reason, _overTheWire }) => {
+      const cut = branches.ensure(branch, {
+        reason,
+        // Which surface asked, since one of them is a person at this keyboard and
+        // the other may be a model driving the socket.
+        by: _overTheWire ? 'the command line' : 'the window'
+      })
+      const made = cut.filter(c => c.created)
+      log.on('git').good(made.length
+        ? `cut "${branch}" in ${made.map(c => c.repo).join(', ')} — ${String(reason).trim()}`
+        : `"${branch}" already existed everywhere; its reason is unchanged`)
+      return {
+        branch: branch.trim(),
+        cut,
+        made: made.map(c => c.repo),
+        note: branches.noteFor(branch.trim()),
+        already: !made.length
+      }
     }
   },
 
@@ -1076,6 +1115,19 @@ const actions = {
     takes: ['name', 'branch', 'folder'],
     run: async ({ name, branch, folder }) => {
       const vm = vms.get(name)
+
+      // WHAT IS KNOWABLE WITHOUT A MACHINE IS CHECKED WITHOUT ONE.
+      //
+      // A branch that does not exist is a mistake whether or not anything is
+      // running, and it used to be discovered after starting one and waiting for
+      // it to dial in -- so the answer to a typo was five minutes away, and
+      // arrived as though the machine were the problem.
+      const wanted = String(branch || vm.branch || '').trim()
+      if (!wanted) throw new Error(`Say which branch "${name}" is to work on.`)
+      if (!branches.all().branches.some(b => b.name === wanted)) {
+        throw new Error(`There is no branch called "${wanted}". Make it first, with a reason — branchCreate --branch ${wanted} --reason "..." — so what it is for is recorded before anything is built on it. If that name is a typo, this is the refusal that catches it.`)
+      }
+
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in. Start it and wait for it to connect.`)
       guestPath(folder, '--folder')
 
@@ -1130,12 +1182,13 @@ const actions = {
         if (f.freed) log.on('vm', name).info(`${f.repo} was on ${f.from} here; moved it back to ${f.to} so ${name} can use it`)
       }
 
-      const cut = branches.ensure(on)
-      const made = cut.filter(c => c.created)
+      // SETTING A MACHINE UP DOES NOT CREATE A BRANCH ANY MORE. It was the one
+      // place they were born, as a side effect, from whatever string a task
+      // carried -- so a mistyped name did not fail, it made a branch. Refused
+      // above, before the machine is even asked to be running.
+      const here = branches.all().branches.find(b => b.name === on)
       const to = log.on('vm', name)
-      to.info(made.length
-        ? `cut "${on}" in ${made.map(c => c.repo).join(', ')}`
-        : `"${on}" already existed in every repository`)
+      to.info(`"${on}" exists in ${here.in.join(', ')}${here.missing.length ? `, not in ${here.missing.join(', ')}` : ''}`)
 
       const host = await vbox.hostAddress()
       const tls = keys.ensure()

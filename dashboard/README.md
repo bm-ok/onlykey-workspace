@@ -833,6 +833,37 @@ There is ALWAYS a current state, including on a machine with no snapshots at all
 -- it is the whole of the machine with nothing recorded behind it, and it is the
 only place a first snapshot can be taken from.
 
+A branch is cut on purpose, with a reason
+------------------------------------------
+
+Branches used to be born as a SIDE EFFECT. Setting a machine's workspace up cut
+whatever name the task happened to carry, in every repository -- so a mistyped
+branch did not fail, it made a branch, and the workspace was built on a name
+nobody meant. Every branch in the workspace arrived that way, which is exactly
+why not one of them could say what it was for.
+
+`drill/cable-pull` is the monument to it: pointing at the same commit as `master`
+in both repositories, left behind by a drill about the NETWORK that never
+committed anything, and indistinguishable on a list from a branch somebody cut
+deliberately and abandoned. Telling those two apart matters right before deleting
+one.
+
+So `branchCreate` is the only way a branch is made, it takes a reason, and it
+refuses without one. The reason is recorded once, when the branch is first cut,
+and is never overwritten -- a branch reused for a second task keeps the reason it
+was made for, because that is what reusing a name means. Deleting the branch
+takes the note with it, or a branch cut again under the same name later would
+inherit an account of something else.
+
+**Setting a machine up now refuses a branch that does not exist**, and refuses it
+BEFORE asking whether the machine is running -- a name that is not there is a
+mistake whether or not anything is switched on, and the answer used to be five
+minutes away and arrive as though the machine were the problem.
+
+Branches with no reason are shown as having none rather than hidden. That is the
+honest state of most of the board, and it is the state that made one of them
+impossible to account for.
+
 The Branches tab
 ----------------
 
