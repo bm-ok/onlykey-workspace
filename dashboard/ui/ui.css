@@ -409,6 +409,14 @@ table.kv th {
 }
 table.kv td { padding: 3px 0; word-break: break-all; }
 
+/* A fact in a fact table that is good or bad news, coloured as a sentence
+   rather than as a pill. `bad` and `ok` existed only as modifiers of .badge and
+   .card-sub, so a bare <span class="bad"> matched a class name that exists and
+   no rule that draws anything -- the quietest failure this stylesheet allows,
+   and one already paid for once. */
+table.kv td .bad { color: var(--fail); }
+table.kv td .ok { color: var(--ok); }
+
 .act {
   display: flex;
   gap: 12px;

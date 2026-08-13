@@ -176,6 +176,72 @@ async function workFolder (name, where) {
   return folder.replace(/^\$HOME\b/, home).replace(/^~(?=\/|$)/, home)
 }
 
+// HOW LONG A STORED WORKER CREDENTIAL HAS LEFT, without using it.
+//
+// TWO CLOCKS, and confusing them is the whole difficulty.
+//
+//   the access token   short-lived, hours. EXPIRED IS ITS NORMAL STATE — Claude
+//                      Code refreshes it whenever it needs to, so an expired one
+//                      says nothing at all about whether the credential works.
+//   the refresh token  weeks. This is the one that matters: when it goes, the
+//                      credential is dead and only a person at a sign-in page
+//                      can replace it.
+//
+// SO A CLOCK IS NOT PROOF, IN ONE DIRECTION ONLY. Expired refresh token means
+// definitely dead — worth refusing on, because nothing can recover it. Unexpired
+// means "no reason to think it is broken", which is weaker than it looks: an
+// OAuth refresh ROTATES the refresh token, so a credential grabbed from a machine
+// that has refreshed since is holding a superseded one. It reads as valid for
+// weeks and fails immediately. That is exactly what this host has: a refresh
+// token dated four weeks out, and a worker answering "OAuth session expired and
+// could not be refreshed".
+//
+// Hence `usable` is true/false/null and not a boolean: false is knowledge, true
+// is only the absence of one kind of bad news, and the definitive answer comes
+// from a machine trying it.
+function credentialLife (file) {
+  let oauth = null
+  try {
+    const parsed = JSON.parse(secret.read(file).toString('utf8'))
+    oauth = parsed.claudeAiOauth || parsed
+  } catch {
+    return { readable: false, why: 'the stored credential could not be read or is not the shape this knows' }
+  }
+
+  const at = Number(oauth.expiresAt) || null
+  const refresh = Number(oauth.refreshTokenExpiresAt) || null
+  const now = Date.now()
+
+  return {
+    readable: true,
+    // Non-secret facts about the account, useful for telling two apart.
+    plan: oauth.subscriptionType || null,
+    scopes: Array.isArray(oauth.scopes) ? oauth.scopes.length : null,
+    access: at ? { at: new Date(at).toISOString(), left: at - now, expired: at <= now } : null,
+    refresh: refresh ? { at: new Date(refresh).toISOString(), left: refresh - now, expired: refresh <= now } : null,
+    // The only certain answer available from a clock.
+    usable: refresh ? (refresh > now ? null : false) : null,
+    why: !refresh
+      ? 'it does not say when its refresh token expires, so nothing can be told from here'
+      : refresh <= now
+        ? 'its refresh token has expired — this credential cannot be recovered, only replaced'
+        : 'its refresh token has not expired, which is not the same as it working: a refresh rotates the token, so one grabbed from a machine that refreshed since is already superseded'
+  }
+}
+
+// The last time a machine actually tried the stored credential, kept beside it.
+//
+// Written into the same `about.json` that records where it came from, because
+// that file already exists to answer "why has this stopped working" and this is
+// the other half of that answer. Best-effort: failing to record a check is not a
+// reason to fail the call that made it.
+function rememberCredentialCheck (checked) {
+  const at = path.join(data.sub('credentials'), 'about.json')
+  let meta = {}
+  try { meta = JSON.parse(fs.readFileSync(at, 'utf8')) } catch { /* older ones have none */ }
+  try { fs.writeFileSync(at, JSON.stringify({ ...meta, checked }, null, 2)) } catch { /* the answer still stands for this call */ }
+}
+
 let wantedShot = null
 
 const actions = {
@@ -2095,7 +2161,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // machine that needs it. A page that displays a secret is a page that gets
   // screenshotted.
   credentialsHeld: {
-    about: 'Whether this host holds a worker credential, and where it came from',
+    about: 'Whether this host holds a worker credential, how long it has left, and where it came from',
     run: () => {
       const dir = data.sub('credentials')
       const file = path.join(dir, 'claude.json')
@@ -2110,6 +2176,17 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
         bytes: stat.size,
         taken: meta.taken || stat.mtime.toISOString(),
         from: meta.from || 'unknown',
+        // HOW LONG IT HAS LEFT, read from the credential itself. Free, instant,
+        // and needs no machine — which is the whole point: the alternative was
+        // booting one, handing the credential over and watching a worker fail.
+        //
+        // TIMESTAMPS ONLY. The tokens are never returned by this or anything
+        // else; a window that can show a secret is a window that ends up in a
+        // screenshot, and this one is photographed on purpose several times a day.
+        life: credentialLife(file),
+        // The last time a machine actually tried it, which is the only answer
+        // that is proof. See credentialLife for why the clock is not.
+        checked: meta.checked || null,
         // Reported rather than claimed. "Sealed" and "the folder happens to be
         // yours" are different protections, and a reader should be able to tell
         // which one is holding.
@@ -2169,6 +2246,16 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
       const file = path.join(data.sub('credentials'), 'claude.json')
       if (!fs.existsSync(file)) {
         throw new Error('This host has no worker credential yet. Sign in on one machine and take it with vmCredentialsGrab first.')
+      }
+
+      // ASKED BEFORE IT IS SPENT. A dead credential can be recognised here, on
+      // this host, from its own refresh-token expiry — no machine, no boot, no
+      // waiting. Refused only when the clock is CERTAIN, which it is in one
+      // direction: an expired refresh token cannot be recovered by anything.
+      // Unexpired proves nothing, so it is not treated as permission.
+      const life = credentialLife(file)
+      if (life.usable === false) {
+        throw new Error(`This host's worker credential is dead — ${life.why}. Nothing can revive it; get a new one on the Keys tab.`)
       }
 
       // Opened here and nowhere else. It exists as cleartext for the length of
@@ -2234,10 +2321,16 @@ claude auth status 2>/dev/null || true`, { what: 'handing it a worker credential
       if (seen) { try { ready = JSON.parse(seen[0]).loggedIn === true } catch { /* not the shape we know */ } }
 
       if (ready === false) {
-        log.on('vm', name).bad(`${name} took the credential and ${'claude'} still reports itself signed out — this host's credential has expired. Get a new one on the Keys tab.`)
+        log.on('vm', name).bad(`${name} took the credential and the worker still reports itself signed out — this host's credential has expired. Get a new one on the Keys tab.`)
       } else {
         log.on('vm', name).warn(`${name} now holds a worker credential — it cannot be snapshotted until that is taken back`)
       }
+
+      // KEPT, so the board can say "known bad" without spending a machine to
+      // find out again. This is the only answer that is proof, and it was being
+      // thrown away the moment it was learnt — so every panel went back to
+      // guessing from a clock that says the wrong thing.
+      if (ready !== null) rememberCredentialCheck({ at: new Date().toISOString(), on: name, ready })
 
       return {
         to: name,

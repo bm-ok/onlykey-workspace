@@ -409,14 +409,60 @@ function paintKeys () {
     setText($('keys-context'), held.held ? `— taken from ${held.from}` : '— none yet')
     if (!changed('keys', held)) return
 
+    // WHAT THE STATE ACTUALLY IS, from the two things that know: the credential's
+    // own refresh-token clock, and the last time a machine really tried it.
+    //
+    // They are shown as two rows and not merged into one verdict, because they
+    // disagree in a way that matters and the disagreement IS the information.
+    // This host's credential says "four weeks left" and a worker says "OAuth
+    // session expired" — the clock is not lying, it is answering a different
+    // question, since a refresh rotates the token and one grabbed from a machine
+    // that refreshed since is already superseded.
+    const life = held.life || {}
+    const tried = held.checked || null
+    const dead = life.usable === false || (tried && tried.ready === false)
+    const proven = tried && tried.ready === true
+
     fill($('keys'), held.held
-      ? el('div', { className: 'card' },
+      ? el('div', { className: `card${dead ? ' warn' : ''}` },
           el('div', { className: 'card-title' },
             el('span', { textContent: 'Claude Code' }),
-            el('span', { className: 'badge ok', textContent: 'held' })),
+            el('span', {
+              className: `badge ${dead ? 'bad' : proven ? 'ok' : 'warn'}`,
+              textContent: dead ? 'will not work' : proven ? 'working' : 'not tried yet'
+            })),
           el('table', { className: 'kv', style: 'margin-top:8px' },
+            // The headline: how long is left, and on which clock.
+            el('tr', {}, el('th', { textContent: 'time left' }),
+              el('td', {}, life.refresh
+                ? el('span', {
+                    className: life.refresh.expired ? 'bad' : '',
+                    textContent: life.refresh.expired
+                      ? `expired ${lasts(life.refresh.left)} ago`
+                      : `${lasts(life.refresh.left)} — until ${new Date(life.refresh.at).toLocaleString()}`
+                  })
+                : el('span', { className: 'muted', textContent: life.readable ? 'it does not say' : (life.why || 'unreadable') }))),
+            // The short clock, which is expired almost always and means nothing
+            // on its own. Said anyway, because otherwise somebody reads it
+            // elsewhere and draws the wrong conclusion from it.
+            life.access
+              ? el('tr', {}, el('th', { textContent: 'session token' }),
+                  el('td', { className: 'muted' },
+                    life.access.expired
+                      ? `expired ${lasts(life.access.left)} ago — normal, it is refreshed when needed`
+                      : `${lasts(life.access.left)} left`))
+              : null,
+            // The only proof there is.
+            el('tr', {}, el('th', { textContent: 'last tried' }),
+              el('td', {}, tried
+                ? el('span', {
+                    className: tried.ready ? 'ok' : 'bad',
+                    textContent: `${tried.ready ? 'worked' : 'refused'} on ${tried.on}, ${ago(tried.at)}`
+                  })
+                : el('span', { className: 'muted', textContent: 'never — no machine has used it since it was taken' }))),
+            life.plan ? el('tr', {}, el('th', { textContent: 'plan' }), el('td', { className: 'mono', textContent: life.plan })) : null,
             el('tr', {}, el('th', { textContent: 'taken from' }), el('td', { className: 'mono', textContent: held.from })),
-            el('tr', {}, el('th', { textContent: 'when' }), el('td', { className: 'mono', textContent: new Date(held.taken).toLocaleString() })),
+            el('tr', {}, el('th', { textContent: 'when' }), el('td', { className: 'mono', textContent: `${new Date(held.taken).toLocaleString()} — ${ago(held.taken)}` })),
             // The path, not the contents. A page that shows a secret is a page
             // that ends up in a screenshot.
             el('tr', {}, el('th', { textContent: 'kept in' }), el('td', { className: 'mono', style: 'user-select:text', textContent: held.dir })),
@@ -427,8 +473,20 @@ function paintKeys () {
             el('tr', {}, el('th', { textContent: 'at rest' }),
               el('td', {}, el('span', { className: `badge ${held.sealed ? 'ok' : 'warn'}`, textContent: held.sealed ? 'sealed' : 'plain' }))),
             el('tr', {}, el('th', { textContent: '' }), el('td', { className: 'muted', textContent: held.protection || '' }))),
-          el('p', { className: 'note', style: 'margin-top:10px', textContent: 'Hand it to a machine with vmCredentialsPut, and take it back with vmCredentialsForget before snapshotting.' }))
-      : el('p', { className: 'empty', textContent: 'No worker credential yet. Get one from a machine that is running.' }))
+
+          // WHAT TO DO ABOUT IT, beside the thing that is wrong. A panel that
+          // reports a dead credential and leaves the cure on another row of the
+          // page is a panel somebody reads twice and acts on neither time.
+          dead
+            ? el('div', {},
+                el('p', { className: 'note', style: 'margin-top:10px', textContent: life.usable === false ? life.why : 'A machine tried it and the worker reported itself signed out. Only a person at a sign-in page can replace it.' }),
+                el('button', { className: 'btn ok', textContent: 'Sign in again and replace it', onclick: () => getCredentials() }))
+            : el('p', { className: 'note', style: 'margin-top:10px', textContent: proven
+                ? 'Handed to a machine per task and taken back afterwards, so no machine keeps it and none can be snapshotted while holding one.'
+                : 'It has not been tried since it was taken. The first machine given it will say, and that answer is kept here.' }))
+      : el('div', {},
+          el('p', { className: 'empty', textContent: 'No worker credential yet, so nothing on a machine can run claude.' }),
+          el('button', { className: 'btn ok', textContent: 'Sign in and get one', onclick: () => getCredentials() })))
   }).catch(() => { /* the tab is not worth an error bar of its own */ })
 }
 
@@ -3147,6 +3205,18 @@ async function paintSnapshots () {
 }
 
 // "3 days ago", because a date alone does not answer which of these is old.
+// The same shape as `ago`, forwards. A credential's remaining life is the thing
+// somebody wants read at a glance, and "expires 2026-09-10T07:10:35.745Z" is a
+// fact nobody subtracts today's date from in their head.
+function lasts (ms) {
+  const secs = Math.round(Math.abs(ms) / 1000)
+  const [n, unit] = secs < 90 ? [secs, 'second']
+    : secs < 5400 ? [Math.round(secs / 60), 'minute']
+      : secs < 172800 ? [Math.round(secs / 3600), 'hour']
+        : [Math.round(secs / 86400), 'day']
+  return `${n} ${unit}${n === 1 ? '' : 's'}`
+}
+
 function ago (when) {
   const secs = Math.max(0, Math.round((Date.now() - Date.parse(when)) / 1000))
   const [n, unit] = secs < 90 ? [secs, 'second']

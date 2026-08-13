@@ -367,3 +367,22 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   being run, so it costs nothing, and it turns a claim about this host's actions
   into a report of the machine's state. Prefer the second wherever the first is
   cheap to check.
+
+* **A credential has two clocks, and the one you can read is the wrong one.** The
+  access token is short-lived and EXPIRED IS ITS NORMAL STATE -- Claude Code
+  refreshes it whenever it needs to, so an expired one says nothing about whether
+  the credential works. The refresh token is the one that matters, and this host
+  was holding one dated four weeks out while a worker answered "OAuth session
+  expired and could not be refreshed".
+
+  Both were true. A refresh ROTATES the refresh token, so a credential grabbed
+  from a machine that has refreshed since is holding a superseded one: valid
+  dates, dead credential. The clock is therefore proof in one direction only --
+  expired means certainly dead and is worth refusing on, because nothing can
+  recover it; unexpired means only the absence of one kind of bad news.
+
+  So `usable` is true/false/null rather than a boolean, the panel shows the clock
+  and the last real attempt as two separate rows, and the disagreement between
+  them is left visible instead of being resolved into one verdict. The
+  disagreement is the information: "27 days left" beside "refused 20 seconds ago"
+  is the whole explanation of what is wrong.
