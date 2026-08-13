@@ -111,6 +111,19 @@ const waitUntilOff = (name, opts) => waitForState(name, s => OFF_STATES.has(s) |
 // Powered off is not unlocked. VirtualBox holds the session for a moment after a
 // VM stops, and while it is held `unregistervm` fails with
 // VBOX_E_INVALID_OBJECT_STATE. Waiting on the power state alone races it.
+// POWERED OFF IS NOT READY, and this is the wait every caller that is about to
+// touch a machine's DISK has to do first.
+//
+// VirtualBox reports a machine as `poweroff` while it is still holding the
+// session, and the operations that need the disk to itself -- restoring,
+// snapshotting, deleting a snapshot -- are not refused during that window so
+// much as raced. A restore issued into it has been observed to leave a machine
+// that starts to a black screen and never boots: nothing failed, nothing was
+// logged, and the disk was simply not what anybody thought.
+//
+// The window is a few seconds. Asking is still not enough on its own -- see
+// LEARNED -- so callers wait AND retry: this closes most of it, and `retrying`
+// covers what is left.
 async function waitUntilUnlocked (name, { timeout = 60000, interval = 2000 } = {}) {
   const deadline = Date.now() + timeout
   const to = log.on('vm', name)
@@ -178,7 +191,18 @@ async function hostAddress () {
 
 // ---- switching on and off --------------------------------------------
 
-const start = (name, type = 'gui') => run(['startvm', name, '--type', type], { tags: [name] })
+// Retried, because starting is the operation most likely to arrive while
+// VirtualBox is still holding a session it has not admitted to.
+//
+// It follows a stop or a restore almost every time -- that is what the queue
+// does before every task -- and a lock released "after the command that took it
+// has returned" means the very next line is the worst moment to ask. Waiting for
+// SessionState is not enough on its own: it has read Unlocked 100ms before a
+// start was refused for being locked. So both, which is the same conclusion this
+// file already reached once for snapshots.
+const start = (name, type = 'gui') =>
+  retrying(() => run(['startvm', name, '--type', type], { tags: [name] }),
+    { what: 'starting the machine', tags: [name] })
 
 // The button, not the plug. A guest mid-write should be allowed to finish;
 // pulling power is a separate, explicit choice.

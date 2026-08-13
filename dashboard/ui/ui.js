@@ -443,7 +443,7 @@ const STATE_BADGE = {
   rejected: 'bad'
 }
 
-function paintTasks () {
+function paintTasks (queued) {
   Promise.all([api('tasks'), api('planned')]).then(([{ tasks }, plan]) => {
     taskList = tasks
     // Reconciled against what exists, for the same reason the machine selection
@@ -497,7 +497,7 @@ function paintTasks () {
         : el('p', { className: 'empty', textContent: 'No tasks yet. Write one with +.' }))
     }
 
-    paintQueue()
+    paintQueue(queued)
 
     const task = tasks.find(t => t.id === pickedTask)
     setText($('task-context'), task ? `— #${task.number}  ${task.id}` : '— nothing selected')
@@ -525,8 +525,12 @@ function paintTasks () {
 // no machine can take it" look identical from outside and want opposite
 // responses, and the four ways a machine can be unavailable each want a
 // different one: release it, snapshot it, put it back in the pool, or wait.
-function paintQueue () {
-  api('queueState').then(q => {
+function paintQueue (q) {
+  // Handed in rather than fetched. drawOnce already asked, and asking twice per
+  // draw doubles a call that walks every machine -- which is a VBoxManage
+  // process each. A window that polls every three seconds cannot afford to ask
+  // the same question twice out of tidiness.
+  Promise.resolve(q || api('queueState')).then(q => {
     const held = q.machines.filter(m => !m.free)
     const worth = q.waiting.length || q.inFlight.length || held.some(m => /kept back/.test(m.why))
     $('queue').classList.toggle('hidden', !worth)
@@ -1823,7 +1827,7 @@ async function drawOnce () {
 
   paintVms()
   paintKeys()
-  paintTasks()
+  paintTasks(running)
 }
 
 // ---- right-click, and devtools ---------------------------------------

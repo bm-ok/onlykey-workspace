@@ -359,6 +359,9 @@ const actions = {
         throw new Error('Shut the machine down first — a snapshot taken while it is running stores its memory too, which makes it enormous. "Make a clean starting point" does the shutting down for you.')
       }
       refuseIfItHoldsACredential(name)
+      // Powered off is not unlocked, and a snapshot taken into that window is
+      // taken of a disk VirtualBox has not finished with.
+      await vbox.waitUntilUnlocked(name)
       await vbox.takeSnapshot(name, title.trim(), description || '')
       const vm = vms.get(name)
       vms.update(name, {
@@ -443,6 +446,7 @@ const actions = {
     run: ({ name, title }) => busy.during(name, 'having a snapshot removed', async () => {
       const vm = vms.get(name)
       if (!title) throw new Error('Say which snapshot.')
+      await vbox.waitUntilUnlocked(name)
       await vbox.deleteSnapshot(name, title)
 
       // What the registry recorded about it goes too, or the branch it named
@@ -464,6 +468,10 @@ const actions = {
     run: ({ name, title }) => busy.during(name, 'being restored', async () => {
       const vm = vms.get(name)
       if (!await vbox.isOff(name)) throw new Error('Shut the machine down first — VirtualBox will not restore a snapshot while it is running.')
+      // Powered off is not unlocked. See waitUntilUnlocked: a restore issued
+      // into that window races the session VirtualBox is still holding, and the
+      // machine it leaves behind boots to a black screen with nothing logged.
+      await vbox.waitUntilUnlocked(name)
       // The disk is about to become a different disk, so whatever session is
       // recorded for this machine describes something that will not exist in a
       // moment. A machine stopped by pulling its power leaves one that looks
@@ -1403,6 +1411,58 @@ done`
     }
   },
 
+  // Send a rejected task back to be done again.
+  //
+  // THE LOOP HAS TO GO BACKWARDS or the shortcut it exists to prevent becomes
+  // the only way. The rule is that a bad result is sent back rather than fixed
+  // here, because the supervisor's own edits are the one path nothing reviews —
+  // and that rule was unenforceable, because a judged task refused to be
+  // re-queued at all. The only remaining option was for somebody to open the
+  // work and correct it themselves, which is exactly the thing being forbidden.
+  //
+  // The note is the point. It is what the worker is given, appended to the brief
+  // rather than replacing it, so the second attempt can see both what was
+  // originally asked and what was wrong with the answer — and so the record
+  // afterwards says what it was told, rather than only what it was first asked.
+  //
+  // SAME BRANCH, and it already has the first attempt's commits on it. The
+  // worker continues from where it left off rather than starting again, which is
+  // what "send it back" means and is why the branch was never deleted.
+  taskSendBack: {
+    about: 'Send a rejected task back to be done again, with the reason attached',
+    takes: ['id', 'note'],
+    run: ({ id, note }) => {
+      const task = tasks.get(id)
+      if (task.state !== 'rejected') {
+        throw new Error(`#${task.number} is "${task.state}". Only a rejected task is sent back — an accepted one is finished, and anything else has not been judged yet.`)
+      }
+      const why = String(note || (task.verdict && task.verdict.note) || '').trim()
+      if (!why) throw new Error('There is nothing to send back with. Say what is wrong.')
+
+      const stamped = new Date().toISOString().slice(0, 10)
+      const brief = `${task.brief}\n\n--- sent back on ${stamped} ---\n${why}`
+
+      // This changes a brief after the task has been given out, which
+      // `taskUpdate` refuses — and the refusal is right: editing the question
+      // after the fact rewrites what a piece of work was the answer to. This is
+      // the sanctioned exception rather than a way around it, because the change
+      // is APPENDED and dated, the previous verdict is kept, and what the second
+      // attempt was told is exactly what the record now shows.
+
+      const back = tasks.update(id, {
+        state: 'queued',
+        brief,
+        // Kept rather than overwritten. A task that went round twice and a task
+        // that went round once are different pieces of history, and the verdict
+        // that caused the second attempt is the most useful part of it.
+        verdicts: [...(task.verdicts || []), { ...task.verdict, sentBack: new Date().toISOString() }],
+        verdict: null
+      })
+      log.on('task', task.id).warn(`#${task.number} sent back: ${why.split('\n')[0]}`)
+      return { ...back, note: `Back in the queue on ${task.branch}, which still has the first attempt on it. The next free machine continues from there.` }
+    }
+  },
+
   taskUnqueue: {
     about: 'Take a task back out of the queue. Does not stop one already running',
     takes: ['id'],
@@ -1417,10 +1477,19 @@ done`
     about: 'What the queue is doing, and which machines could take work',
     run: async () => {
       const { vms } = await actions.vmList.run({})
-      const { tasks: all } = await actions.tasks.run({})
+      // The STORE, not the `tasks` action.
+      //
+      // That action reads every task's branch out of git to say what is on it,
+      // which is three or four processes per repository per task -- and this is
+      // asked for on every draw, alongside the action that already does it.
+      // Nothing here needs to know what a branch contains: a queued task is
+      // queued whatever is on its branch.
+      const all = tasks.read()
       return {
         ...queue.state(),
-        waiting: all.filter(t => t.state === 'queued').map(t => ({ number: t.number, id: t.id, title: t.title, branch: t.branch })),
+        waiting: all.filter(t => t.state === 'queued')
+          .sort((a, b) => a.number - b.number)
+          .map(t => ({ number: t.number, id: t.id, title: t.title, branch: t.branch })),
         machines: queue.availability(vms),
         every: `${queue.TICK / 1000}s`
       }
@@ -1562,7 +1631,9 @@ done`
   taskArtifact: {
     about: "What arrived on a task's branch: commits and files, per repository",
     takes: ['id'],
-    run: ({ id }) => artifact.read(tasks.get(id).branch)
+    // Never cached: this is what somebody judges from, and reading a
+    // four-second-old picture of a branch is exactly the wrong moment to.
+    run: ({ id }) => artifact.read(tasks.get(id).branch, { fresh: true })
   },
 
   taskDiff: {
@@ -1590,7 +1661,7 @@ done`
       const call = String(verdict || '').toLowerCase()
       if (call !== 'accept' && call !== 'reject') throw new Error('The verdict is "accept" or "reject".')
 
-      const art = artifact.read(task.branch)
+      const art = artifact.read(task.branch, { fresh: true })
       // Refused rather than allowed with a warning. A verdict on an empty branch
       // is a judgement of nothing, and it is indistinguishable afterwards from a
       // judgement of something.

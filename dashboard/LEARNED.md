@@ -179,6 +179,24 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   its claim for ever, kept out of the queue and unable to be given anything
   else. Half a rule reads as correctness right up until somebody needs the
   other half.
+* **Powered off is not unlocked — and only two callers knew it.** VirtualBox
+  reports a machine as `poweroff` while it still holds the session, and the
+  operations that need the disk to themselves are not refused in that window so
+  much as raced. Restoring a snapshot into it left a machine that started to a
+  black screen and never booted: nothing failed, nothing was logged, and the
+  disk simply was not what anybody thought. The wait already existed and was
+  used by `destroy` and by `vmBaseSnapshot` — restore, take and delete each did
+  their own `isOff` check and stopped there. A lesson that is applied in some
+  places is a lesson that has not been learned.
+* **A summary that costs a process is not a summary.** The board read every
+  task's branch out of git to say what was on it — three or four `git` calls per
+  repository per task — and the window drew every three seconds, twice over. A
+  profile showed **94% of the window's samples inside `spawn`**, doing nothing
+  else at all: ten tasks cost 2.8 seconds of a 3-second cycle. Caching the answer
+  hides it; the fix is to ask a cheaper question first. One `for-each-ref` per
+  repository says where every branch is, and nothing is recomputed unless its
+  branch actually moved — eighty processes a draw became two, and the steady
+  state went from 2800ms to 80ms.
 * **Git Bash rewrites paths that look absolute.** `--folder /home/okc/work`
   arrives as `C:/Program Files/Git/home/okc/work`, which is a real path on this
   host, so nothing looks wrong anywhere: the machine cannot find it, falls back
