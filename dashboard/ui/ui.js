@@ -174,11 +174,22 @@ const been = {
 let view = been.get('view', 'branches')
 document.querySelectorAll('.tab').forEach(b => {
   b.onclick = () => {
+    const from = view
     view = b.dataset.view
     been.set('view', view)
     document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === b))
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${view}`))
     if (view === 'live') clearBadge()
+
+    // SAID INTO THE LOG, because the log is the only thing anything outside
+    // this window can watch. A session following the stream can otherwise see
+    // every machine, task and branch change and not the one thing that says
+    // what the person is actually looking at -- which is most of the context
+    // for "why are they asking about this".
+    //
+    // Only on a real change: switching to the tab you are on is a click that
+    // says nothing, and a watcher full of those learns to ignore the tag.
+    if (from !== view) liveLog.on('window').info(`looking at ${view}`)
   }
 })
 const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).click()
@@ -3360,6 +3371,12 @@ async function capture () {
 document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
     e.preventDefault()
+    // Announced BEFORE it is taken, and saying which tab, so anything watching
+    // the stream knows a capture is coming and what it will be of. The action
+    // logs the file afterwards; this logs the intent, and the two together are
+    // what let a session following along say "they just photographed the
+    // Branches tab" rather than noticing a file appear.
+    liveLog.on('window').info(`asked for a capture of ${view} — Ctrl+Shift+D`)
     capture()
   }
 })

@@ -115,17 +115,51 @@ async function main () {
     const streams = known.some(a => a.name === action && /^Follow /.test(a.about || ''))
 
     if (streams) {
-      // Printed as it arrives and never buffered: the entire point is watching
-      // something happen, and a line held back until the end is a line that
-      // arrived too late to be worth anything.
-      await ipc.call(action, args, {
-        onEvent: e => {
-          if (asJson) return console.log(JSON.stringify(e))
-          const tags = (e.tags || []).join(' ')
-          console.log(`${e.at.slice(11, 19)}  ${String(e.level).padEnd(5)}  ${tags.padEnd(18)}  ${e.text}`)
+      // IT RECONNECTS, because the thing it is watching is the thing that
+      // restarts.
+      //
+      // A watcher that ends when the dashboard does is a watcher that is not
+      // running for exactly the period somebody most wants to see -- and it ends
+      // SILENTLY, because a closed stream and a finished stream look identical
+      // from here. Whoever left it running comes back to a prompt and no way to
+      // tell whether nothing happened or nothing was listening.
+      //
+      // Resumed from the last id rather than from the start, so a reconnect does
+      // not reprint an hour of history, and nothing that happened while it was
+      // away is missed either -- the log keeps its last two thousand lines and
+      // `since` asks for what came after.
+      let since = Number(args.since) || 0
+      let attempt = 0
+
+      for (;;) {
+        try {
+          await ipc.call(action, { ...args, since }, {
+            // Printed as it arrives and never buffered: the entire point is
+            // watching something happen, and a line held back until the end is a
+            // line that arrived too late to be worth anything.
+            onEvent: e => {
+              if (e && e.id) since = Math.max(since, Number(e.id) || 0)
+              if (asJson) return console.log(JSON.stringify(e))
+              const tags = (e.tags || []).join(' ')
+              console.log(`${e.at.slice(11, 19)}  ${String(e.level).padEnd(5)}  ${tags.padEnd(18)}  ${e.text}`)
+            }
+          })
+          // A clean end means the far side went away, not that there is nothing
+          // more to say.
+          attempt = 0
+        } catch (e) {
+          // Not running yet is the ordinary case for a watcher started beside
+          // the thing it watches, so it waits rather than giving up.
+          if (!e.notRunning) throw e
         }
-      })
-      return 0
+
+        // Backed off, but never far: this is a person or a session waiting to
+        // see something, and thirty seconds of silence after a restart is most
+        // of the value gone.
+        const wait = Math.min(1000 * ++attempt, 5000)
+        if (!asJson) console.error(`… the dashboard went away; watching again in ${wait / 1000}s`)
+        await new Promise(r => setTimeout(r, wait))
+      }
     }
 
     // `vmShell` becomes an actual shell, here, rather than printing a command

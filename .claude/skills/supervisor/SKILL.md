@@ -40,6 +40,12 @@ commands below.
   Hand that to `Monitor`. `APPROVED`, `WITHDRAWN` and `ASKED-TO-READ` lead their
   lines for exactly this reason. When it fires, run what was approved — do not
   re-derive whether it is approved from something you remember.
+
+  **It survives the dashboard restarting**, which matters because the dashboard
+  restarts constantly while anything is being built on it. `logWatch` reconnects
+  on its own and picks the new instance up from its first line, so a watch armed
+  before a restart is still armed after one. It says `… the dashboard went away;
+  watching again in Ns` while it waits, so a gap is visible rather than silent.
 * **Write instructions; do not build.** Two authors in one working tree produced
   every coordination failure of that day: a branch moved under someone
   mid-edit, a tool run while it was being rewritten, one session's notes swept

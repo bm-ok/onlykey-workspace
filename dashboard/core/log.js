@@ -44,7 +44,25 @@ const on = (...tags) => ({
   on: (...more) => on(...tags, ...more)
 })
 
-const since = id => entries.filter(e => e.id > Number(id || 0))
+// Everything after an id -- unless that id is from a LOG THAT NO LONGER EXISTS.
+//
+// Ids count from 1 and reset when this process does, because the log is in
+// memory and is what is happening NOW. So a watcher that reconnects after a
+// restart asks for "everything after 412" of a log whose newest line is 3, and
+// is answered with nothing, for ever: it is connected, it is healthy, and it
+// will never print another line. That is a worse failure than dropping out,
+// because it looks exactly like a quiet system.
+//
+// An id higher than anything here cannot be one of ours, and the only way to
+// hold one is to have been watching a previous life of this process. So it is
+// read as "start again" rather than as a filter, and the reconnect shows the new
+// instance from its first line -- which is the honest answer: this log did just
+// begin.
+const since = id => {
+  const from = Number(id || 0)
+  const newest = entries.length ? entries[entries.length - 1].id : 0
+  return from > newest ? entries.slice() : entries.filter(e => e.id > from)
+}
 
 // Every tag currently in the log, with how many lines carry it. The UI builds
 // its filters from this rather than from a hardcoded list, so a new tag anywhere
