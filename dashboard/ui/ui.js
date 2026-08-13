@@ -308,7 +308,10 @@ function paintMerge () {
     //
     // So the answer is kept until its question changes, and re-read on a much
     // slower clock so a branch that moved underneath it is still noticed.
-    const key = `${mergeSource} ${mergeTarget}`
+    // Not the two names joined by a space: a line is called things like
+    // "testing2 line", so a space is part of a name and two different pairs
+    // could produce one key.
+    const key = JSON.stringify([mergeSource, mergeTarget])
     const fresh = mergeAnswer && mergeAnswer.key === key && Date.now() - mergeAnswer.at < 30000
     const asked = fresh
       ? Promise.resolve(mergeAnswer.value)
@@ -1781,6 +1784,8 @@ let mergeSeen = null
 // pane is the most expensive thing in the window and must not be asked on a
 // timer.
 let mergeAnswer = null
+// Which group the Baselines pane is describing.
+let pickedGroup = been.get('group', null)
 
 // SCOPED TO THE ONES THAT NAME A PANE. `.subtab` is a look, and the Merge pane
 // has two of its own inside it for commits and files — caught by a document-wide
@@ -1958,28 +1963,55 @@ function paintBaselines () {
       : el('p', { className: 'empty', textContent: 'No repositories in the workspace.' }))
 
     // ---- the groups -----------------------------------------------------
+    // Reconciled against what exists, like every other selection here: a group
+    // can be forgotten between one draw and the next, and coming back to a name
+    // that is gone leaves the panel beside it stranded.
+    if (!groups.some(g => g.name === pickedGroup)) {
+      pickedGroup = groups.length ? (groups.find(g => g.inUse) || groups[0]).name : null
+      been.set('group', pickedGroup)
+    }
+
     setText($('group-context'), groups.length ? `— ${groups.length}` : '')
     fill($('groups'), groups.length
       ? groups.map(g => el('div', {
-          className: `card pick${g.inUse ? ' on' : ''}${g.broken.length ? ' warn' : ''}`,
-          onclick: () => showGroup(g)
+          // `on` IS SELECTED, everywhere in this window. It was being used here
+          // to mean "in use", so the group work is counted from looked selected
+          // whatever you clicked — and clicking anything else changed nothing
+          // visible, because the panel beside it was showing every group anyway.
+          // "In use" already has a badge, which is where a fact about the group
+          // belongs; the highlight is about what YOU are looking at.
+          className: `card pick${g.name === pickedGroup ? ' on' : ''}${g.broken.length ? ' warn' : ''}`,
+          onclick: () => { pickedGroup = g.name; been.set('group', pickedGroup); changed('baselines', null); paintBaselines() }
         },
         el('div', { className: 'card-title' },
           el('span', { className: 'mono', textContent: g.name }),
           g.inUse ? el('span', { className: 'badge ok', textContent: 'in use' }) : null,
+          g.marked ? el('span', { className: 'badge warn', textContent: 'proposed' }) : null,
           g.broken.length ? el('span', { className: 'badge bad', textContent: 'broken' }) : null),
         el('div', { className: 'badges' },
           el('span', { className: 'muted', textContent: `${g.on.length} repositor${g.on.length === 1 ? 'y' : 'ies'}` }),
           g.missing.length ? el('span', { className: 'muted', textContent: `${g.missing.length} not named` }) : null)))
       : el('p', { className: 'empty', textContent: 'No groups yet. A group names one branch per repository, so a task can be based on a line of work rather than on a branch at a time.' }))
 
-    // The detail panel follows the list rather than a selection, because a group
-    // is small enough to show whole and there are rarely many.
-    fill($('group-detail'), groups.length
-      ? groups.map(g => el('div', { className: 'carries' },
+    // ONE GROUP, THE SELECTED ONE.
+    //
+    // This used to render every group, on the reasoning that a group is small
+    // enough to show whole and there are rarely many. That was true while there
+    // was exactly one — and it read as a detail panel, which is what made it
+    // wrong the moment a second appeared: the list gained a selection nothing
+    // responded to, and the panel beside it showed both. A panel headed "what a
+    // group is", showing two groups, is answering a question nobody asked.
+    const one = groups.filter(g => g.name === pickedGroup)
+    fill($('group-detail'), one.length
+      ? one.map(g => el('div', { className: 'carries' },
           el('div', { className: 'carries-head' },
             el('span', { textContent: g.name }),
+            g.inUse ? el('span', { className: 'badge ok', textContent: 'in use' }) : null,
+            g.marked ? el('span', { className: 'badge warn', textContent: 'proposed' }) : null,
             g.why ? el('span', { className: 'muted', textContent: g.why }) : null),
+          g.marked
+            ? el('p', { className: 'note', textContent: `Proposed for landing ${ago(g.marked.at)}${g.marked.why ? ` — ${g.marked.why}` : ''}. Read it on the Merge tab.` })
+            : null,
           ...g.on.map(p => el('div', { className: 'group-part' },
             el('span', { className: 'mono', textContent: p.repo }),
             el('span', { className: p.there ? 'mono' : 'mono gone', textContent: p.there ? p.branch : `${p.branch} — gone` }))),
@@ -1996,12 +2028,25 @@ function paintBaselines () {
                 .then(r => { changed('baselines', null); changed('branches', null); say(r.note); return draw() })
                 .catch(oops)
             }),
+            // PROPOSING IT, from where the group lives. The Merge tab can take a
+            // proposal back, because that is where somebody is when they decide
+            // it is not ready; putting one up happens here, where you are
+            // looking at what the line actually is.
+            el('button', {
+              className: 'btn',
+              textContent: g.marked ? 'Stop proposing it' : 'Propose it for landing',
+              disabled: g.broken.length > 0,
+              title: g.broken.length ? g.broken.join('; ') : 'A proposed line is what the Merge tab compares',
+              onclick: () => (g.marked ? unproposeGroup(g) : proposeGroup(g))
+            }),
             el('button', {
               className: 'btn danger',
               textContent: 'Forget it',
               onclick: () => askToForgetGroup(g)
             }))))
-      : el('p', { className: 'empty', textContent: 'A group is a line of work: master today, version2 next, each one cut from the last. Naming it is what lets a task be based on it — and what protects it while it is a link.' }))
+      : el('p', { className: 'empty', textContent: groups.length
+          ? 'Pick a group on the left.'
+          : 'A group is a line of work: master today, version2 next, each one cut from the last. Naming it is what lets a task be based on it — and what protects it while it is a link.' }))
   }).catch(() => { /* the panel beside it is the one worth an error */ })
 }
 
@@ -2070,7 +2115,54 @@ function newGroup () {
   }).catch(oops)
 }
 
-const showGroup = g => say(`"${g.name}" — ${g.on.map(p => `${p.repo}:${p.branch}`).join(', ')}`)
+// `showGroup` was here. It answered a click on a group by flashing a notice,
+// which is what a list does when nothing is actually selected — the panel beside
+// it showed every group regardless, so there was nothing for a click to change.
+
+// Putting a line up to be landed.
+function proposeGroup (g) {
+  ask({
+    title: `Propose "${g.name}" for landing?`,
+    plain: [
+      `It says this line is finished: ${g.on.map(p => `${p.repo}:${p.branch}`).join(', ')}.`,
+      'Nothing moves and nothing is protected that was not already — its branches are protected because they are in a group, which is what a line is. What this adds is intent, so a second person can tell a line being worked on from one being offered.',
+      'It then appears on the left of the Merge tab, where it can be read against the line it would go into and landed.'
+    ],
+    fields: [
+      { name: 'why', label: 'Why it is ready, if it needs saying', placeholder: 'the scaffolding is done' }
+    ],
+    confirm: 'Propose it',
+    onYes: async f => {
+      const r = await api('baselineGroupMark', { name: g.name, why: f.why })
+      mergeAnswer = null
+      changed('baselines', null)
+      changed('merge', null)
+      say(r.note)
+      return draw()
+    }
+  })
+}
+
+function unproposeGroup (g) {
+  ask({
+    title: `Stop proposing "${g.name}"?`,
+    plain: [
+      'It goes back to being a line rather than a proposal, and leaves the Merge tab.',
+      'Its branches stay protected, because they are still named in a group. Forgetting the group is what gives them back.',
+      'Nothing that has already landed is undone.'
+    ],
+    confirm: 'Take it back',
+    danger: true,
+    onYes: async () => {
+      const r = await api('baselineGroupUnmark', { name: g.name })
+      mergeAnswer = null
+      changed('baselines', null)
+      changed('merge', null)
+      say(r.note)
+      return draw()
+    }
+  })
+}
 
 function askToForgetGroup (g) {
   ask({
