@@ -2223,8 +2223,8 @@ done`
   // returned.
   vmShellRun: {
     about: 'Run one command on a machine over ssh — works when its agent does not',
-    takes: ['name', 'command', 'timeout'],
-    run: async ({ name, command, timeout }) => {
+    takes: ['name', 'command', 'timeout', 'input'],
+    run: async ({ name, command, timeout, input = null }) => {
       if (!command) throw new Error('There is no command to run.')
       // Coerced, because everything that arrives from the command line or over
       // the wire is a string, and execFile rejects a string timeout with an
@@ -2249,7 +2249,7 @@ done`
       log.on('vm', name).info(`over ssh: ${String(command).split('\n')[0].slice(0, 80)}`)
 
       return await new Promise((resolve, reject) => {
-        execFile('ssh', args, { timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+        const child = execFile('ssh', args, { timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
           // REDACTED ON THE WAY IN, like every other thing a machine says. A
           // command run here can print an environment, and this output is
           // returned to a window and to a supervising session that keeps it.
@@ -2264,6 +2264,17 @@ done`
             output
           })
         })
+
+        // WHATEVER IS BEING SENT GOES DOWN STDIN, NOT ARGV.
+        //
+        // A command line is not a transport. Windows caps the whole line at
+        // about 32k, and a file of any size base64'd into an argument reaches
+        // the far end TRUNCATED IN THE MIDDLE OF A QUOTE — where the shell
+        // reports "unexpected EOF" and says nothing about length, so it reads as
+        // a quoting mistake. Which is what it looked like, until the same
+        // quoting worked for a smaller file.
+        if (input != null) child.stdin.end(input)
+        else child.stdin.end()
       })
     }
   },

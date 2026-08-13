@@ -126,8 +126,20 @@ def run_command(link, job, command, what):
     and whatever their ~/.profile sets up. This process is already the user, so there
     is nothing to drop to and no notion of "as root" here at all: anything needing
     privilege says `sudo` in the command, which is what a person would type.
+
+    A DEAD LINK IS NOT AN ERROR HERE. The session can end while a command is
+    still running -- that is ordinary, and the dashboard has already given up on
+    the job by then -- but every send after that raised out of this thread as an
+    unhandled traceback, twenty lines of it, into the journal. Which is worse
+    than noise: the journal is the back door's whole value, and a real fault
+    arriving there has to be found among these. The command is still allowed to
+    finish and be reaped; nobody is listening, so nothing is sent.
     """
-    link.send({"type": "out", "job": job, "text": f"$ {what}"})
+    try:
+        link.send({"type": "out", "job": job, "text": f"$ {what}"})
+    except OSError:
+        return
+
     try:
         process = subprocess.Popen(
             [SHELL, "-lc", command],
@@ -137,13 +149,32 @@ def run_command(link, job, command, what):
             bufsize=1,
         )
     except Exception as err:
-        link.send({"type": "done", "job": job, "code": 127, "what": f"{what}: {err}"})
+        try:
+            link.send({"type": "done", "job": job, "code": 127, "what": f"{what}: {err}"})
+        except OSError:
+            pass
         return
 
+    lost = False
     for line in process.stdout:
-        link.send({"type": "out", "job": job, "text": line.rstrip()})
+        if lost:
+            continue    # drained rather than abandoned, so the child is not left
+                        # blocked on a full pipe with nobody reading it
+        try:
+            link.send({"type": "out", "job": job, "text": line.rstrip()})
+        except OSError:
+            print(f"okc-agent: the link went while running {what}; letting it finish quietly", flush=True)
+            lost = True
+
+    # Always waited for. Returning early from this loop would leave a zombie for
+    # every command that outlived its session.
     process.wait()
-    link.send({"type": "done", "job": job, "code": process.returncode, "what": what})
+    if lost:
+        return
+    try:
+        link.send({"type": "done", "job": job, "code": process.returncode, "what": what})
+    except OSError:
+        pass
 
 
 def beat(link, stop, sock, heard):
@@ -256,6 +287,13 @@ def session():
                 print("okc-agent: the dashboard has gone quiet; reconnecting", flush=True)
                 return
             if not chunk:
+                # SAID OUT LOUD, because this is the branch that ends a session
+                # without anybody knowing. Both ends were reporting the other as
+                # having closed first -- the dashboard logging "hung up" on a
+                # clean close, this returning silently on an empty read -- and
+                # with neither of them naming the other, there was no way to tell
+                # which was true.
+                print("okc-agent: the dashboard closed the connection", flush=True)
                 return
             # Anything at all counts: this is what makes the far end's silence
             # measurable, and the dashboard answers every beat so it is never

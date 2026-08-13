@@ -182,8 +182,25 @@ function onConnection (socket, tokenFor, onHello) {
 
   // Not an error: a machine rebooting looks exactly like this, and it will be back.
   // Through dropAgent, so anything waiting on it is told rather than left waiting.
+  //
+  // WHY IT WENT IS RECORDED, which it was not. Both endings arrived here as the
+  // same three words — "hung up" — so a machine that rebooted, a machine whose
+  // network died, and a connection reset by something in between were one event
+  // with one description. Chasing a channel that dropped the instant any command
+  // started, the two ends each reported the other closing first and neither could
+  // be believed, because the one place that knew the difference was discarding it.
+  // WHICH EVENT CAME FIRST is the whole diagnosis, and it was being thrown away.
+  //
+  // `end` means the far end sent FIN: the machine closed, and this side is only
+  // noticing. `error` means the connection broke. `close` on its own means THIS
+  // side closed it, which is the answer nobody had -- both ends were reporting
+  // the other as having gone, and neither could name it.
+  let why = null
+  socket.on('end', () => { why = why || 'the machine closed it' })
+  socket.on('error', err => { why = why || `error: ${(err && (err.code || err.message)) || 'unknown'}` })
   const gone = () => {
-    if (vm && agents.get(vm) && agents.get(vm).socket === socket) dropAgent(vm, 'hung up')
+    if (!(vm && agents.get(vm) && agents.get(vm).socket === socket)) return
+    dropAgent(vm, why ? `hung up — ${why}` : 'hung up — this side closed it, and nothing here said why')
   }
   socket.on('close', gone)
   socket.on('error', gone)
