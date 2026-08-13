@@ -562,6 +562,103 @@ const actions = {
     })
   },
 
+  // ---- borrowing a machine ----------------------------------------------
+  //
+  // A PERSON TAKING A RUNNER, which the queue had no way to express. There were
+  // two states: in the pool, or kept back from it for ever. Neither fits "I am
+  // about to sit in this machine for twenty minutes" -- keeping it back works
+  // and has to be undone by hand afterwards, which is exactly the sort of thing
+  // that gets forgotten and quietly shrinks the pool.
+  //
+  // Borrowing is temporary and says why. It brings the machine up CLEAN first,
+  // because a machine somebody is about to work in should start from the same
+  // place a task would: the base snapshot, nothing left from before.
+  //
+  // It reuses the queue's own bring-up rather than repeating it. "Make a machine
+  // clean" already exists, has been debugged, and knows about the things that
+  // bite -- a machine that will not answer its power button, a double rollback
+  // racing VirtualBox. A second copy would be a second set of those lessons.
+  vmBorrow: {
+    about: 'Take a machine out of the pool and bring it up clean, for a person to use',
+    takes: ['name', 'why'],
+    run: async ({ name, why }) => {
+      const reason = String(why || '').trim() || 'somebody is using it'
+      const { vms: all } = await actions.vmList.run({})
+
+      // Named, or the first one that is genuinely free. Asking for a specific
+      // machine that is busy is refused with the queue's own words rather than
+      // quietly given a different one.
+      let pick = name
+      const free = queue.availability(all)
+      if (pick) {
+        const said = free.find(a => a.name === pick)
+        if (!said) throw new Error(`There is no machine called "${pick}".`)
+        if (!said.free) throw new Error(`"${pick}" ${said.why}.`)
+      } else {
+        const first = free.find(a => a.free)
+        if (!first) {
+          throw new Error(`No machine is free. ${free.map(a => `${a.name} ${a.why}`).join('; ')}.`)
+        }
+        pick = first.name
+      }
+
+      // Claimed BEFORE it is brought up, so the queue's next tick -- which is at
+      // most fifteen seconds away and may be sooner -- cannot take it while it
+      // is starting.
+      vms.update(pick, { borrowed: { why: reason, at: new Date().toISOString() } })
+
+      const to = log.on('vm', pick)
+      to.info(`borrowed — ${reason}`)
+      try {
+        await queue.bringUp(actions, to, pick)
+      } catch (e) {
+        // Handed back on failure. A machine left borrowed by a bring-up that
+        // never finished is out of the pool with nobody using it, which is the
+        // failure this whole thing exists to avoid.
+        vms.update(pick, { borrowed: null })
+        to.bad(`could not bring it up, so it is back in the pool: ${e.message}`)
+        throw e
+      }
+
+      return {
+        name: pick,
+        why: reason,
+        note: `${pick} is yours until you give it back. The queue will not touch it, and "vmReturn --name ${pick}" puts it away clean.`
+      }
+    }
+  },
+
+  vmReturn: {
+    about: 'Give a borrowed machine back: put it away clean, or just release the claim',
+    takes: ['name', 'keep'],
+    run: async ({ name, keep = false }) => {
+      const vm = vms.get(name)
+      if (!vm.borrowed) throw new Error(`"${name}" is not borrowed, so there is nothing to give back.`)
+
+      // ASKED WHAT IT IS HOLDING FIRST, because putting it away rolls it back
+      // and a person working by hand is exactly who has uncommitted work. The
+      // queue's tasks push before they finish; a human in an editor has no such
+      // habit, and losing an afternoon to a tidy-up button is not a mistake
+      // anybody makes twice with this tool.
+      if (!keep) {
+        let holds = null
+        try { holds = await actions.vmHolds.run({ name }) } catch { /* said below */ }
+        if (holds && holds.summary) {
+          throw new Error(`"${name}" is still holding ${holds.summary}. Putting it away rolls it back to its base snapshot, which discards that. Push it, or give it back with keep=true to release the claim and leave the machine exactly as it is.`)
+        }
+      }
+
+      vms.update(name, { borrowed: null })
+      if (keep) {
+        log.on('vm', name).good('given back — left running, and free for the queue')
+        return { name, put: false, note: `${name} is back in the pool as it is. It is still running.` }
+      }
+
+      await queue.putAway(actions, log, name)
+      return { name, put: true, note: `${name} is off, back at its base snapshot, and free for the queue.` }
+    }
+  },
+
   // What the dial-in makes possible.
   vmAgents: { about: 'Which machines are dialled in right now, and what they say they are', run: async () => ({ agents: channel.list() }) },
   vmRun: {

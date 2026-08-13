@@ -25,6 +25,8 @@ should do. Two other documents sit beside it and are deliberately not this one:
                  what of it was one ecosystem rather than a tool. Read against
                  this one's spine: branches hold work, tasks produce it, a
                  supervisor drives
+    ROADMAP.md   the order to build in, and why that order. Step 0 is not a
+                 feature: no real repository has been through this loop yet
 
 
 It is generic on purpose

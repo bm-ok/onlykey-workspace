@@ -60,6 +60,14 @@ const stop = () => { if (timer) { clearInterval(timer); timer = null } }
 // can take it" look identical from outside and want opposite responses.
 function availability (vms) {
   return vms.map(v => {
+    // BORROWED BY A PERSON, which is not the same as kept back. Kept back is a
+    // standing decision about a machine; borrowed is somebody using it right
+    // now -- signing a worker in, or sitting in it with an editor open -- and it
+    // ends when they say so. Checked first because it is the most specific and
+    // the most temporary: a machine somebody is inside is the one the queue must
+    // not roll back, whatever else is true of it.
+    if (v.borrowed) return { name: v.name, free: false, why: `borrowed — ${v.borrowed.why || 'somebody is using it'}` }
+
     // A decision, checked before any of the facts. Someone has said keep this
     // one back, and that outranks it merely looking idle -- which is exactly
     // what a machine somebody is about to use looks like.
@@ -515,4 +523,4 @@ async function adopt (actions, log) {
 
 const state = () => ({ inFlight: [...busyWith.entries()].map(([machine, task]) => ({ machine, task })) })
 
-module.exports = { begin, stop, tick, availability, state, busyWith, TICK }
+module.exports = { begin, stop, tick, availability, state, busyWith, bringUp, putAway, TICK }

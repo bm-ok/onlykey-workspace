@@ -8,57 +8,103 @@ was probably never going to be done.
 
 Something that needs *exercising* rather than building belongs in
 `TEST-PLAN.md`, which is where the four unrun drills went. It is a different
-list: not what is missing, but what is unproven.
+list: not what is missing, but what is unproven. Something that is not built yet
+because it is not its turn belongs in `ROADMAP.md`.
 
 
 The window can be looked at now
 -------------------------------
 
-NW.js can photograph itself, so it does. `okc.js windowShot` leaves a request
-that the window answers on its next draw, and Ctrl+Shift+D saves a picture
+NW.js can photograph itself, so it does. `okc.js windowShot --view <tab>` leaves
+a request that the window answers on its next draw — switching to that tab first,
+so a panel nobody clicked is checkable too — and Ctrl+Shift+D saves a picture
 beside the markup it already saved. Both were needed: the markup says what the
-window is MADE of and can be searched; only the picture says what it looks
-like, and the faults that matter here -- a class matching no rule, a panel off
-the bottom, an empty badge -- are invisible in the first and obvious in the
-second.
+window is MADE of and can be searched; only the picture says what it looks like,
+and the faults that matter here -- a class matching no rule, a panel off the
+bottom, an empty badge -- are invisible in the first and obvious in the second.
 
-The Tasks tab has now actually been seen, and it found two faults in one look.
-What is drawn today is right; what is drawn tomorrow still needs a photograph.
+It has now caught, among others: a tasks list that could not be selected, a
+Branches tab photographed blank because its panels fill asynchronously, a banner
+scolding somebody for a credential the same window had just told them to place,
+and a machine reported "changed" one minute after being reverted. `npm test`
+catches the cheaper half of that class without a photograph — every class the
+window applies, every custom property it reads and every id it looks up.
+
+
+Where the bigger picture lives now
+----------------------------------
+
+Two documents took most of what used to be listed here, because it was not
+"outstanding" so much as "not built yet", which is a different thing and wants a
+different shape:
+
+    ROADMAP.md   the order to build in, from here to the vision. Step 0 is not a
+                 feature: no real repository has ever been through this loop
+    GAPS.md      what the older design projected, what of it was one ecosystem
+                 rather than a tool, and where this is already ahead of it
+
+What stays below is the near ground: things half-done, things that bit and were
+not fixed, and the state of the machines.
 
 
 Outstanding
 -----------
 
+* **The human flow through VS Code is half-built.** `vmBorrow` and `vmReturn`
+  exist and work — a machine is taken out of the pool, brought up clean, and
+  given back put away, with the queue refusing to touch it in between. What is
+  not built is the one-click path on the Branches tab: take a free machine, set
+  it up on this branch, open VS Code in it, and an "I am done" that checks what
+  it is holding before putting it away. `vmEditor` opens an editor on a machine
+  that is already up; nothing joins the two ends.
+
+* **The credential flow still starts from a machine that is already running.**
+  `Keys → Get Claude Code credentials` asks which dialled-in machine should sign
+  in, and leaves the credential on it — grabbing it, forgetting it and putting
+  the machine away are three more steps nobody is reminded of. It should borrow a
+  free machine, bring it up clean, sign in, take the credential, and hand the
+  machine back with nothing left on it. The pieces all exist now; the flow does
+  not join them.
+
 * **`runner1` is running an agent two fixes behind.** It never got the read
   timeout or the unit change, and it has not got the TLS locking either — so it
   is the only machine left that still drops its channel whenever a command
-  produces output. It needs the same push, which needs it started and dialled in,
-  and it is the machine that would not boot.
+  produces output. It needs the same push, which needs it started and dialled in.
+  It has booted since, so this is now ordinary work rather than blocked.
 
 * **Nothing has been left running for hours.** A five-minute soak passed on a
   timer; the overnight one is written and waiting as **#17**, ten hours of
-  heartbeats, queue it at bedtime. What it is looking for is what only shows up
-  over time: a channel that drops, an agent that dies, a disk that fills.
+  heartbeats. What it is looking for is what only shows up over time: a channel
+  that drops, an agent that dies, a disk that fills. Worth queueing on a night
+  when Windows updates are deferred — an overnight update killed a runner
+  mid-credential once already.
+
+* **The queue adopts work it did not dispatch.** A task handed straight to a
+  machine with `taskGive` is picked up by the queue on the next restart, treated
+  as in flight, and its machine put away — which rolled back a workspace somebody
+  had set up by hand. Either adoption should be limited to tasks the queue
+  started, or handing one over directly should say that this is what happens.
+
+* **`taskUpdate` can force a task into any stored state.** Bounded — the set is
+  checked, and `working` and `delivered` are derived rather than settable — but
+  still a way round the state machine from the command line, and it was used to
+  fix a task the queue had stranded. Either that is a legitimate repair tool and
+  should say so, or it should refuse the transitions that make no sense.
+
+* **The Branches tab runs past the bottom of the window.** The baselines block
+  pushed the left column past the viewport and the page scrolls. Same class of
+  thing as the terminal's height, which is measured rather than guessed.
+
 * **`legacy/contracts/dashboard/supervisor-mode.md` is still on disk.** Its rules
-  now live in the supervisor skill, which is where PLAN says supervisor mode is
-  entered. The file is two sentences of generic filler that nothing loads, and
-  deleting it needs a hand that is not this one — `legacy/` is untracked.
+  now live in the supervisor skill. The file is two sentences of generic filler
+  that nothing loads, and deleting it needs a hand that is not this one —
+  `legacy/` is untracked.
 
-* **There is no way to say "keep this one up, I want to look at it".** Both
-  `vmEditor` and `vmShell` need a machine dialled in, and the queue shuts a
-  machine down the moment its work ends — so wanting to look at what a task
-  actually did means starting the machine again yourself, by which point it has
-  been rolled back and there is nothing to look at. `vmForTasks` keeps a machine
-  out of the pool but does not stop the queue putting away one it is already
-  using. The likely shape is a task that says "leave it up when you are done",
-  decided before it runs rather than after.
-
-* **`taskUpdate` can force a task into any stored state.** It is bounded — the
-  set is checked, and `working` and `delivered` are derived rather than settable
-  — but it is still a way round the state machine from the command line, and it
-  was used tonight to fix a task the queue had stranded. Either that is a
-  legitimate repair tool and should say so, or it should refuse the transitions
-  that make no sense.
+* **The task contract is runtime state, and it should not be.** It sits in the
+  per-user data directory with the registries, having moved out of the repository
+  along with them — right for a registry, wrong for this. It is project
+  *configuration*: the rules a worker is given are worth a history, and it is now
+  further from version control than it was.
 
 
 The next joints
@@ -149,14 +195,8 @@ Housekeeping on the machines
 ----------------------------
 
 * **Nothing.** Both runners are off, clean, claiming nothing, holding nothing,
-  and in the pool. Kept as a heading because this is the state to return them
-  to, not because there is anything to do.
-* **The task contract is runtime state, and it should not be.** It now sits in
-  the per-user data directory with the registries, having moved out of the
-  repository along with them — which is right for a registry and wrong for this.
-  It is project *configuration*: the rules a worker is given are worth a history,
-  and it is now further from version control than it was, not closer. No task has
-  used one since it was written, because the file is nowhere anybody would look.
+  borrowed by nobody, and in the pool. Kept as a heading because this is the
+  state to return them to, not because there is anything to do.
 
 
 Nothing else is outstanding
