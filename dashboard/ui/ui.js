@@ -245,8 +245,8 @@ function alignDiff (text) {
 // hoist; a `const` does not, and putting them here threw
 // "Cannot access 'been' before initialization" on the first line of the page.
 
-function paintMerge () {
-  waiting('merge-summary', { cards: 1 })
+function paintChanges () {
+  waiting('change-summary', { cards: 1 })
   api('lines').then(({ groups }) => {
     const usable = (groups || []).filter(g => !g.broken.length)
     const proposed = usable.filter(g => g.marked)
@@ -255,49 +255,47 @@ function paintMerge () {
     // most of the time nothing is up for landing. A pane that says only "pick
     // something" from two empty dropdowns is a pane nobody can act on.
     if (!proposed.length) {
-      fill($('merge-summary'), el('div', { className: 'panel' },
+      fill($('change-summary'), el('div', { className: 'panel' },
         el('p', { className: 'empty', textContent: usable.length
           ? 'No line is proposed for landing.'
           : 'No lines are named yet, so there is nothing that could be landed.' }),
         el('p', { className: 'empty', textContent: 'A branch that carries finished work is made into a line — "Make it a line", on Overview — and then proposed here. Proposing changes nothing; it says somebody thinks it is done, and it is what puts it on the left below.' })))
-      fill($('merge-commits'), null)
-      fill($('merge-filelist'), null)
-      fill($('merge-diff'), null)
-      fill($('merge-actions'), null)
-      setText($('merge-state'), '')
-      paintMergePicks(proposed, usable)
+      fill($('change-commits'), null)
+      fill($('change-filelist'), null)
+      fill($('change-diff'), null)
+      fill($('change-actions'), null)
+      setText($('change-state'), '')
+      paintChangesPicks(proposed, usable)
       return
     }
 
-    if (!proposed.some(g => g.name === mergeSource)) mergeSource = proposed[0].name
-    const others = usable.filter(g => g.name !== mergeSource)
-    if (!others.some(g => g.name === mergeTarget)) {
+    if (!proposed.some(g => g.name === changeFrom)) changeFrom = proposed[0].name
+    const others = usable.filter(g => g.name !== changeFrom)
+    if (!others.some(g => g.name === changeInto)) {
       // The line in use is what work is currently counted from, so it is the one
       // a proposal almost always goes into. Guessed, not assumed — it is a
       // dropdown, and being wrong costs one click.
-      mergeTarget = (others.find(g => !g.marked) || others[0] || {}).name || null
+      changeInto = (others.find(g => !g.marked) || others[0] || {}).name || null
     }
-    paintMergePicks(proposed, usable)
+    paintChangesPicks(proposed, usable)
 
-    if (!mergeTarget) {
-      fill($('merge-summary'), el('div', { className: 'panel' },
-        el('p', { className: 'empty', textContent: 'There is no other line to land it into. Name the line it would go into on the Lines tab.' })))
+    if (!changeInto) {
+      fill($('change-summary'), el('div', { className: 'panel' },
+        el('p', { className: 'empty', textContent: 'There is no other line to compare it against. Name the line it would go into on the Lines tab.' })))
       return
     }
 
-    const marked = proposed.find(g => g.name === mergeSource)
-    setText($('merge-state'), marked && marked.marked
+    const marked = proposed.find(g => g.name === changeFrom)
+    setText($('change-state'), marked && marked.marked
       ? `proposed ${ago(marked.marked.at)}${marked.marked.why ? ` — ${marked.marked.why}` : ''}`
       : '')
 
     // ASKED WHEN THE QUESTION CHANGES, NOT EVERY THREE SECONDS.
     //
-    // This pane is expensive in a way nothing else here is. `mergeCompare` runs
-    // three or four git processes per repository, and `mergePlan` runs a real
-    // merge -- `merge-tree` performs the whole thing to find out whether it
-    // would conflict -- plus a `git status` each. On a three-repository
-    // workspace that is about twenty processes, and the window redraws every
-    // three seconds.
+    // This pane is expensive in a way nothing else here is. `changeRead` runs
+    // three or four git processes per repository. On a three-repository
+    // workspace that is a dozen processes, and the window redraws every three
+    // seconds.
     //
     // A trace said so plainly: 78% of the samples that were not idle were inside
     // `spawn`, with the pane open and nobody touching it. That is the same fault
@@ -311,26 +309,24 @@ function paintMerge () {
     // Not the two names joined by a space: a line is called things like
     // "testing2 line", so a space is part of a name and two different pairs
     // could produce one key.
-    const key = JSON.stringify([mergeSource, mergeTarget])
-    const fresh = mergeAnswer && mergeAnswer.key === key && Date.now() - mergeAnswer.at < 30000
+    const key = JSON.stringify([changeFrom, changeInto])
+    const fresh = changeAnswer && changeAnswer.key === key && Date.now() - changeAnswer.at < 30000
     const asked = fresh
-      ? Promise.resolve(mergeAnswer.value)
-      : Promise.all([
-          api('mergeCompare', { source: mergeSource, target: mergeTarget }),
-          api('mergePlan', { source: mergeSource, target: mergeTarget })
-        ]).then(value => { mergeAnswer = { key, at: Date.now(), value }; return value })
+      ? Promise.resolve(changeAnswer.value)
+      : api('changeRead', { source: changeFrom, target: changeInto })
+          .then(value => { changeAnswer = { key, at: Date.now(), value }; return value })
 
-    asked.then(([cmp, plan]) => {
-      if (!changed('merge', [mergeSource, mergeTarget, mergeLook, mergeMode, cmp, plan])) return
-      mergeSeen = cmp
-      paintMergeSummary(cmp, plan)
-      paintMergeActions(cmp, plan)
-      paintMergeBody(cmp)
+    asked.then(cmp => {
+      if (!changed('change', [changeFrom, changeInto, changeLook, changeMode, cmp])) return
+      changeSeen = cmp
+      paintChangesSummary(cmp)
+      paintChangesActions(cmp)
+      paintChangesBody(cmp)
     }).catch(oops)
   }).catch(oops)
 }
 
-function paintMergePicks (proposed, usable) {
+function paintChangesPicks (proposed, usable) {
   const pick = (box, list, value, onPick) => {
     if (!changed(`${box}-list`, [list.map(g => g.name), value])) return
     fill($(box), ...list.map(g => el('option', {
@@ -340,26 +336,22 @@ function paintMergePicks (proposed, usable) {
     })))
     $(box).onchange = () => onPick($(box).value)
   }
-  pick('merge-source', proposed, mergeSource, v => {
-    mergeSource = v; been.set('merge-source', v); mergePicked = null; mergeAnswer = null; changed('merge', null); paintMerge()
+  pick('change-from', proposed, changeFrom, v => {
+    changeFrom = v; been.set('change-from', v); changePicked = null; changeAnswer = null; changed('change', null); paintChanges()
   })
-  pick('merge-target', usable.filter(g => g.name !== mergeSource), mergeTarget, v => {
-    mergeTarget = v; been.set('merge-target', v); mergePicked = null; mergeAnswer = null; changed('merge', null); paintMerge()
+  pick('change-into', usable.filter(g => g.name !== changeFrom), changeInto, v => {
+    changeInto = v; been.set('change-into', v); changePicked = null; changeAnswer = null; changed('change', null); paintChanges()
   })
 }
 
-function paintMergeSummary (cmp, plan) {
-  fill($('merge-summary'), el('div', { className: `card${plan.trouble.length ? ' warn' : ''}` },
+function paintChangesSummary (cmp) {
+  fill($('change-summary'), el('div', { className: 'card' },
     el('div', { className: 'card-title' },
       el('span', { textContent: cmp.summary }),
       cmp.anything
         ? el('span', { className: 'badge', textContent: `+${cmp.added} −${cmp.removed}` })
         : null,
-      plan.can
-        ? el('span', { className: 'badge ok', textContent: 'lands cleanly' })
-        : plan.trouble.length
-          ? el('span', { className: 'badge bad', textContent: 'would not land' })
-          : el('span', { className: 'badge muted', textContent: 'nothing to land' })),
+      cmp.anything ? null : el('span', { className: 'badge muted', textContent: 'nothing in it' })),
     ...cmp.repos.map(r => el('div', { className: 'group-part' },
       el('span', { className: 'mono', textContent: `${r.repo}  ${r.head} → ${r.base}` }),
       el('span', {
@@ -377,32 +369,30 @@ function paintMergeSummary (cmp, plan) {
     cmp.onlyInTarget.length
       ? el('div', { className: 'card-sub muted', textContent: `${cmp.onlyInTarget.join(', ')} — in "${cmp.target}" only; this line never reached it.` })
       : null,
-    plan.trouble.length
-      ? el('div', { className: 'card-sub bad', textContent: plan.trouble.join(' · ') })
-      : null))
+    null))
 }
 
-function paintMergeActions (cmp, plan) {
-  fill($('merge-actions'),
+// WHAT YOU CAN DO WITH A CHANGE YOU HAVE READ.
+//
+// "Land it" and "Land it and push" were here, with a dry run of the git commands
+// they would run. They merged a line into another ON THIS HOST -- which made this
+// app the one thing allowed to write to a protected branch, outside every rule it
+// enforces on a machine. That is the same category error as a machine pushing to
+// master, arriving through the door marked "but I am the tool".
+//
+// Landing is a pull request now. The review stays here, where it is local and
+// fast and reads the repositories directly; the landing goes where landings
+// belong, with their own approvals and their own record. What is missing is the
+// button that opens one, and saying so is better than leaving the old ending in
+// place because it was already built.
+function paintChangesActions (cmp) {
+  fill($('change-actions'),
     el('button', {
       className: 'btn ok',
-      textContent: 'Land it',
-      disabled: !plan.can,
-      title: plan.can ? 'Shows the exact commands first' : plan.note,
-      onclick: () => askToLand(cmp, false)
-    }),
-    el('button', {
-      className: 'btn',
-      textContent: 'Land it and push',
-      disabled: !plan.can,
-      title: plan.can ? 'The same, and then pushes each target branch to its origin' : plan.note,
-      onclick: () => askToLand(cmp, true)
-    }),
-    el('button', {
-      className: 'btn',
-      textContent: 'Show the commands',
-      title: 'The dry run on its own, run nothing',
-      onclick: () => showMergePlan(cmp, plan.push)
+      textContent: 'Open pull requests',
+      disabled: true,
+      title: 'Not built yet — this is the next piece of work',
+      onclick: () => {}
     }),
     el('button', {
       className: 'btn danger',
@@ -419,92 +409,48 @@ function paintMergeActions (cmp, plan) {
         danger: true,
         onYes: async () => {
           const r = await api('lineWithdraw', { name: cmp.source })
-          mergeAnswer = null; changed('merge', null); changed('baselines', null); changed('branches', null)
+          changeAnswer = null; changed('change', null); changed('baselines', null); changed('branches', null)
           say(r.note)
           return draw()
         }
       })
-    }))
+    }),
+    el('p', { className: 'note', style: 'flex-basis:100%;margin:8px 0 0' },
+      el('strong', { textContent: 'Nothing here lands a change. ' }),
+      el('span', { textContent: `A default branch is protected, and that includes from this app. When pull requests are built, this is where "${cmp.source}" becomes one per repository — ${cmp.repos.filter(r => r.ahead).map(r => r.repo).join(', ') || 'none yet'} — tracked together so the change is landed only when all of them are.` })))
 }
 
-// The dry run, as a thing to read rather than a thing to agree to.
-function showMergePlan (cmp, push) {
-  api('mergePlan', { source: cmp.source, target: cmp.target, push: !!push }).then(plan => {
-    ask({
-      title: `What landing "${plan.source}" would run`,
-      plain: [plan.note],
-      confirm: 'Close',
-      onYes: () => {},
-      extra: null
-    })
-    const body = document.querySelector('.dlg-body')
-    if (body) body.append(codeBlock(mergeCommandText(plan), 'markdown', { lines: 20 }))
-  }).catch(oops)
-}
-
-const mergeCommandText = plan => plan.steps.map(s => s.ahead
-  ? `# ${s.repo}${s.why ? `  —  ${s.why}` : ''}\n${s.commands.join('\n')}`
-  : `# ${s.repo}  —  nothing to do, ${s.base} already has everything on ${s.head}`).join('\n\n')
-
-function askToLand (cmp, push) {
-  api('mergePlan', { source: cmp.source, target: cmp.target, push }).then(plan => {
-    ask({
-      title: push ? `Land "${plan.source}" and push` : `Land "${plan.source}" into "${plan.target}"?`,
-      plain: [
-        `Every repository is merged with --no-ff, in its working tree on this host, so "${plan.target}" gains a commit saying this line landed.`,
-        'Every one of them was asked first: a repository that would conflict, or has uncommitted changes here, stops all of them before anything moves.',
-        push
-          ? 'Each target branch is then pushed to its origin. A push that fails does not undo the merge — it is a thing to do again, and it will say which repository.'
-          : 'Nothing is pushed anywhere. The merge is in this host\'s repositories only.',
-        'The source line is untouched and stays proposed. Take it back when you are done with it.'
-      ],
-      cost: push
-        ? 'This changes branches other work is measured against, and then puts them somewhere this app cannot reach to take them back.'
-        : 'This changes branches other work is measured against.',
-      // THE COMMANDS, IN THE CONFIRM. This is the one dialog in this window where
-      // the thing being agreed to is long enough that a summary would be a
-      // different statement — so it is not summarised.
-      confirm: push ? 'Run these, and push' : 'Run these',
-      danger: true,
-      onYes: async () => {
-        const r = await api('mergeLand', { source: cmp.source, target: cmp.target, push })
-        mergeAnswer = null; changed('merge', null); changed('branches', null); changed('baselines', null)
-        say(r.note, r.failed && r.failed.length ? 'bad' : undefined)
-        return draw()
-      }
-    })
-    const body = document.querySelector('.dlg-body')
-    if (body) body.append(codeBlock(mergeCommandText(plan), 'markdown', { lines: 14 }))
-  }).catch(oops)
-}
+// showMergePlan and askToLand were here: the dry run of the git commands a
+// landing would run, and the confirmation that ran them. Both went with the
+// landing itself.
 
 // ---- what is in it: commits, and the files -----------------------------
 
-function paintMergeBody (cmp) {
-  document.querySelectorAll('#merge-tabs .subtab[data-look]').forEach(b => {
-    b.classList.toggle('active', b.dataset.look === mergeLook)
+function paintChangesBody (cmp) {
+  document.querySelectorAll('#change-tabs .subtab[data-look]').forEach(b => {
+    b.classList.toggle('active', b.dataset.look === changeLook)
     b.onclick = () => {
-      mergeLook = b.dataset.look
-      been.set('merge-look', mergeLook)
-      changed('merge', null)
-      paintMerge()
+      changeLook = b.dataset.look
+      been.set('change-look', changeLook)
+      changed('change', null)
+      paintChanges()
     }
   })
-  $('merge-commits').classList.toggle('hidden', mergeLook !== 'commits')
-  $('merge-files').classList.toggle('hidden', mergeLook !== 'files')
+  $('change-commits').classList.toggle('hidden', changeLook !== 'commits')
+  $('change-files').classList.toggle('hidden', changeLook !== 'files')
 
-  if (mergeLook === 'commits') return paintMergeCommits(cmp)
-  paintMergeFiles(cmp)
+  if (changeLook === 'commits') return paintChangesCommits(cmp)
+  paintChangesFiles(cmp)
 }
 
-function paintMergeCommits (cmp) {
+function paintChangesCommits (cmp) {
   const carrying = cmp.repos.filter(r => !r.missing && !r.noBase && !r.empty)
-  fill($('merge-commits'), carrying.length
+  fill($('change-commits'), carrying.length
     ? carrying.map(r => el('div', { className: 'carries' },
         el('div', { className: 'carries-head' },
           el('span', { textContent: r.repo }),
           el('span', { className: 'muted', textContent: `${r.ahead} on top of ${r.base}` })),
-        ...r.commits.map(c => el('div', { className: 'merge-commit' },
+        ...r.commits.map(c => el('div', { className: 'change-commit' },
           el('span', { className: 'mono sha', textContent: c.sha }),
           el('span', { className: 'subject', textContent: c.subject }),
           el('span', { className: 'muted who', textContent: `${c.who}, ${ago(c.at)}` }))),
@@ -512,25 +458,25 @@ function paintMergeCommits (cmp) {
     : el('p', { className: 'empty', textContent: 'Nothing to land — these two lines carry the same commits.' }))
 }
 
-function paintMergeFiles (cmp) {
+function paintChangesFiles (cmp) {
   const carrying = cmp.repos.filter(r => !r.missing && !r.noBase && !r.empty)
   if (!carrying.length) {
-    fill($('merge-filelist'), el('p', { className: 'empty', textContent: 'No files differ.' }))
-    fill($('merge-diff'), null)
-    setText($('merge-filename'), '')
+    fill($('change-filelist'), el('p', { className: 'empty', textContent: 'No files differ.' }))
+    fill($('change-diff'), null)
+    setText($('change-filename'), '')
     return
   }
 
-  if (!mergePicked || !carrying.some(r => r.repo === mergePicked.repo && r.files.some(f => f.file === mergePicked.file))) {
+  if (!changePicked || !carrying.some(r => r.repo === changePicked.repo && r.files.some(f => f.file === changePicked.file))) {
     const first = carrying.find(r => r.files.length)
-    mergePicked = first ? { repo: first.repo, file: first.files[0].file } : null
+    changePicked = first ? { repo: first.repo, file: first.files[0].file } : null
   }
 
-  fill($('merge-filelist'), ...carrying.map(r => el('div', {},
-    el('div', { className: 'merge-repo', textContent: `${r.repo} — ${r.files.length}${r.moreFiles ? `+${r.moreFiles}` : ''} file(s)` }),
+  fill($('change-filelist'), ...carrying.map(r => el('div', {},
+    el('div', { className: 'change-repo', textContent: `${r.repo} — ${r.files.length}${r.moreFiles ? `+${r.moreFiles}` : ''} file(s)` }),
     ...r.files.map(f => el('button', {
-      className: `merge-file${mergePicked && mergePicked.repo === r.repo && mergePicked.file === f.file ? ' on' : ''}`,
-      onclick: () => { mergePicked = { repo: r.repo, file: f.file }; changed('merge-file', null); paintMergeFiles(cmp) },
+      className: `change-file${changePicked && changePicked.repo === r.repo && changePicked.file === f.file ? ' on' : ''}`,
+      onclick: () => { changePicked = { repo: r.repo, file: f.file }; changed('change-file', null); paintChangesFiles(cmp) },
       title: f.file
     },
     // The path reads right-to-left so a long one keeps its FILENAME rather than
@@ -542,26 +488,26 @@ function paintMergeFiles (cmp) {
       : el('span', {}, el('span', { className: 'plus', textContent: `+${f.added}` }), ' ', el('span', { className: 'minus', textContent: `−${f.removed}` })))),
     r.moreFiles ? el('div', { className: 'card-sub muted', style: 'padding:2px 6px', textContent: `and ${r.moreFiles} more not listed` }) : null)))
 
-  paintMergeDiff(cmp)
+  paintChangesDiff(cmp)
 }
 
-function paintMergeDiff (cmp) {
-  setText($('merge-filename'), mergePicked ? `${mergePicked.repo} · ${mergePicked.file}` : '')
-  $('merge-mode').textContent = mergeMode === 'sides' ? 'Unified' : 'Side by side'
-  $('merge-mode').onclick = () => {
-    mergeMode = mergeMode === 'sides' ? 'unified' : 'sides'
-    been.set('merge-mode', mergeMode)
-    changed('merge-file', null)
-    paintMergeDiff(cmp)
+function paintChangesDiff (cmp) {
+  setText($('change-filename'), changePicked ? `${changePicked.repo} · ${changePicked.file}` : '')
+  $('change-mode').textContent = changeMode === 'sides' ? 'Unified' : 'Side by side'
+  $('change-mode').onclick = () => {
+    changeMode = changeMode === 'sides' ? 'unified' : 'sides'
+    been.set('change-mode', changeMode)
+    changed('change-file', null)
+    paintChangesDiff(cmp)
   }
-  if (!mergePicked) return fill($('merge-diff'), null)
-  if (!changed('merge-file', [mergePicked, mergeMode, cmp.source, cmp.target])) return
+  if (!changePicked) return fill($('change-diff'), null)
+  if (!changed('change-file', [changePicked, changeMode, cmp.source, cmp.target])) return
 
-  waiting('merge-diff', { lines: 10 })
-  api('mergeDiff', { source: cmp.source, target: cmp.target, repo: mergePicked.repo, file: mergePicked.file })
+  waiting('change-diff', { lines: 10 })
+  api('changeDiff', { source: cmp.source, target: cmp.target, repo: changePicked.repo, file: changePicked.file })
     .then(({ diff }) => {
-      if (mergeMode === 'unified') return fill($('merge-diff'), codeBlock(diff || 'no changes', 'diff', { lines: 30 }))
-      fill($('merge-diff'), sideBySide(diff))
+      if (changeMode === 'unified') return fill($('change-diff'), codeBlock(diff || 'no changes', 'diff', { lines: 30 }))
+      fill($('change-diff'), sideBySide(diff))
     })
     .catch(oops)
 }
@@ -602,7 +548,7 @@ function sideBySide (diff) {
       // the blank is padding rather than an empty line in the file. Marked
       // differently, because "there is nothing here" and "this line is gone"
       // are different things to be told.
-      const cls = mine == null ? 'merge-pad' : (side === 'left' ? 'merge-removed' : 'merge-added')
+      const cls = mine == null ? 'change-pad' : (side === 'left' ? 'change-removed' : 'change-added')
       if (mine == null && theirs == null) return
       try { ed.session.addMarker(new Range(i, 0, i, Infinity), cls, 'fullLine') } catch { /* an Ace without Range: the text is still right */ }
     })
@@ -630,17 +576,17 @@ function sideBySide (diff) {
   const wasEmpty = rows.every(r => r.left == null || r.kind === 'hunk')
   const nowEmpty = rows.every(r => r.right == null || r.kind === 'hunk')
 
-  return el('div', { className: 'merge-sides' },
-    el('div', { className: 'merge-side' },
-      el('div', { className: 'merge-side-head' },
+  return el('div', { className: 'change-sides' },
+    el('div', { className: 'change-side' },
+      el('div', { className: 'change-side-head' },
         el('span', { className: wasEmpty ? 'gone' : '', textContent: wasEmpty ? 'before — the file did not exist' : 'before' })),
       editorBlock(left, 'text', {
         lines,
         gutter: gutterFor('left'),
         onReady: ed => { a = ed; marks(ed, 'left'); tie() }
       })),
-    el('div', { className: 'merge-side' },
-      el('div', { className: 'merge-side-head' },
+    el('div', { className: 'change-side' },
+      el('div', { className: 'change-side-head' },
         el('span', { className: nowEmpty ? 'gone' : 'new', textContent: nowEmpty ? 'after — the file is gone' : 'after' })),
       editorBlock(right, 'text', {
         lines,
@@ -1774,16 +1720,16 @@ let branchPane = been.get('branch-pane', 'overview')
 // in one sitting, and coming back to a blank pane is how a review gets started
 // again from the top. Declared here rather than beside the functions that use
 // them, because those sit above `been`.
-let mergeSource = been.get('merge-source', null)
-let mergeTarget = been.get('merge-target', null)
-let mergeLook = been.get('merge-look', 'commits')
-let mergeMode = been.get('merge-mode', 'sides')
-let mergePicked = null
-let mergeSeen = null
-// The last comparison and plan, and what they were about. See paintMerge: this
+let changeFrom = been.get('change-from', null)
+let changeInto = been.get('change-into', null)
+let changeLook = been.get('change-look', 'commits')
+let changeMode = been.get('change-mode', 'sides')
+let changePicked = null
+let changeSeen = null
+// The last comparison and plan, and what they were about. See paintChanges: this
 // pane is the most expensive thing in the window and must not be asked on a
 // timer.
-let mergeAnswer = null
+let changeAnswer = null
 // Which group the Baselines pane is describing.
 let pickedGroup = been.get('group', null)
 
@@ -1900,7 +1846,7 @@ function paintBranches () {
     // Only the pane on screen. The other two read git and would be paying for
     // answers nobody is looking at, three seconds at a time.
     if (branchPane === 'baselines') paintBaselines()
-    if (branchPane === 'merge') paintMerge()
+    if (branchPane === 'changes') paintChanges()
     if (branchPane === 'protected') paintProtected(board)
   }).catch(oops)
 }
@@ -2171,9 +2117,9 @@ function proposeGroup (g) {
     confirm: 'Propose it',
     onYes: async f => {
       const r = await api('linePropose', { name: g.name, why: f.why })
-      mergeAnswer = null
+      changeAnswer = null
       changed('baselines', null)
-      changed('merge', null)
+      changed('change', null)
       say(r.note)
       return draw()
     }
@@ -2192,9 +2138,9 @@ function unproposeGroup (g) {
     danger: true,
     onYes: async () => {
       const r = await api('lineWithdraw', { name: g.name })
-      mergeAnswer = null
+      changeAnswer = null
       changed('baselines', null)
-      changed('merge', null)
+      changed('change', null)
       say(r.note)
       return draw()
     }
@@ -4727,12 +4673,12 @@ function shotIfAsked () {
 
     // The Merge pane has a selection of its own: which of its two readings is
     // open, and which file. `commits` / `files`, or `repo:path` to open a file.
-    if (want.pick && view === 'branches' && branchPane === 'merge') {
+    if (want.pick && view === 'branches' && branchPane === 'changes') {
       if (want.pick === 'commits' || want.pick === 'files') {
-        if (mergeLook !== want.pick) {
-          mergeLook = want.pick
-          been.set('merge-look', mergeLook)
-          changed('merge', null)
+        if (changeLook !== want.pick) {
+          changeLook = want.pick
+          been.set('change-look', changeLook)
+          changed('change', null)
           shotSettle = 2
           paintBranches()
           return
@@ -4740,12 +4686,12 @@ function shotIfAsked () {
       } else if (want.pick.includes(':')) {
         const cut = want.pick.indexOf(':')
         const wanted = { repo: want.pick.slice(0, cut), file: want.pick.slice(cut + 1) }
-        if (!mergePicked || mergePicked.repo !== wanted.repo || mergePicked.file !== wanted.file) {
-          mergePicked = wanted
-          mergeLook = 'files'
-          been.set('merge-look', mergeLook)
-          changed('merge', null)
-          changed('merge-file', null)
+        if (!changePicked || changePicked.repo !== wanted.repo || changePicked.file !== wanted.file) {
+          changePicked = wanted
+          changeLook = 'files'
+          been.set('change-look', changeLook)
+          changed('change', null)
+          changed('change-file', null)
           shotSettle = 3
           paintBranches()
           return
@@ -4760,7 +4706,7 @@ function shotIfAsked () {
     // set as the selection, reset by the next paint because no such branch
     // exists, and set again — a photograph that never arrived and a window that
     // never settled, which looked like the pane being broken.
-    if (want.pick && view === 'branches' && branchPane !== 'merge' && pickedBranch !== want.pick) {
+    if (want.pick && view === 'branches' && branchPane !== 'change' && pickedBranch !== want.pick) {
       pickedBranch = want.pick
       been.set('branch', pickedBranch)
       // The finder is cleared, or a branch that does not match whatever was last

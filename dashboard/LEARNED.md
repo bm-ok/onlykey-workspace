@@ -432,3 +432,14 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   The general lesson is about decomposition, not caching: a function that costs
   one process is fine, and six of them in one draw are the same process six
   times. Ask what a panel spawns, not what it calls.
+
+* **`node --check` proves syntax, not that a file can be loaded.** Removing three
+  functions left their names in `module.exports`. Every check passed — syntax
+  fine, `npm test` fine, both suites green — and the dashboard then failed to
+  start at all with `ReferenceError: landPlan is not defined`. The window came up
+  empty and the command line said nothing was listening.
+
+  A missing export is a runtime error at module scope, so the cheapest possible
+  test catches it: `node -e "require('./repos/branches')"`. That belongs beside
+  `node --check` in the routine, and it is worth running for every file a change
+  touches rather than just the one it was about.

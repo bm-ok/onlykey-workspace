@@ -541,89 +541,10 @@ function freeEverywhere (branch) {
   return serve.list().map(r => freeIfBusy(r.name, branch)).filter(r => r.freed || r.busy)
 }
 
-// ---- landing one branch into another, in one repository -----------------
-//
-// IN THE WORKING TREE, and not by moving a ref. Every repository here has a
-// checkout and it is sitting on the branch work lands into — so `fetch . a:b`,
-// the usual way to move a ref in a bare repository, is refused by git with a
-// message about a checked-out branch. Forcing the ref instead would leave the
-// files on disk describing a commit that is no longer at the head, which is a
-// repository that looks fine until somebody runs `git status` and cannot explain
-// it. A merge in the tree is what a person would do, and it is the thing whose
-// failure modes git already explains well.
-//
-// --no-ff DELIBERATELY. A line landing is an event: a fast-forward would leave
-// the target's history indistinguishable from the work having been done on it
-// directly, and the whole point of a line is that it is a thing that happened.
-//
-// A DRY RUN IS A DIFFERENT FUNCTION, not a flag on this one. A flag means the
-// same code path decides, at run time, whether it is pretending — and the way
-// that goes wrong is that it stops pretending.
-function landPlan (repo, base, head, { push = false } = {}) {
-  const dir = serve.gitDirOf(repo)
-  if (!dir) throw new Error(`There is no repository called "${repo}" here.`)
-  const at = pathOf(repo)
-  const bare = dir === at
-  const was = headOf(dir)
-
-  let ahead = 0
-  try { ahead = Number(git(dir, ['rev-list', '--count', `${base}..${head}`])) || 0 } catch { /* unrelated histories read as nothing to do */ }
-
-  // Would it conflict, asked without merging. `merge-tree --write-tree` performs
-  // the merge against the object database and writes the resulting tree,
-  // touching no ref and no working tree, then exits non-zero and names the files
-  // if it could not. That is the whole answer, and it is a read.
-  let conflicts = null
-  let unchecked = false
-  if (ahead) {
-    try {
-      git(dir, ['merge-tree', '--write-tree', base, head])
-    } catch (e) {
-      const said = String((e.stdout || '') + (e.stderr || '') + (e.message || ''))
-      if (/unknown option|usage: git merge-tree/i.test(said)) unchecked = true
-      else {
-        const named = said.split('\n').map(l => l.trim()).filter(l => /^CONFLICT/.test(l)).slice(0, 6)
-        conflicts = named.length ? named.join('; ') : 'it would conflict'
-      }
-    }
-  }
-
-  const dirty = ahead && !bare && !isClean(repo)
-
-  return {
-    repo,
-    base,
-    head,
-    ahead,
-    was,
-    bare,
-    conflicts,
-    unchecked,
-    dirty: !!dirty,
-    why: conflicts || (dirty ? `${repo} has uncommitted changes here, and landing merges in its working tree` : null),
-    // Word for word what landInto will run, in order.
-    commands: !ahead
-      ? []
-      : (was === base ? [] : [`git -C ${at} checkout ${base}`])
-          .concat([`git -C ${at} merge --no-ff --no-edit ${head}`])
-          .concat(push ? [`git -C ${at} push origin ${base}`] : [])
-  }
-}
-
-function landInto (repo, base, head) {
-  const plan = landPlan(repo, base, head)
-  if (plan.why) throw new Error(`${repo}: ${plan.why}`)
-  if (!plan.ahead) return { ...plan, moved: false }
-
-  const at = pathOf(repo)
-  if (plan.was !== base) gitIn(at, ['checkout', '--quiet', base])
-  gitIn(at, ['merge', '--no-ff', '--no-edit', head])
-  return { ...plan, moved: true, now: gitIn(at, ['rev-parse', base]) }
-}
-
-function pushLanded (repo, base) {
-  return gitIn(pathOf(repo), ['push', 'origin', base])
-}
+// landPlan, landInto and pushLanded were here -- a merge in the working tree,
+// with --no-ff, and a push afterwards. They are gone with the local landing.
+// Nothing in this app merges into a protected branch any more, which is what it
+// asks of every machine.
 
 // Repositories sitting away from their default branch, and whether that can be
 // undone on its own.
@@ -1018,6 +939,5 @@ module.exports = {
   defaultOf, baseFor, baselines, groups, saveGroup, deleteGroup, inAnyGroup,
   markGroup, unmarkGroup, groupFromBranch,
   protectedBranches, isProtected, whyProtected,
-  isClean, freeIfBusy, freeEverywhere, blocking,
-  landPlan, landInto, pushLanded
+  isClean, freeIfBusy, freeEverywhere, blocking
 }

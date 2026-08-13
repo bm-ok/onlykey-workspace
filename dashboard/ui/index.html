@@ -142,7 +142,7 @@
     <div class="subtabs">
       <button class="subtab active" data-pane="overview">Overview</button>
       <button class="subtab" data-pane="baselines">Lines</button>
-      <button class="subtab" data-pane="merge">Merge</button>
+      <button class="subtab" data-pane="changes">Changes</button>
       <button class="subtab" data-pane="protected">Protected</button>
     </div>
 
@@ -234,7 +234,7 @@
       </div>
     </div>
 
-    <!-- ---------------- Merge ----------------
+    <!-- ---------------- Changes ----------------
          What landing a line would do, read before it is done.
 
          TWO LINES, NOT TWO BRANCHES. A change spans repositories, so "should
@@ -246,34 +246,34 @@
          as three columns: the comparison is the thing being read, and it wants
          the whole width. Reading a change in a 300px column is why the last
          version of this was a modal. -->
-    <div class="pane" id="pane-merge">
-      <div class="merge-pick">
-        <select id="merge-source"></select>
-        <span class="merge-into">into</span>
-        <select id="merge-target"></select>
+    <div class="pane" id="pane-changes">
+      <div class="change-pick">
+        <select id="change-from"></select>
+        <span class="change-into">into</span>
+        <select id="change-into"></select>
         <span class="grow"></span>
-        <span id="merge-state" class="muted"></span>
+        <span id="change-state" class="muted"></span>
       </div>
-      <div id="merge-actions" class="row" style="margin-bottom:12px"></div>
-      <div id="merge-summary"></div>
+      <div id="change-actions" class="row" style="margin-bottom:12px"></div>
+      <div id="change-summary"></div>
 
       <!-- Commits and file changes, which are the two questions worth asking of
            a change and the only two worth a tab each. -->
-      <div class="subtabs" id="merge-tabs">
+      <div class="subtabs" id="change-tabs">
         <button class="subtab active" data-look="commits">Commits</button>
         <button class="subtab" data-look="files">File changes</button>
       </div>
-      <div id="merge-commits"></div>
-      <div id="merge-files" class="hidden">
-        <div class="merge-files">
-          <div class="merge-list" id="merge-filelist"></div>
-          <div class="merge-view">
-            <div class="merge-viewhead">
-              <span id="merge-filename" class="mono"></span>
+      <div id="change-commits"></div>
+      <div id="change-files" class="hidden">
+        <div class="change-files">
+          <div class="change-list" id="change-filelist"></div>
+          <div class="change-view">
+            <div class="change-viewhead">
+              <span id="change-filename" class="mono"></span>
               <span class="grow"></span>
-              <button class="btn small" id="merge-mode">Side by side</button>
+              <button class="btn small" id="change-mode">Side by side</button>
             </div>
-            <div id="merge-diff"></div>
+            <div id="change-diff"></div>
           </div>
         </div>
       </div>

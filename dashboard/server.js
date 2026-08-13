@@ -1821,7 +1821,7 @@ const actions = {
   },
 
   // What landing this line would be, read against the line it would land in.
-  mergeCompare: {
+  changeRead: {
     about: 'What one line carries that another does not: commits and changed files, per repository',
     takes: ['source', 'target'],
     run: ({ source, target }) => {
@@ -1857,7 +1857,7 @@ const actions = {
     }
   },
 
-  mergeDiff: {
+  changeDiff: {
     about: "One repository's changes between two lines, in full",
     takes: ['source', 'target', 'repo', 'file'],
     run: ({ source, target, repo, file }) => {
@@ -1878,7 +1878,7 @@ const actions = {
 
   // The two sides of one file, whole, for a view that shows them next to each
   // other instead of as one stream of plus and minus.
-  mergeFile: {
+  changeFile: {
     about: 'One file as it is on each side of a comparison, for a side-by-side reading',
     takes: ['source', 'target', 'repo', 'file'],
     run: ({ source, target, repo, file }) => {
@@ -1894,100 +1894,17 @@ const actions = {
     }
   },
 
-  // ---- the dry run, and the thing it describes ---------------------------
+  // mergePlan and mergeLand were here: a dry run of the git commands that would
+  // land a line into another, and the thing that ran them. Both are gone.
   //
-  // SAID BEFORE IT IS DONE, in the commands that will be run. Everything else in
-  // this app can be undone or is a read; landing changes branches that other
-  // people's work is measured against, and pushing puts it somewhere this app
-  // cannot reach to take it back. So the plan is a first-class answer: a person
-  // can read it, run it by hand instead, or press the button knowing exactly
-  // what the button is.
-  mergePlan: {
-    about: 'The exact git commands landing this line would run, without running any of them',
-    takes: ['source', 'target', 'push'],
-    run: ({ source, target, push = false }) => {
-      const pair = twoLines(source, target)
-      // WORD FOR WORD WHAT WILL RUN, and produced by the same function that will
-      // run it -- not written out again here. A dry run assembled separately from
-      // the thing it describes is a dry run that drifts, and the first sign of
-      // the drift is somebody trusting it.
-      const steps = pair.on.map(({ repo, head, base }) => branches.landPlan(repo, base, head, { push }))
-      const doing = steps.filter(s => s.ahead)
-      const trouble = doing.filter(s => s.why).map(s => `${s.repo}: ${s.why}`)
-
-      return {
-        source: pair.source.name,
-        target: pair.target.name,
-        push: !!push,
-        steps,
-        trouble,
-        can: !trouble.length && doing.length > 0,
-        note: trouble.length
-          ? `This would not land: ${trouble.join('; ')}. Nothing has been run.`
-          : doing.length
-            ? `${doing.length} repositor${doing.length === 1 ? 'y' : 'ies'} would move${push ? ', and then be pushed' : ''}. Nothing has been run.`
-            : 'There is nothing to land — the target already has everything.'
-      }
-    }
-  },
-
-  mergeLand: {
-    about: 'Run the plan: merge the source line into the target, in every repository, or none',
-    takes: ['source', 'target', 'push'],
-    run: async ({ source, target, push = false }) => {
-      const plan = await actions.mergePlan.run({ source, target, push })
-      if (!plan.can) throw new Error(plan.note)
-
-      // ALL OF THEM OR NONE — as far as that can be promised. Every repository
-      // was asked first, and one that would conflict or is dirty stops the whole
-      // thing before any of them move. What cannot be promised is atomicity
-      // across three repositories: if the second merge fails for a reason the
-      // check did not predict, the first has landed. So the failure says which
-      // ones moved rather than pretending none did.
-      const doing = plan.steps.filter(s => s.ahead)
-      const landed = []
-      try {
-        for (const step of doing) {
-          const done = branches.landInto(step.repo, step.base, step.head)
-          landed.push({ repo: done.repo, base: done.base, head: done.head, at: done.now })
-          log.on('git').good(`landed ${step.head} into ${step.base} in ${step.repo}`)
-        }
-      } catch (e) {
-        log.on('git').bad(`landing stopped: ${e.message}`)
-        throw new Error(landed.length
-          ? `${e.message}. ${landed.map(l => l.repo).join(', ')} landed, and ${plan.target} now holds them; the rest did not. Fix that repository and land again — the ones already in are skipped.`
-          : e.message)
-      }
-
-      const pushed = []
-      const failed = []
-      if (push) {
-        for (const step of doing) {
-          try {
-            branches.pushLanded(step.repo, step.base)
-            pushed.push(step.repo)
-            log.on('git').good(`pushed ${step.base} from ${step.repo}`)
-          } catch (e) {
-            // NOT FATAL, and not hidden. The merge is already in this host's
-            // repositories; a push that failed is a thing to do again, not a
-            // reason to pretend the landing did not happen.
-            failed.push(`${step.repo}: ${String(e.message || e).split('\n')[0]}`)
-            log.on('git').bad(`could not push ${step.base} from ${step.repo}: ${e.message}`)
-          }
-        }
-      }
-
-      return {
-        source: plan.source,
-        target: plan.target,
-        landed,
-        pushed,
-        failed,
-        note: `${plan.source} is in ${plan.target}: ${landed.map(l => `${l.repo} ${l.base} at ${String(l.at).slice(0, 8)}`).join(', ')}.` +
-          (push ? (failed.length ? ` Pushed ${pushed.join(', ') || 'nothing'}; ${failed.join('; ')}.` : ` Pushed ${pushed.join(', ')}.`) : '')
-      }
-    }
-  },
+  // A DEFAULT BRANCH IS PROTECTED, and this app was the one thing allowed to
+  // merge into one anyway -- on the host, outside every rule it enforces on a
+  // machine. That is the same category error as a machine pushing to master,
+  // arriving through the door marked "but I am the tool".
+  //
+  // Landing is a pull request now. The review stays here, where it is fast and
+  // local and reads the repositories directly; the landing goes where a landing
+  // belongs, with its own approvals and its own history.
 
   // Take a branch out of every repository that has it.
   //
