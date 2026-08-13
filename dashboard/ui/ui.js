@@ -1545,12 +1545,19 @@ function branchActions (b) {
     el('div', { className: 'row', style: 'margin-top:10px' },
       // WORKING IN IT YOURSELF, which is the flow a person actually has. A
       // branch is a workspace when the human is the one working: take a free
-      // machine, set it up on this branch, open an editor in it. One button,
-      // because assembling it from three was how a machine got left running.
+      // machine, set it up on this branch, open it. One button, because
+      // assembling it from three was how a machine got left running.
+      //
+      // NOT "in VS Code" any more. It said that when an editor was the only
+      // thing it could open, and the dialog behind it now offers three answers —
+      // VS Code, a terminal here, or nothing yet because the task is for later.
+      // A button that names one of three is a promise it keeps a third of the
+      // time, and the two it breaks are the ones somebody chose deliberately.
       !b.protected && !b.heldBy
         ? el('button', {
             className: 'btn ok',
-            textContent: 'Work on it in VS Code',
+            textContent: 'Work on it',
+            title: 'Write a task on this branch, and take a machine now or leave it for later',
             onclick: () => workOnBranch(b)
           })
         : null,
@@ -1603,7 +1610,7 @@ function branchActions (b) {
       // attempts, no verdict and nothing recording that it happened.
       //
       // There are two ways to put a machine on a branch and both of them make a
-      // task first: "Work on it in VS Code" for a person, and queueing or giving
+      // task first: "Work on it" for a person, and queueing or giving
       // a task for a worker. A machine on a branch outside those is a machine
       // nothing on the board can account for.
 
@@ -2948,8 +2955,9 @@ function vmActions () {
     // hole the human path was outside of, and it is not one to leave a second
     // door open into.
     //
-    // Work is started from a BRANCH now: Branches -> Work on it in VS Code,
-    // which makes a task, borrows a machine, sets it up and opens the editor.
+    // Work is started from a BRANCH now: Branches -> Work on it, which makes
+    // a task, borrows a machine, sets it up, and opens it in whichever of VS
+    // Code or a terminal was asked for.
     // The chain is the same as a worker's and the board says who did it.
     //
     // `vmEditor` remains an action, listed with everything else in All actions.
