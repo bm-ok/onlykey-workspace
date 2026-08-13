@@ -125,21 +125,39 @@
        thrown away looked exactly like one somebody made by hand — and the
        difference is whether deleting it loses anything. -->
   <section class="view" id="view-branches">
-    <div class="sync-head">
-      <h2>Branches <span class="muted" id="branch-context"></span></h2>
-      <div class="sync-controls">
-        <label class="inline"><input type="checkbox" id="branch-mine" checked> Only ones we made</label>
-        <input id="branch-find" placeholder="find a branch">
+    <div class="cols">
+
+      <div class="col narrow">
+        <h2 class="titlerow">
+          Branches
+          <label class="inline mine"><input type="checkbox" id="branch-mine" checked> ours</label>
+        </h2>
+        <input id="branch-find" class="finder" placeholder="find a branch">
+        <div id="branch-counts" class="chips"></div>
+        <div id="branches" class="stack"></div>
       </div>
+
+      <div class="col">
+        <!-- What can be done to the selected branch, and what has been done ON
+             it. The same split as the machines tab: acts on the left column's
+             selection, so one set of buttons serves every branch. -->
+        <h2>Actions <span class="muted" id="branch-context">— nothing selected</span></h2>
+        <div id="branch-actions" class="panel"></div>
+
+        <h2>Tasks <span class="muted" id="branch-tasks-context"></span></h2>
+        <div id="branch-tasks" class="stack"></div>
+      </div>
+
+      <div class="col wide">
+        <!-- Everything the branch carries, of every kind. A branch used to mean
+             commits and nothing else; a run can now hand over a file a branch
+             cannot hold, and the session that produced the work is the third
+             thing worth keeping with it. -->
+        <h2>What it carries <span class="muted" id="branch-carries"></span></h2>
+        <div id="branch-artifacts" class="panel"></div>
+      </div>
+
     </div>
-    <p class="note">
-      Read from the repositories on this host, never from a machine's account of
-      itself. Nothing here checks anything out — a branch is judged from its
-      commits, and reviewing by checking out would move HEAD in a repository
-      something else is serving.
-    </p>
-    <div id="branch-counts" class="chips"></div>
-    <div id="branches" class="stack"></div>
   </section>
 
   <!-- ---------------- Live ----------------

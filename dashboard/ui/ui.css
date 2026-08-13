@@ -479,6 +479,48 @@ table.kv td { padding: 3px 0; word-break: break-all; }
 .spec summary:hover { color: var(--text); }
 .spec .kv { margin-top: 6px; }
 
+/* Not yet, rather than nothing. Dimmer than an ordinary empty message and
+   deliberately not animated: it is on screen for a fraction of a second in the
+   ordinary case, and a spinner that flashes is worse than a word that does not. */
+.empty.waiting { opacity: .45; font-style: italic; }
+
+/* The branch list's own controls, in the narrow column with it rather than in a
+   header bar the other two columns would have to leave room for. */
+.finder {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0d1117;
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.titlerow .mine { font-size: 11px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+/* What a branch carries, of every kind: commits, files handed over, the session.
+   One block each, so a branch with no files reads as "none" rather than as a
+   gap where something failed to render. */
+.carries { margin-bottom: 16px; }
+.carries-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 5px;
+  margin-bottom: 8px;
+}
+.carries-head .muted { text-transform: none; letter-spacing: 0; font-size: 12px; }
+.carries-head .badge { text-transform: none; letter-spacing: 0; }
+.carries-part { margin-bottom: 10px; }
+
 /* Branches. The card carries one badge saying what the branch IS, a row of facts
    about it, and its tasks as a way back into the board. */
 .card.branch .card-title span:first-child { font-size: 13px; }

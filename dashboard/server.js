@@ -956,6 +956,52 @@ const actions = {
     }
   },
 
+  // Everything a branch carries, of every kind, in ONE answer.
+  //
+  // A branch is where work is kept, and work now arrives in more than one shape:
+  // commits, files a run handed over that a branch could not hold, and -- when it
+  // exists -- the session that produced them. A panel showing all three should
+  // not have to make three calls and stitch them together, because the three
+  // would then be from three different moments.
+  branchArtifacts: {
+    about: 'Everything a branch carries: its commits, the files handed over, and the session',
+    takes: ['branch'],
+    run: ({ branch }) => {
+      if (!branch) throw new Error('Which branch?')
+
+      // Never cached: this is what somebody reads before judging or deleting.
+      const git = artifact.read(branch, { fresh: true })
+
+      // Every task that named this branch, and what each of them handed over.
+      // Read from the archive rather than the task record, so a task that was
+      // thrown away still shows what it produced.
+      const onIt = tasks.read().filter(t => t.branch === branch)
+      const delivered = onIt.map(t => ({
+        task: t.id,
+        number: t.number,
+        title: t.title,
+        state: t.state,
+        machine: t.machine || null,
+        files: files.list(t.uid)
+      }))
+
+      return {
+        branch,
+        git,
+        tasks: delivered,
+        files: delivered.flatMap(d => d.files.map(f => ({ ...f, task: d.task, number: d.number }))),
+        // SAID PLAINLY RATHER THAN LEFT OUT. A branch is where work lives and a
+        // session is how that work was reached, so it belongs here -- and
+        // nothing captures one yet. An empty panel would read as "this branch
+        // has no session"; this says the tool does not keep them.
+        session: {
+          kept: false,
+          why: 'Nothing captures a worker session yet. The machine is rolled back when its work ends, and the session goes with it — so resuming one, or reading how a branch was reached, is not possible from here.'
+        }
+      }
+    }
+  },
+
   branchDiff: {
     about: "One repository's changes on a branch, in full, without a task",
     takes: ['branch', 'repo', 'file'],

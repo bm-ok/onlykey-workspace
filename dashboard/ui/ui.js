@@ -1078,8 +1078,19 @@ function readDefinition (which) {
 // system made or is using, and the toggle is right there for the rest.
 const oursOnly = b => b.protected || b.tasks.length || b.heldBy || b.orphaned
 
+// Which branch the other two columns are about. Remembered, like the machine
+// selection, and reconciled against what exists on every draw -- a branch can be
+// deleted between one window and the next, and coming back to a name that is
+// gone is the same stranded panel as never having chosen.
+let pickedBranch = been.get('branch', null)
+
 function paintBranches () {
   if (view !== 'branches') return
+  // Said before the asking, not after: the gap this fills is the time the answer
+  // takes to arrive.
+  waiting('branches', 'reading the repositories…')
+  waiting('branch-actions', '…')
+  waiting('branch-artifacts', '…')
   api('branchBoard').then(board => {
     const find = $('branch-find').value.trim().toLowerCase()
     const mine = $('branch-mine').checked
@@ -1087,32 +1098,105 @@ function paintBranches () {
       .filter(b => !mine || oursOnly(b))
       .filter(b => !find || b.name.toLowerCase().includes(find))
 
-    // What is not on screen, said out loud. The counts above describe the whole
-    // workspace while the list is filtered, so "1 spare" with nothing spare in
-    // the list reads as a fault rather than as a filter doing its job.
-    const hidden = board.branches.length - rows.length
-    setText($('branch-context'),
-      `— ${board.branches.length} across ${board.repos.join(', ')}${hidden ? `, ${hidden} not shown` : ''}`)
-    if (!changed('branches', [rows, board.counts])) return
+    // Against the WHOLE board rather than the filtered rows: typing in the
+    // finder should not silently move the selection to something else.
+    if (!board.branches.some(b => b.name === pickedBranch)) {
+      // Not the first row, which is alphabetical and therefore usually the
+      // default branch -- the one branch where every action is refused and there
+      // is nothing to read. Landing there says "this tab does nothing".
+      const worth = rows.find(b => !b.protected) || rows[0] || board.branches[0]
+      pickedBranch = (worth || {}).name || null
+      been.set('branch', pickedBranch)
+    }
 
     const c = board.counts
-    fill($('branch-counts'),
-      chip(`${c.all} in all`, null),
-      chip(`${c.claimed} claimed by a task`, 'ok'),
-      // "Claimed by", not "checked out on": the count includes machines that are
-      // switched off, and a claim outlives the machine being on.
-      c.held ? chip(`${c.held} claimed by a machine`, 'ok') : null,
-      c.orphaned ? chip(`${c.orphaned} orphaned — work with no task`, 'bad') : null,
-      c.spare ? chip(`${c.spare} spare — empty and unclaimed`, 'warn') : null)
+    if (changed('branches', [rows, c, pickedBranch])) {
+      fill($('branch-counts'),
+        chip(`${c.all} in all`, null),
+        c.claimed ? chip(`${c.claimed} claimed by a task`, 'ok') : null,
+        // "Claimed by", not "checked out on": the count includes machines that
+        // are switched off, and a claim outlives the machine being on.
+        c.held ? chip(`${c.held} claimed by a machine`, 'ok') : null,
+        c.orphaned ? chip(`${c.orphaned} orphaned`, 'bad') : null,
+        c.spare ? chip(`${c.spare} spare`, 'warn') : null)
 
-    fill($('branches'), rows.length
-      ? rows.map(branchCard)
-      : el('p', { className: 'empty', textContent: mine ? 'Nothing this system made. Untick to see the rest.' : 'No branches match.' }))
+      fill($('branches'), rows.length
+        ? rows.map(branchCard)
+        : el('p', { className: 'empty', textContent: mine ? 'Nothing this system made. Untick "ours" to see the rest.' : 'No branches match.' }))
+    }
+
+    const picked = board.branches.find(b => b.name === pickedBranch) || null
+    branchActions(picked)
+    paintBranchArtifacts(picked)
   }).catch(oops)
+}
+
+// What can be done to the selected branch. One set of buttons for all of them,
+// the same arrangement as the machines tab, so the answer to "why can I not
+// delete this" is beside the thing that would do it rather than on its card.
+function branchActions (b) {
+  const box = $('branch-actions')
+  setText($('branch-context'), b ? `— ${b.name}` : '— nothing selected')
+  if (!b) {
+    if (changed('branch-actions', null)) fill(box, el('p', { className: 'empty', textContent: 'Pick a branch on the left.' }))
+    return
+  }
+  if (!changed('branch-actions', b)) return
+
+  fill(box,
+    el('div', { className: 'branch-facts' },
+      el('span', { className: b.commits ? 'strong' : 'muted', textContent: b.commits ? `${b.commits} commit(s) ahead` : 'nothing beyond the default' }),
+      el('span', { className: 'muted', textContent: `in ${b.in.join(', ') || 'none'}` }),
+      b.missing.length ? el('span', { className: 'muted', textContent: `not in ${b.missing.join(', ')}` }) : null,
+      b.heldBy ? el('span', { className: 'muted', textContent: b.heldRunning ? `checked out on ${b.heldBy}` : `${b.heldBy} claims it, and is off` }) : null),
+
+    b.whyNot ? el('p', { className: 'note', textContent: b.whyNot }) : null,
+
+    el('div', { className: 'row', style: 'margin-top:10px' },
+      // The way out of the one state that blocks deletion, offered where the
+      // block is explained. Enabled only while the machine is running, because
+      // that is the only time it can be asked what it is holding.
+      b.heldBy
+        ? el('button', {
+            className: 'btn',
+            textContent: `Let ${b.heldBy} go of it`,
+            disabled: !b.heldRunning,
+            onclick: () => api('vmRelease', { name: b.heldBy })
+              .then(r => say(r.note || `${b.heldBy} let go of ${b.name}.`)).catch(oops)
+          })
+        : null,
+      el('button', {
+        className: 'btn danger',
+        textContent: 'Delete it',
+        disabled: !b.removable,
+        onclick: () => askToDeleteBranch(b)
+      })))
 }
 
 const chip = (text, kind) => el('span', { className: `chip${kind ? ' ' + kind : ''}`, textContent: text })
 
+// A panel that has not been filled yet says so.
+//
+// EVERY PANEL HERE FILLS FROM AN ACTION, so the first frame after switching to a
+// tab is empty -- and an empty panel is indistinguishable from a panel whose
+// answer is "nothing". That is not a small difference: "no branches" and "not
+// asked yet" look identical and mean opposite things, and the Branches tab
+// photographs blank for exactly as long as its first read takes.
+//
+// ONLY WHEN THERE IS NOTHING THERE. Blanking a panel that already has content
+// on every refresh would make the whole window flicker every three seconds,
+// which is a worse fault than the one being fixed.
+function waiting (id, text) {
+  const box = $(id)
+  if (box.childElementCount) return
+  fill(box, el('p', { className: 'empty waiting', textContent: text }))
+}
+
+// One row per branch, selectable, and deliberately thin. Everything that used
+// to be on the card -- what is on it, what can be done to it, which tasks ran --
+// is in the two columns beside it now, for the same reason the machines tab is
+// arranged that way: a list you choose from should be readable at a glance, and
+// a card carrying five facts and three buttons is not a list.
 function branchCard (b) {
   // What this branch IS, in one word, because that is the question. The order
   // matters: protected beats everything, and orphaned beats spare because
@@ -1124,113 +1208,135 @@ function branchCard (b) {
   const [tag, kind] =
     b.protected ? ['protected', 'ok']
       : b.heldRunning ? ['in use', 'ok']
-        : b.heldBy ? ['claimed by a machine, off', 'warn']
+        : b.heldBy ? ['claimed, off', 'warn']
           : b.tasks.length ? ['claimed', 'ok']
             : b.orphaned ? ['orphaned', 'bad']
               : ['spare', 'warn']
 
-  return el('div', { className: 'card branch' },
+  return el('div', {
+    className: `card pick${pickedBranch === b.name ? ' on' : ''}`,
+    onclick: () => { pickedBranch = b.name; been.set('branch', b.name); paintBranches() }
+  },
     el('div', { className: 'card-title' },
       el('span', { className: 'mono', textContent: b.name }),
       el('span', { className: `badge ${kind}`, textContent: tag })),
-
-    el('div', { className: 'branch-facts' },
-      // Ahead of the default, which is the number that decides everything else.
-      el('span', { className: b.commits ? 'strong' : 'muted', textContent: b.commits ? `${b.commits} commit(s) ahead` : 'nothing beyond the default' }),
-      b.files ? el('span', { className: 'muted', textContent: `${b.files} file(s)` }) : null,
-      // Which repositories have it, and — the part that is easy to miss — which
-      // do not. A name in three of four is the normal shape of a change that only
-      // touched three, not a fault.
-      el('span', { className: 'muted', textContent: `in ${b.in.join(', ') || 'none'}` }),
-      b.missing.length ? el('span', { className: 'muted', textContent: `not in ${b.missing.join(', ')}` }) : null,
-      b.heldBy
-        ? el('span', { className: 'muted', textContent: b.heldRunning ? `checked out on ${b.heldBy}` : `${b.heldBy} claims it, and is off` })
-        : null),
-
-    // Its tasks, as a way INTO the board rather than as text about it. The task
-    // is where a verdict is given, and this tab deliberately does not duplicate
-    // that -- it only makes the connection findable from the branch end.
-    b.tasks.length
-      ? el('div', { className: 'branch-tasks' }, b.tasks.map(t => el('button', {
-          className: 'linky',
-          textContent: `#${t.number} ${t.title} — ${t.state}`,
-          onclick: () => { pickedTask = t.id; been.set('task', t.id); showTab('tasks') }
-        })))
-      : null,
-
-    b.whyNot ? el('p', { className: 'note', textContent: b.whyNot }) : null,
-
-    el('div', { className: 'row' },
-      el('button', {
-        className: 'btn',
-        textContent: 'What is on it',
-        disabled: !b.commits,
-        onclick: () => showBranch(b)
-      }),
-      // The way out of the one state that blocks deletion, offered where the
-      // block is explained rather than left as a command to go and find. It is
-      // only ever enabled when the machine is running, because that is the only
-      // time the machine can be asked what it is holding — and the note above
-      // already says to start it.
-      b.heldBy
-        ? el('button', {
-            className: 'btn',
-            textContent: `Let ${b.heldBy} go of it`,
-            disabled: !b.heldRunning,
-            onclick: () => api('vmRelease', { name: b.heldBy })
-              .then(r => say(r.note || `${b.heldBy} let go of ${b.name}.`))
-              .catch(oops)
-          })
-        : null,
-      el('button', {
-        className: 'btn danger',
-        textContent: 'Delete it',
-        disabled: !b.removable,
-        onclick: () => askToDeleteBranch(b)
-      })))
+    el('div', { className: 'badges' },
+      // The one number that decides everything else about a branch.
+      el('span', { className: 'muted', textContent: b.commits ? `${b.commits} commit(s)` : 'empty' }),
+      b.heldBy ? el('span', { className: 'muted', textContent: b.heldBy }) : null))
 }
 
-// What is actually on a branch, read from the branch itself.
+// Everything the branch carries, of every kind.
 //
-// The Tasks tab reads an artifact through its task, which is right when there is
-// one. This is for when there is not: an orphaned branch carrying commits is the
-// one place on the board where somebody has to decide whether to throw work away,
-// and until now that decision was made from a number alone.
-function showBranch (b) {
-  api('branchArtifact', { branch: b.name }).then(art => {
-    const carrying = art.repos.filter(r => !r.missing && !r.empty)
+// A branch used to mean commits and nothing else. A run can now hand over a file
+// a branch cannot hold -- a built binary, an archive -- and the session that
+// produced the work is the third thing worth keeping with it. All three are read
+// in ONE call, so what is on screen is one moment rather than three.
+function paintBranchArtifacts (b) {
+  const box = $('branch-artifacts')
+  setText($('branch-carries'), b ? `— ${b.name}` : '')
+  setText($('branch-tasks-context'), '')
+
+  if (!b) {
+    if (changed('branch-carries', null)) {
+      fill(box, el('p', { className: 'empty', textContent: 'Pick a branch on the left.' }))
+      fill($('branch-tasks'), el('p', { className: 'empty', textContent: '' }))
+    }
+    return
+  }
+
+  // This one reads git for real, uncached, because it is what somebody judges
+  // from -- so it is the slowest panel in the window and the one most worth
+  // saying "not yet" about.
+  waiting('branch-artifacts', `reading ${b.name}…`)
+  waiting('branch-tasks', '…')
+
+  api('branchArtifacts', { branch: b.name }).then(a => {
+    if (!changed('branch-carries', [b.name, a])) return
+
+    // ---- the tasks that ran on it, in the middle column -----------------
+    setText($('branch-tasks-context'), a.tasks.length ? `— ${a.tasks.length}` : '— none')
+    fill($('branch-tasks'), a.tasks.length
+      ? a.tasks.map(t => el('div', { className: 'card' },
+          el('div', { className: 'card-title' },
+            el('button', {
+              className: 'linky mono',
+              textContent: `#${t.number} ${t.title}`,
+              // The task is where a verdict is given, and this tab deliberately
+              // does not duplicate that -- it only makes the connection findable
+              // from the branch end.
+              onclick: () => goToTask(t.task)
+            }),
+            el('span', { className: `badge ${t.state === 'accepted' ? 'ok' : t.state === 'rejected' ? 'bad' : ''}`, textContent: t.state })),
+          el('div', { className: 'badges' },
+            t.machine ? el('span', { className: 'muted', textContent: `on ${t.machine}` }) : null,
+            t.files.length ? el('span', { className: 'muted', textContent: `${t.files.length} file(s) handed over` }) : null)))
+      : el('p', { className: 'empty', textContent: 'No task claims this branch. Its commits arrived some other way, or its task was thrown away.' }))
+
+    // ---- what it carries, in the wide column ----------------------------
+    const carrying = a.git.repos.filter(r => !r.missing && !r.empty)
+
+    fill(box,
+      // GIT. The artifact for anything that is source, and the better one:
+      // reviewable, diffable, and already what a verdict is about.
+      el('div', { className: 'carries' },
+        el('div', { className: 'carries-head' },
+          el('span', { textContent: 'Commits' }),
+          el('span', { className: 'muted', textContent: a.git.summary })),
+        carrying.length
+          ? carrying.map(r => el('div', { className: 'carries-part' },
+              el('div', { className: 'card-title' },
+                el('span', { className: 'mono', textContent: r.repo }),
+                el('span', { className: 'muted', textContent: `${r.ahead} on top of ${r.base}` }),
+                el('button', {
+                  className: 'linky',
+                  textContent: 'read the diff',
+                  onclick: () => showDiffOf(b.name, r.repo)
+                })),
+              codeBlock(
+                r.commits.map(c => `${c.sha}  ${new Date(c.at).toLocaleString()}  ${c.who}\n    ${c.subject}`).join('\n') || 'nothing',
+                'markdown', { lines: Math.min(8, Math.max(2, r.commits.length * 2)) })))
+          : el('p', { className: 'empty', textContent: 'Nothing beyond the default branch.' })),
+
+      // FILES. What a branch could not hold, handed over by a run before its
+      // machine was rolled back. On this host, not on the machine.
+      el('div', { className: 'carries' },
+        el('div', { className: 'carries-head' },
+          el('span', { textContent: 'Files handed over' }),
+          el('span', { className: 'muted', textContent: a.files.length ? `${a.files.length}, ${kb(a.files.reduce((n, f) => n + f.bytes, 0))}` : 'none' })),
+        a.files.length
+          ? el('table', { className: 'kv' }, ...a.files.map(f =>
+              el('tr', {},
+                el('th', { className: 'mono', textContent: f.name }),
+                el('td', { className: 'muted' },
+                  el('span', { textContent: `${kb(f.bytes)} · #${f.number} · ${f.kept ? new Date(f.kept).toLocaleString() : ''}` })))))
+          : el('p', { className: 'empty', textContent: 'None. A run hands one over by calling "okc-artifact <file>", which is on its PATH.' })),
+
+      // THE SESSION. Not built yet, and said so rather than left blank: a branch
+      // is where work lives and the session is how that work was reached, so its
+      // absence is a fact about the tool rather than about this branch.
+      el('div', { className: 'carries' },
+        el('div', { className: 'carries-head' },
+          el('span', { textContent: 'Worker session' }),
+          el('span', { className: 'badge warn', textContent: a.session.kept ? 'kept' : 'not kept' })),
+        el('p', { className: 'note', textContent: a.session.why })))
+  }).catch(oops)
+}
+
+const kb = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`
+
+// One repository's changes, in full. A dialog rather than a panel because it is
+// long, read once, and not something to keep on screen beside everything else.
+function showDiffOf (branch, repo) {
+  api('branchDiff', { branch, repo }).then(({ diff }) => {
     ask({
-      title: b.name,
-      plain: [
-        art.summary,
-        b.contained
-          ? 'Everything on it is already in the default branch.'
-          : 'None of this is in a default branch — this is the only place it exists.'
-      ],
+      title: `${repo} — ${branch}`,
+      plain: [`Everything this branch adds to ${repo}, against the branch it was cut from.`],
       confirm: 'Done',
       onYes: async () => {}
     })
-
-    // Added after the dialog exists, for the same reason a diff is: this is read
-    // rather than answered, and it has to scroll.
     const body = document.querySelector('.dlg-body')
-    if (!body) return
-    for (const r of carrying) {
-      body.append(el('div', { className: 'dlg-heading' },
-        el('span', { textContent: `${r.repo} — ${r.ahead} commit(s) on top of ${r.base}` }),
-        el('button', {
-          className: 'linky',
-          textContent: 'read the whole diff',
-          onclick: () => api('branchDiff', { branch: b.name, repo: r.repo })
-            .then(({ diff }) => {
-              const box = document.querySelector('.dlg-body')
-              if (box) box.append(codeBlock(diff || 'no changes', 'diff', { lines: 22 }))
-            }).catch(oops)
-        })))
-      body.append(codeBlock(
-        r.commits.map(c => `${c.sha}  ${new Date(c.at).toLocaleString()}  ${c.who}\n    ${c.subject}`).join('\n') || 'nothing',
-        'markdown', { lines: Math.min(10, Math.max(3, r.commits.length * 2)) }))
-    }
+    if (body) body.append(codeBlock(diff || 'no changes', 'diff', { lines: 22 }))
   }).catch(oops)
 }
 
@@ -2044,6 +2150,10 @@ async function paintSnapshots () {
     return
   }
 
+  // The other panel that reads something real before it can say anything: this
+  // one asks VBoxManage and then the machine's own config file.
+  waiting('snapshots', 'reading its snapshots…')
+
   let s
   try {
     s = await api('vmSnapshots', { name: v.name })
@@ -2819,7 +2929,11 @@ function shotIfAsked () {
     // than a timing one. It did: the Branches tab photographed blank, correctly.
     if (want.view && want.view !== view) {
       const tab = document.querySelector(`.tab[data-view="${want.view}"]`)
-      if (tab) { tab.click(); shotSettle = 1; return }
+      // TWO draws, not one. One was enough for a tab whose panels come from data
+      // already in hand, and not for one that reads git the moment it opens --
+      // the Branches tab photographed showing its own "reading…" placeholder,
+      // which is honest and still not what the picture was for.
+      if (tab) { tab.click(); shotSettle = 2; return }
       // Named a tab that does not exist. Said rather than silently photographing
       // whatever was already open and letting it read as that tab.
       api('windowShotDone', { file: want.file, error: `there is no tab called "${want.view}"` })
