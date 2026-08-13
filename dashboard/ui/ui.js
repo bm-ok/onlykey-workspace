@@ -1936,7 +1936,8 @@ function paintProtected (board) {
     : el('p', { className: 'empty', textContent: 'Nothing is protected, which means no repository here has a default branch — worth looking at.' }))
 }
 
-// What each repository counts work from — and cuts new branches from.
+// What each repository measures work against. NOT what branches are cut
+// from — cutting names its own line, which is what requiring a group did.
 //
 // A SEPARATE QUESTION FROM ITS DEFAULT BRANCH, which is a fact about git: what
 // that repository says HEAD is. The baseline is a decision, and a repository
@@ -2019,14 +2020,23 @@ function paintBaselines () {
             ? el('p', { className: 'note', textContent: `${g.missing.join(', ')} ${g.missing.length === 1 ? 'is' : 'are'} not named in this group and keep whatever they are counting from.` })
             : null,
           el('div', { className: 'row', style: 'margin-top:8px' },
+            // WHAT IT ACTUALLY DOES, and it used to say something wider.
+            //
+            // "Count everything from it" was written when a baseline decided two
+            // things: what work is measured against, AND what new branches are
+            // cut from. Cutting now names its own line — that was the whole
+            // point of requiring a group — so this decides only the first, and a
+            // label promising the second is a label describing last week.
+            //
+            // It also had no confirmation. One click silently changed what every
+            // "N commits ahead" on the board means, which is the sort of thing
+            // somebody should be told before rather than notice afterwards.
             el('button', {
               className: 'btn ok',
-              textContent: g.inUse ? 'Already in use' : 'Count everything from it',
+              textContent: g.inUse ? 'Already measuring from it' : 'Measure everything from it',
               disabled: g.inUse || g.broken.length > 0,
-              title: g.broken.length ? g.broken.join('; ') : '',
-              onclick: () => api('baselineGroupUse', { name: g.name })
-                .then(r => { changed('baselines', null); changed('branches', null); say(r.note); return draw() })
-                .catch(oops)
+              title: g.broken.length ? g.broken.join('; ') : 'Sets each repository\'s baseline to this line',
+              onclick: () => askToMeasureFrom(g)
             }),
             // PROPOSING IT, from where the group lives. The Merge tab can take a
             // proposal back, because that is where somebody is when they decide
@@ -2118,6 +2128,39 @@ function newGroup () {
 // `showGroup` was here. It answered a click on a group by flashing a notice,
 // which is what a list does when nothing is actually selected — the panel beside
 // it showed every group regardless, so there was nothing for a click to change.
+
+// Making a line the thing everything is measured against.
+//
+// WORTH A DIALOG, because what it changes is invisible where it changes it.
+// Nothing moves, no branch is touched, and every "N commits ahead" on the board
+// silently starts counting from somewhere else — including the figures a person
+// is about to judge a task on.
+function askToMeasureFrom (g) {
+  const moving = g.on.filter(p => p.stillHere)
+  ask({
+    title: `Measure everything from "${g.name}"?`,
+    plain: [
+      `Each repository's baseline is set to this line: ${moving.map(p => `${p.repo} → ${p.branch}`).join(', ')}.`,
+      'That is what every "N commits ahead" on the board is counted from, and what "read the diff" shows a branch against. No branch moves and nothing is merged.',
+      // Said because the old label promised it and people remember labels.
+      'It does NOT decide where new branches are cut from. Cutting names its own line, in the dialog that cuts it.',
+      'A baseline that is not its repository\'s own default branch is protected while it is the baseline — nothing may be built directly on it.',
+      g.missing.length
+        ? `${g.missing.join(', ')} ${g.missing.length === 1 ? 'is' : 'are'} not named in this line and keep whatever they are counting from.`
+        : null
+    ].filter(Boolean),
+    confirm: 'Measure from it',
+    onYes: async () => {
+      const r = await api('baselineGroupUse', { name: g.name })
+      mergeAnswer = null
+      changed('baselines', null)
+      changed('branches', null)
+      changed('merge', null)
+      say(r.changed && r.changed.length ? `${r.note} ${r.changed.join(', ')}.` : r.note)
+      return draw()
+    }
+  })
+}
 
 // Putting a line up to be landed.
 function proposeGroup (g) {
@@ -2280,7 +2323,7 @@ function branchActions (b) {
         ? el('button', {
             className: 'btn',
             textContent: 'Count from it',
-            title: `Everything measured against "${b.name}", and new branches cut from it`,
+            title: `Everything measured against "${b.name}" from then on`,
             onclick: () => askToUseAsBaseline(b)
           })
         : null,
@@ -2682,17 +2725,20 @@ async function newBranch () {
   })
 }
 
-// Making a branch the thing everything is counted from.
+// Making a branch the thing everything is measured against.
 //
-// The scenario this exists for: a branch carries work that the next piece of
-// work should start from. Without it, the next task is cut from a default branch
-// that does not have this yet, and is then measured against a baseline it is
-// already ahead of for reasons that have nothing to do with it.
+// The scenario this exists for: a branch carries work the next piece of work
+// should be read against. Without it, the next task is measured against a
+// baseline that does not have this yet, and reads as ahead for reasons that have
+// nothing to do with it.
 function askToUseAsBaseline (b) {
   ask({
-    title: `Count everything from "${b.name}"?`,
+    title: `Measure everything against "${b.name}"?`,
     plain: [
-      `Every repository that has it measures work against it from now on, and cuts new branches from it. ${b.in.join(', ')}.`,
+      // NO LONGER "and cuts new branches from it". It did both when this was
+      // written; cutting names its own line now, so promising it here would be
+      // describing the tool as it was last week.
+      `Every repository that has it measures work against it from now on. ${b.in.join(', ')}.`,
       b.missing.length
         ? `${b.missing.join(', ')} do not have it and keep what they are counting from — a change that touched some repositories should not move the baseline of one it never reached.`
         : 'Every repository here has it.',
@@ -2702,7 +2748,7 @@ function askToUseAsBaseline (b) {
     fields: [
       { name: 'group', label: 'Name this line, optionally', placeholder: 'the version2 line' }
     ],
-    confirm: 'Count from it',
+    confirm: 'Measure from it',
     onYes: async f => {
       const r = await api('branchAsBaseline', { branch: b.name, group: (f.group || '').trim() || undefined })
       changed('branches', null)
