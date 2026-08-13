@@ -265,3 +265,36 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   to the home folder, and the work happens somewhere nobody asked for. It is
   refused now, rather than guessed at, because guessing what was meant is how it
   lands in a third wrong place.
+* **A valid token is not a usable worker.** Claude Code decides whether to run
+  its first-run wizard from a flag in its config, not from whether it can
+  authenticate — so a machine holding a perfectly good credential opened on
+  "choose a theme" and then on "Select login method", a sign-in it did not need
+  and could not finish there. The program disagreed with itself out loud:
+  `claude auth status` reported the right account and the right plan while the
+  screen asked how to log in, because the two read different files. It was
+  reported as "claude doesn't work with the auth key", and every theory that
+  started from the token was wrong. Handing over a credential now marks the
+  wizard done in the same breath.
+* **An agent that runs your command cannot also answer your beats.** The channel
+  runs the command and replies to this host's liveness beats from the same loop,
+  so anything slow — one headless prompt was enough — looks exactly like a
+  machine that has died, and the connection is dropped out from under the work.
+  The machine redialled seconds later, which is what made it legible at all.
+  `vmShellRun` exists because of this: ssh needs no agent, holds its own
+  connection, and does not have to be alive in two ways at once.
+* **Two `ssh` programs, one config file, and neither reads the other's paths.**
+  Windows OpenSSH — the one VS Code Remote runs — takes `Include "C:/Users/..."`.
+  Git's MSYS build reads that as RELATIVE, looks for a file called `C:` inside
+  `~/.ssh`, finds nothing, and continues without a word, because a missing
+  include is not an error in either. So `ssh okc-runner2`, which this tool tells
+  people to type, answered "could not resolve hostname" as though the machine
+  were at fault. Both spellings are written now; each program ignores the one it
+  cannot read.
+* **The window is the only part of this that fails silently.** Everywhere else a
+  wrong name throws or is refused by name. A stylesheet does not:
+  `className: 'picked'` against a stylesheet that says `pick` produces no error,
+  no warning, and a panel that renders unstyled — found, eventually, by a person
+  saying the list was not selectable. `test/window-test.js` now checks every
+  class the window applies, every custom property it reads and every id it looks
+  up against what exists. It caught two bad variable names within a minute of
+  being written.

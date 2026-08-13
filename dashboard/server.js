@@ -1166,17 +1166,46 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
       // Opened here and nowhere else. It exists as cleartext for the length of
       // this call and is never written back out in that form.
       const b64 = secret.read(file).toString('base64')
+
+      // AND THE FIRST-RUN WIZARD IS MARKED DONE, which is not a nicety.
+      //
+      // A valid token is not a usable worker. Claude Code decides whether to run
+      // its first-run wizard from a flag in the config, NOT from whether it can
+      // authenticate — so a machine holding a perfectly good credential still
+      // opens on "choose a theme", and then on "Select login method", which is a
+      // sign-in it does not need and cannot finish here. The credential is right
+      // there and it asks you to log in anyway.
+      //
+      // That was reported as "claude doesn't work with the auth key", and it was
+      // the wizard the whole time: `claude auth status` said logged in, with the
+      // right email and plan, while the screen asked how to log in. Two answers
+      // to one question, from the same program, because they read different
+      // files.
+      //
+      // MERGED, NOT WRITTEN OVER. The config is Claude Code's -- it keeps the
+      // account, the plan, and everything it has cached there -- so this sets one
+      // key and leaves the file otherwise as found. Missing entirely is the
+      // ordinary case on a machine that has just been rolled back, and then one
+      // key is the whole file.
       const r = await channel.run(name, `set -u
 mkdir -p "$HOME/.claude"
 umask 077
 printf '%s' '${b64}' | base64 -d > "$HOME/.claude/.credentials.json"
 chmod 600 "$HOME/.claude/.credentials.json"
+node - <<'OKC_READY_EOF'
+const fs = require('fs'), os = require('os')
+const p = os.homedir() + '/.claude.json'
+let j = {}
+try { j = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { /* absent or unreadable: one key is the whole file */ }
+j.hasCompletedOnboarding = true
+fs.writeFileSync(p, JSON.stringify(j))
+OKC_READY_EOF
 echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 60000 })
 
       if (!/okc-credential-placed/.test(r.output || '')) throw new Error(`"${name}" did not take the credential.`)
       vms.update(name, { holdsCredential: true })
       log.on('vm', name).warn(`${name} now holds a worker credential — it cannot be snapshotted until that is taken back`)
-      return { to: name, placed: true }
+      return { to: name, placed: true, ready: true }
     }
   },
 
@@ -2173,6 +2202,69 @@ done`
           ? 'Its agent is answering, so vmRun would work too — this is for looking at things the agent cannot tell you.'
           : `Not dialled in. This address is where it was last seen${vm.lastSeenAt ? ` (${new Date(vm.lastSeenAt).toLocaleString()})` : ''}, which is the whole reason it was written down.`
       }
+    }
+  },
+
+  // The back door, used rather than described.
+  //
+  // `vmShell` says how to get in; this goes in. THE DIFFERENCE FROM `vmRun` IS
+  // WHAT IT DOES NOT NEED: vmRun speaks to the agent, and the agent is precisely
+  // the thing that is broken when somebody wants to look inside a machine. It
+  // also cannot hold a long command — the agent answers this host's beats from
+  // the same loop that runs the command, so anything slow makes it look dead,
+  // and the connection is dropped underneath the work. That is not theory; it is
+  // what happened trying to run one headless prompt.
+  //
+  // ssh has neither problem. It is already provisioned, it is how the Terminal
+  // tab and VS Code get in, and it keeps its own connection.
+  //
+  // NOT A SHELL FOR A PERSON — that is the Terminal tab, which needs a terminal
+  // this side does not have. This is one command, run to completion, output
+  // returned.
+  vmShellRun: {
+    about: 'Run one command on a machine over ssh — works when its agent does not',
+    takes: ['name', 'command', 'timeout'],
+    run: async ({ name, command, timeout }) => {
+      if (!command) throw new Error('There is no command to run.')
+      // Coerced, because everything that arrives from the command line or over
+      // the wire is a string, and execFile rejects a string timeout with an
+      // error about unsigned integers that says nothing about where it came from.
+      timeout = Number(timeout) || 120000
+      const where = actions.vmShell.run({ name })
+      const { execFile } = require('node:child_process')
+
+      const args = [
+        // No pty. A command that finishes is not an interactive session, and
+        // -tt would wrap the output in whatever a terminal was asked to draw.
+        '-o', 'BatchMode=yes',
+        '-o', 'StrictHostKeyChecking=accept-new',
+        ...(where.identity ? ['-o', `IdentityFile=${String(where.identity).split('\\').join('/')}`, '-o', 'IdentitiesOnly=yes'] : []),
+        where.target,
+        // A LOGIN SHELL, because that is where a guest's PATH is set. Without it
+        // `claude`, `node` and anything else installed per-user is simply not
+        // found, and the answer is "command not found" rather than the real one.
+        'bash -lc ' + `'${String(command).replace(/'/g, `'\\''`)}'`
+      ]
+
+      log.on('vm', name).info(`over ssh: ${String(command).split('\n')[0].slice(0, 80)}`)
+
+      return await new Promise((resolve, reject) => {
+        execFile('ssh', args, { timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+          // REDACTED ON THE WAY IN, like every other thing a machine says. A
+          // command run here can print an environment, and this output is
+          // returned to a window and to a supervising session that keeps it.
+          const output = secret.redact(`${stdout || ''}${stderr || ''}`)
+          if (err && err.killed) return reject(new Error(`"${name}" did not finish that within ${Math.round(timeout / 1000)}s. Output so far:\n${output}`))
+          resolve({
+            name,
+            target: where.target,
+            // A non-zero exit is an ANSWER, not a failure of this action: `grep`
+            // finding nothing is exit 1 and is exactly what was asked.
+            exit: err ? (typeof err.code === 'number' ? err.code : 1) : 0,
+            output
+          })
+        })
+      })
     }
   },
 

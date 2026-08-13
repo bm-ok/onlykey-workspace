@@ -1269,7 +1269,7 @@ function paintTermAuth () {
             className: 'btn ok small',
             textContent: 'Sign it in',
             onclick: () => api('vmCredentialsPut', { name })
-              .then(() => say(`${name} can authenticate now. A claude already running will not notice — start it again.`))
+              .then(() => say(`${name} is ready — credential placed and the first-run wizard marked done. A claude already running will not notice; start it again.`))
               .catch(oops)
           })
         : null))

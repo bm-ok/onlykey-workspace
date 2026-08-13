@@ -607,6 +607,43 @@ snapshotted, and that is the same fact.
 A `claude` that is ALREADY RUNNING will not notice a credential appearing
 underneath it. Start it again.
 
+**A valid token is not a usable worker**, which cost an evening to learn. Claude
+Code decides whether to run its first-run wizard from a flag in its config, not
+from whether it can authenticate -- so a machine holding a perfectly good
+credential still opens on "choose a theme", and then on "Select login method": a
+sign-in it does not need and cannot finish there. The two halves of the same
+program disagreed out loud, `claude auth status` reporting the right account and
+the right plan while the screen asked how to log in, because they read different
+files. Handing over a credential now marks the wizard done in the same breath.
+The config is merged rather than written over -- it is Claude Code's file and
+holds the account and everything cached -- except on a machine just rolled back,
+where there is no file and that one key is all of it.
+
+`vmShellRun` -- the back door, used rather than described
+---------------------------------------------------------
+
+`vmShell` says how to get in; `vmShellRun` goes in and runs one command.
+
+What it does NOT need is the point. `vmRun` speaks to the agent, and the agent is
+exactly what is broken when somebody wants to look inside a machine. It also
+cannot hold a long command: the agent answers this host's beats from the same
+loop that runs the command, so anything slow makes it look dead and the
+connection is dropped out from under the work. That is not a worry, it is what
+happened trying to run a single headless prompt -- the machine redialled and the
+command was lost.
+
+ssh has neither problem. It is already provisioned, it is how the Terminal tab
+and VS Code get in, and it holds its own connection. The command runs under a
+LOGIN shell, because that is where a guest's PATH is set and without it `claude`
+and `node` are simply not found. A non-zero exit is returned as an answer rather
+than raised as a failure -- `grep` finding nothing is exit 1 and is exactly what
+was asked.
+
+It is not a shell for a person; that is the Terminal tab, which needs a terminal
+this side does not have. This is one command, run to completion, output returned
+-- and redacted on the way in like everything else a machine says, because a
+command run here can print an environment.
+
 Two spellings of one path, in ssh config
 -----------------------------------------
 
