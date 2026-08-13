@@ -400,7 +400,11 @@ const actions = {
       const vm = vms.get(name)
       vms.update(name, {
         baseSnapshot: vm.baseSnapshot || title.trim(),
-        snapshots: { ...(vm.snapshots || {}), [title.trim()]: vm.branch || null }
+        snapshots: { ...(vm.snapshots || {}), [title.trim()]: vm.branch || null },
+        // Capturing the current state is the other way its disk comes to match a
+        // snapshot -- the machine did not move, the snapshot came to it, and
+        // there is now nothing beyond the newest one. See vmSnapshotRestore.
+        cleanSince: new Date().toISOString()
       })
       return vbox.snapshots(name)
     })
@@ -539,7 +543,14 @@ const actions = {
       // holds one for ever -- which refuses every future snapshot of it and,
       // worse, keeps it out of the queue as a machine that needs tidying when it
       // is already clean.
-      vms.update(name, { branch, holdsCredential: false })
+      // AND THE MOMENT ITS DISK WENT BACK TO MATCHING A SNAPSHOT.
+      //
+      // Whether a machine has changed since its snapshot is answered by asking
+      // whether it has dialled in since -- which is first-hand and right, until
+      // a restore, after which the old dial-in is still later than the snapshot
+      // was TAKEN and the machine reads as changed for ever. It is not: this
+      // just put the disk back, and this is the one place that knows.
+      vms.update(name, { branch, holdsCredential: false, cleanSince: new Date().toISOString() })
 
       const to = log.on('vm', name)
       if (branch !== was) {

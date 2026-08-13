@@ -2062,7 +2062,7 @@ async function paintSnapshots () {
   // The rest arrived with the current-state card, which reads facts about the
   // MACHINE and not only about its snapshots: when it last dialled in, whether
   // it is live, and which snapshot the queue treats as its base.
-  if (!changed('snapshots', [v.name, v.running, v.live, v.state, v.reported, v.baseSnapshot, s])) return
+  if (!changed('snapshots', [v.name, v.running, v.live, v.state, v.reported, v.cleanSince, v.baseSnapshot, s])) return
 
   // INDENTED, BECAUSE SNAPSHOTS ARE A TREE.
   //
@@ -2216,7 +2216,14 @@ function ago (when) {
 function currentStateNode (v, s) {
   const on = s.snapshots.find(x => x.current) || null
 
-  const heardAfter = !!(on && v.reported && on.taken && Date.parse(v.reported) > Date.parse(on.taken))
+  // Since WHEN the disk last matched a snapshot -- which is not simply when that
+  // snapshot was taken. Reverting puts the disk back without moving the
+  // snapshot, and taking one brings the snapshot to the disk; both leave the
+  // machine clean, and both happen long after `taken`. Measured from the later
+  // of the two, or a reverted machine reads as changed for ever on the strength
+  // of a dial-in from before it was put back.
+  const clean = [on && on.taken, v.cleanSince].filter(Boolean).sort().pop()
+  const heardAfter = !!(on && v.reported && clean && Date.parse(v.reported) > Date.parse(clean))
   const indent = on ? (on.depth + 1) * 18 : 0
 
   return el('div', {
@@ -2231,7 +2238,11 @@ function currentStateNode (v, s) {
       ? 'There are no snapshots, so this is the whole of the machine with nothing recorded behind it. Nothing can be gone back to until one is taken.'
       : heardAfter
         ? `It dialled in ${ago(v.reported)}, after "${on.name}" was taken — so it has booted and written to its disk since. That stays true until this is either captured as a snapshot of its own, or reverted to "${on.name}" and discarded.`
-        : `Nothing here has heard from it since "${on.name}" was taken. That is not proof nothing ran on it — only that nothing reached this host.` }),
+        // Named by what actually happened. "Since it was taken" is wrong about a
+        // machine that was put BACK an hour ago and right about one that has sat
+        // untouched since the snapshot -- and the difference is the whole reason
+        // this reads as clean.
+        : `Nothing here has heard from it since ${clean === v.cleanSince ? `it was put back to "${on.name}" ${ago(clean)}` : `"${on.name}" was taken`}. That is not proof nothing ran on it — only that nothing reached this host.` }),
 
     // CAPTURING IT IS AN ACTION ON THIS, not on the machine in general, so the
     // button is on the card for the thing it copies rather than in a row of
