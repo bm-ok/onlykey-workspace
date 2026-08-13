@@ -7,8 +7,24 @@
 // a filter, not a place to go looking. Every line carries where it came from, so
 // the log is one stream you narrow rather than several you correlate.
 //
-// It is in memory on purpose. This is what is happening now; the durable record
-// of a change is the commit it became.
+// IT IS IN MEMORY ON PURPOSE, AND THE REAL REASON IS CREDENTIALS.
+//
+// The stated reason used to be that this is what is happening NOW, and that the
+// durable record of a change is the commit it became. True, and not the load-
+// bearing half. Command output goes through here — `out()` exists for exactly
+// that — and command output during ordinary use carries sign-in URLs, tokens
+// being placed, and whatever a worker printed. Writing this stream to a file
+// would put all of it on disk, in cleartext, in a file nothing else in this app
+// treats as a secret. `core/secret.js` exists because that was already decided
+// once for the credential itself.
+//
+// So the cost is accepted, and it is a real cost: a restart loses the record of
+// what somebody did, and this app's own development restarts it every few
+// minutes. "Who unmarked that group?" was unanswerable for exactly this reason.
+// The answer to that is to WATCH the log while it exists, not to write it down.
+//
+// If a durable record is ever wanted, it needs redaction at the boundary and a
+// decision about where it lives — not an append call added here.
 
 const MAX = 2000
 const entries = []
