@@ -1498,13 +1498,15 @@ function branchActions (b) {
           })
         : null,
 
-      !b.protected && !b.heldBy
-        ? el('button', {
-            className: 'btn',
-            textContent: 'Give it to a machine',
-            onclick: () => giveBranchToMachine(b)
-          })
-        : null,
+      // "GIVE IT TO A MACHINE" WAS HERE, and it is gone for the same reason the
+      // editor and shell buttons went from the machines tab: it set a machine up
+      // on a branch with NO TASK, so the work that followed had no brief, no
+      // attempts, no verdict and nothing recording that it happened.
+      //
+      // There are two ways to put a machine on a branch and both of them make a
+      // task first: "Work on it in VS Code" for a person, and queueing or giving
+      // a task for a worker. A machine on a branch outside those is a machine
+      // nothing on the board can account for.
 
       // The way out of the one state that blocks deletion, offered where the
       // block is explained. Enabled only while the machine is running, because
@@ -1923,31 +1925,11 @@ function finishOnBranch (b, vm) {
   })
 }
 
-// Handing a branch to a machine, from the branch's end.
-//
-// vmWorkspace is the same action the Tasks side calls; what is different here is
-// only which of the two you happened to be looking at when you decided.
-function giveBranchToMachine (b) {
-  const can = latest.vms.filter(v => v.connected)
-  ask({
-    title: `Give "${b.name}" to a machine`,
-    plain: [
-      'Every repository is checked out on this branch, pointed back at this host, and the machine is allowed to push this branch and no other.',
-      can.length
-        ? 'A machine stays on its branch until it is clean, so this is not a thing to undo casually.'
-        : 'Nothing is dialled in. Start a machine and wait for it to connect.'
-    ],
-    fields: can.length
-      ? [{ name: 'name', label: 'Machine', value: can[0].name, options: can.map(v => ({ value: v.name, label: `${v.name}${v.branch ? ` — already on ${v.branch}` : ''}` })) }]
-      : [],
-    confirm: can.length ? 'Set it up' : 'Done',
-    onYes: async f => {
-      if (!can.length) return
-      await api('vmWorkspace', { name: f.name, branch: b.name })
-      say(`${f.name} is set up on "${b.name}".`)
-    }
-  })
-}
+// `giveBranchToMachine` was here. It set a machine up on a branch and stopped,
+// which is the middle of a flow with neither end: no task before it saying what
+// the work is, and nothing after it saying the work is done. `vmWorkspace`
+// remains an action for the command line, where it is a step somebody is
+// deliberately taking rather than a button that looks like a way to start work.
 
 // Deleting a branch is the only way work made here is ever unmade, so the dialog
 // says what would be lost in the same sentence as the question.
