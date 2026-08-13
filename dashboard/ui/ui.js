@@ -2088,7 +2088,10 @@ async function paintSnapshots () {
   // NODE. Comparing names would mark both of two snapshots that share one -- and
   // it allows that, which this project has already been caught by.
   fill($('snapshots'), s.snapshots.length
-    ? [...s.snapshots.map(x => el('div', { className: 'card snap', style: `margin-left:${x.depth * 18}px` },
+    // The indent is only written when there IS one, because the connector rule
+    // keys off the attribute being present -- and a root at `margin-left:0px`
+    // would be given a line joining it to a parent it does not have.
+    ? [...s.snapshots.map(x => el('div', { className: 'card snap', ...(x.depth ? { style: `margin-left:${x.depth * 18}px` } : {}) },
         el('div', { className: 'card-title' },
           el('span', { className: 'mono', textContent: x.name }),
           x.current ? el('span', { className: 'badge run', textContent: 'on this one' }) : null,
