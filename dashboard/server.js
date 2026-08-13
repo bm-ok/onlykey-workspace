@@ -2236,6 +2236,47 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
     }
   },
 
+  // WHETHER IT WORKS, ASKED ON PURPOSE.
+  //
+  // The answer only existed as a side effect of giving a machine real work: the
+  // credential was tried when a task started, which is the worst moment to find
+  // out, and a freshly signed-in credential sat reading "not tried yet" until
+  // somebody risked a task on it.
+  //
+  // One action rather than four steps in a remembered order — borrow, place,
+  // take back, put away. Four steps is how a machine gets left holding a
+  // credential, which silently blocks its next snapshot.
+  credentialsTest: {
+    about: 'Take a machine, hand it the stored credential, and see whether the worker can really authenticate',
+    takes: ['name'],
+    run: async ({ name }) => {
+      const file = path.join(data.sub('credentials'), 'claude.json')
+      if (!fs.existsSync(file)) throw new Error('This host holds no worker credential, so there is nothing to test.')
+
+      const borrowed = await actions.vmBorrow.run({ name, why: 'testing whether the stored worker credential authenticates' })
+      const on = borrowed.name
+
+      // THE MACHINE GOES BACK WHATEVER HAPPENS. This is a test: it must leave
+      // nothing behind, least of all a credential on a disk — that is the state
+      // that blocks a snapshot later and reports itself as somebody else's fault.
+      try {
+        const put = await actions.vmCredentialsPut.run({ name: on })
+        return {
+          on,
+          ready: put.ready,
+          note: put.ready === true
+            ? `It works — ${on} signed in with it. Kept, so nothing has to ask again.`
+            : put.ready === false
+              ? `It does not work: ${on} took it and the worker reported itself signed out. Sign in again to replace it.`
+              : `${on} took it and did not say whether it can authenticate, so this proves nothing either way.`
+        }
+      } finally {
+        await actions.vmCredentialsForget.run({ name: on }).catch(() => { /* it may never have been placed */ })
+        await actions.vmReturn.run({ name: on }).catch(e => log.on('vm', on).bad(`could not put it away after the test: ${e.message}`))
+      }
+    }
+  },
+
   vmCredentialsPut: {
     about: 'Hand this host\'s worker credential to a machine',
     takes: ['name'],

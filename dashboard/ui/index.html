@@ -309,11 +309,13 @@
        has to exist inside a machine -- so it is signed in once, taken, and
        handed out per machine rather than living in any of them. -->
   <section class="view" id="view-keys">
+    <!-- A "Get Claude Code credentials" button sat in this header, above and
+         away from the card that describes the credential it would replace. The
+         card is where its state is read, so it is where the two things you can
+         do about that state belong: try it, or replace it. A header button is
+         also the one that stays the same whatever the card says. -->
     <div class="sync-head">
       <h2>Worker sign-in <span class="muted" id="keys-context"></span></h2>
-      <div class="sync-controls">
-        <button class="btn ok" id="keys-get">Get Claude Code credentials</button>
-      </div>
     </div>
     <p class="note">
       One machine is signed in by you; the credential is taken from it and kept

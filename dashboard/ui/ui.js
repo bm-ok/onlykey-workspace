@@ -477,13 +477,28 @@ function paintKeys () {
           // WHAT TO DO ABOUT IT, beside the thing that is wrong. A panel that
           // reports a dead credential and leaves the cure on another row of the
           // page is a panel somebody reads twice and acts on neither time.
-          dead
-            ? el('div', {},
-                el('p', { className: 'note', style: 'margin-top:10px', textContent: life.usable === false ? life.why : 'A machine tried it and the worker reported itself signed out. Only a person at a sign-in page can replace it.' }),
-                el('button', { className: 'btn ok', textContent: 'Sign in again and replace it', onclick: () => getCredentials() }))
-            : el('p', { className: 'note', style: 'margin-top:10px', textContent: proven
-                ? 'Handed to a machine per task and taken back afterwards, so no machine keeps it and none can be snapshotted while holding one.'
-                : 'It has not been tried since it was taken. The first machine given it will say, and that answer is kept here.' }))
+          el('p', { className: 'note', style: 'margin-top:10px', textContent: dead
+            ? (life.usable === false ? life.why : 'A machine tried it and the worker reported itself signed out. Only a person at a sign-in page can replace it.')
+            : proven
+              ? 'Handed to a machine per task and taken back afterwards, so no machine keeps it and none can be snapshotted while holding one.'
+              : 'It has not been tried since it was taken. Testing it takes a machine for a minute or two and settles it now, rather than a task finding out.' }),
+
+          // BOTH, ALWAYS. Replacing was offered only while the credential was
+          // known bad — so a freshly signed-in one had no way to be replaced,
+          // and the moment somebody most wants to redo a sign-in is right after
+          // one that went wrong in a way nothing detected.
+          el('div', { className: 'row' },
+            el('button', {
+              className: `btn ${dead ? '' : 'ok'}`,
+              textContent: proven ? 'Test it again' : 'Test it on a machine',
+              title: 'Borrows a free machine, hands it the credential, asks the worker, then takes it back and puts the machine away',
+              onclick: () => testCredentials()
+            }),
+            el('button', {
+              className: `btn ${dead ? 'ok' : ''}`,
+              textContent: 'Sign in again and replace it',
+              onclick: () => getCredentials()
+            })))
       : el('div', {},
           el('p', { className: 'empty', textContent: 'No worker credential yet, so nothing on a machine can run claude.' }),
           el('button', { className: 'btn ok', textContent: 'Sign in and get one', onclick: () => getCredentials() })))
@@ -2707,6 +2722,30 @@ function paintAppKeys () {
 // Now: a free machine is borrowed, brought up at its base snapshot, signed in,
 // emptied and put away. Nothing is chosen because there is nothing worth
 // choosing, and no machine is left carrying anything.
+// Settling it now, rather than a task finding out.
+function testCredentials () {
+  const free = (queueSays.size ? [...queueSays.values()] : []).filter(m => m.free)
+  ask({
+    title: 'Test the worker credential',
+    plain: [
+      'A free machine is borrowed and brought up clean, handed this host\'s credential, and asked whether its worker can actually authenticate.',
+      'The credential is taken back off it and the machine is put away afterwards, whatever the answer — a test that leaves a credential on a disk has silently blocked that machine\'s next snapshot.',
+      'The answer is kept here, so nothing has to ask again until the credential changes.',
+      free.length
+        ? `Free right now: ${free.map(m => m.name).join(', ')}.`
+        : 'Nothing is free at the moment, so this will refuse and say why.'
+    ],
+    cost: 'It takes a minute or two to bring a machine up.',
+    confirm: 'Test it',
+    onYes: async () => {
+      const r = await api('credentialsTest', {})
+      changed('keys', null)
+      say(r.note, r.ready === false ? 'bad' : undefined)
+      return draw()
+    }
+  })
+}
+
 function getCredentials () {
   ask({
     title: 'Get Claude Code credentials',
@@ -4090,6 +4129,7 @@ async function sync () {
   setTimeout(sync, busy ? 3000 : 12000)
 }
 
-$('keys-get').onclick = () => getCredentials()
+// `keys-get` was wired here. Getting a credential is now a button on the card
+// that describes the one it replaces, beside the button that tests it.
 paintActions().catch(oops)
 draw().then(sync).catch(e => say(e.message, 'bad'))
