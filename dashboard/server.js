@@ -659,6 +659,135 @@ const actions = {
     }
   },
 
+  // ---- the two flows a person actually drives ---------------------------
+  //
+  // Both are the same three or four actions in a row, and both were things a
+  // person had to remember the order of. A flow somebody has to assemble from
+  // parts is a flow that gets half-done: a machine left running, a credential
+  // left on a disk, a branch left claimed by a machine nobody is using.
+
+  // Sitting in a machine, on a branch, with an editor open.
+  //
+  // A BRANCH IS A WORKSPACE when a person is the one working. The parts existed
+  // -- borrow a machine, set it up on a branch, open VS Code over ssh -- and
+  // nothing joined them, so doing this by hand meant starting a machine, waiting,
+  // remembering the workspace action, then remembering the editor one, and
+  // afterwards remembering that the machine is still yours.
+  branchWorkOn: {
+    about: 'Take a free machine, set it up on this branch, and open VS Code in it',
+    takes: ['branch', 'name', 'folder'],
+    run: async ({ branch, name, folder }) => {
+      if (!branch) throw new Error('Which branch do you want to work on?')
+
+      // Refused before a machine is borrowed rather than after, or a typo costs
+      // a boot and leaves a machine out of the pool.
+      const known = branches.all().branches.find(b => b.name === branch)
+      if (!known) throw new Error(`There is no branch called "${branch}". Make it first, with a reason.`)
+      if (known.protected) throw new Error(branches.whyProtected(branch))
+      if (known.missing.length) {
+        throw new Error(`"${branch}" is not in ${known.missing.join(', ')}, and a machine checks it out in every repository. Extend it first with branchCreate.`)
+      }
+
+      const held = vms.read().find(v => v.branch === branch)
+      if (held) throw new Error(`"${branch}" is already set up on ${held.name}. Two machines on one branch race for the same ref.`)
+
+      const borrowed = await actions.vmBorrow.run({ name, why: `working on ${branch} in VS Code` })
+      const on = borrowed.name
+
+      // TWO STEPS, AND ONLY THE FIRST UNDOES ITSELF.
+      //
+      // If the workspace never got set up, nothing was claimed and the machine
+      // is handed straight back -- a machine borrowed for a flow that did not
+      // start is out of the pool with nobody in it.
+      //
+      // Once it IS set up, the machine claims the branch and is genuinely
+      // usable, so a failure after that point keeps it. Handing it back there
+      // released the borrow and left the claim behind: a machine out of the pool
+      // for a different reason, belonging to nobody, which is worse than either
+      // outcome. Opening an editor is also the one step somebody can simply do
+      // again.
+      try {
+        await actions.vmWorkspace.run({ name: on, branch, folder })
+      } catch (e) {
+        vms.update(on, { borrowed: null })
+        log.on('vm', on).bad(`could not set it up on "${branch}", so it is back in the pool: ${e.message}`)
+        throw e
+      }
+
+      let opened = null
+      let why = null
+      try {
+        opened = await actions.vmEditor.run({ name: on, where: folder })
+      } catch (e) {
+        why = e.message
+        log.on('vm', on).warn(`set up on "${branch}", but the editor did not open: ${e.message}`)
+      }
+
+      log.on('vm', on).good(`yours, on "${branch}"${opened ? ' — VS Code is opening' : ''}`)
+      return {
+        name: on,
+        branch,
+        opened,
+        editorFailed: why,
+        note: why
+          ? `${on} is set up on "${branch}" and is yours, but VS Code did not open: ${why}. Open it again from the machine, or work in it over ssh.`
+          : `${on} is set up on "${branch}" and yours until you give it back. Commit and push what you want to keep — giving it back rolls it back, and refuses while anything is uncommitted.`
+      }
+    }
+  },
+
+  // Signing a worker in, on a machine that is clean before and gone afterwards.
+  //
+  // It used to ask which RUNNING machine should sign in, and left the credential
+  // sitting on it -- taking it, forgetting it and putting the machine away were
+  // three more steps with nothing to remind anybody. So the ordinary outcome was
+  // a runner left on, holding a live credential, which is exactly the state the
+  // banner nags about.
+  //
+  // Two halves because there is a human in the middle: a page to visit and a
+  // code to bring back. The machine holds the sign-in open in between.
+  credentialsBegin: {
+    about: 'Borrow a clean machine and start signing a worker in on it',
+    takes: ['name'],
+    run: async ({ name }) => {
+      const borrowed = await actions.vmBorrow.run({ name, why: 'signing a worker in' })
+      const on = borrowed.name
+      try {
+        const started = await actions.vmAuthBegin.run({ name: on })
+        if (!started.url) {
+          throw new Error(started.why || 'it did not produce a sign-in address')
+        }
+        return { name: on, url: started.url, note: `${on} is holding the sign-in open. It is put away as soon as the credential is here.` }
+      } catch (e) {
+        await actions.vmReturn.run({ name: on }).catch(() => { /* said below */ })
+        log.on('vm', on).bad(`the sign-in did not start, so it was put away: ${e.message}`)
+        throw e
+      }
+    }
+  },
+
+  credentialsFinish: {
+    about: 'Give the code back, keep the credential on this host, and put the machine away',
+    takes: ['name', 'code'],
+    run: async ({ name, code }) => {
+      // Throws on a code that did not work, and the machine is deliberately left
+      // BORROWED when it does: a sign-in is retryable, and putting the machine
+      // away would throw a half-finished one away with it. Giving up is the
+      // dialog's other button, and that is the one that returns it.
+      await actions.vmAuthCode.run({ name, code })
+
+      const kept = await actions.vmCredentialsGrab.run({ name })
+      // putAway forgets the credential before it stops the machine, so nothing
+      // is left on that disk -- and the rollback would remove it regardless.
+      await actions.vmReturn.run({ name })
+      return {
+        name,
+        kept: kept.kept,
+        note: `The credential is on this host and ${name} is off, clean, and back in the pool.`
+      }
+    }
+  },
+
   // What the dial-in makes possible.
   vmAgents: { about: 'Which machines are dialled in right now, and what they say they are', run: async () => ({ agents: channel.list() }) },
   vmRun: {
@@ -944,9 +1073,18 @@ const actions = {
   // seconds and it being the thing that pinned the window's CPU last time.
   branchBoard: {
     about: 'Every branch: who claims it, what is on it, and whether it can be deleted',
-    run: () => {
+    run: async () => {
       const all = branches.all()
-      const machines = vms.read()
+      // THE LIVE LIST, not the registry.
+      //
+      // A claim is registry state and outlives the machine being on -- which is
+      // the whole reason "claimed by a machine that is off" exists as a separate
+      // thing to say. But whether it is off is NOT in the registry: it comes
+      // from VirtualBox, and reading `running` off a registry record gets
+      // `undefined` every time. So a machine somebody was actively working in
+      // reported itself as off, which is the exact lie this distinction was
+      // added to stop telling.
+      const { vms: machines } = await vms.all()
       const board = tasks.read()
 
       const rows = all.branches.map(b => {
@@ -1231,8 +1369,8 @@ const actions = {
   branchDelete: {
     about: 'Delete a branch from every repository that has it',
     takes: ['branch', 'force'],
-    run: ({ branch, force = false }) => {
-      const row = actions.branchBoard.run({}).branches.find(b => b.name === branch)
+    run: async ({ branch, force = false }) => {
+      const row = (await actions.branchBoard.run({})).branches.find(b => b.name === branch)
       if (!row) throw new Error(`No repository here has a branch called "${branch}".`)
       if (row.whyNot) throw new Error(row.whyNot)
 
@@ -1398,7 +1536,16 @@ const actions = {
       vms.update(name, { branch: on })
       log.on('vm', name).good(`${name} may now push ${on}, and nothing else`)
 
-      return { branch: on, folder: folder || workspace.folderFor(vm.spec), repos: found.map(r => r.name), cut, output: r.output }
+      // `cut` was here, from when this action created the branch. It does not
+      // any more -- a branch is made deliberately, with a reason -- so what it
+      // reports is where the branch already was, not what it just made.
+      return {
+        branch: on,
+        folder: folder || workspace.folderFor(vm.spec),
+        repos: found.map(r => r.name),
+        in: here.in,
+        output: r.output
+      }
     }
   },
 

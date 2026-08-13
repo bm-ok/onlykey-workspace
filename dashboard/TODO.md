@@ -50,21 +50,12 @@ not fixed, and the state of the machines.
 Outstanding
 -----------
 
-* **The human flow through VS Code is half-built.** `vmBorrow` and `vmReturn`
-  exist and work — a machine is taken out of the pool, brought up clean, and
-  given back put away, with the queue refusing to touch it in between. What is
-  not built is the one-click path on the Branches tab: take a free machine, set
-  it up on this branch, open VS Code in it, and an "I am done" that checks what
-  it is holding before putting it away. `vmEditor` opens an editor on a machine
-  that is already up; nothing joins the two ends.
-
-* **The credential flow still starts from a machine that is already running.**
-  `Keys → Get Claude Code credentials` asks which dialled-in machine should sign
-  in, and leaves the credential on it — grabbing it, forgetting it and putting
-  the machine away are three more steps nobody is reminded of. It should borrow a
-  free machine, bring it up clean, sign in, take the credential, and hand the
-  machine back with nothing left on it. The pieces all exist now; the flow does
-  not join them.
+* **The one-click credential flow is built and has never been run.** `Keys → Get
+  Claude Code credentials` now borrows a free machine, brings it up clean, signs
+  in, keeps the credential here and puts the machine away with nothing on it —
+  `credentialsBegin` and `credentialsFinish`. Every part of it is proven
+  separately and the whole has not been, because the middle is a person visiting
+  a sign-in page. The next time a credential is actually needed is the test.
 
 * **`runner1` is running an agent two fixes behind.** It never got the read
   timeout or the unit change, and it has not got the TLS locking either — so it

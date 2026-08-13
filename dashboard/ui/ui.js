@@ -1242,7 +1242,12 @@ function branchActions (b) {
     if (changed('branch-actions', null)) fill(box, el('p', { className: 'empty', textContent: 'Pick a branch on the left.' }))
     return
   }
-  if (!changed('branch-actions', b)) return
+  // The machine you are working in is part of the signature, because it comes
+  // from the registry rather than from the branch row -- so a machine becoming
+  // yours changes nothing about `b`, and the button offering to give it back
+  // would never appear.
+  const mine = mineFor(b)
+  if (!changed('branch-actions', [b, mine && mine.name])) return
 
   fill(box,
     // WHY IT EXISTS, first, because it is the thing that cannot be worked out
@@ -1269,12 +1274,32 @@ function branchActions (b) {
     b.whyNot ? el('p', { className: 'note', textContent: b.whyNot }) : null,
 
     el('div', { className: 'row', style: 'margin-top:10px' },
-      // USING IT, which is the other half of making branches deliberate: a
-      // branch is cut here and then given to a machine, rather than conjured by
-      // the act of setting one up.
+      // WORKING IN IT YOURSELF, which is the flow a person actually has. A
+      // branch is a workspace when the human is the one working: take a free
+      // machine, set it up on this branch, open an editor in it. One button,
+      // because assembling it from three was how a machine got left running.
       !b.protected && !b.heldBy
         ? el('button', {
             className: 'btn ok',
+            textContent: 'Work on it in VS Code',
+            onclick: () => workOnBranch(b)
+          })
+        : null,
+
+      // And giving it back, which only appears when there is something to give
+      // back. It is the same action the queue uses to put a machine away, so it
+      // refuses while anything is uncommitted rather than rolling it back.
+      mine
+        ? el('button', {
+            className: 'btn',
+            textContent: `Done with ${mine.name}`,
+            onclick: () => finishOnBranch(b, mine)
+          })
+        : null,
+
+      !b.protected && !b.heldBy
+        ? el('button', {
+            className: 'btn',
             textContent: 'Give it to a machine',
             onclick: () => giveBranchToMachine(b)
           })
@@ -1516,6 +1541,67 @@ function newBranch () {
       been.set('branch', r.branch)
       changed('branches', null)
       say(r.already ? `"${r.branch}" already existed everywhere.` : `Cut "${r.branch}" in ${r.made.join(', ')}.`)
+    }
+  })
+}
+
+// The machine YOU are working in on this branch, if there is one.
+//
+// Borrowed and set up on this branch are two different facts and both are
+// needed: a machine borrowed for a sign-in is not yours to finish here, and a
+// machine on this branch that was not borrowed belongs to the queue.
+const mineFor = b => latest.vms.find(v => v.borrowed && v.branch === b.name) || null
+
+// Taking a machine, setting it up on this branch, and opening an editor in it.
+//
+// One button for what was three actions in a remembered order — and the order
+// was the part that went wrong: a machine started and never used, a workspace
+// set up on a machine somebody then forgot was theirs.
+function workOnBranch (b) {
+  const free = (queueSays.size ? [...queueSays.values()] : []).filter(m => m.free)
+  ask({
+    title: `Work on "${b.name}" in VS Code`,
+    plain: [
+      'A free machine is borrowed, brought up at its base snapshot, and set up with every repository checked out on this branch.',
+      'VS Code then opens into it over ssh, with this app\'s own key. What you do in there is ordinary work — including running your own Claude session.',
+      free.length
+        ? `Free right now: ${free.map(m => m.name).join(', ')}.`
+        : 'Nothing is free at the moment, so this will refuse and say why.',
+      'The queue will not touch that machine until you give it back.'
+    ],
+    cost: 'It takes a minute or two to bring a machine up before the editor can open.',
+    confirm: 'Take a machine and open it',
+    onYes: async () => {
+      const r = await api('branchWorkOn', { branch: b.name })
+      say(r.note)
+    }
+  })
+}
+
+// Giving it back when the work is done.
+//
+// The same action the queue uses to put a machine away, so it refuses while
+// anything is uncommitted rather than rolling it back — which is the whole
+// reason this is a button and not a habit.
+function finishOnBranch (b, vm) {
+  ask({
+    title: `Done with ${vm.name}?`,
+    plain: [
+      `${vm.name} goes back to its base snapshot and returns to the pool, and "${b.name}" stops being claimed by it.`,
+      'It is asked what it is holding first: anything uncommitted or unpushed refuses this, because rolling it back would discard exactly that.',
+      'Whatever you pushed is here and is not touched.'
+    ],
+    cost: `Everything on ${vm.name} that is not on a branch is discarded.`,
+    confirm: 'Put it away',
+    danger: true,
+    extra: {
+      label: 'Just release it, leave it running',
+      onClick: () => api('vmReturn', { name: vm.name, keep: true })
+        .then(r => say(r.note)).catch(oops)
+    },
+    onYes: async () => {
+      const r = await api('vmReturn', { name: vm.name })
+      say(r.note)
     }
   })
 }
@@ -1922,33 +2008,35 @@ function paintAppKeys () {
 }
 
 // Ask which machine, sign in on it, then take what it got.
+// One button, and the machine is clean before and gone afterwards.
+//
+// IT USED TO ASK WHICH RUNNING MACHINE SHOULD SIGN IN, which put the work in the
+// wrong place. Somebody had to have started a machine, know which one was safe to
+// use, and then remember three more steps afterwards -- take the credential,
+// forget it, put the machine away -- with nothing reminding them. The ordinary
+// outcome was a runner left on holding a live credential, which is exactly the
+// state the banner nags about.
+//
+// Now: a free machine is borrowed, brought up at its base snapshot, signed in,
+// emptied and put away. Nothing is chosen because there is nothing worth
+// choosing, and no machine is left carrying anything.
 function getCredentials () {
-  const running = latest.vms.filter(v => v.connected)
-  if (!running.length) {
-    return oops(new Error('No machine is dialled in. Start one and wait for it to connect — the sign-in happens on a machine, not here.'))
-  }
-
   ask({
     title: 'Get Claude Code credentials',
     plain: [
-      'One machine signs in, and this host keeps what it gets.',
-      'It opens a sign-in on that machine and gives you an address to visit; the machine waits, holding it open, until you bring the code back.',
-      'Nothing is installed or changed on the machine beyond signing its worker in.'
+      'A free machine is borrowed and brought up clean, it signs in, this host keeps what it gets, and the machine is put away with nothing left on it.',
+      'You will get an address to visit; the machine holds the sign-in open until you bring the code back.',
+      'The queue will not touch that machine while this is going on.'
     ],
-    fields: [{
-      name: 'name',
-      label: 'Which machine signs in',
-      value: running[0].name,
-      options: running.map(v => ({ value: v.name, label: `${v.name} — ${v.description || v.stage}` }))
-    }],
+    cost: 'It takes a minute or two to bring a machine up before there is anything to visit.',
     confirm: 'Start the sign-in',
-    onYes: async f => {
-      const started = await api('vmAuthBegin', { name: f.name })
+    onYes: async () => {
+      const started = await api('credentialsBegin', {})
       // A second dialog rather than a field on the first, because the address
-      // does not exist until the machine has been asked -- and a form that asks
-      // for a code before there is anything to get one from is a form nobody can
-      // fill in.
-      askForCode(f.name, started.url)
+      // does not exist until a machine has been brought up and asked -- and a
+      // form that asks for a code before there is anything to get one from is a
+      // form nobody can fill in.
+      askForCode(started.name, started.url)
     }
   })
 }
@@ -1963,21 +2051,27 @@ function askForCode (name, url) {
     link: url,
     fields: [{ name: 'code', label: 'The code from that page', placeholder: 'paste it here' }],
     confirm: 'Finish signing in',
+    // GIVING UP HAS TO HAND THE MACHINE BACK, or abandoning a sign-in leaves a
+    // borrowed runner out of the pool with nobody using it — the exact failure
+    // borrowing was meant to stop being possible.
     extra: {
       label: 'Give up',
-      onClick: () => api('vmAuthCancel', { name }).then(() => say(`the sign-in on ${name} was abandoned`)).catch(oops)
+      onClick: () => api('vmAuthCancel', { name })
+        .catch(() => { /* it may never have started; the machine still goes back */ })
+        .then(() => api('vmReturn', { name }))
+        .then(() => say(`the sign-in on ${name} was abandoned, and ${name} is back in the pool`))
+        .catch(oops)
     },
     onYes: async f => {
       if (!f.code) throw new Error('Paste the code from the sign-in page.')
-      await api('vmAuthCode', { name, code: f.code })
-      // Taken straight away rather than left for a second click. The reason the
-      // machine was signed in at all is so this host holds the result, and a
-      // credential left sitting on a machine is the thing this exists to avoid.
-      const kept = await api('vmCredentialsGrab', { name })
-      say(`${name} signed in, and its credential is kept here`)
+      // One call: the code, the credential taken, and the machine put away
+      // clean. Three steps somebody used to have to remember, in the order that
+      // leaves nothing behind.
+      const done = await api('credentialsFinish', { name, code: f.code })
+      say(done.note)
       showTab('keys')
       paintKeys()
-      return kept
+      return done
     }
   })
 }
@@ -3061,6 +3155,7 @@ async function drawOnce () {
     ...latest.vms
       .filter(v => v.running &&
         !busyMachines.has(v.name) &&        // the queue is using it
+        !v.borrowed &&                      // somebody took it, deliberately
         !shells.some(s => s.name === v.name && !s.ended) && // you are in it
         v.forTasks !== false &&             // somebody said keep this one back
         v.stage !== 'installing')           // it is being built
