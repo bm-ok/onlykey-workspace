@@ -1093,9 +1093,9 @@ function paintBranches () {
   if (view !== 'branches') return
   // Said before the asking, not after: the gap this fills is the time the answer
   // takes to arrive.
-  waiting('branches', 'reading the repositories…')
-  waiting('branch-actions', '…')
-  waiting('branch-artifacts', '…')
+  waiting('branches', { cards: 4 })
+  waiting('branch-actions', { lines: 4 })
+  waiting('branch-artifacts', { lines: 6 })
   api('branchBoard').then(board => {
     const find = $('branch-find').value.trim().toLowerCase()
     const mine = $('branch-mine').checked
@@ -1187,6 +1187,7 @@ function paintBranches () {
 // way, and a third repository defaulting to something else is what separated
 // them.
 function paintBaselines () {
+  waiting('baselines', { cards: 2 })
   api('repoBaselines').then(({ repos, note }) => {
     if (!changed('baselines', repos)) return
     fill($('baselines'), repos.length
@@ -1332,21 +1333,37 @@ function branchActions (b) {
 
 const chip = (text, kind) => el('span', { className: `chip${kind ? ' ' + kind : ''}`, textContent: text })
 
-// A panel that has not been filled yet says so.
+// A panel that has not been filled yet, drawn as the shape of what is coming.
 //
 // EVERY PANEL HERE FILLS FROM AN ACTION, so the first frame after switching to a
 // tab is empty -- and an empty panel is indistinguishable from a panel whose
 // answer is "nothing". That is not a small difference: "no branches" and "not
-// asked yet" look identical and mean opposite things, and the Branches tab
-// photographs blank for exactly as long as its first read takes.
+// asked yet" look identical and mean opposite things.
 //
-// ONLY WHEN THERE IS NOTHING THERE. Blanking a panel that already has content
-// on every refresh would make the whole window flicker every three seconds,
-// which is a worse fault than the one being fixed.
-function waiting (id, text) {
+// A WORD IN THE GAP WAS NOT ENOUGH. It is easy to miss, it can be mistaken for
+// the answer, and -- the part that mattered -- when the Branches tab
+// photographed blank on a cold start, the placeholder was not there either, and
+// there was no way to tell whether the panel had painted an empty state or had
+// not painted at all. A shape is unmistakable in a screenshot, and its absence
+// is now evidence rather than ambiguity.
+//
+// ONLY WHEN THERE IS NOTHING THERE. Blanking a panel that already has content on
+// every refresh would make the whole window flicker every three seconds, which is
+// a worse fault than the one being fixed.
+const skelLine = width => el('div', { className: 'skel skel-line', ...(width ? { style: `width:${width}` } : {}) })
+
+const skelCard = () => el('div', { className: 'skel-card' }, skelLine(), skelLine())
+
+function waiting (id, { cards = 0, lines = 0 } = {}) {
   const box = $(id)
   if (box.childElementCount) return
-  fill(box, el('p', { className: 'empty waiting', textContent: text }))
+  const shapes = []
+  for (let n = 0; n < cards; n++) shapes.push(skelCard())
+  // Ragged on purpose: equal-length bars read as a table with no data, and
+  // uneven ones read as text that has not arrived.
+  const widths = ['70%', '45%', '85%', '60%']
+  for (let n = 0; n < lines; n++) shapes.push(skelLine(widths[n % widths.length]))
+  fill(box, shapes)
 }
 
 // Why a branch is protected, said as the two separate claims it can be.
@@ -1431,8 +1448,8 @@ function paintBranchArtifacts (b) {
   // This one reads git for real, uncached, because it is what somebody judges
   // from -- so it is the slowest panel in the window and the one most worth
   // saying "not yet" about.
-  waiting('branch-artifacts', `reading ${b.name}…`)
-  waiting('branch-tasks', '…')
+  waiting('branch-artifacts', { lines: 6 })
+  waiting('branch-tasks', { cards: 2 })
 
   api('branchArtifacts', { branch: b.name }).then(a => {
     if (!changed('branch-carries', [b.name, a])) return
@@ -2478,7 +2495,7 @@ async function paintSnapshots () {
 
   // The other panel that reads something real before it can say anything: this
   // one asks VBoxManage and then the machine's own config file.
-  waiting('snapshots', 'reading its snapshots…')
+  waiting('snapshots', { cards: 2 })
 
   let s
   try {
