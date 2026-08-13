@@ -13,11 +13,11 @@
 // unit of work rather than several that have to be remembered together.
 //
 // WHERE IT IS CUT FROM is a decision, not an accident of what was last checked
-// out. Each repository cuts from its baseline -- the thing work is measured
-// against -- or, when one is named, from a baseline GROUP: one branch per
-// repository, named together because they are one point in the work. What it was
-// cut from is recorded with the branch, because "what is this against" is the
-// first question asked of any branch and git cannot answer it later.
+// out. A branch is cut from a named LINE: one branch per repository, named
+// together because they are one point in the work. What it was cut from is
+// recorded with the branch and is what the branch is measured against ever
+// after -- "what is this against" is the first question asked of any branch, and
+// git cannot answer it later.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -98,55 +98,47 @@ function defaultOf (repo) {
 
 // ---- what work is measured against ------------------------------------
 //
-// THE BASELINE AND THE DEFAULT BRANCH ARE NOT THE SAME QUESTION, and treating
-// them as one word was fine only while every repository answered both the same
-// way.
+// THERE USED TO BE A SETTING HERE: a per-repository "baseline", separate from
+// the default branch, settable for all of them in one click. It is gone, and
+// what replaced it is smaller — a branch is measured against the line it was CUT
+// FROM, recorded on the branch when it is made.
 //
-//   the default    what the repository itself says HEAD is. A fact about git,
-//                  read from the repository, never chosen here. Always
-//                  protected, because it is where everything lands eventually.
-//   the baseline   what "ahead" is counted from. A choice: a repository whose
-//                  default is `master` may have its current work measured
-//                  against `version2`, and then every task branch is judged
-//                  against that instead.
+// The difference matters because "3 commits ahead" is a statement about a
+// branch, so it should depend on that branch and nothing else. Under a
+// workspace-wide pointer it depended on a setting anything could move, and
+// moving it reinterpreted every number on the board at once — including for
+// branches with nothing to do with the line being pointed at. That happened by
+// accident within an hour of the button existing.
 //
-// Defaults to the default, so a workspace nobody has configured behaves exactly
-// as it did. Choosing one does NOT unprotect the other -- the repository's own
-// default stays protected whatever is chosen, which is the whole point of it
-// being a fact rather than a preference.
-function baselineOf (repo) {
-  const all = remembered()
-  const chosen = all[repo] && all[repo].baseline
-  if (chosen) return chosen
+// What remains is each repository's own default: a fact about git, read from
+// the repository, never chosen here, always protected.
+//
+// The answer is already recorded and has been since a branch had to name the
+// line it was cut from: `note.from` is one branch per repository, written when
+// the branch was made and never changed afterwards.
+//
+// NAMES, NOT COMMIT IDS, which is what keeps this behaving like the thing it
+// replaces. Measured against the name `master`, a branch still goes to zero once
+// its work lands there — and "is it contained", "is it orphaned" and "can this
+// be deleted" all rest on that.
+//
+// Branches cut before any of this have nothing recorded and fall back to the
+// repository's own default, which is what they were cut from.
+function baseFor (branch, repo) {
+  const n = noteFor(branch)
+  if (n && n.from && n.from[repo]) return n.from[repo]
   return defaultOf(repo)
 }
 
-// Chosen, or cleared back to the repository's own default with an empty value.
-function setBaseline (repo, branch) {
-  const all = remembered()
-  const dir = serve.gitDirOf(repo)
-  if (!dir) throw new Error(`There is no repository called "${repo}" here.`)
-
-  const name = String(branch || '').trim()
-  if (name) {
-    if (!branchesIn(dir).includes(name)) {
-      throw new Error(`"${repo}" has no branch called "${name}". A baseline has to be a branch that exists there — it is what everything else in that repository is counted from.`)
-    }
-    all[repo] = { ...(all[repo] || {}), baseline: name }
-  } else {
-    all[repo] = { ...(all[repo] || {}) }
-    delete all[repo].baseline
-  }
-  remember(all)
-  return { repo, baseline: baselineOf(repo), default: defaultOf(repo), chosen: !!name }
-}
+// `setBaseline` was here, with the file field it wrote. Nothing sets what a
+// repository counts from any more -- a branch carries its own answer.
 
 // ---- groups: one baseline per repository, named ------------------------
 //
-// A CHANGE SPANS REPOSITORIES, so "what is this work counted from" is one
-// question with one answer -- not one answer per repository that somebody has to
-// keep consistent by hand. A group names a branch in each, and using it sets all
-// of them at once.
+// A CHANGE SPANS REPOSITORIES, so "what is this work against" is one question
+// with one answer -- not one answer per repository that somebody has to keep
+// consistent by hand. A line names a branch in each, and a branch cut from it
+// records that as what it is measured against.
 //
 // BEING IN A GROUP PROTECTS EVERY BRANCH IN IT, and that is the point rather
 // than a side effect. It is what makes chaining safe: work is cut FROM a link,
@@ -198,7 +190,6 @@ function groups () {
       // repositories still describes those three when a fourth arrives.
       missing: here.filter(r => !(r in on)),
       broken: parts.filter(p => p.stillHere && !p.there).map(p => `${p.branch} is gone from ${p.repo}`),
-      inUse: parts.length > 0 && parts.every(p => !p.stillHere || baselineOf(p.repo) === p.branch),
       // Proposed for landing: `{ at, by, why }`, or null. See markGroup.
       marked: g.marked || null
     }
@@ -216,7 +207,7 @@ function saveGroup (name, { on = null, why = null } = {}) {
 
   const chosen = on && Object.keys(on).length
     ? on
-    : Object.fromEntries(serve.list().map(r => [r.name, baselineOf(r.name)]).filter(([, b]) => b))
+    : Object.fromEntries(serve.list().map(r => [r.name, defaultOf(r.name)]).filter(([, b]) => b))
 
   for (const [repo, branch] of Object.entries(chosen)) {
     const dir = serve.gitDirOf(repo)
@@ -300,21 +291,9 @@ function groupFromBranch (branch, { name = null, why = null } = {}) {
   })
 }
 
-// Every repository's baseline set at once, which is what a group is for.
-function useGroup (name) {
-  const g = groups().find(x => x.name === String(name || '').trim())
-  if (!g) throw new Error(`There is no group called "${name}".`)
-  if (g.broken.length) throw new Error(`"${g.name}" cannot be used: ${g.broken.join('; ')}.`)
-
-  const changed = []
-  for (const part of g.on) {
-    if (!part.stillHere) continue
-    if (baselineOf(part.repo) === part.branch) continue
-    setBaseline(part.repo, part.branch)
-    changed.push(`${part.repo} → ${part.branch}`)
-  }
-  return { group: g.name, changed, on: g.on }
-}
+// `useGroup` was here. It set every repository's baseline at once, which was
+// the whole point of a group until a branch started recording what it was cut
+// from. A group is now a set of branches with a name; nothing points at one.
 
 function deleteGroup (name) {
   const all = groupsFile()
@@ -341,21 +320,16 @@ function inAnyGroup () {
   return out
 }
 
-// Every repository, what it counts from, and whether that was chosen.
-const baselines = () => serve.list().map(({ name }) => {
-  const all = remembered()
-  const chosen = (all[name] || {}).baseline || null
-  return {
-    repo: name,
-    baseline: baselineOf(name),
-    default: defaultOf(name),
-    chosen: !!chosen,
-    // Named because it is the surprising case: the branch this repository is
-    // measured against is not the branch it would land on.
-    differs: !!chosen && chosen !== defaultOf(name),
-    branches: (() => { try { return branchesIn(serve.gitDirOf(name)) } catch { return [] } })()
-  }
-})
+// Every repository, its default branch, and what branches it has.
+//
+// The "and whether that was chosen" half is gone with the setting it described.
+// What a branch is measured against is a fact about the branch now, not about
+// the repository — see baseFor.
+const baselines = () => serve.list().map(({ name }) => ({
+  repo: name,
+  default: defaultOf(name),
+  branches: (() => { try { return branchesIn(serve.gitDirOf(name)) } catch { return [] } })()
+}))
 
 // Only the default branch is protected, and it always is.
 //
@@ -375,7 +349,7 @@ const baselines = () => serve.list().map(({ name }) => {
 function protectedBranches () {
   const why = new Map()
   const at = branch => {
-    if (!why.has(branch)) why.set(branch, { branch, repos: [], asDefault: [], asBaseline: [], asGroup: [] })
+    if (!why.has(branch)) why.set(branch, { branch, repos: [], asDefault: [], asGroup: [] })
     return why.get(branch)
   }
   const add = (branch, repo, how) => {
@@ -386,8 +360,6 @@ function protectedBranches () {
   }
   for (const { name } of serve.list()) {
     add(defaultOf(name), name, 'asDefault')
-    const base = baselineOf(name)
-    if (base !== defaultOf(name)) add(base, name, 'asBaseline')
   }
   // THE THIRD REASON, and the one that makes chaining work. A branch named in a
   // group is a link somebody builds FROM and merges back INTO, so nothing may be
@@ -431,7 +403,6 @@ function whyProtected (branch) {
   if (!p) return null
   const parts = [
     p.asDefault.length ? `the default branch of ${p.asDefault.join(', ')}` : null,
-    p.asBaseline.length ? `the chosen baseline for ${p.asBaseline.join(', ')}` : null,
     p.asGroup && p.asGroup.length ? `a link in ${[...new Set(p.asGroup)].map(n => `"${n}"`).join(', ')}` : null
   ].filter(Boolean)
   return `"${branch}" is ${parts.join(' and ')}. Work goes onto its own branch and is merged here afterwards, so nothing is built directly on it.`
@@ -953,7 +924,7 @@ function remove (branch, { force = false } = {}) {
 
 module.exports = {
   all, ensure, remove, nameIsOk, branchesIn, headOf, defaultHeads, noteFor, notes, scopeOf,
-  defaultOf, baselineOf, setBaseline, baselines, groups, saveGroup, useGroup, deleteGroup, inAnyGroup,
+  defaultOf, baseFor, baselines, groups, saveGroup, deleteGroup, inAnyGroup,
   markGroup, unmarkGroup, groupFromBranch,
   protectedBranches, isProtected, whyProtected,
   isClean, freeIfBusy, freeEverywhere, blocking,

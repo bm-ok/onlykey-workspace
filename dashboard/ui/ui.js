@@ -275,7 +275,7 @@ function paintMerge () {
       // The line in use is what work is currently counted from, so it is the one
       // a proposal almost always goes into. Guessed, not assumed — it is a
       // dropdown, and being wrong costs one click.
-      mergeTarget = (others.find(g => g.inUse) || others[0] || {}).name || null
+      mergeTarget = (others.find(g => !g.marked) || others[0] || {}).name || null
     }
     paintMergePicks(proposed, usable)
 
@@ -335,7 +335,7 @@ function paintMergePicks (proposed, usable) {
     if (!changed(`${box}-list`, [list.map(g => g.name), value])) return
     fill($(box), ...list.map(g => el('option', {
       value: g.name,
-      textContent: `${g.name}${g.inUse ? ' — in use' : ''}${g.marked ? ' — proposed' : ''}`,
+      textContent: `${g.name}${g.marked ? ' — proposed' : ''}`,
       selected: g.name === value
     })))
     $(box).onchange = () => onPick($(box).value)
@@ -1913,27 +1913,61 @@ function paintBranches () {
 // work across all of them. Collapsing them into "protected" is what made
 // `master` claim to be a baseline for a repository that was counting from
 // something else entirely.
+// WHAT MAY NOT BE BUILT ON, AND WHETHER YOU COULD CHANGE THAT.
+//
+// This was a flat list of cards all saying "protected", with the reasons as rows
+// of a table. Reading it, the question a person actually has is not which
+// branches are protected — it is whether a particular one can be worked on, and
+// if not, what would have to happen first. Those have completely different
+// answers for the two kinds:
+//
+//   a default branch   a fact about the repository, read from git. Nothing here
+//                      can unprotect it, and nothing should.
+//   a link in a line   a decision somebody made by naming the line. Forgetting
+//                      the line gives the branch back.
+//
+// So they are two sections rather than one list with a column, and each says
+// what to do about it — including the one where the answer is "nothing".
 function paintProtected (board) {
   if (!changed('protected', board.protected)) return
-  fill($('protected'), board.protected.length
-    ? board.protected.map(p => el('div', { className: 'card' },
-        el('div', { className: 'card-title' },
-          el('span', { className: 'mono', textContent: p.branch }),
-          el('span', { className: 'badge ok', textContent: 'protected' })),
-        el('table', { className: 'kv', style: 'margin-top:6px' },
-          p.asDefault.length
-            ? el('tr', {}, el('th', { textContent: 'default branch of' }), el('td', { className: 'mono', textContent: p.asDefault.join(', ') }))
-            : null,
-          p.asBaseline.length
-            ? el('tr', {}, el('th', { textContent: 'counted from by' }), el('td', { className: 'mono', textContent: p.asBaseline.join(', ') }))
-            : null,
-          p.asGroup && p.asGroup.length
-            ? el('tr', {}, el('th', { textContent: 'a link in' }), el('td', { className: 'mono', textContent: [...new Set(p.asGroup)].join(', ') }))
-            : null),
-        el('p', { className: 'note', style: 'margin-top:8px', textContent: p.asDefault.length
-          ? 'A default branch is a fact about the repository. It cannot be unprotected from here.'
-          : 'A decision, not a fact — stop counting from it and it stops being protected.' })))
-    : el('p', { className: 'empty', textContent: 'Nothing is protected, which means no repository here has a default branch — worth looking at.' }))
+
+  const facts = board.protected.filter(p => p.asDefault.length)
+  const chosen = board.protected.filter(p => !p.asDefault.length)
+
+  const card = (p, kind) => el('div', { className: 'card' },
+    el('div', { className: 'card-title' },
+      el('span', { className: 'mono', textContent: p.branch }),
+      el('span', { className: `badge ${kind === 'fact' ? 'muted' : 'warn'}`, textContent: kind === 'fact' ? 'always' : 'while it is a link' })),
+    el('div', { className: 'card-sub muted', textContent: kind === 'fact'
+      ? `the default branch of ${p.asDefault.join(', ')}`
+      : `named in ${[...new Set(p.asGroup)].join(', ')}` }),
+    // A branch can be both, and then the weaker reason is worth saying too:
+    // forgetting the line will not give this one back.
+    kind === 'fact' && p.asGroup && p.asGroup.length
+      ? el('div', { className: 'card-sub muted', textContent: `also a link in ${[...new Set(p.asGroup)].join(', ')} — forgetting that line would not unprotect it` })
+      : null)
+
+  fill($('protected'),
+    board.protected.length
+      ? el('div', {},
+          el('div', { className: 'carries' },
+            el('div', { className: 'carries-head' },
+              el('span', { textContent: 'Facts about the repositories' }),
+              el('span', { className: 'muted', textContent: `${facts.length}` })),
+            el('p', { className: 'note', textContent: 'Where everything lands eventually. Read from git the first time each repository was seen, and not changeable from here — a machine is refused this branch whatever else is configured.' }),
+            facts.length
+              ? el('div', { className: 'stack' }, ...facts.map(p => card(p, 'fact')))
+              : el('p', { className: 'empty bad', textContent: 'No repository here has a default branch, which should not be possible and is worth looking at.' })),
+
+          el('div', { className: 'carries' },
+            el('div', { className: 'carries-head' },
+              el('span', { textContent: 'Links in a line' }),
+              el('span', { className: 'muted', textContent: `${chosen.length}` })),
+            el('p', { className: 'note', textContent: 'Named in a line, so work is cut from them and merged back into them rather than built on directly. That is a decision — forget the line on the Baselines tab and the branch is ordinary again.' }),
+            chosen.length
+              ? el('div', { className: 'stack' }, ...chosen.map(p => card(p, 'link')))
+              : el('p', { className: 'empty', textContent: 'No line names a branch that is not already a default. Nothing here is protected by a decision.' })))
+      : el('p', { className: 'empty bad', textContent: 'Nothing is protected, which means no repository here has a default branch — worth looking at.' }))
 }
 
 // What each repository measures work against. NOT what branches are cut
@@ -1950,17 +1984,17 @@ function paintBaselines () {
   api('repoBaselines').then(({ repos, groups, note }) => {
     if (!changed('baselines', [repos, groups])) return
 
-    // WHAT EACH REPOSITORY COUNTS FROM, as a statement rather than a column of
-    // controls. It is the thing every "commits ahead" on the board is measured
-    // against, so it is worth reading; it is not worth being able to change one
-    // at a time, which is what the column it replaced was for.
+    // EACH REPOSITORY'S DEFAULT BRANCH, which is the one fact about a repository
+    // that still belongs here. This block used to say what each repository was
+    // "counted from" — a workspace-wide pointer that no longer exists, because a
+    // branch records what it was cut from and is measured against that.
     fill($('baselines-now'), repos.length
       ? el('div', { className: 'card' },
-          el('div', { className: 'card-title' }, el('span', { textContent: 'Counted from' })),
+          el('div', { className: 'card-title' }, el('span', { textContent: 'Default branches' })),
           ...repos.map(r => el('div', { className: 'group-part' },
             el('span', { className: 'mono', textContent: r.repo }),
-            el('span', { className: r.differs ? 'mono' : 'mono muted', textContent: r.baseline }))),
-          el('div', { className: 'card-sub muted', textContent: note }))
+            el('span', { className: 'mono muted', textContent: r.default }))),
+          el('div', { className: 'card-sub muted', textContent: 'A repository\'s own default, read from git and always protected. A branch is measured against the line it was cut from, not against these — except when it was cut before lines existed.' }))
       : el('p', { className: 'empty', textContent: 'No repositories in the workspace.' }))
 
     // ---- the groups -----------------------------------------------------
@@ -1968,7 +2002,7 @@ function paintBaselines () {
     // can be forgotten between one draw and the next, and coming back to a name
     // that is gone leaves the panel beside it stranded.
     if (!groups.some(g => g.name === pickedGroup)) {
-      pickedGroup = groups.length ? (groups.find(g => g.inUse) || groups[0]).name : null
+      pickedGroup = groups.length ? (groups.find(g => g.marked) || groups[0]).name : null
       been.set('group', pickedGroup)
     }
 
@@ -1986,7 +2020,6 @@ function paintBaselines () {
         },
         el('div', { className: 'card-title' },
           el('span', { className: 'mono', textContent: g.name }),
-          g.inUse ? el('span', { className: 'badge ok', textContent: 'in use' }) : null,
           g.marked ? el('span', { className: 'badge warn', textContent: 'proposed' }) : null,
           g.broken.length ? el('span', { className: 'badge bad', textContent: 'broken' }) : null),
         el('div', { className: 'badges' },
@@ -2007,8 +2040,7 @@ function paintBaselines () {
       ? one.map(g => el('div', { className: 'carries' },
           el('div', { className: 'carries-head' },
             el('span', { textContent: g.name }),
-            g.inUse ? el('span', { className: 'badge ok', textContent: 'in use' }) : null,
-            g.marked ? el('span', { className: 'badge warn', textContent: 'proposed' }) : null,
+              g.marked ? el('span', { className: 'badge warn', textContent: 'proposed' }) : null,
             g.why ? el('span', { className: 'muted', textContent: g.why }) : null),
           g.marked
             ? el('p', { className: 'note', textContent: `Proposed for landing ${ago(g.marked.at)}${g.marked.why ? ` — ${g.marked.why}` : ''}. Read it on the Merge tab.` })
@@ -2020,24 +2052,18 @@ function paintBaselines () {
             ? el('p', { className: 'note', textContent: `${g.missing.join(', ')} ${g.missing.length === 1 ? 'is' : 'are'} not named in this group and keep whatever they are counting from.` })
             : null,
           el('div', { className: 'row', style: 'margin-top:8px' },
-            // WHAT IT ACTUALLY DOES, and it used to say something wider.
+            // "Measure everything from it" was here, and before that "Count
+            // everything from it". It pointed the whole workspace at this line,
+            // and every "N commits ahead" on the board was then counted from it.
             //
-            // "Count everything from it" was written when a baseline decided two
-            // things: what work is measured against, AND what new branches are
-            // cut from. Cutting now names its own line — that was the whole
-            // point of requiring a group — so this decides only the first, and a
-            // label promising the second is a label describing last week.
-            //
-            // It also had no confirmation. One click silently changed what every
-            // "N commits ahead" on the board means, which is the sort of thing
-            // somebody should be told before rather than notice afterwards.
-            el('button', {
-              className: 'btn ok',
-              textContent: g.inUse ? 'Already measuring from it' : 'Measure everything from it',
-              disabled: g.inUse || g.broken.length > 0,
-              title: g.broken.length ? g.broken.join('; ') : 'Sets each repository\'s baseline to this line',
-              onclick: () => askToMeasureFrom(g)
-            }),
+            // GONE, BECAUSE A BRANCH KNOWS ITS OWN ANSWER. What a branch is
+            // measured against is what it was cut from, which has been recorded
+            // on the branch since cutting had to name a line. A global pointer
+            // on top of that was a second, worse answer to a question already
+            // answered — and one click reinterpreted every number on the board
+            // at once, for branches that had nothing to do with the line being
+            // pointed at. That happened by accident within an hour of the button
+            // existing, which is the clearest argument it could have made.
             // PROPOSING IT, from where the group lives. The Merge tab can take a
             // proposal back, because that is where somebody is when they decide
             // it is not ready; putting one up happens here, where you are
@@ -2129,40 +2155,8 @@ function newGroup () {
 // which is what a list does when nothing is actually selected — the panel beside
 // it showed every group regardless, so there was nothing for a click to change.
 
-// Making a line the thing everything is measured against.
-//
-// WORTH A DIALOG, because what it changes is invisible where it changes it.
-// Nothing moves, no branch is touched, and every "N commits ahead" on the board
-// silently starts counting from somewhere else — including the figures a person
-// is about to judge a task on.
-function askToMeasureFrom (g) {
-  const moving = g.on.filter(p => p.stillHere)
-  ask({
-    title: `Measure everything from "${g.name}"?`,
-    plain: [
-      `Each repository's baseline is set to this line: ${moving.map(p => `${p.repo} → ${p.branch}`).join(', ')}.`,
-      'That is what every "N commits ahead" on the board is counted from, and what "read the diff" shows a branch against. No branch moves and nothing is merged.',
-      // Said because the old label promised it and people remember labels.
-      'It does NOT decide where new branches are cut from. Cutting names its own line, in the dialog that cuts it.',
-      'A baseline that is not its repository\'s own default branch is protected while it is the baseline — nothing may be built directly on it.',
-      g.missing.length
-        ? `${g.missing.join(', ')} ${g.missing.length === 1 ? 'is' : 'are'} not named in this line and keep whatever they are counting from.`
-        : null
-    ].filter(Boolean),
-    confirm: 'Measure from it',
-    onYes: async () => {
-      const r = await api('baselineGroupUse', { name: g.name })
-      mergeAnswer = null
-      changed('baselines', null)
-      changed('branches', null)
-      changed('merge', null)
-      say(r.changed && r.changed.length ? `${r.note} ${r.changed.join(', ')}.` : r.note)
-      return draw()
-    }
-  })
-}
+// `askToMeasureFrom` was here, with the button that opened it.
 
-// Putting a line up to be landed.
 function proposeGroup (g) {
   ask({
     title: `Propose "${g.name}" for landing?`,
@@ -2213,7 +2207,11 @@ function askToForgetGroup (g) {
     plain: [
       'The branches are untouched. Forgetting a group is a decision about branches, not a thing the branches belong to.',
       'What it does change: those branches stop being protected by it, so work could be built directly on one.',
-      g.inUse ? 'This is the group in use. What each repository counts from does not change — it just stops having a name.' : null
+      // What branches cut FROM it recorded stays recorded: a branch says what it
+      // started against, and forgetting the line it was cut from does not change
+      // what it was cut from. So nothing on the board starts counting differently.
+      'Branches already cut from it keep measuring against what they were cut from — that was written on them when they were made, and this does not touch it.',
+      g.marked ? 'It is currently proposed for landing, and will leave the Merge tab.' : null
     ].filter(Boolean),
     confirm: 'Forget it',
     danger: true,
@@ -2317,14 +2315,20 @@ function branchActions (b) {
       // counted from and cut from, so the next task starts where this one ended
       // rather than from a default that does not have it yet.
       //
-      // Not offered on something already protected — it is the baseline, or it
-      // is a default, and neither wants doing twice.
-      !b.protected
+      // MAKING A LINE OUT OF IT, which is what "Count from it" was reaching for
+      // and getting wrong. That button pointed the whole workspace at this
+      // branch; what somebody actually wants at this moment is for the finished
+      // work to become a thing with a name — one that can be proposed, compared
+      // and landed. Naming it is also what protects it.
+      //
+      // Not offered on something already protected: it is a default branch or
+      // already a link in a line, and neither wants doing twice.
+      !b.protected && b.commits
         ? el('button', {
             className: 'btn',
-            textContent: 'Count from it',
-            title: `Everything measured against "${b.name}" from then on`,
-            onclick: () => askToUseAsBaseline(b)
+            textContent: 'Make it a line',
+            title: `Name "${b.name}" as a line, so it can be proposed and landed`,
+            onclick: () => askToMakeALine(b)
           })
         : null,
 
@@ -2427,13 +2431,18 @@ function waiting (id, { cards = 0, lines = 0 } = {}) {
 // chosen anywhere: `master` reported itself as "baseline for local-repo-a" while
 // local-repo-a was counting from something else entirely, and was only still
 // protected there because it is that repository's default.
+//
+// The chosen-baseline half is gone with the setting. What is left is the two
+// that remain true: a fact about a repository, and a decision about a line —
+// and a branch protected only by a line said the bare word "protected", which is
+// the least useful thing a label can say about a branch you cannot work on.
 function protectedAs (b) {
   const parts = [
     b.asDefault.length ? `default of ${b.asDefault.join(', ')}` : null,
-    b.asBaseline.length ? `baseline for ${b.asBaseline.join(', ')}` : null
+    b.asGroup && b.asGroup.length ? `a link in ${[...new Set(b.asGroup)].join(', ')}` : null
   ].filter(Boolean)
   if (!parts.length) return 'protected'
-  return b.baselineForAll && b.asDefault.length && !b.asBaseline.length ? 'the baseline' : parts.join('; ')
+  return parts.join('; ')
 }
 
 // One row per branch, selectable, and deliberately thin. Everything that used
@@ -2725,32 +2734,36 @@ async function newBranch () {
   })
 }
 
-// Making a branch the thing everything is measured against.
+// NAMING A FINISHED BRANCH AS A LINE.
 //
-// The scenario this exists for: a branch carries work the next piece of work
-// should be read against. Without it, the next task is measured against a
-// baseline that does not have this yet, and reads as ahead for reasons that have
-// nothing to do with it.
-function askToUseAsBaseline (b) {
+// This was `askToUseAsBaseline`, which pointed the whole workspace at a branch.
+// The scenario it existed for is real -- a branch carries work the next piece of
+// work should be read against -- and cutting from a named line answers it
+// properly: the next branch records that line as what it started from, and is
+// measured against it for ever, whatever the workspace does afterwards.
+//
+// So what is left is the useful half: give this branch a name that outlives it.
+function askToMakeALine (b) {
   ask({
-    title: `Measure everything against "${b.name}"?`,
+    title: `Make "${b.name}" a line?`,
     plain: [
-      // NO LONGER "and cuts new branches from it". It did both when this was
-      // written; cutting names its own line now, so promising it here would be
-      // describing the tool as it was last week.
-      `Every repository that has it measures work against it from now on. ${b.in.join(', ')}.`,
+      `It names one branch per repository — ${b.in.join(', ')} at "${b.name}" — which is what this branch already is. What it adds is a name that outlives the branch.`,
+      'Its branches become protected: work is cut FROM a line and merged back INTO it, never built on directly. That is what makes chaining safe rather than a convention.',
+      'It moves nothing and counts nothing from it. A line is somewhere work can start and somewhere work can land, and neither happens until you say so.',
       b.missing.length
-        ? `${b.missing.join(', ')} do not have it and keep what they are counting from — a change that touched some repositories should not move the baseline of one it never reached.`
-        : 'Every repository here has it.',
-      'It becomes protected: work is cut from it and merged back into it, never built on directly. That is what makes a chain safe rather than a convention.',
-      'Naming it as a group is how this point can be returned to later. Leave it blank if this is a step rather than a place.'
-    ],
+        ? `${b.missing.join(', ')} do not have this branch and are not named in the line.`
+        : null,
+      'Propose it on the Baselines tab when it is ready to go in, and it appears on the Merge tab.'
+    ].filter(Boolean),
     fields: [
-      { name: 'group', label: 'Name this line, optionally', placeholder: 'the version2 line' }
+      { name: 'name', label: 'Called', value: `${b.name} line`, placeholder: 'the version2 line' },
+      { name: 'why', label: 'What it is, if it needs saying', placeholder: 'everything since the v2 split' }
     ],
-    confirm: 'Measure from it',
+    confirm: 'Name it',
     onYes: async f => {
-      const r = await api('branchAsBaseline', { branch: b.name, group: (f.group || '').trim() || undefined })
+      const r = await api('branchAsGroup', { branch: b.name, name: f.name, why: f.why })
+      pickedGroup = r.name
+      been.set('group', pickedGroup)
       changed('branches', null)
       changed('baselines', null)
       say(r.note)

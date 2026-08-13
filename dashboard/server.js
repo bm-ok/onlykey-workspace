@@ -1413,7 +1413,7 @@ const actions = {
         // board to it. So the question is asked of what it IS — a baseline
         // somewhere, or only a link in a line.
         const guard = all.protected.find(p => p.branch === b.name) || {}
-        const isBaseline = (guard.asDefault || []).length > 0 || (guard.asBaseline || []).length > 0
+        const isBaseline = (guard.asDefault || []).length > 0
         const art = isBaseline ? null : artifact.read(b.name)
 
         // CONTAINED IN THE DEFAULT means every repository holding this branch
@@ -1446,21 +1446,18 @@ const actions = {
           // stop being said about a branch that was never supposed to be there:
           // a default branch is not missing from the repositories that have
           // their own, it is simply not theirs.
-          baselineFor: (all.protected.find(p => p.branch === b.name) || {}).repos || [],
           // WHY it is protected, kept apart, because they are different claims
           // and collapsing them says the wrong one. A branch can be the default
           // of one repository and the chosen baseline of another, and once a
           // baseline is chosen anywhere the two lists stop matching.
           asDefault: (all.protected.find(p => p.branch === b.name) || {}).asDefault || [],
-          asBaseline: (all.protected.find(p => p.branch === b.name) || {}).asBaseline || [],
           // Whether it is the baseline for ALL of them, which is the only case
           // where "the baseline" is a true thing to call it.
-          baselineForAll: ((all.protected.find(p => p.branch === b.name) || {}).repos || []).length === all.repos.length,
           // The claim, flattened to what a list can show without a second lookup.
           tasks: claims.map(t => ({ id: t.id, number: t.number, title: t.title, state: t.state })),
           commits: art ? art.commits : 0,
           files: art ? art.files : 0,
-          summary: art ? art.summary : 'a baseline — everything else is measured against it',
+          summary: art ? art.summary : 'a default branch — where work lands, never measured against itself',
           contained,
           // Made by this system and then forgotten: it carries work, and the task
           // that asked for it is gone. This is the one row that is genuinely hard
@@ -1634,17 +1631,11 @@ const actions = {
     }
   },
 
-  baselineGroupUse: {
-    about: 'Count every repository from a named group',
-    takes: ['name'],
-    run: ({ name }) => {
-      const done = branches.useGroup(name)
-      log.on('git').good(done.changed.length
-        ? `now on "${done.group}" — ${done.changed.join(', ')}`
-        : `already on "${done.group}"`)
-      return { ...done, note: done.changed.length ? `Counted from "${done.group}".` : `Already counted from "${done.group}".` }
-    }
-  },
+  // baselineGroupUse was here. It pointed every repository at one line, and what
+  // a branch is measured against is now a fact about the branch — what it was
+  // cut from, recorded when it was made. A workspace-wide pointer on top of that
+  // was a second and worse answer to a question already answered, and moving it
+  // reinterpreted every number on the board at once.
 
   baselineGroupDelete: {
     about: 'Forget a group. Its branches are untouched, and stop being protected by it',
@@ -1657,18 +1648,20 @@ const actions = {
   },
 
   repoBaselines: {
-    about: 'What each repository counts work from, and what its own default branch is',
+    about: 'Each repository, its default branch, and the branches it has',
     run: () => {
       const rows = branches.baselines()
       return {
         repos: rows,
         groups: branches.groups(),
-        // The thing that changes what every "commits ahead" figure means.
-        mixed: [...new Set(rows.map(r => r.baseline))].length > 1,
-        chosen: rows.filter(r => r.chosen).length,
-        note: rows.some(r => r.differs)
-          ? 'Where a baseline differs from the default, both are protected: nothing is built on either.'
-          : 'Every repository is counted from its own default branch.'
+        // Whether the repositories disagree about what their default is. Worth
+        // saying, because it is why one branch's "commits ahead" is a sum of
+        // things counted from different places — and it is the reason naming a
+        // line matters here more than it would in one repository.
+        mixed: [...new Set(rows.map(r => r.default))].length > 1,
+        note: [...new Set(rows.map(r => r.default))].length > 1
+          ? 'These repositories do not share a default branch, so a line is what says which point they are being read at together.'
+          : 'Every repository has the same default branch.'
       }
     }
   },
@@ -1684,77 +1677,14 @@ const actions = {
   // Repositories that do not have the branch keep what they had, and are named.
   // A change that only touched two repositories should not silently move the
   // third's baseline to something it has never heard of.
-  branchAsBaseline: {
-    about: 'Count everything from this branch, wherever it exists',
-    takes: ['branch', 'group'],
-    run: async ({ branch, group }) => {
-      const known = branches.all().branches.find(b => b.name === branch)
-      if (!known) throw new Error(`There is no branch called "${branch}".`)
-
-      const moved = []
-      for (const repo of known.in) {
-        const was = branches.baselineOf(repo)
-        if (was === branch) continue
-        branches.setBaseline(repo, branch)
-        moved.push({ repo, was, now: branch })
-      }
-
-      // Named as a group in the same breath, when asked. A baseline nobody named
-      // is one nobody can go back to -- and going back to it is most of the point
-      // of having chained in the first place.
-      const named = group ? branches.saveGroup(group, { why: `counted from "${branch}"` }) : null
-
-      log.on('git').good(moved.length
-        ? `everything is now counted from "${branch}" in ${moved.map(m => m.repo).join(', ')}`
-        : `"${branch}" was already the baseline everywhere it exists`)
-
-      return {
-        branch,
-        moved,
-        untouched: known.missing,
-        group: named ? named.name : null,
-        note: [
-          moved.length ? `Counted from "${branch}" in ${moved.map(m => m.repo).join(', ')}.` : `"${branch}" was already the baseline.`,
-          known.missing.length ? `${known.missing.join(', ')} do not have it and keep what they had.` : null,
-          `It is protected now — work is cut from it and merged back into it, never built on directly.`,
-          named ? `Saved as "${named.name}", so this point can be returned to.` : null
-        ].filter(Boolean).join(' ')
-      }
-    }
-  },
-
-  repoBaseline: {
-    about: 'Choose what a repository counts work from. Empty puts it back to its default',
-    takes: ['repo', 'branch'],
-    run: ({ repo, branch }) => {
-      const was = branches.baselineOf(repo)
-      const now = branches.setBaseline(repo, branch)
-      if (now.baseline !== was) {
-        log.on('git').good(now.chosen
-          ? `${repo} is now counted from "${now.baseline}" — its default branch "${now.default}" stays protected`
-          : `${repo} is back to counting from its default branch "${now.baseline}"`)
-      }
-      return {
-        ...now,
-        was,
-        note: now.chosen && now.baseline !== now.default
-          ? `New branches in ${repo} are cut from "${now.baseline}", and everything is counted from it. "${now.default}" is still protected — it is the repository's own default and that is not a preference.`
-          : `${repo} counts from its own default branch again.`
-      }
-    }
-  },
-
-  // Cut a branch, deliberately, with a reason.
+  // branchAsBaseline was here, and repoBaseline after it. Both set the branch a
+  // repository counts work from, and nothing counts from a repository any more:
+  // a branch is measured against what it was cut from, which is recorded on the
+  // branch when it is made and does not move afterwards.
   //
-  // THE ONLY WAY ONE IS MADE NOW. Setting a machine up used to do it as a side
-  // effect, from whatever string a task carried, so a typo produced a branch
-  // rather than an error and nothing anywhere recorded what any of them were
-  // for. `drill/cable-pull` is the monument to that: pointing at the same commit
-  // as master in both repositories, left by a drill about the network, and
-  // indistinguishable on a list from a branch somebody meant.
-  //
-  // The reason is required by `ensure` rather than checked here, because this is
-  // not the only caller and a rule that lives at one door is not a rule.
+  // The useful half of branchAsBaseline -- naming a finished branch so the next
+  // work can start there -- is branchAsGroup.
+
   branchCreate: {
     about: 'Cut a branch across every repository, from a named baseline group',
     takes: ['branch', 'reason', 'group'],
