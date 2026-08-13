@@ -73,6 +73,11 @@ const setText = (node, text) => { if (node.textContent !== text) node.textConten
 // is carried into the configure dialog.
 const vmKey = v => v && [v.name, v.state, v.stage, v.live, v.running, v.connected, v.baseSnapshot, v.description || '', v.branch || '', v.forTasks !== false]
 
+// What the queue last said about each machine, by name. Kept here so a card can
+// show the queue's own verdict rather than working one out again -- see
+// queueWhy. Filled on every draw, from the same call the banner already makes.
+let queueSays = new Map()
+
 // ---- code, for reading ------------------------------------------------
 //
 // Two things in this window are read carefully enough that a decision hangs on
@@ -1760,7 +1765,32 @@ const vmCard = v => el('div', {
     // Only when it is being kept back, because that is the surprising state.
     // A badge on every machine saying it is available would be noise on the
     // normal case and would make the exception harder to see, not easier.
-    v.forTasks === false ? el('span', { className: 'badge warn', textContent: 'not for tasks' }) : null))
+    v.forTasks === false ? el('span', { className: 'badge warn', textContent: 'not for tasks' }) : null,
+
+    // WHY THE QUEUE WILL NOT TAKE IT, in the queue's own words.
+    //
+    // `ready` is a badge about PROVISIONING -- built, set up, has a base
+    // snapshot -- and it was being read as ready for work, which is a different
+    // question with a different answer. A machine still claiming a branch is
+    // fully provisioned and is not available, and the card said `poweroff ready`,
+    // identical to a machine that genuinely was.
+    //
+    // The sentence is not composed here. The queue already decides this and
+    // already words it, so this renders that answer rather than a second opinion
+    // that can drift from it -- which is the same mistake this tab has now made
+    // twice, once about a credential and once about a claim.
+    queueWhy(v) ? el('span', { className: 'badge warn', textContent: queueWhy(v), title: 'the queue will not take this machine while it is true' }) : null))
+
+// What the queue says about a machine, when that is not already on the card.
+//
+// "Kept back" has its own badge and "installing" is the stage, so repeating
+// either would be the same fact twice with different wording.
+function queueWhy (v) {
+  const said = queueSays.get(v.name)
+  if (!said || said.free || !said.why) return null
+  if (v.forTasks === false || v.stage === 'installing') return null
+  return said.why
+}
 
 function vmActions () {
   const box = $('machine-actions')
@@ -2161,7 +2191,9 @@ function paintDetails () {
 
 function paintVms () {
   // `picked` is in the signature because it decides which card is highlighted.
-  if (changed('vms', [latest.available, picked, latest.vms.map(vmKey)])) {
+  // The queue's verdict is part of the signature, or a machine that became
+  // unavailable would keep the card it was drawn with.
+  if (changed('vms', [latest.available, picked, latest.vms.map(v => [vmKey(v), queueWhy(v)])])) {
     fill($('vms'), latest.vms.length
       ? latest.vms.map(vmCard)
       : el('p', { className: 'empty', textContent: latest.available ? 'None yet. The + above makes one.' : 'VirtualBox was not found.' }))
@@ -2375,6 +2407,7 @@ async function drawOnce () {
   const busyMachines = new Set((running.inFlight || []).map(f => f.machine))
   latest = list
   latest.credentialsHeld = held
+  queueSays = new Map((running.machines || []).map(m => [m.name, m]))
 
   // Reconcile the selection against what actually exists, every time, before
   // anything that depends on it is painted.
