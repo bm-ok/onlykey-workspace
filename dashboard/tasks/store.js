@@ -26,6 +26,36 @@ const log = require('../core/log')
 const STATE = process.env.OKC_STATE || path.join(__dirname, '..', 'state')
 const FILE = path.join(STATE, 'tasks.json')
 
+// The highest number ever used, kept OUTSIDE the list of tasks.
+//
+// Counting from the tasks that exist looked right and was not: remove the
+// highest-numbered task and the next one written takes its number back. That
+// happened -- #11 was removed, and the next task became #11 -- which quietly
+// makes a number ambiguous in exactly the places numbers get used: a commit
+// message, a note, somebody saying "what happened to eleven".
+//
+// A number is meant to be the one identity a person can say out loud, so it has
+// to survive the record it was issued against being thrown away. This file is
+// the only thing that remembers deleted tasks, which is precisely its job.
+const COUNTER = path.join(STATE, 'tasks-highest.json')
+
+function highest () {
+  let kept = 0
+  try { kept = Number(JSON.parse(fs.readFileSync(COUNTER, 'utf8')).highest) || 0 } catch { /* first run */ }
+  // Never below what is on the board: the counter can be deleted, and a board
+  // that survived it must not start handing out numbers already in use.
+  return Math.max(kept, ...read().map(t => Number(t.number) || 0), 0)
+}
+
+function claimNumber () {
+  const next = highest() + 1
+  try {
+    fs.mkdirSync(STATE, { recursive: true })
+    fs.writeFileSync(COUNTER, JSON.stringify({ highest: next, at: new Date().toISOString() }, null, 2))
+  } catch { /* the number is still right for this call; it is only not remembered */ }
+  return next
+}
+
 // The states a task can be in, and the one thing each means.
 //
 // `working` and `delivered` are DERIVED rather than stored -- a run's outcome
@@ -41,9 +71,10 @@ const STORED = new Set(['draft', 'queued', 'given', 'done', 'accepted', 'rejecte
 
 // TWO IDENTITIES, and they are for different readers.
 //
-// `number` counts from 1 and never repeats, and it is what a person says out
-// loud: "what happened to 3". Short enough to type, ordered, and it says how
-// many pieces of work there have been, which a name cannot.
+// `number` counts from 1 and never repeats -- not even after the task that held
+// it is deleted, which is what the high-water mark above is for. It is what a
+// person says out loud: "what happened to 3". Short enough to type, ordered, and
+// it says how many pieces of work there have been, which a name cannot.
 //
 // `uid` is the durable one. It is what anything STORED points at -- the kept
 // logs in particular -- because a title can be edited and a slug derived from it
@@ -131,11 +162,10 @@ function add (input) {
   const existing = read()
   const task = {
     id: newId(title),
-    // Counted from the highest ever used rather than from the length, so
-    // throwing task 2 away does not hand its number to the next one written.
-    // Two different pieces of work sharing a number is exactly what a number is
-    // for preventing.
-    number: Math.max(0, ...existing.map(t => Number(t.number) || 0)) + 1,
+    // From the high-water mark, not from the board. Throwing the highest task
+    // away must not hand its number back — two pieces of work sharing a number
+    // is the one thing a number exists to prevent.
+    number: claimNumber(),
     uid: uid(),
     title,
     brief,
@@ -202,4 +232,4 @@ function remove (ref) {
   }
 }
 
-module.exports = { read, write, get, add, update, remove, newId, FILE, STORED }
+module.exports = { read, write, get, add, update, remove, newId, highest, FILE, COUNTER, STORED }

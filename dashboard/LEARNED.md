@@ -204,6 +204,14 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   whatever was wrong. That is the fastest way to teach somebody to ignore a red
   number, and it is the same mistake as reading a missing result as a result:
   two different states, one word.
+* **A counter derived from what still exists is not a counter.** Task numbers
+  were the highest on the board plus one, which is correct until the highest is
+  deleted -- and then the next task takes its number back. It happened within an
+  hour of the numbers being added: #11 was removed and the next task became #11.
+  Nothing failed; a number simply stopped meaning one piece of work, in exactly
+  the places numbers are used -- a commit message, a note, somebody asking what
+  happened to eleven. An identity that has to survive deletion cannot be derived
+  from what survived.
 * **Git Bash rewrites paths that look absolute.** `--folder /home/okc/work`
   arrives as `C:/Program Files/Git/home/okc/work`, which is a real path on this
   host, so nothing looks wrong anywhere: the machine cannot find it, falls back
