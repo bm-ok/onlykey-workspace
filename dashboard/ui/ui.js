@@ -2086,7 +2086,11 @@ async function paintSnapshots () {
     [...s.snapshots.map(x => el('div', { className: 'card snap', ...(x.depth ? { style: `margin-left:${x.depth * 18}px` } : {}) },
         el('div', { className: 'card-title' },
           el('span', { className: 'mono', textContent: x.name }),
-          x.current ? el('span', { className: 'badge run', textContent: 'on this one' }) : null,
+          // "On this one" was here. It is not needed any more: the current state
+          // is its own card, hanging off the snapshot it came from, so where the
+          // machine is is shown by POSITION rather than asserted by a label on a
+          // different card.
+
           // The dashboard's own idea, which is not VirtualBox's: the point the
           // queue returns a machine to. Worth marking here because it is the one
           // snapshot whose deletion changes what the queue can do.
@@ -2226,7 +2230,7 @@ function currentStateNode (v, s) {
     el('div', { className: 'card-sub', textContent: !on
       ? 'There are no snapshots, so this is the whole of the machine with nothing recorded behind it. Nothing can be gone back to until one is taken.'
       : heardAfter
-        ? `It dialled in ${ago(v.reported)}, after "${on.name}" was taken — so it has booted and written to its disk since. That stays true until it is either thrown away, by going back to a snapshot, or captured, by taking a new one.`
+        ? `It dialled in ${ago(v.reported)}, after "${on.name}" was taken — so it has booted and written to its disk since. That stays true until this is either captured as a snapshot of its own, or reverted to "${on.name}" and discarded.`
         : `Nothing here has heard from it since "${on.name}" was taken. That is not proof nothing ran on it — only that nothing reached this host.` }),
 
     // CAPTURING IT IS AN ACTION ON THIS, not on the machine in general, so the
@@ -2280,13 +2284,17 @@ function currentStateNode (v, s) {
       on && heardAfter
         ? el('button', {
             className: 'btn danger',
-            textContent: 'Throw it away',
+            // NAMES WHERE IT GOES, not what it destroys. "Throw it away" is
+            // accurate about the current state and says nothing about where the
+            // machine ends up -- which is the thing somebody needs to know
+            // before pressing it, and it is right there in the tree above.
+            textContent: `Revert to ${on.name}`,
             disabled: v.running,
             title: v.running ? 'Shut it down first — VirtualBox will not restore a snapshot while it is running' : '',
             onclick: () => api('vmHolds', { name: v.name })
               .catch(() => ({ asked: false, why: 'asking it failed.' }))
               .then(holds => ask({
-                title: `Throw away everything since "${on.name}"?`,
+                title: `Revert ${v.name} to "${on.name}"?`,
                 plain: [
                   `${v.name} goes back to "${on.name}" and stays there. The snapshot is not touched.`,
                   holdingLine(holds),
@@ -2294,7 +2302,7 @@ function currentStateNode (v, s) {
                   `What ${v.name} is allowed to push goes back with it — to whatever was set when "${on.name}" was taken.`
                 ],
                 cost: `Everything that changed on ${v.name} since ${ago(on.taken)} is discarded.`,
-                confirm: 'Throw it away',
+                confirm: `Revert to ${on.name}`,
                 danger: true,
                 onYes: () => api('vmSnapshotRestore', { name: v.name, title: on.name })
                   .then(r => say(r.branch

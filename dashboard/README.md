@@ -728,10 +728,19 @@ that nothing ran on it, only that nothing reached us.
 
 **Every button is on the thing it acts on**, which took three goes to get right.
 
-    a snapshot        Revert to here      move the machine to this point
-                      Delete this snapshot  remove the point; the machine stays
-    current state     Take a snapshot of it capture where it is now
-                      Throw it away       discard everything since the snapshot
+    a snapshot        Revert to here         move the machine to this point
+                      Delete this snapshot   remove the point; the machine stays
+    current state     Take a snapshot of it  capture where it is now
+                      Revert to <name>       discard it, back to where it came from
+
+Each names WHERE IT GOES rather than what it destroys. "Throw it away" is
+accurate about the current state and says nothing about where the machine ends
+up, which is the thing worth knowing before pressing it -- and it is right there
+in the tree above.
+
+Nothing is labelled "on this one" any more either. The current state is its own
+card hanging off the snapshot it came from, so where the machine is is shown by
+POSITION rather than asserted by a label on a different card.
 
 "Take a snapshot" used to sit in the row of things you do to a MACHINE, with its
 object -- the current state -- somewhere else on the screen. And the snapshot the
