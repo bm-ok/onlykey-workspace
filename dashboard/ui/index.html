@@ -132,51 +132,105 @@
        thrown away looked exactly like one somebody made by hand — and the
        difference is whether deleting it loses anything. -->
   <section class="view active" id="view-branches">
-    <div class="cols">
 
-      <div class="col narrow">
-        <h2 class="titlerow">
-          Branches
-          <span class="grow"></span>
-          <label class="inline mine"><input type="checkbox" id="branch-mine" checked> ours</label>
-          <!-- Making one is a deliberate act with a reason now. It used to happen
-               as a side effect of setting a machine up, from whatever string a
-               task carried — so a typo made a branch instead of an error. -->
-          <button class="plus" id="add-branch-open" title="Cut a branch, with a reason">+</button>
-        </h2>
-        <input id="branch-find" class="finder" placeholder="find a branch">
-        <div id="branch-counts" class="chips"></div>
-        <div id="branches" class="stack"></div>
-
-        <!-- What each repository counts work FROM, and what it cuts new branches
-             from. Different from its default branch, which is a fact about git
-             and stays protected whatever is chosen here — a repository whose
-             default is master may perfectly well be working toward version2. -->
-        <h2 class="titlerow" style="margin-top:18px">Baselines</h2>
-        <div id="baselines" class="stack"></div>
-      </div>
-
-      <div class="col">
-        <!-- What can be done to the selected branch, and what has been done ON
-             it. The same split as the machines tab: acts on the left column's
-             selection, so one set of buttons serves every branch. -->
-        <h2>Actions <span class="muted" id="branch-context">— nothing selected</span></h2>
-        <div id="branch-actions" class="panel"></div>
-
-        <h2>Tasks <span class="muted" id="branch-tasks-context"></span></h2>
-        <div id="branch-tasks" class="stack"></div>
-      </div>
-
-      <div class="col wide">
-        <!-- Everything the branch carries, of every kind. A branch used to mean
-             commits and nothing else; a run can now hand over a file a branch
-             cannot hold, and the session that produced the work is the third
-             thing worth keeping with it. -->
-        <h2>What it carries <span class="muted" id="branch-carries"></span></h2>
-        <div id="branch-artifacts" class="panel"></div>
-      </div>
-
+    <!-- THREE QUESTIONS, NOT ONE SCREEN. What is on this branch, what is
+         everything counted from, and what may nothing be built on — they were
+         stacked into one column until the first of them had to share a scroll
+         with the other two. They are also asked at different times: the first
+         constantly, the second when work changes direction, the third almost
+         never but with the most consequence. -->
+    <div class="subtabs">
+      <button class="subtab active" data-pane="overview">Overview</button>
+      <button class="subtab" data-pane="baselines">Baselines</button>
+      <button class="subtab" data-pane="protected">Protected</button>
     </div>
+
+    <div class="pane active" id="pane-overview">
+      <div class="cols">
+
+        <div class="col narrow">
+          <h2 class="titlerow">
+            Branches
+            <span class="grow"></span>
+            <label class="inline mine"><input type="checkbox" id="branch-mine" checked> ours</label>
+            <!-- Making one is a deliberate act with a reason now. It used to
+                 happen as a side effect of setting a machine up, from whatever
+                 string a task carried — so a typo made a branch, not an error. -->
+            <button class="plus" id="add-branch-open" title="Cut a branch, with a reason">+</button>
+          </h2>
+          <input id="branch-find" class="finder" placeholder="find a branch">
+          <div id="branch-counts" class="chips"></div>
+          <div id="branches" class="stack"></div>
+        </div>
+
+        <div class="col">
+          <!-- What can be done to the selected branch, and what has been done ON
+               it. The same split as the machines tab: acts on the left column's
+               selection, so one set of buttons serves every branch. -->
+          <h2>Actions <span class="muted" id="branch-context">— nothing selected</span></h2>
+          <div id="branch-actions" class="panel"></div>
+
+          <h2>Tasks <span class="muted" id="branch-tasks-context"></span></h2>
+          <div id="branch-tasks" class="stack"></div>
+        </div>
+
+        <div class="col wide">
+          <!-- Everything the branch carries, of every kind. A branch used to mean
+               commits and nothing else; a run can now hand over a file a branch
+               cannot hold, and the session that produced the work is the third
+               thing worth keeping with it. -->
+          <h2>What it carries <span class="muted" id="branch-carries"></span></h2>
+          <div id="branch-artifacts" class="panel"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ---------------- Baselines ----------------
+         What everything is counted from, and cut from. A GROUP names one branch
+         per repository and is the unit a task is based on — because a change
+         spans repositories, and "which version line is this work against" is one
+         question with one answer, not one answer per repository.
+
+         Being in a group PROTECTS every branch in it, and that is what makes
+         chaining safe: work is cut from a link, merges back into it, and the
+         link itself is never built on directly. -->
+    <div class="pane" id="pane-baselines">
+      <div class="cols">
+        <div class="col narrow">
+          <h2 class="titlerow">
+            Groups
+            <span class="grow"></span>
+            <button class="plus" id="add-group-open" title="Name a set of baselines">+</button>
+          </h2>
+          <div id="groups" class="stack"></div>
+        </div>
+
+        <div class="col">
+          <h2>Per repository <span class="muted" id="baseline-context"></span></h2>
+          <div id="baselines" class="stack"></div>
+        </div>
+
+        <div class="col wide">
+          <h2>What a group is <span class="muted" id="group-context"></span></h2>
+          <div id="group-detail" class="panel"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- Protected ----------------
+         The branches nothing may be built on, and WHY each one is one. Two
+         different reasons that were being collapsed into a single word: a
+         repository's own default is a fact about git, and a baseline is a
+         decision that can be unmade. -->
+    <div class="pane" id="pane-protected">
+      <p class="note">
+        Nothing is built on these and nothing pushes to them. Work is cut onto its
+        own branch and merged in afterwards — the rule the rest of this rests on.
+      </p>
+      <div id="protected" class="stack"></div>
+    </div>
+
   </section>
 
   <!-- ---------------- Live ----------------

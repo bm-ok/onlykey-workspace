@@ -1100,6 +1100,31 @@ const oursOnly = b => b.protected || b.tasks.length || b.heldBy || b.orphaned
 // gone is the same stranded panel as never having chosen.
 let pickedBranch = been.get('branch', null)
 
+// Which question is being asked about branches. Remembered like the main tabs,
+// and for the same reason: coming back to a window should find it where it was
+// left rather than at the beginning.
+let branchPane = been.get('branch-pane', 'overview')
+
+document.querySelectorAll('.subtab').forEach(b => {
+  b.onclick = () => {
+    branchPane = b.dataset.pane
+    been.set('branch-pane', branchPane)
+    document.querySelectorAll('.subtab').forEach(x => x.classList.toggle('active', x === b))
+    document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === `pane-${branchPane}`))
+    // Painted at once rather than on the next tick, or switching to a pane that
+    // has never been drawn shows an empty one for up to three seconds.
+    paintBranches()
+  }
+})
+
+// Applied before anything is drawn, so the remembered pane and the markup agree.
+;(() => {
+  const tab = document.querySelector(`.subtab[data-pane="${branchPane}"]`)
+  if (!tab) { branchPane = 'overview'; return }
+  document.querySelectorAll('.subtab').forEach(x => x.classList.toggle('active', x === tab))
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === `pane-${branchPane}`))
+})()
+
 function paintBranches () {
   if (view !== 'branches') return
   // Said before the asking, not after: the gap this fills is the time the answer
@@ -1185,8 +1210,43 @@ function paintBranches () {
     const picked = board.branches.find(b => b.name === pickedBranch) || null
     branchActions(picked)
     paintBranchArtifacts(picked)
-    paintBaselines()
+
+    // Only the pane on screen. The other two read git and would be paying for
+    // answers nobody is looking at, three seconds at a time.
+    if (branchPane === 'baselines') paintBaselines()
+    if (branchPane === 'protected') paintProtected(board)
   }).catch(oops)
+}
+
+// The branches nothing may be built on, and WHY each one is one.
+//
+// Three different reasons, and they are not interchangeable: a repository's own
+// default is a fact about git that cannot be unmade here; a chosen baseline is a
+// decision about one repository; a link in a group is a decision about a line of
+// work across all of them. Collapsing them into "protected" is what made
+// `master` claim to be a baseline for a repository that was counting from
+// something else entirely.
+function paintProtected (board) {
+  if (!changed('protected', board.protected)) return
+  fill($('protected'), board.protected.length
+    ? board.protected.map(p => el('div', { className: 'card' },
+        el('div', { className: 'card-title' },
+          el('span', { className: 'mono', textContent: p.branch }),
+          el('span', { className: 'badge ok', textContent: 'protected' })),
+        el('table', { className: 'kv', style: 'margin-top:6px' },
+          p.asDefault.length
+            ? el('tr', {}, el('th', { textContent: 'default branch of' }), el('td', { className: 'mono', textContent: p.asDefault.join(', ') }))
+            : null,
+          p.asBaseline.length
+            ? el('tr', {}, el('th', { textContent: 'counted from by' }), el('td', { className: 'mono', textContent: p.asBaseline.join(', ') }))
+            : null,
+          p.asGroup && p.asGroup.length
+            ? el('tr', {}, el('th', { textContent: 'a link in' }), el('td', { className: 'mono', textContent: [...new Set(p.asGroup)].join(', ') }))
+            : null),
+        el('p', { className: 'note', style: 'margin-top:8px', textContent: p.asDefault.length
+          ? 'A default branch is a fact about the repository. It cannot be unprotected from here.'
+          : 'A decision, not a fact — stop counting from it and it stops being protected.' })))
+    : el('p', { className: 'empty', textContent: 'Nothing is protected, which means no repository here has a default branch — worth looking at.' }))
 }
 
 // What each repository counts work from — and cuts new branches from.
@@ -1199,8 +1259,11 @@ function paintBranches () {
 // them.
 function paintBaselines () {
   waiting('baselines', { cards: 2 })
-  api('repoBaselines').then(({ repos, note }) => {
-    if (!changed('baselines', repos)) return
+  waiting('groups', { cards: 2 })
+  api('repoBaselines').then(({ repos, groups, note }) => {
+    if (!changed('baselines', [repos, groups])) return
+
+    setText($('baseline-context'), repos.length ? `— ${repos.length}` : '')
     fill($('baselines'), repos.length
       ? [...repos.map(r => el('div', {
           className: `card pick${r.differs ? ' warn' : ''}`,
@@ -1217,7 +1280,99 @@ function paintBaselines () {
           : null)),
         el('p', { className: 'note', textContent: note })]
       : el('p', { className: 'empty', textContent: 'No repositories in the workspace.' }))
+
+    // ---- the groups -----------------------------------------------------
+    setText($('group-context'), groups.length ? `— ${groups.length}` : '')
+    fill($('groups'), groups.length
+      ? groups.map(g => el('div', {
+          className: `card pick${g.inUse ? ' on' : ''}${g.broken.length ? ' warn' : ''}`,
+          onclick: () => showGroup(g)
+        },
+        el('div', { className: 'card-title' },
+          el('span', { className: 'mono', textContent: g.name }),
+          g.inUse ? el('span', { className: 'badge ok', textContent: 'in use' }) : null,
+          g.broken.length ? el('span', { className: 'badge bad', textContent: 'broken' }) : null),
+        el('div', { className: 'badges' },
+          el('span', { className: 'muted', textContent: `${g.on.length} repositor${g.on.length === 1 ? 'y' : 'ies'}` }),
+          g.missing.length ? el('span', { className: 'muted', textContent: `${g.missing.length} not named` }) : null)))
+      : el('p', { className: 'empty', textContent: 'No groups yet. A group names one branch per repository, so a task can be based on a line of work rather than on a branch at a time.' }))
+
+    // The detail panel follows the list rather than a selection, because a group
+    // is small enough to show whole and there are rarely many.
+    fill($('group-detail'), groups.length
+      ? groups.map(g => el('div', { className: 'carries' },
+          el('div', { className: 'carries-head' },
+            el('span', { textContent: g.name }),
+            g.why ? el('span', { className: 'muted', textContent: g.why }) : null),
+          ...g.on.map(p => el('div', { className: 'group-part' },
+            el('span', { className: 'mono', textContent: p.repo }),
+            el('span', { className: p.there ? 'mono' : 'mono gone', textContent: p.there ? p.branch : `${p.branch} — gone` }))),
+          g.missing.length
+            ? el('p', { className: 'note', textContent: `${g.missing.join(', ')} ${g.missing.length === 1 ? 'is' : 'are'} not named in this group and keep whatever they are counting from.` })
+            : null,
+          el('div', { className: 'row', style: 'margin-top:8px' },
+            el('button', {
+              className: 'btn ok',
+              textContent: g.inUse ? 'Already in use' : 'Count everything from it',
+              disabled: g.inUse || g.broken.length > 0,
+              title: g.broken.length ? g.broken.join('; ') : '',
+              onclick: () => api('baselineGroupUse', { name: g.name })
+                .then(r => { changed('baselines', null); changed('branches', null); say(r.note); return draw() })
+                .catch(oops)
+            }),
+            el('button', {
+              className: 'btn danger',
+              textContent: 'Forget it',
+              onclick: () => askToForgetGroup(g)
+            }))))
+      : el('p', { className: 'empty', textContent: 'A group is a line of work: master today, version2 next, each one cut from the last. Naming it is what lets a task be based on it — and what protects it while it is a link.' }))
   }).catch(() => { /* the panel beside it is the one worth an error */ })
+}
+
+// Naming what everything is counted from right now.
+function newGroup () {
+  api('repoBaselines').then(({ repos }) => ask({
+    title: 'Name this set of baselines',
+    plain: [
+      'A group names one branch per repository, and using it sets all of them at once — because a change spans repositories, and what work is counted from is one question with one answer.',
+      `Right now: ${repos.map(r => `${r.repo} → ${r.baseline}`).join(', ')}.`,
+      'Every branch in a group is protected while it is in one: work is cut from it and merged back into it, never built on directly. That is what makes chaining safe rather than a convention.'
+    ],
+    fields: [
+      { name: 'name', label: 'Called', placeholder: 'the version2 line' },
+      { name: 'why', label: 'What it is, if it needs saying', placeholder: 'everything since the v2 split' }
+    ],
+    confirm: 'Name it',
+    onYes: async f => {
+      const saved = await api('baselineGroupSave', { name: f.name, why: f.why })
+      changed('baselines', null)
+      changed('branches', null)
+      say(`"${saved.name}" — ${saved.on.map(p => `${p.repo}:${p.branch}`).join(', ')}`)
+      return draw()
+    }
+  })).catch(oops)
+}
+
+const showGroup = g => say(`"${g.name}" — ${g.on.map(p => `${p.repo}:${p.branch}`).join(', ')}`)
+
+function askToForgetGroup (g) {
+  ask({
+    title: `Forget "${g.name}"?`,
+    plain: [
+      'The branches are untouched. Forgetting a group is a decision about branches, not a thing the branches belong to.',
+      'What it does change: those branches stop being protected by it, so work could be built directly on one.',
+      g.inUse ? 'This is the group in use. What each repository counts from does not change — it just stops having a name.' : null
+    ].filter(Boolean),
+    confirm: 'Forget it',
+    danger: true,
+    onYes: async () => {
+      await api('baselineGroupDelete', { name: g.name })
+      changed('baselines', null)
+      changed('branches', null)
+      say(`"${g.name}" forgotten. Its branches are untouched.`)
+      return draw()
+    }
+  })
 }
 
 // Choosing one. The list is that repository's own branches, because a baseline
@@ -1300,6 +1455,22 @@ function branchActions (b) {
             className: 'btn ok',
             textContent: 'Work on it in VS Code',
             onclick: () => workOnBranch(b)
+          })
+        : null,
+
+      // MAKING THIS THE BASELINE, which is what chaining looks like from the
+      // front: a branch carrying finished work becomes what the NEXT work is
+      // counted from and cut from, so the next task starts where this one ended
+      // rather than from a default that does not have it yet.
+      //
+      // Not offered on something already protected — it is the baseline, or it
+      // is a default, and neither wants doing twice.
+      !b.protected
+        ? el('button', {
+            className: 'btn',
+            textContent: 'Count from it',
+            title: `Everything measured against "${b.name}", and new branches cut from it`,
+            onclick: () => askToUseAsBaseline(b)
           })
         : null,
 
@@ -1635,6 +1806,37 @@ function newBranch () {
       been.set('branch', r.branch)
       changed('branches', null)
       say(r.already ? `"${r.branch}" already existed everywhere.` : `Cut "${r.branch}" in ${r.made.join(', ')}.`)
+    }
+  })
+}
+
+// Making a branch the thing everything is counted from.
+//
+// The scenario this exists for: a branch carries work that the next piece of
+// work should start from. Without it, the next task is cut from a default branch
+// that does not have this yet, and is then measured against a baseline it is
+// already ahead of for reasons that have nothing to do with it.
+function askToUseAsBaseline (b) {
+  ask({
+    title: `Count everything from "${b.name}"?`,
+    plain: [
+      `Every repository that has it measures work against it from now on, and cuts new branches from it. ${b.in.join(', ')}.`,
+      b.missing.length
+        ? `${b.missing.join(', ')} do not have it and keep what they are counting from — a change that touched some repositories should not move the baseline of one it never reached.`
+        : 'Every repository here has it.',
+      'It becomes protected: work is cut from it and merged back into it, never built on directly. That is what makes a chain safe rather than a convention.',
+      'Naming it as a group is how this point can be returned to later. Leave it blank if this is a step rather than a place.'
+    ],
+    fields: [
+      { name: 'group', label: 'Name this line, optionally', placeholder: 'the version2 line' }
+    ],
+    confirm: 'Count from it',
+    onYes: async f => {
+      const r = await api('branchAsBaseline', { branch: b.name, group: (f.group || '').trim() || undefined })
+      changed('branches', null)
+      changed('baselines', null)
+      say(r.note)
+      return draw()
     }
   })
 }
@@ -2922,6 +3124,7 @@ function paintVms () {
 
 $('add-task-open').onclick = newTask
 $('add-branch-open').onclick = newBranch
+$('add-group-open').onclick = newGroup
 $('term-open').onclick = () => openShell($('term-machine').value)
 $('term-close').onclick = () => closeShell(active)
 // The sign-in line is about the machine in the picker, not the one in the front
@@ -3292,8 +3495,21 @@ function shotIfAsked () {
     // moment the photograph is taken -- and an empty panel in a screenshot is
     // worse than no screenshot, because it looks like a rendering fault rather
     // than a timing one. It did: the Branches tab photographed blank, correctly.
-    if (want.view && want.view !== view) {
-      const tab = document.querySelector(`.tab[data-view="${want.view}"]`)
+    // A view, and optionally a pane inside it: `branches/baselines`. Sub-tabs
+    // are exactly as unverifiable as tabs were before this existed -- a panel
+    // nobody clicked is a panel nobody has seen -- and from outside the window
+    // there is no other way to reach one.
+    const [wantView, wantPane] = String(want.view || '').split('/')
+
+    if (wantPane && document.querySelector(`.subtab[data-pane="${wantPane}"]`) && branchPane !== wantPane) {
+      document.querySelector(`.subtab[data-pane="${wantPane}"]`).click()
+      shotSettle = 2
+      // Deliberately not returning: the view itself may still need switching,
+      // and clicking a sub-tab inside a hidden view changes nothing on screen.
+    }
+
+    if (wantView && wantView !== view) {
+      const tab = document.querySelector(`.tab[data-view="${wantView}"]`)
       // TWO draws, not one. One was enough for a tab whose panels come from data
       // already in hand, and not for one that reads git the moment it opens --
       // the Branches tab photographed showing its own "reading…" placeholder,
@@ -3301,7 +3517,7 @@ function shotIfAsked () {
       if (tab) { tab.click(); shotSettle = 2; return }
       // Named a tab that does not exist. Said rather than silently photographing
       // whatever was already open and letting it read as that tab.
-      api('windowShotDone', { file: want.file, error: `there is no tab called "${want.view}"` })
+      api('windowShotDone', { file: want.file, error: `there is no tab called "${wantView}"` })
       return
     }
     if (shotSettle > 0) { shotSettle--; return }

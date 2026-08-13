@@ -527,6 +527,44 @@ table.kv td { padding: 3px 0; word-break: break-all; }
 .skel-card .skel-line:first-child { width: 55%; margin-top: 0; }
 .skel-card .skel-line:last-child { width: 32%; margin-bottom: 0; height: 8px; opacity: .7; }
 
+/* Sub-tabs inside a view. Quieter than the main ones on purpose: these choose
+   which question you are asking about ONE subject, where the top row chooses the
+   subject. Making them look the same would be two navigations competing. */
+.subtabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.subtab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.subtab:hover { color: var(--text); }
+.subtab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.pane { display: none; }
+.pane.active { display: block; }
+
+/* A group of baselines: one branch per repository, named. */
+.group-part {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+.group-part:last-child { border-bottom: 0; }
+.group-part .gone { color: var(--fail); }
+
 /* The branch list's own controls, in the narrow column with it rather than in a
    header bar the other two columns would have to leave room for. */
 .finder {

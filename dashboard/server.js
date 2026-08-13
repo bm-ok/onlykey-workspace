@@ -1396,18 +1396,106 @@ const actions = {
   // repository whose default is `master` may perfectly well be working toward
   // `version2`. Until now they were one word, which was fine only while every
   // repository answered both the same way.
+  baselineGroups: {
+    about: 'Named sets of baselines — one branch per repository, which a task can be based on',
+    run: () => ({ groups: branches.groups(), repos: branches.baselines() })
+  },
+
+  baselineGroupSave: {
+    about: 'Name what each repository counts from right now, so it can be returned to',
+    takes: ['name', 'why', 'on'],
+    run: ({ name, why, on }) => {
+      const saved = branches.saveGroup(name, { why, on: on && (typeof on === 'string' ? JSON.parse(on) : on) })
+      log.on('git').good(`baseline group "${saved.name}" — ${saved.on.map(p => `${p.repo}:${p.branch}`).join(', ')}`)
+      return saved
+    }
+  },
+
+  baselineGroupUse: {
+    about: 'Count every repository from a named group',
+    takes: ['name'],
+    run: ({ name }) => {
+      const done = branches.useGroup(name)
+      log.on('git').good(done.changed.length
+        ? `now on "${done.group}" — ${done.changed.join(', ')}`
+        : `already on "${done.group}"`)
+      return { ...done, note: done.changed.length ? `Counted from "${done.group}".` : `Already counted from "${done.group}".` }
+    }
+  },
+
+  baselineGroupDelete: {
+    about: 'Forget a group. Its branches are untouched, and stop being protected by it',
+    takes: ['name'],
+    run: ({ name }) => {
+      const gone = branches.deleteGroup(name)
+      log.on('git').warn(`baseline group "${gone.deleted}" forgotten — its branches are untouched`)
+      return gone
+    }
+  },
+
   repoBaselines: {
     about: 'What each repository counts work from, and what its own default branch is',
     run: () => {
       const rows = branches.baselines()
       return {
         repos: rows,
+        groups: branches.groups(),
         // The thing that changes what every "commits ahead" figure means.
         mixed: [...new Set(rows.map(r => r.baseline))].length > 1,
         chosen: rows.filter(r => r.chosen).length,
         note: rows.some(r => r.differs)
           ? 'Where a baseline differs from the default, both are protected: nothing is built on either.'
           : 'Every repository is counted from its own default branch.'
+      }
+    }
+  },
+
+  // Make one branch the baseline everywhere it exists.
+  //
+  // THIS IS WHAT CHAINING LOOKS LIKE FROM THE FRONT. A branch carrying finished
+  // work becomes what the next work is counted from and cut from: the next task
+  // starts where this one ended, rather than from a default branch that does not
+  // have it yet. Setting that one repository at a time is the same decision typed
+  // three times, and two of them being right is worse than none.
+  //
+  // Repositories that do not have the branch keep what they had, and are named.
+  // A change that only touched two repositories should not silently move the
+  // third's baseline to something it has never heard of.
+  branchAsBaseline: {
+    about: 'Count everything from this branch, wherever it exists',
+    takes: ['branch', 'group'],
+    run: async ({ branch, group }) => {
+      const known = branches.all().branches.find(b => b.name === branch)
+      if (!known) throw new Error(`There is no branch called "${branch}".`)
+
+      const moved = []
+      for (const repo of known.in) {
+        const was = branches.baselineOf(repo)
+        if (was === branch) continue
+        branches.setBaseline(repo, branch)
+        moved.push({ repo, was, now: branch })
+      }
+
+      // Named as a group in the same breath, when asked. A baseline nobody named
+      // is one nobody can go back to -- and going back to it is most of the point
+      // of having chained in the first place.
+      const named = group ? branches.saveGroup(group, { why: `counted from "${branch}"` }) : null
+
+      log.on('git').good(moved.length
+        ? `everything is now counted from "${branch}" in ${moved.map(m => m.repo).join(', ')}`
+        : `"${branch}" was already the baseline everywhere it exists`)
+
+      return {
+        branch,
+        moved,
+        untouched: known.missing,
+        group: named ? named.name : null,
+        note: [
+          moved.length ? `Counted from "${branch}" in ${moved.map(m => m.repo).join(', ')}.` : `"${branch}" was already the baseline.`,
+          known.missing.length ? `${known.missing.join(', ')} do not have it and keep what they had.` : null,
+          `It is protected now — work is cut from it and merged back into it, never built on directly.`,
+          named ? `Saved as "${named.name}", so this point can be returned to.` : null
+        ].filter(Boolean).join(' ')
       }
     }
   },
@@ -2858,7 +2946,7 @@ done`
   // notices it on its next draw and answers. That is why it returns a path
   // rather than an image — the file appears a second or two later.
   windowShot: {
-    about: 'Ask the window to photograph itself, optionally on a given tab',
+    about: 'Ask the window to photograph itself, optionally on a given tab or tab/pane',
     takes: ['note', 'view'],
     run: ({ note, view }) => {
       const file = path.join(data.sub('window'), `window-${data.stamp()}.png`)

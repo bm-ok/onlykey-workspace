@@ -138,6 +138,136 @@ function setBaseline (repo, branch) {
   return { repo, baseline: baselineOf(repo), default: defaultOf(repo), chosen: !!name }
 }
 
+// ---- groups: one baseline per repository, named ------------------------
+//
+// A CHANGE SPANS REPOSITORIES, so "what is this work counted from" is one
+// question with one answer -- not one answer per repository that somebody has to
+// keep consistent by hand. A group names a branch in each, and using it sets all
+// of them at once.
+//
+// BEING IN A GROUP PROTECTS EVERY BRANCH IN IT, and that is the point rather
+// than a side effect. It is what makes chaining safe: work is cut FROM a link,
+// merges back INTO it, and the link itself is never built on directly. Without
+// that, a chain is just a branch somebody agreed not to touch -- and an
+// agreement is the thing this tool exists to replace with a refusal.
+//
+// Protected while it is IN a group, and not afterwards. Unlike a repository's
+// own default -- which is a fact about git and cannot be unmade from here -- a
+// group is a decision, and taking a branch out of one gives it back.
+const GROUPS = () => path.join(STATE(), 'baseline-groups.json')
+
+function groupsFile () {
+  try { return JSON.parse(fs.readFileSync(GROUPS(), 'utf8').replace(/^﻿/, '')) || {} } catch { return {} }
+}
+
+function writeGroups (all) {
+  try {
+    fs.mkdirSync(STATE(), { recursive: true })
+    fs.writeFileSync(GROUPS(), JSON.stringify(all, null, 2))
+  } catch { /* the answer is still right for this call; it is only not kept */ }
+  return all
+}
+
+// Every group, with each one's branches checked against what is actually there.
+// A group naming a branch that has been deleted is reported as such rather than
+// quietly dropped -- it is the difference between "this line is finished" and
+// "somebody deleted a link in a chain".
+function groups () {
+  const all = groupsFile()
+  const here = serve.list().map(r => r.name)
+  return Object.entries(all).map(([name, g]) => {
+    const on = g.on || {}
+    const parts = Object.entries(on).map(([repo, branch]) => {
+      const dir = serve.gitDirOf(repo)
+      return {
+        repo,
+        branch,
+        there: !!dir && (() => { try { return branchesIn(dir).includes(branch) } catch { return false } })(),
+        stillHere: here.includes(repo)
+      }
+    })
+    return {
+      name,
+      why: g.why || null,
+      made: g.made || null,
+      on: parts,
+      // Missing repositories are not a fault: a group made when there were three
+      // repositories still describes those three when a fourth arrives.
+      missing: here.filter(r => !(r in on)),
+      broken: parts.filter(p => p.stillHere && !p.there).map(p => `${p.branch} is gone from ${p.repo}`),
+      inUse: parts.length > 0 && parts.every(p => !p.stillHere || baselineOf(p.repo) === p.branch)
+    }
+  }).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+// Named from what each repository counts from right now, or from a stated set.
+//
+// Taking the current state as the default is deliberate: a group is usually
+// something somebody has just finished arranging one repository at a time, and
+// asking them to type it all again is how the two drift apart.
+function saveGroup (name, { on = null, why = null } = {}) {
+  const title = String(name || '').trim()
+  if (!title) throw new Error('Give the group a name — it is what a task will be based on.')
+
+  const chosen = on && Object.keys(on).length
+    ? on
+    : Object.fromEntries(serve.list().map(r => [r.name, baselineOf(r.name)]).filter(([, b]) => b))
+
+  for (const [repo, branch] of Object.entries(chosen)) {
+    const dir = serve.gitDirOf(repo)
+    if (!dir) throw new Error(`There is no repository called "${repo}" here.`)
+    if (!branchesIn(dir).includes(branch)) {
+      throw new Error(`"${repo}" has no branch called "${branch}". Every branch in a group has to exist — it is what work will be cut from.`)
+    }
+  }
+
+  const all = groupsFile()
+  all[title] = { on: chosen, why: why ? String(why).trim() : (all[title] || {}).why || null, made: (all[title] || {}).made || new Date().toISOString() }
+  writeGroups(all)
+  return groups().find(g => g.name === title)
+}
+
+// Every repository's baseline set at once, which is what a group is for.
+function useGroup (name) {
+  const g = groups().find(x => x.name === String(name || '').trim())
+  if (!g) throw new Error(`There is no group called "${name}".`)
+  if (g.broken.length) throw new Error(`"${g.name}" cannot be used: ${g.broken.join('; ')}.`)
+
+  const changed = []
+  for (const part of g.on) {
+    if (!part.stillHere) continue
+    if (baselineOf(part.repo) === part.branch) continue
+    setBaseline(part.repo, part.branch)
+    changed.push(`${part.repo} → ${part.branch}`)
+  }
+  return { group: g.name, changed, on: g.on }
+}
+
+function deleteGroup (name) {
+  const all = groupsFile()
+  const title = String(name || '').trim()
+  if (!(title in all)) throw new Error(`There is no group called "${title}".`)
+  delete all[title]
+  writeGroups(all)
+  // The branches are untouched. Deleting a group unprotects them, which is the
+  // whole of what it does -- a group is a decision about branches, not a thing
+  // the branches belong to.
+  return { deleted: title, branchesTouched: false }
+}
+
+// Every branch named in any group, and which groups name it. This is what makes
+// a group protect its links.
+function inAnyGroup () {
+  const out = new Map()
+  for (const g of groups()) {
+    for (const part of g.on) {
+      if (!out.has(part.branch)) out.set(part.branch, [])
+      out.get(part.branch).push(g.name)
+    }
+  }
+  return out
+}
+
 // Every repository, what it counts from, and whether that was chosen.
 const baselines = () => serve.list().map(({ name }) => {
   const all = remembered()
@@ -171,10 +301,13 @@ const baselines = () => serve.list().map(({ name }) => {
 // machine's work can be measured against.
 function protectedBranches () {
   const why = new Map()
+  const at = branch => {
+    if (!why.has(branch)) why.set(branch, { branch, repos: [], asDefault: [], asBaseline: [], asGroup: [] })
+    return why.get(branch)
+  }
   const add = (branch, repo, how) => {
     if (!branch) return
-    if (!why.has(branch)) why.set(branch, { branch, repos: [], asDefault: [], asBaseline: [] })
-    const e = why.get(branch)
+    const e = at(branch)
     if (!e.repos.includes(repo)) e.repos.push(repo)
     e[how].push(repo)
   }
@@ -183,6 +316,14 @@ function protectedBranches () {
     const base = baselineOf(name)
     if (base !== defaultOf(name)) add(base, name, 'asBaseline')
   }
+  // THE THIRD REASON, and the one that makes chaining work. A branch named in a
+  // group is a link somebody builds FROM and merges back INTO, so nothing may be
+  // built on it directly -- and that has to be a refusal rather than an
+  // understanding, or it is exactly the kind of rule this tool exists to stop
+  // relying on people to remember.
+  // Deduped: a group naming the same branch in three repositories names it once
+  // as a reason, not three times.
+  for (const [branch, named] of inAnyGroup()) at(branch).asGroup.push(...new Set(named))
   return [...why.values()]
 }
 
@@ -217,7 +358,8 @@ function whyProtected (branch) {
   if (!p) return null
   const parts = [
     p.asDefault.length ? `the default branch of ${p.asDefault.join(', ')}` : null,
-    p.asBaseline.length ? `the chosen baseline for ${p.asBaseline.join(', ')}` : null
+    p.asBaseline.length ? `the chosen baseline for ${p.asBaseline.join(', ')}` : null,
+    p.asGroup && p.asGroup.length ? `a link in ${[...new Set(p.asGroup)].map(n => `"${n}"`).join(', ')}` : null
   ].filter(Boolean)
   return `"${branch}" is ${parts.join(' and ')}. Work goes onto its own branch and is merged here afterwards, so nothing is built directly on it.`
 }
@@ -532,6 +674,7 @@ function remove (branch, { force = false } = {}) {
 
 module.exports = {
   all, ensure, remove, nameIsOk, branchesIn, headOf, defaultHeads, noteFor, notes,
-  defaultOf, baselineOf, setBaseline, baselines, protectedBranches, isProtected, whyProtected,
+  defaultOf, baselineOf, setBaseline, baselines, groups, saveGroup, useGroup, deleteGroup, inAnyGroup,
+  protectedBranches, isProtected, whyProtected,
   isClean, freeIfBusy, freeEverywhere, blocking
 }
