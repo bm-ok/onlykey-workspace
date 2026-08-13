@@ -6,8 +6,14 @@ design projected and what of it was one ecosystem rather than a tool. This is th
 order to build in, and it is expected to change — when it does, change it here
 rather than remembering.
 
-**The spine this is built around:** branches hold work, tasks produce it, a
-supervisor drives. Anything that does not serve that is not on this list.
+**The spine this is built around:**
+
+    branch <- task <- claude <- supervisor
+    branch <- task <- person <- supervisor
+
+The chain is the same either way and only one step differs: how work is started,
+and how it is known to be finished. Anything that does not serve that is not on
+this list.
 
 
 Where it actually stands

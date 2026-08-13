@@ -71,6 +71,10 @@ function claimNumber () {
 // again, and reports the same completion as though it had just happened.
 const STORED = new Set(['draft', 'queued', 'given', 'done', 'accepted', 'rejected'])
 
+// Who does the work. See `worker` below for why this is a slot rather than the
+// boolean it started as.
+const WORKERS = ['claude', 'shell', 'person']
+
 // TWO IDENTITIES, and they are for different readers.
 //
 // `number` counts from 1 and never repeats -- not even after the task that held
@@ -105,9 +109,18 @@ function withIds (list) {
   let changed = false
   let next = Math.max(0, ...list.map(t => Number(t.number) || 0))
   const done = list.map(t => {
-    if (t.number && t.uid) return t
+    if (t.number && t.uid && t.worker) return t
     changed = true
-    return { ...t, number: t.number || ++next, uid: t.uid || t.id }
+    return {
+      ...t,
+      number: t.number || ++next,
+      uid: t.uid || t.id,
+      // Who did it, for tasks written before that was a question anybody asked.
+      // Derivable rather than unknown: a task with `shell` set was run by a
+      // script and everything else was run by a worker, which is exactly what
+      // the boolean meant.
+      worker: t.worker || (t.shell ? 'shell' : 'claude')
+    }
   })
   if (changed) { try { write(done) } catch { /* readable either way; only not kept */ } }
   return done
@@ -177,14 +190,32 @@ function add (input) {
     // cannot change what a finished run was told.
     contract: input.contract ? String(input.contract) : null,
     folder: input.folder ? String(input.folder) : null,
-    // The brief is a SHELL COMMAND, not a prompt for a worker.
+    // WHO DOES IT. A slot with three implementations, not a special case.
     //
-    // For work that is about this machinery rather than about anything a worker
-    // would do: a soak that has to last a stated length of time, a drill that
-    // needs a run to exist. Involving a worker in those makes the answer depend
-    // on whether it felt like taking an hour, and bills somebody for the
-    // privilege.
-    shell: !!input.shell,
+    //   claude   a worker session in the machine, given the brief as a prompt
+    //   shell    the brief is a SHELL COMMAND, not a prompt. For work that is
+    //            about this machinery rather than about anything a worker would
+    //            do: a soak that has to last a stated length of time, a drill
+    //            that needs a run to exist. Involving a worker in those makes
+    //            the answer depend on whether it felt like taking an hour, and
+    //            bills somebody for the privilege
+    //   person   somebody works it by hand, in VS Code, in the machine
+    //
+    // The third one is why this is a slot rather than the boolean it was. Work
+    // done by hand used to happen OUTSIDE all of this -- a machine borrowed, an
+    // editor opened, and no task, no brief, no attempts, no verdict and no
+    // record that any of it happened. The chain is the same either way:
+    //
+    //     branch <- task <- claude <- supervisor
+    //     branch <- task <- person <- supervisor
+    //
+    // What differs is one step: how the work is started, and how it is known to
+    // be finished. Everything on both sides of that -- the branch, the contract,
+    // the artifacts, the verdict -- is identical, and treating the human path as
+    // a different kind of thing is what kept it off the board.
+    worker: WORKERS.includes(input.worker) ? input.worker : (input.shell ? 'shell' : 'claude'),
+    // Kept because a great deal reads it, and derived so the two cannot disagree.
+    shell: WORKERS.includes(input.worker) ? input.worker === 'shell' : !!input.shell,
     // How long the queue waits before giving up on it, in hours. Six unless the
     // task says otherwise — enough for anything somebody is expecting back
     // today, and not enough for a soak left running overnight, which would
@@ -248,4 +279,4 @@ function remove (ref) {
   }
 }
 
-module.exports = { read, write, get, add, update, remove, newId, highest, FILE, COUNTER, STORED }
+module.exports = { read, write, get, add, update, remove, newId, highest, FILE, COUNTER, STORED, WORKERS }

@@ -1560,19 +1560,30 @@ const mineFor = b => latest.vms.find(v => v.borrowed && v.branch === b.name) || 
 function workOnBranch (b) {
   const free = (queueSays.size ? [...queueSays.values()] : []).filter(m => m.free)
   ask({
-    title: `Work on "${b.name}" in VS Code`,
+    title: `Work on "${b.name}" yourself`,
     plain: [
-      'A free machine is borrowed, brought up at its base snapshot, and set up with every repository checked out on this branch.',
-      'VS Code then opens into it over ssh, with this app\'s own key. What you do in there is ordinary work — including running your own Claude session.',
+      'A free machine is borrowed, brought up at its base snapshot, and set up with every repository checked out on this branch. VS Code then opens into it over ssh, with this app\'s own key.',
+      // THE POINT OF ASKING FOR A TITLE. Work done by hand used to happen off
+      // the board entirely -- a machine borrowed, an editor opened, and nothing
+      // anywhere saying it happened. A task is what makes the human path the
+      // same shape as the worker path: same branch, same artifacts, same verdict.
+      'It becomes a task, like any other work on this branch — so what you deliver is read the same way, and the board says who did it.',
       free.length
         ? `Free right now: ${free.map(m => m.name).join(', ')}.`
-        : 'Nothing is free at the moment, so this will refuse and say why.',
-      'The queue will not touch that machine until you give it back.'
+        : 'Nothing is free at the moment, so this will refuse and say why.'
+    ],
+    fields: [
+      { name: 'title', label: 'What are you doing', placeholder: 'the same sentence you would give a worker' }
     ],
     cost: 'It takes a minute or two to bring a machine up before the editor can open.',
     confirm: 'Take a machine and open it',
-    onYes: async () => {
-      const r = await api('branchWorkOn', { branch: b.name })
+    onYes: async f => {
+      if (!f.title || !f.title.trim()) throw new Error('Say what you are doing — it is what the task will be called.')
+      const made = await api('taskCreate', {
+        task: { title: f.title.trim(), brief: f.title.trim(), branch: b.name, worker: 'person' }
+      })
+      const task = made.task || made
+      const r = await api('taskWorkOn', { id: task.id })
       say(r.note)
     }
   })
@@ -1584,23 +1595,33 @@ function workOnBranch (b) {
 // anything is uncommitted rather than rolling it back — which is the whole
 // reason this is a button and not a habit.
 function finishOnBranch (b, vm) {
+  // The task being worked by hand on this branch, if there is one. Finishing
+  // through the task rather than through the machine is what puts the work up
+  // for a verdict -- giving the machine back alone would leave a task marked as
+  // given to a machine that is off, which is the state the queue adopts.
+  const mine = (taskList || []).find(t => t.branch === b.name && t.machine === vm.name && t.state === 'given')
+
   ask({
-    title: `Done with ${vm.name}?`,
+    title: mine ? `Finish #${mine.number}?` : `Done with ${vm.name}?`,
     plain: [
       `${vm.name} goes back to its base snapshot and returns to the pool, and "${b.name}" stops being claimed by it.`,
       'It is asked what it is holding first: anything uncommitted or unpushed refuses this, because rolling it back would discard exactly that.',
-      'Whatever you pushed is here and is not touched.'
+      mine
+        ? `#${mine.number} is then done and waiting to be judged — and what it delivered is whatever reached "${b.name}", the same as any other task.`
+        : 'Nothing on the board refers to this machine, so only the machine is put away.'
     ],
     cost: `Everything on ${vm.name} that is not on a branch is discarded.`,
-    confirm: 'Put it away',
+    confirm: mine ? 'Finish it' : 'Put it away',
     danger: true,
     extra: {
       label: 'Just release it, leave it running',
-      onClick: () => api('vmReturn', { name: vm.name, keep: true })
+      onClick: () => api(mine ? 'taskFinished' : 'vmReturn', mine ? { id: mine.id, keep: true } : { name: vm.name, keep: true })
         .then(r => say(r.note)).catch(oops)
     },
     onYes: async () => {
-      const r = await api('vmReturn', { name: vm.name })
+      const r = mine
+        ? await api('taskFinished', { id: mine.id })
+        : await api('vmReturn', { name: vm.name })
       say(r.note)
     }
   })

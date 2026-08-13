@@ -666,6 +666,71 @@ const actions = {
   // parts is a flow that gets half-done: a machine left running, a credential
   // left on a disk, a branch left claimed by a machine nobody is using.
 
+  // Giving a task to a PERSON, which is the same act as giving one to a worker.
+  //
+  //     branch <- task <- claude <- supervisor
+  //     branch <- task <- person <- supervisor
+  //
+  // The chain is identical and only one step differs: how the work is started,
+  // and how it is known to be finished. A worker is dispatched and reports an
+  // exit code; a person is handed a machine with an editor open and says when
+  // they are done. Everything on both sides of that step -- the branch, the
+  // contract, the artifacts, the verdict -- is the same, and treating the human
+  // path as a different kind of thing is what kept it off the board entirely:
+  // a machine borrowed, an editor opened, and no task, no attempts, no verdict
+  // and no record that any of it happened.
+  taskWorkOn: {
+    about: 'Take a task yourself: a machine set up on its branch, with VS Code open in it',
+    takes: ['id', 'name'],
+    run: async ({ id, name }) => {
+      const task = tasks.get(id)
+      if (task.verdict) throw new Error(`"${task.id}" has already been judged. Write a new task rather than reopening a decided one.`)
+      if (!task.branch) throw new Error(`"${task.id}" has no branch, and a machine is set up on one.`)
+
+      const started = await actions.branchWorkOn.run({ name, branch: task.branch, folder: task.folder || undefined })
+
+      // Recorded the same way a dispatch is, and for the same reason: the task
+      // has to say who is doing it and where, or nothing else on the board can.
+      tasks.update(task.id, {
+        state: 'given',
+        machine: started.name,
+        attempts: [...(task.attempts || []), { machine: started.name, at: new Date().toISOString(), by: 'a person' }]
+      })
+      log.on('task', task.id).good(`taken by hand on ${started.name}, on ${task.branch}`)
+
+      return {
+        ...started,
+        task: task.id,
+        number: task.number,
+        note: `#${task.number} is yours on ${started.name}. Push what you want judged, then finish it — that gives the machine back and puts the task up for a verdict.`
+      }
+    }
+  },
+
+  // A person saying the work is done, which is what a worker's exit code says.
+  taskFinished: {
+    about: 'Say a task you took by hand is finished: give the machine back and put it up for a verdict',
+    takes: ['id', 'keep'],
+    run: async ({ id, keep = false }) => {
+      const task = tasks.get(id)
+      if (!task.machine) throw new Error(`"${task.id}" is not on a machine.`)
+
+      // The machine goes back through the same door as everything else, so the
+      // same refusal applies: anything uncommitted stops this, because putting a
+      // machine away rolls it back.
+      const back = await actions.vmReturn.run({ name: task.machine, keep })
+
+      tasks.update(task.id, { state: 'done' })
+      log.on('task', task.id).good('finished by hand — waiting on a verdict')
+      return {
+        task: task.id,
+        number: task.number,
+        machine: back.name,
+        note: `${back.note} #${task.number} is done and waiting to be judged — what it delivered is whatever reached "${task.branch}".`
+      }
+    }
+  },
+
   // Sitting in a machine, on a branch, with an editor open.
   //
   // A BRANCH IS A WORKSPACE when a person is the one working. The parts existed
