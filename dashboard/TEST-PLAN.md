@@ -48,40 +48,17 @@ the point; clean it up deliberately rather than by habit.
 Not yet run
 -----------
 
-### 2. A task across both repositories
+### 4b. A branch already claimed, refused to a second machine
 
-**Proves a partial delivery reads honestly.** The round trip that has run touched
-one repository. Two is the smallest number that can *half*-land — one repository
-is trivially "all ready", has no push order, and cannot be partly delivered. The
-artifact panel distinguishes a branch that was **never pushed** to a repository
-from one that is **there and empty**, and that distinction has never been looked
-at with a real partial delivery in front of it.
+**Half of drill 4 is done** — two machines working at once is proven, in 5c.
+What is not is the refusal: while one machine holds a branch, give a task on
+that same branch to another.
 
-    brief: change a file in local-repo-a AND a file in local-repo-b, commit both, push both
-
-**A pass** is both repositories reporting commits. **The more interesting run is
-the one where only one lands** — do it a second time with a brief that touches
-only one repository, and check the other reads `nothing beyond master` rather
-than being reported as if it had delivered.
-
-### 3. A rejection, sent back
-
-**Proves the loop goes backwards.** Never done. Everything so far has gone one
-way, and a workflow that can only go forwards has to allow the shortcut it exists
-to prevent — the supervisor fixing the work itself, which is the one path nothing
-reviews.
-
-Reject what a drill delivered, with a real note, then hand that note back to the
-same machine on the same branch:
-
-    okc.js taskJudge --id <task> --verdict reject --note "<what is wrong>"
-    okc.js vmDispatch --name <machine> --task "<the note, as instructions>" --resume <session>
-
-**A pass** is a second commit arriving on the same branch, the branch claim still
-held by the same machine, and the artifact showing both commits.
-
-**Watch the claim.** A second push onto a claimed branch is the case the claim
-exists for, and it has to succeed here while failing for a *different* machine.
+**A pass is a refusal naming the machine that holds it.** Note that a machine
+already on a branch of its own is refused for *that* first, before the claim is
+ever consulted — so this needs a second machine on **no** branch. The declared
+version of this drill says so and deliberately will not arrange one, because
+the only way off a branch is a rollback and that discards whatever is on it.
 
 ### 5b. The queue drains, one task at a time, through one machine — 2026-08-12
 
@@ -137,14 +114,60 @@ A total says nothing about where the time went. Half of every task here is the
 machine being made ready, and a boot that quietly grows from 30 seconds to five
 minutes is invisible in a number that only says "81s".
 
-### 4. Two runners at once
+### 5c. Two machines at once — 2026-08-12
 
-**Proves the one-machine-per-branch claim under real concurrency**, rather than by
-reading the code. Give two tasks on two branches to two machines simultaneously,
-then try to give a third task on the *first* branch to the second machine.
+**Proves the pool chooses**, which nothing had exercised: until both runners
+were rebuilt there had never been two machines free at the same time, so every
+decision about *which* machine takes a task was reasoning rather than evidence.
 
-**A pass** is the two real tasks proceeding independently, and the third being
-refused by name — saying which machine already holds that branch.
+Queue two tasks on two branches with two machines free.
+
+**Pass:** taken in the same tick, one each, running independently, each putting
+its own machine away. `3372dde` by `runner1` and `635f542` by `runner2`, with
+the log interleaving them — credentials at :28 and :32, workspaces at :33 and
+:40, dispatches at :34 and :48.
+
+### 2. A task across both repositories — 2026-08-12
+
+**Proves a partial delivery reads honestly.** Two repositories is the smallest
+number that can *half*-land; one is trivially "all ready" and cannot be partly
+delivered.
+
+Brief it to change a file in **both** repositories, commit both, push both.
+
+**Pass, both halves:**
+
+    both:     2 commit(s) in local-repo-a, local-repo-b   (7fe9c8f, d4a8458)
+    partial:  local-repo-a | there and empty — nothing beyond master
+              local-repo-b | +2 -0
+
+The partial reading is the one that matters, and it is not the same as "no
+changes": a branch that was **never pushed** to a repository and one that is
+**there and empty** mean different things about what happened, and only the
+first is a worker that failed to deliver.
+
+### 3. A rejection, sent back — 2026-08-12
+
+**Proves the loop goes backwards**, and it found that it could not.
+
+    okc.js taskJudge    --id 10 --verdict reject --note "<what is wrong>"
+    okc.js taskSendBack --id 10
+
+**The first run failed, and that was the point.** A judged task refused to be
+re-queued *or* re-given — "write a new task rather than reopening a decided
+one". So the only way to act on a rejection was for somebody to open the work
+and fix it themselves, which is precisely the thing the rule forbids: the
+supervisor's own edits are the one path nothing reviews. A rule whose only
+compliant option does not exist is not enforced, it is ignored.
+
+`taskSendBack` is what was missing. It appends the reason to the brief, dated,
+keeps the previous verdict in the record, and re-queues on the **same branch**,
+which still carries the first attempt — so the worker continues rather than
+starting again.
+
+**Pass:** a second commit on the same branch doing what the note asked —
+`d141bb8 Change touched a line to touched a twice` on top of `7fe9c8f`, three
+commits total across the two repositories.
 
 
 Passed, and worth re-running after anything structural

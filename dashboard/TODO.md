@@ -11,41 +11,24 @@ Something that needs *exercising* rather than building belongs in
 list: not what is missing, but what is unproven.
 
 
-The window has not kept up
---------------------------
+The window has not been looked at
+---------------------------------
 
-Everything below was built and driven from the command line. The window has the
-actions but not always the way in, and **none of it has been looked at since the
-Tasks tab grew** — the approvals card, the tab badge, the attempts panel, the
-live session view, the queue buttons, the task numbers and the Ace editor all
-went in without anybody seeing them render. The one visual fault found so far —
-the task list not looking clickable — was found by eye, not by me, and there is
-no reason to think it was the only one.
+The one thing here that cannot be closed from a terminal. Everything in the
+Tasks tab was built and driven from the command line, and **nobody has watched
+it render**: the approvals card, the tab badge, the attempts panel with its
+timings, the live session view, the queue panel, the queue buttons, the task
+numbers, the Ace editor, the idle-machine banner and the two new machine
+buttons. The one visual fault found so far — the task list not looking
+clickable — was found by eye, and a misspelt CSS class produces no error at all.
 
-* **The queue is invisible.** `queueState` says what is waiting, what is running
-  and why each machine is or is not free. None of that is in the window, so
-  "why has nothing picked this up" can only be answered from a terminal.
-* **Nothing says a machine is sitting idle.** A runner left on, doing nothing,
-  holding a credential, looks exactly like one working. That is how `runner1`
-  stayed up for hours — spotted by eye, not by the tool. An idle machine is
-  also the one case where a credential is exposed for no reason at all.
-* **`vmRelease` has no button**, and it is the answer to a question people will
-  have ("why is this machine stuck on a branch nothing uses"). Same for
-  `vmSnapshotDelete`, which exists only as an action.
-* **The phase timings are recorded and never shown.** Every attempt carries
-  `spent` — bringUp, credential, workspace, work — which is exactly what makes a
-  slow machine visible, and it is only in the log line at the time.
+**Open it and press things.** `Ctrl+Shift+D` captures the window as HTML, which
+is how the last fault was diagnosed.
 
 
 Outstanding
 -----------
 
-* **Both skills are out of date.** Neither `dashboard` nor `supervisor` mentions
-  the queue, pre-defined tasks, approvals, `vmRelease` or `vmForTasks`. The
-  supervisor one still describes giving a task to a named machine as the normal
-  path, which it no longer is — work is queued and a machine is chosen for it.
-  A skill that describes the tool as it was is worse than none: it is confidently
-  wrong, and it is what a session reads first.
 * **A running task cannot be stopped.** `taskUnqueue` refuses anything already
   given out, and the queue waits up to six hours. A worker that hangs, or that
   is doing the wrong thing entirely, has to be dealt with by hand on its machine.
@@ -65,15 +48,9 @@ Not missing work — things that have been reasoned about rather than seen. The
 drills themselves live in `TEST-PLAN.md`; this is what is outstanding against
 them.
 
-* **Drill 2 — a task across both repositories** has never run. Partial delivery
-  is the case `missing` and `empty` were written to tell apart, and no real
-  partial delivery has ever been looked at.
-* **Drill 3 — a rejection sent back** has never run. Everything so far has gone
-  one way. It is also the only exercise of `--resume` and of a second push onto
-  a branch already claimed by the same machine.
-* **Drill 4 is half done.** Two machines working at once is proven. The other
-  half — a third task on a branch another machine already claims, refused by
-  name — is not.
+* **Drill 4 is half done.** Two machines working at once is proven (5c). The
+  other half — a task on a branch another machine already claims, refused by
+  name — is not, and needs a second machine on no branch of its own.
 * **One definition is waiting to be read.** The claimed-branch drill was
   corrected after it passed for the wrong reason, so its approval lapsed and a
   re-read was requested with the reason. Until it is approved the whole guards
@@ -87,15 +64,18 @@ them.
 Debris
 ------
 
-Cheap to clear, and worth clearing before it is mistaken for real work.
+Cleared. Two tasks remain on the board and both are kept deliberately, because
+between them they are the record of what this thing can do:
 
-* **Nine or so drill branches** in both workspace repositories:
-  `task/first-round-trip`, `task/keeps-a-log`, `task/queued-end-to-end`,
-  `task/queue-one|two|three`, `task/fresh-machine`,
-  `task/two-at-once-alpha|beta`. Only the first was ever judged.
-* **Nine tasks on the board**, most of them the same drill debris. There is no
-  archive: a task stays until it is removed, and removing it deliberately leaves
-  its branch and its kept logs alone.
+* **#1 `task/first-round-trip`** — accepted. The first time work went out and
+  anything came back.
+* **#10 `task/both-repos`** — accepted, having been **rejected and sent back
+  once**. Two repositories, two attempts, the verdict that caused the second one
+  still in its record. The whole loop, in one task.
+
+The eight drill tasks and their branches are gone. Their kept logs are not:
+those are filed under a uid that is never reused, so throwing away the note
+about the work does not throw away the evidence of it.
 
 
 Decisions waiting on the operator
