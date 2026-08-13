@@ -337,3 +337,33 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   Forgetting first would have left a stale copy to be handed to the next machine,
   where it would fail as "the worker is signed out" on a machine that had just
   been handed a credential.
+
+* **A new state can make an old rule wrong without touching its code.** The queue
+  adopts, on every restart, any task sitting in `given` with no run id — written
+  when that could only mean a dispatch interrupted mid-setup, which is a task
+  nothing is doing and which should go back in the queue. Correct, and it stayed
+  correct until a person could take a task by hand: that task sits in `given`
+  with no run id for as long as somebody is working in it, because there is no
+  run — the exit code is a human saying "finished". So every restart re-queued
+  every hand-taken task and gave it to Claude on a second machine while its owner
+  was still in the first.
+
+  The rule was never edited. Its meaning changed underneath it, because "nothing
+  is running" stopped implying "nothing is happening". Nothing failed, no test
+  broke, and it was found by looking at a screenshot and noticing a task marked
+  `working` on a machine nobody had given it to.
+
+  It cost nothing, and that is the second lesson: the branch claim refused the
+  second machine — "drill/cable-pull is already being worked on by runner1" — so
+  the work was never run over the top. The layer that caught it was not the layer
+  that was wrong, which is the entire argument for having more than one.
+
+* **`ready: true` meant "the bytes arrived", and was read as "it works".**
+  `vmCredentialsPut` placed a credential, set the first-run flag, and reported
+  readiness without ever asking the worker anything. A credential can be placed
+  perfectly and be expired — which it was: every panel said the machine was
+  signed in, and `claude` answered "OAuth session expired and could not be
+  refreshed". The fix is one line appended to a remote command that was already
+  being run, so it costs nothing, and it turns a claim about this host's actions
+  into a report of the machine's state. Prefer the second wherever the first is
+  cheap to check.

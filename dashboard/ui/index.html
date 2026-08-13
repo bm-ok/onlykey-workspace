@@ -266,24 +266,31 @@
     <div class="sync-head">
       <h2>Terminal <span class="muted" id="term-context"></span></h2>
       <div class="sync-controls">
-        <select id="term-machine"></select>
-        <button class="btn ok" id="term-open">Open a shell</button>
         <button class="btn danger" id="term-close">Close it</button>
       </div>
     </div>
+    <!-- NOWHERE TO START ONE. A machine picker and an "Open a shell" button used
+         to live here, and they were the last door in this window that put
+         somebody on a machine with no task saying what the work is -- the same
+         hole as the editor and shell buttons taken off the machines tab, and the
+         "give it to a machine" button taken off a branch.
+
+         Terminals are started from a task now, exactly like VS Code, and they
+         LAND here. The tab is a place, not a beginning. -->
     <p class="note" id="term-note">
-      Over ssh, with this app's own key. It is the same way in as
-      <code>okc.js vmShell</code> and the same way VS Code connects — so if this
-      works, those do.
+      Started from a task, and they arrive here. Over ssh, with this app's own
+      key — the same way in as <code>okc.js vmShell</code> and the same way VS
+      Code connects, so if one works they all do.
     </p>
-    <!-- Whether the worker on the machine in the picker could authenticate, said
-         BEFORE a shell is opened. Running `claude` on an idle runner gets a
-         sign-in menu -- correctly, since a credential is handed out per task and
-         taken back after -- and until now the only way to change that was a
-         command line. -->
+    <!-- Whether the worker in the shell you are LOOKING AT could authenticate.
+         Running `claude` on an idle runner gets a sign-in menu -- correctly,
+         since a credential is handed out per task and taken back after -- and
+         this is where somebody meets that. -->
     <div id="term-auth" class="hidden"></div>
     <div id="term-tabs" class="term-tabs hidden"></div>
     <div id="term" class="term"></div>
+    <!-- What the area says when nothing has landed in it. -->
+    <div id="term-empty" class="hidden"></div>
   </section>
 
   <!-- ---------------- Keys ----------------

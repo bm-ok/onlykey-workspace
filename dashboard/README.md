@@ -684,7 +684,22 @@ straight to `ssh`, because the dashboard has no terminal to give.
 A terminal in the window
 ------------------------
 
-The Terminal tab is a real shell on a machine: pick one, open it, type.
+The Terminal tab is a real shell on a machine, and it is a place shells LAND
+rather than a place they start. It had a machine picker and an "Open a shell"
+button, and they were the last way in this window to end up on a machine with
+nothing saying what the work is -- the same hole as the editor and shell buttons
+that used to sit on the machines tab.
+
+A terminal is started from a task now, exactly the way VS Code is: take a task,
+choose "in a terminal", and a machine is borrowed, rolled back, checked out on
+the branch in every repository, handed a credential, and the shell lands here
+already in the folder the work is in.
+
+**It does not type `claude` for you.** The point of a terminal is that a person
+is at it; typing the command is how they decide what session this is, and a
+window that types it for them has taken the one decision the terminal was opened
+to make. The old way of working -- boot a machine, open a shell, type `claude` --
+is exactly this, with a task around it saying what the work is.
 
 **The pty is at the FAR end.** `ssh -tt` allocates one on the machine, which is
 where the shell actually is; this side only moves bytes between a child process
@@ -705,7 +720,10 @@ thing that makes anything full-screen lay out correctly.
 It is spawned from the WINDOW rather than through an action, and that is not a
 hole in one-surface: the command line half is `vmShell`, doing the same thing
 with the same key. What cannot be shared is the terminal itself -- the dashboard
-has none to hand over.
+has none to hand over. That is also why `taskWorkOn --open terminal` returns the
+folder and stops: it does everything a terminal needs and leaves the one part it
+cannot do to whichever side has a terminal. On the command line, that is
+`vmShell` handing its own to ssh.
 
 **Several at once, each its own tab**, because a terminal is mostly somewhere you
 wait -- for a build, for a sign-in, for an agent to say something -- and needing
@@ -722,15 +740,23 @@ LEFT IN THE STRIP, because whatever it said before it died is the reason it died
 Whether the worker can authenticate is said here too
 ----------------------------------------------------
 
-Opening a shell on an idle runner and typing `claude` gets a sign-in menu, and
-that is correct: a credential is handed to a machine per task and taken back
-afterwards, so a machine sitting idle is signed OUT by design. It is still a
-surprise every single time, and until now the only cure was a command line.
+Typing `claude` in a shell on an idle runner gets a sign-in menu, and that is
+correct: a credential is handed to a machine per task and taken back afterwards,
+so a machine sitting idle is signed OUT by design. It is still a surprise every
+single time, and until now the only cure was a command line.
 
-So the Terminal tab says which it is for the machine in the picker, with the one
-button that changes it. Nothing is probed -- the dashboard already records who is
-holding a credential, because a machine holding one is the thing that cannot be
-snapshotted, and that is the same fact.
+So the Terminal tab says which it is for the shell you are looking at, with the
+one button that changes it. It follows the front tab rather than a picker, which
+is also the more useful question -- it used to describe a machine somebody was
+considering, and now it describes the shell they are sitting in.
+
+**A file on disk is not a signed-in worker.** `vmCredentialsPut` used to report
+success for placing bytes, and a credential can be placed perfectly and still be
+expired: the file arrives, the wizard flag is set, and the worker answers "OAuth
+session expired and could not be refreshed" while every panel says the machine is
+signed in. It now asks the worker, in the same remote command, and reports what
+the worker says. `ready` is `true`, `false`, or `null` when the question was not
+answered -- and "it did not answer" is deliberately not "no".
 
 A `claude` that is ALREADY RUNNING will not notice a credential appearing
 underneath it. Start it again.

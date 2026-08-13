@@ -643,10 +643,10 @@ function paintTaskDetail (task) {
       task.worker === 'person'
         ? el('button', {
             className: 'btn ok',
-            textContent: task.machine ? 'Open it again' : 'Work on it in VS Code',
+            textContent: task.machine ? 'Open VS Code again' : 'Work on it in VS Code',
             disabled: !!task.verdict,
             title: task.verdict ? 'This task has been judged' : 'A machine is brought up on its branch with VS Code open in it',
-            onclick: () => takeTaskByHand(task)
+            onclick: () => takeTaskByHand(task, 'editor')
           })
         : task.state === 'queued'
         ? el('button', {
@@ -661,6 +661,23 @@ function paintTaskDetail (task) {
             title: task.verdict ? 'This task has been judged' : 'The next free machine takes it, runs it, and shuts down',
             onclick: () => queueTask(task)
           }),
+      // THE SECOND DOOR ONTO THE SAME TASK. Same machine, same branch, same
+      // credential, same finish — a terminal instead of an editor, landed in the
+      // checkout, with nothing typed into it. This is what the Terminal tab's
+      // machine picker used to be for, minus the part where the work had no
+      // task: booting a machine and typing `claude` in its shell was the way
+      // this was done by hand before any of it existed, and it is a way of
+      // working, not a way of starting work.
+      task.worker === 'person'
+        ? el('button', {
+            className: 'btn',
+            textContent: task.machine ? 'Open a terminal again' : 'Work on it in a terminal',
+            disabled: !!task.verdict,
+            title: task.verdict ? 'This task has been judged' : 'A machine is brought up on its branch and a shell opens here, in the checkout',
+            onclick: () => takeTaskByHand(task, 'terminal')
+          })
+        : null,
+
       // The other half of the person path: saying it is done. It is the exact
       // counterpart of a worker's exit code, and without it on the task itself
       // the only way to end one was from the machine that happened to be holding
@@ -1533,7 +1550,9 @@ function branchActions (b) {
             className: 'btn',
             textContent: `Shell on ${b.heldBy}`,
             title: `A terminal in ${b.heldBy}, where "${b.name}" is checked out`,
-            onclick: () => goToShell(b.heldBy)
+            // Named for the branch, because that is what the shell is FOR. The
+            // machine is the second half of the label and the tooltip.
+            onclick: () => goToShell(b.heldBy, { what: b.name })
           })
         : null,
 
@@ -1899,13 +1918,17 @@ function askToUseAsBaseline (b) {
 // covers work decided on at the moment it begins. A task written on Monday for
 // Thursday had no door: the Tasks tab offered to queue it or give it out, both of
 // which run Claude on it, and neither of which is what the task says.
-function takeTaskByHand (task) {
+function takeTaskByHand (task, open = 'editor') {
   const free = (queueSays.size ? [...queueSays.values()] : []).filter(m => m.free)
+  const term = open === 'terminal'
   ask({
     title: `Work on #${task.number} yourself`,
     plain: [
-      `A free machine is borrowed, brought up at its base snapshot, and set up with every repository checked out on "${task.branch}". VS Code then opens into it over ssh.`,
-      'Claude is signed in on it, so its integrated terminal can run one — the machine is yours and what you do in it is up to you.',
+      `A free machine is borrowed, brought up at its base snapshot, and set up with every repository checked out on "${task.branch}".`,
+      term
+        ? 'A shell then opens on the Terminal tab, in the folder the work is in. Nothing is typed into it — it is a bash prompt on the machine, and what you run there is yours to decide.'
+        : 'VS Code then opens into it over ssh.',
+      'Claude is signed in on the machine, so typing `claude` works rather than asking you to log in.',
       task.machine
         ? `#${task.number} is already on ${task.machine}. This takes another machine, so give that one back first unless you meant to.`
         : 'The task is marked as taken, on the machine that gets it.',
@@ -1913,12 +1936,25 @@ function takeTaskByHand (task) {
         ? `Free right now: ${free.map(m => m.name).join(', ')}.`
         : 'Nothing is free at the moment, so this will refuse and say why.'
     ],
-    cost: 'It takes a minute or two to bring a machine up before the editor can open.',
-    confirm: 'Take a machine and open it',
+    cost: `It takes a minute or two to bring a machine up before the ${term ? 'shell' : 'editor'} can open.`,
+    confirm: term ? 'Take a machine and open a terminal' : 'Take a machine and open it',
     onYes: async () => {
-      const r = await api('taskWorkOn', { id: task.id })
+      const r = await api('taskWorkOn', { id: task.id, open })
       changed('tasks', null)
       changed('branches', null)
+
+      // THE SHELL IS OPENED HERE, because a terminal is the one thing the action
+      // table cannot hand over: there is no terminal on the other side of it.
+      // The action does everything else and says where the work is; this puts a
+      // pty on the far end of an ssh and lands it in that folder. The command
+      // line's half of the same split is `vmShell`, which hands its own terminal
+      // to ssh for the same reason.
+      if (term && r.name) {
+        showTab('terminal')
+        await openShell(r.name, { what: `#${task.number}`, cwd: r.folder, task: task.id })
+          .catch(e => say(`${r.name} is yours, but the shell did not open: ${e.message}`, 'bad'))
+      }
+
       say(r.note)
       return draw()
     }
@@ -1963,7 +1999,7 @@ function workOnBranch (b) {
   ask({
     title: `Work on "${b.name}" yourself`,
     plain: [
-      'A free machine is borrowed, brought up at its base snapshot, and set up with every repository checked out on this branch. VS Code then opens into it over ssh, with this app\'s own key.',
+      'A free machine is borrowed, brought up at its base snapshot, and set up with every repository checked out on this branch. It then opens over ssh, with this app\'s own key — in VS Code, or as a shell on the Terminal tab, whichever you choose below.',
       // THE POINT OF ASKING FOR A TITLE. Work done by hand used to happen off
       // the board entirely -- a machine borrowed, an editor opened, and nothing
       // anywhere saying it happened. A task is what makes the human path the
@@ -1981,12 +2017,17 @@ function workOnBranch (b) {
       // being a task at all. Writing it also makes you say what you are doing
       // before you start doing it, which is most of the value of a brief.
       { name: 'brief', label: 'What the work is', placeholder: 'the same thing you would tell a worker', multiline: true, rows: 7 },
-      { name: 'start', label: 'Take a machine now', value: 'yes', options: [
-        { value: 'yes', label: 'Yes — bring one up and open VS Code' },
+      // HOW IT OPENS, asked once here rather than being a property of the task.
+      // Both doors reach the same machine on the same branch, so this is a
+      // preference about how somebody works today and not a fact about the work
+      // -- which is why the task keeps offering both afterwards.
+      { name: 'start', label: 'Take a machine now', value: 'editor', options: [
+        { value: 'editor', label: 'Yes — bring one up and open VS Code' },
+        { value: 'terminal', label: 'Yes — bring one up and open a terminal here' },
         { value: 'no', label: 'No — just write it down for later' }
       ] }
     ],
-    cost: 'It takes a minute or two to bring a machine up before the editor can open.',
+    cost: 'It takes a minute or two to bring a machine up before it can open.',
     confirm: 'Save it',
     onYes: async f => {
       if (!f.title || !f.title.trim()) throw new Error('Say what this is called — it is what the board will show.')
@@ -2009,7 +2050,15 @@ function workOnBranch (b) {
       // "nothing happened", because the task is written down and will be sitting
       // on the board wondering why it was not mentioned.
       try {
-        const r = await api('taskWorkOn', { id: task.id })
+        const r = await api('taskWorkOn', { id: task.id, open: f.start })
+
+        // Same split as the task's own button: the action does everything a
+        // terminal needs and this window is the only thing that can BE one.
+        if (f.start === 'terminal' && r.name) {
+          showTab('terminal')
+          await openShell(r.name, { what: `#${task.number}`, cwd: r.folder, task: task.id })
+            .catch(e => say(`${r.name} is yours, but the shell did not open: ${e.message}`, 'bad'))
+        }
         say(r.note)
       } catch (e) {
         say(`#${task.number} is on the board, but no machine was taken: ${e.message}`, 'bad')
@@ -2119,8 +2168,18 @@ let shellSeq = 0
 
 const shellFor = id => shells.find(s => s.id === id) || null
 
-function openShell (name) {
-  api('vmShell', { name }).then(where => {
+// A shell on a machine, in this window.
+//
+// `what` names the shell in the tab strip and `cwd` is the folder it lands in --
+// the two things that made this a machine-picker rather than a place work
+// arrives at. It returns the shell so a caller can hold on to one.
+//
+// IT LANDS YOU IN BASH AND STOPS. It does not run `claude` for you, and that is
+// deliberate: the point of a terminal is that a person is at it. Typing the
+// command is how they decide what session this is, and a window that types it
+// for them has taken the one decision the terminal was opened to make.
+function openShell (name, { what = null, cwd = null, task = null } = {}) {
+  return api('vmShell', { name }).then(where => {
     const { spawn } = require('node:child_process')
 
     // Its own element, its own widget, its own child process. The element is
@@ -2158,6 +2217,11 @@ function openShell (name) {
     const shell = {
       id: ++shellSeq,
       name,
+      // What this shell IS, rather than only which machine it is on. A strip of
+      // tabs all reading "runner1" is what a machine-picker produces; a strip
+      // reading "#25 claude" is what work arriving produces.
+      what,
+      task,
       target: where.target,
       live: where.live,
       term,
@@ -2171,6 +2235,9 @@ function openShell (name) {
     shells.push(shell)
 
     const write = t => { try { shell.child && shell.child.stdin.write(t) } catch { /* it has gone */ } }
+    // Kept on the shell as well, so something outside this closure can say
+    // things into it. It was the missing half of driving one from anywhere else.
+    shell.write = write
 
     shell.child.stdout.on('data', d => term.write(d.toString('utf8')))
     shell.child.stderr.on('data', d => term.write(d.toString('utf8')))
@@ -2181,7 +2248,18 @@ function openShell (name) {
     // only way anything full-screen -- an editor, `less`, `top` -- lays out
     // correctly, and it has to be said again whenever the window changes.
     shell.off.push(term.onResize(() => write(`stty rows ${term.rows} cols ${term.cols} 2>/dev/null\n`)))
-    setTimeout(() => write(`stty rows ${term.rows} cols ${term.cols} 2>/dev/null; clear\n`), 700)
+    // AND THE FOLDER THE WORK IS IN, on the same line as the size, because both
+    // are things the shell should already be true of by the time anybody looks
+    // at it. Landing in $HOME and having to find the checkout is the difference
+    // between a terminal opened FOR a task and a terminal that merely happens to
+    // be on the right machine.
+    //
+    // Quoted, because the folder came from a dialog somebody can type in and
+    // this is a line being handed to a shell.
+    setTimeout(() => write(
+      `stty rows ${term.rows} cols ${term.cols} 2>/dev/null` +
+      (cwd ? `; cd '${String(cwd).split("'").join("'\\''")}' 2>/dev/null || echo "could not enter ${String(cwd).split('"').join('')}"` : '') +
+      '; clear\n'), 700)
 
     shell.child.on('close', code => {
       term.write(`\r\n\x1b[38;5;244m[the session ended${code ? ` — ssh exited ${code}` : ''}]\x1b[0m\r\n`)
@@ -2195,7 +2273,10 @@ function openShell (name) {
     shell.child.on('error', e => term.write(`\r\n\x1b[31m[could not start ssh: ${e.message}]\x1b[0m\r\n`))
 
     showShell(shell)
-  }).catch(oops)
+    // Handed back so a caller can hold on to it. The catch belongs to whoever
+    // asked -- a task opening one wants the failure said next to the task.
+    return shell
+  })
 }
 
 // The box gets whatever is left of the window, measured rather than assumed.
@@ -2251,7 +2332,10 @@ function paintShellTabs () {
     onclick: () => showShell(s),
     title: `${s.target}${s.ended ? ' — this session has ended' : ''}`
   },
-  el('span', { textContent: `${s.name}${shells.filter(o => o.name === s.name).length > 1 ? ` #${s.id}` : ''}` }),
+  // What the shell is for, and the machine second. Two shells opened for two
+  // tasks on the same machine were "runner1" and "runner1 #2" -- true, and no
+  // help at all in picking the one you meant.
+  el('span', { textContent: s.what ? `${s.what} · ${s.name}` : `${s.name}${shells.filter(o => o.name === s.name).length > 1 ? ` #${s.id}` : ''}` }),
   el('button', {
     className: 'term-x',
     textContent: '×',
@@ -2263,19 +2347,26 @@ function paintShellTabs () {
     ? `— ${active.target}${active.live ? '' : ' (last known address)'}${active.ended ? ', ended' : ''}`
     : '')
   $('term-close').disabled = !active
+  // The sign-in line describes the front tab, so it moves when the front tab
+  // does rather than waiting for the next draw.
+  paintTermAuth()
 }
 
-// Whether the worker on the machine you are looking at can authenticate.
+// Whether the worker in the shell you are looking at can authenticate.
 //
-// HERE BECAUSE THIS IS WHERE IT BITES. Opening a shell on a fresh machine and
-// running `claude` gets a sign-in menu, because a runner's credential is handed
-// to it per task and taken back afterwards — so a machine sitting idle is
+// HERE BECAUSE THIS IS WHERE IT BITES. Typing `claude` in a shell on a machine
+// that is signed out gets a sign-in menu, because a runner's credential is
+// handed to it per task and taken back afterwards — so a machine sitting idle is
 // signed OUT by design, and the way to fix that was a command line only.
+//
+// IT FOLLOWS THE ACTIVE TAB now, not a picker, because the picker is gone. That
+// is also the more useful question: it used to describe a machine somebody was
+// considering, and now it describes the shell they are actually sitting in.
 //
 // Not probed. The dashboard already records who is holding one, because a
 // machine holding a credential is the thing that cannot be snapshotted.
 function paintTermAuth () {
-  const name = $('term-machine').value
+  const name = active && active.name
   const vm = latest.vms.find(v => v.name === name)
   const box = $('term-auth')
   if (!vm) { box.classList.add('hidden'); return }
@@ -2313,17 +2404,30 @@ function paintTermAuth () {
 }
 
 function paintTerminal () {
-  const pick = $('term-machine')
-  const up = latest.vms.filter(v => v.connected || v.lastAddress)
-  if (changed('term-machines', up.map(v => [v.name, v.connected]))) {
-    const was = pick.value
-    fill(pick, ...up.map(v => el('option', {
-      value: v.name,
-      textContent: `${v.name}${v.connected ? '' : ' — not dialled in, last known address'}`
-    })))
-    if (was && up.some(v => v.name === was)) pick.value = was
+  // AN AREA WORK ARRIVES AT. The machine picker and its "Open a shell" button
+  // stood here, and they were the last way in this window to end up on a machine
+  // with nothing saying what the work is. What replaces them is a sentence
+  // saying where terminals come from -- shown only when there are none, because
+  // once one has landed the tab strip says it better.
+  const idle = !shells.length
+  $('term').classList.toggle('hidden', idle)
+  $('term-empty').classList.toggle('hidden', !idle)
+  // Said here as well as in paintShellTabs, which only runs once a shell has
+  // existed — so on a window where none ever has, the button sat there looking
+  // like something you could press.
+  $('term-close').disabled = !active
+  if (idle && changed('term-empty', true)) {
+    fill($('term-empty'), el('div', { className: 'panel' },
+      el('p', { className: 'empty', textContent: 'No terminals are open.' }),
+      el('p', { className: 'empty', textContent: 'They start from a task, the same way VS Code does — take a task and choose "in a terminal", and the shell lands here with the branch checked out and the machine signed in. Then type claude, or anything else.' }),
+      el('button', {
+        className: 'btn',
+        textContent: 'Go to the tasks',
+        onclick: () => showTab('tasks')
+      })))
   }
-  $('term-open').disabled = !up.length
+  if (!idle) changed('term-empty', false)
+
   paintTermAuth()
   // Resized and refitted every draw, because what sits above the box changes on
   // its own: the banner appears and disappears with the state of the machines.
@@ -3096,7 +3200,7 @@ const goToBranch = branch => {
   paintBranches()
 }
 const goToTask = id => { pickedTask = id; been.set('task', id); showTab('tasks') }
-const goToShell = name => { showTab('terminal'); openShell(name) }
+const goToShell = (name, opts) => { showTab('terminal'); return openShell(name, opts).catch(oops) }
 
 // What this machine is doing, and what is standing in its way.
 //
@@ -3249,12 +3353,11 @@ function paintVms () {
 $('add-task-open').onclick = newTask
 $('add-branch-open').onclick = newBranch
 $('add-group-open').onclick = newGroup
-$('term-open').onclick = () => openShell($('term-machine').value)
+// `term-open` and `term-machine` were wired here. They were the machine picker
+// and its button, and they are gone: a terminal is started from a task now. The
+// sign-in line follows the front tab instead of the picker, which is repainted
+// by showShell rather than by an onchange.
 $('term-close').onclick = () => closeShell(active)
-// The sign-in line is about the machine in the picker, not the one in the front
-// tab -- it is what you read BEFORE opening a shell, to know whether opening one
-// is worth doing.
-$('term-machine').onchange = () => paintTermAuth()
 // Repainted on the spot rather than on the next draw, because a filter that
 // takes up to three seconds to answer reads as one that did not work.
 $('branch-mine').onchange = () => { changed('branches', null); paintBranches() }

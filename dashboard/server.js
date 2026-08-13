@@ -152,6 +152,30 @@ function guestPath (p, what) {
   return p
 }
 
+// WHERE THE WORK IS, on the machine, as an absolute path.
+//
+// Lifted out of vmEditor because a second door now needs the same answer. The
+// folder can be written `$HOME/workspace` -- that is what the script that makes
+// it calls it -- and an editor needs a real path to open, a terminal needs one
+// to `cd` into, and the two must not be allowed to disagree about which folder a
+// task is being worked in.
+//
+// The expansion is done here in JS rather than by echoing the folder through a
+// shell on the machine, because a folder can be typed into a dialog and
+// interpolating that into a remote command is how a text field becomes a way to
+// run things.
+//
+// Short timeout, because everything calling this is a button somebody is waiting
+// on. The channel's own default is measured in half hours, which is right for a
+// setup script and wrong for a person looking at nothing.
+async function workFolder (name, where) {
+  const vm = vms.get(name)
+  const home = (await channel.run(name, 'printf "%s\\n" "$HOME"', { what: 'where its home is', timeout: 15000 }))
+    .output.trim().split('\n').pop().trim()
+  const folder = where || (vm.spec && vm.spec.folder) || workspace.FOLDER
+  return folder.replace(/^\$HOME\b/, home).replace(/^~(?=\/|$)/, home)
+}
+
 let wantedShot = null
 
 const actions = {
@@ -710,21 +734,21 @@ const actions = {
   // a machine borrowed, an editor opened, and no task, no attempts, no verdict
   // and no record that any of it happened.
   taskWorkOn: {
-    about: 'Take a task yourself: a machine set up on its branch, with VS Code open in it',
-    takes: ['id', 'name'],
-    run: async ({ id, name }) => {
+    about: 'Take a task yourself: a machine set up on its branch, opened in VS Code or in a terminal here',
+    takes: ['id', 'name', 'open'],
+    run: async ({ id, name, open = 'editor' }) => {
       const task = tasks.get(id)
       if (task.verdict) throw new Error(`"${task.id}" has already been judged. Write a new task rather than reopening a decided one.`)
       if (!task.branch) throw new Error(`"${task.id}" has no branch, and a machine is set up on one.`)
 
-      const started = await actions.branchWorkOn.run({ name, branch: task.branch, folder: task.folder || undefined })
+      const started = await actions.branchWorkOn.run({ name, branch: task.branch, folder: task.folder || undefined, open })
 
       // Recorded the same way a dispatch is, and for the same reason: the task
       // has to say who is doing it and where, or nothing else on the board can.
       tasks.update(task.id, {
         state: 'given',
         machine: started.name,
-        attempts: [...(task.attempts || []), { machine: started.name, at: new Date().toISOString(), by: 'a person' }]
+        attempts: [...(task.attempts || []), { machine: started.name, at: new Date().toISOString(), by: open === 'terminal' ? 'a person, in a terminal' : 'a person, in VS Code' }]
       })
       log.on('task', task.id).good(`taken by hand on ${started.name}, on ${task.branch}`)
 
@@ -732,7 +756,15 @@ const actions = {
         ...started,
         task: task.id,
         number: task.number,
-        note: `#${task.number} is yours on ${started.name}. Push what you want judged, then finish it — that gives the machine back and puts the task up for a verdict.`
+        // The sign-in state is carried up rather than dropped. This note used to
+        // replace branchWorkOn's wholesale, which meant a machine whose worker
+        // cannot authenticate handed itself over without mentioning it — and the
+        // person finds out by typing `claude` and being told the session expired.
+        note: `#${task.number} is yours on ${started.name}.` +
+          (started.signedIn === false
+            ? ' Claude will NOT run there: this host\'s worker credential has expired. Get a fresh one on the Keys tab.'
+            : '') +
+          ' Push what you want judged, then finish it — that gives the machine back and puts the task up for a verdict.'
       }
     }
   },
@@ -769,10 +801,13 @@ const actions = {
   // remembering the workspace action, then remembering the editor one, and
   // afterwards remembering that the machine is still yours.
   branchWorkOn: {
-    about: 'Take a free machine, set it up on this branch, and open VS Code in it',
-    takes: ['branch', 'name', 'folder'],
-    run: async ({ branch, name, folder }) => {
+    about: 'Take a free machine, set it up on this branch, and open it — in VS Code, or in a terminal here',
+    takes: ['branch', 'name', 'folder', 'open'],
+    run: async ({ branch, name, folder, open = 'editor' }) => {
       if (!branch) throw new Error('Which branch do you want to work on?')
+      if (!['editor', 'terminal', 'none'].includes(open)) {
+        throw new Error(`"${open}" is not a way to open work. It is "editor", "terminal", or "none".`)
+      }
 
       // Refused before a machine is borrowed rather than after, or a typo costs
       // a boot and leaves a machine out of the pool.
@@ -786,7 +821,10 @@ const actions = {
       const held = vms.read().find(v => v.branch === branch)
       if (held) throw new Error(`"${branch}" is already set up on ${held.name}. Two machines on one branch race for the same ref.`)
 
-      const borrowed = await actions.vmBorrow.run({ name, why: `working on ${branch} in VS Code` })
+      const borrowed = await actions.vmBorrow.run({
+        name,
+        why: `working on ${branch} in ${open === 'terminal' ? 'a terminal' : 'VS Code'}`
+      })
       const on = borrowed.name
 
       // TWO STEPS, AND ONLY THE FIRST UNDOES ITSELF.
@@ -820,33 +858,74 @@ const actions = {
       // literally step one of the Keys tab -- and it is no reason to withhold a
       // machine somebody asked for. The editor still opens; the note says what
       // they will find in the terminal.
-      let signedIn = false
+      // `signedIn` is what the WORKER says, not what we placed. Placing a file
+      // and being able to authenticate are two different facts, and reporting
+      // the first as the second is how somebody ends up typing `claude` into a
+      // terminal this window promised was ready.
+      let signedIn = null
+      let signInNote = null
       try {
-        await actions.vmCredentialsPut.run({ name: on })
-        signedIn = true
+        signedIn = (await actions.vmCredentialsPut.run({ name: on })).ready
+        if (signedIn === false) signInNote = 'this host\'s worker credential has expired'
       } catch (e) {
+        signedIn = false
+        signInNote = e.message
         log.on('vm', on).warn(`set up on "${branch}", but it has no worker credential: ${e.message}`)
       }
 
+      // TWO DOORS ONTO THE SAME MACHINE, and the flow only differs at this last
+      // step. Everything above -- borrow, roll back, check out the branch in
+      // every repository, hand it a credential -- is what "work on this" means,
+      // and which window it lands in is a preference about how somebody works
+      // rather than a different kind of work.
+      //
+      // THE TERMINAL IS OPENED BY THE WINDOW, NOT HERE. This is not a hole in
+      // one-surface: the command line's half is `vmShell`, which says how to get
+      // in and hands its own terminal to ssh. The dashboard has no terminal to
+      // give, so what this returns is everything needed to open one -- and the
+      // command line already does exactly that with `vmShell --command`.
       let opened = null
       let why = null
-      try {
-        opened = await actions.vmEditor.run({ name: on, where: folder })
-      } catch (e) {
-        why = e.message
-        log.on('vm', on).warn(`set up on "${branch}", but the editor did not open: ${e.message}`)
+      let dir = null
+
+      if (open === 'editor') {
+        try {
+          opened = await actions.vmEditor.run({ name: on, where: folder })
+        } catch (e) {
+          why = e.message
+          log.on('vm', on).warn(`set up on "${branch}", but the editor did not open: ${e.message}`)
+        }
+      } else if (open === 'terminal') {
+        // Resolved here rather than guessed at the other end, so a terminal and
+        // an editor opened on the same task land in the same folder.
+        try {
+          dir = await workFolder(on, folder)
+        } catch (e) {
+          why = e.message
+          log.on('vm', on).warn(`set up on "${branch}", but it would not say where its work is: ${e.message}`)
+        }
       }
 
-      log.on('vm', on).good(`yours, on "${branch}"${opened ? ' — VS Code is opening' : ''}`)
+      log.on('vm', on).good(`yours, on "${branch}"${opened ? ' — VS Code is opening' : open === 'terminal' ? ' — a terminal is opening' : ''}`)
+
+      const claude = signedIn === true
+        ? ' Claude is signed in there, so typing `claude` works.'
+        : signedIn === null
+          ? ' A credential is on it; whether Claude can authenticate was not established.'
+          : ` Typing \`claude\` there will fail — ${signInNote || 'it is not signed in'}. Get a fresh credential on the Keys tab.`
+      const keep = ' Commit and push what you want to keep — giving it back rolls it back, and refuses while anything is uncommitted.'
+
       return {
         name: on,
         branch,
+        open,
         opened,
+        folder: dir,
         signedIn,
         editorFailed: why,
         note: why
-          ? `${on} is set up on "${branch}" and is yours, but VS Code did not open: ${why}. Open it again from the machine, or work in it over ssh.`
-          : `${on} is set up on "${branch}" and yours until you give it back.${signedIn ? ' Claude is signed in there, so its integrated terminal can run it.' : ' Claude is NOT signed in there — get a credential on the Keys tab first.'} Commit and push what you want to keep — giving it back rolls it back, and refuses while anything is uncommitted.`
+          ? `${on} is set up on "${branch}" and is yours, but it could not be opened: ${why}. Open it again, or work in it over ssh.`
+          : `${on} is set up on "${branch}" and yours until you give it back.${claude}${keep}`
       }
     }
   },
@@ -2103,12 +2182,47 @@ try { j = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { /* absent or unreadab
 j.hasCompletedOnboarding = true
 fs.writeFileSync(p, JSON.stringify(j))
 OKC_READY_EOF
-echo okc-credential-placed`, { what: 'handing it a worker credential', timeout: 60000 })
+echo okc-credential-placed
+# AND THEN ASKED WHETHER IT ACTUALLY WORKS, in the same breath.
+#
+# A FILE ON DISK IS NOT A SIGNED-IN WORKER. This returned ready:true for
+# placing bytes, and a credential can be placed perfectly and still be
+# expired -- which is exactly what happened: the file arrived, the wizard
+# flag was set, and the worker answered "OAuth session expired and could
+# not be refreshed". Every panel said the machine was signed in.
+#
+# In the SAME remote command because it is free here and a second round
+# trip is not: this runs before every queued dispatch.
+claude auth status 2>/dev/null || true`, { what: 'handing it a worker credential', timeout: 60000 })
 
       if (!/okc-credential-placed/.test(r.output || '')) throw new Error(`"${name}" did not take the credential.`)
       vms.update(name, { holdsCredential: true })
-      log.on('vm', name).warn(`${name} now holds a worker credential — it cannot be snapshotted until that is taken back`)
-      return { to: name, placed: true, ready: true }
+
+      // What the worker itself says, believed over what we just wrote. It prints
+      // JSON; anything else -- an old version, a missing binary -- leaves this
+      // unknown rather than false, because "it did not answer the question" and
+      // "it answered no" are different and only one of them is a dead credential.
+      let ready = null
+      const said = (r.output || '').slice((r.output || '').indexOf('okc-credential-placed'))
+      const seen = said.match(/\{[\s\S]*"loggedIn"[\s\S]*?\}/)
+      if (seen) { try { ready = JSON.parse(seen[0]).loggedIn === true } catch { /* not the shape we know */ } }
+
+      if (ready === false) {
+        log.on('vm', name).bad(`${name} took the credential and ${'claude'} still reports itself signed out — this host's credential has expired. Get a new one on the Keys tab.`)
+      } else {
+        log.on('vm', name).warn(`${name} now holds a worker credential — it cannot be snapshotted until that is taken back`)
+      }
+
+      return {
+        to: name,
+        placed: true,
+        ready,
+        note: ready === false
+          ? 'The credential was placed and the worker still reports itself signed out. This host\'s credential has expired — sign in again on the Keys tab.'
+          : ready === null
+            ? 'The credential was placed. The worker did not say whether it can authenticate.'
+            : 'The credential was placed and the worker reports itself signed in.'
+      }
     }
   },
 
@@ -2496,6 +2610,13 @@ done`
     run: async ({ id }) => {
       const task = tasks.get(id)
       if (task.verdict) throw new Error(`#${task.number} has already been judged. Write a new task rather than reopening a decided one.`)
+      // REFUSED AT THE DOOR, not ignored inside. The queue skips a person's task
+      // now, and a task sitting queued that nothing will ever pick up looks
+      // exactly like one that is merely waiting its turn — which is the state
+      // this whole action's closing note exists to avoid.
+      if (task.worker === 'person') {
+        throw new Error(`#${task.number} is written for a person — the queue would roll a machine back and run Claude over the top of it. Take it yourself with taskWorkOn, or write it for a worker instead.`)
+      }
       const why = branches.nameIsOk(task.branch)
       if (why) throw new Error(why)
       const queued = tasks.update(id, { state: 'queued' })
@@ -3338,22 +3459,9 @@ done`
       const user = facts.user || (vm.spec && vm.spec.user)
       if (!address || !user) throw new Error(`"${name}" has not said enough about itself yet to open it.`)
 
-      // Asked once, for one fixed thing, and joined here.
-      //
-      // The folder can be written `$HOME/workspace` -- that is what it is called
-      // in the script that makes it -- but a folder-uri needs a real path. The
-      // expansion is done in JS rather than by echoing the folder through a
-      // shell, because a folder can be typed in a dialog and interpolating that
-      // into a remote command is how a text field becomes a way to run things.
-      //
-      // Short timeout, because this is a button. The default is measured in half
-      // hours, which is right for a setup script and wrong for someone waiting
-      // with nothing on screen.
-      const home = (await channel.run(name, 'printf "%s\\n" "$HOME"', { what: 'where its home is', timeout: 15000 }))
-        .output.trim().split('\n').pop().trim()
-
-      const folder = where || (vm.spec && vm.spec.folder) || workspace.FOLDER
-      const dir = folder.replace(/^\$HOME\b/, home).replace(/^~(?=\/|$)/, home)
+      // Shared with the terminal door, so the two cannot open different folders
+      // for the same task. See workFolder, above the table.
+      const dir = await workFolder(name, where)
 
       // THROUGH THE ALIAS, not through user@address.
       //

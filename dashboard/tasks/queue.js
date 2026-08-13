@@ -89,7 +89,14 @@ async function tick (actions, log) {
     const { tasks } = await actions.tasks.run({})
     // Oldest first. A queue that is not first-in-first-out is a queue somebody
     // has to reason about, and the number is the order they were written.
-    const waiting = tasks.filter(t => t.state === 'queued').sort((a, b) => a.number - b.number)
+    //
+    // A PERSON'S TASK IS NEVER PICKED UP HERE, wherever it got its state from.
+    // The queue's job is to find work nobody is doing and give it to a worker,
+    // and a task that says a person is doing it is not that — dispatching one
+    // rolls a machine back to a snapshot and runs Claude over the top of it.
+    // Belt and braces with the adoption rule above: this is the door, and it
+    // should be shut whether or not something upstream went wrong.
+    const waiting = tasks.filter(t => t.state === 'queued' && t.worker !== 'person').sort((a, b) => a.number - b.number)
     if (!waiting.length) return
 
     const { vms } = await actions.vmList.run({})
@@ -491,7 +498,20 @@ async function adopt (actions, log) {
   // Put back in the queue rather than marked done, and the difference is real:
   // nothing was dispatched, so no work happened and there is nothing to judge.
   // Re-queueing loses nothing and re-running it is exactly what was wanted.
-  for (const t of tasks.filter(x => x.state === 'given' && !x.run)) {
+  //
+  // EXCEPT A PERSON'S, whose whole working life is exactly this shape.
+  //
+  // A task somebody took by hand sits in `given` with no run id for as long as
+  // they are working in it — there is no run because there is no worker process;
+  // the exit code is a human saying "finished". So this re-queued every one of
+  // them on every restart and handed it to Claude on a second machine, while the
+  // person was still in the first. Two machines on one branch, and the work
+  // stolen from underneath somebody with an editor open.
+  //
+  // The rule this was written to is still right: `given` with no run means
+  // nothing is running. What changed is that "nothing is running" stopped
+  // meaning "nothing is happening".
+  for (const t of tasks.filter(x => x.state === 'given' && !x.run && x.worker !== 'person')) {
     log.on('queue').warn(`#${t.number} was being set up when this stopped, and never started — back in the queue`)
     await actions.taskUpdate.run({ id: t.id, task: { state: 'queued', machine: null } }).catch(() => {})
   }
