@@ -479,6 +479,11 @@ table.kv td { padding: 3px 0; word-break: break-all; }
 .spec summary:hover { color: var(--text); }
 .spec .kv { margin-top: 6px; }
 
+/* A chip that does something. Same shape as the ones that only report, because
+   it reports the same kind of thing -- it just also fixes it. */
+.linky-chip { cursor: pointer; font: inherit; font-size: 11px; }
+.linky-chip:hover { border-color: var(--accent); color: var(--accent); }
+
 /* Not yet, rather than nothing. Dimmer than an ordinary empty message and
    deliberately not animated: it is on screen for a fraction of a second in the
    ordinary case, and a spinner that flashes is worse than a word that does not. */

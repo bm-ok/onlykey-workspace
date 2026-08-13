@@ -1110,15 +1110,32 @@ function paintBranches () {
     }
 
     const c = board.counts
-    if (changed('branches', [rows, c, pickedBranch])) {
+    // WHAT IS NOT ON SCREEN, SAID WHERE THE COUNT IS. The chips describe the
+    // whole workspace and the list is filtered, so "4 in all" above three rows
+    // reads as a fault in the list rather than as a filter doing its job. It is
+    // the count that has to say so, because it is the count that is disagreed
+    // with -- and it is worth keeping the board-wide numbers, since "there is an
+    // orphan somewhere" is exactly the thing a filtered list would hide.
+    const hidden = board.branches.length - rows.length
+
+    if (changed('branches', [rows, c, hidden, pickedBranch])) {
       fill($('branch-counts'),
-        chip(`${c.all} in all`, null),
+        chip(hidden ? `${rows.length} of ${c.all}` : `${c.all} in all`, null),
         c.claimed ? chip(`${c.claimed} claimed by a task`, 'ok') : null,
         // "Claimed by", not "checked out on": the count includes machines that
         // are switched off, and a claim outlives the machine being on.
         c.held ? chip(`${c.held} claimed by a machine`, 'ok') : null,
         c.orphaned ? chip(`${c.orphaned} orphaned`, 'bad') : null,
-        c.spare ? chip(`${c.spare} spare`, 'warn') : null)
+        c.spare ? chip(`${c.spare} spare`, 'warn') : null,
+        // Actionable rather than merely honest: the thing you want on reading
+        // "1 hidden" is to see it, so this is the button that does that.
+        hidden
+          ? el('button', {
+              className: 'chip warn linky-chip',
+              textContent: `${hidden} hidden — show`,
+              onclick: () => { $('branch-mine').checked = false; changed('branches', null); paintBranches() }
+            })
+          : null)
 
       fill($('branches'), rows.length
         ? rows.map(branchCard)
@@ -1221,8 +1238,10 @@ function branchCard (b) {
       el('span', { className: 'mono', textContent: b.name }),
       el('span', { className: `badge ${kind}`, textContent: tag })),
     el('div', { className: 'badges' },
-      // The one number that decides everything else about a branch.
-      el('span', { className: 'muted', textContent: b.commits ? `${b.commits} commit(s)` : 'empty' }),
+      // The one number that decides everything else about a branch -- except on
+      // the default, where "empty" is meaningless: it is the thing the count is
+      // measured against, so it can only ever be zero ahead of itself.
+      el('span', { className: 'muted', textContent: b.protected ? 'the baseline' : b.commits ? `${b.commits} commit(s)` : 'empty' }),
       b.heldBy ? el('span', { className: 'muted', textContent: b.heldBy }) : null))
 }
 
