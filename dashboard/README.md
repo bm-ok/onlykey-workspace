@@ -211,6 +211,39 @@ iterates on a half-hour loop. The machine fetches the script fresh, so an edit m
 since it was built is included.
 
 
+Nothing it produces lives in the repository
+-------------------------------------------
+
+Everything this app makes by RUNNING is in the per-user data directory --
+`%LOCALAPPDATA%\okc-dashboard` on Windows, `~/.local/share/okc-dashboard`
+elsewhere -- and nothing it makes by running is in the working tree.
+
+    state/         which machines it made, which tasks exist, which branch each
+                   repository treats as default, what has been approved
+    credentials/   the worker credential, sealed
+    task-logs/     what a run left behind, kept where a machine cannot take it
+    window/        photographs of the window
+    ca.pem, server.key, id_okc, ssh_config, known_hosts
+
+**The registries used to be in `dashboard/state/`**, covered by `.gitignore`,
+which is where they were written before this directory existed. Ignored is a
+rule, and a rule can be changed, overridden with a `-f`, or simply not apply to
+whoever clones this next -- and a machine registry inside a working tree is one
+`git clean -xdf` away from every machine this app made becoming unmanageable,
+with the machines themselves still sitting there in VirtualBox. Outside the tree
+there is nothing for git to decide about, which is a stronger statement than
+asking it not to.
+
+They MOVE THEMSELVES, once, the first time anything asks for the directory and
+before any of it is read -- because the alternative is an app that starts up
+having forgotten its machines. Nothing is overwritten: a file already at the
+destination is the live one, and a leftover beside it is from before the move.
+The start that does it says so in the log.
+
+`OKC_STATE` still points the whole lot somewhere else, and when it is set nothing
+is moved -- somebody who has chosen where this goes is not helped by having their
+files relocated.
+
 Encrypted, and how a bare machine comes to trust it
 ---------------------------------------------------
 

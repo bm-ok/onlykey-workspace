@@ -2579,8 +2579,7 @@ done`
     about: 'Save what the window currently looks like: the markup, and a picture of it',
     takes: ['html', 'png'],
     run: async ({ html, png }) => {
-      const dir = process.env.OKC_STATE || path.join(__dirname, 'state')
-      fs.mkdirSync(dir, { recursive: true })
+      const dir = data.state()
       const file = path.join(dir, 'capture.html')
       fs.writeFileSync(file, String(html || ''))
 
@@ -3031,6 +3030,17 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
       // from it.
       queue.begin(actions, log)
       log.on('queue').info(`watching for queued work every ${queue.TICK / 1000}s`)
+
+      // Said once, on the start that does it. Moving a machine registry out from
+      // under a running app is not something to do quietly -- and on anybody
+      // else's copy this is the start where it happens.
+      const carried = data.tookOver()
+      if (carried && carried.moved.length) {
+        log.on('server').good(`moved ${carried.moved.length} state file(s) out of the repository and into ${carried.to}`)
+      }
+      if (carried && carried.left.length) {
+        log.on('server').warn(`${carried.left.join(', ')} could not be moved out of ${carried.from} — there is already a file of that name in ${carried.to}, and the one already there is the live one`)
+      }
 
       log.on('server').good(`Listening on port ${port} over TLS — scripts and repositories for machines being provisioned`)
       log.on('server').info(`The authority is published unencrypted on port ${caPort}, and is the only thing there`)

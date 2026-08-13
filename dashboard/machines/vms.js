@@ -14,7 +14,9 @@ const log = require('../core/log')
 const vbox = require('./vbox')
 const channel = require('./channel')
 
-const STATE = process.env.OKC_STATE || path.join(__dirname, '..', 'state')
+const data = require('../core/data')
+
+const STATE = data.state()
 const FILE = path.join(STATE, 'vms.json')
 
 // Tolerant on purpose. These files get hand-edited, and two ways of writing them

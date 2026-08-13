@@ -151,11 +151,12 @@ Housekeeping on the machines
 * **Nothing.** Both runners are off, clean, claiming nothing, holding nothing,
   and in the pool. Kept as a heading because this is the state to return them
   to, not because there is anything to do.
-* **The task contract lives in `dashboard/state/`, which is runtime state and
-  untracked.** It is project configuration and does not belong there; it was put
-  where it was to prove the mechanism. Somewhere it can be version-controlled
-  would be better, since the rules a worker is given are worth a history — and
-  no task has used one since, because the file is not where anybody would look.
+* **The task contract is runtime state, and it should not be.** It now sits in
+  the per-user data directory with the registries, having moved out of the
+  repository along with them — which is right for a registry and wrong for this.
+  It is project *configuration*: the rules a worker is given are worth a history,
+  and it is now further from version control than it was, not closer. No task has
+  used one since it was written, because the file is nowhere anybody would look.
 
 
 Nothing else is outstanding

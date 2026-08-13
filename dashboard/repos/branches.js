@@ -20,6 +20,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { execFileSync } = require('node:child_process')
 const serve = require('./serve')
+const data = require('../core/data')
 
 // Git, read or write, in one repository. Synchronous on purpose: these are local
 // ref operations on a handful of repositories, they take milliseconds, and the
@@ -58,7 +59,7 @@ function headOf (dir) {
 // default" and, worse, would leave the real default unprotected exactly while
 // somebody is reading code. Recorded the first time a repository is seen, it
 // stays protected whatever is checked out later.
-const STATE = process.env.OKC_STATE || path.join(__dirname, '..', 'state')
+const STATE = data.state()
 const FILE = path.join(STATE, 'repos.json')
 
 function remembered () {

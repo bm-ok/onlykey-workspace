@@ -24,7 +24,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 const log = require('../core/log')
 
-const STATE = process.env.OKC_STATE || path.join(__dirname, '..', 'state')
+const data = require('../core/data')
+
+const STATE = data.state()
 const FILE = path.join(STATE, 'approvals.json')
 
 // Suite and name together. A test name is only unique inside its suite, and two
