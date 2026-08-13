@@ -2406,27 +2406,72 @@ function openShell (name, { what = null, cwd = null, task = null } = {}) {
     // things into it. It was the missing half of driving one from anywhere else.
     shell.write = write
 
-    shell.child.stdout.on('data', d => term.write(d.toString('utf8')))
-    shell.child.stderr.on('data', d => term.write(d.toString('utf8')))
+    // WHAT WE TYPED IS TAKEN BACK OUT OF WHAT COMES BACK.
+    //
+    // The remote pty's size can only be changed by running `stty` in it, and
+    // running something in a shell means typing it — which the shell then echoes,
+    // so every resize printed `stty rows 44 cols 168` into the terminal a person
+    // is trying to read. That was reported as the terminal being buggy, and it
+    // was: the tool's own housekeeping was being shown as though the user had
+    // typed it.
+    //
+    // So a command sent by this code is registered before it goes, and struck
+    // from the first output that contains it. Exact match, first occurrence,
+    // once — if it does not match, nothing is removed and the worst case is what
+    // happened before.
+    shell.hush = []
+    const scrub = text => {
+      for (let i = 0; i < shell.hush.length; i++) {
+        const at = text.indexOf(shell.hush[i])
+        if (at === -1) continue
+        // The echo carries the newline that ended it, in either spelling.
+        const end = at + shell.hush[i].length
+        const skip = text.startsWith('\r\n', end) ? 2 : (text[end] === '\r' || text[end] === '\n') ? 1 : 0
+        text = text.slice(0, at) + text.slice(end + skip)
+        shell.hush.splice(i, 1)
+        i--
+      }
+      return text
+    }
+
+    shell.child.stdout.on('data', d => term.write(scrub(d.toString('utf8'))))
+    shell.child.stderr.on('data', d => term.write(scrub(d.toString('utf8'))))
     shell.off.push(term.onData(write))
 
     // The remote pty is created at ssh's idea of our size, which is 80x24
     // because we have no terminal here. Telling the far end the real size is the
     // only way anything full-screen -- an editor, `less`, `top` -- lays out
     // correctly, and it has to be said again whenever the window changes.
-    shell.off.push(term.onResize(() => write(`stty rows ${term.rows} cols ${term.cols} 2>/dev/null\n`)))
-    // AND THE FOLDER THE WORK IS IN, on the same line as the size, because both
-    // are things the shell should already be true of by the time anybody looks
-    // at it. Landing in $HOME and having to find the checkout is the difference
-    // between a terminal opened FOR a task and a terminal that merely happens to
-    // be on the right machine.
+    // Said once the dragging stops, not on every frame of it. A resize produces
+    // a burst of these — one per column crossed — and each one was a command run
+    // in the shell, so the cost of widening a window was thirty prompts.
+    const quietly = cmd => { shell.hush.push(cmd); write(`${cmd}\n`) }
+    let resizing = null
+    shell.off.push(term.onResize(() => {
+      clearTimeout(resizing)
+      resizing = setTimeout(() => quietly(`stty rows ${term.rows} cols ${term.cols} 2>/dev/null`), 400)
+    }))
+    // Closing takes the pending resize with it, or a shell disposed mid-drag
+    // writes to a child that has gone.
+    shell.off.push({ dispose: () => clearTimeout(resizing) })
+    // The size, and the folder the work is in, once the login has finished.
+    //
+    // NOTHING IS CLEARED. This used to end in `; clear`, which wiped the login
+    // banner — the distribution, the update count, the last-login line — and left
+    // a bare prompt. That was reported as the banner not showing, and "cleared by
+    // something" was exactly right: the thing a person reads first to know which
+    // machine they are on was being erased a moment after it arrived, by us.
+    //
+    // Sent through `quietly`, so the housekeeping does not appear as though it
+    // had been typed. What remains visible is one fresh prompt, which is honest:
+    // something ran.
     //
     // Quoted, because the folder came from a dialog somebody can type in and
     // this is a line being handed to a shell.
-    setTimeout(() => write(
+    setTimeout(() => quietly(
       `stty rows ${term.rows} cols ${term.cols} 2>/dev/null` +
-      (cwd ? `; cd '${String(cwd).split("'").join("'\\''")}' 2>/dev/null || echo "could not enter ${String(cwd).split('"').join('')}"` : '') +
-      '; clear\n'), 700)
+      (cwd ? `; cd '${String(cwd).split("'").join("'\\''")}' 2>/dev/null || echo "could not enter ${String(cwd).split('"').join('')}"` : '')
+    ), 700)
 
     shell.child.on('close', code => {
       term.write(`\r\n\x1b[38;5;244m[the session ended${code ? ` — ssh exited ${code}` : ''}]\x1b[0m\r\n`)
