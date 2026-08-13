@@ -1050,6 +1050,113 @@ function readDefinition (which) {
   }).catch(oops)
 }
 
+// The two keys this app needs in order to be itself.
+//
+// Together because they are the same kind of thing: a credential the app owns,
+// kept in its own directory rather than in anybody's home, which nothing else
+// should have to provide. One is how a machine knows it is talking to this host;
+// the other is how this host gets back into a machine when the machine has
+// stopped talking.
+//
+// NEITHER SHOWS A PRIVATE KEY. A fingerprint identifies a key without being one,
+// and a window that displays a secret is a window that ends up in a screenshot.
+function paintAppKeys () {
+  Promise.all([api('sshKey'), api('tlsKey')]).then(([mine, tls]) => {
+    if (!changed('app-keys', [mine, tls])) return
+
+    const strangers = (mine.machines || []).filter(m => !m.authorised)
+
+    fill($('app-keys'),
+      // ---- ssh ----------------------------------------------------------
+      el('div', { className: 'card' },
+        el('div', { className: 'card-title' },
+          el('span', { textContent: 'ssh — the way back into a machine' }),
+          el('span', { className: `badge ${mine.ok ? 'ok' : 'warn'}`, textContent: mine.ok ? 'have one' : 'none yet' })),
+        mine.ok
+          ? el('table', { className: 'kv', style: 'margin-top:8px' },
+              el('tr', {}, el('th', { textContent: 'fingerprint' }), el('td', { className: 'mono', style: 'user-select:text', textContent: mine.fingerprint || '—' })),
+              el('tr', {}, el('th', { textContent: 'kept in' }), el('td', { className: 'mono', style: 'user-select:text', textContent: mine.file || '' })),
+              el('tr', {}, el('th', { textContent: 'made' }), el('td', { className: 'muted', textContent: mine.made ? new Date(mine.made).toLocaleString() : '—' })))
+          : el('p', { className: 'note', textContent: mine.why || '' }),
+
+        // Which machines would actually let it in — a different question from
+        // whether the key exists, and the one that matters when you cannot get
+        // into something.
+        strangers.length
+          ? el('div', { className: 'card-sub muted', style: 'margin-top:8px' },
+              `${strangers.length} machine${strangers.length === 1 ? '' : 's'} will not accept it: ` +
+              `${strangers.map(m => m.name).join(', ')} — built with a different key, and nothing here can change that from outside.`)
+          : el('div', { className: 'card-sub muted', style: 'margin-top:8px', textContent: 'Every machine here accepts it.' }),
+
+        el('div', { className: 'row', style: 'margin-top:10px' },
+          el('button', {
+            className: 'btn',
+            textContent: 'Write the ssh config',
+            title: 'So ssh and VS Code find these machines by name, using this key',
+            onclick: () => api('sshConfig').then(r => say(
+              `${r.hosts.length} machine${r.hosts.length === 1 ? '' : 's'} written to ${r.file}${r.include.added ? `, and included from ${r.include.file}` : ''}`
+            )).catch(oops)
+          }),
+          el('button', {
+            className: 'btn danger',
+            textContent: mine.ok ? 'Make a new one' : 'Make one',
+            onclick: () => ask({
+              title: mine.ok ? 'Make a new ssh key?' : 'Make this app an ssh key?',
+              plain: mine.ok
+                ? [
+                    'A new key is written, and this one is gone.',
+                    'Every machine already built has the OLD public key in its authorized_keys, and nothing here can reach in to change that — the only thing that could is the key being replaced.',
+                    'Machines built after this will accept the new one.'
+                  ]
+                : [
+                    'Makes a key belonging to this app, kept beside its certificate.',
+                    'New machines are built with it; machines that already exist are not touched.'
+                  ],
+              cost: mine.ok ? 'This app loses its way into every existing machine. They have to be rebuilt, or given the new key by hand while the old one still works.' : null,
+              confirm: mine.ok ? 'Replace it' : 'Make it',
+              danger: !!mine.ok,
+              onYes: async () => { const r = await api('sshKeyMake', { force: true }); say(`${r.fingerprint} — ${r.note}`) }
+            })
+          }))),
+
+      // ---- tls ----------------------------------------------------------
+      el('div', { className: 'card' },
+        el('div', { className: 'card-title' },
+          el('span', { textContent: 'https — how a machine knows it is this host' }),
+          el('span', {
+            className: `badge ${tls.ok ? 'ok' : tls.missing ? 'bad' : 'warn'}`,
+            textContent: tls.missing ? 'none' : tls.expired ? 'expired' : !tls.matches ? 'wrong address' : tls.expiringSoon ? 'expiring' : 'good'
+          })),
+        el('table', { className: 'kv', style: 'margin-top:8px' },
+          el('tr', {}, el('th', { textContent: 'names' }), el('td', { className: 'mono', style: 'user-select:text', textContent: (tls.covers || []).join(', ') || '—' })),
+          el('tr', {}, el('th', { textContent: 'this host is' }), el('td', { className: 'mono', textContent: tls.address || 'unknown' })),
+          el('tr', {}, el('th', { textContent: 'expires' }), el('td', { className: 'muted', textContent: tls.validTo ? `${new Date(tls.validTo).toDateString()} — ${tls.daysLeft} days` : '—' })),
+          // Published rather than secret: a brand-new machine checks the
+          // authority against this over a connection that is not yet protected,
+          // which is what makes the very first fetch possible at all.
+          el('tr', {}, el('th', { textContent: 'authority' }), el('td', { className: 'mono', style: 'user-select:text; word-break:break-all', textContent: tls.fingerprint || '—' }))),
+        tls.why ? el('div', { className: 'card-sub bad', style: 'margin-top:8px', textContent: tls.why }) : null,
+
+        el('div', { className: 'row', style: 'margin-top:10px' },
+          el('button', {
+            className: 'btn danger',
+            textContent: 'Make a new certificate',
+            onclick: () => ask({
+              title: 'Make a new certificate?',
+              plain: [
+                'A new authority and a new certificate, naming this host\'s addresses as they are now.',
+                'Every machine already built trusts the OLD authority, which was checked against a fingerprint when it was made. They will refuse the new one.',
+                'This is what to do when this host\'s address has changed, or the certificate is close to expiring.'
+              ],
+              cost: 'Every existing machine has to be set up again before it can fetch scripts or push work.',
+              confirm: 'Replace it',
+              danger: true,
+              onYes: async () => { await api('tlsRegenerate'); say('New certificate. Every machine has to be set up again.') }
+            })
+          }))))
+  }).catch(() => { /* the tab above already says if the dashboard is unreachable */ })
+}
+
 // Ask which machine, sign in on it, then take what it got.
 function getCredentials () {
   const running = latest.vms.filter(v => v.connected)
@@ -1885,6 +1992,7 @@ async function drawOnce () {
 
   paintVms()
   paintKeys()
+  paintAppKeys()
   paintTasks(running)
 
   // Last, so the picture is of a window that has finished drawing.

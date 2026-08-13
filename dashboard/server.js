@@ -17,6 +17,7 @@ const path = require('node:path')
 const log = require('./core/log')
 const ipc = require('./core/ipc')
 const keys = require('./core/keys')
+const ssh = require('./core/ssh')
 const data = require('./core/data')
 const secret = require('./core/secret')
 const vbox = require('./machines/vbox')
@@ -614,15 +615,136 @@ const actions = {
 
   // Offered so a key can be picked rather than pasted. Public keys only: nothing
   // here reads a private key, and there is no reason it ever should.
-  hostKeys: {
-    about: 'Public ssh keys on this machine, to authorise on a new machine',
-    run: async () => {
-      const dir = path.join(require('node:os').homedir(), '.ssh')
-      if (!fs.existsSync(dir)) return { keys: [] }
-      const keys = fs.readdirSync(dir).filter(f => f.endsWith('.pub')).map(f => {
-        const text = fs.readFileSync(path.join(dir, f), 'utf8').trim()
-        return { file: f, key: text, comment: text.split(/\s+/).slice(2).join(' ') || f }
+  // ---- the two keys this app needs to be itself -------------------------
+  //
+  // They are the same kind of thing and belong together: the TLS material a
+  // machine verifies this host by, and the ssh key this host gets back into a
+  // machine with. Both live in the app's data directory rather than in anybody's
+  // home, both are made once, and remaking either has a cost that has to be said
+  // out loud before it happens.
+
+  sshKey: {
+    about: "This app's own ssh key — the one that gets into the machines it makes",
+    run: () => {
+      const state = ssh.state()
+      const mine = vms.read()
+      return {
+        ...state,
+        // Which machines would actually accept it, which is not the same
+        // question as whether the key exists. A machine built before this key —
+        // or with a different one chosen in the dialog — has somebody else's
+        // public half in its authorized_keys and nothing here can change that
+        // without being able to get in, which is the thing at issue.
+        machines: mine.map(vm => ({
+          name: vm.name,
+          authorised: !!(vm.spec && vm.spec.sshKey && state.publicKey && vm.spec.sshKey.trim() === state.publicKey.trim()),
+          builtWith: vm.spec && vm.spec.sshKey ? String(vm.spec.sshKey).split(' ').slice(0, 2).join(' ').slice(0, 28) + '…' : null
+        }))
+      }
+    }
+  },
+
+  // Where anything that speaks ssh looks for these machines.
+  //
+  // Written because VS CODE cannot be told which key to use. `vmShell` could take
+  // `-i`, but VS Code Remote runs plain `ssh user@host` and reads everything else
+  // from ssh's configuration — so a key that is not in a config file is a key it
+  // will never offer, and "open in VS Code" would fall back to whatever the
+  // operator's default identity happens to be. Which is the key all of this
+  // exists to stop using.
+  sshConfig: {
+    about: 'Write the ssh config for these machines, so ssh and VS Code find them by name',
+    run: () => {
+      const machines = vms.read().map(vm => {
+        const agent = channel.list().find(a => a.vm === vm.name)
+        const live = agent ? String(agent.from || '').replace(/^::ffff:/, '').replace(/:\d+$/, '') : null
+        return {
+          name: vm.name,
+          address: live || vm.lastAddress || null,
+          user: (agent && agent.facts && agent.facts.user) || vm.lastUser || (vm.spec && vm.spec.user) || null
+        }
       })
+      const file = ssh.writeConfig(machines)
+      const include = ssh.ensureInclude()
+      return {
+        file,
+        include,
+        hosts: machines.filter(m => m.address && m.user).map(m => ({ alias: ssh.aliasFor(m.name), ...m })),
+        // Said, because a machine with no address has never dialled in and its
+        // absence here is a fact about it rather than a failure of this.
+        without: machines.filter(m => !m.address).map(m => m.name)
+      }
+    }
+  },
+
+  sshKeyMake: {
+    about: 'Make this app a new ssh key. Machines built with the old one stop letting it in',
+    takes: ['force'],
+    run: ({ force }) => {
+      const had = ssh.have()
+      const yes = force === true || force === 'true' || force === 'yes'
+      if (had && !yes) {
+        throw new Error('There is already a key. Making another one locks this app out of every machine built with the old one — say force to mean it.')
+      }
+      const made = ssh.make({ force: yes })
+      const state = ssh.state()
+      log.on('keys')[had ? 'warn' : 'good'](had
+        ? `a new ssh key was made — machines built with the old one no longer let this app in (${state.fingerprint})`
+        : `ssh key made (${state.fingerprint})`)
+      return {
+        ...made,
+        ...state,
+        note: had
+          ? 'Every machine built with the old key must be rebuilt, or have this public key added to its authorized_keys by hand while the old key still works.'
+          : 'New machines will be built with this. Existing ones were not.'
+      }
+    }
+  },
+
+  tlsKey: {
+    about: "This host's certificate: what it names, when it expires, and its authority",
+    run: async () => {
+      let address = null
+      try { address = await vbox.hostAddress() } catch { /* no adapter is its own answer */ }
+      const state = keys.state(address)
+      // The authority's fingerprint, which is the one number a person may
+      // actually need to read out: a brand-new machine checks the authority
+      // against it before trusting anything, over a connection that is not yet
+      // protected. Published rather than secret, for exactly that reason.
+      let fingerprint = null
+      try { fingerprint = keys.ensure().fingerprint } catch { /* reported as missing above */ }
+      return { ...state, address, fingerprint, dir: keys.DIR }
+    }
+  },
+
+  hostKeys: {
+    about: 'Public ssh keys that could be authorised on a new machine — this app\'s first',
+    run: async () => {
+      const keys = []
+
+      // THIS APP'S OWN KEY FIRST, and made if it does not exist yet.
+      //
+      // It is what should go into a new machine: the app can say when it was
+      // made and rotate it, nothing else on this computer is opened by it, and
+      // it does not vanish with somebody's profile. The operator's personal keys
+      // are still offered underneath because a person may deliberately want
+      // their own way in — but the default should not be the key that opens
+      // everything else they can reach.
+      try {
+        ssh.make()
+        const mine = ssh.publicKey()
+        if (mine) keys.push({ file: 'id_okc.pub', key: mine, comment: "this app's own key", mine: true })
+      } catch (e) {
+        log.on('keys').warn(`could not make this app an ssh key: ${e.message}`)
+      }
+
+      const dir = path.join(require('node:os').homedir(), '.ssh')
+      if (fs.existsSync(dir)) {
+        for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.pub'))) {
+          const text = fs.readFileSync(path.join(dir, f), 'utf8').trim()
+          keys.push({ file: f, key: text, comment: `${text.split(/\s+/).slice(2).join(' ') || f} — yours`, mine: false })
+        }
+      }
       return { keys }
     }
   },
@@ -2011,14 +2133,25 @@ done`
         throw new Error(`Nothing knows where "${name}" is. It has to have dialled in at least once for its address to be recorded — start it and wait, or look in VirtualBox.`)
       }
 
+      // Kept current here, because this is the moment somebody is about to use
+      // it — and an alias pointing at an address a machine no longer has is
+      // worse than no alias at all.
+      try { actions.sshConfig.run({}) } catch { /* the direct target below still works */ }
+
+      const alias = ssh.aliasFor(name)
       return {
         name,
         user,
         address,
+        alias,
+        // The app's own key, and only that one. Reaching a machine with whatever
+        // identity happened to be offered first is how the key this app manages
+        // stops being the key that matters.
+        identity: ssh.have() ? ssh.KEY() : null,
         // Both, because they answer different questions: one to run, one to
         // paste somewhere else.
         target: `${user}@${address}`,
-        command: `ssh ${user}@${address}`,
+        command: `ssh ${alias}`,
         live: !!live,
         note: live
           ? 'Its agent is answering, so vmRun would work too — this is for looking at things the agent cannot tell you.'
@@ -2074,7 +2207,18 @@ done`
       const folder = where || (vm.spec && vm.spec.folder) || workspace.FOLDER
       const dir = folder.replace(/^\$HOME\b/, home).replace(/^~(?=\/|$)/, home)
 
-      return editor.open({ dir, remote: `${user}@${address}`, tags: [name] })
+      // THROUGH THE ALIAS, not through user@address.
+      //
+      // VS Code runs plain `ssh <what it is given>` and takes the identity from
+      // ssh's configuration. Given `okc@1.2.3.4` it would offer whatever the
+      // operator's default identity is; given the alias it reads the block this
+      // app wrote, which names this app's key and no other. Written just before
+      // opening, because an alias pointing at an address the machine no longer
+      // has is worse than none.
+      try { actions.sshConfig.run({}) } catch { /* the alias may already be right */ }
+      const alias = ssh.have() ? ssh.aliasFor(name) : `${user}@${address}`
+
+      return editor.open({ dir, remote: alias, tags: [name] })
     }
   },
 

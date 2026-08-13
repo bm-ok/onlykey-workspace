@@ -498,22 +498,54 @@ the thing that is broken when you most need to look inside. From this host a
 silent agent is indistinguishable from a dead machine, and the difference is
 written in the guest's own journal.
 
-**What makes it work is that THIS host's public key is in the machine's
-`authorized_keys`.** Not a key belonging to the machine — `hostKeys` reads the
-operator's own public key off this computer, the make-a-machine dialog offers
-it, and `first-boot.sh` appends it to the guest's `authorized_keys`. So the
-private key that opens every runner is the one already sitting in `~/.ssh` here,
-and no secret is generated, carried or stored to make that true.
+**What makes it work is a public key in the machine's `authorized_keys`** — put
+there by `first-boot.sh` from whatever the make-a-machine dialog offered.
+
+**The app now has a key of its own**, and that is what it offers first. It lives
+beside the certificate, in the app's data directory, and it exists for three
+reasons that only matter once:
+
+* A runner runs unattended code written by a model. Putting the key that opens
+  everything else the operator can reach *inside* one is a larger statement than
+  anybody meant to make.
+* A key in somebody's home directory is not the app's to reason about — it
+  cannot say when it was made, what else it protects, or whether to rotate it.
+* And it disappears: absent on another account, on a rebuilt workstation, or
+  anywhere this app runs without that profile loaded.
+
+The operator's own keys are still offered underneath, because deliberately
+wanting your own way in is a real thing to want. What changed is the default.
 
 It is installed at build time rather than on request because the moment you need
 it is the moment nothing can be arranged. An agent was once found awake,
 correctly diagnosing its own lost connection, saying so in its journal — and
 stuck. Nothing on this side could have reported that; one `journalctl` did.
 
-Two consequences worth stating. **`vmShell` only works from the machine holding
-that private key** — it is not a way in from anywhere else, which is the right
-shape for a back door. And **the same key is what VS Code Remote uses**, so if
-one works the other does.
+**VS Code is why there is an ssh config.** `vmShell` can be told which key to use
+with a flag; VS Code Remote runs plain `ssh <target>` and takes everything else
+from ssh's own configuration — so a key that is not in a config file is a key it
+will never offer, and "open in VS Code" would quietly fall back to whatever
+default identity happened to be lying around.
+
+So the app writes one: a `Host okc-<machine>` block per machine, naming its
+address, its user, this app's key, and `IdentitiesOnly` so no other is tried.
+The operator's `~/.ssh/config` gets a single `Include` line — the only edit this
+app ever makes to a file it does not own, and it is idempotent. Both `vmShell`
+and `vmEditor` go through the alias, so they reach a machine the same way.
+
+    okc.js sshKey        the key, its fingerprint, and which machines accept it
+    okc.js sshConfig     rewrite the config from what the registry knows
+    okc.js tlsKey        what the certificate names, when it expires, its authority
+
+The config is rewritten whole rather than appended to: addresses change and
+machines are deleted, and a file that only grows accumulates entries pointing at
+nothing — which fail slowly and confusingly rather than not existing.
+
+**A machine only accepts the key it was built with.** `sshKey` says which
+machines those are, because "the key exists" and "that machine will let it in"
+are different questions and only the second one matters when you cannot get in.
+Nothing here can change a machine's `authorized_keys` from outside — the only
+thing that could is the key being replaced.
 
 **It works when the machine is not dialled in**, which is the entire point. The
 address is recorded every time a machine connects, and used long afterwards —
@@ -855,6 +887,8 @@ The shape
     core/keys.js    the certificate this host serves with, and its authority
     core/data.js    where anything produced by running goes -- outside the repo
     core/secret.js  sealing what is worth keeping, and redacting what comes back
+    core/ssh.js     the key this app gets back into a machine with, and the
+                    ssh config that makes VS Code use it
     tasks/
       store.js      what is to be done, who has it, and what was decided
       queue.js      work waits for a machine; a machine does not wait for work

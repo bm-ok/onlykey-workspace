@@ -147,7 +147,19 @@ async function main () {
       // With --command it runs that and returns; without, it is a shell. The
       // same flag vmRun uses, so which door you go through is the only
       // difference between them.
+      // Through the app's own config and alias, so this and VS Code reach a
+      // machine exactly the same way — with the app's key, and no other.
+      // Falling back to the address only if there is no key yet, which is the
+      // one case where the alias would not exist.
+      // The app's own key, and only that one. Reaching a machine with whatever
+      // identity happened to be offered first is how the key this app manages
+      // stops being the key that matters — and it would work, quietly, using
+      // somebody else's.
+      const identity = where.identity
+        ? ['-o', `IdentityFile=${String(where.identity).split('\\').join('/')}`, '-o', 'IdentitiesOnly=yes']
+        : []
       const ssh = spawnSync('ssh', [
+        ...identity,
         '-o', 'StrictHostKeyChecking=accept-new',
         where.target,
         ...(args.command ? [String(args.command)] : [])

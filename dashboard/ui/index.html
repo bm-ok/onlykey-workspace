@@ -154,6 +154,13 @@
       that is deleted or snapshotted takes none with it.
     </p>
     <div id="keys" class="stack"></div>
+
+    <!-- The two keys this app needs in order to be itself: the certificate a
+         machine verifies this host by, and the ssh key this host gets back into
+         a machine with. Both live in the app's own directory rather than in
+         anybody's home, and remaking either has a cost worth reading first. -->
+    <h2 style="margin-top:22px">This app's own keys</h2>
+    <div id="app-keys" class="stack"></div>
   </section>
 
   <!-- ---------------- All actions ---------------- -->
