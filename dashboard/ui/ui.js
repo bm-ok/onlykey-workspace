@@ -3226,10 +3226,20 @@ function paintVms () {
   // `picked` is in the signature because it decides which card is highlighted.
   // The queue's verdict is part of the signature, or a machine that became
   // unavailable would keep the card it was drawn with.
-  if (changed('vms', [latest.available, picked, latest.vms.map(v => [vmKey(v), queueWhy(v)])])) {
+  if (changed('vms', [latest.available, latest.unreachable || '', picked, latest.vms.map(v => [vmKey(v), queueWhy(v)])])) {
     fill($('vms'), latest.vms.length
       ? latest.vms.map(vmCard)
-      : el('p', { className: 'empty', textContent: latest.available ? 'None yet. The + above makes one.' : 'VirtualBox was not found.' }))
+      // THREE DIFFERENT NOTHINGS, and they were two. Installed with no machines
+      // yet, not installed at all, and installed but not answering are separate
+      // situations with separate answers, and the third one used to read as the
+      // second -- "VirtualBox was not found" said of a VirtualBox sitting right
+      // there, wedged, which sends somebody to reinstall a thing that is fine.
+      : latest.unreachable
+        ? el('div', {},
+            el('p', { className: 'empty bad', textContent: 'VirtualBox is not answering.' }),
+            el('p', { className: 'empty', textContent: latest.unreachable }),
+            el('p', { className: 'empty', textContent: 'Everything else here still works — a task list and a branch are read from this host, not from a machine.' }))
+        : el('p', { className: 'empty', textContent: latest.available ? 'None yet. The + above makes one.' : 'VirtualBox was not found.' }))
   }
   vmActions()
   paintDetails()
@@ -3432,8 +3442,19 @@ async function drawOnce () {
   // needs it: a machine the queue is driving is not an idle machine, and
   // nagging about one would train the operator to ignore the banner.
   const [list, status, running, held] = await Promise.all([
-    api('vmList'),
-    api('status'),
+    // CAUGHT, because a broken VirtualBox is not a broken window.
+    //
+    // This was the one call in here without a catch, and it took the whole draw
+    // down with it: the Promise.all rejected, and Tasks, Branches, Keys and the
+    // photograph at the bottom were never painted. VirtualBox wedged -- every
+    // VBoxManage call, including a read-only `list vms`, hanging until it timed
+    // out -- and the window answered by emptying the two tabs that do not touch
+    // a machine at all. A task list is read from a file on this host; there is
+    // no reason it should go blank because a hypervisor is unwell.
+    //
+    // The machines panel says so itself, which is where it belongs.
+    api('vmList').catch(e => ({ available: false, vms: [], unreachable: e.message })),
+    api('status').catch(() => ({ repos: [], virtualbox: true })),
     api('queueState').catch(() => ({ inFlight: [] })),
     // Whether there is a credential to hand out at all, which is the difference
     // between "sign this machine in" and "there is nothing to sign it in with".
@@ -3503,6 +3524,13 @@ async function drawOnce () {
   const trouble = [
     !status.virtualbox
       ? ['VirtualBox was not found. ', 'Nothing here can make or start a machine until it is installed.']
+      : null,
+    // Said in the banner and not only in the machines panel, because it is a
+    // fact about every tab: a task cannot be given out, a branch cannot be
+    // worked on, and the reason has nothing to do with either of them.
+    latest.unreachable
+      ? ['VirtualBox is installed but not answering. ',
+          `Machine actions will hang or fail until it recovers — everything read from this host is unaffected. It said: ${latest.unreachable}`]
       : null,
     ...gone.map(v => [
       `${v.name} is in this list but VirtualBox has no such machine. `,
