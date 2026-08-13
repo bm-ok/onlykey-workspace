@@ -1303,6 +1303,19 @@ function branchActions (b) {
           })
         : null,
 
+      // A SHELL INTO THE MACHINE THIS BRANCH IS ON, which is where a shell for
+      // working belongs. It used to be offered on the machine's own panel, which
+      // is a way into a machine with no branch and no task -- the same category
+      // error as the editor button. Here it can only ever open on work.
+      b.heldBy && b.heldRunning
+        ? el('button', {
+            className: 'btn',
+            textContent: `Shell on ${b.heldBy}`,
+            title: `A terminal in ${b.heldBy}, where "${b.name}" is checked out`,
+            onclick: () => goToShell(b.heldBy)
+          })
+        : null,
+
       // And giving it back, which only appears when there is something to give
       // back. It is the same action the queue uses to put a machine away, so it
       // refuses while anything is uncommitted rather than rolling it back.
@@ -2856,16 +2869,26 @@ function paintDetails () {
     table(now),
 
     // The ways out of this panel, beside the facts that send you there.
+    //
+    // "OPEN A SHELL" WAS HERE AND IS NOT ANY MORE, for the same reason the
+    // editor button went: a shell opened to WORK in belongs to the branch the
+    // work is on, and this panel is about a machine. Offered here it is a way
+    // into a machine with no task and no branch, which is the shape of the hole
+    // the human path used to sit outside of.
+    //
+    // A shell for DIAGNOSING a machine is a different thing and still exists --
+    // the Terminal tab, which is about machines, and `vmShell` for when the agent
+    // has stopped answering. That one is the back door and should not be behind a
+    // branch, because the case it is for is a machine that has no working branch
+    // at all.
     el('div', { className: 'row', style: 'margin-top:10px' },
-      el('button', {
-        className: 'btn',
-        textContent: 'Open a shell',
-        disabled: !(v.connected || v.lastAddress),
-        title: (v.connected || v.lastAddress) ? '' : 'It has to have dialled in once for its address to be known',
-        onclick: () => goToShell(v.name)
-      }),
       v.branch ? el('button', { className: 'btn', textContent: 'Its branch', onclick: () => goToBranch(v.branch) }) : null,
-      doing ? el('button', { className: 'btn', textContent: 'Its task', onclick: () => goToTask(doing) }) : null),
+      doing ? el('button', { className: 'btn', textContent: 'Its task', onclick: () => goToTask(doing) }) : null,
+      // Nothing at all is better than a button that leads somewhere it should
+      // not, but a panel with an empty row reads as something failing to render.
+      !v.branch && !doing
+        ? el('span', { className: 'muted', textContent: 'Not on a branch and not running anything — nothing to go to.' })
+        : null),
 
     // Closed, because it answers a question asked once: what was this made with.
     el('details', { className: 'spec' },
