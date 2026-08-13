@@ -908,8 +908,8 @@ There is ALWAYS a current state, including on a machine with no snapshots at all
 -- it is the whole of the machine with nothing recorded behind it, and it is the
 only place a first snapshot can be taken from.
 
-A branch is cut on purpose, with a reason
-------------------------------------------
+A branch is cut on purpose, with a reason and a starting point
+---------------------------------------------------------------
 
 Branches used to be born as a SIDE EFFECT. Setting a machine's workspace up cut
 whatever name the task happened to carry, in every repository -- so a mistyped
@@ -938,6 +938,31 @@ minutes away and arrive as though the machine were the problem.
 Branches with no reason are shown as having none rather than hidden. That is the
 honest state of most of the board, and it is the state that made one of them
 impossible to account for.
+
+**And it is cut from a named baseline group, which is required.** `git branch x`
+cuts from HEAD -- whatever was last checked out here -- so a review left on
+another branch used to silently decide where the next task started. Cutting from
+each repository's own baseline fixed that and left a quieter version of it: three
+settings, decided at some earlier time, that nobody is looking at while typing a
+branch name. A group is one branch per repository named together, so "what is
+this work against" has one answer; choosing one is the act of putting work ON a
+line rather than near it.
+
+Required, not defaulted, for the same reason the reason is required. A workspace
+with no named lines has not yet decided what its work is measured against, and
+cutting in it produces branches whose "3 commits ahead" means nothing in
+particular -- so with none named, `branchCreate` refuses and the dialog offers
+the Baselines tab instead of a field that cannot be filled.
+
+Choosing a group here does NOT move any baseline. That is `baselineGroupUse`, and
+it is a different and larger act; making the safe one and the sweeping one the
+same click is how a chain gets re-aimed by somebody who meant to cut a branch.
+
+What it was cut from is recorded with the branch -- the group's name and the
+branch per repository -- because git stops being able to answer it once those
+branches move on. A merge base answers "where do these diverge now", which is a
+different question and stops agreeing with this one as soon as the baseline
+advances.
 
 The Branches tab
 ----------------

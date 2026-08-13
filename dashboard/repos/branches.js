@@ -12,9 +12,12 @@
 // one, the test that pins it in another. Matching names are what make those one
 // unit of work rather than several that have to be remembered together.
 //
-// What this does NOT do is pin a version. A branch is cut from wherever each
-// repository currently is, recorded nowhere, and the name is the only thing they
-// share.
+// WHERE IT IS CUT FROM is a decision, not an accident of what was last checked
+// out. Each repository cuts from its baseline -- the thing work is measured
+// against -- or, when one is named, from a baseline GROUP: one branch per
+// repository, named together because they are one point in the work. What it was
+// cut from is recorded with the branch, because "what is this against" is the
+// first question asked of any branch and git cannot answer it later.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -577,7 +580,7 @@ const forget = branch => {
 // happened to carry -- so a typo did not fail, it made a branch, and the
 // workspace was then built on a name nobody meant. Every branch on the board
 // arrived that way, which is why none of them could say what they were for.
-function ensure (branch, { reason = null, by = null } = {}) {
+function ensure (branch, { reason = null, by = null, group = null } = {}) {
   const why = nameIsOk(branch)
   if (why) throw new Error(why)
   const name = branch.trim()
@@ -593,6 +596,42 @@ function ensure (branch, { reason = null, by = null } = {}) {
   const guarded = whyProtected(name)
   if (guarded) throw new Error(guarded)
 
+  // FROM A NAMED GROUP, AND THERE IS NO OTHER WAY.
+  //
+  // A group is one branch per repository, named together because they are one
+  // point in the work — and "which version line is this against" is one question
+  // with one answer, not one answer per repository that somebody has to have got
+  // consistent earlier and by hand.
+  //
+  // REQUIRED, rather than defaulting to the per-repository baselines. The
+  // default was the quiet path: it always worked, it never asked anything, and
+  // what it produced depended on three settings nobody was looking at when they
+  // typed the name. Naming the point is the whole act — a branch you cannot say
+  // the starting point of is a branch whose "3 commits ahead" means nothing in
+  // particular. Refusing when none are named is the same rule as refusing a
+  // branch with no reason, one level up: a workspace with no named lines has not
+  // yet decided what work is measured against, and cutting work in it produces
+  // branches that cannot be accounted for.
+  //
+  // It does not MOVE any baseline. Saying "cut this from the version2 line" is a
+  // statement about ONE branch, and a workspace where every such request also
+  // re-aimed everything else would make the safe act and the sweeping one the
+  // same click. Moving the baselines is `useGroup`, which says so.
+  const known = groups()
+  if (!group || !String(group).trim()) {
+    throw new Error(known.length
+      ? `Say what "${name}" is cut from. It is one of: ${known.map(g => g.name).join(', ')}. Every branch starts somewhere, and a branch nobody can name the start of cannot be measured against anything later.`
+      : `There are no baseline groups yet, so there is nowhere to cut "${name}" from. Name one on the Baselines tab first — it is one branch per repository, saying what this workspace's work is against.`)
+  }
+  const found = known.find(g => g.name === String(group).trim())
+  if (!found) {
+    throw new Error(`There is no baseline group called "${group}".${known.length ? ` There is: ${known.map(g => g.name).join(', ')}.` : ' None have been named yet — name one on the Baselines tab.'}`)
+  }
+  if (found.broken.length) {
+    throw new Error(`"${found.name}" cannot be cut from: ${found.broken.join('; ')}. A group is only a place to start from while every branch in it still exists.`)
+  }
+  const fromGroup = Object.fromEntries(found.on.map(p => [p.repo, p.branch]))
+
   // CUT FROM THE BASELINE, not from wherever the repository happens to be.
   //
   // `git branch x` cuts from HEAD, which is whatever was last checked out here --
@@ -600,10 +639,16 @@ function ensure (branch, { reason = null, by = null } = {}) {
   // next task started. The baseline is the answer to "what is work measured
   // against", so it is also the answer to "what does work start from"; anything
   // else means a task is judged against a branch it was not cut from.
+  //
+  // The group decides it, except in a repository the group does not name: a
+  // group made when there were three repositories still describes those three
+  // when a fourth arrives, and the fourth falls back to its own baseline rather
+  // than being left out of the branch entirely. That is the one place a baseline
+  // is still consulted, and it is a gap in the group rather than a choice.
   const cut = serve.list().map(({ name: repo }) => {
     const dir = serve.gitDirOf(repo)
     const had = branchesIn(dir).includes(name)
-    const from = baselineOf(repo)
+    const from = fromGroup[repo] || baselineOf(repo)
     if (!had) git(dir, from ? ['branch', name, from] : ['branch', name])
     return { repo, branch: name, created: !had, from: had ? null : (from || headOf(dir)) }
   })
@@ -617,7 +662,14 @@ function ensure (branch, { reason = null, by = null } = {}) {
       reason: String(reason).trim(),
       by: by || null,
       made: new Date().toISOString(),
-      cutIn: cut.filter(c => c.created).map(c => c.repo)
+      cutIn: cut.filter(c => c.created).map(c => c.repo),
+      // WHAT IT WAS CUT FROM, kept because git stops being able to say once the
+      // branches move on. A merge base is a good guess and it is only a guess:
+      // it answers "where do these two diverge now", not "what was this started
+      // against", and the two stop agreeing the moment the baseline advances.
+      // The group name is the useful half -- it is the thing somebody chose.
+      group: String(group).trim(),
+      from: Object.fromEntries(cut.filter(c => c.created).map(c => [c.repo, c.from]))
     })
   }
 

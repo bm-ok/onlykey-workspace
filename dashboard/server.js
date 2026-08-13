@@ -815,7 +815,7 @@ const actions = {
       if (!known) throw new Error(`There is no branch called "${branch}". Make it first, with a reason.`)
       if (known.protected) throw new Error(branches.whyProtected(branch))
       if (known.missing.length) {
-        throw new Error(`"${branch}" is not in ${known.missing.join(', ')}, and a machine checks it out in every repository. Extend it first with branchCreate.`)
+        throw new Error(`"${branch}" is not in ${known.missing.join(', ')}, and a machine checks it out in every repository. Extend it first with branchCreate, saying which baseline group the missing repositories cut it from.`)
       }
 
       const held = vms.read().find(v => v.branch === branch)
@@ -1632,18 +1632,24 @@ const actions = {
   // The reason is required by `ensure` rather than checked here, because this is
   // not the only caller and a rule that lives at one door is not a rule.
   branchCreate: {
-    about: 'Cut a branch across every repository, with a reason it exists',
-    takes: ['branch', 'reason'],
-    run: ({ branch, reason, _overTheWire }) => {
+    about: 'Cut a branch across every repository, from a named baseline group',
+    takes: ['branch', 'reason', 'group'],
+    run: ({ branch, reason, group, _overTheWire }) => {
       const cut = branches.ensure(branch, {
         reason,
+        // WHICH POINT IN THE WORK IT STARTS FROM, and it is required. The old
+        // behaviour — each repository from its own baseline — is right when they
+        // are all on the same line and quietly wrong when they are not, and it
+        // was three separate decisions somebody had to have made earlier and
+        // correctly. "Cut from the version2 line" is one decision, said out loud.
+        group: group || null,
         // Which surface asked, since one of them is a person at this keyboard and
         // the other may be a model driving the socket.
         by: _overTheWire ? 'the command line' : 'the window'
       })
       const made = cut.filter(c => c.created)
       log.on('git').good(made.length
-        ? `cut "${branch}" in ${made.map(c => c.repo).join(', ')} — ${String(reason).trim()}`
+        ? `cut "${branch}" in ${made.map(c => `${c.repo} from ${c.from}`).join(', ')}${group ? ` — the "${group}" line` : ''} — ${String(reason).trim()}`
         : `"${branch}" already existed everywhere; its reason is unchanged`)
       return {
         branch: branch.trim(),
@@ -1786,7 +1792,7 @@ const actions = {
       if (!wanted) throw new Error(`Say which branch "${name}" is to work on.`)
       const known = branches.all().branches.find(b => b.name === wanted)
       if (!known) {
-        throw new Error(`There is no branch called "${wanted}". Make it first, with a reason — branchCreate --branch ${wanted} --reason "..." — so what it is for is recorded before anything is built on it. If that name is a typo, this is the refusal that catches it.`)
+        throw new Error(`There is no branch called "${wanted}". Make it first, with a reason — branchCreate --branch ${wanted} --reason "..." --group "..." — so what it is for and what it starts from are both recorded before anything is built on it. If that name is a typo, this is the refusal that catches it.`)
       }
 
       // IN SOME REPOSITORIES AND NOT OTHERS, which is a state a workspace
@@ -1800,7 +1806,7 @@ const actions = {
       // command -- branchCreate cuts it in whatever is missing it and leaves the
       // reason it already has alone.
       if (known.missing.length) {
-        throw new Error(`"${wanted}" is not in ${known.missing.join(', ')}, and a machine checks it out in every repository. Extend it first — branchCreate --branch ${wanted} --reason "..." cuts it wherever it is missing and keeps the reason it already has.`)
+        throw new Error(`"${wanted}" is not in ${known.missing.join(', ')}, and a machine checks it out in every repository. Extend it first — branchCreate --branch ${wanted} --reason "..." --group "..." cuts it wherever it is missing and keeps the reason it already has.`)
       }
 
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in. Start it and wait for it to connect.`)

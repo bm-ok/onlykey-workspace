@@ -1499,6 +1499,17 @@ function branchActions (b) {
         ? `${b.note.reason} — ${b.note.by || 'made'} ${b.note.made ? ago(b.note.made) : ''}`
         : 'No reason was recorded. It was cut before that was required, or by something other than this app.'),
 
+    // WHAT IT WAS CUT FROM, which is the other half of accounting for a branch
+    // and the half git stops being able to answer. "3 commits ahead" is measured
+    // against a baseline that may have moved since; this says where the work
+    // actually started, and names the line if one was chosen.
+    b.note && b.note.from
+      ? el('p', { className: 'note muted' },
+          b.note.group
+            ? `Cut from the "${b.note.group}" line — ${Object.entries(b.note.from).map(([r, f]) => `${r}:${f}`).join(', ')}.`
+            : `Cut from ${Object.entries(b.note.from).map(([r, f]) => `${r}:${f}`).join(', ')}.`)
+      : null,
+
     el('div', { className: 'branch-facts' },
       el('span', { className: b.commits ? 'strong' : 'muted', textContent: b.commits ? `${b.commits} commit(s) ahead` : 'nothing beyond the default' }),
       el('span', { className: 'muted', textContent: `in ${b.in.join(', ') || 'none'}` }),
@@ -1859,24 +1870,81 @@ function chooseWorkspace () {
 // The dialog says what the reason is FOR, because "why does this exist" is a
 // question asked months later by somebody deciding whether to delete it -- and
 // the answer costs one sentence now and cannot be reconstructed then.
-function newBranch () {
+// WHAT IT IS CUT FROM IS ASKED, AND IT IS REQUIRED.
+//
+// This dialog used to say a branch was cut "from wherever that repository
+// currently is", which stopped being true when cutting moved to the baseline and
+// was never a good idea while it was true — it made whatever somebody last
+// checked out on the host decide where the next task started.
+//
+// The per-repository baselines were the obvious replacement and they are three
+// answers to a question that has one. Worse, they are the QUIET answer: always
+// available, never asked about, and decided by settings nobody is looking at
+// while typing a branch name. So a named group is not the alternative here, it
+// is the only way — the same rule as refusing a branch with no reason, one level
+// up. A branch nobody can name the starting point of cannot be measured against
+// anything afterwards.
+//
+// WITH NONE NAMED, THIS DOES NOT OFFER TO CUT ANYTHING. A dialog with a
+// disabled-looking confirm and a field that cannot be filled is worse than a
+// dialog that says what is missing and where to go and fix it.
+async function newBranch () {
+  const { groups } = await api('baselineGroups').catch(() => ({ groups: [] }))
+  const usable = (groups || []).filter(g => !g.broken.length)
+  const broken = (groups || []).filter(g => g.broken.length)
+
+  if (!usable.length) {
+    return ask({
+      title: 'Nothing to cut a branch from yet',
+      plain: [
+        'A branch is cut from a baseline group: one branch per repository, named together because they are one point in the work.',
+        broken.length
+          ? `${broken.length} group(s) are named but cannot be cut from — ${broken.map(g => `${g.name}: ${g.broken.join('; ')}`).join(' · ')}.`
+          : 'None have been named yet.',
+        'Name one on the Baselines tab — it takes what each repository counts from now and gives that point a name. Then work can be cut from it, and every branch can say what it started against.'
+      ],
+      confirm: 'Go to the baselines',
+      onYes: () => {
+        showTab('branches')
+        const pane = document.querySelector('.subtab[data-pane="baselines"]')
+        if (pane) pane.click()
+      }
+    })
+  }
+
   ask({
     title: 'Cut a branch',
     plain: [
-      'It is cut in every repository that does not already have it, from wherever that repository currently is.',
-      'Nothing is built on it until it is given to a machine, and creating it moves no other branch and touches no working tree.'
+      'It is cut in every repository that does not already have it, and nothing is built on it until a task takes it — creating it moves no other branch and touches no working tree.',
+      'It starts at the group you choose, in every repository at once. That does not move any baseline — that is "use this group", on the Baselines tab, and it is a different and larger act.'
     ],
     fields: [
       { name: 'branch', label: 'Name', placeholder: 'task/what-it-is-for' },
-      { name: 'reason', label: 'What is it for', placeholder: 'why this exists, for whoever finds it later' }
+      { name: 'reason', label: 'What is it for', placeholder: 'why this exists, for whoever finds it later' },
+      // No blank option, because there is no blank answer. A select that opens
+      // on a real choice is also the one that cannot be skipped past.
+      {
+        name: 'group',
+        label: 'Cut it from',
+        value: usable[0].name,
+        options: usable.map(g => ({
+          value: g.name,
+          label: `${g.name} — ${g.on.map(p => `${p.repo}:${p.branch}`).join(', ')}`
+        }))
+      }
     ],
     confirm: 'Cut it',
     onYes: async f => {
-      const r = await api('branchCreate', { branch: f.branch, reason: f.reason })
+      if (!f.group) throw new Error('Say what it is cut from. Every branch starts somewhere, and this is the record of where.')
+      const r = await api('branchCreate', { branch: f.branch, reason: f.reason, group: f.group })
       pickedBranch = r.branch
       been.set('branch', r.branch)
       changed('branches', null)
-      say(r.already ? `"${r.branch}" already existed everywhere.` : `Cut "${r.branch}" in ${r.made.join(', ')}.`)
+      say(r.already
+        ? `"${r.branch}" already existed everywhere.`
+        // Says where it was cut from, not only that it happened. It is the fact
+        // that decides what the branch will be measured against.
+        : `Cut "${r.branch}" — ${r.cut.filter(c => c.created).map(c => `${c.repo} from ${c.from}`).join(', ')}.`)
     }
   })
 }
@@ -3351,7 +3419,9 @@ function paintVms () {
 }
 
 $('add-task-open').onclick = newTask
-$('add-branch-open').onclick = newBranch
+// Caught here because newBranch reads the baselines before it can draw itself,
+// and a dialog that fails to open must say so rather than not appearing.
+$('add-branch-open').onclick = () => newBranch().catch(oops)
 $('add-group-open').onclick = newGroup
 // `term-open` and `term-machine` were wired here. They were the machine picker
 // and its button, and they are gone: a terminal is started from a task now. The
@@ -3779,6 +3849,22 @@ function shotIfAsked () {
         paintTasks()
         return
       }
+    }
+
+    // The same for a branch, by name. Two tabs are built around a list and a
+    // detail panel, and only one of them could be reached from outside.
+    if (want.pick && view === 'branches' && pickedBranch !== want.pick) {
+      pickedBranch = want.pick
+      been.set('branch', pickedBranch)
+      // The finder is cleared, or a branch that does not match whatever was last
+      // typed is selected and not on screen -- a photograph of a detail panel
+      // beside a list that does not contain it.
+      $('branch-find').value = ''
+      $('branch-mine').checked = false
+      changed('branches', null)
+      shotSettle = 2
+      paintBranches()
+      return
     }
 
     if (shotSettle > 0) { shotSettle--; return }
