@@ -247,7 +247,7 @@ function alignDiff (text) {
 
 function paintMerge () {
   waiting('merge-summary', { cards: 1 })
-  api('baselineGroups').then(({ groups }) => {
+  api('lines').then(({ groups }) => {
     const usable = (groups || []).filter(g => !g.broken.length)
     const proposed = usable.filter(g => g.marked)
 
@@ -281,7 +281,7 @@ function paintMerge () {
 
     if (!mergeTarget) {
       fill($('merge-summary'), el('div', { className: 'panel' },
-        el('p', { className: 'empty', textContent: 'There is no other line to land it into. Name the line it would go into on the Baselines tab.' })))
+        el('p', { className: 'empty', textContent: 'There is no other line to land it into. Name the line it would go into on the Lines tab.' })))
       return
     }
 
@@ -412,13 +412,13 @@ function paintMergeActions (cmp, plan) {
         title: `Stop proposing "${cmp.source}"?`,
         plain: [
           'It stops being a proposal and goes back to being a line.',
-          'Its branches stay protected, because they are still named in a group — that is what a line is. Delete the group on the Baselines tab to build on them directly again.',
+          'Its branches stay protected, because they are still named in a line. Forget the line on the Lines tab to build on them directly again.',
           'Nothing that has already landed is undone.'
         ],
         confirm: 'Take it back',
         danger: true,
         onYes: async () => {
-          const r = await api('baselineGroupUnmark', { name: cmp.source })
+          const r = await api('lineWithdraw', { name: cmp.source })
           mergeAnswer = null; changed('merge', null); changed('baselines', null); changed('branches', null)
           say(r.note)
           return draw()
@@ -1884,7 +1884,7 @@ function paintBranches () {
           el('strong', { textContent: 'These repositories do not share a default branch. ' }),
           el('span', {
             textContent: `${board.baselines.map(p => `${p.branch} in ${p.repos.join(', ')}`).join('; ')}. ` +
-              'A branch cut across all of them is measured against a different baseline in each, so one "commits ahead" figure is a sum of things counted from different places. Nothing is wrong with it — it is just not one number about one thing.'
+              'A branch cut across all of them starts from a different branch in each, so one "commits ahead" figure is a sum of things counted from different places. Nothing is wrong with it — it is just not one number about one thing, and naming a line is what says which point they are being read at together.'
           })))
       }
 
@@ -1963,7 +1963,7 @@ function paintProtected (board) {
             el('div', { className: 'carries-head' },
               el('span', { textContent: 'Links in a line' }),
               el('span', { className: 'muted', textContent: `${chosen.length}` })),
-            el('p', { className: 'note', textContent: 'Named in a line, so work is cut from them and merged back into them rather than built on directly. That is a decision — forget the line on the Baselines tab and the branch is ordinary again.' }),
+            el('p', { className: 'note', textContent: 'Named in a line, so work is cut from them and merged back into them rather than built on directly. That is a decision — forget the line on the Lines tab and the branch is ordinary again.' }),
             chosen.length
               ? el('div', { className: 'stack' }, ...chosen.map(p => card(p, 'link')))
               : el('p', { className: 'empty', textContent: 'No line names a branch that is not already a default. Nothing here is protected by a decision.' })))
@@ -1981,7 +1981,7 @@ function paintProtected (board) {
 // them.
 function paintBaselines () {
   waiting('groups', { cards: 2 })
-  api('repoBaselines').then(({ repos, groups, note }) => {
+  api('repoDefaults').then(({ repos, groups, note }) => {
     if (!changed('baselines', [repos, groups])) return
 
     // EACH REPOSITORY'S DEFAULT BRANCH, which is the one fact about a repository
@@ -2025,7 +2025,7 @@ function paintBaselines () {
         el('div', { className: 'badges' },
           el('span', { className: 'muted', textContent: `${g.on.length} repositor${g.on.length === 1 ? 'y' : 'ies'}` }),
           g.missing.length ? el('span', { className: 'muted', textContent: `${g.missing.length} not named` }) : null)))
-      : el('p', { className: 'empty', textContent: 'No groups yet. A group names one branch per repository, so a task can be based on a line of work rather than on a branch at a time.' }))
+      : el('p', { className: 'empty', textContent: 'No lines yet. A line names one branch per repository, so work can be cut from a point rather than from a branch at a time.' }))
 
     // ONE GROUP, THE SELECTED ONE.
     //
@@ -2081,8 +2081,8 @@ function paintBaselines () {
               onclick: () => askToForgetGroup(g)
             }))))
       : el('p', { className: 'empty', textContent: groups.length
-          ? 'Pick a group on the left.'
-          : 'A group is a line of work: master today, version2 next, each one cut from the last. Naming it is what lets a task be based on it — and what protects it while it is a link.' }))
+          ? 'Pick a line on the left.'
+          : 'A line is a point the whole workspace can be read at: master today, version2 next, each one cut from the last. Naming it is what lets work be cut from it — and what protects it while it is a link.' }))
   }).catch(() => { /* the panel beside it is the one worth an error */ })
 }
 
@@ -2100,15 +2100,15 @@ function paintBaselines () {
 // reached a repository says so, and it is what scopes every task cut from this
 // group to the repositories the work is actually about.
 function newGroup () {
-  api('repoBaselines').then(({ repos }) => {
+  api('repoDefaults').then(({ repos }) => {
     if (!repos.length) throw new Error('There are no repositories in this workspace to name a line across.')
 
     return ask({
-      title: 'Name this set of baselines',
+      title: 'Name a line',
       plain: [
-        'A group names one branch per repository, and it is what work is cut from — because a change spans repositories, and what work is counted from is one question with one answer.',
-        'Every branch in a group is protected while it is in one: work is cut from it and merged back into it, never built on directly. That is what makes chaining safe rather than a convention.',
-        'Leave a repository out if this line does not reach it. A task cut from this group only ever touches the repositories named here — it is not checked out on a machine, and that machine cannot fetch it.'
+        'A line names one branch per repository, and it is what work is cut from — because a change spans repositories, and what work is measured against is one question with one answer.',
+        'Every branch in a line is protected while it is in one: work is cut from it and merged back into it, never built on directly. That is what makes chaining safe rather than a convention.',
+        'Leave a repository out if this line does not reach it. A task cut from this line only ever touches the repositories named here — it is not checked out on a machine, and that machine cannot fetch it.'
       ],
       fields: [
         { name: 'name', label: 'Called', placeholder: 'the version2 line' },
@@ -2140,7 +2140,7 @@ function newGroup () {
           throw new Error('A line has to reach at least one repository. Every repository is set to "not part of this line".')
         }
 
-        const saved = await api('baselineGroupSave', { name: f.name, why: f.why, on })
+        const saved = await api('lineSave', { name: f.name, why: f.why, on })
         changed('baselines', null)
         changed('branches', null)
         const left = repos.filter(r => !(r.repo in on)).map(r => r.repo)
@@ -2162,7 +2162,7 @@ function proposeGroup (g) {
     title: `Propose "${g.name}" for landing?`,
     plain: [
       `It says this line is finished: ${g.on.map(p => `${p.repo}:${p.branch}`).join(', ')}.`,
-      'Nothing moves and nothing is protected that was not already — its branches are protected because they are in a group, which is what a line is. What this adds is intent, so a second person can tell a line being worked on from one being offered.',
+      'Nothing moves and nothing is protected that was not already — its branches are protected because they are named in a line. What this adds is intent, so a second person can tell a line being worked on from one being offered.',
       'It then appears on the left of the Merge tab, where it can be read against the line it would go into and landed.'
     ],
     fields: [
@@ -2170,7 +2170,7 @@ function proposeGroup (g) {
     ],
     confirm: 'Propose it',
     onYes: async f => {
-      const r = await api('baselineGroupMark', { name: g.name, why: f.why })
+      const r = await api('linePropose', { name: g.name, why: f.why })
       mergeAnswer = null
       changed('baselines', null)
       changed('merge', null)
@@ -2185,13 +2185,13 @@ function unproposeGroup (g) {
     title: `Stop proposing "${g.name}"?`,
     plain: [
       'It goes back to being a line rather than a proposal, and leaves the Merge tab.',
-      'Its branches stay protected, because they are still named in a group. Forgetting the group is what gives them back.',
+      'Its branches stay protected, because they are still named in a line. Forgetting the line is what gives them back.',
       'Nothing that has already landed is undone.'
     ],
     confirm: 'Take it back',
     danger: true,
     onYes: async () => {
-      const r = await api('baselineGroupUnmark', { name: g.name })
+      const r = await api('lineWithdraw', { name: g.name })
       mergeAnswer = null
       changed('baselines', null)
       changed('merge', null)
@@ -2203,9 +2203,9 @@ function unproposeGroup (g) {
 
 function askToForgetGroup (g) {
   ask({
-    title: `Forget "${g.name}"?`,
+    title: `Forget the "${g.name}" line?`,
     plain: [
-      'The branches are untouched. Forgetting a group is a decision about branches, not a thing the branches belong to.',
+      'The branches are untouched. Forgetting a line is a decision about branches, not a thing the branches belong to.',
       'What it does change: those branches stop being protected by it, so work could be built directly on one.',
       // What branches cut FROM it recorded stays recorded: a branch says what it
       // started against, and forgetting the line it was cut from does not change
@@ -2216,7 +2216,7 @@ function askToForgetGroup (g) {
     confirm: 'Forget it',
     danger: true,
     onYes: async () => {
-      await api('baselineGroupDelete', { name: g.name })
+      await api('lineForget', { name: g.name })
       changed('baselines', null)
       changed('branches', null)
       say(`"${g.name}" forgotten. Its branches are untouched.`)
@@ -2235,7 +2235,7 @@ function askToForgetGroup (g) {
 //
 // Choosing a branch per repository happens in the name-a-line dialog now, where
 // it is one decision with one name on it. `repoBaseline` remains an action: on a
-// command line it is a deliberate single step, and `baselineGroupUse` is built
+// command line it is a deliberate single step, and `lineUse_REMOVED` is built
 // out of it.
 
 // What can be done to the selected branch. One set of buttons for all of them,
@@ -2674,7 +2674,7 @@ function chooseWorkspace () {
 // disabled-looking confirm and a field that cannot be filled is worse than a
 // dialog that says what is missing and where to go and fix it.
 async function newBranch () {
-  const { groups } = await api('baselineGroups').catch(() => ({ groups: [] }))
+  const { groups } = await api('lines').catch(() => ({ groups: [] }))
   const usable = (groups || []).filter(g => !g.broken.length)
   const broken = (groups || []).filter(g => g.broken.length)
 
@@ -2682,13 +2682,13 @@ async function newBranch () {
     return ask({
       title: 'Nothing to cut a branch from yet',
       plain: [
-        'A branch is cut from a baseline group: one branch per repository, named together because they are one point in the work.',
+        'A branch is cut from a named line: one branch per repository, named together because they are one point in the work.',
         broken.length
           ? `${broken.length} group(s) are named but cannot be cut from — ${broken.map(g => `${g.name}: ${g.broken.join('; ')}`).join(' · ')}.`
           : 'None have been named yet.',
-        'Name one on the Baselines tab — it takes what each repository counts from now and gives that point a name. Then work can be cut from it, and every branch can say what it started against.'
+        'Name one on the Lines tab — one branch per repository, given a name. Then work can be cut from it, and every branch can say what it started against.'
       ],
-      confirm: 'Go to the baselines',
+      confirm: 'Go to the lines',
       onYes: () => {
         showTab('branches')
         const pane = document.querySelector('.subtab[data-pane="baselines"]')
@@ -2701,7 +2701,7 @@ async function newBranch () {
     title: 'Cut a branch',
     plain: [
       'It is cut in every repository that does not already have it, and nothing is built on it until a task takes it — creating it moves no other branch and touches no working tree.',
-      'It starts at the group you choose, in every repository at once. That does not move any baseline — that is "use this group", on the Baselines tab, and it is a different and larger act.'
+      'It starts at the line you choose, in every repository at once, and that line is recorded as what the branch is measured against ever after.'
     ],
     fields: [
       { name: 'branch', label: 'Name', placeholder: 'task/what-it-is-for' },
@@ -2753,7 +2753,7 @@ function askToMakeALine (b) {
       b.missing.length
         ? `${b.missing.join(', ')} do not have this branch and are not named in the line.`
         : null,
-      'Propose it on the Baselines tab when it is ready to go in, and it appears on the Merge tab.'
+      'Propose it on the Lines tab when it is ready to go in, and it appears on the Merge tab.'
     ].filter(Boolean),
     fields: [
       { name: 'name', label: 'Called', value: `${b.name} line`, placeholder: 'the version2 line' },
@@ -2761,7 +2761,7 @@ function askToMakeALine (b) {
     ],
     confirm: 'Name it',
     onYes: async f => {
-      const r = await api('branchAsGroup', { branch: b.name, name: f.name, why: f.why })
+      const r = await api('branchAsLine', { branch: b.name, name: f.name, why: f.why })
       pickedGroup = r.name
       been.set('group', pickedGroup)
       changed('branches', null)

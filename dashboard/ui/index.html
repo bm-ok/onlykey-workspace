@@ -141,7 +141,7 @@
          never but with the most consequence. -->
     <div class="subtabs">
       <button class="subtab active" data-pane="overview">Overview</button>
-      <button class="subtab" data-pane="baselines">Baselines</button>
+      <button class="subtab" data-pane="baselines">Lines</button>
       <button class="subtab" data-pane="merge">Merge</button>
       <button class="subtab" data-pane="protected">Protected</button>
     </div>
@@ -150,8 +150,13 @@
       <div class="cols">
 
         <div class="col narrow">
+          <!-- "Branch cuts" rather than "Branches", because that is what this
+               list is: every branch was CUT, from a named line, for a reason, and
+               all three are recorded. The tab is called Branches; this column is
+               the cuts made in it, which is what distinguishes it from the lines
+               on Baselines and the protected ones next door. -->
           <h2 class="titlerow">
-            Branches
+            Branch cuts
             <span class="grow"></span>
             <label class="inline mine"><input type="checkbox" id="branch-mine" checked> ours</label>
             <!-- Making one is a deliberate act with a reason now. It used to
@@ -200,9 +205,9 @@
       <div class="cols">
         <div class="col narrow">
           <h2 class="titlerow">
-            Groups
+            Lines
             <span class="grow"></span>
-            <button class="plus" id="add-group-open" title="Name a set of baselines">+</button>
+            <button class="plus" id="add-group-open" title="Name a line: one branch per repository">+</button>
           </h2>
           <!-- What each repository counts from right now: the thing every
                "commits ahead" figure on the board is measured against, said once
@@ -223,7 +228,7 @@
              NOW is still worth seeing, so it is said once, above the groups,
              as a fact rather than as a row of controls. -->
         <div class="col wide">
-          <h2>What a group is <span class="muted" id="group-context"></span></h2>
+          <h2>What a line is <span class="muted" id="group-context"></span></h2>
           <div id="group-detail" class="panel"></div>
         </div>
       </div>

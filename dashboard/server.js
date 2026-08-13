@@ -1616,13 +1616,13 @@ const actions = {
   // repository whose default is `master` may perfectly well be working toward
   // `version2`. Until now they were one word, which was fine only while every
   // repository answered both the same way.
-  baselineGroups: {
-    about: 'Named sets of baselines — one branch per repository, which a task can be based on',
+  lines: {
+    about: 'Every named line: one branch per repository, and what work is cut from',
     run: () => ({ groups: branches.groups(), repos: branches.baselines() })
   },
 
-  baselineGroupSave: {
-    about: 'Name what each repository counts from right now, so it can be returned to',
+  lineSave: {
+    about: 'Name a line: one branch per repository, so work can be cut from that point',
     takes: ['name', 'why', 'on'],
     run: ({ name, why, on }) => {
       const saved = branches.saveGroup(name, { why, on: on && (typeof on === 'string' ? JSON.parse(on) : on) })
@@ -1631,14 +1631,14 @@ const actions = {
     }
   },
 
-  // baselineGroupUse was here. It pointed every repository at one line, and what
+  // A "use this line" action was here. It pointed every repository at one line, and what
   // a branch is measured against is now a fact about the branch — what it was
   // cut from, recorded when it was made. A workspace-wide pointer on top of that
   // was a second and worse answer to a question already answered, and moving it
   // reinterpreted every number on the board at once.
 
-  baselineGroupDelete: {
-    about: 'Forget a group. Its branches are untouched, and stop being protected by it',
+  lineForget: {
+    about: 'Forget a line. Its branches are untouched, and stop being protected by it',
     takes: ['name'],
     run: ({ name }) => {
       const gone = branches.deleteGroup(name)
@@ -1647,7 +1647,7 @@ const actions = {
     }
   },
 
-  repoBaselines: {
+  repoDefaults: {
     about: 'Each repository, its default branch, and the branches it has',
     run: () => {
       const rows = branches.baselines()
@@ -1683,10 +1683,10 @@ const actions = {
   // branch when it is made and does not move afterwards.
   //
   // The useful half of branchAsBaseline -- naming a finished branch so the next
-  // work can start there -- is branchAsGroup.
+  // work can start there -- is branchAsLine.
 
   branchCreate: {
-    about: 'Cut a branch across every repository, from a named baseline group',
+    about: 'Cut a branch across every repository, from a named line',
     takes: ['branch', 'reason', 'group'],
     run: ({ branch, reason, group, _overTheWire }) => {
       const cut = branches.ensure(branch, {
@@ -1787,8 +1787,8 @@ const actions = {
   // before they run, and they are refused as a set if any one of them would fail.
 
   // Turning a finished branch into a line, so it can be proposed.
-  branchAsGroup: {
-    about: 'Make a line out of a branch, so it can be compared and landed. Moves no baseline',
+  branchAsLine: {
+    about: 'Make a line out of a branch, so it can be compared and landed. Moves nothing',
     takes: ['branch', 'name', 'why'],
     run: ({ branch, name, why }) => {
       const made = branches.groupFromBranch(branch, { name, why })
@@ -1800,7 +1800,7 @@ const actions = {
     }
   },
 
-  baselineGroupMark: {
+  linePropose: {
     about: 'Propose a line for landing. It appears on the left of a comparison and stays protected',
     takes: ['name', 'why'],
     run: ({ name, why, _overTheWire }) => {
@@ -1810,7 +1810,7 @@ const actions = {
     }
   },
 
-  baselineGroupUnmark: {
+  lineWithdraw: {
     about: 'Take a line back out of being proposed, so work on it can continue',
     takes: ['name'],
     run: ({ name }) => {
