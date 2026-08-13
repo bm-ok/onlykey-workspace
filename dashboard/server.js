@@ -814,6 +814,178 @@ const actions = {
     }
   },
 
+  // Every branch, and everything that decides what to do with it.
+  //
+  // WHY THIS EXISTS SEPARATELY FROM `gitBranches`. That one answers "may I build
+  // on this", which is the question asked when a machine is being set up. This
+  // answers "what IS this", which is the question asked when nobody can remember
+  // where a branch came from -- and there are, by now, a great many branches.
+  //
+  // The confusing part is not any single branch, it is that ownership is spread
+  // across three places that never met: the repositories know a name exists, the
+  // board knows a task claims one, and the machine registry knows one is checked
+  // out somewhere. A branch belonging to a task that was thrown away looks
+  // exactly like a branch somebody made by hand, and the difference decides
+  // whether deleting it loses anything.
+  //
+  // NOTHING HERE SPAWNS GIT PER BRANCH. What is on a branch comes from the
+  // artifact cache, which is keyed on where every ref actually is, so a board of
+  // forty branches costs the same two processes as a board of one. That is not an
+  // optimisation, it is the difference between this being drawable every three
+  // seconds and it being the thing that pinned the window's CPU last time.
+  branchBoard: {
+    about: 'Every branch: who claims it, what is on it, and whether it can be deleted',
+    run: () => {
+      const all = branches.all()
+      const machines = vms.read()
+      const board = tasks.read()
+
+      const rows = all.branches.map(b => {
+        const held = machines.find(v => v.branch === b.name) || null
+        // Every task that named this branch, not the first. Two tasks on one
+        // branch is a mistake worth seeing rather than a case to pick a winner in.
+        const claims = board.filter(t => t.branch === b.name)
+
+        // What is on it, from the cache. A protected branch is the baseline
+        // everything else is measured against, so asking what it adds to itself
+        // is meaningless and is not asked.
+        const art = b.protected ? null : artifact.read(b.name)
+
+        // CONTAINED IN THE DEFAULT means every repository holding this branch
+        // reports nothing beyond its default -- which is the same statement as
+        // "merged", arrived at without a single extra command, because the
+        // artifact already had to count it.
+        // NULL rather than false for a protected branch. It is the thing
+        // everything else is measured against, so "is it contained in the
+        // default" has no answer -- and false would read as "it has work nobody
+        // has merged", which is the opposite of true.
+        const carrying = art ? art.repos.filter(r => !r.missing) : []
+        const contained = art ? (carrying.length > 0 && carrying.every(r => r.ahead === 0)) : null
+
+        return {
+          ...b,
+          heldBy: held ? held.name : null,
+          // The claim, flattened to what a list can show without a second lookup.
+          tasks: claims.map(t => ({ id: t.id, number: t.number, title: t.title, state: t.state })),
+          commits: art ? art.commits : 0,
+          files: art ? art.files : 0,
+          summary: art ? art.summary : 'the default branch — everything else is measured against it',
+          contained,
+          // Made by this system and then forgotten: it carries work, and the task
+          // that asked for it is gone. This is the one row that is genuinely hard
+          // to reconstruct by hand, and it is why the tab is worth having.
+          orphaned: !b.protected && !claims.length && !held && !!art && art.delivered,
+          // Unclaimed and carrying nothing. Not the same as orphaned, and the
+          // difference is the whole of what deleting costs: this one is a name
+          // and nothing else, so sweeping it up loses exactly nothing. Most of
+          // what accumulates here is this -- a drill's branch outliving the
+          // drill.
+          spare: !b.protected && !claims.length && !held && !!art && !art.delivered,
+          // Said in one place so the window and the command line refuse
+          // identically, and so the reason is a sentence rather than a flag.
+          removable: !b.protected && !held && b.reclaimable,
+          whyNot: b.protected
+            ? branches.whyProtected(b.name)
+            : held
+              ? `${held.name} is set up on this branch. Release it first, or the machine loses the checkout under it.`
+              : !b.reclaimable
+                ? (b.blocked && b.blocked[0]) || 'something on this host is holding it'
+                : null
+        }
+      })
+
+      return {
+        repos: all.repos,
+        protected: all.protected,
+        branches: rows,
+        counts: {
+          all: rows.length,
+          protected: rows.filter(r => r.protected).length,
+          claimed: rows.filter(r => r.tasks.length).length,
+          held: rows.filter(r => r.heldBy).length,
+          orphaned: rows.filter(r => r.orphaned).length,
+          spare: rows.filter(r => r.spare).length,
+          contained: rows.filter(r => r.contained).length
+        }
+      }
+    }
+  },
+
+  // What is on a branch, asked of the branch rather than of a task.
+  //
+  // `taskArtifact` answers the same question and needs a task id, which is
+  // exactly what an ORPHANED branch does not have -- and an orphaned branch
+  // carrying commits is the one thing on the board where somebody has to decide
+  // whether to throw work away. Deciding that blind was the only option.
+  //
+  // Never cached: the summary on the board can be four seconds stale without
+  // costing anything, but this is what a person reads before deleting something.
+  branchArtifact: {
+    about: 'What is on a branch: commits and files per repository, without a task',
+    takes: ['branch'],
+    run: ({ branch }) => {
+      if (!branch) throw new Error('Which branch?')
+      return artifact.read(branch, { fresh: true })
+    }
+  },
+
+  branchDiff: {
+    about: "One repository's changes on a branch, in full, without a task",
+    takes: ['branch', 'repo', 'file'],
+    run: ({ branch, repo, file }) => {
+      if (!branch || !repo) throw new Error('Which branch, in which repository?')
+      return { branch, repo, file: file || null, diff: artifact.diff(repo, branch, file) }
+    }
+  },
+
+  // Take a branch out of every repository that has it.
+  //
+  // Every refusal is here rather than in the window, because the window is one
+  // caller. A protected branch is refused outright; a branch a machine is set up
+  // on is refused because deleting it pulls the checkout out from under a running
+  // job; and a branch carrying commits the default does not have is refused
+  // UNLESS the caller says so, since that is the only case where the answer
+  // depends on something this cannot know.
+  branchDelete: {
+    about: 'Delete a branch from every repository that has it',
+    takes: ['branch', 'force'],
+    run: ({ branch, force = false }) => {
+      const row = actions.branchBoard.run({}).branches.find(b => b.name === branch)
+      if (!row) throw new Error(`No repository here has a branch called "${branch}".`)
+      if (row.whyNot) throw new Error(row.whyNot)
+
+      if (!row.contained && !force) {
+        throw new Error(
+          `"${branch}" carries ${row.commits} commit(s) that ${row.tasks.length ? 'its task delivered and ' : ''}no default branch has. ` +
+          'Deleting it is the only way that work is lost here, so it has to be asked for on purpose: pass force.'
+        )
+      }
+
+      // Forced at the git level whenever we got this far, because the check that
+      // matters was made above against the DEFAULT branch. Git's own -d compares
+      // against whatever HEAD happens to be, which in a bare repository being
+      // served is not the question anybody asked.
+      const gone = branches.remove(branch, { force: true })
+
+      log.on('git').warn(
+        `deleted branch "${branch}" from ${gone.deletedFrom.map(d => d.repo).join(', ')}` +
+        (row.contained ? '' : ` — it carried ${row.commits} commit(s) no default branch has`)
+      )
+      // The commits are named on the way out. A branch is a pointer; deleting one
+      // does not delete what it pointed at, and for as long as git keeps the
+      // object these numbers are how it comes back.
+      return {
+        ...gone,
+        carried: row.commits,
+        contained: row.contained,
+        tasks: row.tasks,
+        note: row.contained
+          ? 'Everything on it was already in the default branch.'
+          : `It carried ${row.commits} commit(s) that no default branch has. They still exist: ${gone.deletedFrom.map(d => `${d.repo} ${d.was || '(nothing)'}`).join(', ')}`
+      }
+    }
+  },
+
   // Lay out a machine's workspace: every repository, on one branch, pointed back
   // here.
   //
@@ -1992,13 +2164,21 @@ done`
   // notices it on its next draw and answers. That is why it returns a path
   // rather than an image — the file appears a second or two later.
   windowShot: {
-    about: 'Ask the window to photograph itself. It answers on its next draw',
-    takes: ['note'],
-    run: ({ note }) => {
+    about: 'Ask the window to photograph itself, optionally on a given tab',
+    takes: ['note', 'view'],
+    run: ({ note, view }) => {
       const file = path.join(data.sub('window'), `window-${data.stamp()}.png`)
-      wantedShot = { file, note: note || null, asked: Date.now() }
+      // WHICH TAB, because otherwise only the one that happens to be open can
+      // ever be checked. The window is the single part of this that fails
+      // silently -- a class that matches no rule, a panel that stopped updating,
+      // both of which have happened here -- and photographing it was the answer.
+      // But a panel behind a tab nobody clicked is exactly as unverifiable as it
+      // was before, and every new tab arrived that way: built, reasoned about,
+      // and photographed only once somebody thought to switch to it.
+      wantedShot = { file, note: note || null, view: view || null, asked: Date.now() }
       return {
         file,
+        view: view || null,
         note: 'The window takes it on its next draw — up to twelve seconds if nobody is looking at it. Read the file once it appears.'
       }
     }

@@ -662,6 +662,46 @@ fault.
 Both lines are written. Each program reads the spelling it understands and
 ignores the other -- the same silence that caused the bug, used deliberately.
 
+The Branches tab
+----------------
+
+A branch is the unit of work here. It is what a task delivers, what a machine is
+set up on, and what a verdict is about -- and THREE PLACES KNEW THAT AND NONE OF
+THEM MET. The repositories know a name exists, the board knows a task claimed
+one, the registry knows one is checked out on a machine. So a branch belonging to
+a task that was thrown away looked exactly like one somebody cut by hand, and the
+difference is the whole of what deleting it costs.
+
+Each one gets a single word for what it IS:
+
+    protected   a default branch. Nothing is built on it and nothing deletes it.
+    in use      a machine is set up on it right now.
+    claimed     a task named it. The task is where the verdict happens.
+    orphaned    it carries work and nothing claims it. This is the one that is
+                hard to reconstruct by hand, and the reason the tab exists.
+    spare       nothing claims it and nothing is on it. A name and no more --
+                usually a drill outliving its drill. Safe to sweep.
+
+The number that decides everything else is how far ahead of the default it is.
+Nothing ahead means the name is all there is; anything ahead means the work
+exists here and nowhere else.
+
+**It costs no git commands.** What is on each branch comes from the artifact
+cache, which is keyed on where every ref actually is, so forty branches cost the
+same two processes as one. That is not tidiness -- reading branches per-draw is
+precisely what once put 94% of the window in `spawn`.
+
+**Deleting is the only way work made here is ever unmade**, so the refusals
+matter more than the action. A protected branch is refused outright. One a
+machine is set up on is refused, because deleting it pulls the checkout out from
+under a running job. One carrying commits no default branch has is refused unless
+forced -- and when it is forced, the report names the commit each repository was
+left at, because a branch is a pointer and deleting one does not delete what it
+pointed at.
+
+NOTHING MERGES, still. That is a separate joint with its own rules and it is not
+here; this tab lets you see and remove, not land.
+
 Seeing a machine that is not talking yet
 ----------------------------------------
 

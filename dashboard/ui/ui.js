@@ -1050,6 +1050,183 @@ function readDefinition (which) {
   }).catch(oops)
 }
 
+// ---- branches ----------------------------------------------------------
+//
+// A branch is the unit of work here: it is what a task delivers, what a machine
+// is set up on, and what a verdict is about. THREE PLACES KNEW THAT AND NONE OF
+// THEM MET -- the repositories know a name exists, the board knows a task claimed
+// one, the registry knows one is checked out on a machine. So a branch belonging
+// to a task that was thrown away looked exactly like one somebody made by hand,
+// and the difference is the whole of what deleting it costs.
+//
+// The one number that matters is how far ahead of the default it is. Nothing
+// ahead means the name is all there is and sweeping it up loses nothing;
+// anything ahead means work exists here and nowhere else.
+
+// Which branches are worth looking at by default.
+//
+// A workspace accumulates names -- a drill's branch outlives the drill, somebody
+// cuts one by hand -- and a list that shows everything equally is the confusion
+// this tab exists to remove rather than to display. So the default is what this
+// system made or is using, and the toggle is right there for the rest.
+const oursOnly = b => b.protected || b.tasks.length || b.heldBy || b.orphaned
+
+function paintBranches () {
+  if (view !== 'branches') return
+  api('branchBoard').then(board => {
+    const find = $('branch-find').value.trim().toLowerCase()
+    const mine = $('branch-mine').checked
+    const rows = board.branches
+      .filter(b => !mine || oursOnly(b))
+      .filter(b => !find || b.name.toLowerCase().includes(find))
+
+    // What is not on screen, said out loud. The counts above describe the whole
+    // workspace while the list is filtered, so "1 spare" with nothing spare in
+    // the list reads as a fault rather than as a filter doing its job.
+    const hidden = board.branches.length - rows.length
+    setText($('branch-context'),
+      `— ${board.branches.length} across ${board.repos.join(', ')}${hidden ? `, ${hidden} not shown` : ''}`)
+    if (!changed('branches', [rows, board.counts])) return
+
+    const c = board.counts
+    fill($('branch-counts'),
+      chip(`${c.all} in all`, null),
+      chip(`${c.claimed} claimed by a task`, 'ok'),
+      c.held ? chip(`${c.held} checked out on a machine`, 'ok') : null,
+      c.orphaned ? chip(`${c.orphaned} orphaned — work with no task`, 'bad') : null,
+      c.spare ? chip(`${c.spare} spare — empty and unclaimed`, 'warn') : null)
+
+    fill($('branches'), rows.length
+      ? rows.map(branchCard)
+      : el('p', { className: 'empty', textContent: mine ? 'Nothing this system made. Untick to see the rest.' : 'No branches match.' }))
+  }).catch(oops)
+}
+
+const chip = (text, kind) => el('span', { className: `chip${kind ? ' ' + kind : ''}`, textContent: text })
+
+function branchCard (b) {
+  // What this branch IS, in one word, because that is the question. The order
+  // matters: protected beats everything, and orphaned beats spare because
+  // carrying work is the more important fact about it.
+  const [tag, kind] =
+    b.protected ? ['protected', 'ok']
+      : b.heldBy ? ['in use', 'ok']
+        : b.tasks.length ? ['claimed', 'ok']
+          : b.orphaned ? ['orphaned', 'bad']
+            : ['spare', 'warn']
+
+  return el('div', { className: 'card branch' },
+    el('div', { className: 'card-title' },
+      el('span', { className: 'mono', textContent: b.name }),
+      el('span', { className: `badge ${kind}`, textContent: tag })),
+
+    el('div', { className: 'branch-facts' },
+      // Ahead of the default, which is the number that decides everything else.
+      el('span', { className: b.commits ? 'strong' : 'muted', textContent: b.commits ? `${b.commits} commit(s) ahead` : 'nothing beyond the default' }),
+      b.files ? el('span', { className: 'muted', textContent: `${b.files} file(s)` }) : null,
+      // Which repositories have it, and — the part that is easy to miss — which
+      // do not. A name in three of four is the normal shape of a change that only
+      // touched three, not a fault.
+      el('span', { className: 'muted', textContent: `in ${b.in.join(', ') || 'none'}` }),
+      b.missing.length ? el('span', { className: 'muted', textContent: `not in ${b.missing.join(', ')}` }) : null,
+      b.heldBy ? el('span', { className: 'muted', textContent: `checked out on ${b.heldBy}` }) : null),
+
+    // Its tasks, as a way INTO the board rather than as text about it. The task
+    // is where a verdict is given, and this tab deliberately does not duplicate
+    // that -- it only makes the connection findable from the branch end.
+    b.tasks.length
+      ? el('div', { className: 'branch-tasks' }, b.tasks.map(t => el('button', {
+          className: 'linky',
+          textContent: `#${t.number} ${t.title} — ${t.state}`,
+          onclick: () => { pickedTask = t.id; been.set('task', t.id); showTab('tasks') }
+        })))
+      : null,
+
+    b.whyNot ? el('p', { className: 'note', textContent: b.whyNot }) : null,
+
+    el('div', { className: 'row' },
+      el('button', {
+        className: 'btn',
+        textContent: 'What is on it',
+        disabled: !b.commits,
+        onclick: () => showBranch(b)
+      }),
+      el('button', {
+        className: 'btn danger',
+        textContent: 'Delete it',
+        disabled: !b.removable,
+        onclick: () => askToDeleteBranch(b)
+      })))
+}
+
+// What is actually on a branch, read from the branch itself.
+//
+// The Tasks tab reads an artifact through its task, which is right when there is
+// one. This is for when there is not: an orphaned branch carrying commits is the
+// one place on the board where somebody has to decide whether to throw work away,
+// and until now that decision was made from a number alone.
+function showBranch (b) {
+  api('branchArtifact', { branch: b.name }).then(art => {
+    const carrying = art.repos.filter(r => !r.missing && !r.empty)
+    ask({
+      title: b.name,
+      plain: [
+        art.summary,
+        b.contained
+          ? 'Everything on it is already in the default branch.'
+          : 'None of this is in a default branch — this is the only place it exists.'
+      ],
+      confirm: 'Done',
+      onYes: async () => {}
+    })
+
+    // Added after the dialog exists, for the same reason a diff is: this is read
+    // rather than answered, and it has to scroll.
+    const body = document.querySelector('.dlg-body')
+    if (!body) return
+    for (const r of carrying) {
+      body.append(el('div', { className: 'dlg-heading' },
+        el('span', { textContent: `${r.repo} — ${r.ahead} commit(s) on top of ${r.base}` }),
+        el('button', {
+          className: 'linky',
+          textContent: 'read the whole diff',
+          onclick: () => api('branchDiff', { branch: b.name, repo: r.repo })
+            .then(({ diff }) => {
+              const box = document.querySelector('.dlg-body')
+              if (box) box.append(codeBlock(diff || 'no changes', 'diff', { lines: 22 }))
+            }).catch(oops)
+        })))
+      body.append(codeBlock(
+        r.commits.map(c => `${c.sha}  ${new Date(c.at).toLocaleString()}  ${c.who}\n    ${c.subject}`).join('\n') || 'nothing',
+        'markdown', { lines: Math.min(10, Math.max(3, r.commits.length * 2)) }))
+    }
+  }).catch(oops)
+}
+
+// Deleting a branch is the only way work made here is ever unmade, so the dialog
+// says what would be lost in the same sentence as the question.
+function askToDeleteBranch (b) {
+  const loses = !b.contained && b.commits
+  ask({
+    title: `Delete "${b.name}"?`,
+    danger: true,
+    plain: [
+      `It would go from ${b.in.join(' and ')}.`,
+      loses
+        ? `It carries ${b.commits} commit(s) that no default branch has. This is the only place that work exists.`
+        : 'Everything on it is already in the default branch, so nothing is lost.',
+      b.tasks.length
+        ? `${b.tasks.map(t => `#${t.number}`).join(', ')} still refer(s) to it, and would be left pointing at a branch that is gone.`
+        : null
+    ].filter(Boolean),
+    cost: loses ? 'The commits themselves survive until git collects them, and the report says where they were.' : null,
+    confirm: loses ? 'Delete it and lose the work' : 'Delete it',
+    onYes: () => api('branchDelete', { branch: b.name, force: !b.contained })
+      .then(r => say(`Deleted "${r.branch}". ${r.note}`))
+      .catch(oops)
+  })
+}
+
 // ---- shells on machines ------------------------------------------------
 //
 // THE PTY IS AT THE FAR END. `ssh -tt` allocates one on the machine, which is
@@ -1977,6 +2154,10 @@ $('term-close').onclick = () => closeShell(active)
 // tab -- it is what you read BEFORE opening a shell, to know whether opening one
 // is worth doing.
 $('term-machine').onchange = () => paintTermAuth()
+// Repainted on the spot rather than on the next draw, because a filter that
+// takes up to three seconds to answer reads as one that did not work.
+$('branch-mine').onchange = () => { changed('branches', null); paintBranches() }
+$('branch-find').oninput = () => { changed('branches', null); paintBranches() }
 window.addEventListener('resize', () => {
   if (view !== 'terminal') return
   sizeTerminal()
@@ -2262,6 +2443,7 @@ async function drawOnce () {
   paintKeys()
   paintAppKeys()
   paintTerminal()
+  paintBranches()
   paintTasks(running)
 
   // Last, so the picture is of a window that has finished drawing.
@@ -2282,6 +2464,26 @@ async function drawOnce () {
 function shotIfAsked () {
   api('windowShotPending').then(want => {
     if (!want || !want.file || shotInFlight) return
+
+    // Switched to the asked-for tab first, and then A WHOLE DRAW IS LET PASS.
+    //
+    // One draw is not enough, which cost a picture to learn. Every panel here
+    // fills from an action, so painting it is asynchronous, while this runs
+    // synchronously at the END of the same draw that started those requests. A
+    // tab that has never been painted is therefore still empty at exactly the
+    // moment the photograph is taken -- and an empty panel in a screenshot is
+    // worse than no screenshot, because it looks like a rendering fault rather
+    // than a timing one. It did: the Branches tab photographed blank, correctly.
+    if (want.view && want.view !== view) {
+      const tab = document.querySelector(`.tab[data-view="${want.view}"]`)
+      if (tab) { tab.click(); shotSettle = 1; return }
+      // Named a tab that does not exist. Said rather than silently photographing
+      // whatever was already open and letting it read as that tab.
+      api('windowShotDone', { file: want.file, error: `there is no tab called "${want.view}"` })
+      return
+    }
+    if (shotSettle > 0) { shotSettle--; return }
+
     shotInFlight = true
     try {
       // Raw base64 rather than a data URI: it is written to a file, and the
@@ -2302,6 +2504,9 @@ function shotIfAsked () {
   }).catch(() => { shotInFlight = false })
 }
 let shotInFlight = false
+// Draws still to let pass before photographing, so a panel that was switched to
+// has actually finished filling. See shotIfAsked.
+let shotSettle = 0
 
 // ---- right-click, and devtools ---------------------------------------
 //

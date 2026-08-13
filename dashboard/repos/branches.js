@@ -327,8 +327,52 @@ function ensure (branch) {
   })
 }
 
+// Take a branch out of every repository that has it.
+//
+// THE ONE DESTRUCTIVE THING IN THIS FILE, and the only way work made here is
+// ever unmade -- so what it refuses matters more than what it does.
+//
+// It will not touch a protected branch, for the same reason nothing else will.
+// And it uses `-d` rather than `-D` unless told otherwise: git's own check is
+// that the branch is contained in the current HEAD, which is not the question we
+// care about, so containment in the DEFAULT is checked here first and `-D` is
+// what actually runs. The caller is the one that decides whether losing commits
+// is acceptable; this only makes sure that decision was made.
+//
+// A branch checked out on this host is stepped off first where that is safe --
+// git refuses to delete a branch that is checked out, and the message says
+// nothing about which working tree is holding it.
+function remove (branch, { force = false } = {}) {
+  const why = whyProtected(branch)
+  if (why) throw new Error(why)
+
+  const name = String(branch || '').trim()
+  if (!name) throw new Error('There is no branch to delete.')
+
+  const stepped = freeEverywhere(name)
+  const stuck = stepped.filter(s => s.busy)
+  if (stuck.length) throw new Error(stuck[0].why)
+
+  const done = []
+  for (const { name: repo } of serve.list()) {
+    const dir = serve.gitDirOf(repo)
+    if (!dir || !branchesIn(dir).includes(name)) continue
+    // Where it was, before it is not anywhere. A deleted branch is recoverable
+    // from its commit for as long as git keeps the object, and the number is the
+    // only thing that makes that possible -- so it is reported even though
+    // nothing here uses it.
+    let at = null
+    try { at = git(dir, ['rev-parse', name]) } catch { /* unborn; nothing to record */ }
+    git(dir, ['branch', force ? '-D' : '-d', name])
+    done.push({ repo, was: at })
+  }
+
+  if (!done.length) throw new Error(`No repository here has a branch called "${name}".`)
+  return { branch: name, deletedFrom: done, steppedOff: stepped.filter(s => s.freed) }
+}
+
 module.exports = {
-  all, ensure, nameIsOk, branchesIn, headOf, defaultHeads,
+  all, ensure, remove, nameIsOk, branchesIn, headOf, defaultHeads,
   defaultOf, protectedBranches, isProtected, whyProtected,
   isClean, freeIfBusy, freeEverywhere, blocking
 }

@@ -26,6 +26,7 @@
     <!-- The badge is what makes a tab you cannot see safe to have: output
          arriving behind it is announced, and a failure differently from
          ordinary chatter. -->
+    <button class="tab" data-view="branches">Branches</button>
     <button class="tab" data-view="live">Live <span class="tab-badge hidden" id="live-badge"></span></button>
     <button class="tab" data-view="terminal">Terminal</button>
     <button class="tab" data-view="keys">Keys</button>
@@ -115,6 +116,30 @@
       </div>
 
     </div>
+  </section>
+
+  <!-- ---------------- Branches ----------------
+       A branch is the unit of work here: it is what a task delivers, what a
+       machine is set up on, and what a verdict is about. Three different places
+       knew that and none of them met, so a branch belonging to a task that was
+       thrown away looked exactly like one somebody made by hand — and the
+       difference is whether deleting it loses anything. -->
+  <section class="view" id="view-branches">
+    <div class="sync-head">
+      <h2>Branches <span class="muted" id="branch-context"></span></h2>
+      <div class="sync-controls">
+        <label class="inline"><input type="checkbox" id="branch-mine" checked> Only ones we made</label>
+        <input id="branch-find" placeholder="find a branch">
+      </div>
+    </div>
+    <p class="note">
+      Read from the repositories on this host, never from a machine's account of
+      itself. Nothing here checks anything out — a branch is judged from its
+      commits, and reviewing by checking out would move HEAD in a repository
+      something else is serving.
+    </p>
+    <div id="branch-counts" class="chips"></div>
+    <div id="branches" class="stack"></div>
   </section>
 
   <!-- ---------------- Live ----------------

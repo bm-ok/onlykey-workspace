@@ -449,6 +449,37 @@ table.kv td { padding: 3px 0; word-break: break-all; }
   font-size: 12px;
 }
 
+/* Branches. The card carries one badge saying what the branch IS, a row of facts
+   about it, and its tasks as a way back into the board. */
+.card.branch .card-title span:first-child { font-size: 13px; }
+.branch-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.branch-facts .strong { color: var(--text); font-weight: 600; }
+.branch-tasks { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 8px; }
+
+/* A button that reads as a link, for moving between views rather than acting. */
+.linky {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.linky:hover { text-decoration: underline; }
+
+/* Counts across the top, coloured by what they mean rather than uniformly. */
+.chip.ok { border-color: rgba(63, 185, 80, .4); color: var(--ok); }
+.chip.warn { border-color: rgba(210, 153, 34, .4); color: var(--warn); }
+.chip.bad { border-color: rgba(248, 81, 73, .4); color: var(--fail); }
+
 /* One pane per shell, stacked in the same box and shown one at a time. Hidden
    with display:none rather than being removed, so a shell you switched away
    from keeps its scrollback and whatever is still running in it. */
