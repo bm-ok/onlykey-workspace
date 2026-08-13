@@ -103,8 +103,21 @@ describe('guards — the things that must be refused', () => {
     // off a machine loses nothing and putting it back is one call. The finally
     // is not optional -- leaving a machine signed out would break the next thing
     // to use it, and blame something else.
-    const target = vms.find(v => v.connected && v.holdsCredential) || vms.find(v => v.connected)
-    assert.needs(target, 'no machine is dialled in — a runner rests off')
+    // NEVER a machine the queue is driving.
+    //
+    // This drill takes a credential away and puts it back, and the only time
+    // there is a connected machine to try it on is while one is WORKING -- so
+    // the obvious choice is the worst one. Pulling a credential out from under
+    // a live worker to prove a point about refusals is a drill sabotaging the
+    // thing it exists to protect, and the failure would surface minutes later
+    // as the worker's, not as this one's.
+    const { inFlight = [] } = await okc('queueState')
+    const busy = new Set(inFlight.map(f => f.machine))
+    const idle = vms.filter(v => v.connected && !busy.has(v.name))
+    const target = idle.find(v => v.holdsCredential) || idle[0]
+    assert.needs(target, busy.size
+      ? 'every connected machine is busy with queued work, and this must not take a credential from one that is working'
+      : 'no machine is dialled in — a runner rests off')
 
     const held = !!(target.holdsCredential)
     if (held) {

@@ -48,18 +48,6 @@ the point; clean it up deliberately rather than by habit.
 Not yet run
 -----------
 
-### 4b. A branch already claimed, refused to a second machine
-
-**Half of drill 4 is done** — two machines working at once is proven, in 5c.
-What is not is the refusal: while one machine holds a branch, give a task on
-that same branch to another.
-
-**A pass is a refusal naming the machine that holds it.** Note that a machine
-already on a branch of its own is refused for *that* first, before the claim is
-ever consulted — so this needs a second machine on **no** branch. The declared
-version of this drill says so and deliberately will not arrange one, because
-the only way off a branch is a rollback and that discards whatever is on it.
-
 ### 5b. The queue drains, one task at a time, through one machine — 2026-08-12
 
 **Proves the pool works when it is full**, which is the only condition under
@@ -113,6 +101,36 @@ the queue, not the recovery.
 A total says nothing about where the time went. Half of every task here is the
 machine being made ready, and a boot that quietly grows from 30 seconds to five
 minutes is invisible in a number that only says "81s".
+
+### 4b. The guards, under load — 2026-08-13
+
+**Proves the four guards that only exist while work is happening.** A machine
+holding a credential, a machine on a branch, a claimed branch refused to a
+second machine, a signed-out machine refused work — none of those states exist
+at rest, and this tool puts machines at rest by design. On a quiet host half the
+suite legitimately has nothing to look at and says so.
+
+Make the conditions, then run the whole suite:
+
+    okc.js taskQueue --id <a long task>    one machine takes it, claims a branch,
+                                           holds a credential
+    okc.js vmStart --name <the other>      connected, on no branch
+    okc.js plannedRun --suite "guards ..."
+
+**Pass: 8 passed, 0 failed, 0 could not run — and the live task still running
+afterwards.** That last clause is the drill on the drills. A guard that proves a
+refusal by disturbing real work has cost more than it demonstrated, and the
+damage would surface later as the worker's fault rather than as the drill's.
+
+**The signed-out guard is the one to watch.** It takes a credential away and
+puts it back, and the only time a connected machine exists is while one is
+*working* — so the obvious choice is the worst one. It asks the queue what is in
+flight and refuses to touch it.
+
+**Two machines are needed, and only one of them is doing anything.** The claimed
+branch has to be refused to a machine that is on *no* branch, because a machine
+already on one is refused for that first — a different rule than the one being
+tested.
 
 ### 5c. Two machines at once — 2026-08-12
 

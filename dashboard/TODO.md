@@ -42,12 +42,9 @@ Unproven, and unexplained
 -------------------------
 
 Not missing work — things that have been reasoned about rather than seen. The
-drills themselves live in `TEST-PLAN.md`; this is what is outstanding against
-them.
+drills themselves live in `TEST-PLAN.md`, and all of them now pass, including
+the four that only have anything to look at while a machine is mid-work.
 
-* **Drill 4 is half done.** Two machines working at once is proven (5c). The
-  other half — a task on a branch another machine already claims, refused by
-  name — is not, and needs a second machine on no branch of its own.
 * **`runner2` failed to boot for nine minutes this afternoon and it was never
   explained.** The double rollback five seconds apart is the prime suspect and
   has been fixed, but every boot since has been thirty seconds, which is
