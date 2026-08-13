@@ -386,3 +386,22 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   them is left visible instead of being resolved into one verdict. The
   disagreement is the information: "27 days left" beside "refused 20 seconds ago"
   is the whole explanation of what is wrong.
+
+* **A panel that asks git something on a timer is a panel that costs a process
+  per repository per tick.** This is written down already — it is why
+  `artifact.read` caches — and it came back through a new door within a day of
+  being read. The Merge pane called `mergeCompare` and `mergePlan` on every draw:
+  three or four git processes per repository for the first, and for the second a
+  REAL MERGE (`merge-tree` performs the whole thing to find out whether it would
+  conflict) plus a `git status` each. Twenty processes every three seconds, on a
+  pane that was open and untouched.
+
+  A devtools trace said it in one line: 78% of the samples that were not idle
+  were inside `spawn`. That is the same number the artifact cache was written to
+  fix, and the same shape — expensive question, cheap-to-be-wrong answer, asked
+  on a clock rather than when the question changed.
+
+  The rule that generalises: **the window redraws on a timer, so anything it
+  calls is on a timer.** A new action is cheap to add and free to call from the
+  command line, and neither of those says anything about what it costs three
+  seconds at a time. Before wiring one into a paint function, ask what it spawns.

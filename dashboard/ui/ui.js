@@ -290,10 +290,34 @@ function paintMerge () {
       ? `proposed ${ago(marked.marked.at)}${marked.marked.why ? ` — ${marked.marked.why}` : ''}`
       : '')
 
-    Promise.all([
-      api('mergeCompare', { source: mergeSource, target: mergeTarget }),
-      api('mergePlan', { source: mergeSource, target: mergeTarget })
-    ]).then(([cmp, plan]) => {
+    // ASKED WHEN THE QUESTION CHANGES, NOT EVERY THREE SECONDS.
+    //
+    // This pane is expensive in a way nothing else here is. `mergeCompare` runs
+    // three or four git processes per repository, and `mergePlan` runs a real
+    // merge -- `merge-tree` performs the whole thing to find out whether it
+    // would conflict -- plus a `git status` each. On a three-repository
+    // workspace that is about twenty processes, and the window redraws every
+    // three seconds.
+    //
+    // A trace said so plainly: 78% of the samples that were not idle were inside
+    // `spawn`, with the pane open and nobody touching it. That is the same fault
+    // the artifact cache was written for, arriving by a new door, and the lesson
+    // is the same one -- a panel that asks git something on a timer is a panel
+    // that costs a process per repository per tick for an answer nobody asked
+    // for twice.
+    //
+    // So the answer is kept until its question changes, and re-read on a much
+    // slower clock so a branch that moved underneath it is still noticed.
+    const key = `${mergeSource} ${mergeTarget}`
+    const fresh = mergeAnswer && mergeAnswer.key === key && Date.now() - mergeAnswer.at < 30000
+    const asked = fresh
+      ? Promise.resolve(mergeAnswer.value)
+      : Promise.all([
+          api('mergeCompare', { source: mergeSource, target: mergeTarget }),
+          api('mergePlan', { source: mergeSource, target: mergeTarget })
+        ]).then(value => { mergeAnswer = { key, at: Date.now(), value }; return value })
+
+    asked.then(([cmp, plan]) => {
       if (!changed('merge', [mergeSource, mergeTarget, mergeLook, mergeMode, cmp, plan])) return
       mergeSeen = cmp
       paintMergeSummary(cmp, plan)
@@ -314,10 +338,10 @@ function paintMergePicks (proposed, usable) {
     $(box).onchange = () => onPick($(box).value)
   }
   pick('merge-source', proposed, mergeSource, v => {
-    mergeSource = v; been.set('merge-source', v); mergePicked = null; changed('merge', null); paintMerge()
+    mergeSource = v; been.set('merge-source', v); mergePicked = null; mergeAnswer = null; changed('merge', null); paintMerge()
   })
   pick('merge-target', usable.filter(g => g.name !== mergeSource), mergeTarget, v => {
-    mergeTarget = v; been.set('merge-target', v); mergePicked = null; changed('merge', null); paintMerge()
+    mergeTarget = v; been.set('merge-target', v); mergePicked = null; mergeAnswer = null; changed('merge', null); paintMerge()
   })
 }
 
@@ -392,7 +416,7 @@ function paintMergeActions (cmp, plan) {
         danger: true,
         onYes: async () => {
           const r = await api('baselineGroupUnmark', { name: cmp.source })
-          changed('merge', null); changed('baselines', null); changed('branches', null)
+          mergeAnswer = null; changed('merge', null); changed('baselines', null); changed('branches', null)
           say(r.note)
           return draw()
         }
@@ -441,7 +465,7 @@ function askToLand (cmp, push) {
       danger: true,
       onYes: async () => {
         const r = await api('mergeLand', { source: cmp.source, target: cmp.target, push })
-        changed('merge', null); changed('branches', null); changed('baselines', null)
+        mergeAnswer = null; changed('merge', null); changed('branches', null); changed('baselines', null)
         say(r.note, r.failed && r.failed.length ? 'bad' : undefined)
         return draw()
       }
@@ -1753,6 +1777,10 @@ let mergeLook = been.get('merge-look', 'commits')
 let mergeMode = been.get('merge-mode', 'sides')
 let mergePicked = null
 let mergeSeen = null
+// The last comparison and plan, and what they were about. See paintMerge: this
+// pane is the most expensive thing in the window and must not be asked on a
+// timer.
+let mergeAnswer = null
 
 // SCOPED TO THE ONES THAT NAME A PANE. `.subtab` is a look, and the Merge pane
 // has two of its own inside it for commits and files — caught by a document-wide
