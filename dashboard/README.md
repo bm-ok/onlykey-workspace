@@ -707,15 +707,15 @@ indices into the key itself:
     SnapshotName-2="..."            a SECOND child of the root
 
 so the parent is the key with its last segment removed. The current one is found
-by , which names the exact key, NOT by matching the name --
+by `CurrentSnapshotNode`, which names the exact key, NOT by matching the name --
 VirtualBox allows two snapshots to share a name, and this project has been caught
 by that once already.
 
 **When each was taken** is not reported by VBoxManage at all, which left "which
 of these is the one from before I broke it" unanswerable. VirtualBox keeps it in
-the machine own , where its GUI reads it from, so that is its record
-rather than a guess. Cached on the file size and modified time, because the panel
-redraws every three seconds and the file only changes when a snapshot does.
+the machine's own `.vbox`, where its GUI reads it from, so that is its record
+rather than a guess. Cached on the file's size and modified time, because the
+panel redraws every three seconds and the file only changes when a snapshot does.
 
 **Current state, and whether it CHANGED.** VirtualBox marks this in its own
 window from an API property its GUI reads and VBoxManage does not report. The
