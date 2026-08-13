@@ -500,9 +500,27 @@ function all () {
         // answer "no" to both with the same sentence, and send somebody looking
         // for another branch when what they actually had was two minutes of
         // uncommitted work in a checkout they had forgotten about.
+        // WHAT IT IS MISSING FROM is asked of the repositories it is ABOUT, not
+        // of the whole workspace. A branch cut from a group that names two of
+        // three repositories is complete at two; calling the third "missing"
+        // reads as damage and, worse, is acted on -- vmWorkspace refuses to set
+        // a machine up on a branch with anything missing, so a correctly scoped
+        // branch would be permanently unusable and the fix on offer would be to
+        // extend it into a repository the work has nothing to do with.
+        const scope = scopeOf(b.name)
+
         return {
           ...b,
-          missing: names.filter(n => !b.in.includes(n)),
+          group: scope.group,
+          // Only the repositories in scope, so a branch that also exists
+          // elsewhere for unrelated reasons does not drag them into this task.
+          in: b.in.filter(n => scope.repos.includes(n)),
+          about: scope.repos,
+          missing: scope.repos.filter(n => !b.in.includes(n)),
+          // Named by the group and not here any more. A different problem from
+          // "missing": nothing can extend the branch into a repository that has
+          // been removed from the workspace.
+          gone: scope.gone || [],
           protected: !!p,
           reclaimable: !stuck.length,
           blocked: stuck.length ? stuck.map(s => s.why) : null,
@@ -510,6 +528,49 @@ function all () {
         }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
+  }
+}
+
+// ---- which repositories a branch is ABOUT ------------------------------
+//
+// A group names a branch in some repositories and says nothing about the rest,
+// and that silence is a decision: a line of work that never reached the fourth
+// repository is not work "against" that repository at all. So the group a branch
+// was cut from is also the list of repositories the branch exists in, is checked
+// out in, is measured across, and is judged on.
+//
+// WHAT THIS PREVENTS is a machine holding repositories the work has nothing to
+// do with. Every checkout on a machine is something a worker can read, change
+// and push; handing over all of them for a change that concerns two is a wider
+// grant than anybody asked for, and the extra ones are exactly the ones nobody
+// is reviewing afterwards.
+//
+// Branches cut before this existed have no group and are about everything, which
+// is what they were made as. The fallback is not a default anybody chooses --
+// `ensure` requires a group — it is how the branches already on the board keep
+// meaning what they meant.
+function scopeOf (branch) {
+  const here = serve.list().map(r => r.name)
+  const note = noteFor(branch)
+  if (!note || !note.group) return { group: null, repos: here, whole: true }
+
+  const found = groups().find(g => g.name === note.group)
+  // A group deleted since is not a reason to widen a branch's reach. What it
+  // named is recorded on the branch itself, and that record outlives the group
+  // precisely so this question stays answerable.
+  const named = found
+    ? found.on.map(p => p.repo)
+    : Object.keys(note.from || {})
+
+  const scoped = here.filter(n => named.includes(n))
+  return {
+    group: note.group,
+    repos: scoped.length ? scoped : here,
+    whole: !scoped.length || scoped.length === here.length,
+    // Repositories the group named that are not in this workspace any more.
+    // Reported rather than dropped: a task that spanned three repositories and
+    // can now only reach two is a different task.
+    gone: named.filter(n => !here.includes(n))
   }
 }
 
@@ -640,18 +701,30 @@ function ensure (branch, { reason = null, by = null, group = null } = {}) {
   // against", so it is also the answer to "what does work start from"; anything
   // else means a task is judged against a branch it was not cut from.
   //
-  // The group decides it, except in a repository the group does not name: a
-  // group made when there were three repositories still describes those three
-  // when a fourth arrives, and the fourth falls back to its own baseline rather
-  // than being left out of the branch entirely. That is the one place a baseline
-  // is still consulted, and it is a gap in the group rather than a choice.
-  const cut = serve.list().map(({ name: repo }) => {
-    const dir = serve.gitDirOf(repo)
-    const had = branchesIn(dir).includes(name)
-    const from = fromGroup[repo] || baselineOf(repo)
-    if (!had) git(dir, from ? ['branch', name, from] : ['branch', name])
-    return { repo, branch: name, created: !had, from: had ? null : (from || headOf(dir)) }
-  })
+  // AND IT IS CUT ONLY WHERE THE GROUP REACHES.
+  //
+  // A group naming three of four repositories is not an incomplete group; it is
+  // a line of work that never reached the fourth. Cutting there anyway -- which
+  // is what falling back to that repository's own baseline did -- invents a
+  // branch in a repository the work has nothing to do with, and then a machine
+  // checks it out, a worker can push it, and a reviewer has a fourth repository
+  // to account for that was never part of the change.
+  //
+  // So the group is the scope. A task on this branch reaches these repositories
+  // and no others.
+  const cut = serve.list()
+    .filter(({ name: repo }) => repo in fromGroup)
+    .map(({ name: repo }) => {
+      const dir = serve.gitDirOf(repo)
+      const had = branchesIn(dir).includes(name)
+      const from = fromGroup[repo]
+      if (!had) git(dir, ['branch', name, from])
+      return { repo, branch: name, created: !had, from: had ? null : from }
+    })
+
+  if (!cut.length) {
+    throw new Error(`"${found.name}" names no repository that is in this workspace, so there is nowhere to cut "${name}". It names ${found.on.map(p => p.repo).join(', ')}.`)
+  }
 
   // Recorded once, when it is first cut, and never overwritten afterwards. A
   // branch reused for a second task keeps the reason it was made for -- that is
@@ -725,7 +798,7 @@ function remove (branch, { force = false } = {}) {
 }
 
 module.exports = {
-  all, ensure, remove, nameIsOk, branchesIn, headOf, defaultHeads, noteFor, notes,
+  all, ensure, remove, nameIsOk, branchesIn, headOf, defaultHeads, noteFor, notes, scopeOf,
   defaultOf, baselineOf, setBaseline, baselines, groups, saveGroup, useGroup, deleteGroup, inAnyGroup,
   protectedBranches, isProtected, whyProtected,
   isClean, freeIfBusy, freeEverywhere, blocking

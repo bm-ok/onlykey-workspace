@@ -1871,10 +1871,30 @@ const actions = {
       const to = log.on('vm', name)
       to.info(`"${on}" exists in ${here.in.join(', ')}${here.missing.length ? `, not in ${here.missing.join(', ')}` : ''}`)
 
+      // ONLY THE REPOSITORIES THIS BRANCH IS ABOUT.
+      //
+      // The machine used to be handed every repository in the workspace, whatever
+      // the work was. Every checkout on it is something a worker can read, change
+      // and push, so a change concerning two repositories was granted four — and
+      // the extra two are precisely the ones nobody reviews afterwards, because
+      // nobody expected the work to touch them.
+      //
+      // The branch's baseline group is what says which. A group naming three of
+      // four repositories is not incomplete; it is a line of work that never
+      // reached the fourth, and the fourth has no business being on the machine.
+      const scope = branches.scopeOf(on)
+      const mine = found.filter(r => scope.repos.includes(r.name))
+      if (!mine.length) {
+        throw new Error(`"${on}" is about ${scope.repos.join(', ')}, and none of those are in ${repos.DIR}.`)
+      }
+      if (scope.group) {
+        to.info(`it is about ${mine.map(r => r.name).join(', ')} — the "${scope.group}" line${scope.gone.length ? `, which also named ${scope.gone.join(', ')}, no longer here` : ''}`)
+      }
+
       const host = await vbox.hostAddress()
       const tls = keys.ensure()
       const script = workspace.script({
-        repos: found.map(r => r.name),
+        repos: mine.map(r => r.name),
         branch: on,
         folder: folder || workspace.folderFor(vm.spec),
         origin: `https://${host}:${port}`,
@@ -3673,6 +3693,31 @@ function gitRoute (req, res, url) {
   if (!dir) {
     res.writeHead(404, { 'content-type': 'text/plain' }).end(`no repository called "${repo}" in the workspace\n`)
     return
+  }
+
+  // AND ONLY THE REPOSITORIES ITS BRANCH IS ABOUT.
+  //
+  // Being a machine this app made was the whole of the authorization: any token
+  // reached any repository in the workspace, for reading as well as writing. So
+  // the scope enforced when the workspace was built -- two repositories out of
+  // three -- was a decision about what got CHECKED OUT, and nothing stopped a
+  // worker cloning the third itself. A limit that only holds while nobody tries
+  // is not a limit.
+  //
+  // Read from the branch every time rather than recorded against the machine,
+  // for the same reason the protected check below is: a recorded permission is
+  // not evidence, it is a copy of a decision that may have changed since.
+  //
+  // A machine with no branch yet is left to the checks further down, which say
+  // "you have not been set up" -- a better answer than one about repositories.
+  if (who.branch) {
+    const scope = branches.scopeOf(who.branch)
+    if (!scope.repos.includes(repo)) {
+      log.on('git', who.name).warn(`${who.name} asked for ${repo}, which is not part of "${who.branch}"`)
+      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+        .end(`refused: ${repo} is not part of the work you were given.\n"${who.branch}" is about ${scope.repos.join(', ')}.\nnothing was taken - your commits are still on your own copy.\n`)
+      return
+    }
   }
 
   const service = tail === '/info/refs'

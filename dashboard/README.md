@@ -964,6 +964,50 @@ branches move on. A merge base answers "where do these diverge now", which is a
 different question and stops agreeing with this one as soon as the baseline
 advances.
 
+The group is also the SCOPE
+----------------------------
+
+A group naming two of three repositories is not an incomplete group. It is a
+line of work that never reached the third, and the third has no business being
+part of the task. So the group a branch was cut from is the list of repositories
+that branch exists in, is checked out in, is measured across, and is judged on.
+
+    a group naming 2 of 3   ->  the branch is cut in 2
+                            ->  the machine checks out 2
+                            ->  the artifact has 2 rows
+                            ->  the git server serves 2, to that machine
+
+Every checkout on a machine is something a worker can read, change and push, so
+handing over all of them for a change concerning two is a wider grant than
+anybody asked for -- and the extra ones are exactly the ones nobody reviews
+afterwards, because nobody expected the work to touch them.
+
+**Enforced at the git server, not only at the checkout.** Being a machine this
+app made used to be the whole of the authorization: any token reached any
+repository, for reading as well as writing. Limiting what gets checked out is a
+decision about convenience while nothing stops a worker cloning the rest itself,
+and a limit that only holds while nobody tries is not a limit. A machine asking
+for a repository outside its branch's scope is refused in git's own words:
+
+    remote: refused: local-repo-c is not part of the work you were given.
+    remote: "task/two-of-three" is about local-repo-a, local-repo-b.
+
+Read from the branch on every request rather than recorded against the machine,
+for the same reason the protected-branch check is: a recorded permission is not
+evidence, it is a copy of a decision that may have changed since.
+
+`missing` is asked of the repositories a branch is ABOUT. Against the whole
+workspace, a correctly scoped branch would report the third as missing -- which
+reads as damage, and is acted on, since setting a machine up refuses a branch
+with anything missing. A correctly scoped branch would have been permanently
+unusable, and the fix on offer would have been to extend it into a repository the
+work has nothing to do with.
+
+Branches cut before any of this have no group and reach everything, which is what
+they were made as. That fallback is not a default anybody chooses -- cutting
+requires a group -- it is how the branches already on the board keep meaning what
+they meant.
+
 The Branches tab
 ----------------
 
