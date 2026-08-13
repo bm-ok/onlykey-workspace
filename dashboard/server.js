@@ -131,6 +131,8 @@ function guestPath (p, what) {
   return p
 }
 
+let wantedShot = null
+
 const actions = {
   status: {
     about: 'Is the server up, and what does it have to work with',
@@ -1552,10 +1554,21 @@ done`
       const attempts = task.attempts || (task.run ? [{ run: task.run, machine: task.machine }] : [])
       if (!task.machine || !channel.connected(task.machine)) {
         // A real answer rather than a failure. A machine that has been thrown
-        // away is the normal end of a task, and the attempts are still worth
-        // showing -- they are the record, and the machine was only ever where
-        // the work happened.
-        return { task: id, attempts, live: null, why: task.machine ? `"${task.machine}" is not dialled in` : 'it has not been given out yet' }
+        // away is the normal end of a task -- the queue shuts it down the moment
+        // the work ends -- and the attempts are still worth showing: they are the
+        // record, and the machine was only ever where the work happened.
+        //
+        // STILL ANSWERED PER ATTEMPT, which the first version forgot. It returned
+        // the raw attempts with no `state` and no `kept`, so the window drew an
+        // empty badge and said "no log was kept here" about runs whose logs were
+        // sitting on this host all along. The machine being gone is exactly when
+        // the kept copy matters, so that is the worst moment to stop reporting it.
+        return {
+          task: id,
+          attempts: attempts.map(a => ({ ...a, state: a.failed ? 'lost' : 'ended', kept: archive.has(task.uid, a.run) })),
+          live: null,
+          why: task.machine ? `"${task.machine}" is off — the queue puts a machine away when its work ends` : 'it has not been given out yet'
+        }
       }
 
       const runs = await actions.vmRuns.run({ name: task.machine })
@@ -1676,6 +1689,49 @@ done`
       })
       log.on('task', id).good(`${call}ed: ${art.summary}`)
       return decided
+    }
+  },
+
+  // ---- a picture of the window itself ------------------------------------
+  //
+  // `vmScreenshot` answers "what is that machine doing"; this answers "what does
+  // this app actually look like", which had no answer at all. Everything in the
+  // Tasks tab was built and driven from a terminal, and the only visual fault
+  // found so far was found by a person's eye — a misspelt CSS class produces no
+  // error, so a panel can be wrong in a way nothing reports.
+  //
+  // ASKED HERE, TAKEN THERE. `capturePage` exists only in the window: the node
+  // side has no page to photograph. So this leaves a request, and the window
+  // notices it on its next draw and answers. That is why it returns a path
+  // rather than an image — the file appears a second or two later.
+  windowShot: {
+    about: 'Ask the window to photograph itself. It answers on its next draw',
+    takes: ['note'],
+    run: ({ note }) => {
+      const file = path.join(data.sub('window'), `window-${data.stamp()}.png`)
+      wantedShot = { file, note: note || null, asked: Date.now() }
+      return {
+        file,
+        note: 'The window takes it on its next draw — up to twelve seconds if nobody is looking at it. Read the file once it appears.'
+      }
+    }
+  },
+
+  // Read by the window, and by nothing else. Kept in the table rather than
+  // hidden, because the table is what says an action exists.
+  windowShotPending: {
+    about: 'Whether a picture of the window has been asked for',
+    run: () => wantedShot || { file: null }
+  },
+
+  windowShotDone: {
+    about: 'The window reporting that it took the picture',
+    takes: ['file', 'bytes', 'error'],
+    run: ({ file, bytes, error }) => {
+      wantedShot = null
+      if (error) log.on('window').bad(`could not photograph itself: ${error}`)
+      else log.on('window').good(`window saved to ${file} (${bytes} bytes)`)
+      return { ok: !error }
     }
   },
 
@@ -1879,15 +1935,33 @@ done`
   },
 
   capture: {
-    about: 'Save what the window currently looks like, as rendered HTML',
-    takes: ['html'],
-    run: async ({ html }) => {
+    about: 'Save what the window currently looks like: the markup, and a picture of it',
+    takes: ['html', 'png'],
+    run: async ({ html, png }) => {
       const dir = process.env.OKC_STATE || path.join(__dirname, 'state')
       fs.mkdirSync(dir, { recursive: true })
       const file = path.join(dir, 'capture.html')
       fs.writeFileSync(file, String(html || ''))
-      log.on('capture').good(`Saved what the window looks like to ${file}`)
-      return { file, bytes: String(html || '').length }
+
+      // Beside the markup and named the same, because they are one capture of
+      // one moment and separating them is how a picture ends up being compared
+      // against markup from ten minutes later. The markup says what the window
+      // is made of; only the picture says what it looks like, and the faults
+      // that matter here — a class matching no rule, a panel off the bottom of
+      // the screen — are invisible in the first and obvious in the second.
+      let image = null
+      if (png) {
+        try {
+          image = path.join(dir, 'capture.png')
+          fs.writeFileSync(image, Buffer.from(String(png), 'base64'))
+        } catch (e) {
+          image = null
+          log.on('capture').warn(`the picture could not be saved: ${e.message}`)
+        }
+      }
+
+      log.on('capture').good(`Saved what the window looks like to ${file}${image ? `, and a picture to ${image}` : ''}`)
+      return { file, bytes: String(html || '').length, image }
     }
   },
 

@@ -11,19 +11,19 @@ Something that needs *exercising* rather than building belongs in
 list: not what is missing, but what is unproven.
 
 
-The window has not been looked at
----------------------------------
+The window can be looked at now
+-------------------------------
 
-The one thing here that cannot be closed from a terminal. Everything in the
-Tasks tab was built and driven from the command line, and **nobody has watched
-it render**: the approvals card, the tab badge, the attempts panel with its
-timings, the live session view, the queue panel, the queue buttons, the task
-numbers, the Ace editor, the idle-machine banner and the two new machine
-buttons. The one visual fault found so far — the task list not looking
-clickable — was found by eye, and a misspelt CSS class produces no error at all.
+NW.js can photograph itself, so it does. `okc.js windowShot` leaves a request
+that the window answers on its next draw, and Ctrl+Shift+D saves a picture
+beside the markup it already saved. Both were needed: the markup says what the
+window is MADE of and can be searched; only the picture says what it looks
+like, and the faults that matter here -- a class matching no rule, a panel off
+the bottom, an empty badge -- are invisible in the first and obvious in the
+second.
 
-**Open it and press things.** `Ctrl+Shift+D` captures the window as HTML, which
-is how the last fault was diagnosed.
+The Tasks tab has now actually been seen, and it found two faults in one look.
+What is drawn today is right; what is drawn tomorrow still needs a photograph.
 
 
 Outstanding

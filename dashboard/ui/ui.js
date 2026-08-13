@@ -658,13 +658,23 @@ function paintHistory (task) {
     const box2 = $('task-history')
     if (!box2) return
 
-    const badge = a => a.state === 'running' ? 'run' : a.state === 'lost' ? 'bad' : a.exit === 0 ? 'ok' : 'bad'
+    // `ended` means the machine is gone and we cannot ask how it went — which is
+    // not the same as it having failed. Reading it as a failure would paint most
+    // finished tasks red, because the queue shuts a machine down the moment its
+    // work ends.
+    const badge = a => a.state === 'running' ? 'run'
+      : a.state === 'lost' ? 'bad'
+        : a.state === 'ended' ? 'muted'
+          : a.exit === 0 ? 'ok' : 'bad'
+    const said = a => a.state === 'gone' ? 'the machine no longer has it'
+      : a.state === 'ended' ? 'ended — its machine has been put away'
+        : a.state || 'unknown'
     fill(box2,
       p.attempts.length
         ? p.attempts.map((a, i) => el('div', { className: 'card' },
             el('div', { className: 'card-title' },
               el('span', { textContent: `attempt ${i + 1} — ${a.machine || 'unknown'}` }),
-              el('span', { className: `badge ${badge(a)}`, textContent: a.state === 'gone' ? 'machine no longer has it' : a.state })),
+              el('span', { className: `badge ${badge(a)}`, textContent: said(a) })),
             el('div', { className: 'card-sub mono', textContent: a.run }),
             el('div', { className: 'card-sub muted', textContent: a.at ? new Date(a.at).toLocaleString() : '' }),
             // Where the minutes actually went. A total says nothing about
@@ -681,7 +691,7 @@ function paintHistory (task) {
             // nothing is worse than no button.
             a.kept
               ? el('button', { className: 'btn', style: 'margin-top:6px', textContent: 'Read its log', onclick: () => showLog(task, a.run) })
-              : el('div', { className: 'card-sub muted', textContent: a.state === 'running' ? 'still going; the log is kept when it ends' : 'no log was kept here' })))
+              : el('div', { className: 'card-sub muted', textContent: a.state === 'running' ? 'still going; the log is kept when it ends' : 'no log was kept for this attempt' })))
         : el('p', { className: 'empty', textContent: p.why || 'never given out' }),
 
       // What it is doing NOW, which is the question a running task provokes and
@@ -1828,7 +1838,45 @@ async function drawOnce () {
   paintVms()
   paintKeys()
   paintTasks(running)
+
+  // Last, so the picture is of a window that has finished drawing.
+  shotIfAsked()
 }
+
+// A photograph of this window, when something has asked for one.
+//
+// `capturePage` exists only here — the node side has no page to photograph — so
+// the request is left in the actions table and answered on the next draw. That
+// is the whole reason this is a poll rather than a call: the asking and the
+// taking happen in different processes.
+//
+// It exists because the window is the one part of this tool nobody could check
+// from a terminal. A misspelt CSS class produces no error, a panel can silently
+// stop updating, and both have happened — so "it renders correctly" was, until
+// now, always somebody's opinion.
+function shotIfAsked () {
+  api('windowShotPending').then(want => {
+    if (!want || !want.file || shotInFlight) return
+    shotInFlight = true
+    try {
+      // Raw base64 rather than a data URI: it is written to a file, and the
+      // `data:image/png;base64,` prefix would have to be sliced off again.
+      nw.Window.get().capturePage(b64 => {
+        try {
+          const bytes = Buffer.from(b64, 'base64')
+          require('node:fs').writeFileSync(want.file, bytes)
+          api('windowShotDone', { file: want.file, bytes: bytes.length })
+        } catch (e) {
+          api('windowShotDone', { file: want.file, error: e.message })
+        } finally { shotInFlight = false }
+      }, { format: 'png', datatype: 'raw' })
+    } catch (e) {
+      shotInFlight = false
+      api('windowShotDone', { file: want.file, error: e.message })
+    }
+  }).catch(() => { shotInFlight = false })
+}
+let shotInFlight = false
 
 // ---- right-click, and devtools ---------------------------------------
 //
@@ -1850,9 +1898,28 @@ async function capture () {
   const html = `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>captured</title>\n<style>\n${css}\n</style>\n</head>\n${document.body.outerHTML}\n</html>\n`
 
   try { await navigator.clipboard.writeText(html) } catch { /* the file still gets written */ }
+
+  // A picture as well as the markup, because they answer different questions.
+  //
+  // The HTML says what the window is made of and can be searched, diffed and
+  // read at leisure. It does not say what the window LOOKS like: a class that
+  // matches no rule, a panel drawn off the bottom, text the same colour as its
+  // background are all invisible in the markup and obvious in a photograph. The
+  // one visual fault found so far was found by eye for exactly that reason.
+  //
+  // Taken first and awaited, so both files describe the same moment rather than
+  // one being a second later than the other.
+  const png = await new Promise(resolve => {
+    try {
+      nw.Window.get().capturePage(b64 => resolve(b64), { format: 'png', datatype: 'raw' })
+    } catch { resolve(null) }
+  })
+
   try {
-    const { file, bytes } = await api('capture', { html })
-    say(`Copied to the clipboard, and saved ${bytes} bytes to ${file}`)
+    const { file, bytes, image } = await api('capture', { html, png })
+    say(image
+      ? `Copied to the clipboard. ${bytes} bytes to ${file}, and a picture beside it.`
+      : `Copied to the clipboard, and saved ${bytes} bytes to ${file}`)
   } catch (err) {
     oops(err)
   }

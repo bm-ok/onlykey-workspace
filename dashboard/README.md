@@ -745,6 +745,25 @@ A verdict on an empty branch is refused rather than warned about: a judgement of
 nothing is indistinguishable afterwards from a judgement of something.
 
 
+Looking at the window itself
+----------------------------
+
+    okc.js windowShot          ask it to photograph itself
+    Ctrl+Shift+D               markup AND a picture, saved together
+
+The window is the one part of this that cannot be checked from a terminal, and
+for a long time it was not checked at all. NW.js can photograph its own page,
+so  leaves a request and the window answers on its next draw --
+which is why it returns a path rather than an image.
+
+**The markup and the picture answer different questions.** The first says what
+the window is made of and can be searched and diffed. Only the second says what
+it looks like, and the faults that actually happen here are invisible in the
+markup: a class name matching no rule renders as nothing at all and CSS reports
+no error, a panel can be drawn off the bottom of a dialog, a badge can be empty
+because the field behind it was never filled in. All three have happened.
+
+
 The window keeps up on its own
 ------------------------------
 
