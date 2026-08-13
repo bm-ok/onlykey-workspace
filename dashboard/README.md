@@ -753,7 +753,7 @@ Looking at the window itself
 
 The window is the one part of this that cannot be checked from a terminal, and
 for a long time it was not checked at all. NW.js can photograph its own page,
-so  leaves a request and the window answers on its next draw --
+so `windowShot` leaves a request and the window answers on its next draw —
 which is why it returns a path rather than an image.
 
 **The markup and the picture answer different questions.** The first says what
