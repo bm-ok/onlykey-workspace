@@ -894,6 +894,12 @@ const actions = {
           // a default branch is not missing from the repositories that have
           // their own, it is simply not theirs.
           baselineFor: (all.protected.find(p => p.branch === b.name) || {}).repos || [],
+          // WHY it is protected, kept apart, because they are different claims
+          // and collapsing them says the wrong one. A branch can be the default
+          // of one repository and the chosen baseline of another, and once a
+          // baseline is chosen anywhere the two lists stop matching.
+          asDefault: (all.protected.find(p => p.branch === b.name) || {}).asDefault || [],
+          asBaseline: (all.protected.find(p => p.branch === b.name) || {}).asBaseline || [],
           // Whether it is the baseline for ALL of them, which is the only case
           // where "the baseline" is a true thing to call it.
           baselineForAll: ((all.protected.find(p => p.branch === b.name) || {}).repos || []).length === all.repos.length,
@@ -979,6 +985,51 @@ const actions = {
     run: ({ branch }) => {
       if (!branch) throw new Error('Which branch?')
       return artifact.read(branch, { fresh: true })
+    }
+  },
+
+  // What each repository counts from, and lets it be chosen.
+  //
+  // THE DEFAULT AND THE BASELINE ARE DIFFERENT QUESTIONS. The default is what the
+  // repository says HEAD is -- a fact about git, never chosen here, and always
+  // protected. The baseline is what work is measured against AND cut from, and a
+  // repository whose default is `master` may perfectly well be working toward
+  // `version2`. Until now they were one word, which was fine only while every
+  // repository answered both the same way.
+  repoBaselines: {
+    about: 'What each repository counts work from, and what its own default branch is',
+    run: () => {
+      const rows = branches.baselines()
+      return {
+        repos: rows,
+        // The thing that changes what every "commits ahead" figure means.
+        mixed: [...new Set(rows.map(r => r.baseline))].length > 1,
+        chosen: rows.filter(r => r.chosen).length,
+        note: rows.some(r => r.differs)
+          ? 'Where a baseline differs from the default, both are protected: nothing is built on either.'
+          : 'Every repository is counted from its own default branch.'
+      }
+    }
+  },
+
+  repoBaseline: {
+    about: 'Choose what a repository counts work from. Empty puts it back to its default',
+    takes: ['repo', 'branch'],
+    run: ({ repo, branch }) => {
+      const was = branches.baselineOf(repo)
+      const now = branches.setBaseline(repo, branch)
+      if (now.baseline !== was) {
+        log.on('git').good(now.chosen
+          ? `${repo} is now counted from "${now.baseline}" — its default branch "${now.default}" stays protected`
+          : `${repo} is back to counting from its default branch "${now.baseline}"`)
+      }
+      return {
+        ...now,
+        was,
+        note: now.chosen && now.baseline !== now.default
+          ? `New branches in ${repo} are cut from "${now.baseline}", and everything is counted from it. "${now.default}" is still protected — it is the repository's own default and that is not a preference.`
+          : `${repo} counts from its own default branch again.`
+      }
     }
   },
 

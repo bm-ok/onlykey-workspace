@@ -236,6 +236,9 @@ main { padding: 16px; }
 }
 .card.pick { cursor: pointer; }
 .card.pick:hover { border-color: var(--muted); }
+/* A repository counted from something other than its own default. Marked because
+   it is the surprising case and it changes what every number elsewhere means. */
+.card.warn { border-left: 3px solid var(--warn); }
 .card.on { border-color: var(--accent); background: var(--panel-2); }
 .card-title { font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .card-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }

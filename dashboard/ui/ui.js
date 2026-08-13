@@ -1169,7 +1169,67 @@ function paintBranches () {
     const picked = board.branches.find(b => b.name === pickedBranch) || null
     branchActions(picked)
     paintBranchArtifacts(picked)
+    paintBaselines()
   }).catch(oops)
+}
+
+// What each repository counts work from — and cuts new branches from.
+//
+// A SEPARATE QUESTION FROM ITS DEFAULT BRANCH, which is a fact about git: what
+// that repository says HEAD is. The baseline is a decision, and a repository
+// whose default is `master` may perfectly well be working toward `version2`.
+// They were one word here for as long as every repository answered both the same
+// way, and a third repository defaulting to something else is what separated
+// them.
+function paintBaselines () {
+  api('repoBaselines').then(({ repos, note }) => {
+    if (!changed('baselines', repos)) return
+    fill($('baselines'), repos.length
+      ? [...repos.map(r => el('div', {
+          className: `card pick${r.differs ? ' warn' : ''}`,
+          onclick: () => chooseBaseline(r)
+        },
+        el('div', { className: 'card-title' },
+          el('span', { className: 'mono', textContent: r.repo }),
+          el('span', { className: `badge ${r.differs ? 'warn' : ''}`, textContent: r.baseline })),
+        // Only when it is not the obvious answer. Saying "its own default" under
+        // every repository would be noise on the ordinary case and would make
+        // the exception harder to see, not easier.
+        r.differs
+          ? el('div', { className: 'badges' }, el('span', { className: 'muted', textContent: `chosen — its default is ${r.default}` }))
+          : null)),
+        el('p', { className: 'note', textContent: note })]
+      : el('p', { className: 'empty', textContent: 'No repositories in the workspace.' }))
+  }).catch(() => { /* the panel beside it is the one worth an error */ })
+}
+
+// Choosing one. The list is that repository's own branches, because a baseline
+// has to exist there -- it is what everything else in it is counted from.
+function chooseBaseline (r) {
+  ask({
+    title: `What does ${r.repo} count from?`,
+    plain: [
+      'Work is measured against this branch, and new branches are cut from it.',
+      `Its own default branch is "${r.default}", and that stays protected whatever is chosen here — a default is a fact about the repository rather than a preference.`,
+      'While a branch is the baseline, nothing may be built on it either: a branch a machine can push to is not something that machine\'s work can be measured against.'
+    ],
+    fields: [{
+      name: 'branch',
+      label: 'Counted from',
+      value: r.baseline,
+      options: [
+        ...(r.chosen ? [{ value: '', label: `— back to its default, ${r.default} —` }] : []),
+        ...r.branches.map(b => ({ value: b, label: b === r.default ? `${b} (its default)` : b }))
+      ]
+    }],
+    confirm: 'Use it',
+    onYes: async f => {
+      const done = await api('repoBaseline', { repo: r.repo, branch: f.branch })
+      changed('branches', null)
+      changed('baselines', null)
+      say(done.note)
+    }
+  })
 }
 
 // What can be done to the selected branch. One set of buttons for all of them,
@@ -1203,9 +1263,7 @@ function branchActions (b) {
       // is simply not theirs, and calling that absence a gap reads as a fault to
       // go and fix.
       b.missing.length && !b.protected ? el('span', { className: 'muted', textContent: `not in ${b.missing.join(', ')}` }) : null,
-      b.protected && b.baselineFor.length
-        ? el('span', { className: 'muted', textContent: `the baseline for ${b.baselineFor.join(', ')}` })
-        : null,
+      b.protected ? el('span', { className: 'muted', textContent: protectedAs(b) }) : null,
       b.heldBy ? el('span', { className: 'muted', textContent: b.heldRunning ? `checked out on ${b.heldBy}` : `${b.heldBy} claims it, and is off` }) : null),
 
     b.whyNot ? el('p', { className: 'note', textContent: b.whyNot }) : null,
@@ -1261,6 +1319,23 @@ function waiting (id, text) {
   fill(box, el('p', { className: 'empty waiting', textContent: text }))
 }
 
+// Why a branch is protected, said as the two separate claims it can be.
+//
+// A branch is the DEFAULT of a repository -- a fact about git, read from it --
+// or the chosen BASELINE of one, or both, in any combination across a workspace.
+// Collapsing them into one list said the wrong thing the moment a baseline was
+// chosen anywhere: `master` reported itself as "baseline for local-repo-a" while
+// local-repo-a was counting from something else entirely, and was only still
+// protected there because it is that repository's default.
+function protectedAs (b) {
+  const parts = [
+    b.asDefault.length ? `default of ${b.asDefault.join(', ')}` : null,
+    b.asBaseline.length ? `baseline for ${b.asBaseline.join(', ')}` : null
+  ].filter(Boolean)
+  if (!parts.length) return 'protected'
+  return b.baselineForAll && b.asDefault.length && !b.asBaseline.length ? 'the baseline' : parts.join('; ')
+}
+
 // One row per branch, selectable, and deliberately thin. Everything that used
 // to be on the card -- what is on it, what can be done to it, which tasks ran --
 // is in the two columns beside it now, for the same reason the machines tab is
@@ -1299,9 +1374,7 @@ function branchCard (b) {
         // is A baseline, for some of the repositories, and which ones is the
         // whole of what makes the number beside every other branch mean
         // different things in different repositories.
-        textContent: b.protected
-          ? (b.baselineForAll ? 'the baseline' : `baseline for ${b.baselineFor.join(', ')}`)
-          : b.commits ? `${b.commits} commit(s)` : 'empty'
+        textContent: b.protected ? protectedAs(b) : b.commits ? `${b.commits} commit(s)` : 'empty'
       }),
       b.heldBy ? el('span', { className: 'muted', textContent: b.heldBy }) : null))
 }

@@ -86,6 +86,67 @@ function defaultOf (repo) {
   return head
 }
 
+// ---- what work is measured against ------------------------------------
+//
+// THE BASELINE AND THE DEFAULT BRANCH ARE NOT THE SAME QUESTION, and treating
+// them as one word was fine only while every repository answered both the same
+// way.
+//
+//   the default    what the repository itself says HEAD is. A fact about git,
+//                  read from the repository, never chosen here. Always
+//                  protected, because it is where everything lands eventually.
+//   the baseline   what "ahead" is counted from. A choice: a repository whose
+//                  default is `master` may have its current work measured
+//                  against `version2`, and then every task branch is judged
+//                  against that instead.
+//
+// Defaults to the default, so a workspace nobody has configured behaves exactly
+// as it did. Choosing one does NOT unprotect the other -- the repository's own
+// default stays protected whatever is chosen, which is the whole point of it
+// being a fact rather than a preference.
+function baselineOf (repo) {
+  const all = remembered()
+  const chosen = all[repo] && all[repo].baseline
+  if (chosen) return chosen
+  return defaultOf(repo)
+}
+
+// Chosen, or cleared back to the repository's own default with an empty value.
+function setBaseline (repo, branch) {
+  const all = remembered()
+  const dir = serve.gitDirOf(repo)
+  if (!dir) throw new Error(`There is no repository called "${repo}" here.`)
+
+  const name = String(branch || '').trim()
+  if (name) {
+    if (!branchesIn(dir).includes(name)) {
+      throw new Error(`"${repo}" has no branch called "${name}". A baseline has to be a branch that exists there — it is what everything else in that repository is counted from.`)
+    }
+    all[repo] = { ...(all[repo] || {}), baseline: name }
+  } else {
+    all[repo] = { ...(all[repo] || {}) }
+    delete all[repo].baseline
+  }
+  remember(all)
+  return { repo, baseline: baselineOf(repo), default: defaultOf(repo), chosen: !!name }
+}
+
+// Every repository, what it counts from, and whether that was chosen.
+const baselines = () => serve.list().map(({ name }) => {
+  const all = remembered()
+  const chosen = (all[name] || {}).baseline || null
+  return {
+    repo: name,
+    baseline: baselineOf(name),
+    default: defaultOf(name),
+    chosen: !!chosen,
+    // Named because it is the surprising case: the branch this repository is
+    // measured against is not the branch it would land on.
+    differs: !!chosen && chosen !== defaultOf(name),
+    branches: (() => { try { return branchesIn(serve.gitDirOf(name)) } catch { return [] } })()
+  }
+})
+
 // Only the default branch is protected, and it always is.
 //
 // A branch that merely happens to be CHECKED OUT is a different thing and is
@@ -95,13 +156,25 @@ function defaultOf (repo) {
 // had no idea reading the code was what did it. But that is a door standing in
 // the way rather than a rule: if nothing is at stake in that working tree, the
 // host can simply step out of it. See `freeIfBusy`.
+// TWO REASONS A BRANCH IS PROTECTED, and they are kept apart because they are
+// answered differently. Its repository's own default is a fact about git and
+// cannot be changed from here. A chosen baseline is a decision, and unchoosing it
+// unprotects it -- but while it IS the baseline nothing may be built on it, for
+// the same reason: a branch that a machine can push to is not something the same
+// machine's work can be measured against.
 function protectedBranches () {
   const why = new Map()
+  const add = (branch, repo, how) => {
+    if (!branch) return
+    if (!why.has(branch)) why.set(branch, { branch, repos: [], asDefault: [], asBaseline: [] })
+    const e = why.get(branch)
+    if (!e.repos.includes(repo)) e.repos.push(repo)
+    e[how].push(repo)
+  }
   for (const { name } of serve.list()) {
-    const branch = defaultOf(name)
-    if (!branch) continue
-    if (!why.has(branch)) why.set(branch, { branch, repos: [] })
-    why.get(branch).repos.push(name)
+    add(defaultOf(name), name, 'asDefault')
+    const base = baselineOf(name)
+    if (base !== defaultOf(name)) add(base, name, 'asBaseline')
   }
   return [...why.values()]
 }
@@ -135,7 +208,11 @@ const isProtected = branch => protectedBranches().some(p => p.branch === branch)
 function whyProtected (branch) {
   const p = protectedBranches().find(x => x.branch === branch)
   if (!p) return null
-  return `"${branch}" is the default branch of ${p.repos.join(', ')}. Work goes onto its own branch and is merged here afterwards, so nothing is built directly on it.`
+  const parts = [
+    p.asDefault.length ? `the default branch of ${p.asDefault.join(', ')}` : null,
+    p.asBaseline.length ? `the chosen baseline for ${p.asBaseline.join(', ')}` : null
+  ].filter(Boolean)
+  return `"${branch}" is ${parts.join(' and ')}. Work goes onto its own branch and is merged here afterwards, so nothing is built directly on it.`
 }
 
 // ---- getting out of the way --------------------------------------------
@@ -367,11 +444,19 @@ function ensure (branch, { reason = null, by = null } = {}) {
   const guarded = whyProtected(name)
   if (guarded) throw new Error(guarded)
 
+  // CUT FROM THE BASELINE, not from wherever the repository happens to be.
+  //
+  // `git branch x` cuts from HEAD, which is whatever was last checked out here --
+  // and a review left on another branch would have silently decided where the
+  // next task started. The baseline is the answer to "what is work measured
+  // against", so it is also the answer to "what does work start from"; anything
+  // else means a task is judged against a branch it was not cut from.
   const cut = serve.list().map(({ name: repo }) => {
     const dir = serve.gitDirOf(repo)
     const had = branchesIn(dir).includes(name)
-    if (!had) git(dir, ['branch', name])
-    return { repo, branch: name, created: !had, from: had ? null : headOf(dir) }
+    const from = baselineOf(repo)
+    if (!had) git(dir, from ? ['branch', name, from] : ['branch', name])
+    return { repo, branch: name, created: !had, from: had ? null : (from || headOf(dir)) }
   })
 
   // Recorded once, when it is first cut, and never overwritten afterwards. A
@@ -440,6 +525,6 @@ function remove (branch, { force = false } = {}) {
 
 module.exports = {
   all, ensure, remove, nameIsOk, branchesIn, headOf, defaultHeads, noteFor, notes,
-  defaultOf, protectedBranches, isProtected, whyProtected,
+  defaultOf, baselineOf, setBaseline, baselines, protectedBranches, isProtected, whyProtected,
   isClean, freeIfBusy, freeEverywhere, blocking
 }

@@ -140,6 +140,13 @@
         <input id="branch-find" class="finder" placeholder="find a branch">
         <div id="branch-counts" class="chips"></div>
         <div id="branches" class="stack"></div>
+
+        <!-- What each repository counts work FROM, and what it cuts new branches
+             from. Different from its default branch, which is a fact about git
+             and stays protected whatever is chosen here — a repository whose
+             default is master may perfectly well be working toward version2. -->
+        <h2 class="titlerow" style="margin-top:18px">Baselines</h2>
+        <div id="baselines" class="stack"></div>
       </div>
 
       <div class="col">
