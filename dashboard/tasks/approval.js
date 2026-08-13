@@ -88,7 +88,7 @@ function request (suite, name, fingerprint, why) {
     request: { fingerprint, why: String(why).trim(), at: new Date().toISOString() }
   }
   write(all)
-  log.on('drill').warn(`re-reading asked for: ${name} — ${String(why).trim()}`)
+  log.on('drill').warn(`ASKED-TO-READ ${name} — ${String(why).trim().split('\n')[0]}`)
   return all[key].request
 }
 
@@ -104,7 +104,14 @@ function approve (suite, name, fingerprint, note) {
     at: new Date().toISOString()
   }
   write(all)
-  log.on('drill').good(`approved: ${name}`)
+  // Said in a shape something can WATCH for.
+  //
+  // A model asks for a definition to be read and then has no way of learning
+  // that it was — it cannot poll politely for ever, and asking again is how a
+  // supervisor becomes noise. The live log already carries every event in this
+  // app, so the answer goes there in a form a filter can match: one marker word,
+  // always at the front, whatever else the line says.
+  log.on('drill').good(`APPROVED ${name}${note ? ` — ${note}` : ''}`)
   return all[keyOf(suite, name)]
 }
 
@@ -114,7 +121,7 @@ function withdraw (suite, name) {
   if (!all[key]) return { withdrawn: false, why: 'it was not approved' }
   delete all[key]
   write(all)
-  log.on('drill').warn(`approval withdrawn: ${name}`)
+  log.on('drill').warn(`WITHDRAWN ${name}`)
   return { withdrawn: true }
 }
 

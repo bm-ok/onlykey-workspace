@@ -26,6 +26,20 @@ commands below.
   is recorded against the source and lapses if you edit it afterwards, so
   changing an approved definition sends it back for reading rather than
   inheriting the approval.
+
+  **Arm a watch when you ask, and do not ask again.** You cannot know an
+  approval happened, and coming back to check is how a supervisor turns into
+  noise — worse, a stale note repeated as fact is a confident wrong report,
+  which has already happened here. The live log carries the answer, so watch
+  for it:
+
+  ```bash
+  okc.js logWatch | grep --line-buffered -E "APPROVED|WITHDRAWN"
+  ```
+
+  Hand that to `Monitor`. `APPROVED`, `WITHDRAWN` and `ASKED-TO-READ` lead their
+  lines for exactly this reason. When it fires, run what was approved — do not
+  re-derive whether it is approved from something you remember.
 * **Write instructions; do not build.** Two authors in one working tree produced
   every coordination failure of that day: a branch moved under someone
   mid-edit, a tool run while it was being rewritten, one session's notes swept
