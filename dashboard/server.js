@@ -1931,6 +1931,10 @@ done`
         onTestUpdate: ({ testName, status, error }) => {
           if (status === 'running') to.info(`running: ${testName}`)
           else if (status === 'passed') to.good(`passed: ${testName}`)
+          // Could not run is a note, not a fault: it says something about the
+          // moment rather than about the code, and colouring it red is how a
+          // suite teaches somebody to ignore red.
+          else if (status === 'unrunnable') to.warn(`could not run: ${testName} — ${error}`)
           else to.bad(`FAILED: ${testName} — ${String(error || '').split('\n')[0]}`)
         },
         testFilter: (t, s) => (!name || t === name) && (!suite || s === suite)

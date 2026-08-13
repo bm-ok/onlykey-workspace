@@ -80,10 +80,28 @@ async function refuses (fn, expected, msg) {
   return threw
 }
 
-const assert = { ok, equal, notEqual, refuses }
+// COULD NOT RUN IS NOT THE SAME AS FAILED, and reporting them the same way is
+// how a suite stops being read.
+//
+// Half the drills here need a machine that is on, holding a credential, or
+// claiming a branch — and the whole design of this tool puts machines at REST:
+// off, clean, holding nothing. So running the suite on a quiet system reported
+// "4 failed" when nothing whatever was wrong, which is the fastest way to teach
+// somebody to ignore a red number.
+//
+// A precondition is stated with this rather than with ok(). The drill still
+// stops — it cannot prove anything without what it asked for — but it stops
+// saying "there was nothing to try this on", which is a fact about the moment
+// rather than about the code.
+const UNMET = 'okc-precondition-unmet: '
+function needs (cond, why) {
+  if (!cond) throw new Error(UNMET + why)
+}
+
+const assert = { ok, equal, notEqual, refuses, needs }
 
 async function run (context = {}) {
-  const results = { suites: [], passed: 0, failed: 0 }
+  const results = { suites: [], passed: 0, failed: 0, unrunnable: 0 }
   const {
     timeoutMs = 0,
     testFilter,
@@ -137,6 +155,20 @@ async function run (context = {}) {
         results.passed++
         log(`  PASS ${t.name} (${Math.round(testRes.ms / 1000)}s)`)
       } catch (e) {
+        const why = (e && e.message) || String(e)
+        // A precondition that was not met stops the test and is NOT a failure.
+        // Counted apart, reported apart, and said in the words the drill used.
+        if (why.startsWith(UNMET)) {
+          testRes.ok = null
+          testRes.unrunnable = why.slice(UNMET.length)
+          testRes.ms = Date.now() - started
+          results.unrunnable++
+          try { if (context.onTestUpdate) context.onTestUpdate({ suiteName: suite.name, testName: t.name, status: 'unrunnable', error: testRes.unrunnable }) } catch {}
+          log(`  SKIP ${t.name} -> ${testRes.unrunnable}`)
+          try { if (onTestEnd) onTestEnd({ suiteName: suite.name, testName: t.name, result: testRes }) } catch { /* a reporter must not fail a test */ }
+          suiteRes.tests.push(testRes)
+          continue
+        }
         testRes.ok = false
         testRes.ms = Date.now() - started
         testRes.error = e && (e.stack || e.message || String(e))

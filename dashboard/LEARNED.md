@@ -197,6 +197,13 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   repository says where every branch is, and nothing is recomputed unless its
   branch actually moved — eighty processes a draw became two, and the steady
   state went from 2800ms to 80ms.
+* **Could not run is not the same as failed.** Half the drills here need a
+  machine that is on, holding a credential, or on a branch -- and the whole
+  design of this tool puts machines at REST: off, clean, holding nothing. So
+  running the suite on a quiet system reported "4 failed" when nothing
+  whatever was wrong. That is the fastest way to teach somebody to ignore a red
+  number, and it is the same mistake as reading a missing result as a result:
+  two different states, one word.
 * **Git Bash rewrites paths that look absolute.** `--folder /home/okc/work`
   arrives as `C:/Program Files/Git/home/okc/work`, which is a real path on this
   host, so nothing looks wrong anywhere: the machine cannot find it, falls back

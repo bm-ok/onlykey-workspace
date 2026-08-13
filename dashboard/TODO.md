@@ -48,10 +48,6 @@ them.
 * **Drill 4 is half done.** Two machines working at once is proven (5c). The
   other half — a task on a branch another machine already claims, refused by
   name — is not, and needs a second machine on no branch of its own.
-* **One definition is waiting to be read.** The claimed-branch drill was
-  corrected after it passed for the wrong reason, so its approval lapsed and a
-  re-read was requested with the reason. Until it is approved the whole guards
-  suite refuses to run as a suite.
 * **`runner2` failed to boot for nine minutes this afternoon and it was never
   explained.** The double rollback five seconds apart is the prime suspect and
   has been fixed, but every boot since has been thirty seconds, which is

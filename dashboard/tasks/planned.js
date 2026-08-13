@@ -18,9 +18,17 @@
 // driven wrong -- and a guard is not a guard until something has been refused by
 // it. Twice in this project a guard was written, reviewed, and open.
 //
-// A drill that cannot run says so as a failure rather than passing quietly.
-// "There was no machine to try it on" is not evidence that a rule holds, and a
-// green tick for it is worse than a red one.
+// A drill that cannot run says so, and it is NOT counted as a failure. "There
+// was no machine to try it on" is not evidence that a rule holds -- a green tick
+// for it would be worse than a red one -- but it is not evidence that anything
+// is broken either, and reporting it as broken is how a suite stops being read.
+//
+// That distinction earns its keep here more than it would elsewhere, because
+// this tool puts machines at REST: off, clean, holding nothing, claiming
+// nothing. Half these guards are about a machine that is on, holding a
+// credential or on a branch — states that only exist while work is happening.
+// Run the suite on a quiet system and half of it legitimately has nothing to
+// look at.
 
 const { describe, it } = require('./harness')
 
@@ -63,7 +71,7 @@ describe('guards — the things that must be refused', () => {
     // for the wrong reason.
     const { tasks } = await okc('tasks')
     const delivered = tasks.find(t => t.delivered)
-    assert.ok(delivered, 'This drill needs a task whose branch has something on it; there is none. Run the round trip first.')
+    assert.needs(delivered, 'no task has anything on its branch — run the round trip first')
     await assert.refuses(
       () => okc('taskJudge', { id: delivered.id, verdict: 'reject', note: '' }),
       'why',
@@ -73,7 +81,7 @@ describe('guards — the things that must be refused', () => {
   it('a machine holding a credential cannot be snapshotted', async ({ okc, assert }) => {
     const { vms } = await okc('vmList')
     const holding = vms.find(v => v.holdsCredential)
-    assert.ok(holding, 'This drill needs a machine holding a credential; none is. Hand one out with vmCredentialsPut first.')
+    assert.needs(holding, 'no machine is holding a credential — the queue takes them back when work ends')
     await assert.refuses(
       () => okc('vmBaseSnapshot', { name: holding.name, title: 'drill-should-refuse' }),
       'holding a worker credential',
@@ -96,7 +104,7 @@ describe('guards — the things that must be refused', () => {
     // is not optional -- leaving a machine signed out would break the next thing
     // to use it, and blame something else.
     const target = vms.find(v => v.connected && v.holdsCredential) || vms.find(v => v.connected)
-    assert.ok(target, 'This drill needs a machine dialled in; none is.')
+    assert.needs(target, 'no machine is dialled in — a runner rests off')
 
     const held = !!(target.holdsCredential)
     if (held) {
@@ -116,7 +124,7 @@ describe('guards — the things that must be refused', () => {
   it('a machine is not moved off the branch it is on', async ({ okc, assert }) => {
     const { vms } = await okc('vmList')
     const on = vms.find(v => v.connected && v.branch)
-    assert.ok(on, 'This drill needs a connected machine already set up on a branch; there is none.')
+    assert.needs(on, 'no connected machine is on a branch — one is only on a branch while it is working')
     await assert.refuses(
       () => okc('vmWorkspace', { name: on.name, branch: scratch('elsewhere') }),
       'stays there until it is clean',
@@ -141,8 +149,8 @@ describe('guards — the things that must be refused', () => {
     // whatever is on it -- a drill may not decide that somebody's work is worth
     // less than a green tick.
     const free = vms.find(v => v.connected && !v.branch && v.name !== (claimed || {}).name)
-    assert.ok(claimed, 'This drill needs a machine claiming a branch; none is.')
-    assert.ok(free, 'This drill needs a connected machine that is on no branch, and there is none. It will not make one: the only way off a branch is a rollback, and that discards whatever is on it.')
+    assert.needs(claimed, 'no machine claims a branch — a machine is rolled back when its work ends')
+    assert.needs(free, 'no second machine is connected and free of a branch. This will not make one: the only way off a branch is a rollback, and that discards whatever is on it')
 
     await assert.refuses(
       () => okc('vmWorkspace', { name: free.name, branch: claimed.branch }),
@@ -156,7 +164,7 @@ describe('the round trip — work goes out, and something comes back', () => {
   // worker, and wait for it. Run them deliberately.
 
   it('a worker delivers a branch, and it can be read here', async ({ okc, assert, log, machine, waitFor }) => {
-    assert.ok(machine, 'Say which machine this runs on.')
+    assert.needs(machine, 'say which machine this runs on')
     const branch = scratch('delivers')
     const task = await okc('taskCreate', {
       task: {
@@ -180,7 +188,7 @@ describe('the round trip — work goes out, and something comes back', () => {
   })
 
   it('a worker cannot push to the default branch', async ({ okc, assert, log, machine, waitFor }) => {
-    assert.ok(machine, 'Say which machine this runs on.')
+    assert.needs(machine, 'say which machine this runs on')
     const branch = scratch('protected')
 
     // The instruction is blunt on purpose. Asked vaguely, a worker does the
