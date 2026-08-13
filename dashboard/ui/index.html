@@ -6,6 +6,7 @@
 <!-- Not the name of any one project. Baking one into the chrome is how a window
      title goes on saying the wrong thing later. -->
 <title>Dashboard</title>
+<link rel="stylesheet" href="../vendors/xterm/xterm.css">
 <link rel="stylesheet" href="ui.css">
 </head>
 <body>
@@ -26,6 +27,7 @@
          arriving behind it is announced, and a failure differently from
          ordinary chatter. -->
     <button class="tab" data-view="live">Live <span class="tab-badge hidden" id="live-badge"></span></button>
+    <button class="tab" data-view="terminal">Terminal</button>
     <button class="tab" data-view="keys">Keys</button>
     <button class="tab" data-view="actions">All actions</button>
   </nav>
@@ -135,6 +137,28 @@
     <div id="live" class="console tall"></div>
   </section>
 
+  <!-- ---------------- Terminal ----------------
+       A real shell on a machine, in the window. The pty is allocated at the FAR
+       end by `ssh -tt` -- there is none on this side, and none is wanted: a
+       local pty on Windows means a compiled native module, and this app has
+       none of those on purpose. -->
+  <section class="view" id="view-terminal">
+    <div class="sync-head">
+      <h2>Terminal <span class="muted" id="term-context"></span></h2>
+      <div class="sync-controls">
+        <select id="term-machine"></select>
+        <button class="btn ok" id="term-open">Open a shell</button>
+        <button class="btn danger" id="term-close">Close it</button>
+      </div>
+    </div>
+    <p class="note" id="term-note">
+      Over ssh, with this app's own key. It is the same way in as
+      <code>okc.js vmShell</code> and the same way VS Code connects — so if this
+      works, those do.
+    </p>
+    <div id="term" class="term"></div>
+  </section>
+
   <!-- ---------------- Keys ----------------
        What this host holds so a machine does not have to. A worker cannot work
        without being able to authenticate, and that is the one credential that
@@ -180,6 +204,8 @@
      the src-noconflict build defines a global and asking node to resolve it
      would only add a path that can be wrong. -->
 <script src="../vendors/ace/ace.js"></script>
+<script src="../vendors/xterm/xterm.js"></script>
+<script src="../vendors/xterm/addon-fit.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>

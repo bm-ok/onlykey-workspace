@@ -655,13 +655,18 @@ const actions = {
   sshConfig: {
     about: 'Write the ssh config for these machines, so ssh and VS Code find them by name',
     run: () => {
+      const mine = ssh.have() ? String(ssh.publicKey() || '').trim() : null
       const machines = vms.read().map(vm => {
         const agent = channel.list().find(a => a.vm === vm.name)
         const live = agent ? String(agent.from || '').replace(/^::ffff:/, '').replace(/:\d+$/, '') : null
         return {
           name: vm.name,
           address: live || vm.lastAddress || null,
-          user: (agent && agent.facts && agent.facts.user) || vm.lastUser || (vm.spec && vm.spec.user) || null
+          user: (agent && agent.facts && agent.facts.user) || vm.lastUser || (vm.spec && vm.spec.user) || null,
+          // Whether this machine would accept the app's key. Machines built
+          // before it existed would not, and naming it for them would be
+          // insisting on the one identity that cannot work.
+          mine: !!(mine && vm.spec && vm.spec.sshKey && String(vm.spec.sshKey).trim() === mine)
         }
       })
       const file = ssh.writeConfig(machines)
@@ -2144,10 +2149,21 @@ done`
         user,
         address,
         alias,
-        // The app's own key, and only that one. Reaching a machine with whatever
-        // identity happened to be offered first is how the key this app manages
-        // stops being the key that matters.
-        identity: ssh.have() ? ssh.KEY() : null,
+        // The app's key ONLY IF THIS MACHINE WOULD ACCEPT IT.
+        //
+        // Forcing it unconditionally broke the way into every machine built
+        // before the key existed: they have somebody else's public half in their
+        // authorized_keys, and insisting on this one turned a working back door
+        // into "Permission denied" — on the machines most likely to need one.
+        //
+        // So it is offered where it fits and ssh is left to its own devices
+        // where it does not, which is exactly what happened before. A machine
+        // built with the operator's key is still reached with the operator's
+        // key; the change only ever applies to machines built since.
+        identity: (ssh.have() && vm.spec && vm.spec.sshKey &&
+                   String(vm.spec.sshKey).trim() === String(ssh.publicKey() || '').trim())
+          ? ssh.KEY()
+          : null,
         // Both, because they answer different questions: one to run, one to
         // paste somewhere else.
         target: `${user}@${address}`,

@@ -169,13 +169,18 @@ function writeConfig (machines) {
       `Host ${aliasFor(m.name)}`,
       `  HostName ${m.address}`,
       `  User ${m.user}`,
-      // Forward slashes: ssh reads this file on Windows too, and a backslash
-      // in a config value is an escape character there rather than a separator.
-      `  IdentityFile ${slashes(KEY())}`,
-      // Only this key. Without it ssh offers every identity the agent holds
-      // first, and a machine that accepts one of those would be reached with a
-      // key this app did not choose -- which is the thing being fixed.
-      '  IdentitiesOnly yes',
+      // This key ONLY IF THE MACHINE WOULD ACCEPT IT.
+      //
+      // Naming it unconditionally broke every machine built before the key
+      // existed: they have somebody else's public half in their
+      // authorized_keys, and `IdentitiesOnly` then guarantees the one identity
+      // that cannot work is the only one offered. A machine built with the
+      // operator's key is left to ssh's own defaults, which is what reached it
+      // before and still does.
+      //
+      // Forward slashes: ssh reads this file on Windows too, and a backslash in
+      // a config value is an escape character there rather than a separator.
+      ...(m.mine ? [`  IdentityFile ${slashes(KEY())}`, '  IdentitiesOnly yes'] : []),
       // These machines are made and destroyed constantly and their addresses are
       // reused, so a changed host key is expected rather than alarming. Not
       // written to the operator's known_hosts for the same reason.

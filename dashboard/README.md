@@ -553,6 +553,32 @@ asking the agent where it lives is no use when the agent is the problem. Without
 `--command` it is an interactive shell; the command line hands its terminal
 straight to `ssh`, because the dashboard has no terminal to give.
 
+A terminal in the window
+------------------------
+
+The Terminal tab is a real shell on a machine: pick one, open it, type.
+
+**The pty is at the FAR end.** `ssh -tt` allocates one on the machine, which is
+where the shell actually is; this side only moves bytes between a child process
+and xterm.js. That matters because a pty on THIS side would mean a compiled
+native module matching NW.js own Node ABI, and this app has none of those on
+purpose -- so the thing that usually makes a terminal hard simply is not here.
+
+**-tt rather than -t.** Without it ssh notices there is no terminal on this side
+and runs without one, which gives a shell with no prompt, no line editing and no
+job control -- something that looks like a broken terminal rather than a
+deliberate one.
+
+The remote pty is created at ssh idea of our size, which is 80x24 because there
+is no terminal here to measure. The real size is sent as `stty rows R cols C`
+once the shell is up and again whenever the window changes, which is the only
+thing that makes anything full-screen lay out correctly.
+
+It is spawned from the WINDOW rather than through an action, and that is not a
+hole in one-surface: the command line half is `vmShell`, doing the same thing
+with the same key. What cannot be shared is the terminal itself -- the dashboard
+has none to hand over.
+
 Seeing a machine that is not talking yet
 ----------------------------------------
 

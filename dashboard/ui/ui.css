@@ -419,3 +419,25 @@ table.kv td { padding: 3px 0; word-break: break-all; }
 .act code { color: var(--accent); flex: 0 0 11rem; }
 .act .about { flex: 1 1 auto; }
 .act .takes { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+/* The terminal panel. A fixed box rather than one that grows: xterm measures
+   its container to work out rows and columns, so a container sized by its
+   contents would size itself to nothing and report zero rows. */
+.term {
+  height: calc(100vh - 200px);
+  min-height: 20rem;
+  background: #0a0d12;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+.sync-controls select {
+  background: #0d1117;
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+}

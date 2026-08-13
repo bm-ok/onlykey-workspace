@@ -1050,6 +1050,122 @@ function readDefinition (which) {
   }).catch(oops)
 }
 
+// ---- a shell on a machine ---------------------------------------------
+//
+// THE PTY IS AT THE FAR END. `ssh -tt` allocates one on the machine, which is
+// where the shell actually is; this side only moves bytes between a child
+// process and a terminal widget. That matters because a pty on THIS side would
+// mean a compiled native module matching NW.js's Node ABI, and this app has no
+// native modules on purpose.
+//
+// Spawned from the window rather than through an action, and that is not a
+// hole in "one surface": the command line's half of this is `vmShell`, which
+// does the same thing with the same key. What cannot be shared is the terminal —
+// the dashboard has none to hand over, and an interactive session needs the one
+// the person is sitting at.
+let term = null
+let termFit = null
+let termChild = null
+let termName = null
+
+function termWrite (text) { if (term) term.write(text) }
+
+function openTerminal (name) {
+  closeTerminal({ quiet: true })
+
+  api('vmShell', { name }).then(where => {
+    const { spawn } = require('node:child_process')
+
+    if (!term) {
+      term = new Terminal({
+        fontFamily: 'Consolas, "Cascadia Mono", monospace',
+        fontSize: 13,
+        // Matches the window rather than xterm's default black, so a terminal
+        // sitting in this page does not look like a hole cut in it.
+        theme: { background: '#0a0d12', foreground: '#c9d1d9', cursor: '#58a6ff' },
+        cursorBlink: true,
+        // Kept, because the whole point of a terminal is reading what went past.
+        scrollback: 5000
+      })
+      termFit = new FitAddon.FitAddon()
+      term.loadAddon(termFit)
+      term.open($('term'))
+    }
+    termFit.fit()
+    term.clear()
+
+    // -tt FORCES a pty even though our stdin is a pipe rather than a terminal.
+    // Without it ssh notices there is no terminal here and runs the command
+    // without one, which gives a shell with no prompt, no line editing and no
+    // job control -- something that looks like a broken terminal rather than a
+    // deliberate one.
+    const args = [
+      '-tt',
+      ...(where.identity ? ['-o', `IdentityFile=${String(where.identity).split('\\').join('/')}`, '-o', 'IdentitiesOnly=yes'] : []),
+      '-o', 'StrictHostKeyChecking=accept-new',
+      where.target
+    ]
+    termChild = spawn('ssh', args, { windowsHide: true })
+    termName = name
+    setText($('term-context'), `— ${where.target}${where.live ? '' : ' (last known address)'}`)
+
+    termChild.stdout.on('data', d => termWrite(d.toString('utf8')))
+    termChild.stderr.on('data', d => termWrite(d.toString('utf8')))
+    term.onData(d => { try { termChild && termChild.stdin.write(d) } catch { /* it has gone */ } })
+
+    // The remote pty is created at ssh's idea of our size, which is 80x24
+    // because we have no terminal here. Telling the far end the real size is the
+    // only way anything full-screen -- an editor, `less`, `top` -- lays out
+    // correctly, and it has to be said again whenever the window changes.
+    const tellSize = () => {
+      if (!termChild || !term) return
+      try { termChild.stdin.write(`stty rows ${term.rows} cols ${term.cols} 2>/dev/null; clear\n`) } catch { /* as above */ }
+    }
+    setTimeout(tellSize, 700)
+
+    term.onResize(() => { try { termChild && termChild.stdin.write(`stty rows ${term.rows} cols ${term.cols} 2>/dev/null\n`) } catch { /* as above */ } })
+
+    termChild.on('close', code => {
+      termWrite(`\r\n\x1b[38;5;244m[the session ended${code ? ` — ssh exited ${code}` : ''}]\x1b[0m\r\n`)
+      termChild = null
+      setText($('term-context'), '— closed')
+    })
+    termChild.on('error', e => termWrite(`\r\n\x1b[31m[could not start ssh: ${e.message}]\x1b[0m\r\n`))
+
+    term.focus()
+  }).catch(oops)
+}
+
+function closeTerminal ({ quiet = false } = {}) {
+  if (termChild) {
+    try { termChild.kill() } catch { /* already gone */ }
+    termChild = null
+  }
+  termName = null
+  if (!quiet) {
+    setText($('term-context'), '— closed')
+    termWrite('\r\n\x1b[38;5;244m[closed]\x1b[0m\r\n')
+  }
+}
+
+function paintTerminal () {
+  const pick = $('term-machine')
+  const up = latest.vms.filter(v => v.connected || v.lastAddress)
+  if (changed('term-machines', up.map(v => [v.name, v.connected]))) {
+    const was = pick.value
+    fill(pick, ...up.map(v => el('option', {
+      value: v.name,
+      textContent: `${v.name}${v.connected ? '' : ' — not dialled in, last known address'}`
+    })))
+    if (was && up.some(v => v.name === was)) pick.value = was
+  }
+  $('term-open').disabled = !up.length
+  $('term-close').disabled = !termChild
+  // Resized when the tab becomes visible: a terminal laid out while its panel
+  // was hidden measures zero and comes back the wrong size.
+  if (view === 'terminal' && termFit) { try { termFit.fit() } catch { /* not open yet */ } }
+}
+
 // The two keys this app needs in order to be itself.
 //
 // Together because they are the same kind of thing: a credential the app owns,
@@ -1727,6 +1843,9 @@ function paintVms () {
 }
 
 $('add-task-open').onclick = newTask
+$('term-open').onclick = () => openTerminal($('term-machine').value)
+$('term-close').onclick = () => closeTerminal()
+window.addEventListener('resize', () => { if (termFit && view === 'terminal') { try { termFit.fit() } catch {} } })
 
 // The settings are the previous version's, which were arrived at by running it:
 // 8 GB, 4 cpus, 60 GB, a named LTS image type, and bridged networking so the
@@ -1993,6 +2112,7 @@ async function drawOnce () {
   paintVms()
   paintKeys()
   paintAppKeys()
+  paintTerminal()
   paintTasks(running)
 
   // Last, so the picture is of a window that has finished drawing.

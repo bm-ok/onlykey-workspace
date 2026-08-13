@@ -46,3 +46,25 @@ path for a file to be loaded from.
 To move to a newer version, replace these files with the same names from the
 same path at the new version, change the number above, and check the two places
 that call `codeBlock()` still render.
+
+
+xterm/ — xterm.js 6.0.0, and its fit addon 0.11.0
+-------------------------------------------------
+
+The terminal in the Terminal tab. MIT licensed; `xterm/LICENSE` is the copy that
+came with it.
+
+    xterm.js        the terminal
+    xterm.css       its stylesheet, which it needs to lay out at all
+    addon-fit.js    sizes it to whatever box it is in
+    LICENSE
+
+From `https://unpkg.com/@xterm/xterm@6.0.0/` and
+`https://unpkg.com/@xterm/addon-fit@0.11.0/`.
+
+**No native module, and that is the point.** A terminal usually implies a pty,
+which on Windows means `node-pty` — a compiled dependency that has to match the
+Node ABI NW.js was built against, and that is exactly the kind of thing this
+project does not have. It is not needed here: `ssh -tt` allocates the pty on the
+machine at the far end, which is where the shell actually is. This side only
+moves bytes.
