@@ -220,15 +220,32 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   fine: detached, still going, and destroyed by the thing supervising it. The
   run is detached on purpose; an outage is something happening to the dashboard,
   not to the work.
-* **A partitioned socket blocks for ever, and the agent had not learned what the
-  dashboard had.** This side already knew that silence is not health — a machine
-  whose power is pulled sends no FIN. The agent did not: it read with no
-  timeout, so a network that went away left `recv()` blocked indefinitely, and
-  its heartbeat thread returned on the first failed send without telling anyone.
-  The reconnect loop underneath was written correctly, retries for ever, and was
-  never reached. **A machine that lost the network never came back**, and nothing
-  in its log said why. Keepalive makes the read fail; a failed beat closes the
-  socket, which is the only thing that gets a blocking read to let go.
+* **A partitioned socket blocks for ever, and it took three fixes.** The agent
+  read with no timeout, so a network that went away left `recv()` blocked
+  indefinitely; the reconnect loop underneath was written correctly, retried for
+  ever, and was never reached. **A machine that lost its network never came
+  back.** Each attempt looked right and only the third was:
+
+  **TCP keepalive** never fires, because keepalive only probes an *idle*
+  connection and this one beats every twenty seconds. **Closing the socket when a
+  beat fails** never fires either, because `sendall` succeeds into the kernel's
+  buffer for about fifteen minutes of retransmits — a one-way heartbeat proves
+  nothing, so the dashboard now answers every beat and silence became
+  measurable. And when that finally *did* detect the outage, closing the socket
+  from the heartbeat thread **still** did not wake a `recv` already blocked
+  inside the syscall: the descriptor went away and the thread stayed parked. The
+  agent diagnosed itself correctly, wrote it in its journal, and sat there:
+
+      okc-agent: nothing from the dashboard for 80s; dropping the session
+      (and then nothing, ever again)
+
+  What works is a **read timeout**, which needs no other thread to co-operate —
+  and which is only safe because the far end now answers, so ninety seconds of
+  nothing genuinely means gone.
+
+  The other lesson is where the answer came from: the guest's own journal, over
+  ssh. From the dashboard the agent simply looked absent, which is the one thing
+  it was not.
 * **`Wants=` does not mean "after".** The agent's unit said
   `Wants=network-online.target`, which does not wait for the network so much as
   **pull that target into the boot** — dragging in `NetworkManager-wait-online`

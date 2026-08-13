@@ -210,6 +210,17 @@ function handle (vm, msg) {
       agent.facts.desktop = msg.desktop
       to.info(msg.desktop ? 'its desktop session is up' : 'its desktop session has gone')
     }
+    // ANSWERED, because a one-way heartbeat proves nothing.
+    //
+    // The machine cannot tell a working connection from a severed one by
+    // sending: the data sits in its kernel's buffer being retransmitted for
+    // about fifteen minutes and every send succeeds. What it can measure is
+    // silence from here — so there has to be something to be silent. Without
+    // this reply, a machine that lost its network stayed stuck for ever and
+    // never redialled.
+    if (agent && agent.socket && !agent.socket.destroyed) {
+      try { agent.socket.write(JSON.stringify({ type: 'beat' }) + '\n') } catch { /* it is going anyway */ }
+    }
     return
   }
   to.info(JSON.stringify(msg).slice(0, 400))

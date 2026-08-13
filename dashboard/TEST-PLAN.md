@@ -132,6 +132,50 @@ branch has to be refused to a machine that is on *no* branch, because a machine
 already on one is refused for that first — a different rule than the one being
 tested.
 
+### 12. The network goes away mid-run — 2026-08-13
+
+**Proves what happens when a machine drops off and comes back**, which is not a
+hypothetical: a switch reboots, wifi drops, a laptop sleeps. Everything about it
+was reasoned rather than seen — the run is detached so it *should* survive, the
+agent *should* redial, the queue *should* keep waiting — and all three were
+wrong.
+
+Queue a **shell** soak long enough that the watching is never racing the work
+(fifteen minutes; the first attempt used eight and had to hurry). Once it is
+working, pull the cable, wait, plug it back in:
+
+    okc.js vmNetwork --name runner1 --connected false
+    ...ninety seconds...
+    okc.js vmNetwork --name runner1 --connected true
+
+**A pass is three separate things:**
+
+* The **run** survives — it is detached, so an outage is something happening to
+  the dashboard, not to the work.
+* The **queue** keeps waiting, and says it cannot see the machine rather than
+  concluding the work is over.
+* The **agent** redials within a minute of the cable returning.
+
+**All three failed the first time**, and the first one cost the whole task:
+fifteen seconds after the cable came out, the queue's failed poll threw into the
+`finally` that puts a machine away, and it powered the machine off and rolled it
+back mid-run.
+
+**Read the guest's journal, not just the dashboard.** `ssh okc@<its address>` then
+`journalctl -u okc-agent`. That is what settled it: the agent was correctly
+detecting the silence and saying so, and then sitting there anyway — a fact
+invisible from this side, where it simply looked absent.
+
+**Passed on the third attempt**, and the two failures are the interesting part —
+see `LEARNED.md`. Keepalive never fires on a connection that beats every twenty
+seconds; closing a socket from another thread does not wake a blocked `recv`.
+The chain that works, end to end:
+
+    02:22:45  nothing from the dashboard for 79s; dropping the session
+    02:22:57  Network is unreachable; retrying in 2s ... 4s ... 8s ... 16s
+    02:23:19  cable back
+    02:23:30  dialled in           (11 seconds)
+
 ### 11. A soak, on a timer rather than on a worker — 2026-08-13
 
 **Proves the machinery holds over time**, which is the only question a soak

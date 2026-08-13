@@ -146,23 +146,42 @@ def run_command(link, job, command, what):
     link.send({"type": "done", "job": job, "code": process.returncode, "what": what})
 
 
-def beat(link, stop, sock):
-    """Say we are alive, and TEAR THE SESSION DOWN when we cannot.
+def beat(link, stop, sock, heard):
+    """Say we are alive, and drop the session when the dashboard stops answering.
 
-    The old version returned when a beat failed, which ended this thread and
-    nothing else -- the main loop stayed blocked in recv() on a socket that was
-    never coming back, so the agent sat there for ever and the reconnect loop
-    below was never reached. A machine that lost the network never redialled,
-    and there was nothing in its log to say why.
+    A ONE-WAY HEARTBEAT PROVES NOTHING, which took two attempts to accept.
 
-    Closing the socket is what makes recv() raise, which is the only way to get
-    the main loop out of a blocking read it has no timeout on.
+    Sending does not fail when the network goes away: the data sits in the
+    kernel's send buffer being retransmitted, for about fifteen minutes by
+    default, and `sendall` returns happily the whole time. TCP keepalive does not
+    help either -- it only fires on an IDLE connection, and beating every twenty
+    seconds means the idle timer never gets there. Both were tried; a cable
+    pulled for ninety seconds still left the agent stuck.
+
+    What settles it is expecting an ANSWER. The dashboard replies to every beat,
+    so silence is measurable: if nothing has arrived for long enough, the far end
+    is gone whatever this socket believes, and closing it is the only way to get
+    the main loop out of a blocking read.
     """
+    SILENCE = 70    # three missed answers, and a little slack for a slow host
+
     while not stop.wait(20):
         try:
             link.send({"type": "beat", "desktop": desktop_ready()})
         except Exception as err:
             print(f"okc-agent: beat failed ({err}); dropping the session", flush=True)
+            try:
+                sock.close()
+            except Exception:
+                pass
+            return
+
+        quiet = time.time() - heard["at"]
+        if quiet > SILENCE:
+            print(
+                f"okc-agent: nothing from the dashboard for {int(quiet)}s; dropping the session",
+                flush=True,
+            )
             try:
                 sock.close()
             except Exception:
@@ -190,41 +209,58 @@ def session():
     context.verify_mode = ssl.CERT_REQUIRED
     sock = context.wrap_socket(raw, server_hostname=HOST)
 
-    # KEEPALIVE, because a partitioned socket does not tell anyone.
-    #
-    # This reads with no timeout, which is right: the dashboard may say nothing
-    # for hours and that is not a fault. But it means a network that goes away
-    # leaves recv() blocked for ever -- TCP keeps the connection "established"
-    # until something tries to send and gives up, which by default takes about
-    # fifteen minutes and may never happen on an idle link.
-    #
-    # That is not hypothetical here: pulling this machine's cable for one minute
-    # left the agent stuck for ever, and the machine never redialled. The
-    # dashboard learned this same lesson about ITS side long ago -- silence is
-    # not health -- and this side had not.
-    #
-    # A minute of unanswered probes is enough to call it dead. Linux-specific
-    # options, guarded, because this agent runs where it is put.
+    # Keepalive as well, which costs nothing and covers the case where this is
+    # genuinely idle. It is NOT what catches a network outage here: keepalive
+    # only fires on an idle connection, and a beat every twenty seconds means the
+    # idle timer never gets there. The silence check in `beat` is what does that.
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
     for option, value in (("TCP_KEEPIDLE", 30), ("TCP_KEEPINTVL", 10), ("TCP_KEEPCNT", 3)):
         try:
             sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, option), value)
         except Exception:
-            pass    # not this platform's spelling; the beat below still covers it
+            pass    # not this platform's spelling
 
-    sock.settimeout(None)
+    # A READ TIMEOUT, which is the thing that actually gets this unstuck.
+    #
+    # Third attempt, and the first two are worth knowing about because both
+    # looked right. Keepalive does not fire on a connection that beats every
+    # twenty seconds -- it is never idle. Closing the socket from the beat thread
+    # does not wake a `recv` that is already blocked inside the syscall: the
+    # descriptor goes away and the thread stays parked. The agent detected the
+    # silence correctly, said so in its journal, and then sat there anyway:
+    #
+    #     okc-agent: nothing from the dashboard for 80s; dropping the session
+    #     (and nothing, ever again)
+    #
+    # A timeout needs no other thread to co-operate. It is safe because the
+    # dashboard ANSWERS every beat, so this connection is never quiet for more
+    # than twenty seconds while it is healthy -- a minute and a half of nothing
+    # means the far end is gone, whatever the socket believes.
+    sock.settimeout(90)
+    heard = {"at": time.time()}
     link = Link(sock)
     link.send({"type": "hello", "vm": VM, "token": TOKEN, "facts": facts()})
 
     stop = threading.Event()
-    threading.Thread(target=beat, args=(link, stop, sock), daemon=True).start()
+    threading.Thread(target=beat, args=(link, stop, sock, heard), daemon=True).start()
 
     buffer = ""
     try:
         while True:
-            chunk = sock.recv(65536)
+            try:
+                chunk = sock.recv(65536)
+            except (socket.timeout, TimeoutError):
+                # Ninety seconds without a word, on a connection that is answered
+                # every twenty. Returning here reconnects, which is the whole
+                # point: nothing else can free a blocked read.
+                print("okc-agent: the dashboard has gone quiet; reconnecting", flush=True)
+                return
             if not chunk:
                 return
+            # Anything at all counts: this is what makes the far end's silence
+            # measurable, and the dashboard answers every beat so it is never
+            # quiet for long unless something is wrong.
+            heard["at"] = time.time()
             buffer += chunk.decode("utf-8", "replace")
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
