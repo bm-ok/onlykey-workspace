@@ -888,6 +888,15 @@ const actions = {
           // that was required, which is itself worth showing rather than hiding:
           // "nobody recorded this" is the honest state of most of the board.
           note: branches.noteFor(b.name),
+          // Which repositories treat THIS branch as their default. Only ever
+          // set on a protected one, and it is what makes "not in local-repo-a"
+          // stop being said about a branch that was never supposed to be there:
+          // a default branch is not missing from the repositories that have
+          // their own, it is simply not theirs.
+          baselineFor: (all.protected.find(p => p.branch === b.name) || {}).repos || [],
+          // Whether it is the baseline for ALL of them, which is the only case
+          // where "the baseline" is a true thing to call it.
+          baselineForAll: ((all.protected.find(p => p.branch === b.name) || {}).repos || []).length === all.repos.length,
           // The claim, flattened to what a list can show without a second lookup.
           tasks: claims.map(t => ({ id: t.id, number: t.number, title: t.title, state: t.state })),
           commits: art ? art.commits : 0,
@@ -928,6 +937,19 @@ const actions = {
       return {
         repos: all.repos,
         protected: all.protected,
+        // MORE THAN ONE BASELINE IN ONE WORKSPACE IS A FACT WORTH SAYING.
+        //
+        // Every repository has its own default branch, read from that repository
+        // rather than assumed -- `master` here, `main` in most new ones, and
+        // something else entirely is ordinary. So a workspace can hold several,
+        // and then "ahead of the default" means a different thing per repository:
+        // one branch, measured against `master` in two of them and `version2` in
+        // the third, summed into a single number.
+        //
+        // Nothing is wrong with that and everything about it is easy to misread,
+        // which is exactly the sort of thing this window exists to say out loud.
+        baselines: all.protected,
+        mixed: all.protected.length > 1,
         branches: rows,
         counts: {
           all: rows.length,
@@ -1124,8 +1146,23 @@ const actions = {
       // arrived as though the machine were the problem.
       const wanted = String(branch || vm.branch || '').trim()
       if (!wanted) throw new Error(`Say which branch "${name}" is to work on.`)
-      if (!branches.all().branches.some(b => b.name === wanted)) {
+      const known = branches.all().branches.find(b => b.name === wanted)
+      if (!known) {
         throw new Error(`There is no branch called "${wanted}". Make it first, with a reason — branchCreate --branch ${wanted} --reason "..." — so what it is for is recorded before anything is built on it. If that name is a typo, this is the refusal that catches it.`)
+      }
+
+      // IN SOME REPOSITORIES AND NOT OTHERS, which is a state a workspace
+      // reaches on its own: a repository added after a branch was cut does not
+      // have it, and nothing here goes back to extend old branches into new
+      // repositories.
+      //
+      // The machine checks out this branch in every repository it is given, so
+      // the one without it fails INSIDE THE GUEST, in the middle of a setup, with
+      // git's own words about a pathspec. Said here instead, where the fix is one
+      // command -- branchCreate cuts it in whatever is missing it and leaves the
+      // reason it already has alone.
+      if (known.missing.length) {
+        throw new Error(`"${wanted}" is not in ${known.missing.join(', ')}, and a machine checks it out in every repository. Extend it first — branchCreate --branch ${wanted} --reason "..." cuts it wherever it is missing and keeps the reason it already has.`)
       }
 
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in. Start it and wait for it to connect.`)

@@ -1139,7 +1139,27 @@ function paintBranches () {
               textContent: `${hidden} hidden — show`,
               onclick: () => { $('branch-mine').checked = false; changed('branches', null); paintBranches() }
             })
+          : null,
+
+        // MORE THAN ONE BASELINE IN ONE WORKSPACE. Not a fault -- every
+        // repository has its own default and something other than master is
+        // ordinary -- but it changes what every other number on this screen
+        // means, because "ahead of the default" is then measured against a
+        // different branch per repository and summed into one figure.
+        board.mixed
+          ? chip(`${board.baselines.length} baselines`, 'bad')
           : null)
+
+      // Said in full underneath, because a chip has room for the fact and not
+      // for what follows from it.
+      if (board.mixed) {
+        $('branch-counts').append(el('p', { className: 'note', style: 'flex-basis:100%;margin:6px 0 0' },
+          el('strong', { textContent: 'These repositories do not share a default branch. ' }),
+          el('span', {
+            textContent: `${board.baselines.map(p => `${p.branch} in ${p.repos.join(', ')}`).join('; ')}. ` +
+              'A branch cut across all of them is measured against a different baseline in each, so one "commits ahead" figure is a sum of things counted from different places. Nothing is wrong with it — it is just not one number about one thing.'
+          })))
+      }
 
       fill($('branches'), rows.length
         ? rows.map(branchCard)
@@ -1178,7 +1198,14 @@ function branchActions (b) {
     el('div', { className: 'branch-facts' },
       el('span', { className: b.commits ? 'strong' : 'muted', textContent: b.commits ? `${b.commits} commit(s) ahead` : 'nothing beyond the default' }),
       el('span', { className: 'muted', textContent: `in ${b.in.join(', ') || 'none'}` }),
-      b.missing.length ? el('span', { className: 'muted', textContent: `not in ${b.missing.join(', ')}` }) : null,
+      // NOT SAID ABOUT A DEFAULT BRANCH. Every repository has its own, so one
+      // that is the baseline in some of them is not MISSING from the rest -- it
+      // is simply not theirs, and calling that absence a gap reads as a fault to
+      // go and fix.
+      b.missing.length && !b.protected ? el('span', { className: 'muted', textContent: `not in ${b.missing.join(', ')}` }) : null,
+      b.protected && b.baselineFor.length
+        ? el('span', { className: 'muted', textContent: `the baseline for ${b.baselineFor.join(', ')}` })
+        : null,
       b.heldBy ? el('span', { className: 'muted', textContent: b.heldRunning ? `checked out on ${b.heldBy}` : `${b.heldBy} claims it, and is off` }) : null),
 
     b.whyNot ? el('p', { className: 'note', textContent: b.whyNot }) : null,
@@ -1266,7 +1293,16 @@ function branchCard (b) {
       // The one number that decides everything else about a branch -- except on
       // the default, where "empty" is meaningless: it is the thing the count is
       // measured against, so it can only ever be zero ahead of itself.
-      el('span', { className: 'muted', textContent: b.protected ? 'the baseline' : b.commits ? `${b.commits} commit(s)` : 'empty' }),
+      el('span', {
+        className: 'muted',
+        // "The baseline" is wrong the moment a workspace has more than one. It
+        // is A baseline, for some of the repositories, and which ones is the
+        // whole of what makes the number beside every other branch mean
+        // different things in different repositories.
+        textContent: b.protected
+          ? (b.baselineForAll ? 'the baseline' : `baseline for ${b.baselineFor.join(', ')}`)
+          : b.commits ? `${b.commits} commit(s)` : 'empty'
+      }),
       b.heldBy ? el('span', { className: 'muted', textContent: b.heldBy }) : null))
 }
 
