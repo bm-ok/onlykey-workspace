@@ -29,12 +29,6 @@ const q = s => `'${String(s).replace(/'/g, `'\\''`)}'`
 
 const RUNS = '$HOME/.okc-runs'
 
-// Where a run's record lives on the machine. One directory per run: the prompt
-// as it was given, the raw output, and the exit status written when it ends.
-//
-// Kept rather than streamed and dropped. "What actually ran" has no source but a
-// record of the run -- a claim in a transcript is the agent's account of itself,
-// and the two diverge.
 // A heredoc ends at its delimiter, wherever that appears. Text arriving here is
 // written by a person or by another agent, so "it will not contain that line" is
 // an assumption about somebody else's prose -- and the failure is not an error
@@ -121,6 +115,38 @@ date -u +%Y-%m-%dT%H:%M:%SZ > ${dir}/started
 echo okc-dispatched ${id}`
 }
 
+// Stopping a run that is still going.
+//
+// THE PROCESS GROUP, not the process. `setsid` gave the run a session of its
+// own, so the worker, whatever it spawned, and the shell holding them are all in
+// one group -- and killing only the pid leaves a worker running with nothing
+// watching it, which is worse than not stopping at all: the machine looks free
+// and is not.
+//
+// The status file is deliberately NOT written. A stopped run has no result, and
+// inventing an exit code for it would make it indistinguishable from one that
+// finished. With the pid gone and no status, it reads as `lost` -- which is
+// exactly what it is, and what every reader here already understands.
+//
+// Politely first. TERM lets a worker finish the line it is writing; KILL after a
+// moment covers one that ignores it. Neither is a shutdown of the machine: that
+// is the queue's business, and it does it when the run ends.
+const stop = id => `set -u
+D=${RUNS}/${q(id).slice(1, -1)}
+if [ ! -f "$D/pid" ]; then echo "okc-stop-nopid"; exit 0; fi
+P=$(cat "$D/pid")
+if ! kill -0 "$P" 2>/dev/null; then echo "okc-stop-gone"; exit 0; fi
+kill -TERM -- -"$P" 2>/dev/null || kill -TERM "$P" 2>/dev/null || true
+for i in 1 2 3 4 5; do
+  kill -0 "$P" 2>/dev/null || break
+  sleep 1
+done
+if kill -0 "$P" 2>/dev/null; then
+  kill -KILL -- -"$P" 2>/dev/null || kill -KILL "$P" 2>/dev/null || true
+  sleep 1
+fi
+kill -0 "$P" 2>/dev/null && echo "okc-stop-refused" || echo "okc-stop-done"`
+
 // Every run on the machine, newest first, with what became of it.
 //
 // `status` is written only when the run ends, so its absence is the answer to
@@ -185,4 +211,4 @@ function runs (out) {
 // is a name somebody types back to ask what happened to it.
 const newId = () => 'run-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
 
-module.exports = { script, list, output, runs, newId, RUNS, path }
+module.exports = { script, list, output, runs, stop, newId, RUNS, path }

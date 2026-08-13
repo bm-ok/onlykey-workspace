@@ -733,6 +733,26 @@ half of what this project must prove passes by being **stopped**. It matches the
 refusal's message as well as the fact of it: a refusal for the wrong reason is
 not a pass.
 
+### Stopping, and sending back
+
+    okc.js taskStop     --id 3        kill the worker; the machine is put away as usual
+    okc.js taskSendBack --id 3        a rejected task goes round again
+
+**Stopping kills the run and nothing else.** The queue is already waiting on
+that run: it sees it end, keeps the log, takes the credential back and puts the
+machine away exactly as it would for one that finished. Unwinding the task here
+as well would be a second place that ends a task, and the two would drift. The
+run reads `lost` afterwards — no result, and nothing left to produce one, which
+is precisely what a stopped run is.
+
+**A rejection has to be answerable.** Sending back appends the reason to the
+brief, dated, keeps the previous verdict, and re-queues on the **same branch** —
+which still carries the first attempt, so the next machine continues rather than
+starting again. Without it the only way to act on a rejection was to open the
+work and fix it yourself, which is exactly what the rule forbids: *the
+supervisor's own edits are the one path nothing reviews*. A rule whose only
+compliant option does not exist is not enforced, it is ignored.
+
 ### Judging does not merge
 
 `taskJudge` records what a person decided and nothing else. Landing work is a

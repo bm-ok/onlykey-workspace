@@ -29,9 +29,6 @@ What is drawn today is right; what is drawn tomorrow still needs a photograph.
 Outstanding
 -----------
 
-* **A running task cannot be stopped.** `taskUnqueue` refuses anything already
-  given out, and the queue waits up to six hours. A worker that hangs, or that
-  is doing the wrong thing entirely, has to be dealt with by hand on its machine.
 * **Nothing has been left running for days.** Every run so far has been minutes.
   A worker that hits a token refresh, a network drop or a full disk mid-task has
   never been observed.

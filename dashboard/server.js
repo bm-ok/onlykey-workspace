@@ -1465,6 +1465,64 @@ done`
     }
   },
 
+  // Stop a worker that is still going.
+  //
+  // Wanted because the alternative was nothing: `taskUnqueue` refuses anything
+  // already given out, and the queue waits up to six hours. A worker that hangs,
+  // or that is confidently doing the wrong thing, held a machine for the rest of
+  // the day and the only way out was to open a shell on the guest.
+  //
+  // It does NOT shut the machine down or unwind the task. Killing the run is all
+  // it does; the queue is already waiting on that run, sees it end, keeps the
+  // log, takes the credential back and puts the machine away exactly as it would
+  // for one that finished. Doing any of that here as well would be a second
+  // place that ends a task, and the two would drift.
+  taskStop: {
+    about: 'Stop a task that is running. Its machine is put away as usual',
+    takes: ['id'],
+    run: async ({ id }) => {
+      const task = tasks.get(id)
+      const attempt = [...(task.attempts || [])].reverse().find(a => a.run)
+      if (!attempt) throw new Error(`#${task.number} has never been given out, so there is nothing to stop.`)
+      if (!task.machine || !channel.connected(task.machine)) {
+        throw new Error(`"${task.machine || 'no machine'}" is not dialled in. If it is off, the work is already over — the queue puts a machine away as soon as its run ends.`)
+      }
+      return actions.vmRunStop.run({ name: task.machine, run: attempt.run })
+    }
+  },
+
+  vmRunStop: {
+    about: 'Stop a run on a machine, and everything it started',
+    takes: ['name', 'run'],
+    run: async ({ name, run }) => {
+      vms.get(name)
+      if (!run) throw new Error('Say which run.')
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
+
+      const r = await channel.run(name, dispatch.stop(String(run)), { what: `stopping ${run}`, timeout: 60000 })
+      const said = String(r.output || '')
+      const how = said.includes('okc-stop-done') ? 'stopped'
+        : said.includes('okc-stop-gone') ? 'was already over'
+          : said.includes('okc-stop-nopid') ? 'never recorded a pid, so nothing could be signalled'
+            : said.includes('okc-stop-refused') ? 'would not die'
+              : 'did not answer'
+
+      if (how === 'would not die' || how === 'did not answer') {
+        throw new Error(`${run} ${how}. Look at the machine — something there is ignoring both TERM and KILL.`)
+      }
+      log.on('vm', name).warn(`${run} ${how}`)
+      return {
+        name,
+        run,
+        outcome: how,
+        // Said plainly, because a stopped run is not a failed one and the
+        // difference matters when somebody reads the board tomorrow: it has no
+        // result because it was stopped, not because it went wrong.
+        note: 'It reads as `lost` from here on — no result, and nothing left to produce one. The queue puts the machine away as it would for any ended run.'
+      }
+    }
+  },
+
   taskUnqueue: {
     about: 'Take a task back out of the queue. Does not stop one already running',
     takes: ['id'],

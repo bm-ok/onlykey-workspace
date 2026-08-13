@@ -611,6 +611,31 @@ function paintTaskDetail (task) {
         title: !idle.length ? 'No machine is dialled in' : task.verdict ? 'This task has been judged' : 'Skips the queue and uses a machine that is already up',
         onclick: () => giveTask(task, idle)
       }),
+      // Only while something is actually running, because that is the only time
+      // it means anything — and it is the button somebody wants at the moment
+      // they would otherwise be opening a shell on the guest.
+      task.reads === 'working'
+        ? el('button', {
+            className: 'btn danger',
+            textContent: 'Stop it',
+            onclick: () => ask({
+              title: `Stop #${task.number}?`,
+              plain: [
+                'The worker is killed, along with anything it started.',
+                'Whatever it had already committed and pushed is here and is not touched. Whatever it had not is lost with the machine.',
+                'The machine is then put away as usual — credential taken back, shut down, rolled back — so it is free for other work.'
+              ],
+              cost: 'The run ends with no result. It reads as `lost`, which is what it is.',
+              confirm: 'Stop it',
+              danger: true,
+              onYes: async () => {
+                const r = await api('taskStop', { id: task.id })
+                say(`${r.run} ${r.outcome}. ${r.note}`)
+              }
+            })
+          })
+        : null,
+
       el('button', {
         className: 'btn',
         textContent: 'Judge it',
@@ -618,6 +643,29 @@ function paintTaskDetail (task) {
         title: task.delivered ? '' : 'Nothing has arrived on this branch yet',
         onclick: () => judgeTask(task)
       }),
+
+      // Sending it back is the answer to a rejection, and the rule is that the
+      // answer is never "fix it yourself".
+      task.state === 'rejected'
+        ? el('button', {
+            className: 'btn ok',
+            textContent: 'Send it back',
+            title: 'Re-queue it on the same branch, with the reason attached',
+            onclick: () => ask({
+              title: `Send #${task.number} back?`,
+              plain: [
+                'The reason you gave is appended to the brief, dated, so the worker sees both what was asked and what was wrong with the answer.',
+                `It goes back in the queue on ${task.branch}, which still carries the first attempt — so the next machine continues rather than starting again.`,
+                'The verdict is kept in the record.'
+              ],
+              confirm: 'Send it back',
+              onYes: async () => {
+                const r = await api('taskSendBack', { id: task.id })
+                say(r.note)
+              }
+            })
+          })
+        : null,
       el('button', {
         className: 'btn danger',
         textContent: 'Throw it away',
