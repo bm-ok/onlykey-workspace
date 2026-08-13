@@ -48,6 +48,58 @@ the point; clean it up deliberately rather than by habit.
 Not yet run
 -----------
 
+The three below are what is left of the failure set that drill 12 came from.
+Two of them are **shell** runs and cost nothing; only the credential one needs a
+worker, because what a worker does when its token disappears is the question.
+
+### 13. The credential goes away mid-run
+
+**Proves the token-refresh case without waiting for a token to expire.** Take the
+credential off a machine while its worker is thinking. Claude Code has already
+read the file, so it may not notice until it needs to refresh — which is exactly
+the failure a long run hits overnight, minus the overnight.
+
+    okc.js vmCredentialsForget --name <the one that is working>
+
+**A pass is not "it fails".** It is that the failure **reads honestly**: the run
+record says it could not authenticate, rather than surfacing as an api error in a
+json blob that points nowhere near the cause. That has happened before — the real
+sentence was *Not logged in*, one field deep in a machine's output — and this is
+the drill that would catch it coming back.
+
+**This is the only one of the three that needs a worker**, so it is also the only
+one that costs anything to run.
+
+### 14. The disk fills mid-run
+
+**Expected to fail worst, which is why it is worth doing.** A full disk breaks
+the run record, the log and the push all at once, and each of those is a
+different piece of this reporting something untrue.
+
+A shell run that fills the guest, then keeps going:
+
+    fallocate -l $(df --output=avail -B1 / | tail -1) /tmp/fill && echo filled
+    ...then heartbeat, and try to write to the run directory...
+
+**What to watch:** whether `vmRuns` still reports honestly when it cannot write
+its own status file; whether the kept log arrives here or is truncated; and
+whether the queue puts the machine away or hangs. The machine is disposable and
+rolled back afterwards, so this costs nothing but the time.
+
+### 15. The dashboard restarts mid-run
+
+**Half-proven by accident, twice, and never on purpose.** Adoption picked up an
+in-flight task both times, and both were mid-*setup* rather than mid-*work* —
+which is the easier case, because nothing was dispatched yet.
+
+Queue a shell soak, wait until it is genuinely working, then restart the
+dashboard. **A pass** is the run continuing untouched, the queue adopting it,
+waiting for it, keeping its log, and putting the machine away at the end — and
+the task landing in `done` rather than being stranded in `given`.
+
+**Do not confuse this with drill 12.** There the machine went away; here the
+watcher does. The run should not be able to tell the difference.
+
 ### 5b. The queue drains, one task at a time, through one machine — 2026-08-12
 
 **Proves the pool works when it is full**, which is the only condition under

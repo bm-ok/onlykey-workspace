@@ -45,6 +45,57 @@ Outstanding
   entered. The file is two sentences of generic filler that nothing loads, and
   deleting it needs a hand that is not this one — `legacy/` is untracked.
 
+* **There is no way to say "keep this one up, I want to look at it".** Both
+  `vmEditor` and `vmShell` need a machine dialled in, and the queue shuts a
+  machine down the moment its work ends — so wanting to look at what a task
+  actually did means starting the machine again yourself, by which point it has
+  been rolled back and there is nothing to look at. `vmForTasks` keeps a machine
+  out of the pool but does not stop the queue putting away one it is already
+  using. The likely shape is a task that says "leave it up when you are done",
+  decided before it runs rather than after.
+
+* **The kept logs can only be reached through a task.** `taskLog` needs a task
+  id, and `taskRemove` deliberately leaves the logs behind — so the moment a
+  task is thrown away its logs become unreachable through the tool, while sitting
+  there on disk under a uid nobody can look up. Something should list what is
+  archived, and it is worth doing precisely because the evidence outliving the
+  note about it was the point.
+
+* **`taskUpdate` can force a task into any stored state.** It is bounded — the
+  set is checked, and `working` and `delivered` are derived rather than settable
+  — but it is still a way round the state machine from the command line, and it
+  was used tonight to fix a task the queue had stranded. Either that is a
+  legitimate repair tool and should say so, or it should refuse the transitions
+  that make no sense.
+
+
+The next joints
+---------------
+
+Not tasks. Two things the shape of this now implies, either of which is a
+session's work on its own and neither of which should be started by accident.
+
+**Nothing merges.** `taskJudge` deliberately does not — a verdict is a person's
+decision and landing work is a separate act with its own rules — and nothing
+else does either. So accepted work sits on its branch for ever, and the two
+branches on the board are both accepted and both still sitting there. That is
+the next joint after the round trip: the loop currently goes out, comes back,
+and stops. In `legacy/` this is what the gate was for, and its rules are written
+down there rather than here.
+
+Worth being clear that this is a *decision*, not an omission: everything
+delivered so far is on a branch precisely because nothing has decided it should
+be anywhere else.
+
+**Nothing runs the supervisor.** Every piece is in place — the queue drives
+machines, pre-defined tasks are written and approved, a worker is given rules and
+watched, and what comes back is judged — and a person still writes every task by
+hand. `legacy/PLAN.md` describes the AI-driven mode and is explicit about why it
+is allowed at all: the dashboard sits between the model and the workers, so
+distribution goes through the observable channel rather than a private call
+inside an orchestrator. That constraint is already satisfied by the queue; what
+does not exist is anything proposing the work.
+
 
 Unproven, and unexplained
 -------------------------
