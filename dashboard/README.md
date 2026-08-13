@@ -21,6 +21,10 @@ should do. Two other documents sit beside it and are deliberately not this one:
                  last left. Working state, and the first thing to distrust
     TEST-PLAN.md the end-to-end drills, what each proves, and when it last ran.
                  Half of them pass by being REFUSED
+    GAPS.md      what the older design projected that this does not do yet, and
+                 what of it was one ecosystem rather than a tool. Read against
+                 this one's spine: branches hold work, tasks produce it, a
+                 supervisor drives
 
 
 It is generic on purpose
