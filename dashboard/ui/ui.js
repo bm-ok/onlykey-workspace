@@ -166,7 +166,12 @@ const been = {
 
 // ---- tabs -------------------------------------------------------------
 
-let view = been.get('view', 'ops')
+// Branches, not machines, for a window nobody has used before. It is the head of
+// the chain everything else hangs off -- a branch holds the work, a task
+// produces it, a machine is what a task borrows -- and the markup's `active`
+// class has to agree with this or a fresh window shows one tab selected and a
+// different one's panel.
+let view = been.get('view', 'branches')
 document.querySelectorAll('.tab').forEach(b => {
   b.onclick = () => {
     view = b.dataset.view

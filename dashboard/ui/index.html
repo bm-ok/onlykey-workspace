@@ -18,15 +18,22 @@
     <span class="muted mono" id="vbox-path"></span>
   </div>
   <nav class="tabs">
-    <!-- Two managers, and the split is the shape of the whole tool. One side
-         is machines; the other is work. They meet at exactly one point -- a
-         task is given to a machine -- and nothing else crosses. -->
-    <button class="tab active" data-view="ops">Virtual machines</button>
+    <!-- IN THE ORDER THE WORK GOES, which is the shape of the whole tool:
+         a branch holds the work, a task produces it, a machine is what a task
+         borrows to do it. It used to read machines-first, from when a machine
+         WAS the product and everything else was built around one.
+
+             branch <- task <- claude <- supervisor
+             branch <- task <- person <- supervisor
+
+         So a branch is where you start and a machine is an implementation
+         detail you visit when something is wrong with one. -->
+    <button class="tab active" data-view="branches">Branches</button>
     <button class="tab" data-view="tasks">Tasks <span class="tab-badge hidden" id="tasks-badge"></span></button>
     <!-- The badge is what makes a tab you cannot see safe to have: output
          arriving behind it is announced, and a failure differently from
          ordinary chatter. -->
-    <button class="tab" data-view="branches">Branches</button>
+    <button class="tab" data-view="ops">Virtual machines</button>
     <button class="tab" data-view="live">Live <span class="tab-badge hidden" id="live-badge"></span></button>
     <button class="tab" data-view="terminal">Terminal</button>
     <button class="tab" data-view="keys">Keys</button>
@@ -45,7 +52,7 @@
 <main>
 
   <!-- ---------------- Virtual machines ---------------- -->
-  <section class="view active" id="view-ops">
+  <section class="view" id="view-ops">
     <div class="cols">
 
       <div class="col narrow">
@@ -124,7 +131,7 @@
        knew that and none of them met, so a branch belonging to a task that was
        thrown away looked exactly like one somebody made by hand — and the
        difference is whether deleting it loses anything. -->
-  <section class="view" id="view-branches">
+  <section class="view active" id="view-branches">
     <div class="cols">
 
       <div class="col narrow">
