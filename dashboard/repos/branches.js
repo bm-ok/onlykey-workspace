@@ -59,17 +59,24 @@ function headOf (dir) {
 // default" and, worse, would leave the real default unprotected exactly while
 // somebody is reading code. Recorded the first time a repository is seen, it
 // stays protected whatever is checked out later.
-const STATE = data.state()
-const FILE = path.join(STATE, 'repos.json')
+// PER WORKSPACE. Both files here are keyed by NAME -- a repository's name, a
+// branch's name -- and a name means something different in a different folder.
+// Shared, `local-repo-a`'s remembered default branch would be applied to an
+// unrelated repository that happens to share the name, and a branch's recorded
+// reason would attach itself to a branch somebody else cut. Neither would error.
+const workspaces = require('../core/workspaces')
+
+const STATE = () => workspaces.stateDir()
+const FILE = () => path.join(STATE(), 'repos.json')
 
 function remembered () {
-  try { return JSON.parse(fs.readFileSync(FILE, 'utf8').replace(/^﻿/, '')) || {} } catch { return {} }
+  try { return JSON.parse(fs.readFileSync(FILE(), 'utf8').replace(/^﻿/, '')) || {} } catch { return {} }
 }
 
 function remember (all) {
   try {
-    fs.mkdirSync(STATE, { recursive: true })
-    fs.writeFileSync(FILE, JSON.stringify(all, null, 2))
+    fs.mkdirSync(STATE(), { recursive: true })
+    fs.writeFileSync(FILE(), JSON.stringify(all, null, 2))
   } catch { /* the answer is still right for this call; it is only not kept */ }
 }
 
@@ -386,7 +393,7 @@ function nameIsOk (branch) {
 // purpose and abandoned, and telling those apart mattered before deleting it.
 //
 // A reason is cheap to write once and impossible to reconstruct later.
-const NOTES = () => path.join(STATE, 'branches.json')
+const NOTES = () => path.join(STATE(), 'branches.json')
 
 function notes () {
   try { return JSON.parse(fs.readFileSync(NOTES(), 'utf8').replace(/^﻿/, '')) || {} } catch { return {} }
@@ -400,7 +407,7 @@ function note (branch, entry) {
   const all = notes()
   all[branch] = { ...(all[branch] || {}), ...entry }
   try {
-    fs.mkdirSync(STATE, { recursive: true })
+    fs.mkdirSync(STATE(), { recursive: true })
     fs.writeFileSync(NOTES(), JSON.stringify(all, null, 2))
   } catch { /* the branch is still cut; only the note is not kept */ }
   return all[branch]

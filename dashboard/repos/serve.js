@@ -23,9 +23,21 @@ const zlib = require('node:zlib')
 const { spawn } = require('node:child_process')
 const log = require('../core/log')
 
-// Same convention as the provisioning scripts: what belongs to a project lives
-// outside the app, and one variable moves it.
-const DIR = process.env.OKC_REPOS_DIR || path.join(__dirname, '..', '..', 'workspace')
+// WHERE THE REPOSITORIES ARE, ASKED EACH TIME rather than fixed at load.
+//
+// It was a constant, which meant changing workspace meant restarting the app --
+// and a tool whose whole subject can be switched should not have to be stopped
+// to switch it. Every read below goes through `dir()`, so pointing this
+// somewhere else takes effect on the next request rather than the next start.
+//
+// `DIR` is kept as a property for the handful of callers that only want to say
+// where they looked, and it reads the same live value.
+const workspaces = require('../core/workspaces')
+
+// Named ROOT rather than dir, because `dir` is already a parameter in the
+// functions below where it means one repository's git directory. Two meanings of
+// one short name in one file is a trap for whoever edits it next.
+const root = () => workspaces.dir()
 
 const isDir = p => { try { return fs.statSync(p).isDirectory() } catch { return false } }
 const isFile = p => { try { return fs.statSync(p).isFile() } catch { return false } }
@@ -46,7 +58,7 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 // convention and conventions are not always followed.
 function gitDirOf (name) {
   if (!NAME.test(name)) return null
-  const base = path.join(DIR, name)
+  const base = path.join(root(), name)
   if (!isDir(base)) return null
 
   const dotGit = path.join(base, '.git')
@@ -58,8 +70,8 @@ function gitDirOf (name) {
 // What there is to clone. Read fresh per request, like the provisioning scripts,
 // so a repository added to the workspace needs nothing restarted.
 function list () {
-  if (!isDir(DIR)) return []
-  return fs.readdirSync(DIR, { withFileTypes: true })
+  if (!isDir(root())) return []
+  return fs.readdirSync(root(), { withFileTypes: true })
     .filter(e => e.isDirectory() && NAME.test(e.name))
     .map(e => ({ name: e.name, dir: gitDirOf(e.name) }))
     .filter(r => r.dir)
@@ -67,7 +79,7 @@ function list () {
     // it. Compared rather than read off the name: `<name>.git` is only a
     // convention, and a bare repository not spelled that way would be labelled
     // backwards -- which will matter as soon as pushes land in bare repos.
-    .map(r => ({ name: r.name, bare: r.dir === path.join(DIR, r.name) }))
+    .map(r => ({ name: r.name, bare: r.dir === path.join(root(), r.name) }))
 }
 
 // ---- the protocol ----------------------------------------------------
@@ -172,4 +184,8 @@ function rpc (req, res, { dir, service, repo, env }) {
   req.on('aborted', () => git.kill())
 }
 
-module.exports = { DIR, list, gitDirOf, advertise, rpc, SERVICES, NAME }
+module.exports = { root, list, gitDirOf, advertise, rpc, SERVICES, NAME }
+
+// Read live, so anything holding a reference to this module sees a workspace
+// change without being reloaded.
+Object.defineProperty(module.exports, 'DIR', { get: root, enumerable: true })

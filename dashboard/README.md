@@ -217,6 +217,46 @@ iterates on a half-hour loop. The machine fetches the script fresh, so an edit m
 since it was built is included.
 
 
+Which repositories this is about
+--------------------------------
+
+A **workspace** is a folder of repositories. It was `../workspace`, fixed, with an
+environment variable as the only way out -- which is fine for a tool with one
+subject and useless for one meant to serve any ecosystem. It is chosen from the
+title bar now, and changing it takes effect without a restart.
+
+**The part that is not obvious is contamination.** Some of what this app knows is
+about the HOST and some is about the WORKSPACE, and they were in one drawer:
+
+    about the host       the machines it made, machines reachable over ssh, the
+                         approvals recorded for its own drills. True whatever
+                         repositories are being worked on
+    about the workspace  every task, because a task delivers to a branch in these
+                         repositories. Every branch's reason. Every repository's
+                         default branch and chosen baseline
+
+Both of the workspace files are keyed by NAME, and a name means something
+different in a different folder. Kept together, switching would apply
+`local-repo-a`'s remembered baseline to an unrelated repository that happens to
+share the name, and attach a branch's recorded reason to a branch somebody else
+cut. **None of it would error.** All of it would be quietly wrong, which is the
+worst way for a tool whose job is oversight to be wrong.
+
+So the second kind lives under the workspace it belongs to, and the files that
+were written before there was more than one move into the workspace that was
+already being served -- once, automatically, because that is the one they
+describe.
+
+**Switching is refused while anything ties a machine to the current one**: a
+machine borrowed, a machine set up on a branch, a task out on one. A machine
+checked out on a branch cannot be reasoned about from a folder that has no such
+branch, and the refusal names what is holding it. The same list is shown in the
+picker before it is offered, so the window never offers what the action turns
+down.
+
+Forgetting a workspace does not delete what is known about it. It means "stop
+offering me this" -- point at the folder again and its tasks are where they were.
+
 Nothing it produces lives in the repository
 -------------------------------------------
 
@@ -224,8 +264,11 @@ Everything this app makes by RUNNING is in the per-user data directory --
 `%LOCALAPPDATA%\okc-dashboard` on Windows, `~/.local/share/okc-dashboard`
 elsewhere -- and nothing it makes by running is in the working tree.
 
-    state/         which machines it made, which tasks exist, which branch each
-                   repository treats as default, what has been approved
+    state/         which machines it made, machines reachable over ssh, what has
+                   been approved — the things that are true whatever repositories
+                   are being worked on
+    workspaces/    one folder per workspace: its tasks, its branch reasons, its
+                   repositories' defaults and baselines
     credentials/   the worker credential, sealed
     task-logs/     what a run left behind, kept where a machine cannot take it
     artifacts/     what a task handed over that was not a commit

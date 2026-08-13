@@ -31,6 +31,25 @@ const harness = require('./tasks/harness')
 const approval = require('./tasks/approval')
 const archive = require('./tasks/archive')
 const files = require('./tasks/files')
+const workspaces = require('./core/workspaces')
+
+// Everything that ties a machine, or work in flight, to the workspace being
+// served right now.
+//
+// One list, used twice: to refuse a switch, and to say why a switch would be
+// refused before anybody tries. Those must be the same list or the window offers
+// something the action turns down.
+function inTheWay () {
+  const out = []
+  for (const vm of vms.read()) {
+    if (vm.borrowed) out.push({ what: vm.name, why: `${vm.name} is borrowed — ${vm.borrowed.why || 'somebody is using it'}` })
+    else if (vm.branch) out.push({ what: vm.name, why: `${vm.name} is set up on "${vm.branch}"` })
+  }
+  for (const task of tasks.read()) {
+    if (task.state === 'given') out.push({ what: task.id, why: `#${task.number} is out on ${task.machine || 'a machine'}` })
+  }
+  return out
+}
 const queue = require('./tasks/queue')
 require('./tasks/planned')   // registers the drills with the harness
 const machines = require('./machines/store')
@@ -143,6 +162,17 @@ const actions = {
       started,
       port,
       virtualbox: vbox.available() ? vbox.exe() : null,
+      // WHICH REPOSITORIES THIS IS ABOUT, carried on the poll the window already
+      // makes. It is the one piece of context that changes what nearly every
+      // panel means -- a branch, a task and a baseline are all statements about
+      // one folder -- so it belongs where the window can always see it rather
+      // than behind a call somebody has to remember to make.
+      workspace: (() => {
+        try {
+          const now = workspaces.current()
+          return { name: now.name, dir: now.dir, repos: repos.list().length }
+        } catch { return null }
+      })(),
       mine: vms.read().length,
       // Repositories left somewhere other than their default branch. Carried on
       // the poll because a dirty one will refuse a push whose owner cannot
@@ -1286,6 +1316,76 @@ const actions = {
       if (!branch) throw new Error('Which branch?')
       return artifact.read(branch, { fresh: true })
     }
+  },
+
+  // ---- which repositories this is about ---------------------------------
+  //
+  // See core/workspaces.js for why switching is guarded rather than free.
+  workspaces: {
+    about: 'The repository folders this app knows, and which one it is serving',
+    run: () => {
+      const list = workspaces.known()
+      const now = workspaces.current()
+      return {
+        current: now,
+        known: list,
+        // Everything that would be left describing somewhere else. Reported
+        // whether or not anybody is switching, because it is also the answer to
+        // "why will it not let me".
+        inTheWay: inTheWay(),
+        where: workspaces.stateDir(),
+        note: 'Tasks, branch reasons and baselines belong to a workspace and follow it. Machines, ssh hosts and approvals belong to this host and do not.'
+      }
+    }
+  },
+
+  workspaceAdd: {
+    about: 'Remember a folder of repositories, without switching to it',
+    takes: ['dir', 'name'],
+    run: ({ dir, name }) => {
+      const added = workspaces.add(dir, name)
+      if (!added.already) log.on('server').good(`workspace "${added.name}" added — ${added.dir}`)
+      return { ...added, repos: repos.list().length }
+    }
+  },
+
+  workspaceUse: {
+    about: 'Serve a different folder of repositories',
+    takes: ['dir'],
+    run: ({ dir }) => {
+      const was = workspaces.current()
+      const same = path.resolve(String(dir || '')) === path.resolve(was.dir)
+      if (same) return { ...was, changed: false, note: 'That is already the one in use.' }
+
+      // REFUSED WHILE ANYTHING TIES A MACHINE TO THIS ONE.
+      //
+      // A machine set up on a branch cannot be reasoned about from a workspace
+      // that has no such branch: its claim names something that does not exist,
+      // the queue's idea of free changes underneath it, and a task in flight is
+      // delivering to a repository nobody is serving any more. None of that
+      // errors -- it just quietly becomes wrong, which is the failure this whole
+      // separation exists to prevent.
+      const stuck = inTheWay()
+      if (stuck.length) {
+        throw new Error(`Not while ${stuck.map(s => s.why).join('; ')}. Finish or put that away first — switching now would leave it describing a workspace nobody is serving.`)
+      }
+
+      const now = workspaces.use(dir)
+      log.on('server').good(`now serving ${now.dir} — ${repos.list().length} repositories`)
+      return {
+        ...now,
+        was: was.dir,
+        changed: true,
+        repos: repos.list().map(r => r.name),
+        note: `Its tasks, branch reasons and baselines are its own. The machines are this host's and did not move.`
+      }
+    }
+  },
+
+  workspaceForget: {
+    about: 'Stop offering a folder. What is known about it is kept',
+    takes: ['dir'],
+    run: ({ dir }) => workspaces.forget(dir)
   },
 
   // What each repository counts from, and lets it be chosen.

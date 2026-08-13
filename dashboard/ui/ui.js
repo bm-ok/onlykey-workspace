@@ -1551,6 +1551,54 @@ function showDiffOf (branch, repo) {
   }).catch(oops)
 }
 
+// Choosing which folder of repositories this is about.
+//
+// SWITCHING IS GUARDED, and the dialog says so before offering it rather than
+// refusing afterwards: a machine set up on a branch cannot be reasoned about
+// from a workspace that has no such branch, so anything holding one has to be
+// finished or put away first. The same list the action refuses with is shown
+// here, or the window would offer something the action turns down.
+function chooseWorkspace () {
+  api('workspaces').then(w => {
+    const stuck = w.inTheWay || []
+    ask({
+      title: 'Which repositories is this about?',
+      plain: [
+        `Serving ${w.current.dir} — ${(w.known.find(k => k.current) || {}).repos || 0} repositories.`,
+        'Tasks, branch reasons and baselines belong to a workspace and follow it. The machines are this host\'s and do not move.',
+        stuck.length
+          ? `Cannot switch while ${stuck.map(s => s.why).join('; ')}.`
+          : 'Nothing is holding a machine, so switching is safe.'
+      ],
+      fields: [
+        {
+          name: 'dir',
+          label: 'Use',
+          value: w.current.dir,
+          options: w.known.map(k => ({
+            value: k.dir,
+            label: `${k.name}${k.current ? ' (in use)' : ''}${k.there ? ` — ${k.repos} repo${k.repos === 1 ? '' : 's'}` : ' — MISSING'}`
+          }))
+        },
+        // Adding is the same field as choosing, because typing a path somewhere
+        // it is not already known is exactly how a new one arrives.
+        { name: 'add', label: 'Or a folder it has not seen', value: '', placeholder: 'C:\\path\\to\\a\\folder\\of\\repositories' }
+      ],
+      confirm: 'Use it',
+      onYes: async f => {
+        const where = (f.add || '').trim() || f.dir
+        if (!where) throw new Error('Say which folder.')
+        if ((f.add || '').trim()) await api('workspaceAdd', { dir: where })
+        const now = await api('workspaceUse', { dir: where })
+        // Everything on screen is about the old one until it is redrawn.
+        for (const key of ['branches', 'baselines', 'branch-actions', 'branch-carries', 'tasks', 'vms']) changed(key, null)
+        say(now.changed ? `Now serving ${now.dir} — ${(now.repos || []).length} repositories.` : now.note)
+        return draw()
+      }
+    })
+  }).catch(oops)
+}
+
 // Cutting one, with the reason as a required field rather than a nicety.
 //
 // The dialog says what the reason is FOR, because "why does this exist" is a
@@ -3158,8 +3206,28 @@ async function drawOnce () {
     been.set('vm', picked)
   }
 
-  // A path worth copying, so it must not be replaced under a selection.
-  setText($('vbox-path'), status.virtualbox || '')
+  // WHICH REPOSITORIES THIS IS ABOUT, in the chrome, because it is the context
+  // for everything else on screen. A branch, a task, a baseline and a verdict
+  // are all statements about one folder, and until that folder could be changed
+  // it went without saying -- so the title bar carried the path to VBoxManage
+  // instead, which never changes and which nobody needs to see twice.
+  //
+  // Clickable, because the thing you want on reading it is to change it.
+  const ws = status.workspace
+  if (changed('workspace-chip', ws)) {
+    fill($('vbox-path'), el('button', {
+      className: 'linky mono',
+      // The folder's NAME, not its path. A path in the chrome is a line of text
+      // nobody reads twice and which pushes everything else along; the name is
+      // what somebody calls it. The full path and the count are one hover away,
+      // where they answer "which one is this exactly" rather than sitting there.
+      textContent: ws ? ws.name : 'no workspace',
+      title: ws
+        ? `${ws.dir}\n${ws.repos} repositor${ws.repos === 1 ? 'y' : 'ies'}\n\nClick to switch, or add another.`
+        : 'Click to choose a folder of repositories',
+      onclick: chooseWorkspace
+    }))
+  }
   setText($('topright'), latest.vms.length
     ? `${latest.vms.length} machine${latest.vms.length === 1 ? '' : 's'} this app made`
     : 'no machines yet')

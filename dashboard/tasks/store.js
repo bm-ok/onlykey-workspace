@@ -25,8 +25,16 @@ const log = require('../core/log')
 
 const data = require('../core/data')
 
-const STATE = data.state()
-const FILE = path.join(STATE, 'tasks.json')
+// PER WORKSPACE, because a task delivers to a branch in one set of
+// repositories. Kept in one place, switching workspace would leave the board
+// listing work against branches that do not exist here -- and worse, a task
+// could be given to a machine on a branch name that means something else in the
+// folder now being served. Read through a function rather than fixed at load,
+// so switching takes effect without a restart.
+const workspaces = require('../core/workspaces')
+
+const STATE = () => workspaces.stateDir()
+const FILE = () => path.join(STATE(), 'tasks.json')
 
 // The highest number ever used, kept OUTSIDE the list of tasks.
 //
@@ -39,11 +47,11 @@ const FILE = path.join(STATE, 'tasks.json')
 // A number is meant to be the one identity a person can say out loud, so it has
 // to survive the record it was issued against being thrown away. This file is
 // the only thing that remembers deleted tasks, which is precisely its job.
-const COUNTER = path.join(STATE, 'tasks-highest.json')
+const COUNTER = () => path.join(STATE(), 'tasks-highest.json')
 
 function highest () {
   let kept = 0
-  try { kept = Number(JSON.parse(fs.readFileSync(COUNTER, 'utf8')).highest) || 0 } catch { /* first run */ }
+  try { kept = Number(JSON.parse(fs.readFileSync(COUNTER(), 'utf8')).highest) || 0 } catch { /* first run */ }
   // Never below what is on the board: the counter can be deleted, and a board
   // that survived it must not start handing out numbers already in use.
   return Math.max(kept, ...read().map(t => Number(t.number) || 0), 0)
@@ -52,8 +60,8 @@ function highest () {
 function claimNumber () {
   const next = highest() + 1
   try {
-    fs.mkdirSync(STATE, { recursive: true })
-    fs.writeFileSync(COUNTER, JSON.stringify({ highest: next, at: new Date().toISOString() }, null, 2))
+    fs.mkdirSync(STATE(), { recursive: true })
+    fs.writeFileSync(COUNTER(), JSON.stringify({ highest: next, at: new Date().toISOString() }, null, 2))
   } catch { /* the number is still right for this call; it is only not remembered */ }
   return next
 }
@@ -131,19 +139,19 @@ function withIds (list) {
 // should empty the board and make it look as though no work was ever written
 // down.
 function read () {
-  if (!fs.existsSync(FILE)) return []
+  if (!fs.existsSync(FILE())) return []
   try {
-    const data = JSON.parse(fs.readFileSync(FILE, 'utf8').replace(/^﻿/, ''))
+    const data = JSON.parse(fs.readFileSync(FILE(), 'utf8').replace(/^﻿/, ''))
     return withIds(Array.isArray(data) ? data : [data])
   } catch (e) {
-    log.on('task').bad(`${FILE} could not be read (${e.message}). Fix or delete it; no task is listed until then.`)
+    log.on('task').bad(`${FILE()} could not be read (${e.message}). Fix or delete it; no task is listed until then.`)
     return []
   }
 }
 
 const write = list => {
-  fs.mkdirSync(STATE, { recursive: true })
-  fs.writeFileSync(FILE, JSON.stringify(list, null, 2))
+  fs.mkdirSync(STATE(), { recursive: true })
+  fs.writeFileSync(FILE(), JSON.stringify(list, null, 2))
 }
 
 // Any of the three, because a person types the number, a script keeps the uid,

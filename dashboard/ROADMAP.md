@@ -53,9 +53,12 @@ any of these are tested rather than assumed: how large a real diff is, how long 
 real suite takes, whether a real `setup.sh` survives provisioning, whether a
 contract actually constrains a worker doing work that matters.
 
-What blocks it is small and already known: the workspace is `../workspace` with an
-environment-variable override. **Make it a thing the app points at.** That is the
-whole of step 0's engineering.
+**Nothing blocks it now.** The workspace is a folder the app points at, changeable
+from the title bar, and what belongs to a workspace follows it -- see "Which
+repositories this is about" in `README.md`. What remains is a decision rather than
+work: which repositories, and whether the first real task is a fix or a read. A
+task that only READS and reports exercises the whole loop with nothing at stake on
+the branch, which makes it the cheaper first one.
 
 
 1. Keep the session, so a task can be paused
