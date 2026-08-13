@@ -318,3 +318,22 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   class the window applies, every custom property it reads and every id it looks
   up against what exists. It caught two bad variable names within a minute of
   being written.
+* **A host restart leaves a machine holding a credential, and nothing said so.**
+  A credential is taken back before a machine is shut down, so a powered-off
+  machine holding one cannot be reached by anything working correctly — it means
+  the machine was stopped from OUTSIDE that sequence, and a Windows update doing
+  it overnight is the ordinary way. Every other warning in the window is about a
+  machine that is RUNNING, so this one was invisible: a real credential sat on a
+  powered-off disk for eight hours, silently blocking the next snapshot, waiting
+  for somebody to read a field. It matters more when the machine is off than when
+  it is on, not less — a running machine is at least visible; a stopped one looks
+  finished.
+
+  The recovery has an order that is easy to get backwards. The copy ON THE
+  MACHINE was newer than the one on this host, because Claude Code refreshes its
+  token and rewrites the file — and an OAuth refresh rotates the refresh token,
+  so the host was holding one that had probably already stopped working. Grabbing
+  before forgetting keeps the credential that demonstrably still authenticates.
+  Forgetting first would have left a stale copy to be handed to the next machine,
+  where it would fail as "the worker is signed out" on a machine that had just
+  been handed a credential.

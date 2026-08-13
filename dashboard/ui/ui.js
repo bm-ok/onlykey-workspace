@@ -2429,7 +2429,28 @@ async function drawOnce () {
         ? [`${v.name} is on, doing nothing, and holding a worker credential. `,
             'A runner rests off and holding nothing. Take the credential back and shut it down, or give it something to do.']
         : [`${v.name} is on and doing nothing. `,
-            'A runner rests off — the queue starts one when there is work. Shut it down, or give it something to do.'])
+            'A runner rests off — the queue starts one when there is work. Shut it down, or give it something to do.']),
+
+    // OFF, and still holding one. Which nothing said, because every other rule
+    // here is about a machine that is running.
+    //
+    // A credential is taken back before a machine is shut down, so this state
+    // cannot be reached by anything working correctly -- it means a machine was
+    // stopped from OUTSIDE that sequence. A host that rebooted for an update is
+    // the ordinary way, and it happened: an overnight update powered a runner off
+    // mid-credential and the window had nothing to say about it in the morning.
+    //
+    // It matters more when the machine is off than when it is on, not less. A
+    // running machine is at least visible; a powered-off one looks finished, and
+    // the credential sits on its disk indefinitely, unmentioned, waiting for
+    // somebody to happen to read a field. It also silently blocks the next
+    // snapshot, with an error about credentials arriving at whoever tries.
+    ...latest.vms
+      .filter(v => !v.running && v.live && v.holdsCredential)
+      .map(v => [
+        `${v.name} is powered off and still holding a worker credential. `,
+        'That cannot happen in the ordinary sequence — a credential is taken back before a machine is shut down — so it was stopped from outside it, which a host restart does. Start it, take the credential back, and shut it down again. Until then it cannot be snapshotted.'
+      ])
   ].filter(Boolean)
 
   $('trouble').classList.toggle('hidden', !trouble.length)
