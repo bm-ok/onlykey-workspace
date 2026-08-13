@@ -422,9 +422,16 @@ table.kv td { padding: 3px 0; word-break: break-all; }
 
 /* The terminal panel. A fixed box rather than one that grows: xterm measures
    its container to work out rows and columns, so a container sized by its
-   contents would size itself to nothing and report zero rows. */
+   contents would size itself to nothing and report zero rows.
+
+   ITS HEIGHT IS MEASURED, NOT WRITTEN HERE. It used to be `100vh - 200px`, and
+   200 was a guess at everything above it -- which stopped being true the moment
+   a sign-in line and a tab strip were added, and the page grew a scrollbar with
+   the terminal running off the bottom. Above it there is a header, a banner that
+   is sometimes several lines and sometimes absent, a note, a sign-in line and a
+   strip of tabs; no constant describes that. So `sizeTerminal()` asks the box
+   where it actually is and gives it the rest of the window. */
 .term {
-  height: calc(100vh - 200px);
   min-height: 20rem;
   background: #0a0d12;
   border: 1px solid var(--line);

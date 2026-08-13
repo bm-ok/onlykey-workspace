@@ -1161,11 +1161,31 @@ function openShell (name) {
   }).catch(oops)
 }
 
+// The box gets whatever is left of the window, measured rather than assumed.
+//
+// What sits above it is a header, a banner that is sometimes several lines and
+// sometimes absent, a note, a sign-in line and a strip of tabs. A stylesheet
+// cannot subtract that -- the first version tried, with `100vh - 200px`, and the
+// page grew a scrollbar with the terminal running off the bottom the moment two
+// of those rows were added. Asking the element where it ended up is exact and
+// stays exact.
+function sizeTerminal () {
+  const box = $('term')
+  if (view !== 'terminal') return
+  const top = box.getBoundingClientRect().top
+  // The 16 is main's own bottom padding, which is a real constant rather than a
+  // guess at a layout.
+  box.style.height = `${Math.max(240, Math.round(window.innerHeight - top - 16))}px`
+}
+
 function showShell (shell) {
   active = shell || null
   for (const s of shells) s.holder.classList.toggle('on', s === active)
   paintShellTabs()
   if (!active) return
+  // Sized and THEN fitted, in that order: fit measures the container, so fitting
+  // before the container has its height measures the old one.
+  sizeTerminal()
   // Fitted only once visible: a terminal laid out inside a hidden element
   // measures zero and comes back at the wrong size.
   try { active.fit.fit() } catch { /* not laid out yet */ }
@@ -1268,7 +1288,9 @@ function paintTerminal () {
   }
   $('term-open').disabled = !up.length
   paintTermAuth()
-  // Refitted when the tab becomes visible, for the reason in showShell.
+  // Resized and refitted every draw, because what sits above the box changes on
+  // its own: the banner appears and disappears with the state of the machines.
+  sizeTerminal()
   if (view === 'terminal' && active) { try { active.fit.fit() } catch { /* not open yet */ } }
 }
 
@@ -1955,7 +1977,11 @@ $('term-close').onclick = () => closeShell(active)
 // tab -- it is what you read BEFORE opening a shell, to know whether opening one
 // is worth doing.
 $('term-machine').onchange = () => paintTermAuth()
-window.addEventListener('resize', () => { if (active && view === 'terminal') { try { active.fit.fit() } catch { /* not laid out */ } } })
+window.addEventListener('resize', () => {
+  if (view !== 'terminal') return
+  sizeTerminal()
+  if (active) { try { active.fit.fit() } catch { /* not laid out */ } }
+})
 
 // The settings are the previous version's, which were arrived at by running it:
 // 8 GB, 4 cpus, 60 GB, a named LTS image type, and bridged networking so the
@@ -2204,9 +2230,18 @@ async function drawOnce () {
     // note: an idle machine is the one case where a token is exposed for no
     // reason at all — nothing is using it, and it will keep not being used
     // until somebody looks.
+    //
+    // A SHELL OPEN ON IT COUNTS AS USING IT, which it did not until the Terminal
+    // tab existed. Without that, the window argued with itself: the sign-in line
+    // offers to hand a machine a credential so `claude` will run, and the banner
+    // immediately scolds you for the credential you were just told to place, on a
+    // machine you are visibly sitting in. A nag that fires at the thing the same
+    // window recommended is a nag people learn to ignore, and this one is worth
+    // not teaching that about.
     ...latest.vms
       .filter(v => v.running &&
         !busyMachines.has(v.name) &&        // the queue is using it
+        !shells.some(s => s.name === v.name && !s.ended) && // you are in it
         v.forTasks !== false &&             // somebody said keep this one back
         v.stage !== 'installing')           // it is being built
       .map(v => v.holdsCredential
