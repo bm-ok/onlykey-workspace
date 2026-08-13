@@ -1325,27 +1325,21 @@ function paintProtected (board) {
 // way, and a third repository defaulting to something else is what separated
 // them.
 function paintBaselines () {
-  waiting('baselines', { cards: 2 })
   waiting('groups', { cards: 2 })
   api('repoBaselines').then(({ repos, groups, note }) => {
     if (!changed('baselines', [repos, groups])) return
 
-    setText($('baseline-context'), repos.length ? `— ${repos.length}` : '')
-    fill($('baselines'), repos.length
-      ? [...repos.map(r => el('div', {
-          className: `card pick${r.differs ? ' warn' : ''}`,
-          onclick: () => chooseBaseline(r)
-        },
-        el('div', { className: 'card-title' },
-          el('span', { className: 'mono', textContent: r.repo }),
-          el('span', { className: `badge ${r.differs ? 'warn' : ''}`, textContent: r.baseline })),
-        // Only when it is not the obvious answer. Saying "its own default" under
-        // every repository would be noise on the ordinary case and would make
-        // the exception harder to see, not easier.
-        r.differs
-          ? el('div', { className: 'badges' }, el('span', { className: 'muted', textContent: `chosen — its default is ${r.default}` }))
-          : null)),
-        el('p', { className: 'note', textContent: note })]
+    // WHAT EACH REPOSITORY COUNTS FROM, as a statement rather than a column of
+    // controls. It is the thing every "commits ahead" on the board is measured
+    // against, so it is worth reading; it is not worth being able to change one
+    // at a time, which is what the column it replaced was for.
+    fill($('baselines-now'), repos.length
+      ? el('div', { className: 'card' },
+          el('div', { className: 'card-title' }, el('span', { textContent: 'Counted from' })),
+          ...repos.map(r => el('div', { className: 'group-part' },
+            el('span', { className: 'mono', textContent: r.repo }),
+            el('span', { className: r.differs ? 'mono' : 'mono muted', textContent: r.baseline }))),
+          el('div', { className: 'card-sub muted', textContent: note }))
       : el('p', { className: 'empty', textContent: 'No repositories in the workspace.' }))
 
     // ---- the groups -----------------------------------------------------
@@ -1397,27 +1391,68 @@ function paintBaselines () {
 }
 
 // Naming what everything is counted from right now.
+// NAMING A LINE IS WHERE ITS BRANCHES ARE CHOSEN.
+//
+// This used to snapshot whatever the per-repository baselines happened to be, so
+// making a group meant first setting three things one at a time somewhere else
+// and then giving the result a name. Those three settings were the problem: they
+// were edited individually, nothing described them together, and what a branch
+// got cut from depended on all of them being right at once.
+//
+// So the choice moved here, to the moment it is one decision. A repository can
+// also be left OUT, which is not an omission — it is how a line that never
+// reached a repository says so, and it is what scopes every task cut from this
+// group to the repositories the work is actually about.
 function newGroup () {
-  api('repoBaselines').then(({ repos }) => ask({
-    title: 'Name this set of baselines',
-    plain: [
-      'A group names one branch per repository, and using it sets all of them at once — because a change spans repositories, and what work is counted from is one question with one answer.',
-      `Right now: ${repos.map(r => `${r.repo} → ${r.baseline}`).join(', ')}.`,
-      'Every branch in a group is protected while it is in one: work is cut from it and merged back into it, never built on directly. That is what makes chaining safe rather than a convention.'
-    ],
-    fields: [
-      { name: 'name', label: 'Called', placeholder: 'the version2 line' },
-      { name: 'why', label: 'What it is, if it needs saying', placeholder: 'everything since the v2 split' }
-    ],
-    confirm: 'Name it',
-    onYes: async f => {
-      const saved = await api('baselineGroupSave', { name: f.name, why: f.why })
-      changed('baselines', null)
-      changed('branches', null)
-      say(`"${saved.name}" — ${saved.on.map(p => `${p.repo}:${p.branch}`).join(', ')}`)
-      return draw()
-    }
-  })).catch(oops)
+  api('repoBaselines').then(({ repos }) => {
+    if (!repos.length) throw new Error('There are no repositories in this workspace to name a line across.')
+
+    return ask({
+      title: 'Name this set of baselines',
+      plain: [
+        'A group names one branch per repository, and it is what work is cut from — because a change spans repositories, and what work is counted from is one question with one answer.',
+        'Every branch in a group is protected while it is in one: work is cut from it and merged back into it, never built on directly. That is what makes chaining safe rather than a convention.',
+        'Leave a repository out if this line does not reach it. A task cut from this group only ever touches the repositories named here — it is not checked out on a machine, and that machine cannot fetch it.'
+      ],
+      fields: [
+        { name: 'name', label: 'Called', placeholder: 'the version2 line' },
+        { name: 'why', label: 'What it is, if it needs saying', placeholder: 'everything since the v2 split' },
+        // One per repository, defaulted to what it counts from now — so the
+        // ordinary case is still "name what is already true", answered by
+        // reading it rather than by it happening invisibly.
+        ...repos.map(r => ({
+          name: `on:${r.repo}`,
+          label: r.repo,
+          value: r.baseline || '',
+          options: [
+            ...(r.branches || []).map(b => ({
+              value: b,
+              label: b === r.default ? `${b} — its default` : b
+            })),
+            { value: '', label: '— not part of this line —' }
+          ]
+        }))
+      ],
+      confirm: 'Name it',
+      onYes: async f => {
+        const on = {}
+        for (const r of repos) {
+          const chosen = f[`on:${r.repo}`]
+          if (chosen) on[r.repo] = chosen
+        }
+        if (!Object.keys(on).length) {
+          throw new Error('A line has to reach at least one repository. Every repository is set to "not part of this line".')
+        }
+
+        const saved = await api('baselineGroupSave', { name: f.name, why: f.why, on })
+        changed('baselines', null)
+        changed('branches', null)
+        const left = repos.filter(r => !(r.repo in on)).map(r => r.repo)
+        say(`"${saved.name}" — ${saved.on.map(p => `${p.repo}:${p.branch}`).join(', ')}${left.length ? `. Not part of it: ${left.join(', ')}.` : ''}`)
+        return draw()
+      }
+    })
+  }).catch(oops)
 }
 
 const showGroup = g => say(`"${g.name}" — ${g.on.map(p => `${p.repo}:${p.branch}`).join(', ')}`)
@@ -1444,32 +1479,16 @@ function askToForgetGroup (g) {
 
 // Choosing one. The list is that repository's own branches, because a baseline
 // has to exist there -- it is what everything else in it is counted from.
-function chooseBaseline (r) {
-  ask({
-    title: `What does ${r.repo} count from?`,
-    plain: [
-      'Work is measured against this branch, and new branches are cut from it.',
-      `Its own default branch is "${r.default}", and that stays protected whatever is chosen here — a default is a fact about the repository rather than a preference.`,
-      'While a branch is the baseline, nothing may be built on it either: a branch a machine can push to is not something that machine\'s work can be measured against.'
-    ],
-    fields: [{
-      name: 'branch',
-      label: 'Counted from',
-      value: r.baseline,
-      options: [
-        ...(r.chosen ? [{ value: '', label: `— back to its default, ${r.default} —` }] : []),
-        ...r.branches.map(b => ({ value: b, label: b === r.default ? `${b} (its default)` : b }))
-      ]
-    }],
-    confirm: 'Use it',
-    onYes: async f => {
-      const done = await api('repoBaseline', { repo: r.repo, branch: f.branch })
-      changed('branches', null)
-      changed('baselines', null)
-      say(done.note)
-    }
-  })
-}
+// `chooseBaseline` was here. It set ONE repository's baseline, and it was the
+// last way to make three independent settings that nothing described together —
+// the state the group requirement exists to end, since what a branch is cut from
+// then depends on all of them being right at once and nobody is looking at any
+// of them while typing a branch name.
+//
+// Choosing a branch per repository happens in the name-a-line dialog now, where
+// it is one decision with one name on it. `repoBaseline` remains an action: on a
+// command line it is a deliberate single step, and `baselineGroupUse` is built
+// out of it.
 
 // What can be done to the selected branch. One set of buttons for all of them,
 // the same arrangement as the machines tab, so the answer to "why can I not

@@ -203,14 +203,24 @@
             <span class="grow"></span>
             <button class="plus" id="add-group-open" title="Name a set of baselines">+</button>
           </h2>
+          <!-- What each repository counts from right now: the thing every
+               "commits ahead" figure on the board is measured against, said once
+               and not editable here. -->
+          <div id="baselines-now"></div>
           <div id="groups" class="stack"></div>
         </div>
 
-        <div class="col">
-          <h2>Per repository <span class="muted" id="baseline-context"></span></h2>
-          <div id="baselines" class="stack"></div>
-        </div>
+        <!-- A "Per repository" column stood here, one card per repository with
+             its baseline, each one clickable to change that repository on its
+             own. It said the same thing the groups say and it was the last place
+             three independent settings could be created — the exact state the
+             group requirement exists to end, since what a branch is cut from
+             would then depend on all three being right at once.
 
+             Choosing a branch per repository now happens where it is one
+             decision: naming the line. What each repository counts from RIGHT
+             NOW is still worth seeing, so it is said once, above the groups,
+             as a fact rather than as a row of controls. -->
         <div class="col wide">
           <h2>What a group is <span class="muted" id="group-context"></span></h2>
           <div id="group-detail" class="panel"></div>

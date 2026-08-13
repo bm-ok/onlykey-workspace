@@ -964,6 +964,34 @@ branches move on. A merge base answers "where do these diverge now", which is a
 different question and stops agreeing with this one as soon as the baseline
 advances.
 
+Naming a line is where its branches are chosen
+-----------------------------------------------
+
+The Baselines pane had a "Per repository" column: one card per repository with
+its baseline, each clickable to change that repository on its own. Naming a group
+then snapshotted whatever those happened to be -- so making a line meant setting
+three things one at a time and afterwards giving the result a name.
+
+Those three settings were the problem the group requirement exists to solve. They
+were edited individually, nothing described them together, and what a branch got
+cut from depended on all of them being right at once while nobody was looking at
+any of them.
+
+So the choice moved into the name-a-line dialog, where it is one decision with
+one name on it: a select per repository, defaulted to what it counts from now, so
+the ordinary case is still "name what is already true" -- read rather than
+assumed. **A repository can be left out**, which is not an omission but the way a
+line says it never reached that repository, and it is what scopes every task cut
+from the group.
+
+What each repository counts from is still shown, once, above the groups. It is
+what every "commits ahead" on the board is measured against, so it is worth
+reading; it is not worth being able to change one at a time.
+
+`repoBaseline` remains an action. On a command line it is a deliberate single
+step, and `baselineGroupUse` is built out of it -- what went away is the window
+offering it as a row of controls.
+
 The group is also the SCOPE
 ----------------------------
 
