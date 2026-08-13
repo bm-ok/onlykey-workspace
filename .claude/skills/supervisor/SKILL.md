@@ -248,12 +248,28 @@ already reported.
 If a machine has gone silent and there is nothing in the log to read:
 
 ```bash
-okc.js vmScreenshot --name runner1
+okc.js vmScreenshot --name runner1                     # is it even booting
+okc.js vmShell --name runner1                          # a shell inside it
+okc.js vmShell --name runner1 --command 'journalctl -u okc-agent -n 30'
 ```
 
-That is the only thing that answers "working or stuck?" before an agent
-connects, and it has already caught two failures that produced no log output at
-all.
+**`vmShell` is the back door, and it is the reason an ssh key goes onto every
+machine at build time.** Everything else here reaches a machine through its
+agent — which is exactly the thing that is broken when you most need to look.
+From this side a silent agent is indistinguishable from a dead machine; the
+difference is written in the guest's own journal.
+
+That is not hypothetical. An agent was once found *awake*, correctly diagnosing
+its own lost connection, writing so to its journal — and stuck. Nothing on this
+side could have said that, and one `journalctl` did.
+
+**It works when the machine is NOT dialled in**, which is the whole point: the
+address is recorded every time a machine connects and used long afterwards.
+Asking the agent where it lives is no use when the agent is the problem.
+
+`vmScreenshot` is still the first thing for a machine that has never connected —
+before an agent exists there is no journal to read, and it is the only thing that
+tells an installer copying files from one sitting at a boot menu.
 
 ## 5. Report
 

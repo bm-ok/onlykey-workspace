@@ -487,6 +487,29 @@ about a machine that is off — precisely the one nobody has looked at recently.
 says it could not ask. Silence must not be able to mean two different things.
 
 
+The back door, and why every machine gets an ssh key
+---------------------------------------------------
+
+    okc.js vmShell --name runner1
+    okc.js vmShell --name runner1 --command 'journalctl -u okc-agent -n 30'
+
+Everything else here reaches a machine **through its agent**, which is precisely
+the thing that is broken when you most need to look inside. From this host a
+silent agent is indistinguishable from a dead machine, and the difference is
+written in the guest's own journal.
+
+That is why the ssh key is installed at build time rather than on request: the
+moment you need it is the moment nothing can be arranged. An agent was once
+found awake, correctly diagnosing its own lost connection, saying so in its
+journal — and stuck. Nothing on this side could have reported that; one
+`journalctl` did.
+
+**It works when the machine is not dialled in**, which is the entire point. The
+address is recorded every time a machine connects, and used long afterwards —
+asking the agent where it lives is no use when the agent is the problem. Without
+`--command` it is an interactive shell; the command line hands its terminal
+straight to `ssh`, because the dashboard has no terminal to give.
+
 Seeing a machine that is not talking yet
 ----------------------------------------
 

@@ -149,10 +149,26 @@ function onConnection (socket, tokenFor, onHello) {
         if (had && had.socket !== socket) dropAgent(vm, 'was replaced by a new connection')
         agents.set(vm, { socket, since: new Date().toISOString(), from, facts: msg.facts || {}, lastSeen: Date.now() })
         log.on('vm', vm, 'channel').good(`${vm} dialled in from ${socket.remoteAddress}`)
+
+        // Handed out rather than written down here, because this file must not
+        // know about the registry -- vms.js already requires this one, and the
+        // other direction would be a cycle.
         // It has a token now, so whatever carried it here is spent. Told rather
         // than inferred: this is the only moment anything knows a machine has
         // finished being built, and the install ticket must not outlive it.
-        if (onHello) { try { onHello(vm) } catch { /* never worth dropping a session over */ } }
+        // The address goes with it. The socket's far end rather than anything
+        // the machine says about itself: a machine lists every address it has,
+        // and once docker is installed that includes a bridge address that is
+        // real inside it and unreachable from here. A packet has already come
+        // back along this one.
+        if (onHello) {
+          try {
+            onHello(vm, {
+              address: String(from || '').replace(/^::ffff:/, '').replace(/:\d+$/, ''),
+              user: (msg.facts || {}).user || null
+            })
+          } catch { /* never worth dropping a session over */ }
+        }
         send({ type: 'hi' })
         continue
       }

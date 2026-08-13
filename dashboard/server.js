@@ -1979,6 +1979,54 @@ done`
     }
   },
 
+  // The way in when the way in has stopped working.
+  //
+  // THIS IS THE BACK DOOR, and it is the reason an ssh key is put on every
+  // machine at build time. Everything else here talks to a machine through its
+  // agent — which is exactly the thing that is broken when you most need to look
+  // inside. A silent agent is indistinguishable from a dead machine from this
+  // side, and the difference is written in the guest's own journal.
+  //
+  // That is not hypothetical: an agent was found awake, correctly diagnosing its
+  // own lost connection, writing so to its journal, and stuck. Nothing on this
+  // side could have said that. One `journalctl -u okc-agent` did.
+  //
+  // The address comes from the registry rather than the channel, deliberately.
+  // Asking the agent where it lives is no use when the agent is the problem, so
+  // it is recorded every time a machine dials in and used long afterwards.
+  vmShell: {
+    about: 'How to ssh into a machine — the way in when its agent has stopped answering',
+    takes: ['name'],
+    run: ({ name }) => {
+      const vm = vms.get(name)
+      const agent = channel.list().find(a => a.vm === name)
+
+      // Live first, remembered second. They are usually the same; when they are
+      // not, the live one is right and the remembered one is what there is.
+      const live = agent ? String(agent.from || '').replace(/^::ffff:/, '').replace(/:\d+$/, '') : null
+      const address = live || vm.lastAddress || null
+      const user = (agent && agent.facts && agent.facts.user) || vm.lastUser || (vm.spec && vm.spec.user) || null
+
+      if (!address) {
+        throw new Error(`Nothing knows where "${name}" is. It has to have dialled in at least once for its address to be recorded — start it and wait, or look in VirtualBox.`)
+      }
+
+      return {
+        name,
+        user,
+        address,
+        // Both, because they answer different questions: one to run, one to
+        // paste somewhere else.
+        target: `${user}@${address}`,
+        command: `ssh ${user}@${address}`,
+        live: !!live,
+        note: live
+          ? 'Its agent is answering, so vmRun would work too — this is for looking at things the agent cannot tell you.'
+          : `Not dialled in. This address is where it was last seen${vm.lastSeenAt ? ` (${new Date(vm.lastSeenAt).toLocaleString()})` : ''}, which is the whole reason it was written down.`
+      }
+    }
+  },
+
   // Open a virtual machine's work in VS Code, over its own remote.
   //
   // The address is not configured, discovered or looked up: the machine dialled
@@ -2443,7 +2491,24 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
           // A machine that has dialled in has its token, so the ticket that got
           // it there is spent. Burned here rather than on a timer, because this
           // is the only moment anything knows the install actually finished.
-          onHello: name => { try { vms.update(name, { installTicket: null }) } catch { /* it may already be gone */ } }
+          // Two things, both only knowable at this moment.
+          //
+          // The ticket is spent: the machine has a token now, so whatever
+          // carried it here must not outlive that.
+          //
+          // And the address is REMEMBERED, because the moment you most want to
+          // reach a machine is the moment it has stopped talking to you. It is
+          // only knowable while connected — it is the far end of the socket —
+          // and by the time somebody needs to ssh in and find out why the agent
+          // is silent, there is no socket to ask.
+          onHello: (name, seen = {}) => {
+            try {
+              vms.update(name, {
+                installTicket: null,
+                ...(seen.address ? { lastAddress: seen.address, lastUser: seen.user || null, lastSeenAt: new Date().toISOString() } : {})
+              })
+            } catch { /* it may already be gone */ }
+          }
         })
         channelPort = c.port
       } catch (e) {

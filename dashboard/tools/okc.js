@@ -128,6 +128,36 @@ async function main () {
       return 0
     }
 
+    // `vmShell` becomes an actual shell, here, rather than printing a command
+    // for somebody to copy.
+    //
+    // It has to happen in THIS process: the dashboard has no terminal to hand
+    // over, and an interactive session needs the one the person is sitting at.
+    // So the action answers where the machine is and this replaces itself with
+    // ssh — the same thing they would have typed, without the typing.
+    //
+    // Not when --json was asked for. That is a script asking where a machine is,
+    // and dropping it into an interactive session would be a surprise of the
+    // worst kind.
+    if (action === 'vmShell' && !asJson) {
+      const where = await ipc.call(action, args)
+      console.error(`${where.command}${where.live ? '' : '   (not dialled in — last known address)'}`)
+      const { spawnSync } = require('node:child_process')
+      // stdio inherited, so this IS the session: keys, colours, the lot.
+      // With --command it runs that and returns; without, it is a shell. The
+      // same flag vmRun uses, so which door you go through is the only
+      // difference between them.
+      const ssh = spawnSync('ssh', [
+        '-o', 'StrictHostKeyChecking=accept-new',
+        where.target,
+        ...(args.command ? [String(args.command)] : [])
+      ], { stdio: 'inherit' })
+      // ssh's own exit code, passed straight through: a script that runs a
+      // command this way should see what the command said, not what this
+      // wrapper thought of it.
+      return ssh.status === null ? 1 : ssh.status
+    }
+
     show(await ipc.call(action, args), asJson)
     return 0
   } catch (e) {
