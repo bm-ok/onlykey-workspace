@@ -176,7 +176,13 @@ async function run (actions, log, task, machine) {
     })
 
     // --- wait for it ------------------------------------------------------
-    const outcome = await phase('work', () => waitForRun(actions, to, machine, started.run))
+    // How long to wait is the TASK's business, not this file's.
+    //
+    // Six hours is a sensible default for work somebody is expecting back today,
+    // and wrong for a soak deliberately left overnight -- which would be
+    // abandoned at hour six while still running perfectly, and the machine put
+    // away underneath it. A task that knows it is long says so.
+    const outcome = await phase('work', () => waitForRun(actions, to, machine, started.run, Number(task.hours) || 6))
 
     // Pulled across before the machine is touched again. taskProgress does this
     // too, but that only happens if somebody looks -- and this machine is about

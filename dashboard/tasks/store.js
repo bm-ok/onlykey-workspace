@@ -183,6 +183,12 @@ function add (input) {
     // on whether it felt like taking an hour, and bills somebody for the
     // privilege.
     shell: !!input.shell,
+    // How long the queue waits before giving up on it, in hours. Six unless the
+    // task says otherwise — enough for anything somebody is expecting back
+    // today, and not enough for a soak left running overnight, which would
+    // otherwise be abandoned at hour six while still working perfectly and have
+    // its machine put away underneath it.
+    hours: Number(input.hours) > 0 ? Number(input.hours) : null,
     state: 'draft',
     machine: null,
     // The LAST run, kept for the things that only care about the latest.

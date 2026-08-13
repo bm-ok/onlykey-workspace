@@ -29,9 +29,10 @@ What is drawn today is right; what is drawn tomorrow still needs a photograph.
 Outstanding
 -----------
 
-* **Nothing has been left running for days.** Every run so far has been minutes.
-  A worker that hits a token refresh, a network drop or a full disk mid-task has
-  never been observed.
+* **Nothing has been left running for hours.** A five-minute soak passed on a
+  timer; the overnight one is written and waiting as **#17**, ten hours of
+  heartbeats, queue it at bedtime. What it is looking for is what only shows up
+  over time: a channel that drops, an agent that dies, a disk that fills.
 * **`legacy/contracts/dashboard/supervisor-mode.md` is still on disk.** Its rules
   now live in the supervisor skill, which is where PLAN says supervisor mode is
   entered. The file is two sentences of generic filler that nothing loads, and
