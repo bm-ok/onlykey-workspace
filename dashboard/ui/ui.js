@@ -2419,103 +2419,21 @@ function vmActions () {
         .catch(oops)
     }),
 
-    // ONE button, and it asks a question only once.
+    // "Open in VS Code" WAS HERE, and it is deliberately gone.
     //
-    // A machine on a branch stays on it until it is clean, so there is nothing
-    // to decide on the way back in: opening again just opens. There was briefly
-    // a second button for moving to another branch, and it was a mistake --
-    // switching is how half-finished work stops being anywhere, sitting on a
-    // branch the machine may no longer push with nothing saying so. The way off
-    // a branch is back to a snapshot from before it, which is an action that
-    // states what it discards.
+    // It opened an editor on a MACHINE, which meant choosing a branch from a
+    // machine that had none, or carrying on with whatever one it happened to
+    // hold -- and either way no task existed, so the work had no brief, no
+    // attempts, no verdict and nothing recording that it happened. That is the
+    // hole the human path was outside of, and it is not one to leave a second
+    // door open into.
     //
-    // The setup still runs on the way in, because it is safe to -- it never
-    // resets the machine's copy -- and it repairs a workspace that is not there,
-    // which is exactly the state a machine is in after being rolled back.
-    v.connected && v.branch
-      ? el('button', {
-          className: 'btn',
-          textContent: 'Open in VS Code',
-          title: `${v.name} is on ${v.branch}, and stays there until it is clean`,
-          onclick: () => {
-            showTab('live')
-            return api('vmWorkspace', { name: v.name, branch: v.branch })
-              .then(() => api('vmEditor', { name: v.name }))
-              .then(r => say(`${v.name} is on ${v.branch} — VS Code opened ${r.opened}`))
-              .catch(oops)
-          }
-        })
-      : el('button', {
-          className: 'btn',
-          textContent: 'Open in VS Code',
-          disabled: !v.connected,
-          title: v.connected ? '' : 'It has to be dialled in — that is where its address comes from',
-          onclick: () => api('gitBranches').then(({ repos, branches }) => {
-            // Two questions, kept apart, because the way out of each is
-            // different. A branch may not be AVAILABLE -- protected, or another
-            // machine has it -- and then the answer is to pick another one. Or
-            // it may not be RECLAIMABLE, meaning a checkout here has uncommitted
-            // work in it, and then the answer is in that working tree and this
-            // choice was fine.
-            const open = branches.filter(b => b.usable)
-            const taken = branches.filter(b => !b.available)
-            const stuck = branches.filter(b => b.available && !b.reclaimable)
-
-            return ask({
-              title: `Open ${v.name} in VS Code?`,
-              plain: [
-                `It sets up a workspace on ${v.name} holding ${repos.length ? repos.join(', ') : 'the workspace repositories'}, all on one branch, pointed back here.`,
-                'Pick a branch to carry on with, or type a name to start new work.',
-                'Nothing lands on a default branch: the branch is cut here first and the machine arrives with it already checked out.',
-                // Asked once, and said so while it is still a free choice. After
-                // this the machine is on that branch until it is rolled back to a
-                // point from before it, which is the only way off.
-                `${v.name} stays on whichever you pick until it goes back to a snapshot from before it.`,
-                // What is missing from the list, and why -- otherwise a branch
-                // somebody knows exists is simply absent, which reads as a bug.
-                ...taken.map(b => b.protected
-                  ? `${b.name} is not offered: it is the default branch, and work is merged into it here rather than done on it.`
-                  : `${b.name} is not offered: ${b.heldBy} is working on it.`),
-                // Said differently on purpose. This one is not about the branch
-                // at all -- it is available, and something in a working tree
-                // here is in the way of using it.
-                ...stuck.map(b => `${b.name} is free, but ${b.blocked.join(' ')}`),
-                'Then a new window opens on it; this one is not replaced.'
-              ],
-              fields: [
-                {
-                  name: 'existing',
-                  label: open.length ? 'Carry on with' : 'Nothing to carry on with — type a name below',
-                  value: '',
-                  options: [
-                    { value: '', label: open.length ? '— start a new one —' : 'none available' },
-                    ...open.map(b => ({
-                      value: b.name,
-                      // What a name means is which repositories are on it, so
-                      // that is said here rather than discovered after picking.
-                      label: b.missing.length ? `${b.name} — in ${b.in.join(', ')}` : `${b.name} — all of them`
-                    }))
-                  ]
-                },
-                { name: 'fresh', label: 'Or a new branch', placeholder: 'fix/the-thing' }
-              ],
-              confirm: 'Set it up and open it',
-              onYes: async f => {
-                const branch = f.fresh.trim() || f.existing
-                if (!branch) throw new Error('Pick a branch to carry on with, or type a name for a new one.')
-
-                showTab('live')
-                // Two calls, because they fail differently and only one of them
-                // is slow: setting up clones over the network, opening does not.
-                // If the setup fails there is nothing worth opening, and the
-                // reason is in the log rather than behind an editor window.
-                const w = await api('vmWorkspace', { name: v.name, branch })
-                const r = await api('vmEditor', { name: v.name })
-                say(`${v.name} is on ${w.branch} — VS Code opened ${r.opened}`)
-              }
-            })
-          }).catch(oops)
-        }),
+    // Work is started from a BRANCH now: Branches -> Work on it in VS Code,
+    // which makes a task, borrows a machine, sets it up and opens the editor.
+    // The chain is the same as a worker's and the board says who did it.
+    //
+    // `vmEditor` remains an action, listed with everything else in All actions.
+    // Removing a button is not the same as removing what it did.
 
     v.live && !v.baseSnapshot
       ? el('button', {
