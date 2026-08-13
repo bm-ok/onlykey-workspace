@@ -29,12 +29,12 @@ What is drawn today is right; what is drawn tomorrow still needs a photograph.
 Outstanding
 -----------
 
-* **Both machines are running the OLD agent.** Tonight fixed three things in
-  it -- keepalive, a beat that tears the session down, and a unit that no longer
-  blocks the boot -- and none of that is on either runner: those files are
-  applied at install, or by vmSetupAgain, and neither has happened since. The
-  next rebuild picks them up; until then a machine that loses the network still
-  never comes back.
+* **`runner1` is running the OLD agent.** `runner2` has tonight's three fixes —
+  a read timeout, a beat the dashboard answers, and a unit that no longer blocks
+  the boot — pushed with `vmSetupAgain --stage firstBoot` and proven by pulling
+  its cable. `runner1` has none of them, so it is still a machine that never
+  comes back from a network outage. It needs the same push, which needs it
+  started and dialled in — and it is the machine that would not boot.
 
 * **Nothing has been left running for hours.** A five-minute soak passed on a
   timer; the overnight one is written and waiting as **#17**, ten hours of
