@@ -223,6 +223,30 @@ incomplete one. Nothing nags, nothing is blocked on it, and no count anywhere
 reads as a chore -- a judgement is a thing somebody asked for, and the moment the
 window implies one is owed, it is a checklist rather than a tool.
 
+**So the cut carries a list of judgement cards, with a `+`.** The same shape as
+the branch cuts and the task board, in the same place a person is already
+looking: the cut's own panel, listing what has been judged, by whom, at which
+tips, and whether each still describes what is there. `+` adds one.
+
+**AND THE `+` ASKS THE SAME QUESTION THE TASK DIALOG ASKS: who is doing it.**
+
+    + judgement  ->  claude   queued as a judgement run, taken ahead of tasks
+                 ->  person   an editor, here, now -- no machine, no queue
+
+That is not a convenience, it is the spine again. A task is `worker: claude |
+person`, one board, one record, one contract, and the only step that differs is
+how the work is started and how it is known to be finished. A judgement is the
+same object with the same two answers, and building the person's kind as a
+different thing -- a note field, a checkbox, a comment typed into GitHub -- is
+exactly what kept work done by hand off the board for so long.
+
+The case this is for: **Claude passes, then a person reads it themselves.** Two
+judgements, both against the same tips, both in the list, both published, in
+order, saying which was which. What makes that worth having is that it is
+visible: a reviewer arriving later can see that a model read it and then a person
+did, which is a different and much stronger claim than either alone -- and it is
+the claim nobody can make today, because the person's pass leaves no trace at all.
+
 **It recommends. A person still decides.** The judge writes its judgement onto
 the PR cut and into the Judge tab, with reasons; accepting or rejecting stays a
 person's act, and nothing lands on a judgement alone. That is the same rule
@@ -273,6 +297,9 @@ deciding which is the kind of thing a person should not have done for them.
   each entry with the tips it read, the verdict, the reasons, when, and **who or
   what judged** -- the model and its version where it was a model, a name where
   it was a person. Appended to, never replaced
+* the `+` on a cut, and the two answers behind it. The person's kind needs no
+  machine and no queue and should be the cheaper one to build; doing it first
+  would also prove the record and the staleness rule with nothing else moving
 * a run kind the queue understands as *judge*, and the rule above about what it
   is taken before
 * what a judge is actually given: the diff of the cut, the branch's reason, the
