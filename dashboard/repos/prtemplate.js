@@ -24,6 +24,7 @@ const { execFileSync } = require('node:child_process')
 const serve = require('./serve')
 const branches = require('./branches')
 const workspaces = require('../core/workspaces')
+const remotes = require('./remotes')
 
 const FILE = () => path.join(workspaces.stateDir(), 'pr-template.json')
 
@@ -31,6 +32,19 @@ const git = (dir, args) => {
   try {
     return execFileSync('git', ['--git-dir', dir, ...args], { encoding: 'utf8', timeout: 30000, windowsHide: true }).trim()
   } catch { return null }
+}
+
+// A commit, short enough to read and long enough to find, as a link when there
+// is somewhere to point it. Forty characters of hexadecimal in a description is
+// something a reader copies out and pastes into a search box; eight of them
+// underlined is something they click.
+//
+// Plain when there is no url — a repository with no remote still deserves the
+// hash, and a link to nowhere is worse than none.
+const link = (sha, at) => {
+  if (!sha) return '`unknown`'
+  const short = String(sha).slice(0, 8)
+  return at ? `[\`${short}\`](${at}/commit/${sha})` : `\`${short}\``
 }
 
 // ---- the blocks --------------------------------------------------------
@@ -62,12 +76,12 @@ const BLOCKS = [
   {
     id: 'cutfrom',
     label: 'What it was cut from',
-    about: 'The line the branch started at, per repository — which is what its "commits ahead" is measured against.',
+    about: 'The branch and the exact commit each repository started at, linked to the repository that commit came from.',
     write: c => {
       const note = branches.noteFor(c.branch)
-      if (!note || !note.from) return null
-      const from = Object.entries(note.from).map(([r, b]) => `- ${r} — \`${b}\``)
-      return [`**Cut from${note.group ? ` the "${note.group}" line` : ''}:**`, ...from].join('\n')
+      const rows = (c.repos || []).map(r => `- ${r.repo} — \`${r.base}\` at ${link(r.startedAt, r.from)}`)
+      if (!rows.length) return null
+      return [`**Cut from${note && note.group ? ` the "${note.group}" line` : ''}:**`, ...rows].join('\n')
     }
   },
   {
@@ -83,10 +97,15 @@ const BLOCKS = [
   {
     id: 'commits',
     label: 'The commit each repository ends at',
-    about: 'The exact commit this pull request is proposing, per repository. What a reviewer checked, written down.',
+    about: 'The branch and the exact commit this pull request proposes, linked to the repository the branch lives in.',
     manyOnly: false,
+    // THE SAME SHAPE AS "cut from", deliberately. They are the two ends of one
+    // range and a reader compares them line by line — written differently, that
+    // comparison becomes a translation exercise. Same order, same punctuation,
+    // same thing linked: repository, branch, commit.
     write: c => {
-      const rows = (c.repos || []).map(r => `- ${r.repo} — \`${r.tip || 'unknown'}\`${r.ahead ? ` (${r.ahead} commit${r.ahead === 1 ? '' : 's'})` : ''}`)
+      const rows = (c.repos || []).map(r =>
+        `- ${r.repo} — \`${r.branch}\` at ${link(r.tip, r.at)}${r.ahead ? ` — ${r.ahead} commit${r.ahead === 1 ? '' : 's'}` : ''}`)
       if (!rows.length) return null
       return ['**Ends at:**', ...rows].join('\n')
     }
@@ -126,6 +145,7 @@ function about (source, target, pulls = []) {
   if (!from || !into) return null
 
   const bases = new Map(into.on.map(p => [p.repo, p.branch]))
+  const where = new Map(remotes.read().map(r => [r.repo, r]))
   const repos = []
   let branch = null
 
@@ -137,7 +157,37 @@ function about (source, target, pulls = []) {
     let ahead = 0
     try { ahead = Number(git(dir, ['rev-list', '--count', `${base}..${part.branch}`])) || 0 } catch { /* unrelated histories */ }
     if (!ahead) continue
-    repos.push({ repo: part.repo, branch: part.branch, base, ahead, tip: git(dir, ['rev-parse', part.branch]) })
+
+    // WHERE EACH END ACTUALLY LIVES, so a hash can be a link somebody can
+    // follow rather than forty characters to copy out.
+    //
+    // The two ends live in DIFFERENT repositories, which is the whole reason
+    // this is worth being careful about: the branch is in the fork it was pushed
+    // to, and the point it was cut from belongs to the repository it came from —
+    // the parent for a fork, and the parent's parent for a fork of a fork, which
+    // is what `parent` already walks one step of. A commit is reachable from any
+    // repository in a fork network that contains it, so both links resolve; what
+    // differs is which one a reader lands in, and landing in the wrong one is how
+    // somebody ends up reading a fork's copy of somebody else's history.
+    const here = where.get(part.repo) || {}
+    const origin = here.remote && here.remote.host
+      ? `https://${here.remote.host}/${here.remote.owner}/${here.remote.repo}`
+      : null
+    const came = here.parent && here.remote ? `https://${here.remote.host}/${here.parent}` : origin
+
+    repos.push({
+      repo: part.repo,
+      branch: part.branch,
+      base,
+      ahead,
+      tip: git(dir, ['rev-parse', part.branch]),
+      // THE COMMIT IT STARTED AT, which is the merge base rather than wherever
+      // the base branch is now. "Cut from master" is a name; this is the commit
+      // that name meant at the time, and it stays true after master moves on.
+      startedAt: git(dir, ['merge-base', base, part.branch]),
+      at: origin,
+      from: came
+    })
   }
 
   return { source, target, branch, repos, pulls }
