@@ -101,7 +101,7 @@ module.exports = {
       let base = null
       try {
         const where2 = await vbox.hostAddress()
-        if (where2) base = `https://${where2}:${port}`
+        if (where2) base = `https://${where2}:${net.port}`
       } catch { /* no address means no helper, and the run still runs */ }
 
       const r = await channel.run(name, dispatch.script({ id, task: String(task), folder: where, contract: rules, resume, shell: !!shell, base }),

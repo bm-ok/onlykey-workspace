@@ -29,7 +29,7 @@ const jobs = require('./jobs')
 // Everything it needs to reach a machine is handed in rather than required, so
 // this file cannot find a private path to any of it -- the same reason a job
 // gets a command on its PATH instead of an action table.
-async function run ({ id, promptId, machine, token, prompts, contracts, dispatch, channel, base, folder, log }) {
+async function run ({ id, promptId, fromTask, machine, token, prompts, contracts, dispatch, channel, base, folder, log }) {
   const job = jobs.get(id)
   if (!job) throw new Error(`There is no job called "${id}".`)
   if (!job.there) throw new Error(`"${job.name}" has no script. Its file is missing from the jobs folder.`)
@@ -48,7 +48,30 @@ async function run ({ id, promptId, machine, token, prompts, contracts, dispatch
   // and the two are only ever read together, so a run that took one without the
   // other would be sending half of what somebody approved.
   let contract = null
-  if (promptId) {
+
+  // FROM A TASK, WHICH ALREADY CARRIES ITS OWN COPIES.
+  //
+  // A task written from a prompt copied that prompt's words into its brief and
+  // its contract's words into its rules -- that is the spine's rule, and the
+  // whole reason a finished task stays readable. So a job run for a task must
+  // use what the TASK carries, not go back to the library and read whatever is
+  // there now. Those are different texts the moment anybody edits one, and the
+  // task's is the one somebody wrote, queued and will be judged on.
+  //
+  // The job is still checked above. What is not re-checked here is the brief,
+  // because a task's brief has never been a library object with an approval on
+  // it -- it is what a person wrote, and the queue has always handed it straight
+  // to `claude -p`. Running it through a job instead is the same words to the
+  // same worker on the same machine, so it grants nothing new.
+  if (fromTask) {
+    if (!fromTask.brief || !String(fromTask.brief).trim()) {
+      throw new Error(`#${fromTask.number} has no brief, so there is nothing to give the job.`)
+    }
+    prompt = { id: fromTask.id, name: `#${fromTask.number} ${fromTask.title}`, text: String(fromTask.brief) }
+    contract = fromTask.rules
+      ? { id: fromTask.contractId || 'the task\'s own', name: fromTask.contractName || 'the rules it was written under', text: String(fromTask.rules) }
+      : null
+  } else if (promptId) {
     prompt = (prompts.all() || []).find(p => p.id === promptId) || null
     if (!prompt) throw new Error(`There is no prompt called "${promptId}".`)
     if (!prompt.approved) {

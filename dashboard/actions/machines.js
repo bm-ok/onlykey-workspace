@@ -539,7 +539,7 @@ module.exports = {
       const vm = vms.get(name)
       let host = '127.0.0.1'
       try { host = await vbox.hostAddress() } catch { /* previewing should work with no network */ }
-      return { stage, file: path.basename(scripts.fileFor(vm, stage)), script: scripts.render(stage, vm, { hostAddress: host, port, channelPort, caPort, caFingerprint: keys.ensure().fingerprint }) }
+      return { stage, file: path.basename(scripts.fileFor(vm, stage)), script: scripts.render(stage, vm, { hostAddress: host, port: net.port, channelPort: net.channelPort, caPort: net.caPort, caFingerprint: keys.ensure().fingerprint }) }
     }
   },
 
@@ -565,7 +565,7 @@ module.exports = {
       const file = path.basename(scripts.fileFor(vm, stage))
       // Fetched by the machine rather than pushed, so it gets exactly what a fresh
       // install would get -- including any edit made since it was built.
-      const url = `https://${await vbox.hostAddress()}:${port}/provision/${file}?vm=${encodeURIComponent(name)}`
+      const url = `https://${await vbox.hostAddress()}:${net.port}/provision/${file}?vm=${encodeURIComponent(name)}`
 
       // Commands arrive as the user, so a script that touches /etc needs sudo -- the
       // same thing a person would type. `sudo -n` rather than plain sudo so it fails
@@ -752,7 +752,7 @@ module.exports = {
         repos: mine.map(r => r.name),
         branch: on,
         folder: folder || workspace.folderFor(vm.spec),
-        origin: `https://${host}:${port}`,
+        origin: `https://${host}:${net.port}`,
         machine: name,
         token: vm.spec.token,
         ca: tls.ca.toString()
@@ -818,8 +818,8 @@ sudo -n sed -i "s|^OKC_TOKEN=.*|OKC_TOKEN=${fresh}|" /etc/okc-agent.env
 umask 077
 touch "$HOME/.git-credentials"
 tmp=$(mktemp)
-grep -vF '${host}:${port}' "$HOME/.git-credentials" > "$tmp" 2>/dev/null || true
-printf '%s\\n' 'https://${name}:${fresh}@${host}:${port}' >> "$tmp"
+grep -vF '${host}:${net.port}' "$HOME/.git-credentials" > "$tmp" 2>/dev/null || true
+printf '%s\\n' 'https://${name}:${fresh}@${host}:${net.port}' >> "$tmp"
 mv "$tmp" "$HOME/.git-credentials"
 chmod 600 "$HOME/.git-credentials"
 echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })

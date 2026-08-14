@@ -192,18 +192,38 @@ async function run (actions, log, task, machine) {
     // --- give it the work -------------------------------------------------
     await phase('credential', () => actions.vmCredentialsPut.run({ name: machine }))
     await phase('workspace', () => actions.vmWorkspace.run({ name: machine, branch: task.branch, folder: task.folder || undefined }))
-    const started = await actions.vmDispatch.run({
-      name: machine,
-      task: task.brief,
-      folder: task.folder || undefined,
-      // The words it was written under, or the file it was written against.
-      // Never both -- vmDispatch refuses that, and a task carries one or the
-      // other by construction. See taskCreate.
-      rules: task.rules || undefined,
-      contractName: task.contractName || undefined,
-      contract: task.rules ? undefined : (task.contract || undefined),
-      shell: !!task.shell
-    })
+    // A TASK THAT NAMES A JOB RUNS THAT JOB.
+    //
+    // It did not, and nothing said so. The job was stored on the task, shown on
+    // the board, filled in from the prompt -- and the queue dispatched
+    // `claude -p` with the brief anyway, so a task written to run a script ran a
+    // worker instead. It failed silently in the worst direction: the run looked
+    // completely normal, and the only sign was the artifact that never arrived.
+    //
+    // Through the action, like every other step here, so a job dispatched by the
+    // queue meets exactly the refusals a job dispatched by hand meets -- the
+    // script must be approved, the machine must be dialled in, and the workspace
+    // gate still applies. A second path for the scheduler is always the one that
+    // turns out to be wrong.
+    const started = task.job
+      ? await actions.jobRun.run({
+          id: task.job,
+          task: id,
+          name: machine,
+          folder: task.folder || undefined
+        })
+      : await actions.vmDispatch.run({
+        name: machine,
+        task: task.brief,
+        folder: task.folder || undefined,
+        // The words it was written under, or the file it was written against.
+        // Never both -- vmDispatch refuses that, and a task carries one or the
+        // other by construction. See taskCreate.
+        rules: task.rules || undefined,
+        contractName: task.contractName || undefined,
+        contract: task.rules ? undefined : (task.contract || undefined),
+        shell: !!task.shell
+      })
     const fresh = await actions.tasks.run({})
     const now = fresh.tasks.find(t => t.id === id) || task
     await actions.taskUpdate.run({

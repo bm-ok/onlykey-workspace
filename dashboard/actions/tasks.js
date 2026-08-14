@@ -798,10 +798,10 @@ module.exports = {
   },
 
   jobRun: {
-    about: 'Send a job to a machine and let it run there, with a prompt',
+    about: 'Send a job to a machine and let it run there, with a prompt — or with what a task carries',
     needs: 'workspace',
-    takes: ['id', 'promptId', 'name', 'folder'],
-    run: async ({ id, promptId, name, folder }) => {
+    takes: ['id', 'promptId', 'task', 'name', 'folder'],
+    run: async ({ id, promptId, task: taskId, name, folder }) => {
       const one = jobs.get(id)
       if (!one) throw new Error(`There is no job called "${id}".`)
 
@@ -849,9 +849,19 @@ module.exports = {
         if (where) base = `https://${where}:${net.port}`
       } catch { /* no address means no helper, and the job still runs */ }
 
+      // WITH WHAT THE TASK CARRIES, when it is being run for one. A task copied
+      // its brief and its rules when it was written; going back to the library
+      // here would run it under whatever those say now, which is a different
+      // text the moment anybody edits one -- and the task's is the one somebody
+      // wrote, queued, and will be judged on.
+      const forTask = taskId ? tasks.get(taskId) : null
+      if (taskId && !forTask) throw new Error(`There is no task called "${taskId}".`)
+      if (forTask && promptId) throw new Error('Give it either a prompt from the library or a task, not both — a task already carries the words it was written with.')
+
       const out = await jobrun.run({
         id,
-        promptId: promptId || one.promptId || null,
+        promptId: forTask ? null : (promptId || one.promptId || null),
+        fromTask: forTask,
         machine: name,
         // The machine's own token, which the host holds and the guest does not
         // have until something puts it there. See job-api.js.
