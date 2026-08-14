@@ -105,7 +105,7 @@ const workerOf = t => WORKERS[t && t.worker] || WORKERS.claude
 const taskKey = t => t && [
   t.number,
   t.id, t.title, t.branch, t.state, t.reads, t.machine || '', t.run || '', t.worker || '',
-  t.delivered, t.artifact, t.contract || '', (t.verdict && t.verdict.call) || ''
+  t.delivered, t.artifact, t.contract || '', t.contractId || '', (t.verdict && t.verdict.call) || ''
 ]
 
 const STATE_BADGE = {
@@ -324,10 +324,34 @@ function paintTaskDetail (task) {
       // Said whether or not there is one, because "no rules" is the dangerous
       // reading and it is also the silent one: a task with no contract looks
       // exactly like a task with one from everywhere except here.
+      // THE RULES IT CARRIES, not the name of a library entry it came from. A
+      // task written under a contract copied the words, so this reads them off
+      // the task rather than looking the contract up — which is the point: the
+      // library may have moved on, and what this task went out under did not.
       el('tr', {}, el('th', { textContent: 'contract' }),
-        el('td', {}, task.contract
-          ? el('span', { className: 'mono', style: 'user-select:text', textContent: task.contract })
-          : el('span', { className: 'badge warn', textContent: 'none — the worker gets no rules' }))),
+        el('td', {}, task.rules
+          ? [
+              el('span', { textContent: task.contractName || task.contractId || 'the rules it was given' }),
+              el('button', {
+                className: 'linky',
+                style: 'margin-left:8px',
+                textContent: 'read them',
+                title: 'The words this task carries, as the worker gets them',
+                onclick: () => ask({
+                  title: `The rules for #${task.number}`,
+                  plain: [`Carried by this task, as it was written. Editing "${task.contractName || task.contractId}" in the library since then has not changed these.`],
+                  confirm: 'Done',
+                  onYes: async () => {},
+                  onOpen: () => {
+                    const body = document.querySelector('.dlg-body')
+                    if (body) body.append(codeBlock(task.rules, 'markdown'))
+                  }
+                })
+              })
+            ]
+          : task.contract
+            ? el('span', { className: 'mono', style: 'user-select:text', textContent: task.contract })
+            : el('span', { className: 'badge warn', textContent: 'none — the worker gets no rules' }))),
       task.verdict
         ? el('tr', {}, el('th', { textContent: 'verdict' }),
             el('td', {}, el('span', { className: `badge ${task.verdict.call === 'accept' ? 'ok' : 'bad'}`, textContent: task.verdict.call }),
@@ -725,6 +749,13 @@ function newTask (from = null) {
   ]).then(([{ branches: known, protected: guarded }, lib, work]) => {
     const taken = new Set((guarded || []).map(g => g.branch))
 
+    // The contracts come back with the prompts, from the one call that already
+    // resolves the tie between them. Asked for here rather than read from the
+    // last paint of the Prompts pane -- this dialog opens from the Board, where
+    // that pane may never have been drawn at all, and a dropdown that is empty
+    // because of which tab somebody was last on is the worst kind of empty.
+    contractsNow = lib.contracts || contractsNow
+
     // ONE THING, SO NO TABS. This dialog used to carry pre-defined jobs behind a
     // second tab: three clicks in, behind a dropdown, with nothing on screen
     // saying what the thing did. They have a pane of their own now, where one
@@ -767,7 +798,21 @@ function newTask (from = null) {
                 ...(work.jobs || []).map(x => ({ value: x.id, label: `${x.name}${x.runnable ? '' : ` — ${x.whyNot}`}` }))
               ]
             },
-            { name: 'contract', label: 'Contract (a file on this host, optional)', placeholder: 'the rules the worker is given' },
+            // THE RULES, FROM THE LIBRARY, not a path typed from memory.
+            //
+            // This was a text box wanting a file on this host, which is why the
+            // field went unused: the rules a run was governed by lived outside
+            // everything that governs runs. Only approved ones are offered —
+            // an unapproved contract in a dropdown is a thing somebody picks.
+            {
+              name: 'contractId',
+              label: 'Under which contract (optional)',
+              value: '',
+              options: [
+                { value: '', label: 'none — the worker gets no rules' },
+                ...contractsNow.filter(c => c.approved).map(c => ({ value: c.id, label: c.name }))
+              ]
+            },
             { name: 'folder', label: 'Folder on the machine (optional)', placeholder: 'defaults to its workspace' }
           ],
           confirm: 'Write it',
@@ -785,9 +830,11 @@ function newTask (from = null) {
             const pick = inputs.promptId
             const brief = inputs.brief
             const jobPick = inputs.job
+            const rulePick = inputs.contractId
             if (!pick || !brief) return
             let filled = brief.value
             let filledJob = jobPick ? jobPick.value : ''
+            let filledRule = rulePick ? rulePick.value : ''
 
             pick.onchange = () => {
               const chosen = (lib.prompts || []).find(x => x.id === pick.value)
@@ -811,6 +858,29 @@ function newTask (from = null) {
               // somebody chose deliberately stays chosen, and a prompt with no
               // job leaves whatever was there rather than clearing it, since
               // "none" is a real answer somebody may have meant.
+              // AND THE CONTRACT IT RUNS UNDER, which is not a convenience the
+              // way the job is. A prompt names its contract because the words
+              // have to hold to those rules — so a task written from that prompt
+              // and NOT under those rules is the one combination the pairing
+              // exists to prevent. It is still only filled in rather than
+              // locked: a task is one occasion, and somebody may mean to run
+              // this occasion differently.
+              if (rulePick) {
+                const under = chosen.contractId || ''
+                if (!rulePick.value || rulePick.value === filledRule) {
+                  // Only if it is actually on offer. The dropdown carries
+                  // approved contracts only, so a prompt whose rules have
+                  // lapsed would otherwise be "filled in" with a value that
+                  // silently does not exist and reads as none.
+                  if (!under || [...rulePick.options].some(o => o.value === under)) {
+                    rulePick.value = under
+                    filledRule = under
+                  } else {
+                    say(`"${chosen.name}" runs under a contract that is not approved, so it was not filled in.`, 'warn')
+                  }
+                }
+              }
+
               if (!jobPick) return
               const tied = (work.jobs || []).filter(j => j.promptId === chosen.id)
               if (!tied.length) return

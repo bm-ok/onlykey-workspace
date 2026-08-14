@@ -196,7 +196,12 @@ async function run (actions, log, task, machine) {
       name: machine,
       task: task.brief,
       folder: task.folder || undefined,
-      contract: task.contract || undefined,
+      // The words it was written under, or the file it was written against.
+      // Never both -- vmDispatch refuses that, and a task carries one or the
+      // other by construction. See taskCreate.
+      rules: task.rules || undefined,
+      contractName: task.contractName || undefined,
+      contract: task.rules ? undefined : (task.contract || undefined),
       shell: !!task.shell
     })
     const fresh = await actions.tasks.run({})

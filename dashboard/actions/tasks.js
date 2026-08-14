@@ -74,7 +74,30 @@ module.exports = {
       if (!input || typeof input !== 'object') throw new Error('Pass the task as an object.')
       const why = branches.nameIsOk(String(input.branch || '').trim())
       if (why) throw new Error(why)
-      if (input.contract) {
+
+      // THE RULES ARE COPIED IN, the same way the brief is.
+      //
+      // `contractId` names one from the library and what gets stored is its
+      // WORDS, in `rules`. That is the spine's rule -- every arrow carries a
+      // copy -- and it is what makes a finished task readable: a name proves
+      // nothing months later about what the worker was actually held to, and the
+      // library it named has moved on since.
+      //
+      // `contract` as a path on this host still works, for the command line and
+      // for the one task written before the library existed. Both at once is
+      // refused rather than silently preferring one.
+      if (input.contractId) {
+        if (input.contract) throw new Error('Give it either a contract from the library or a file on this host, not both — otherwise which rules a run was under depends on which line of code read it first.')
+        const one = contracts.get(String(input.contractId))
+        if (!one) throw new Error(`There is no contract called "${input.contractId}".`)
+        if (!one.approved) {
+          throw new Error(one.lapsed
+            ? `The contract "${one.name}" has been edited since it was approved. Read it and approve it again before writing a task under it.`
+            : `The contract "${one.name}" is not approved. What a worker may not do is read before it is sent, the same as what it is told to do.`)
+        }
+        input.rules = one.text
+        input.contractName = one.name
+      } else if (input.contract) {
         const at = path.resolve(String(input.contract))
         if (!fs.existsSync(at)) throw new Error(`There is no contract at ${at}. It is read from this host when the task is given out.`)
       }

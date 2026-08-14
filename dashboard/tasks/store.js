@@ -200,7 +200,23 @@ function add (input) {
     // A path on THIS host. Read at dispatch and carried with the run, so the
     // rules that governed a run sit beside it -- and so editing this file later
     // cannot change what a finished run was told.
+    //
+    // Kept for the command line and for tasks written before there was a
+    // library. A task written under a library contract uses the two fields
+    // below instead, and taskCreate refuses both at once.
     contract: input.contract ? String(input.contract) : null,
+
+    // THE RULES THEMSELVES, COPIED IN. The spine's rule: every arrow carries a
+    // copy rather than a name. A path can be edited afterwards and a library
+    // entry can be rewritten, and either would silently change what a finished
+    // task appears to have been held to -- which is the one question a task
+    // record exists to answer months later.
+    //
+    // The name is kept beside them only so the board can say which contract this
+    // was. Nothing reads it to find the rules; the rules are right here.
+    rules: input.rules ? String(input.rules) : null,
+    contractId: input.contractId ? String(input.contractId) : null,
+    contractName: input.contractName ? String(input.contractName) : null,
     folder: input.folder ? String(input.folder) : null,
     // WHO DOES IT. A slot with three implementations, not a special case.
     //
