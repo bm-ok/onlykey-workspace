@@ -24,6 +24,7 @@ const github = require('./core/github')
 const remotes = require('./repos/remotes')
 const landings = require('./repos/landings')
 const prtemplate = require('./repos/prtemplate')
+const drafts = require('./repos/drafts')
 const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
@@ -2299,8 +2300,8 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // so holding them together is the part only this can do.
   prCutMake: {
     about: 'Push a line onward and open a pull request per repository, tracked together as one landing',
-    takes: ['source', 'target', 'title', 'body', 'into'],
-    run: async ({ source, target, title, body, into, _overTheWire }) => {
+    takes: ['source', 'target', 'title', 'body', 'into', 'draft'],
+    run: async ({ source, target, title, body, into, draft, _overTheWire }) => {
       const pair = twoLines(source, target)
       const carrying = []
       for (const { repo, head, base } of pair.on) {
@@ -2338,7 +2339,11 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
           base: c.base,
           title: said,
           body: prtemplate.composeFor(typed, context, c.repo),
-          into: into || null
+          into: into || null,
+          // THE OTHER KIND OF DRAFT: opened on GitHub and marked not ready for
+          // review. It is a public pull request with a number -- the opposite of
+          // the local kind, which is the absence of one.
+          draft: draft === true || draft === 'true'
         })
         if (pr.opened) log.on('git', c.repo).good(`pull request #${pr.number} into ${pr.into} — ${pr.url}`)
         else log.on('git', c.repo)[pr.already ? 'warn' : 'bad'](`no pull request opened: ${pr.why}`)
@@ -2360,6 +2365,11 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
         }
         log.on('git').good(`${opened.length} pull requests now name each other`)
       }
+
+      // SPENT ONCE IT IS CUT. What was written is now what the pull requests
+      // say; a draft left behind would be an older copy of them, and the editor
+      // would offer it back as though it were newer.
+      if (opened.length) drafts.forget(pair.source.name, pair.target.name)
 
       const record = landings.record(pair.source.name, pair.target.name, done, _overTheWire ? 'the command line' : 'the window')
       return {
@@ -2455,6 +2465,41 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
         note: `As ${which} would read it. ${on.length} repositor${on.length === 1 ? 'y' : 'ies'} carry work: ${on.join(', ')}.` +
           (real.length ? ' The links are the real pull request numbers.' : ' Nothing is cut yet, so the links show ? until it is.')
       }
+    }
+  },
+
+
+  // ---- what is written and not sent yet ----------------------------------
+  //
+  // TWO THINGS ARE CALLED A DRAFT. This is the one that exists only here: a
+  // title and a description for a pair of lines, with nothing pushed and nobody
+  // else able to see it. The other is a pull request that HAS been opened and is
+  // marked not-ready-for-review, which is `draft` on prCutMake.
+  prDraft: {
+    about: 'What has been written for a pair of lines and not cut yet',
+    takes: ['source', 'target'],
+    run: ({ source, target }) => ({
+      draft: drafts.read(source, target),
+      note: 'Kept in this workspace only. Nothing is pushed and nobody else can see it.'
+    })
+  },
+
+  prDraftSave: {
+    about: 'Keep what has been written for a pair of lines, without cutting anything',
+    takes: ['source', 'target', 'title', 'body'],
+    run: ({ source, target, title, body }) => {
+      if (!source || !target) throw new Error('A draft is about a pair of lines. Say which two.')
+      const kept = drafts.save(source, target, { title, body })
+      return { draft: kept, note: kept ? 'Kept.' : 'Nothing in it, so nothing is kept.' }
+    }
+  },
+
+  prDraftForget: {
+    about: 'Throw away what was written for a pair of lines',
+    takes: ['source', 'target'],
+    run: ({ source, target }) => {
+      const gone = drafts.forget(source, target)
+      return { ...gone, note: gone.forgotten ? 'Thrown away.' : 'There was none.' }
     }
   },
 

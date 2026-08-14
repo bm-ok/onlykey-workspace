@@ -355,7 +355,7 @@ function pushBranch (repo, branch) {
 // this wrong does not fail loudly — it opens a pull request inside the fork,
 // from the fork's branch into the fork's own default, which looks perfectly
 // normal and lands the work nowhere anybody is watching.
-async function openPull (repo, { branch, base, title, body, into = null }) {
+async function openPull (repo, { branch, base, title, body, into = null, draft = false }) {
   const remote = remoteOf(repo)
   if (!remote || remote.kind !== 'github') throw new Error(`"${repo}" has no GitHub remote to open a pull request on.`)
 
@@ -373,6 +373,7 @@ async function openPull (repo, { branch, base, title, body, into = null }) {
     body,
     head,
     base,
+    ...(draft ? { draft: true } : {}),
     // NAMED EXPLICITLY, because `owner:branch` stops being unique in a chain.
     // One account can own several repositories in the same fork network, and
     // then `owner:branch` describes more than one branch — GitHub resolves it

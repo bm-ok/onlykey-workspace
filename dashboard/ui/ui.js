@@ -3969,7 +3969,7 @@ function paintCutDetail (c) {
       el('button', {
         className: 'btn ok',
         textContent: 'Edit all of them',
-        title: 'One title and one description, written to every pull request in this cut',
+        title: 'Opens it in Write one, where the whole description can be seen while it is written',
         onclick: () => editCut(c)
       }),
       el('button', {
@@ -4009,25 +4009,27 @@ function paintCutDetail (c) {
 // ONE TITLE AND ONE DESCRIPTION, WRITTEN TO ALL OF THEM. This is what "one pull
 // request in the dashboard updates all three" means, and it is the only reliable
 // way three descriptions of one change stay the same sentence.
+// EDITING GOES TO THE ONE EDITOR, rather than being a second one.
+//
+// This was a dialog with a title and a description in it, and it had two faults
+// that were really the same fault. It could not show a preview -- a dialog here
+// is 560px and a composed description is not -- so somebody edited a pull
+// request without seeing what it would say. And it wrote the typed text RAW,
+// with none of the blocks: editing a cut from here would have quietly stripped
+// the cross-links, the reason, the commits, everything the template adds.
+//
+// Two editors that disagree is the fault this window keeps turning up. So there
+// is one, and this takes you to it with the cut already loaded.
 function editCut (c) {
-  const said = c.said || {}
-  ask({
-    title: 'Edit every pull request in this cut',
-    plain: [
-      `${c.pulls.filter(p => p.number).length} pull request(s) are changed, in ${c.pulls.filter(p => p.number).map(p => p.repo).join(', ')}.`,
-      'Leave a field as it is to leave it alone. What is written here is this app\'s statement of the change; whether each one is open or merged stays GitHub\'s and is read back rather than set here.'
-    ],
-    fields: [
-      { name: 'title', label: 'Title', value: said.title || '', placeholder: 'the same sentence on all of them' },
-      { name: 'body', label: 'Description', value: said.body || '', multiline: true, rows: 10, placeholder: 'what this change is, written once' }
-    ],
-    confirm: 'Write it to all of them',
-    onYes: async f => {
-      const r = await api('prCutUpdate', { source: c.source, target: c.target, title: f.title, body: f.body })
-      say(r.note, r.changed.some(x => !x.ok) ? 'bad' : undefined)
-      return refreshCuts()
-    }
-  })
+  tmplFrom = c.source
+  tmplInto = c.target
+  been.set('tmpl-from', tmplFrom)
+  been.set('tmpl-into', tmplInto)
+  tmplSeen = null
+  changed('prwrite-fields', null)
+  changed('prtemplate', null)
+  const tab = document.querySelector('#view-prcuts .subtab[data-pane="templates"]')
+  if (tab) tab.click()
 }
 
 function setCutState (c, state) {
@@ -4053,74 +4055,10 @@ function setCutState (c, state) {
   })
 }
 
-// CUTTING ONE, FROM A LINE.
-//
-// The source is a line and not a branch, because a line is what a change IS
-// here: one branch per repository, named together. And only the repositories
-// that actually carry something get a pull request — a change that touched two
-// of three should not open an empty one in the third, which is a pull request
-// nobody can review and a notification nobody can act on.
-//
-// The dialog reads the comparison first and shows exactly which repositories
-// will get one, because "3 of 3" and "2 of 3, local-repo-b has nothing" are
-// different acts and only one of them is what somebody meant.
-async function newPrCut () {
-  const { groups } = await api('lines').catch(() => ({ groups: [] }))
-  const usable = (groups || []).filter(g => !g.broken.length)
-  if (usable.length < 2) {
-    return ask({
-      title: 'There is nothing to cut yet',
-      plain: [
-        usable.length ? 'Only one line is named, and a pull request goes from one line into another.' : 'No lines are named yet.',
-        'Name them on the Lines tab: one branch per repository, given a name. Then a change is a line going into another line.'
-      ],
-      confirm: 'Go to the lines',
-      onYes: () => { showTab('branches'); const t = document.querySelector('#view-branches .subtab[data-pane="baselines"]'); if (t) t.click() }
-    })
-  }
-
-  const from = usable.find(g => g.marked) || usable[0]
-  const into = pickTargetFor(from.name, usable)
-
-  ask({
-    title: 'Cut a pull request',
-    plain: [
-      'One act, one pull request per repository, edited afterwards as one thing.',
-      'Only repositories that carry something get one. A change that touched two of three should not open an empty pull request in the third — nobody can review it and nobody can act on it.',
-      'The branch is pushed onward first, from this host. No machine is ever handed the token.'
-    ],
-    fields: [
-      { name: 'source', label: 'This line', value: from.name, options: usable.map(g => ({ value: g.name, label: `${g.name}${g.marked ? ' — proposed' : ''}` })) },
-      { name: 'target', label: 'goes into', value: into ? into.name : '', options: usable.map(g => ({ value: g.name, label: g.name })) },
-      { name: 'title', label: 'Called', placeholder: 'the same sentence on every one of them' },
-      { name: 'body', label: 'What it is', multiline: true, rows: 8, placeholder: 'Left blank, this says which line went where and how many commits each repository carries.' }
-    ],
-    cost: 'This pushes branches to GitHub and opens pull requests. Both are visible to anyone who can see those repositories.',
-    confirm: 'Push and open them',
-    onYes: async f => {
-      if (f.source === f.target) throw new Error('A line cannot go into itself. Pick a different one to land in.')
-      const r = await api('prCutMake', { source: f.source, target: f.target, title: f.title, body: f.body })
-      pickedCut = `${f.source} -> ${f.target}`
-      been.set('prcut', pickedCut)
-      say(r.note, r.pulls.some(p => !p.opened) ? 'bad' : undefined)
-      return refreshCuts()
-    }
-  })
-}
-
-// WHICH LINE A CHANGE WOULD GO INTO, guessed well enough to be right most of the
-// time and never silently wrong: not merely a different name, but a line naming
-// DIFFERENT BRANCHES -- two lines can name the same ones, and a pair like that
-// carries nothing by construction. A line nobody has proposed is preferred,
-// because a proposal goes into something settled rather than into another
-// proposal.
-function pickTargetFor (sourceName, lines) {
-  const from = lines.find(g => g.name === sourceName)
-  const same = g => from && g.on.length === from.on.length &&
-    g.on.every(p => from.on.some(q => q.repo === p.repo && q.branch === p.branch))
-  const others = lines.filter(g => g.name !== sourceName && !same(g))
-  return others.find(g => !g.marked) || others[0] || null
-}
+// `newPrCut` was here: a dialog asking for a source line, a target, a title and
+// a description. It sat next to a pane built for writing exactly those, with a
+// preview the dialog could not show — so it was the second editor, and the one
+// that could not show its work. Both + and Edit open the real one now.
 
 function refreshCuts () {
   return api('prCuts').then(r => {
@@ -4147,6 +4085,8 @@ let tmplInto = been.get('tmpl-into', null)
 let tmplAs = null
 // The last preview, and what it was of. See paintTemplates.
 let tmplSeen = null
+// The pending write of what is being typed. See paintTemplates.
+let draftTimer = null
 
 document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(t => {
   t.onclick = () => {
@@ -4242,8 +4182,15 @@ function paintTemplates () {
         // somebody's hands mid-sentence — which is the same fault as repainting
         // a list while it is being read, and worse, because it eats typing.
         if (changed('prwrite-fields', [tmplFrom, tmplInto])) {
-          $('prwrite-title').value = (v.said && v.said.title) || ''
-          $('prwrite-body').value = (v.said && v.said.body) || ''
+          // THE DRAFT WINS. It is what somebody was in the middle of writing,
+          // and the cut is what was sent last time — offering the older of the
+          // two back would quietly discard a paragraph.
+          api('prDraft', { source: tmplFrom, target: tmplInto }).then(({ draft }) => {
+            $('prwrite-title').value = (draft && draft.title) || (v.said && v.said.title) || ''
+            $('prwrite-body').value = (draft && draft.body) || (v.said && v.said.body) || ''
+            setText($('prwrite-state'), draft ? `draft kept ${ago(draft.at)}` : '')
+            show()
+          }).catch(() => { /* an unreadable draft is not worth a banner */ })
         }
 
         // COMPOSED HERE AS IT IS TYPED, not asked for again. What the blocks add
@@ -4266,12 +4213,39 @@ function paintTemplates () {
         // Repainted on input rather than on the draw, because the draw is three
         // seconds away and a preview that lags a sentence behind is one nobody
         // trusts.
-        $('prwrite-title').oninput = show
-        $('prwrite-body').oninput = show
+        // KEPT A MOMENT AFTER TYPING STOPS. What somebody writes here lived
+        // only in a DOM node: one click on another tab and a paragraph was gone,
+        // and writing the description is the slowest part of cutting a pull
+        // request. Debounced rather than per keystroke, because this is a file
+        // write and a paragraph is a hundred of them.
+        const keep = () => {
+          clearTimeout(draftTimer)
+          draftTimer = setTimeout(() => {
+            api('prDraftSave', {
+              source: tmplFrom,
+              target: tmplInto,
+              title: $('prwrite-title').value,
+              body: $('prwrite-body').value
+            }).then(({ draft }) => setText($('prwrite-state'), draft ? `draft kept ${ago(draft.at)}` : ''))
+              .catch(() => { /* it is still on the screen; failing to keep it is not worth a banner */ })
+          }, 800)
+        }
+
+        $('prwrite-title').oninput = () => { show(); keep() }
+        $('prwrite-body').oninput = () => { show(); keep() }
         show()
 
         const existing = v.existing && v.existing.count
         fill($('prwrite-actions'),
+          existing
+            ? null
+            // GITHUB'S KIND OF DRAFT, which is not this app's kind: a pull
+            // request that HAS been opened and is marked not ready for review.
+            // Offered only when cutting, because it is a state a pull request is
+            // opened in.
+            : el('label', { className: 'inline', style: 'align-self:center' },
+                el('input', { type: 'checkbox', id: 'prwrite-asdraft' }),
+                el('span', { textContent: 'open them as drafts on GitHub' })),
           el('button', {
             className: 'btn ok',
             textContent: existing ? `Write it to all ${v.existing.count}` : `Cut it — ${v.repos.length} pull request(s)`,
@@ -4303,16 +4277,19 @@ function cutFromWriter (v) {
     cost: 'This pushes branches to GitHub and opens pull requests. Both are visible to anyone who can see those repositories.',
     confirm: 'Push and open them',
     onYes: async () => {
+      const asDraft = $('prwrite-asdraft') && $('prwrite-asdraft').checked
       const r = await api('prCutMake', {
         source: tmplFrom,
         target: tmplInto,
         title: $('prwrite-title').value.trim(),
-        body: $('prwrite-body').value.trim()
+        body: $('prwrite-body').value.trim(),
+        draft: !!asDraft
       })
       pickedCut = `${tmplFrom} -> ${tmplInto}`
       been.set('prcut', pickedCut)
       tmplSeen = null
       changed('prwrite-fields', null)
+      setText($('prwrite-state'), '')
       say(r.note, r.pulls.some(x => !x.opened) ? 'bad' : undefined)
       return refreshCuts()
     }
@@ -5108,7 +5085,13 @@ $('add-group-open').onclick = newGroup
 // sign-in line follows the front tab instead of the picker, which is repainted
 // by showShell rather than by an onchange.
 $('prcuts-refresh').onclick = () => refreshCuts()
-$('add-prcut-open').onclick = () => newPrCut()
+// The + opens the editor too, with nothing loaded. A dialog asking for a title
+// and a description, next to a pane built for writing exactly those, would be
+// the second editor again.
+$('add-prcut-open').onclick = () => {
+  const tab = document.querySelector('#view-prcuts .subtab[data-pane="templates"]')
+  if (tab) tab.click()
+}
 $('repos-check').onclick = () => api('repositoriesCheck')
   .then(r => { changed('repos', null); say(r.note, r.repos.some(x => x.reachable !== true || x.why) ? 'bad' : undefined); return draw() })
   .catch(oops)
