@@ -189,7 +189,7 @@ its author does.
 
 **A judgement is bound to the commits it read.** `prtemplate.about()` already
 computes the tip of each repository's branch, so a judgement records
-`{repo -> tip}` for every repository in the cut. Any tip moves and the judgement
+`{repo -> tip}` for every repository in the cut. Any tip moves and that judgement
 is **stale** -- shown as stale rather than hidden, because "judged, then changed"
 and "never judged" are different states and only one of them means somebody has
 already read this.
@@ -199,6 +199,29 @@ the change; the description is the claim about the change, and invalidating a
 reading of the code because a sentence was rewritten would train people to stop
 believing the word. That is a decision, and it is the kind somebody will
 reasonably question, so it is written here rather than left in the code.
+
+**A cut carries MANY judgements, and carries none quite happily.** Not one field
+that the next run overwrites -- a list that accumulates, each entry with its own
+tips, its own verdict and its own author. Three things follow, and each is the
+reason for the shape rather than a consequence of it:
+
+* **Staleness is per judgement, not per cut.** A cut is not "stale"; it has
+  judgements, some of which were made before the last push. What the tab shows is
+  which ones still describe what is there now -- and a cut whose only judgement
+  predates three commits is exactly as unjudged as one with none, said out loud.
+* **Re-judging keeps the old one.** The point of recording the tips is that the
+  history stays readable: this was judged, then it changed, then it was judged
+  again. Overwriting would throw away the one thing that makes the second reading
+  meaningful.
+* **Two judgements may disagree, and that is information.** A model and a person,
+  or two models, reaching different verdicts on the same tips is the most useful
+  thing this list can show, and nothing should try to resolve it into a single
+  answer. Reconciling them is a person's job and it is the job they came for.
+
+**And judging is optional.** A cut with no judgement is an ordinary cut, not an
+incomplete one. Nothing nags, nothing is blocked on it, and no count anywhere
+reads as a chore -- a judgement is a thing somebody asked for, and the moment the
+window implies one is owed, it is a checklist rather than a tool.
 
 **It recommends. A person still decides.** The judge writes its judgement onto
 the PR cut and into the Judge tab, with reasons; accepting or rejecting stays a
@@ -236,11 +259,20 @@ and is pushed onto the pull requests second, because those are two decisions --
 and because a judgement of a cut is one thing while the pull requests are N, so
 publishing it is the same fan-out `prCutUpdate` already does.
 
+**It goes on as a comment, not into the body.** The body is this app's one
+statement of what the change IS, rewritten whenever the description is edited --
+a judgement written there would be overwritten by the next edit, and a second
+judgement would have to overwrite the first. Comments accumulate, which is the
+shape a list of judgements already has. Publishing is per judgement too: some are
+worth putting in front of reviewers and some were run to answer a question, and
+deciding which is the kind of thing a person should not have done for them.
+
 **What it needs that does not exist:**
 
-* a judgement record, keyed like a landing (`source -> target`), holding the tips
-  it read, the verdict, the reasons, when, and **who or what judged** -- the
-  model and its version where it was a model, a name where it was a person
+* a judgement record: keyed like a landing (`source -> target`), holding a LIST,
+  each entry with the tips it read, the verdict, the reasons, when, and **who or
+  what judged** -- the model and its version where it was a model, a name where
+  it was a person. Appended to, never replaced
 * a run kind the queue understands as *judge*, and the rule above about what it
   is taken before
 * what a judge is actually given: the diff of the cut, the branch's reason, the
