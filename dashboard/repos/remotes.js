@@ -102,7 +102,10 @@ function read () {
       may: note.may || null,
       accountMay: note.accountMay || null,
       parent: note.parent || null,
+      source: note.source || null,
+      chained: !!note.chained,
       intoParent: note.intoParent || null,
+      intoSource: note.intoSource || null,
       branchesThere: note.branchesThere || null,
       privateRepo: note.privateRepo == null ? null : note.privateRepo,
       fork: note.fork == null ? null : note.fork,
@@ -197,27 +200,53 @@ async function check (only = null) {
         //
         // The parent is asked about separately and on its own terms: reachable
         // is one question, and may-open-a-pull-request-there is another.
+        // A FORK OF A FORK MAKES THIS A CHOICE RATHER THAN A FACT.
+        //
+        // GitHub reports two: `parent` is ONE level up, `source` is the root of
+        // the whole network. In A <- B <- C they are different and nothing
+        // reports the middle of a longer chain at all.
+        //
+        // Which one a change should go to is a decision — up the chain one step,
+        // the way a fork's owner sends work to the person they forked from, or
+        // straight to the root, which GitHub also allows since any two
+        // repositories in one network can open a pull request between them.
+        // Both are offered and the immediate parent is the default, because it
+        // is the one that matches how a chain is normally worked.
         const parent = r.body.parent ? r.body.parent.full_name : null
-        let intoParent = null
-        if (parent) {
-          const [po, pr] = parent.split('/')
-          const up = await github.call('GET', `/repos/${po}/${pr}/pulls?state=open&per_page=1`)
-          intoParent = {
-            repo: parent,
-            defaultBranch: r.body.parent.default_branch || null,
+        const source = r.body.source ? r.body.source.full_name : null
+        const chained = !!(parent && source && parent !== source)
+
+        // Asked of each separately, because a token can be granted one and not
+        // the other — and in a chain that is the ordinary case rather than an
+        // unlucky one.
+        const canOpenIn = async full => {
+          if (!full) return null
+          const [o, n] = full.split('/')
+          const up = await github.call('GET', `/repos/${o}/${n}/pulls?state=open&per_page=1`)
+          return {
+            repo: full,
             mayOpen: up.status === 200,
             why: up.status === 200 ? null : (up.status === 404
-              ? 'this token was not granted the parent, so a pull request cannot be opened there'
+              ? 'this token was not granted it, so a pull request cannot be opened there'
               : (up.body && up.body.message) || `GitHub answered ${up.status}`)
           }
-          if (!intoParent.mayOpen) missing.push(`Pull requests on ${parent}`)
+        }
+
+        const intoParent = parent ? { ...(await canOpenIn(parent)), defaultBranch: r.body.parent.default_branch || null } : null
+        const intoSource = chained ? { ...(await canOpenIn(source)), defaultBranch: r.body.source.default_branch || null } : null
+
+        if (intoParent && !intoParent.mayOpen && !(intoSource && intoSource.mayOpen)) {
+          missing.push(`Pull requests on ${parent}`)
         }
 
         notes[name] = {
           checked: at,
           reachable: true,
           parent,
+          source,
+          chained,
           intoParent,
+          intoSource,
           why: missing.length
             ? `the token cannot use ${missing.join(' or ')} here — add ${missing.length === 1 ? 'that permission' : 'those permissions'} to it on GitHub`
             : null,
@@ -292,20 +321,31 @@ function pushBranch (repo, branch) {
 // this wrong does not fail loudly — it opens a pull request inside the fork,
 // from the fork's branch into the fork's own default, which looks perfectly
 // normal and lands the work nowhere anybody is watching.
-async function openPull (repo, { branch, base, title, body }) {
+async function openPull (repo, { branch, base, title, body, into = null }) {
   const remote = remoteOf(repo)
   if (!remote || remote.kind !== 'github') throw new Error(`"${repo}" has no GitHub remote to open a pull request on.`)
 
   const note = seen()[repo] || {}
-  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
-  const crossing = !!note.parent
+  // Given, or the immediate parent, or itself. A fork of a fork of a fork makes
+  // this a choice and not a fact — see `check`, which reports both the parent
+  // one level up and the root of the network.
+  const target = into || note.parent || `${remote.owner}/${remote.repo}`
+  const [owner, name] = target.split('/')
+  const crossing = target !== `${remote.owner}/${remote.repo}`
   const head = crossing ? `${remote.owner}:${branch}` : branch
 
-  const r = await github.call('POST', `/repos/${into[0]}/${into[1]}/pulls`, {
+  const r = await github.call('POST', `/repos/${owner}/${name}/pulls`, {
     title,
     body,
     head,
-    base
+    base,
+    // NAMED EXPLICITLY, because `owner:branch` stops being unique in a chain.
+    // One account can own several repositories in the same fork network, and
+    // then `owner:branch` describes more than one branch — GitHub resolves it
+    // however it resolves it, which is not a thing to leave to chance when the
+    // consequence is a change landing in the wrong repository. `head_repo`
+    // removes the question.
+    ...(crossing ? { head_repo: `${remote.owner}/${remote.repo}` } : {})
   })
 
   if (r.status === 201) {
@@ -315,7 +355,7 @@ async function openPull (repo, { branch, base, title, body }) {
       number: r.body.number,
       url: r.body.html_url,
       state: r.body.state,
-      into: `${into[0]}/${into[1]}`,
+      into: target,
       head,
       base
     }
@@ -327,7 +367,7 @@ async function openPull (repo, { branch, base, title, body }) {
   const said = (r.body && r.body.errors && r.body.errors.map(e => e.message).filter(Boolean).join('; ')) ||
     (r.body && r.body.message) || `GitHub answered ${r.status}`
   const already = /already exists/i.test(said)
-  return { repo, opened: false, already, why: said, into: `${into[0]}/${into[1]}`, head, base }
+  return { repo, opened: false, already, why: said, into: target, head, base }
 }
 
 // Everything open on a repository right now, so a landing can be re-read rather

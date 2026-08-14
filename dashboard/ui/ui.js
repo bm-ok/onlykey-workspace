@@ -3661,7 +3661,7 @@ function paintRepos () {
               el('span', { className: 'mono', textContent: r.repo }),
               el('span', { className: 'badge muted', textContent: `${r.branches} branch(es)` }),
               r.privateRepo ? el('span', { className: 'badge muted', textContent: 'private' }) : null,
-              r.fork ? el('span', { className: 'badge muted', textContent: r.parent ? 'fork of ' + r.parent : 'fork' }) : null,
+              r.fork ? el('span', { className: 'badge muted', textContent: r.chained ? 'fork of ' + r.parent + ' of ' + r.source : (r.parent ? 'fork of ' + r.parent : 'fork') }) : null,
               !asked
                 ? el('span', { className: 'badge', textContent: 'not asked about yet' })
                 : bad
@@ -3721,7 +3721,20 @@ function paintRepos () {
                         className: r.intoParent.mayOpen ? 'ok' : 'bad',
                         textContent: r.intoParent.mayOpen ? 'this token may open one there' : 'this token may NOT open one there'
                       }),
-                      r.intoParent.why ? el('div', { className: 'muted', textContent: r.intoParent.why }) : null))
+                      r.intoParent.why ? el('div', { className: 'muted', textContent: r.intoParent.why }) : null,
+                      // A CHAIN MAKES THIS A CHOICE. GitHub reports the parent
+                      // one level up and the root of the network, and nothing
+                      // reports the middle of a longer one — so a fork of a fork
+                      // has two honest answers and this says both rather than
+                      // picking one silently.
+                      r.chained
+                        ? el('div', { className: 'note', style: 'margin-top:4px' },
+                            el('strong', { textContent: 'This is a fork of a fork. ' }),
+                            el('span', { textContent: `One level up is ${r.parent}; the root of the network is ${r.source}. Work goes one step up by default, which is how a chain is normally worked — sending it to the root instead is a choice, not a correction.` }),
+                            r.intoSource
+                              ? el('div', { className: r.intoSource.mayOpen ? 'ok' : 'bad', textContent: r.intoSource.mayOpen ? `The token may also open one directly in ${r.source}.` : `The token may not open one in ${r.source}: ${r.intoSource.why}` })
+                              : null)
+                        : null))
                 : asked && r.fork === false
                   ? el('tr', {}, el('th', { textContent: 'a pull request goes to' }),
                       el('td', { className: 'muted', textContent: 'itself — this is not a fork' }))

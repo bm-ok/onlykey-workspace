@@ -2298,8 +2298,8 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // so holding them together is the part only this can do.
   changeOpen: {
     about: 'Push a line onward and open a pull request per repository, tracked together as one landing',
-    takes: ['source', 'target', 'title', 'body'],
-    run: async ({ source, target, title, body, _overTheWire }) => {
+    takes: ['source', 'target', 'title', 'body', 'into'],
+    run: async ({ source, target, title, body, into, _overTheWire }) => {
       const pair = twoLines(source, target)
       const carrying = []
       for (const { repo, head, base } of pair.on) {
@@ -2330,7 +2330,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
           continue
         }
 
-        const pr = await remotes.openPull(c.repo, { branch: c.head, base: c.base, title: said, body: because })
+        const pr = await remotes.openPull(c.repo, { branch: c.head, base: c.base, title: said, body: because, into: into || null })
         if (pr.opened) log.on('git', c.repo).good(`pull request #${pr.number} into ${pr.into} — ${pr.url}`)
         else log.on('git', c.repo)[pr.already ? 'warn' : 'bad'](`no pull request opened: ${pr.why}`)
         done.push(pr)
