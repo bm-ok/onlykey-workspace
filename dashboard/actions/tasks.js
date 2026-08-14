@@ -660,7 +660,10 @@ module.exports = {
     needs: 'workspace',
     takes: ['tag'],
     run: ({ tag }) => {
-      const library = prompts.all()
+      // The prompts as the prompt library itself reports them, so a prompt's own
+      // contract is already resolved and this does not work it out a second time
+      // with a second chance of getting it wrong.
+      const library = actions.prompts.run({}).prompts
       const rows = jobs.all()
         .filter(j => !tag || (j.tags || []).includes(tag))
         .map(j => {
@@ -671,11 +674,17 @@ module.exports = {
             // full by `job`, which is what the editor asks for.
             code: undefined,
             lines: (j.code || '').split('\n').length,
-            prompt: from ? { id: from.id, name: from.name, approved: from.approved } : null,
+            prompt: from ? { id: from.id, name: from.name, approved: from.approved, usable: from.usable, whyNot: from.whyNot } : null,
             missingPrompt: !!(j.promptId && !from),
-            // WHETHER IT COULD RUN RIGHT NOW, as one answer rather than three
-            // flags a reader has to combine. Both halves have to be approved.
-            runnable: j.approved && (!j.promptId || !!(from && from.approved)),
+            // WHETHER IT COULD RUN RIGHT NOW, as one answer rather than four
+            // flags a reader has to combine.
+            //
+            // THREE THINGS ARE APPROVED, not two, and the third arrives through
+            // the second: the script, the prompt, and the rules that prompt runs
+            // under. A job does not name a contract -- a prompt does -- so this
+            // asks the prompt whether IT is usable rather than reaching past it
+            // to the contract, which keeps the chain in one direction.
+            runnable: j.approved && (!j.promptId || !!(from && from.usable)),
             whyNot: !j.there
               ? 'its script is missing'
               : j.lapsed
@@ -684,8 +693,12 @@ module.exports = {
                   ? 'not approved'
                   : j.promptId && !from
                     ? 'its prompt is gone'
-                    : j.promptId && from && !from.approved
-                      ? `its prompt "${from.name}" is not approved`
+                    : j.promptId && from && !from.usable
+                      ? (from.approved
+                          // Said in full, because "its prompt is not usable"
+                          // would send somebody to the prompt to find it fine.
+                          ? `its prompt "${from.name}" runs under a contract that is not ready — ${from.whyNot}`
+                          : `its prompt "${from.name}" is not approved`)
                       : null
           }
         })
@@ -821,6 +834,7 @@ module.exports = {
         // have until something puts it there. See job-api.js.
         token: vm.spec && vm.spec.token,
         prompts,
+        contracts,
         dispatch,
         channel,
         base,
@@ -853,9 +867,31 @@ module.exports = {
   prompts: {
     about: 'The prompt library: what a worker can be told, written once and kept',
     run: () => {
-      const list = prompts.all()
+      const rules = contracts.all()
+      // THE CONTRACT IT RUNS UNDER, resolved here, the same way a job's prompt
+      // is. A prompt is what a worker is told to do and a contract is what it
+      // may not do while doing it, and the two are only ever read together --
+      // so "is this usable" is one answer rather than two flags a reader has to
+      // combine, and `whyNot` names which half is missing.
+      const list = prompts.all().map(p => {
+        const under = p.contractId ? rules.find(c => c.id === p.contractId) || null : null
+        return {
+          ...p,
+          contract: under ? { id: under.id, name: under.name, approved: under.approved } : null,
+          missingContract: !!(p.contractId && !under),
+          usable: p.approved && (!p.contractId || !!(under && under.approved)),
+          whyNot: !p.approved
+            ? (p.lapsed ? 'edited since it was approved' : 'not approved')
+            : p.contractId && !under
+              ? 'its contract is gone'
+              : p.contractId && under && !under.approved
+                ? `its contract "${under.name}" is not approved`
+                : null
+        }
+      })
       return {
         prompts: list,
+        contracts: rules,
         where: prompts.FILE(),
         note: list.length
           ? 'A task copies the text it was given rather than pointing at it, so editing one here never rewrites a task that already went out.'
@@ -866,9 +902,14 @@ module.exports = {
 
   promptSave: {
     about: 'Write a prompt, or rewrite one. The id never changes once it is made',
-    takes: ['id', 'name', 'text', 'about'],
-    run: ({ id, name, text, about, _overTheWire }) => {
-      const saved = prompts.save({ id, name, text, about }, _overTheWire ? 'the command line' : 'the window')
+    takes: ['id', 'name', 'text', 'about', 'contractId'],
+    run: ({ id, name, text, about, contractId, _overTheWire }) => {
+      // Refused by name here rather than discovered as a dangling reference in
+      // the panel three days later.
+      if (contractId && !contracts.get(String(contractId))) {
+        throw new Error(`There is no contract called "${contractId}". Write it first — the rules a prompt runs under are not a name typed into a box.`)
+      }
+      const saved = prompts.save({ id, name, text, about, contractId }, _overTheWire ? 'the command line' : 'the window')
       log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the prompt "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
       return saved
     }

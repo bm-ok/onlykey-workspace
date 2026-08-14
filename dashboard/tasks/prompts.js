@@ -79,7 +79,7 @@ const idFor = name => String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-
 // Written, or rewritten. The id never changes once made: something may be
 // pointing at it, and a rename that silently becomes a different prompt is the
 // quietest way to break a reference.
-function save ({ id, name, text, about }, by = 'the window') {
+function save ({ id, name, text, about, contractId }, by = 'the window') {
   const title = String(name || '').trim()
   if (!title) throw new Error('Give it a name. A prompt with no name is one nobody finds again.')
   const body = String(text || '').trim()
@@ -97,16 +97,35 @@ function save ({ id, name, text, about }, by = 'the window') {
   // write one and may not ratify its own.
   const stamp = by === 'the window' ? { at: now, by, hash: hash(body) } : null
 
+  // THE RULES THESE WORDS HAVE TO HOLD TO.
+  //
+  // A contract hangs off the prompt rather than off the job, because the prompt
+  // is the thing that has to be consistent with it: "refactor across every
+  // repository" and "touch nothing you were not asked about" are a brief and a
+  // limit that contradict each other, and the only moment anybody would notice
+  // is while reading one against the other. Which is the moment a prompt is
+  // approved -- so that is where they belong together.
+  //
+  // Left alone when nothing is sent, like the code on a job: a save that means
+  // "rename this" must not quietly unbind the rules.
+  const rules = contractId === undefined
+    ? (at === -1 ? null : list[at].contractId || null)
+    : (String(contractId || '').trim() || null)
+
   if (at === -1) {
-    list.push({ id: key, name: title, about: String(about || '').trim() || null, text: body, written: now, edited: null, approval: stamp })
+    list.push({ id: key, name: title, about: String(about || '').trim() || null, text: body, contractId: rules, written: now, edited: null, approval: stamp })
   } else {
     const was = list[at]
-    const changed = was.text !== body
+    // THE CONTRACT IS PART OF WHAT WAS APPROVED. Changing which rules a prompt
+    // runs under changes what somebody agreed to just as much as rewriting a
+    // sentence of it does -- more, since the words look identical afterwards.
+    const changed = was.text !== body || (was.contractId || null) !== rules
     list[at] = {
       ...was,
       name: title,
       about: String(about || '').trim() || null,
       text: body,
+      contractId: rules,
       edited: changed ? now : was.edited,
       // An unchanged save keeps whatever approval it had; a changed one is
       // re-approved only if a person is the one saving it.

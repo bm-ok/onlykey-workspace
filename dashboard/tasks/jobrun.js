@@ -29,7 +29,7 @@ const jobs = require('./jobs')
 // Everything it needs to reach a machine is handed in rather than required, so
 // this file cannot find a private path to any of it -- the same reason a job
 // gets a command on its PATH instead of an action table.
-async function run ({ id, promptId, machine, token, prompts, dispatch, channel, base, folder, log }) {
+async function run ({ id, promptId, machine, token, prompts, contracts, dispatch, channel, base, folder, log }) {
   const job = jobs.get(id)
   if (!job) throw new Error(`There is no job called "${id}".`)
   if (!job.there) throw new Error(`"${job.name}" has no script. Its file is missing from the jobs folder.`)
@@ -44,11 +44,29 @@ async function run ({ id, promptId, machine, token, prompts, dispatch, channel, 
   // this one's: a job that tidies branches needs no instruction, and refusing one
   // for lacking an input it never reads would be this deciding what a job is for.
   let prompt = null
+  // THE RULES THE PROMPT RUNS UNDER, carried with it. A prompt names a contract
+  // and the two are only ever read together, so a run that took one without the
+  // other would be sending half of what somebody approved.
+  let contract = null
   if (promptId) {
     prompt = (prompts.all() || []).find(p => p.id === promptId) || null
     if (!prompt) throw new Error(`There is no prompt called "${promptId}".`)
     if (!prompt.approved) {
       throw new Error(`The prompt "${prompt.name}" is not approved. What a worker is told is read before it is sent, the same as the script that sends it.`)
+    }
+
+    if (prompt.contractId) {
+      contract = (contracts.all() || []).find(c => c.id === prompt.contractId) || null
+      // REFUSED RATHER THAN RUN WITHOUT IT, which is the whole reason a contract
+      // is a thing here now. A missing or unapproved contract silently becoming
+      // "no rules" is the failure this replaced: a run with no limits looks
+      // exactly like a run with limits from everywhere except the limits.
+      if (!contract) throw new Error(`The prompt "${prompt.name}" runs under the contract "${prompt.contractId}", and there is no such contract. It will not be sent without the rules it was approved with.`)
+      if (!contract.approved) {
+        throw new Error(contract.lapsed
+          ? `The contract "${contract.name}" has been edited since it was approved. Read it and approve it again — what a worker may not do is read before it is sent.`
+          : `The contract "${contract.name}" is not approved. What a worker may not do is read before it is sent, the same as what it is told to do.`)
+      }
     }
   }
 
@@ -57,7 +75,7 @@ async function run ({ id, promptId, machine, token, prompts, dispatch, channel, 
   // oddly.
   const runId = `job-${id}-${new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14)}`
 
-  log(`sending "${job.name}" to ${machine}${prompt ? ` with the prompt "${prompt.name}"` : ''}`)
+  log(`sending "${job.name}" to ${machine}${prompt ? ` with the prompt "${prompt.name}"` : ''}${contract ? `, under "${contract.name}"` : ''}`)
 
   const out = await channel.run(machine, dispatch.script({
     id: runId,
@@ -66,6 +84,12 @@ async function run ({ id, promptId, machine, token, prompts, dispatch, channel, 
     vm: machine,
     token,
     prompt: prompt ? { id: prompt.id, name: prompt.name, text: prompt.text } : null,
+    // The text, not the name. Carried rather than referenced, for the reason
+    // dispatch.js gives about a task's contract: read six weeks later, a name
+    // proves nothing about what the worker was actually held to.
+    contract: contract ? contract.text : null,
+    contractName: contract ? contract.name : null,
+    contractId: contract ? contract.id : null,
     folder,
     base
   }), { what: `dispatching the job ${id}`, timeout: 60000 })
@@ -79,6 +103,9 @@ async function run ({ id, promptId, machine, token, prompts, dispatch, channel, 
     job: job.id,
     machine,
     prompt: prompt ? prompt.id : null,
+    // Said plainly, because "no rules" is the dangerous answer and it is also
+    // the silent one -- the same note vmDispatch makes about a task.
+    contract: contract ? contract.id : null,
     // FIRE AND FORGET, like every other run here. A job can take as long as it
     // takes, and holding the channel open for it would make starting one
     // indistinguishable from waiting for it. What it said is read afterwards

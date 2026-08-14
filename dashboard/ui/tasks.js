@@ -77,6 +77,13 @@ function showJob (id) {
   showPane('jobs')
 }
 
+function showContract (id) {
+  pickedContract = id
+  been.set('contract', id)
+  forget('contracts'); forget('contract-detail')
+  showPane('contracts')
+}
+
 // What a task's card and its detail panel read, including what the buttons close
 // over. A field missed here is a panel that silently stops updating, which is
 // worse than the flicker the signature exists to prevent.
@@ -852,6 +859,11 @@ function newTask (from = null) {
 // cannot rewrite history somebody is judging against. That is the same reason a
 // task keeps its own contract rather than a path to one.
 let pickedPrompt = been.get('prompt', null)
+// The contracts, kept from the last paint so the write dialog can offer them
+// without a round trip while it is opening. Same as promptsNow, for the same
+// reason: a dropdown that fills in a moment later is a dropdown somebody has
+// already scrolled past.
+let contractsNow = []
 
 function paintPrompts () {
   if (view !== 'tasks' || taskPane !== 'prompts') return
@@ -868,7 +880,8 @@ async function paintPromptsNow () {
   // still paint: prompts are kept for this computer and jobs belong to a
   // workspace, so with none open the library is still readable and the answer to
   // "what uses this" is simply nothing.
-  Promise.all([api('prompts'), api('jobs').catch(() => ({ jobs: [] }))]).then(([{ prompts, note }, work]) => {
+  Promise.all([api('prompts'), api('jobs').catch(() => ({ jobs: [] }))]).then(([{ prompts, contracts, note }, work]) => {
+    contractsNow = contracts || []
     const usersOf = id => (work.jobs || []).filter(j => j.promptId === id)
 
     if (!prompts.some(x => x.id === pickedPrompt)) {
@@ -908,12 +921,18 @@ async function paintPromptsNow () {
   }).catch(oops)
 }
 
-// The same ladder as a job's, for the half that is words rather than code.
+// The same ladder as a job's, for the half that is words rather than code — and
+// like a job's it has a rung that is not about this thing at all: a prompt runs
+// under a contract, and rules that are not ready stop it just as surely as words
+// that are not approved. Saying "not approved" for that would send somebody to
+// the prompt to find it perfectly approved.
 const promptBadge = x => x.lapsed
   ? { className: 'badge bad', textContent: 'edited' }
-  : x.approved
-    ? { className: 'badge ok', textContent: 'approved' }
-    : { className: 'badge warn', textContent: 'not approved' }
+  : !x.approved
+      ? { className: 'badge warn', textContent: 'not approved' }
+      : x.usable === false
+        ? { className: 'badge warn', textContent: x.missingContract ? 'contract gone' : 'contract waiting' }
+        : { className: 'badge ok', textContent: 'approved' }
 
 function paintPrompt (x, used = []) {
   if (!x) return fill($('prompt-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one.' }))
@@ -933,11 +952,32 @@ function paintPrompt (x, used = []) {
       ? el('p', { className: 'note bad', textContent: 'It was edited after it was approved, so it is waiting to be read again — what was approved is not what would be sent.' })
       : null,
 
-    // WHAT DEPENDS ON IT, and the way back to each. The other half of the link
-    // from a job to its prompt — and the more useful direction of the two, since
-    // withdrawing approval here stops those jobs running and this is the only
-    // place that says which ones they are before you do it.
+    x.whyNot && x.approved
+      ? el('p', { className: 'note warn', textContent: `It will not be sent: ${x.whyNot}.` })
+      : null,
+
+    // THE RULES IT RUNS UNDER, beside the words that have to hold to them.
+    //
+    // The contract hangs off the prompt rather than off the job because this is
+    // the pairing somebody reads: a brief saying "refactor across every
+    // repository" under rules saying "touch nothing you were not asked about"
+    // is a contradiction that is only visible when the two are on one screen —
+    // and the moment that matters is while approving, which is here.
     el('div', { className: 'carries', style: 'margin-top:10px' },
+      el('div', { className: 'group-part' },
+        el('span', { textContent: 'under the contract' }),
+        el('span', {}, x.contract
+          ? [
+              el('button', {
+                className: 'linky',
+                textContent: x.contract.name,
+                title: x.contract.approved ? 'Read the rules' : 'Read the rules, and approve them if they are fit',
+                onclick: () => showContract(x.contract.id)
+              }),
+              x.contract.approved ? null : el('span', { className: 'warn', textContent: ' — not approved' })
+            ]
+          : el('span', { className: x.missingContract ? 'warn' : 'muted', textContent: x.missingContract ? `${x.contractId} — gone` : 'none — the worker gets no rules' }))),
+
       el('div', { className: 'group-part' },
         el('span', { textContent: 'used by' }),
         el('span', {}, used.length
@@ -1040,11 +1080,25 @@ function writePrompt (x = null) {
     fields: [
       { name: 'name', label: 'Name', value: x ? x.name : '', placeholder: 'Short enough to recognise in a list' },
       { name: 'about', label: 'What it is for (optional)', value: x && x.about ? x.about : '', placeholder: 'One line, so somebody else knows when to reach for it' },
-      { name: 'text', label: 'The prompt', value: x ? x.text : '', multiline: true, rows: 14, placeholder: 'Read the README and the code, and say where they disagree.' }
+      { name: 'text', label: 'The prompt', value: x ? x.text : '', multiline: true, rows: 14, placeholder: 'Read the README and the code, and say where they disagree.' },
+      // BOUND HERE, so the words and the rules they must hold to are chosen in
+      // one act. Changing it counts as an edit and takes the approval back —
+      // swapping the rules under a brief changes what was agreed to as much as
+      // rewriting a sentence does, and more quietly, since the words look
+      // identical afterwards.
+      {
+        name: 'contractId',
+        label: 'Under which contract',
+        value: x && x.contractId ? x.contractId : '',
+        options: [
+          { value: '', label: 'none — the worker gets no rules' },
+          ...contractsNow.map(c => ({ value: c.id, label: `${c.name}${c.approved ? '' : ' — not approved'}` }))
+        ]
+      }
     ],
     confirm: x ? 'Save it' : 'Write it',
     onYes: async f => {
-      const saved = await api('promptSave', { id: x ? x.id : undefined, name: f.name, about: f.about, text: f.text })
+      const saved = await api('promptSave', { id: x ? x.id : undefined, name: f.name, about: f.about, text: f.text, contractId: f.contractId || '' })
       pickedPrompt = saved.id
       been.set('prompt', pickedPrompt)
       say(saved.created ? `"${saved.name}" kept.` : `"${saved.name}" saved.`)
@@ -1083,7 +1137,12 @@ async function paintContractsNow () {
   await settle()
   if (view !== 'tasks' || taskPane !== 'contracts') return
 
-  api('contracts').then(({ contracts, note }) => {
+  // The prompts too, only to say which run under each. A contract with nothing
+  // under it is not a fault — it is one somebody wrote before the brief that
+  // needs it — so this never fails the paint.
+  Promise.all([api('contracts'), api('prompts').catch(() => ({ prompts: [] }))]).then(([{ contracts, note }, lib]) => {
+    const boundTo = id => (lib.prompts || []).filter(p => p.contractId === id)
+
     if (!contracts.some(c => c.id === pickedContract)) {
       pickedContract = contracts.length ? contracts[0].id : null
       been.set('contract', pickedContract)
@@ -1114,11 +1173,12 @@ async function paintContractsNow () {
     }
 
     const one = contracts.find(c => c.id === pickedContract) || null
-    if (changed('contract-detail', one)) paintContract(one)
+    const under = one ? boundTo(one.id) : []
+    if (changed('contract-detail', [one, under])) paintContract(one, under)
   }).catch(oops)
 }
 
-function paintContract (c) {
+function paintContract (c, under = []) {
   if (!c) return fill($('contract-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one.' }))
 
   fill($('contract-detail'),
@@ -1135,6 +1195,25 @@ function paintContract (c) {
     c.lapsed
       ? el('p', { className: 'note bad', textContent: 'It was edited after it was approved, so it is waiting to be read again — what was approved is not what would govern a run.' })
       : null,
+
+    // WHAT RUNS UNDER IT, and the way to each. The other half of the link from a
+    // prompt to its contract, and the direction that matters when taking an
+    // approval back: this is the list of briefs that stop being sendable, said
+    // before you do it rather than discovered afterwards one refusal at a time.
+    el('div', { className: 'carries', style: 'margin-top:10px' },
+      el('div', { className: 'group-part' },
+        el('span', { textContent: 'the prompts under it' }),
+        el('span', {}, under.length
+          ? under.flatMap((p, n) => [
+              n ? el('span', { className: 'muted', textContent: ', ' }) : null,
+              el('button', {
+                className: 'linky',
+                textContent: p.name,
+                title: p.usable ? 'Ready to send' : `It will not be sent: ${p.whyNot}`,
+                onclick: () => showPrompt(p.id)
+              })
+            ])
+          : el('span', { className: 'muted', textContent: 'none yet — rules with nothing under them govern nothing' })))),
 
     el('div', { className: 'row', style: 'margin-top:8px' },
       c.approved && !c.lapsed

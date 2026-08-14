@@ -83,7 +83,7 @@ function heredoc (path, body, tag) {
 // permissions skipped, and it stays true: a job gets the same door everything
 // else on this machine gets -- a command on its PATH, authenticated by the
 // machine's own token -- and nothing wider.
-function script ({ id, task, folder, contract, resume, shell, job, prompt, vm, token, base }) {
+function script ({ id, task, folder, contract, contractName, contractId, resume, shell, job, prompt, vm, token, base }) {
   const dir = `${RUNS}/${id}`
 
   // THE CONTRACT IS CARRIED, NOT REFERENCED.
@@ -205,7 +205,14 @@ OKC_RUN=${q(id)}
 export OKC_BASE OKC_RUN
 ${prompt ? `OKC_PROMPT_ID=${q(prompt.id)}
 OKC_PROMPT_NAME=${q(prompt.name || prompt.id)}
-export OKC_PROMPT_ID OKC_PROMPT_NAME` : ''}`
+export OKC_PROMPT_ID OKC_PROMPT_NAME` : ''}
+# The rules that prompt runs under. The TEXT is already written beside this as
+# contract.md, by the same heredoc a task's contract goes through -- these only
+# say which contract it was, so a job can report it by name. A job reads the
+# rules from the file and hands them to the worker it starts.
+${contractId ? `OKC_CONTRACT_ID=${q(contractId)}
+OKC_CONTRACT_NAME=${q(contractName || contractId)}
+export OKC_CONTRACT_ID OKC_CONTRACT_NAME` : ''}`
 : ''}
 ${job
   ? `node ${dir}/run-job.js`

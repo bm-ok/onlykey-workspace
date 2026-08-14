@@ -92,8 +92,24 @@ const PROMPT = process.env.OKC_PROMPT_ID
     })
   : null
 
+// THE RULES THAT PROMPT RUNS UNDER, read from the file written beside this one.
+//
+// A prompt names a contract, so a run that carries a prompt carries its rules
+// too -- and a job is handed both rather than having to go and find one. The
+// text is here so a job can write it down, quote it, check something against it,
+// or hand it to a worker it starts; the id and name are here so it can say which
+// rules it was, which is what makes a run record worth reading later.
+const CONTRACT = process.env.OKC_CONTRACT_ID
+  ? Object.freeze({
+      id: process.env.OKC_CONTRACT_ID,
+      name: process.env.OKC_CONTRACT_NAME || null,
+      text: read('contract.md')
+    })
+  : null
+
 module.exports = {
   prompt: PROMPT,
+  contract: CONTRACT,
 
   // WHERE IT ACTUALLY IS, not where it was meant to be. The run script cds to
   // the configured folder and falls back to the home directory when there is
@@ -174,11 +190,25 @@ module.exports = {
   // SYNCHRONOUS, like sh, and this one is worth saying out loud: a worker takes
   // minutes, and nothing else in the job runs while it does -- no log line, no
   // progress. So `report()` before it and after it, rather than during.
-  claude (text, { contract = null, resume = null, timeout = 30 * 60 * 1000, cwd = null } = {}) {
+  claude (text, opts = {}) {
+    const { resume = null, timeout = 30 * 60 * 1000, cwd = null } = opts
     // Defaulting to the prompt is the ordinary case, not a shortcut: a job whose
     // work IS the prompt should not have to name it.
     const brief = String(text == null ? (PROMPT ? PROMPT.text : '') : text).trim()
     if (!brief) throw new Error('there is no brief to give a worker — pass one, or run this job with a prompt')
+
+    // THE RUN'S OWN CONTRACT UNLESS THE JOB SAYS OTHERWISE, and "otherwise"
+    // includes saying none. Tested with `in` rather than by a default value,
+    // because those are three different intentions and a default can only tell
+    // two of them apart:
+    //
+    //     claude(brief)                       under the rules this run carries
+    //     claude(brief, { contract: text })   under these rules instead
+    //     claude(brief, { contract: null })   under no rules, deliberately
+    //
+    // A worker started with no rules because nobody thought about it, and one
+    // started with no rules on purpose, must not be the same line of code.
+    const contract = 'contract' in opts ? opts.contract : (CONTRACT ? CONTRACT.text : null)
 
     try {
       cp.execFileSync('sh', ['-c', 'command -v claude'], { stdio: 'ignore' })
@@ -189,10 +219,17 @@ module.exports = {
     // Rules beside the run rather than named by a path, for the reason
     // dispatch.js gives: a path read six weeks later proves nothing about what
     // the worker was actually told.
+    //
+    // The run's own contract.md is used AS IT ARRIVED and never rewritten -- it
+    // is the record of what this run was given, and a job overwriting it would
+    // destroy the one copy that was not written by the job. Rules the job
+    // supplies itself go in a file of their own, so the two are still
+    // distinguishable afterwards.
     let rulesFile = null
     if (contract) {
-      rulesFile = path.join(here, 'contract.md')
-      fs.writeFileSync(rulesFile, String(contract))
+      const own = CONTRACT && contract === CONTRACT.text
+      rulesFile = path.join(here, own ? 'contract.md' : 'contract-given.md')
+      if (!own) fs.writeFileSync(rulesFile, String(contract))
     }
 
     const args = ['-p', brief, '--dangerously-skip-permissions', '--output-format', 'json']
