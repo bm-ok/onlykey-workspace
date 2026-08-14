@@ -57,10 +57,6 @@ Object.assign(actions,
   require('./actions/repos')
 )
 
-// Registers the drills with the harness. A require for its side effect, kept
-// here rather than in a group file so it happens once and in a stated place.
-require('./tasks/planned')
-
 // The ports this server actually ended up on, shared with the actions so a guest
 // is told where something is really listening. See actions/shared.js.
 const net = shared.net

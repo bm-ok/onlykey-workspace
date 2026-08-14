@@ -114,7 +114,7 @@ async function pickTask (id, card) {
 }
 
 function paintTasks (queued) {
-  Promise.all([api('tasks'), api('planned')]).then(([{ tasks }, plan]) => {
+  Promise.all([api('tasks'), api('defined').catch(() => ({ defined: [] }))]).then(([{ tasks }, jobs]) => {
     taskList = tasks
     // Reconciled against what exists, for the same reason the machine selection
     // is: a task remembered from the last window may have been thrown away
@@ -127,20 +127,23 @@ function paintTasks (queued) {
 
     // ASKED FOR HERE, where it can be seen.
     //
-    // Approval was reachable only from inside the write-a-task dialog, three
-    // clicks in — so ten definitions could sit waiting and the window said
-    // nothing at all, which is indistinguishable from there being none. A
-    // decision that has to be sought out is a decision that does not get made.
-    const waiting = plan.waiting + plan.lapsed
-    if (changed('approvals', [plan.waiting, plan.lapsed])) {
+    // A decision that has to be sought out is a decision that does not get made.
+    // This only ever fires for a job somebody ELSE wrote: one written at the
+    // window is approved by whoever wrote it, so the count is exactly "what
+    // arrived down the pipe and is waiting on you", which is the case worth a
+    // card rather than a number in a corner.
+    const unread = (jobs.defined || []).filter(d => !d.approved)
+    const lapsed = unread.filter(d => d.lapsed).length
+    const waiting = unread.length
+    if (changed('approvals', [waiting, lapsed])) {
       fill($('approvals'), waiting
         ? el('div', { className: 'card wants' },
             el('div', { className: 'card-title' },
-              el('span', { textContent: `${waiting} pre-defined task${waiting === 1 ? '' : 's'} waiting for you` }),
+              el('span', { textContent: `${waiting} job${waiting === 1 ? '' : 's'} waiting for you` }),
               el('span', { className: 'badge warn', textContent: 'needs reading' })),
-            el('div', { className: 'card-sub muted', textContent: plan.lapsed
-              ? `${plan.waiting} never read, ${plan.lapsed} changed since you approved them.`
-              : 'Written by a model. Nothing runs until you have read it and said so.' }),
+            el('div', { className: 'card-sub muted', textContent: lapsed
+              ? `${waiting - lapsed} never read, ${lapsed} changed since you approved them.`
+              : 'Nothing unapproved runs, whoever is asking.' }),
             // TO THE PANE, not to a dialog. The card says how many are waiting;
             // the pane is where they can be read, compared and decided on, and
             // sending somebody to a one-at-a-time reader was most of why ten of
@@ -697,65 +700,6 @@ function newTask (from = null) {
 // Only in the window. `plannedApprove` refuses over the socket, because that is
 // the socket a supervising model drives — and a model approving a definition it
 // wrote is the one path nothing reviews.
-// ---- what is defined, rather than what is happening ---------------------
-//
-// A pre-defined task is not a task. It is a DEFINITION of a job -- a prompt, or a
-// script, written once to do one thing -- approved once by a person who read it,
-// and run whenever it is wanted. The board next to it is work: written for an
-// occasion, given out, delivered, judged, and then done with. These outlive the
-// occasion, which is the whole point of them.
-//
-// WHAT IS REGISTERED TODAY IS DRILLS, and that is a fact about this moment rather
-// than about the shape. They are jobs that happen to assert something; a job that
-// reads a repository and reports, or one that applies a known fix wherever it
-// finds it, is the same object with the same approval and the same run. Naming
-// this pane "tests" would have written that limit into the window.
-//
-// APPROVAL IS THE POINT, and it matters more the less test-like these get. A
-// model may write one; only a person may say it is fit to run, and `plannedRun`
-// refuses anything unapproved. A definition that does work rather than asserting
-// makes that boundary load-bearing rather than tidy.
-//
-// Until now the only ways in were a nudge card that appears when something is
-// waiting, and the write-a-task dialog three clicks in. So the ordinary state --
-// ten definitions, all approved, nothing waiting -- had no surface at all, and
-// "what does this app already know how to do" was a question you could only
-// answer from a terminal.
-let taskPane = been.get('task-pane', 'board')
-// Which definition is being read. Kept like every other selection here, so
-// coming back to the tab comes back to what you were looking at.
-let pickedPlan = been.get('planned', null)
-// The written jobs, and the prompt library they can point at. Held so the
-// dialog below can offer the list without asking again.
-let definedNow = []
-let promptsNow = []
-
-document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
-  t.onclick = () => {
-    taskPane = t.dataset.pane
-    been.set('task-pane', taskPane)
-    document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
-    document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
-    paintPlanned()
-  }
-})
-;(() => {
-  const t = document.querySelector(`#view-tasks .subtab[data-pane="${taskPane}"]`)
-  if (!t) { taskPane = 'board'; return }
-  document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
-  document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
-})()
-
-// WHAT EACH STATE MEANS, said as the sentence rather than the flag. "Approved" is
-// not one thing: a definition can be approved as it stands, approved and then
-// EDITED since -- which is the dangerous one, because it reads as approved and is
-// not what anybody read -- or never read at all.
-const definitionState = t => t.lapsed
-  ? { cls: 'bad', label: 'changed since you approved it', why: 'Somebody has edited this since it was read. It will not run until it is read again.' }
-  : t.approved
-    ? { cls: 'ok', label: 'approved', why: null }
-    : { cls: 'warn', label: 'never read', why: 'Written by a model. Nothing runs until a person has read it and said so.' }
-
 // ---- the prompt library --------------------------------------------------
 //
 // The third of three, and the one the other two are made of:
@@ -889,6 +833,46 @@ function writePrompt (x = null) {
 
 $('prompt-new').onclick = () => writePrompt()
 
+// ---- jobs, written down to be run again ---------------------------------
+//
+//     task <- pre-defined <- prompt
+//
+// A task is one occasion: written, given out, delivered, judged, done with. A
+// pre-defined task is the standing intention to do that job -- a prompt bound to
+// the circumstances it runs in: which branch it delivers on, which contract,
+// which kind of worker.
+//
+// THIS PANE HELD TWO DIFFERENT THINGS AND SAID SO BADLY. Ten drills declared in
+// tasks/planned.js sat here beside jobs somebody wrote, because both were
+// "pre-defined" -- one meaning "a test written in code while this app was being
+// built", the other meaning "work I want to do again". They were approved the
+// same way and listed together and nothing could be done to half of them, which
+// made the whole pane read as broken rather than as two things.
+//
+// The drills are gone. Their reasoning is in TEST-PLAN.md, which is where it had
+// always been and where an assertion could never have put it.
+let taskPane = been.get('task-pane', 'board')
+let pickedPlan = been.get('planned', null)
+let definedNow = []
+let promptsNow = []
+
+document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
+  t.onclick = () => {
+    taskPane = t.dataset.pane
+    been.set('task-pane', taskPane)
+    document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
+    document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
+    paintPlanned()
+    paintPrompts()
+  }
+})
+;(() => {
+  const t = document.querySelector(`#view-tasks .subtab[data-pane="${taskPane}"]`)
+  if (!t) { taskPane = 'board'; return }
+  document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
+  document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
+})()
+
 function paintPlanned () {
   if (view !== 'tasks' || taskPane !== 'planned') return
   waiting('planned-list', { cards: 3 })
@@ -900,151 +884,54 @@ async function paintPlannedNow () {
   await settle()
   if (view !== 'tasks' || taskPane !== 'planned') return
 
-  Promise.all([api('planned'), api('defined').catch(() => ({ defined: [], prompts: [] }))]).then(([plan, mine]) => {
-    const suites = plan.suites || []
+  api('defined').then(mine => {
     definedNow = mine.defined || []
     promptsNow = mine.prompts || []
-    const all = suites.flatMap(s => s.tests)
-    const waitingOn = all.filter(t => !t.approved || t.lapsed).length
 
-    setText($('planned-context'), all.length
-      ? `— ${all.length} in ${suites.length} suite${suites.length === 1 ? '' : 's'}${waitingOn ? `, ${waitingOn} needing you` : ''}`
-      : '— none registered')
-    setText($('planned-note'), plan.note || '')
+    const needing = definedNow.filter(d => !d.approved).length
+    setText($('planned-context'), definedNow.length
+      ? `— ${definedNow.length}${needing ? `, ${needing} to approve` : ''}`
+      : '— none yet')
+    setText($('planned-note'), mine.note || '')
 
-    if (!changed('planned', suites)) return
-
-    // Reconciled against what is registered, like every other selection here --
-    // and there are two lists to be registered in now. A written job is named
-    // "defined:<id>" so the two cannot collide: a drill's name is a sentence and
-    // an id is a slug, but relying on that is the sort of assumption that holds
-    // until somebody writes a job called exactly what a drill is called.
-    const mineId = String(pickedPlan || '').startsWith('defined:') ? pickedPlan.slice(8) : null
-    const stillThere = mineId
-      ? definedNow.some(d => d.id === mineId)
-      : all.some(t => t.name === pickedPlan)
-    if (!stillThere) {
-      pickedPlan = definedNow.length
-        ? 'defined:' + definedNow[0].id
-        : all.length ? all[0].name : null
+    // Reconciled against what exists, like every other selection here.
+    if (!definedNow.some(d => d.id === pickedPlan)) {
+      pickedPlan = definedNow.length ? definedNow[0].id : null
       been.set('planned', pickedPlan)
     }
 
-    if (changed('planned', [suites, definedNow, pickedPlan])) {
-      fill($('planned-list'),
-        // WRITTEN ONES FIRST. They are the ones this window can create, edit and
-        // throw away; the declared ones below are code and can only be read.
-        // Putting the editable half at the top is what makes the + above it mean
-        // something rather than looking like it adds to the whole list.
-        definedNow.length
-          ? el('div', { className: 'carries' },
-              el('div', { className: 'carries-head' },
-                el('span', { textContent: 'written here' }),
-                el('span', { className: 'muted', textContent: `${definedNow.length}` })),
-              ...definedNow.map(d => {
-                const st = d.lapsed
-                  ? { cls: 'bad', label: 'edited since approval' }
-                  : d.approved
-                    ? { cls: 'ok', label: 'approved' }
-                    : { cls: 'warn', label: 'not approved' }
-                return el('div', {
-                  className: `card pick${pickedPlan === 'defined:' + d.id ? ' on' : ''}`,
-                  onclick: () => {
-                    pickedPlan = 'defined:' + d.id
-                    been.set('planned', pickedPlan)
-                    changed('planned', null); changed('planned-detail', null)
-                    paintPlanned()
-                  }
-                },
-                el('div', { className: 'card-title' },
-                  el('span', { className: 'grow', textContent: d.name }),
-                  el('span', { className: `badge ${st.cls}`, textContent: st.label })),
-                el('div', { className: 'card-sub mono muted', textContent: d.branch }),
-                d.missingPrompt ? el('div', { className: 'card-sub bad', textContent: 'its prompt is gone' }) : null)
-              }))
-          : null,
-        suites.length
-        ? suites.map(su => el('div', { className: 'carries' },
-            el('div', { className: 'carries-head' },
-              el('span', { textContent: su.name }),
-              el('span', { className: 'muted', textContent: `${su.tests.length} defined` })),
-            ...su.tests.map(t => {
-              const st = definitionState(t)
-              return el('div', {
-                className: `card pick${t.name === pickedPlan ? ' on' : ''}`,
-                onclick: () => {
-                  pickedPlan = t.name
-                  been.set('planned', pickedPlan)
-                  changed('planned', null); changed('planned-detail', null)
-                  paintPlanned()
-                }
-              },
-              el('div', { className: 'card-title' },
-                el('span', { className: 'grow', textContent: t.name }),
-                el('span', { className: `badge ${st.cls}`, textContent: st.label })),
-              // WHEN it was approved, because "approved" with no date is a claim
-              // nobody can weigh against a definition that has been sitting for
-              // months.
-              el('div', { className: 'card-sub muted', textContent: t.at ? `read ${ago(t.at)}` : 'never read' }),
-              t.request ? el('div', { className: 'card-sub warn', textContent: 'asked to be read' }) : null)
-            })))
-          : (definedNow.length ? null : el('p', { className: 'empty', textContent: 'Nothing defined yet. Write one with + — a job is worth defining the moment you would write the same task a second time.' })))
+    if (changed('planned', [definedNow, pickedPlan])) {
+      fill($('planned-list'), definedNow.length
+        ? definedNow.map(d => {
+            const st = d.lapsed
+              ? { cls: 'bad', label: 'edited since approval' }
+              : d.approved
+                ? { cls: 'ok', label: 'approved' }
+                : { cls: 'warn', label: 'not approved' }
+            return el('div', {
+              className: `card pick${d.id === pickedPlan ? ' on' : ''}`,
+              onclick: () => {
+                pickedPlan = d.id
+                been.set('planned', pickedPlan)
+                changed('planned', null); changed('planned-detail', null)
+                paintPlanned()
+              }
+            },
+            el('div', { className: 'card-title' },
+              el('span', { className: 'grow', textContent: d.name }),
+              el('span', { className: `badge ${st.cls}`, textContent: st.label })),
+            el('div', { className: 'card-sub mono muted', textContent: d.branch }),
+            d.missingPrompt ? el('div', { className: 'card-sub bad', textContent: 'its prompt is gone' }) : null)
+          })
+        : el('p', { className: 'empty', textContent: 'Nothing yet. Write one with + — a job is worth defining the moment you would write the same task a second time.' }))
     }
 
-    if (String(pickedPlan || '').startsWith('defined:')) {
-      const mineOne = definedNow.find(d => 'defined:' + d.id === pickedPlan) || null
-      if (changed('planned-detail', mineOne)) paintWrittenJob(mineOne)
-      return
-    }
-    const one = all.find(t => t.name === pickedPlan) || null
-    if (changed('planned-detail', one)) paintDefinition(one)
+    const one = definedNow.find(d => d.id === pickedPlan) || null
+    if (changed('planned-detail', one)) paintWrittenJob(one)
   }).catch(oops)
 }
 
-// WHAT IT WILL ACT ON, NAMED, before it is started.
-//
-// A definition acts on whichever workspace is open, and nothing binds one to the
-// workspace it was written against -- so the workspace is the fact that decides
-// whether this is safe, and it belongs in the sentence rather than in the
-// operator's memory of which folder they last opened.
-function runDefinition (t) {
-  const here = latest.workspace
-  ask({
-    title: `Run "${t.name}"?`,
-    plain: [
-      here
-        ? `It runs against "${here.name}" — ${here.dir}`
-        : 'No workspace is open, so it will be refused.',
-      'It drives the same actions a person does. Depending on what it says, that can mean writing a task, cutting a branch, or borrowing a machine for several minutes.',
-      'Progress goes to the live log as it happens.'
-    ],
-    cost: 'Anything it leaves behind — a branch, a task — is left behind. Nothing here undoes it afterwards.',
-    fields: [{
-      name: 'machine',
-      label: 'On which machine (only some need one)',
-      value: (latest.vms.find(v => v.connected) || {}).name || '',
-      options: [{ value: '', label: 'none' }, ...latest.vms.filter(v => v.connected).map(v => ({ value: v.name, label: v.name }))]
-    }],
-    confirm: 'Run it',
-    onYes: async ({ machine }) => {
-      showTab('live')
-      say(`Running "${t.name}" — watch the live log.`)
-      const r = await api('plannedRun', { suite: t.suite, name: t.name, machine: machine || undefined })
-      const failed = (r.results || []).filter(x => x.status === 'failed')
-      say(failed.length
-        ? `${failed.length} failed: ${failed.map(x => x.name).join(', ')}`
-        : `"${t.name}" finished — ${(r.results || []).length} step(s), none failed.`,
-      failed.length ? 'bad' : 'ok')
-    }
-  })
-}
 
-// A JOB SOMEBODY WROTE HERE, which is the half of this pane that can be changed.
-//
-// Everything below the buttons is what a worker would be handed. The words come
-// from the prompt where one is named and from the brief where one is not, and it
-// says which -- because "where did this instruction come from" is the question
-// somebody asks when it turns out to have been wrong.
 function paintWrittenJob (d) {
   if (!d) return fill($('planned-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one with +.' }))
 
@@ -1191,146 +1078,4 @@ function writeJob (d = null) {
 
 $('defined-new').onclick = () => writeJob()
 
-// ONE DEFINITION, IN FULL, and what it would actually do.
-//
-// The question these get read with is not "what is it called" -- it is "what
-// would this do to my repositories if I ran it". That is answerable only from
-// what it says, so the source is here rather than behind a dialog, in an editor
-// rather than a paragraph, because code that is read has to look like code or it
-// gets approved without being read.
-function paintDefinition (t) {
-  if (!t) return fill($('planned-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left.' }))
-  const st = definitionState(t)
 
-  fill($('planned-detail'),
-    el('div', { className: 'card-title' },
-      el('span', { className: 'grow', textContent: t.name }),
-      el('span', { className: `badge ${st.cls}`, textContent: st.label })),
-    el('div', { className: 'card-sub muted', textContent: [
-      t.suite,
-      t.at ? `read ${ago(t.at)}` : 'never read',
-      `fingerprint ${t.fingerprint}`
-    ].filter(Boolean).join(' · ') }),
-
-    st.why ? el('p', { className: 'note', textContent: st.why }) : null,
-    t.note ? el('p', { className: 'note', textContent: `Approved with: "${t.note}"` }) : null,
-    t.request ? el('p', { className: 'note warn', textContent: `Asked to be read: ${t.request}` }) : null,
-
-    // WHAT RUNNING IT WOULD TOUCH, said before the source rather than left to be
-    // inferred from it. These were written against the scaffolding repositories
-    // while this app was being built, and they do real things: create tasks, cut
-    // branches, borrow a machine. Nothing binds a definition to the workspace it
-    // was written for, so the one that is open is the one it would act on.
-    el('div', { className: 'carries', style: 'margin-top:10px' },
-      el('div', { className: 'carries-head' }, el('span', { textContent: 'If it ran, it would run here' })),
-      el('p', { className: 'note', textContent: 'A definition acts through the same actions a person does, on whichever workspace is open — there is nothing tying one to the workspace it was written against. Several of these create tasks and cut branches named "drill/…"; some borrow a machine for ten minutes.' }),
-      el('p', { className: 'note', textContent: 'Withdrawing approval is what makes one unrunnable: nothing unapproved runs, whoever is asking, and it can be read and approved again whenever it is wanted.' })),
-
-    el('div', { className: 'row', style: 'margin-top:10px' },
-      el('button', {
-        className: 'btn small',
-        textContent: st.cls === 'ok' ? 'Read it again' : 'Read it',
-        title: 'Opens it with the approve and withdraw decisions',
-        onclick: () => readDefinition(t.name)
-      }),
-      // RUNNING IT IS A DECISION, AND THIS IS WHERE IT CAN BE MADE WELL.
-      //
-      // It lived in the second tab of the write-a-task dialog: three clicks in,
-      // behind a dropdown, with nothing on screen saying what the thing did. So
-      // the one place a person could start one was the one place they could not
-      // read it first, which is the wrong way round for the only act here that
-      // touches repositories.
-      //
-      // Refused rather than hidden when it is not approved: a greyed button that
-      // says why teaches the rule, and a missing one teaches nothing.
-      t.approved
-        ? el('button', {
-            className: 'btn small ok',
-            textContent: 'Run it',
-            title: 'Runs it now, against the workspace that is open',
-            onclick: () => runDefinition(t)
-          })
-        : el('button', {
-            className: 'btn small',
-            textContent: 'Run it',
-            disabled: true,
-            title: t.lapsed
-              ? 'It has been edited since it was approved. Read it again first.'
-              : 'Nothing unapproved runs. Read it first.'
-          }),
-      t.approved
-        ? el('button', {
-            // NOT red. Red is for something that will not be there afterwards,
-            // and this deletes nothing -- it takes a permission back, and the
-            // thing it took it from can be read and approved again in a click.
-            // Colouring every consequential act red is how red stops meaning
-            // anything, which matters because two buttons away is one that does
-            // destroy something.
-            className: 'btn small',
-            textContent: 'Withdraw approval',
-            title: 'It stops being runnable until somebody reads it again',
-            onclick: () => ask({
-              title: `Withdraw approval for "${t.name}"?`,
-              plain: [
-                'It stops being runnable — nothing unapproved runs, whoever is asking.',
-                'Nothing is deleted. The definition stays where it is and can be read and approved again whenever it is wanted.'
-              ],
-              confirm: 'Withdraw it',
-              onYes: async () => {
-                await api('plannedWithdraw', { suite: t.suite, name: t.name })
-                say(`Approval withdrawn for "${t.name}". It will not run until it is read again.`, 'warn')
-                changed('planned', null); changed('planned-detail', null)
-                return draw()
-              }
-            })
-          })
-        : null),
-
-    el('div', { style: 'margin-top:10px' }, codeBlock(t.source || '', 'javascript', { lines: 18 })))
-}
-
-function readDefinition (which) {
-  api('planned').then(plan => {
-    const all = (plan.suites || []).flatMap(s => s.tests.map(t => ({ suite: s.name, ...t })))
-    // Whatever most needs reading, when nothing was named: something changed
-    // since it was approved first, then something never read at all.
-    const t = (which && all.find(x => x.name === which)) ||
-      all.find(x => x.lapsed) || all.find(x => !x.approved) || all[0]
-    if (!t) return oops(new Error('Nothing is registered.'))
-
-    const others = all.filter(x => x.name !== t.name)
-
-    ask({
-      title: t.name,
-      plain: [
-        `From "${t.suite}".`,
-        t.approved
-          ? `You approved this on ${new Date(t.at).toLocaleString()}.${t.note ? ` Note: ${t.note}` : ''}`
-          : `This ${t.why}`,
-        'An approval is recorded against this exact source and lapses if it changes, so approving cannot be inherited by a later edit.'
-      ],
-      cost: t.approved ? null : 'Approving it means a supervising session may run it without asking you again.',
-      fields: [
-        { name: 'note', label: 'A note, if you want one on the record', value: t.note || '', placeholder: 'why this is alright to run' },
-        others.length
-          ? { name: 'next', label: 'Read another instead', value: '', options: [{ value: '', label: '— stay on this one —' }, ...others.map(o => ({ value: o.name, label: `${o.name} [${o.approved ? 'approved' : o.lapsed ? 'CHANGED' : 'not approved'}]` }))] }
-          : null
-      ].filter(Boolean),
-      confirm: t.approved ? 'Keep it approved' : 'Approve it',
-      extra: t.approved ? { label: 'Withdraw approval', danger: true, onClick: () => api('plannedWithdraw', { suite: t.suite, name: t.name }).then(() => say(`Approval withdrawn for "${t.name}".`)).catch(oops) } : null,
-      onYes: async ({ note, next }) => {
-        if (next) return setTimeout(() => readDefinition(next), 0)
-        await api('plannedApprove', { suite: t.suite, name: t.name, note })
-        say(`Approved "${t.name}".`)
-      }
-    })
-
-    // Inserted after the dialog exists, for the same reason a diff is: source is
-    // read, not answered, and it needs to scroll and be selectable.
-    const body = document.querySelector('.dlg-body')
-    if (body) {
-      body.append(el('div', { className: 'dlg-heading', textContent: 'What it does, exactly' }))
-      body.append(codeBlock(t.source, 'javascript', { lines: 20 }))
-    }
-  }).catch(oops)
-}

@@ -17,7 +17,7 @@ const actions = require('./table')
 const s = require('./shared')
 const {
   log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
-  vbox, vms, provisioner, scripts, channel, tasks, artifact, harness, approval,
+  vbox, vms, provisioner, scripts, channel, tasks, artifact,
   archive, files, prompts, defined, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,

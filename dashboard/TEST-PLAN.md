@@ -1,15 +1,25 @@
 Drills
 ======
 
-**Ten of these are now declared in code**, in `tasks/planned.js`, using the
-harness ported from test-moniker. They can be listed, approved and run from the
-window — `okc.js planned` shows which. This file stays as the reasoning: what
-each drill is for, the trap that made it worthless the first time, and what to
-put back afterwards. A definition says what runs; this says why it is worth
-running, and no assertion holds that.
+**These are prose again, and that is deliberate.** Ten of them were declared in
+code as drills, in `tasks/planned.js`, and have been taken back out.
 
-**A definition has to be approved before it runs**, by a person, in the window,
-after reading it. A model writes them; it cannot ratify its own.
+They were written while this app was being built, against three scaffolding
+repositories, to prove the flow worked while the flow was changing under them.
+That job is done. What was left was ten executable definitions that nobody had
+run in weeks, all approved, one click from running against whatever workspace
+happened to be open -- and they create tasks, cut branches and borrow machines.
+A drill that is never run is not a safety net; it is a loaded thing in a drawer.
+
+**What was worth keeping was never the assertions.** It was the reasoning: what
+each drill is for, the trap that made it worthless the first time, and what to
+put back afterwards. That was always here, and where it was only in the code it
+has been moved here -- see 4c below. An assertion says what runs; it cannot say
+why it is worth running.
+
+The machinery that ran them is still there and does nothing until something is
+declared. What replaces them for real work is the Pre-defined tab: jobs written
+in the window, as data, approved the same way and run deliberately.
 
 Things to run against this tool, and what each one proves. Not unit tests —
 `npm test` is that, and it only checks the code stayed generic. These are the
@@ -210,17 +220,25 @@ second machine, a signed-out machine refused work — none of those states exist
 at rest, and this tool puts machines at rest by design. On a quiet host half the
 suite legitimately has nothing to look at and says so.
 
-Make the conditions, then run the whole suite:
+Make the conditions, then try each one by hand:
 
     okc.js taskQueue --id <a long task>    one machine takes it, claims a branch,
                                            holds a credential
     okc.js vmStart --name <the other>      connected, on no branch
-    okc.js plannedRun --suite "guards ..."
 
-**Pass: 8 passed, 0 failed, 0 could not run — and the live task still running
-afterwards.** That last clause is the drill on the drills. A guard that proves a
-refusal by disturbing real work has cost more than it demonstrated, and the
-damage would surface later as the worker's fault rather than as the drill's.
+    okc.js vmSnapshotTake --name <the holder> --title x   refused: it holds a
+                                                          credential
+    okc.js vmWorkspace --name <the holder> --branch other refused: it is on a
+                                                          branch
+    okc.js taskGive --id <another> --name <the free one>  refused: that branch is
+                                                          claimed
+    okc.js vmCredentialsForget --name <the free one>      then dispatch to it:
+                                                          refused, signed out
+
+**Pass: every one refused, naming what it refused and why — and the live task
+still running afterwards.** That last clause is the drill on the drills. A guard
+proved by disturbing real work has cost more than it demonstrated, and the damage
+would surface later as the worker's fault rather than as the check's.
 
 **The signed-out guard is the one to watch.** It takes a credential away and
 puts it back, and the only time a connected machine exists is while one is
@@ -231,6 +249,49 @@ flight and refuses to touch it.
 branch has to be refused to a machine that is on *no* branch, because a machine
 already on one is refused for that first — a different rule than the one being
 tested.
+
+### 4c. The refusals that need nothing but a terminal
+
+**Four rules that hold on a quiet host**, with no machine, no credential and
+nothing running. They were declared in code as drills and are written here
+instead — see "What happened to the declared drills" at the top of this file.
+
+Each is a refusal, and each exists because the thing it refuses would not fail:
+it would succeed and be wrong later, somewhere else, wearing somebody else's
+name.
+
+    okc.js taskCreate --task '{"title":"no branch","brief":"anything"}'
+
+**Refused for having no branch.** A task with no branch has no artifact, so
+there would be nothing to read and nothing to judge. The task would look written
+and would be unjudgeable, which is discovered at the end rather than at the
+start.
+
+    okc.js taskCreate --task '{"title":"bad contract","brief":"anything",
+        "branch":"drill/contract","contract":"C:/nothing/here.md"}'
+
+**Refused for a contract that is not there.** A contract that silently fails to
+load leaves a worker with NO RULES while every panel reports success. That is
+worse than no contract at all, because the screen says there is one.
+
+    okc.js taskCreate --task '{"title":"empty","brief":"x","branch":"drill/empty"}'
+    okc.js taskJudge --id <it> --verdict accept --note "should not be possible"
+    okc.js taskRemove --id <it>
+
+**Refused for judging a branch with nothing on it.** A judgement of nothing is
+indistinguishable afterwards from a judgement of something: the record says
+accepted either way, and nobody reading it later can tell which happened.
+
+    okc.js taskJudge --id <a delivered task> --verdict reject --note ""
+
+**Refused for a rejection with no reason.** It is sent back to a worker that
+cannot ask what was wrong, so the next attempt is a guess. Check it on a task
+that HAS delivered — on an empty branch the refusal above fires first and this
+passes for the wrong reason.
+
+**A pass is four refusals, each naming what it refused and why.** A refusal that
+says only "invalid" teaches nobody anything and is indistinguishable from a bug.
+
 
 ### 12. The network goes away mid-run — 2026-08-13
 
