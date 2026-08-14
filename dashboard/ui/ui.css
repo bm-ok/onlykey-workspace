@@ -71,6 +71,26 @@ h2:first-child { margin-top: 0; }
 }
 .tab:hover { color: var(--text); background: var(--panel-2); }
 .tab.active { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+
+/* The workspace, beside the title. Monospaced and dotted because it names a
+   folder and is a control -- and a control that looks like a label is one
+   nobody presses. */
+.brand-tab {
+  font-family: var(--mono);
+  color: var(--accent);
+  border-style: dashed;
+  border-color: var(--line);
+  max-width: 26vw;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.brand-tab.none { color: var(--warn); }
+
+/* A TAB THAT NEEDS A WORKSPACE, WHILE THERE IS NONE. Dimmed and unclickable
+   rather than removed: which tabs stop working is the clearest statement of
+   what a workspace IS, and a row that silently loses half its buttons reads as
+   a broken window rather than as a state. */
+.tab:disabled { opacity: .3; cursor: default; }
+.tab:disabled:hover { color: var(--muted); background: transparent; }
 .tab-badge {
   display: inline-block;
   min-width: 16px;

@@ -490,3 +490,44 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   a git process alive out of 40 after this. The regression cost as much as the
   original fix saved, and would have kept costing it, because each new panel
   looked reasonable in isolation.
+
+* **Three callers reached the actions table directly, so there was nowhere to put
+  a rule.** The window did `app.actions[name].run(args)`, the pipe did its own
+  lookup, and a drill's `okc` did a third. That was fine while there was nothing
+  to say in between — and adding "a workspace can be closed" needed exactly that:
+  one place where every call passes through.
+
+  The alternative was a check inside each of the fifty-three actions that is a
+  question about a folder of repositories, which is fifty-three chances to forget
+  one, in the file that grows fastest. With `call()` it is a `needs: 'workspace'`
+  key beside `about:`, and the same function serves the window, the terminal and
+  the drills, so none of them can be refused something another one is allowed.
+
+  It also gave the window something to SAY. `workspaces` reports the marked
+  names, so "53 of this app's actions are questions about a folder" is read off
+  the table rather than written into a paragraph that goes stale.
+
+* **A path built from nowhere throws about an argument nobody passed.** Closing a
+  workspace made `stateDir()` return null, and `path.join(null, 'tasks.json')`
+  came back as `The "path" argument must be of type string. Received null` — from
+  `workspaces`, the one action whose whole job is to answer while none is open.
+
+  Reading is a fair question with nothing open and the answer is "nothing", so
+  the readers return empty rather than throwing; what must not happen quietly is
+  a WRITE, and that is stopped at the action where it can say why. Two different
+  answers to "there is nowhere to keep this", each in the place that can give it.
+
+  The same shape bit `serve.js`: `path.join(root(), name)` with a null root turns
+  a name that came off a URL into a RELATIVE path, which is the one thing the
+  `NAME` regex above it exists to prevent.
+
+* **Tearing down is where you find out what was holding on.** Adding "close it"
+  was the cheapest end-to-end test this app has had of its own assumptions: it
+  found the null paths above, a `workspaceUse` that read `current().dir` without
+  considering there might not be one, and a queue that would have read an empty
+  board and called it idle — the right outcome by the wrong route, and one stale
+  file away from dispatching into a workspace nobody is serving.
+
+  None of those are edge cases of closing. They are all "this value was never
+  absent, so nothing was written for absent", and the only way to find them was
+  to make it absent.

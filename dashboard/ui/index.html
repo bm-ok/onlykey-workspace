@@ -15,7 +15,17 @@
   <div class="brand">
     <span class="dot" id="link-dot" title="live log stream"></span>
     <strong>Dashboard</strong>
-    <span class="muted mono" id="vbox-path"></span>
+    <!-- WHICH REPOSITORIES THIS IS ABOUT, and a tab in its own right.
+         It sits beside the title rather than in the row of tabs because it is
+         not one more thing to look at -- it is the subject of all of them. A
+         branch, a task, a baseline and a pull request are each a statement about
+         one folder, and this names the folder.
+
+         A real `.tab`, so the one handler that switches views drives it and the
+         active styling is the same styling as everywhere else. It was a link
+         opening a dialog, which is the wrong shape for something that lists,
+         adds, removes and closes -- a dialog is for one decision. -->
+    <button class="tab brand-tab" data-view="workspace" id="workspace-tab">no workspace</button>
   </div>
   <nav class="tabs">
     <!-- IN THE ORDER THE WORK GOES, which is the shape of the whole tool:
@@ -564,6 +574,51 @@
       Nothing can exist without appearing here.
     </p>
     <div id="action-list"></div>
+  </section>
+
+  <!-- ---------------- Workspaces ----------------
+       THE SUBJECT OF EVERY OTHER TAB. A workspace is a folder of repositories,
+       and a branch, a task, a baseline and a pull request are each a statement
+       about one of them. Until this existed the subject was implied: one folder,
+       fixed, and a title bar that named it without offering to change it.
+
+       AND THERE IS A STATE WHERE THERE IS NONE. Closing one is not a way of
+       quitting -- it is the honest answer at the end of a day, or while working
+       on this app rather than through it. Everything that is a question about
+       repositories is refused while it lasts, in one place, by name; everything
+       about this HOST -- its machines, its keys, its approvals, its log -- keeps
+       working, because putting a machine away is how somebody gets to close one
+       in the first place. -->
+  <section class="view" id="view-workspace">
+
+    <div class="sync-head">
+      <h2 id="ws-title">Workspaces <span class="muted" id="ws-context"></span></h2>
+      <div class="sync-controls">
+        <button class="btn" id="ws-close">Close this workspace</button>
+      </div>
+    </div>
+    <p class="note" id="ws-note"></p>
+
+    <div id="ws-welcome" class="panel hidden"></div>
+
+    <div class="cols">
+      <div class="col wide">
+        <div id="ws-list" class="stack"></div>
+      </div>
+      <div class="col narrow">
+        <div class="panel">
+          <div class="carries-head"><span>Add a folder</span></div>
+          <p class="note">A folder whose subdirectories are git repositories. Nothing is written into it — what this app learns about a workspace is kept beside its own state, out of reach of a <code>git clean</code>.</p>
+          <input id="ws-add" class="finder" placeholder="C:\path\to\a\folder\of\repositories">
+          <div class="row" style="margin-top:8px">
+            <button class="btn ok" id="ws-add-go">Remember it</button>
+            <button class="btn" id="ws-add-use">Remember and open it</button>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:10px" id="ws-scope"></div>
+      </div>
+    </div>
+
   </section>
 
 </main>

@@ -61,7 +61,7 @@ function read () {
     const kept = JSON.parse(fs.readFileSync(FILE(), 'utf8').replace(/^﻿/, ''))
     if (kept && Array.isArray(kept.known)) return kept
   } catch { /* first run, or unreadable: the fallback below is still right */ }
-  return { current: null, known: [] }
+  return { current: null, known: [], closed: false }
 }
 
 function write (all) {
@@ -74,20 +74,32 @@ function write (all) {
 
 const isDir = p => { try { return fs.statSync(p).isDirectory() } catch { return false } }
 
-// Where the repositories are, right now.
+// Where the repositories are, right now, or NULL WHEN NONE IS OPEN.
 //
-// Falls back to the original path when nothing has been chosen, so this is a
-// change in what is POSSIBLE rather than a change in what happens by default.
+// Falls back to the original path when nothing has ever been chosen, so this is
+// a change in what is POSSIBLE rather than a change in what happens by default.
+//
+// CLOSED IS NOT THE SAME AS NEVER CHOSEN. Falling back on both would make
+// closing a workspace mean "go back to the one that was hard-coded", which is
+// the opposite of what somebody closing it asked for -- and it would do it
+// silently, under a title bar still naming a folder. So closing is recorded as
+// its own state and this returns null for it, which is what every caller reads
+// as "there is nothing to say anything about".
 function dir () {
   const all = read()
+  if (all.closed) return null
   if (all.current && isDir(all.current)) return all.current
   return ORIGINAL
 }
 
-// The current one as a record, whether or not it has ever been named.
+// Whether there is one at all. The single question everything else is gated on.
+const open = () => !!dir()
+
+// The current one as a record, or null when none is open.
 function current () {
   const all = read()
   const at = dir()
+  if (!at) return null
   const known = all.known.find(w => path.resolve(w.dir) === path.resolve(at))
   return known || { name: path.basename(at), dir: at, slug: slugFor(at), added: null, implicit: true }
 }
@@ -97,19 +109,23 @@ function current () {
 // removed drive is a thing to notice, not a thing to silently forget.
 function known () {
   const all = read()
-  const at = path.resolve(dir())
+  const at = dir()
+  const here = at ? path.resolve(at) : null
   const list = all.known.map(w => ({
     ...w,
     slug: w.slug || slugFor(w.dir),
-    current: path.resolve(w.dir) === at,
+    current: here !== null && path.resolve(w.dir) === here,
+    // The one that was open when it was closed, so reopening is one click on a
+    // list that would otherwise look like it has no memory of what you were on.
+    last: !!all.closed && !!all.current && path.resolve(w.dir) === path.resolve(all.current),
     there: isDir(w.dir),
     repos: isDir(w.dir) ? countRepos(w.dir) : 0
   }))
   // The implicit one appears too, or a fresh install would show an empty list
   // while plainly serving repositories from somewhere.
-  if (!list.some(w => w.current)) {
+  if (here !== null && !list.some(w => w.current)) {
     const c = current()
-    list.unshift({ ...c, current: true, there: isDir(c.dir), repos: countRepos(c.dir) })
+    list.unshift({ ...c, current: true, last: false, there: isDir(c.dir), repos: countRepos(c.dir) })
   }
   return list
 }
@@ -157,15 +173,35 @@ function use (at) {
   if (!all.known.some(w => path.resolve(w.dir) === full)) add(full)
   const now = read()
   now.current = full
+  now.closed = false
   write(now)
   return current()
+}
+
+// Put down, without being forgotten.
+//
+// THE POINT IS TO BE ABLE TO STOP. Everything about branches, tasks and pull
+// requests is a statement about one folder, and there are times -- finishing for
+// the day, handing the machine over, working on the app itself -- when the
+// honest state is that there is no such folder. Until now the only way to say
+// that was to quit, and the app came back up serving whatever it was last
+// pointed at whether or not that was still what anybody meant.
+//
+// `current` is deliberately left where it is. Closing says "not now", not
+// "forget where I was", and the list marks it so reopening is one click.
+function close () {
+  const all = read()
+  all.closed = true
+  write(all)
+  return { closed: true, was: all.current || null }
 }
 
 function forget (at) {
   const full = path.resolve(String(at || '').trim())
   const all = read()
-  if (path.resolve(dir()) === full) {
-    throw new Error('That is the workspace in use. Switch to another one before forgetting this one.')
+  const here = dir()
+  if (here && path.resolve(here) === full) {
+    throw new Error('That is the workspace in use. Close it, or switch to another one, before forgetting it.')
   }
   const before = all.known.length
   all.known = all.known.filter(w => path.resolve(w.dir) !== full)
@@ -190,8 +226,15 @@ const SCOPED = ['tasks.json', 'tasks-highest.json', 'repos.json', 'branches.json
 
 let carried = false
 
+// NULL WHEN NONE IS OPEN, and every caller here reads a missing file as empty
+// already, so the tasks and branch notes of the workspace that was closed do not
+// keep answering for a window that is no longer about anywhere. A write with
+// nowhere to go is stopped one level up, at the action -- see `needs` in
+// server.js -- rather than being dropped quietly here.
 function stateDir (at) {
-  const slug = at ? slugFor(at) : current().slug
+  const now = at ? null : current()
+  if (!at && !now) return null
+  const slug = at ? slugFor(at) : now.slug
   const dir = data.sub(path.join('workspaces', slug))
 
   // MOVED ONCE, INTO THE WORKSPACE THAT WAS ALREADY IN USE.
@@ -220,4 +263,4 @@ function stateDir (at) {
   return dir
 }
 
-module.exports = { dir, current, known, add, use, forget, stateDir, slugFor, ORIGINAL, FILE }
+module.exports = { dir, open, current, known, add, use, close, forget, stateDir, slugFor, ORIGINAL, FILE }

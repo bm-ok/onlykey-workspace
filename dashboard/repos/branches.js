@@ -106,9 +106,12 @@ function headOf (dir) {
 const workspaces = require('../core/workspaces')
 
 const STATE = () => workspaces.stateDir()
-const FILE = () => path.join(STATE(), 'repos.json')
+// Null with no workspace open; `remembered` reads that as knowing nothing, which
+// is exactly true. See tasks/store.js for the same note at more length.
+const FILE = () => { const at = STATE(); return at ? path.join(at, 'repos.json') : null }
 
 function remembered () {
+  if (!FILE()) return {}
   try { return JSON.parse(fs.readFileSync(FILE(), 'utf8').replace(/^﻿/, '')) || {} } catch { return {} }
 }
 

@@ -100,6 +100,54 @@ the task landing in `done` rather than being stranded in `given`.
 **Do not confuse this with drill 12.** There the machine went away; here the
 watcher does. The run should not be able to tell the difference.
 
+### 16. The workspace is closed, and everything comes back — 2026-08-14
+
+**Proves that "none open" is a state rather than a broken app, and that closing
+one keeps everything it knows.** Every other drill here asks what happens while
+the app is doing something. This asks what happens while it is doing nothing, on
+purpose — which is the case nothing had ever been written for, because the value
+was never absent.
+
+It is worth running because *building up* and *tearing down* exercise different
+code from *running*, and this app had only ever been exercised running. The first
+attempt found three faults in ten minutes: two paths built from a null state
+directory, an action that read `current().dir` without considering there might
+not be a current one, and a queue that would have read an empty board and called
+it idle — the right outcome by the wrong route.
+
+    okc.js workspaces --json                      note `known`, and the task count
+    okc.js tasks --json                           note how many
+    okc.js workspaceClose --json
+    okc.js workspaces --json                      open:false, `last` marks where you were
+    okc.js branchBoard                            REFUSED, by name
+    okc.js repositories                           REFUSED, by name
+    okc.js vmList --json                          ANSWERS — it is about this host
+    okc.js status --json                          workspace:null, and nothing else broken
+    # wait past one queue tick
+    okc.js logSince --json                        one line, not a heartbeat
+    okc.js workspaceUse --dir <the same folder>
+    okc.js tasks --json                           the same count, unchanged
+
+**A pass** is: the two refusals name the action and say what to do; `vmList` and
+`status` answer normally; the queue says "no workspace is open" **once** rather
+than every fifteen seconds; and the task count after reopening is the count from
+before closing. **A fail** includes anything that throws a TypeError rather than
+refusing — a stack about an argument nobody passed is this app failing to have a
+state, not refusing to serve one.
+
+**Try to close it while something is holding a machine** — borrow one, or set one
+up on a branch. It must be refused with the same sentence switching is refused
+with. Closing is not the safe half of switching: a machine left naming a branch
+nothing is serving is the same problem either way.
+
+**In the window**: the four workspace tabs are disabled and say why on hover, the
+name beside the title reads "no workspace", and the Workspaces tab shows the
+welcome landing. Virtual machines, Terminal, Keys and Live still work — that is
+the point, because putting a machine away is how you get to close a workspace.
+
+**Put back**: open the workspace again. Nothing else to undo; closing writes one
+flag and deletes nothing.
+
 ### 5b. The queue drains, one task at a time, through one machine — 2026-08-12
 
 **Proves the pool works when it is full**, which is the only condition under

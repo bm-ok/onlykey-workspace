@@ -34,7 +34,11 @@ const data = require('../core/data')
 const workspaces = require('../core/workspaces')
 
 const STATE = () => workspaces.stateDir()
-const FILE = () => path.join(STATE(), 'tasks.json')
+// NULL WHEN NO WORKSPACE IS OPEN, and every reader below treats a missing file
+// as an empty board -- which is the right answer, and the one `path.join(null)`
+// was replacing with a TypeError about an argument nobody passed. Writing is
+// stopped at the action instead, where it can say why. See `needs` in server.js.
+const FILE = () => { const at = STATE(); return at ? path.join(at, 'tasks.json') : null }
 
 // The highest number ever used, kept OUTSIDE the list of tasks.
 //
@@ -47,7 +51,7 @@ const FILE = () => path.join(STATE(), 'tasks.json')
 // A number is meant to be the one identity a person can say out loud, so it has
 // to survive the record it was issued against being thrown away. This file is
 // the only thing that remembers deleted tasks, which is precisely its job.
-const COUNTER = () => path.join(STATE(), 'tasks-highest.json')
+const COUNTER = () => { const at = STATE(); return at ? path.join(at, 'tasks-highest.json') : null }
 
 function highest () {
   let kept = 0
@@ -139,7 +143,7 @@ function withIds (list) {
 // should empty the board and make it look as though no work was ever written
 // down.
 function read () {
-  if (!fs.existsSync(FILE())) return []
+  if (!FILE() || !fs.existsSync(FILE())) return []
   try {
     const data = JSON.parse(fs.readFileSync(FILE(), 'utf8').replace(/^﻿/, ''))
     return withIds(Array.isArray(data) ? data : [data])

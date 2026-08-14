@@ -32,7 +32,7 @@ const ADDRESS = process.env.OKC_IPC || (process.platform === 'win32'
 
 // ---- the server ------------------------------------------------------
 
-function listen (actions, { log } = {}) {
+function listen (actions, { log, call } = {}) {
   // A Unix socket is a file and outlives the process that made it, so a crash
   // leaves one behind that nothing is listening on -- and binding then fails
   // with EADDRINUSE for a server that is not running. Windows pipes disappear
@@ -50,7 +50,7 @@ function listen (actions, { log } = {}) {
       while ((cut = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, cut)
         buf = buf.slice(cut + 1)
-        if (line.trim()) answer(line, socket, actions, log)
+        if (line.trim()) answer(line, socket, actions, log, call)
       }
     })
   })
@@ -82,7 +82,7 @@ function close (server) {
 
 // One request, one reply, carrying back the id it came with -- so a caller can
 // have more than one in flight without matching replies by their order.
-async function answer (line, socket, actions, log) {
+async function answer (line, socket, actions, log, call) {
   let req
   try {
     req = JSON.parse(line)
@@ -121,7 +121,7 @@ async function answer (line, socket, actions, log) {
     // It is a boundary rather than a proof: anyone at this keyboard can open the
     // window. That is fine -- the person at the keyboard is who approval is for.
     // What it stops is approval happening as a step inside an automated run.
-    const result = await action.run({ ...(req.args || {}), _overTheWire: true })
+    const result = await (call ? call(req.action, { ...(req.args || {}), _overTheWire: true }) : action.run({ ...(req.args || {}), _overTheWire: true }))
     say(socket, { id: req.id ?? null, ok: true, result })
   } catch (e) {
     // The message and nothing else. A stack trace here would be this app's

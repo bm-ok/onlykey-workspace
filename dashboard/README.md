@@ -222,8 +222,9 @@ Which repositories this is about
 
 A **workspace** is a folder of repositories. It was `../workspace`, fixed, with an
 environment variable as the only way out -- which is fine for a tool with one
-subject and useless for one meant to serve any ecosystem. It is chosen from the
-title bar now, and changing it takes effect without a restart.
+subject and useless for one meant to serve any ecosystem. It has its own tab now,
+opened from the name beside the title, and changing it takes effect without a
+restart.
 
 **The part that is not obvious is contamination.** Some of what this app knows is
 about the HOST and some is about the WORKSPACE, and they were in one drawer:
@@ -256,6 +257,34 @@ down.
 
 Forgetting a workspace does not delete what is known about it. It means "stop
 offering me this" -- point at the folder again and its tasks are where they were.
+
+### None open is a state
+
+A workspace can be **closed** without being forgotten, and without quitting: the
+honest answer at the end of a day, or while working on this app rather than
+through it. Closing is refused for exactly the same reasons switching is, because
+a machine left naming a branch nothing is serving is the same problem either way.
+
+What that state means is one rule in one place. An action declares
+`needs: 'workspace'` if it is a question about a folder of repositories, and
+**`call()` in `server.js` -- which the window, the pipe and a drill all go
+through -- turns it down by name**. There is no second list to keep in step, and
+`workspaces` reports the marked ones so the window can say what stops working
+before somebody walks into it.
+
+    refused        everything under Repositories, Branches, PR cuts and Tasks
+    still working  the machines, the ssh hosts, the keys, the approvals, the log
+
+That split is not a convenience, it is the same one drawn above: the second
+column is true whatever is being worked on, and it is exactly what somebody needs
+while nothing is open -- **putting a machine away is how you get to close a
+workspace**.
+
+Everything downstream reads it as "there is nothing to say anything about": the
+git server serves no repository, the state directory is `null` and its readers
+treat that as an empty board, and the queue says so once and stops dispatching
+rather than reading an empty list and calling it idle. The window disables the
+four tabs, names the reason on each, and shows a welcome landing.
 
 Nothing it produces lives in the repository
 -------------------------------------------

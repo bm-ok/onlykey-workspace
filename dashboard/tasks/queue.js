@@ -37,8 +37,12 @@ const TICK = 15000
 // of service until somebody noticed.
 const busyWith = new Map()
 
+const workspaces = require('../core/workspaces')
+
 let running = false
 let timer = null
+// Said once when it goes quiet, not on every tick. See `tick`.
+let idleSaid = false
 
 function begin (actions, log) {
   if (timer) return
@@ -84,6 +88,21 @@ function availability (vms) {
 
 async function tick (actions, log) {
   if (running) return
+
+  // NOTHING TO DISPATCH WHEN THERE IS NOWHERE TO DELIVER.
+  //
+  // Read through the store this would have returned an empty board and idled
+  // quietly, which is the right OUTCOME reached by the wrong route: "no tasks"
+  // and "no workspace" are different sentences, and a queue that cannot tell
+  // them apart is one that would happily dispatch the moment a stale file
+  // answered. Said once, on the tick after it closes, because a heartbeat every
+  // fifteen seconds saying nothing is happening is how a log stops being read.
+  if (!workspaces.open()) {
+    if (!idleSaid) { idleSaid = true; log.on('queue').info('no workspace is open — nothing is dispatched until one is') }
+    return
+  }
+  idleSaid = false
+
   running = true
   try {
     const { tasks } = await actions.tasks.run({})
@@ -485,6 +504,10 @@ async function waitForRun (actions, to, machine, runId, hours = 6) {
 // neither can be re-entered from here. What happens is honest: the run is waited
 // on if it is still alive, and the machine is put away either way.
 async function adopt (actions, log) {
+  // Nothing was in flight in a workspace nobody is serving -- and asking would
+  // read an empty board and "recover" it, which is adoption doing the one thing
+  // it exists to prevent.
+  if (!workspaces.open()) return
   const { tasks } = await actions.tasks.run({})
 
   // A task that was being SET UP when this stopped never became a run.

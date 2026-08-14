@@ -58,7 +58,13 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 // convention and conventions are not always followed.
 function gitDirOf (name) {
   if (!NAME.test(name)) return null
-  const base = path.join(root(), name)
+  // NOTHING IS SERVED WHILE NO WORKSPACE IS OPEN. Not an error: this answers
+  // "where is that repository" and the honest answer is that there is not one.
+  // Joining a null root would have made a RELATIVE path out of a name from a
+  // URL, which is the one thing NAME above exists to prevent.
+  const at = root()
+  if (!at) return null
+  const base = path.join(at, name)
   if (!isDir(base)) return null
 
   const dotGit = path.join(base, '.git')

@@ -308,12 +308,20 @@ const actions = {
       // panel means -- a branch, a task and a baseline are all statements about
       // one folder -- so it belongs where the window can always see it rather
       // than behind a call somebody has to remember to make.
+      //
+      // NULL MEANS NONE IS OPEN, which is a state and not a failure. The window
+      // reads it as "show the welcome landing and disable everything that is a
+      // question about repositories", so it has to be told apart from the poll
+      // having gone wrong -- hence `workspaceKnown`, which says how many folders
+      // it could open, beside it.
       workspace: (() => {
         try {
           const now = workspaces.current()
+          if (!now) return null
           return { name: now.name, dir: now.dir, repos: repos.list().length }
         } catch { return null }
       })(),
+      workspaceKnown: (() => { try { return workspaces.known().length } catch { return 0 } })(),
       mine: vms.read().length,
       // Repositories left somewhere other than their default branch. Carried on
       // the poll because a dirty one will refuse a push whose owner cannot
@@ -852,6 +860,7 @@ const actions = {
   // and no record that any of it happened.
   taskWorkOn: {
     about: 'Take a task yourself: a machine set up on its branch, opened in VS Code or in a terminal here',
+    needs: 'workspace',
     takes: ['id', 'name', 'open'],
     run: async ({ id, name, open = 'editor' }) => {
       const task = tasks.get(id)
@@ -889,6 +898,7 @@ const actions = {
   // A person saying the work is done, which is what a worker's exit code says.
   taskFinished: {
     about: 'Say a task you took by hand is finished: give the machine back and put it up for a verdict',
+    needs: 'workspace',
     takes: ['id', 'keep'],
     run: async ({ id, keep = false }) => {
       const task = tasks.get(id)
@@ -919,6 +929,7 @@ const actions = {
   // afterwards remembering that the machine is still yours.
   branchWorkOn: {
     about: 'Take a free machine, set it up on this branch, and open it — in VS Code, or in a terminal here',
+    needs: 'workspace',
     takes: ['branch', 'name', 'folder', 'open'],
     run: async ({ branch, name, folder, open = 'editor' }) => {
       if (!branch) throw new Error('Which branch do you want to work on?')
@@ -1334,6 +1345,7 @@ const actions = {
   // knows nothing about machines and should not start.
   gitBranches: {
     about: 'Every branch across the workspace repositories, which have each, and which are taken',
+    needs: 'workspace',
     run: () => {
       const all = branches.all()
       const mine = vms.read()
@@ -1384,6 +1396,7 @@ const actions = {
   // seconds and it being the thing that pinned the window's CPU last time.
   branchBoard: {
     about: 'Every branch: who claims it, what is on it, and whether it can be deleted',
+    needs: 'workspace',
     run: async () => {
       const all = branches.all()
       // THE LIVE LIST, not the registry.
@@ -1536,6 +1549,7 @@ const actions = {
   // costing anything, but this is what a person reads before deleting something.
   branchArtifact: {
     about: 'What is on a branch: commits and files per repository, without a task',
+    needs: 'workspace',
     takes: ['branch'],
     run: ({ branch }) => {
       if (!branch) throw new Error('Which branch?')
@@ -1552,6 +1566,7 @@ const actions = {
       const list = workspaces.known()
       const now = workspaces.current()
       return {
+        open: !!now,
         current: now,
         known: list,
         // Everything that would be left describing somewhere else. Reported
@@ -1559,7 +1574,41 @@ const actions = {
         // "why will it not let me".
         inTheWay: inTheWay(),
         where: workspaces.stateDir(),
+        // WHAT STOPS WORKING WITH NONE OPEN, said here rather than discovered a
+        // refusal at a time. It is also the clearest statement of the split this
+        // app draws: a branch belongs to a folder of repositories, a machine
+        // belongs to this host, and the second kind is exactly what somebody
+        // needs while there is no first kind.
+        gated: Object.entries(actions).filter(([, a]) => a.needs === 'workspace').map(([n]) => n),
         note: 'Tasks, branch reasons and baselines belong to a workspace and follow it. Machines, ssh hosts and approvals belong to this host and do not.'
+      }
+    }
+  },
+
+  // PUT DOWN WITHOUT BEING FORGOTTEN, and refused for exactly the same reasons
+  // switching is. Closing is not the safe half of switching: a machine set up on
+  // a branch is left naming something nothing is serving either way, and a task
+  // out on a machine has nowhere to deliver. The one difference is that this has
+  // no destination, so what it leaves behind is a window that says so.
+  workspaceClose: {
+    about: 'Stop serving any folder of repositories, without forgetting it',
+    run: () => {
+      const was = workspaces.current()
+      if (!was) return { closed: true, changed: false, note: 'None was open.' }
+
+      const stuck = inTheWay()
+      if (stuck.length) {
+        throw new Error(`Not while ${stuck.map(s => s.why).join('; ')}. Finish or put that away first — closing now would leave it describing a workspace nobody is serving.`)
+      }
+
+      workspaces.close()
+      log.on('server').warn(`closed ${was.dir} — nothing about repositories, branches or tasks is being served`)
+      return {
+        closed: true,
+        changed: true,
+        was: was.dir,
+        wasName: was.name,
+        note: 'Its tasks, branch reasons and baselines are kept where they are and come back with it. The machines are this host\'s and are untouched.'
       }
     }
   },
@@ -1578,8 +1627,11 @@ const actions = {
     about: 'Serve a different folder of repositories',
     takes: ['dir'],
     run: ({ dir }) => {
+      // NONE OPEN IS THE ORDINARY CASE HERE, not an edge one -- it is what the
+      // welcome landing offers this action from, and every workspace after a
+      // close is opened out of it.
       const was = workspaces.current()
-      const same = path.resolve(String(dir || '')) === path.resolve(was.dir)
+      const same = was && path.resolve(String(dir || '')) === path.resolve(was.dir)
       if (same) return { ...was, changed: false, note: 'That is already the one in use.' }
 
       // REFUSED WHILE ANYTHING TIES A MACHINE TO THIS ONE.
@@ -1599,7 +1651,7 @@ const actions = {
       log.on('server').good(`now serving ${now.dir} — ${repos.list().length} repositories`)
       return {
         ...now,
-        was: was.dir,
+        was: was ? was.dir : null,
         changed: true,
         repos: repos.list().map(r => r.name),
         note: `Its tasks, branch reasons and baselines are its own. The machines are this host's and did not move.`
@@ -1623,11 +1675,13 @@ const actions = {
   // repository answered both the same way.
   lines: {
     about: 'Every named line: one branch per repository, and what work is cut from',
+    needs: 'workspace',
     run: () => ({ groups: branches.groups(), repos: branches.baselines() })
   },
 
   lineSave: {
     about: 'Name a line: one branch per repository, so work can be cut from that point',
+    needs: 'workspace',
     takes: ['name', 'why', 'on'],
     run: ({ name, why, on }) => {
       const saved = branches.saveGroup(name, { why, on: on && (typeof on === 'string' ? JSON.parse(on) : on) })
@@ -1644,6 +1698,7 @@ const actions = {
 
   lineForget: {
     about: 'Forget a line. Its branches are untouched, and stop being protected by it',
+    needs: 'workspace',
     takes: ['name'],
     run: ({ name }) => {
       const gone = branches.deleteGroup(name)
@@ -1654,6 +1709,7 @@ const actions = {
 
   repoDefaults: {
     about: 'Each repository, its default branch, and the branches it has',
+    needs: 'workspace',
     run: () => {
       const rows = branches.baselines()
       return {
@@ -1692,6 +1748,7 @@ const actions = {
 
   branchCreate: {
     about: 'Cut a branch across every repository, from a named line',
+    needs: 'workspace',
     takes: ['branch', 'reason', 'group'],
     run: ({ branch, reason, group, _overTheWire }) => {
       const cut = branches.ensure(branch, {
@@ -1729,6 +1786,7 @@ const actions = {
   // would then be from three different moments.
   branchArtifacts: {
     about: 'Everything a branch carries: its commits, the files handed over, and the session',
+    needs: 'workspace',
     takes: ['branch'],
     run: ({ branch }) => {
       if (!branch) throw new Error('Which branch?')
@@ -1768,6 +1826,7 @@ const actions = {
 
   branchDiff: {
     about: "One repository's changes on a branch, in full, without a task",
+    needs: 'workspace',
     takes: ['branch', 'repo', 'file'],
     run: ({ branch, repo, file }) => {
       if (!branch || !repo) throw new Error('Which branch, in which repository?')
@@ -1794,6 +1853,7 @@ const actions = {
   // Turning a finished branch into a line, so it can be proposed.
   branchAsLine: {
     about: 'Make a line out of a branch, so it can be compared and landed. Moves nothing',
+    needs: 'workspace',
     takes: ['branch', 'name', 'why'],
     run: ({ branch, name, why }) => {
       const made = branches.groupFromBranch(branch, { name, why })
@@ -1807,6 +1867,7 @@ const actions = {
 
   linePropose: {
     about: 'Propose a line for landing. It appears on the left of a comparison and stays protected',
+    needs: 'workspace',
     takes: ['name', 'why'],
     run: ({ name, why, _overTheWire }) => {
       const g = branches.markGroup(name, { why, by: _overTheWire ? 'the command line' : 'the window' })
@@ -1817,6 +1878,7 @@ const actions = {
 
   lineWithdraw: {
     about: 'Take a line back out of being proposed, so work on it can continue',
+    needs: 'workspace',
     takes: ['name'],
     run: ({ name }) => {
       const g = branches.unmarkGroup(name)
@@ -1828,6 +1890,7 @@ const actions = {
   // What landing this line would be, read against the line it would land in.
   changeRead: {
     about: 'What one line carries that another does not: commits and changed files, per repository',
+    needs: 'workspace',
     takes: ['source', 'target'],
     run: ({ source, target }) => {
       const pair = twoLines(source, target)
@@ -1864,6 +1927,7 @@ const actions = {
 
   changeDiff: {
     about: "One repository's changes between two lines, in full",
+    needs: 'workspace',
     takes: ['source', 'target', 'repo', 'file'],
     run: ({ source, target, repo, file }) => {
       const pair = twoLines(source, target)
@@ -1885,6 +1949,7 @@ const actions = {
   // other instead of as one stream of plus and minus.
   changeFile: {
     about: 'One file as it is on each side of a comparison, for a side-by-side reading',
+    needs: 'workspace',
     takes: ['source', 'target', 'repo', 'file'],
     run: ({ source, target, repo, file }) => {
       if (!file) throw new Error('Which file?')
@@ -1921,6 +1986,7 @@ const actions = {
   // depends on something this cannot know.
   branchDelete: {
     about: 'Delete a branch from every repository that has it',
+    needs: 'workspace',
     takes: ['branch', 'force'],
     run: async ({ branch, force = false }) => {
       const row = (await actions.branchBoard.run({})).branches.find(b => b.name === branch)
@@ -1973,6 +2039,7 @@ const actions = {
   // branch here is not written to at any point.
   vmWorkspace: {
     about: "Set up a machine's workspace: every repository, on one branch, pointed back here",
+    needs: 'workspace',
     takes: ['name', 'branch', 'folder'],
     run: async ({ name, branch, folder }) => {
       const vm = vms.get(name)
@@ -2300,6 +2367,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // so holding them together is the part only this can do.
   prCutMake: {
     about: 'Push a line onward and open a pull request per repository, tracked together as one landing',
+    needs: 'workspace',
     takes: ['source', 'target', 'title', 'body', 'into', 'draft'],
     run: async ({ source, target, title, body, into, draft, _overTheWire }) => {
       const pair = twoLines(source, target)
@@ -2386,6 +2454,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
   prCutState: {
     about: 'What became of a change that was sent out: each pull request, read from GitHub',
+    needs: 'workspace',
     takes: ['source', 'target'],
     run: async ({ source, target }) => {
       const at = await landings.state(source, target)
@@ -2403,6 +2472,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
   prTemplate: {
     about: 'What a pull request says beyond what somebody typed: the blocks that are on, and what each adds',
+    needs: 'workspace',
     run: () => ({
       blocks: prtemplate.blocks(),
       note: 'Every block is off until it is turned on. A description that adds things nobody asked for is one people stop reading.'
@@ -2411,6 +2481,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
   prTemplateSet: {
     about: 'Turn a template block on or off',
+    needs: 'workspace',
     takes: ['id', 'on'],
     run: ({ id, on }) => {
       if (!prtemplate.BLOCKS.some(b => b.id === id)) {
@@ -2428,6 +2499,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // actually say is worth saying.
   prTemplatePreview: {
     about: 'What a pull request would say for a given pair of lines, composed from the blocks that are on',
+    needs: 'workspace',
     takes: ['source', 'target', 'title', 'body', 'repo'],
     run: ({ source, target, title, body, repo }) => {
       const context = prtemplate.about(source, target)
@@ -2477,6 +2549,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // marked not-ready-for-review, which is `draft` on prCutMake.
   prDraft: {
     about: 'What has been written for a pair of lines and not cut yet',
+    needs: 'workspace',
     takes: ['source', 'target'],
     run: ({ source, target }) => ({
       draft: drafts.read(source, target),
@@ -2486,6 +2559,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
   prDraftSave: {
     about: 'Keep what has been written for a pair of lines, without cutting anything',
+    needs: 'workspace',
     takes: ['source', 'target', 'title', 'body'],
     run: ({ source, target, title, body }) => {
       if (!source || !target) throw new Error('A draft is about a pair of lines. Say which two.')
@@ -2496,6 +2570,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
   prDraftForget: {
     about: 'Throw away what was written for a pair of lines',
+    needs: 'workspace',
     takes: ['source', 'target'],
     run: ({ source, target }) => {
       const gone = drafts.forget(source, target)
@@ -2505,6 +2580,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
   prCuts: {
     about: 'Every PR cut: one act, one pull request per repository, and how far each has got',
+    needs: 'workspace',
     run: async () => {
       const all = landings.all()
       const rows = []
@@ -2529,6 +2605,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // hand; this is what "one PR in the dashboard updates all three" means.
   prCutUpdate: {
     about: 'Change the title, the description, or the state of every pull request in a cut at once',
+    needs: 'workspace',
     takes: ['source', 'target', 'title', 'body', 'state'],
     run: async ({ source, target, title, body, state }) => {
       const rec = landings.all()[landings.key(source, target)]
@@ -2573,6 +2650,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
   prCutForget: {
     about: 'Stop tracking a PR cut here. The pull requests on GitHub are untouched',
+    needs: 'workspace',
     takes: ['source', 'target'],
     run: ({ source, target }) => {
       const gone = landings.forget(source, target)
@@ -2597,6 +2675,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // fault with rate limits attached.
   repositories: {
     about: 'Every repository in this workspace: where it is, its default branch, its remote, and what was last learnt about it',
+    needs: 'workspace',
     run: () => ({
       dir: repos.DIR,
       repos: remotes.read(),
@@ -2621,6 +2700,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // they are instant.
   repoOverview: {
     about: 'Everything open across the workspace — issues, pull requests, and PR cuts as one row each',
+    needs: 'workspace',
     run: () => {
       const rows = remotes.read()
       const cuts = landings.all()
@@ -2703,6 +2783,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
 
   repositoriesCheck: {
     about: 'Ask GitHub about the repositories: reachability, what the token may do, open issues and pull requests',
+    needs: 'workspace',
     takes: ['repo'],
     run: async ({ repo }) => {
       // Everything on one trip: reachability, what is open, and what is being
@@ -3297,6 +3378,7 @@ done`
 
   tasks: {
     about: 'The board: every task, newest first, and whether its branch has anything on it yet',
+    needs: 'workspace',
     run: () => {
       // Newest first, and sorted HERE so the window and the command line agree.
       // The file is append-ordered because that is how it is written; the order
@@ -3336,6 +3418,7 @@ done`
 
   taskCreate: {
     about: 'Write a task: what the work is, and the branch it delivers on',
+    needs: 'workspace',
     takes: ['task'],
     run: ({ task }) => {
       const input = typeof task === 'string' ? JSON.parse(task) : task
@@ -3352,6 +3435,7 @@ done`
 
   taskUpdate: {
     about: 'Change a task that has not been given out yet',
+    needs: 'workspace',
     takes: ['id', 'task'],
     run: ({ id, task }) => {
       const changes = typeof task === 'string' ? JSON.parse(task) : task
@@ -3373,6 +3457,7 @@ done`
 
   taskRemove: {
     about: 'Throw a task away. Its branch is untouched',
+    needs: 'workspace',
     takes: ['id'],
     run: ({ id }) => tasks.remove(id)
   },
@@ -3385,6 +3470,7 @@ done`
 
   taskQueue: {
     about: 'Put a task in the queue. The next free machine takes it, runs it, and shuts down',
+    needs: 'workspace',
     takes: ['id'],
     run: async ({ id }) => {
       const task = tasks.get(id)
@@ -3435,6 +3521,7 @@ done`
   // what "send it back" means and is why the branch was never deleted.
   taskSendBack: {
     about: 'Send a rejected task back to be done again, with the reason attached',
+    needs: 'workspace',
     takes: ['id', 'note'],
     run: ({ id, note }) => {
       const task = tasks.get(id)
@@ -3482,6 +3569,7 @@ done`
   // place that ends a task, and the two would drift.
   taskStop: {
     about: 'Stop a task that is running. Its machine is put away as usual',
+    needs: 'workspace',
     takes: ['id'],
     run: async ({ id }) => {
       const task = tasks.get(id)
@@ -3528,6 +3616,7 @@ done`
 
   taskUnqueue: {
     about: 'Take a task back out of the queue. Does not stop one already running',
+    needs: 'workspace',
     takes: ['id'],
     run: ({ id }) => {
       const task = tasks.get(id)
@@ -3538,6 +3627,7 @@ done`
 
   queueState: {
     about: 'What the queue is doing, and which machines could take work',
+    needs: 'workspace',
     run: async () => {
       const { vms } = await actions.vmList.run({})
       // The STORE, not the `tasks` action.
@@ -3568,6 +3658,7 @@ done`
   // are all enforced in one place each, and this is a caller like any other.
   taskGive: {
     about: 'Give a task to a machine: set up its workspace, then dispatch the brief',
+    needs: 'workspace',
     takes: ['id', 'name'],
     run: async ({ id, name }) => {
       const task = tasks.get(id)
@@ -3632,6 +3723,7 @@ done`
   // happening, and asking twice means two round trips to say one thing.
   taskProgress: {
     about: 'Every attempt at a task, and what its worker is doing right now',
+    needs: 'workspace',
     takes: ['id', 'lines'],
     run: async ({ id, lines = 12 }) => {
       const task = tasks.get(id)
@@ -3711,6 +3803,7 @@ done`
   // is the only thing the machine can answer that this cannot.
   taskLog: {
     about: "One attempt's output, kept on this host so it survives the machine",
+    needs: 'workspace',
     takes: ['id', 'run', 'lines'],
     run: ({ id, run, lines }) => {
       // Filed under the uid, which is the one identity that never moves. A slug
@@ -3736,6 +3829,7 @@ done`
   // difference between "read it the ordinary way" and "this is all there is".
   taskLogs: {
     about: 'Every run log kept on this host, including tasks that were thrown away',
+    needs: 'workspace',
     run: () => {
       const board = new Map(tasks.read().map(t => [t.uid, t]))
       const kept = archive.everything().map(a => {
@@ -3771,6 +3865,7 @@ done`
   // task away does not orphan what it produced.
   taskFiles: {
     about: 'Files a task handed over — a built binary, an archive, anything a branch cannot hold',
+    needs: 'workspace',
     takes: ['id'],
     run: ({ id }) => {
       if (!id) {
@@ -3804,6 +3899,7 @@ done`
   // What came back, read the way a pull request is read.
   taskArtifact: {
     about: "What arrived on a task's branch: commits and files, per repository",
+    needs: 'workspace',
     takes: ['id'],
     // Never cached: this is what somebody judges from, and reading a
     // four-second-old picture of a branch is exactly the wrong moment to.
@@ -3812,6 +3908,7 @@ done`
 
   taskDiff: {
     about: 'One repository\'s changes on a task\'s branch, in full',
+    needs: 'workspace',
     takes: ['id', 'repo', 'file'],
     run: ({ id, repo, file }) => {
       const task = tasks.get(id)
@@ -3829,6 +3926,7 @@ done`
   // somebody read it and what they thought.
   taskJudge: {
     about: 'Record a verdict on what a task delivered',
+    needs: 'workspace',
     takes: ['id', 'verdict', 'note'],
     run: ({ id, verdict, note }) => {
       const task = tasks.get(id)
@@ -4018,11 +4116,7 @@ done`
       }
 
       const to = log.on('drill', ...(machine ? [machine] : []))
-      const okc = async (action, args = {}) => {
-        const found = actions[action]
-        if (!found) throw new Error(`No action called "${action}"`)
-        return found.run(args)
-      }
+      const okc = async (action, args = {}) => call(action, args)
 
       // Given to the tests rather than imported by them, so a drill polls
       // through one shape and the timeout is stated in minutes where a person
@@ -4294,6 +4388,7 @@ done`
   // one mistake this is easy to make.
   gitRepos: {
     about: 'The repositories in the workspace that a machine can clone, and where from',
+    needs: 'workspace',
     takes: ['name'],
     run: async ({ name }) => {
       const found = repos.list()
@@ -4792,7 +4887,7 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
       // all, so there is no address to check and no rule to keep enforcing.
       let local = null
       try {
-        local = await ipc.listen(actions, { log })
+        local = await ipc.listen(actions, { log, call })
         log.on('ipc').good(`Listening on ${local.address} — the same actions, for the terminal`)
       } catch (e) {
         // Worth continuing without: the window is in-process and does not need
@@ -4844,7 +4939,38 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
   })
 }
 
-module.exports = { start, actions, handler }
+// ---- one way in ---------------------------------------------------------
+//
+// Every caller reached `actions[name].run(args)` on its own: the window, the
+// pipe, and a drill's `okc`. Three copies of "look it up, then run it" was fine
+// while there was nothing to say in between, and there is now -- most of what
+// this app does is a statement about a folder of repositories, and there is a
+// state where there is no such folder.
+//
+// REFUSED HERE RATHER THAN SURVIVED FURTHER IN. A branch, a task, a baseline and
+// a pull request all name something in one workspace; asked with none open they
+// would not error, they would answer about nothing -- an empty list of branches
+// reads exactly like a workspace with no branches, and a task written with
+// nowhere to keep it is lost silently. So an action says whether it needs one
+// and is turned down in a sentence, which is the same shape as every other
+// refusal here.
+//
+// A HOST-SCOPED ACTION IS NOT GATED. The machines this app made, the ssh hosts,
+// the keys and the approvals are true whatever is being worked on -- that is the
+// same split core/workspaces.js draws, and a machine must stay reachable
+// precisely when there is no workspace, because putting one away is how you get
+// to close one.
+function call (name, args = {}) {
+  const found = actions[name]
+  if (!found) throw new Error(`No action called "${name}"`)
+  if (found.needs === 'workspace' && !workspaces.open()) {
+    throw new Error(`No workspace is open, and "${name}" is a question about one. Open a folder of repositories first — the Workspaces tab, beside the title.`)
+  }
+  if (!found.run) throw new Error(`"${name}" is watched rather than asked — it answers on a stream.`)
+  return found.run(args)
+}
+
+module.exports = { start, actions, call, handler }
 
 if (require.main === module) {
   start()
