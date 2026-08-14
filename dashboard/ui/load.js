@@ -52,6 +52,7 @@
     'workspace', // which folder of repositories all of this is about
     'repos',     // the repositories, and everything open across them
     'prcuts',    // a change once it has left
+    'sessions',  // what workers remember, kept across the machines they pass through
     'machines',  // the virtual machines this app made
     'live',      // the log, and every action there is
 

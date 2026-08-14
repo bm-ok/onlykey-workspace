@@ -54,6 +54,7 @@
     <!-- The badge is what makes a tab you cannot see safe to have: output
          arriving behind it is announced, and a failure differently from
          ordinary chatter. -->
+    <button class="tab" data-view="sessions">Sessions</button>
     <button class="tab" data-view="ops">Virtual machines</button>
     <button class="tab" data-view="live">Live <span class="tab-badge hidden" id="live-badge"></span></button>
     <button class="tab" data-view="terminal">Terminal</button>
@@ -617,6 +618,30 @@
        Tabbed, because a terminal is mostly somewhere you WAIT -- for a build,
        for a sign-in, for an agent to say something -- and needing a second one
        while the first is busy is the ordinary case. -->
+
+  <!-- ---------------- Sessions ----------------
+       What a worker remembers, which is the one thing a rolled-back machine
+       used to take with it. See tasks/sessions.js: it comes here when a run
+       ends and goes back down before the next one starts, so a task keeps one
+       conversation however many machines it passes through. -->
+  <section class="view" id="view-sessions">
+    <div class="subtabs">
+      <button class="subtab active" data-pane="guest">Claude guest</button>
+    </div>
+
+    <div class="pane active" id="pane-guest">
+      <p class="note" id="sessions-note"></p>
+      <div class="cols">
+        <div class="col narrow">
+          <h2 class="titlerow">Remembered <span class="muted" id="sessions-context"></span></h2>
+          <div id="sessions-list" class="stack"></div>
+        </div>
+        <div class="col wide">
+          <div id="session-detail" class="panel"></div>
+        </div>
+      </div>
+    </div>
+  </section>
   <section class="view" id="view-terminal">
     <div class="sync-head">
       <h2>Terminal <span class="muted" id="term-context"></span></h2>

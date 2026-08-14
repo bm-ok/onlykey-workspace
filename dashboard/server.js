@@ -34,6 +34,7 @@ const queue = require('./tasks/queue')
 // anything, it leaves the socket open with no response. The guest saw a POST
 // that never answered, and the artifact endpoint had been dead since the split.
 const files = require('./tasks/files')
+const sessions = require('./tasks/sessions')
 const shared = require('./actions/shared')
 
 // ---- the actions ------------------------------------------------------
@@ -327,6 +328,101 @@ function handler (req, res) {
   //
   // It is the same shape as everything else a guest talks to: prove which
   // machine you are, then be told what you get.
+  // ---- the transcript, both ways ----------------------------------------
+  //
+  // A worker's session is the only record of why it did what it did, and the
+  // machine that holds it is rolled back the moment the work ends. So it comes
+  // here when a run finishes, and goes back down before the next one starts --
+  // which is what makes a task given out twice a second attempt at the same
+  // conversation rather than a stranger starting fresh.
+  //
+  // WHICH SESSION IS NOT ASKED, IT IS LOOKED UP, exactly like an artifact's
+  // task. The guest sends bytes and says nothing about where they belong; this
+  // side decides, from the task the machine is running. A machine that talks its
+  // way into another task's transcript is not a thing that can happen if it is
+  // never asked.
+  if (url.pathname === '/session' && req.method === 'GET') {
+    const name = url.searchParams.get('vm') || ''
+    if (!guestAsking(req, url)) return refuseGuest(res, name, 'to fetch its session')
+
+    const task = tasks.read().find(t => t.machine === name && t.state === 'given') || null
+    if (!task) {
+      // 204 rather than 404: "there is no session to continue" is an ordinary
+      // answer to this question, and the first run of every task gives it.
+      res.writeHead(204).end()
+      return
+    }
+    const kept = sessions.get(task.uid)
+    if (!kept) { res.writeHead(204).end(); return }
+    try {
+      const body = require('node:fs').readFileSync(kept.path)
+      res.writeHead(200, {
+        'content-type': 'application/gzip',
+        // The conversation it is carrying on, so the guest can pass --resume
+        // without having to look inside the archive it was just handed. It is
+        // told which; it does not choose.
+        'x-okc-session': kept.id || ''
+      }).end(body)
+      log.on('vm', name, 'guest').info(`sent #${task.number} what it remembers — ${Math.round(kept.bytes / 1024)} KB, ${kept.runs} run(s) so far`)
+    } catch (e) {
+      res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' }).end(`${e.message}\n`)
+    }
+    return
+  }
+
+  if (url.pathname === '/session' && req.method === 'POST') {
+    const name = url.searchParams.get('vm') || ''
+    if (!guestAsking(req, url)) return refuseGuest(res, name, 'to hand back its session')
+
+    const id = url.searchParams.get('id') || ''
+    if (!sessions.okId(id)) {
+      res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end('that is not a session id\n')
+      return
+    }
+
+    const task = tasks.read().find(t => t.machine === name && t.state === 'given') || null
+    if (!task) {
+      res.writeHead(409, { 'content-type': 'text/plain; charset=utf-8' })
+        .end('this machine is not running a task, so a transcript has nothing to belong to.\n')
+      return
+    }
+
+    const chunks = []
+    let size = 0
+    let refused = false
+    req.on('data', chunk => {
+      if (refused) return
+      size += chunk.length
+      if (size > sessions.MOST) {
+        refused = true
+        res.writeHead(413, { 'content-type': 'text/plain; charset=utf-8' })
+          .end(`the most this takes is ${sessions.MOST / 1048576} MB\n`)
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      if (refused) return
+      try {
+        const kept = sessions.keep(task.uid, Buffer.concat(chunks), {
+          id: id || null,
+          run: task.run || null,
+          machine: name,
+          taskId: task.id,
+          number: task.number,
+          folder: url.searchParams.get('folder') || null
+        })
+        log.on('vm', name, 'guest').good(`kept what #${task.number} remembers — ${Math.round(kept.bytes / 1024)} KB, run ${kept.runs}`)
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end('kept\n')
+      } catch (e) {
+        log.on('vm', name, 'guest').bad(`could not keep that transcript: ${e.message}`)
+        res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end(`${e.message}\n`)
+      }
+    })
+    return
+  }
+
   if (url.pathname === '/artifact' && req.method === 'POST') {
     const name = url.searchParams.get('vm') || ''
     if (!guestAsking(req, url)) return refuseGuest(res, name, 'to hand over an artifact')

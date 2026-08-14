@@ -18,7 +18,7 @@ const s = require('./shared')
 const {
   log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
-  archive, files, prompts, contracts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
+  archive, files, sessions, prompts, contracts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
@@ -533,6 +533,79 @@ module.exports = {
           ? 'These are on this host, not on the machine — the machine was rolled back.'
           : 'Nothing was handed over. A run hands a file over by calling "okc-artifact <file>", which is on its PATH.'
       }
+    }
+  },
+
+  // ---- what workers remember ---------------------------------------------
+  //
+  // See tasks/sessions.js. A machine is rolled back when its work ends, so a
+  // worker's memory is copied here at the end of every run and put back at the
+  // start of the next one -- which is what makes a task given out twice a second
+  // attempt rather than a stranger starting fresh.
+  //
+  // NOT GATED ON A WORKSPACE. These outlive the tasks that made them and the
+  // board they were on; a folder of repositories being closed is no reason to
+  // stop being able to see what a worker was told six weeks ago.
+  sessions: {
+    about: 'What workers remember, kept per task — restored before a run and taken back after',
+    run: () => {
+      const kept = sessions.everything()
+      const board = new Map(tasks.read().map(t => [t.uid, t]))
+      const rows = kept.map(s => {
+        const t = board.get(s.uid) || null
+        return {
+          ...s,
+          // From the board where it still exists, and from the record beside the
+          // archive where it does not. A task that was thrown away leaves its
+          // transcript behind on purpose.
+          task: t ? t.id : s.taskId,
+          number: t ? t.number : s.number,
+          title: t ? t.title : null,
+          branch: t ? t.branch : null,
+          orphaned: !t
+        }
+      })
+      return {
+        sessions: rows,
+        bytes: rows.reduce((n, s) => n + (s.bytes || 0), 0),
+        where: sessions.ROOT(),
+        note: rows.length
+          ? 'Restored before a worker starts and taken back when it stops, so a task keeps one conversation however many machines it passes through.'
+          : 'Nothing yet. A worker started by a job hands its memory back when it finishes, and gets it again next time that task runs.'
+      }
+    }
+  },
+
+  session: {
+    about: 'What one task remembers: which conversation, how many runs, and where it is kept',
+    takes: ['id'],
+    run: ({ id }) => {
+      const task = tasks.get(id)
+      const memory = sessions.get(task.uid)
+      if (!memory) {
+        return {
+          task: task.id,
+          number: task.number,
+          has: false,
+          note: 'Nothing yet. This task has not had a worker finish on it, so there is nothing to carry forward.'
+        }
+      }
+      // `has`, not `kept`. The record already uses `kept` for WHEN it was last
+      // written, and a boolean of the same name would have quietly replaced a
+      // timestamp with `true` — the panel would then say "kept true" and nobody
+      // would know where the date had gone.
+      return { ...memory, has: true, task: task.id, number: task.number, title: task.title }
+    }
+  },
+
+  sessionForget: {
+    about: 'Throw away what a task remembers. The next run starts a fresh conversation',
+    takes: ['id'],
+    run: ({ id }) => {
+      const task = tasks.get(id)
+      const gone = sessions.forget(task.uid)
+      log.on('task', task.id).warn(`#${task.number} will start a fresh conversation next time — what it remembered was thrown away`)
+      return { ...gone, note: 'The task, its branch, its files and its logs are untouched. Only the memory is gone.' }
     }
   },
 

@@ -196,6 +196,7 @@ async function drawOnce () {
   paintTerminal()
   paintBranches()
   paintTasks(running)
+  paintSessions()
   paintAddTask()
   paintJobs()
   paintPrompts()

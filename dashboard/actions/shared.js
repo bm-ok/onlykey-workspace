@@ -35,6 +35,7 @@ const artifact = require('../tasks/artifact')
 const prompts = require('../tasks/prompts')
 const jobs = require('../tasks/jobs')
 const contracts = require('../tasks/contracts')
+const sessions = require('../tasks/sessions')
 const jobrun = require('../tasks/jobrun')
 const archive = require('../tasks/archive')
 const files = require('../tasks/files')
@@ -286,7 +287,7 @@ module.exports = {
   log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
-  archive, files, prompts, contracts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
+  archive, files, sessions, prompts, contracts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace,
   fs, path, https,
   started, net, win,

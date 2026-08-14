@@ -634,9 +634,10 @@ function paintArtifact (task) {
   // way to find what it produced was a path in a note.
   Promise.all([
     api('taskArtifact', { id: task.id }),
-    api('taskFiles', { id: task.id }).catch(() => ({ files: [] }))
-  ]).then(([art, handed]) => {
-    if (!changed('artifact', [task.id, art, handed])) return
+    api('taskFiles', { id: task.id }).catch(() => ({ files: [] })),
+    api('session', { id: task.id }).catch(() => ({ has: false }))
+  ]).then(([art, handed, memory]) => {
+    if (!changed('artifact', [task.id, art, handed, memory])) return
 
     const carrying = art.repos.filter(r => !r.missing && !r.empty)
     const kept = handed.files || []
@@ -699,6 +700,37 @@ function paintArtifact (task) {
       // and here the difference is whether a run was supposed to produce
       // something, so it says how one would.
       : el('p', { className: 'empty', textContent: 'Nothing was handed over. A run hands a file back by calling "okc-artifact <file>", which is on its PATH — or, from a job, by awaiting artifact(file).' }))
+
+    // WHAT THE WORKER REMEMBERS, as the third kind of thing a task carries.
+    //
+    // It belongs here rather than in the task's own detail panel because it is
+    // the same class of thing as the two above it: something that survived a
+    // machine being rolled back. The difference is that this one is not read
+    // here -- it is a folder in a gzip, and the Sessions tab is where it is
+    // looked at and thrown away.
+    if (memory.has) {
+      $('handed').append(el('div', { className: 'card', style: 'margin-top:8px' },
+        el('div', { className: 'card-title' },
+          el('span', { className: 'grow', textContent: 'what the worker remembers' }),
+          el('span', { className: 'badge ok', textContent: `${memory.runs || 1} run${memory.runs === 1 ? '' : 's'}` })),
+        el('div', { className: 'card-sub muted', textContent: `${memory.bytes >= 1048576 ? `${(memory.bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(memory.bytes / 1024))} KB`} · kept ${ago(memory.kept)}${memory.machine ? ` from ${memory.machine}` : ''}` }),
+        memory.id ? el('div', { className: 'card-sub muted mono', textContent: memory.id }) : null,
+        el('div', { className: 'card-sub muted', textContent: 'Put back on whichever machine picks this task up next, so the next run carries on instead of starting over.' }),
+        el('div', { className: 'row', style: 'margin-top:8px' },
+          el('button', {
+            className: 'btn small',
+            textContent: 'Open in Sessions',
+            // By uid, which is what the Sessions tab keys on, and set before the
+            // switch so that pane paints with it already picked.
+            onclick: () => {
+              pickedSession = memory.uid || null
+              been.set('session', pickedSession)
+              forget('sessions'); forget('session-detail')
+              showTab('sessions')
+              return draw()
+            }
+          }))))
+    }
 
     fill($('artifact'),
       el('p', { className: art.delivered ? 'note' : 'empty', textContent: art.summary }),
