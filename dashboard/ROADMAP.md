@@ -291,26 +291,48 @@ shape a list of judgements already has. Publishing is per judgement too: some ar
 worth putting in front of reviewers and some were run to answer a question, and
 deciding which is the kind of thing a person should not have done for them.
 
-**What it needs that does not exist:**
+**Built in four steps, and not in one go.**
 
-* a judgement record: keyed like a landing (`source -> target`), holding a LIST,
-  each entry with the tips it read, the verdict, the reasons, when, and **who or
-  what judged** -- the model and its version where it was a model, a name where
-  it was a person. Appended to, never replaced
-* the `+` on a cut, and the two answers behind it. The person's kind needs no
-  machine and no queue and should be the cheaper one to build; doing it first
-  would also prove the record and the staleness rule with nothing else moving
-* a run kind the queue understands as *judge*, and the rule above about what it
-  is taken before
-* what a judge is actually given: the diff of the cut, the branch's reason, the
-  brief of every task that delivered on it, and the contract -- all of which
-  `prtemplate.about()` already gathers for the description, which is the argument
-  for it being the same gathering
-* a Judge tab: what is waiting, what was judged, what is stale, and the reasons
-* the standing question of what a judge is asked to look FOR. A judge with no
-  stated rubric produces prose; the contract is the nearest thing this app has to
-  one, and whether that is what a judge should be measured against has not been
-  decided
+The temptation is the run -- it is the interesting part -- and building it first
+is how the record ends up shaped around what the run happens to produce, rather
+than the run being made to fill a record that was already right. So the run is
+LAST, and every step before it leaves the app working and provable on its own.
+
+**1. The record, and a person's judgement.** `repos/judgements.json` keyed like a
+landing, holding a list; the card list on the cut with its `+`; the person's
+answer behind it, which is an editor and a save. Staleness computed from the tips
+`prtemplate.about()` already returns.
+
+No machine, no queue, no credential, no GitHub. **Provable by hand:** judge a cut,
+commit something on one of its branches, watch that judgement go stale and the
+cut go back to reading as unjudged.
+
+**2. Publishing.** One judgement onto the pull requests as a comment, per
+judgement, chosen deliberately. The fan-out is the one `prCutUpdate` already
+does. **Provable against the three pull requests that are already open**, which
+is the same way the template was proven.
+
+**3. The Judge tab.** Everything across all cuts: what was judged, by whom, at
+which tips, what is stale, what disagrees. Read-only over what steps 1 and 2
+built, which is what makes it cheap -- and it is the step where "optional" gets
+tested, because this is the screen most likely to grow a number that reads as a
+chore.
+
+**4. The Claude judgement.** The run: what it is given, the queue lane, taken
+ahead of tasks, never interrupting one. Last because it is the only part that
+needs a machine, a credential and a dispatch -- and by the time it is written,
+the record it writes into has been proven three times over by hand.
+
+**Each step is a session or less, and none of them is finished until it has been
+run rather than read.** That is not caution for its own sake: every one of the
+faults this app has had that cost real time was in something built in one pass
+and reasoned about rather than exercised, and they are listed in `LEARNED.md`.
+
+**Still open, and it does not block step 1:** what a judge is asked to look FOR.
+A judge with no stated rubric produces prose. The contract is the nearest thing
+this app has to one, and whether that is what a judgement should be measured
+against has not been decided -- step 4 is where it has to be, and steps 1 to 3
+are worth having whatever the answer.
 
 **What has to be true first.** Nothing merges yet -- see `TODO.md` -- so a
 judgement currently has nothing to be acted on downstream of it. That is not a
