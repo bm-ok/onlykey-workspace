@@ -3385,7 +3385,17 @@ function askForGithubToken (g) {
     plain: [
       'It is checked against GitHub before it is kept, so a token that does not work never replaces one that does.',
       'Sealed for this Windows account, beside the worker credential, outside the repository. It is never shown again — not here, not in the log, not in an error — and never handed to a machine.',
-      'A fine-grained token limited to the repositories this workspace serves is the smaller thing to lose. It needs to read them, push branches, and open pull requests.'
+      // SAID BEFORE, NOT DIAGNOSED AFTER. This app knows exactly what it needs
+      // and used to say nothing, so the first real token arrived missing
+      // Contents — and reported "read, push, admin" while being refused, because
+      // that field describes the account rather than the token. Naming the
+      // permissions here is the difference between a two-minute setup and
+      // finding out one repository at a time.
+      'A FINE-GRAINED token, limited to the repositories in this workspace, is the smallest thing to lose. On github.com/settings/personal-access-tokens, give it exactly these:',
+      'Contents — Read and write. To compare what is here with what is there, and to push a branch onward.',
+      'Pull requests — Read and write. To open one and to follow it.',
+      'Metadata — Read. GitHub adds this itself once the others are chosen.',
+      'Nothing else. Not Administration, not Actions, not Workflows — nothing here uses them, and a permission granted is one that has to be trusted.'
     ],
     link: 'https://github.com/settings/personal-access-tokens',
     fields: [

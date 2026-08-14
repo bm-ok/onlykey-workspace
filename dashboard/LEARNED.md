@@ -443,3 +443,28 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   test catches it: `node -e "require('./repos/branches')"`. That belongs beside
   `node --check` in the routine, and it is worth running for every file a change
   touches rather than just the one it was about.
+
+* **GitHub's `permissions` on a repository describes the ACCOUNT, not the token
+  acting for it.** All three repositories reported `read, push, admin` for a
+  fine-grained token that was then refused with "Resource not accessible by
+  personal access token" the moment it asked for a branch list. Believing that
+  field would have produced a dashboard saying "may push" right up until a push
+  failed — probably halfway through opening three pull requests, which is the
+  worst possible moment to find out.
+
+  So capability is PROBED: ask for the thing itself and record what came back.
+  Two extra requests on an action nobody runs on a timer, and it turns a
+  description of an account into a statement about what will actually work. Both
+  answers are shown, labelled, because the difference between them is the whole
+  explanation of the failure.
+
+  The same shape as two other lessons here — `ready: true` for placing a
+  credential file, and a clock that says a credential has four weeks left while
+  it is already dead. Three times now the pattern has been: a field that looks
+  like the answer, next to the real answer nobody asked for.
+
+* **And say what is needed BEFORE it is needed.** The app knew exactly which
+  permissions it wanted and said nothing, so the first real token arrived missing
+  one. Diagnosing that afterwards is good; naming it in the dialog that asks for
+  the token is better, and is the difference between a two-minute setup and
+  finding out one repository at a time.
