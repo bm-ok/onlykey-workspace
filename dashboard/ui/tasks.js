@@ -141,7 +141,19 @@ function paintTasks (queued) {
             el('div', { className: 'card-sub muted', textContent: plan.lapsed
               ? `${plan.waiting} never read, ${plan.lapsed} changed since you approved them.`
               : 'Written by a model. Nothing runs until you have read it and said so.' }),
-            el('button', { className: 'btn ok', style: 'margin-top:8px', textContent: 'Read them', onclick: () => readDefinition() }))
+            // TO THE PANE, not to a dialog. The card says how many are waiting;
+            // the pane is where they can be read, compared and decided on, and
+            // sending somebody to a one-at-a-time reader was most of why ten of
+            // them went unread.
+            el('button', {
+              className: 'btn ok',
+              style: 'margin-top:8px',
+              textContent: 'Read them',
+              onclick: () => {
+                const t = document.querySelector('#view-tasks .subtab[data-pane="planned"]')
+                if (t) t.click()
+              }
+            }))
         : null)
       $('approvals').classList.toggle('hidden', !waiting)
     }
@@ -638,19 +650,13 @@ function judgeTask (task) {
 // two drift apart. The dialog is otherwise identical -- a task from an issue is
 // a task, and gets the same reason, contract and branch as any other.
 function newTask (from = null) {
-  Promise.all([api('gitBranches'), api('planned')]).then(([{ branches: known, protected: guarded }, plan]) => {
+  api('gitBranches').then(({ branches: known, protected: guarded }) => {
     const taken = new Set((guarded || []).map(g => g.branch))
 
-    // Flattened for a list. The suite is what a drill is FOR, so it travels with
-    // the name rather than being a heading somebody has to scroll back to.
-    // The approval state is in the label rather than beside it, because this is
-    // a dropdown and there is nowhere beside it. An unapproved drill is still
-    // listed: hiding it would leave a person wondering where the thing they
-    // asked for went, and the refusal on confirm says what to do.
-    const mark = t => t.approved ? 'approved' : t.lapsed ? 'CHANGED since you approved it' : 'not yet approved'
-    const choices = (plan.suites || []).flatMap(s =>
-      s.tests.map(t => ({ value: s.name + '::' + t.name, label: `${t.name}  [${mark(t)}]` })))
-
+    // ONE THING, SO NO TABS. This dialog used to carry pre-defined jobs behind a
+    // second tab: three clicks in, behind a dropdown, with nothing on screen
+    // saying what the thing did. They have a pane of their own now, where one
+    // can be read before it is started -- see the Pre-defined sub-tab.
     ask({
       title: 'A task for a worker',
       tabs: [
@@ -676,45 +682,6 @@ function newTask (from = null) {
             say(`Task "${made.title}" written, delivering on ${made.branch}. Known branches: ${(known || []).length}.`)
           }
         },
-        {
-          label: `Pre-defined${plan.waiting + plan.lapsed ? ` (${plan.waiting + plan.lapsed} to read)` : ''}`,
-          plain: [
-            'Work decided in advance and written down, rather than invented at the moment of dispatch.',
-            'A model writes these when you ask it to. You approve them. Only then can one be run — including by the model that wrote it.',
-            'Half of them pass by being REFUSED: a drill that is stopped is a drill that passed.',
-            'This RUNS the one you pick. It is not written to the board first.'
-          ],
-          cost: choices.length
-            ? 'Some occupy a machine for several minutes and leave a branch behind. Progress goes to the live log.'
-            : null,
-          fields: choices.length
-            ? [
-                { name: 'pick', label: 'Which one', value: choices[0].value, options: choices },
-                {
-                  name: 'machine',
-                  label: 'On which machine (only some need one)',
-                  value: (latest.vms.find(v => v.connected) || {}).name || '',
-                  options: [{ value: '', label: 'none' }, ...latest.vms.filter(v => v.connected).map(v => ({ value: v.name, label: v.name }))]
-                }
-              ]
-            : [],
-          confirm: choices.length ? 'Run it' : 'Nothing is registered',
-          // The way to approve, and it is a second button rather than a
-          // checkbox beside the run: approving is reading, and it needs a
-          // screen of its own with the definition on it.
-          extra: choices.length ? { label: 'Read it…', onClick: () => readDefinition() } : null,
-          onYes: async ({ pick, machine }) => {
-            const cut = String(pick).indexOf('::')
-            const suite = String(pick).slice(0, cut)
-            const name = String(pick).slice(cut + 2)
-            showTab('live')
-            say(`Running "${name}" — watch the live log.`)
-            const r = await api('plannedRun', { suite, name, machine: machine || undefined })
-            say(r.failed
-              ? `${name}: ${r.failed} failed, ${r.passed} passed in ${r.seconds}s`
-              : `${name}: passed in ${r.seconds}s`, r.failed ? 'bad' : 'ok')
-          }
-        }
       ]
     })
   }).catch(oops)
@@ -848,6 +815,44 @@ async function paintPlannedNow () {
   }).catch(oops)
 }
 
+// WHAT IT WILL ACT ON, NAMED, before it is started.
+//
+// A definition acts on whichever workspace is open, and nothing binds one to the
+// workspace it was written against -- so the workspace is the fact that decides
+// whether this is safe, and it belongs in the sentence rather than in the
+// operator's memory of which folder they last opened.
+function runDefinition (t) {
+  const here = latest.workspace
+  ask({
+    title: `Run "${t.name}"?`,
+    plain: [
+      here
+        ? `It runs against "${here.name}" — ${here.dir}`
+        : 'No workspace is open, so it will be refused.',
+      'It drives the same actions a person does. Depending on what it says, that can mean writing a task, cutting a branch, or borrowing a machine for several minutes.',
+      'Progress goes to the live log as it happens.'
+    ],
+    cost: 'Anything it leaves behind — a branch, a task — is left behind. Nothing here undoes it afterwards.',
+    fields: [{
+      name: 'machine',
+      label: 'On which machine (only some need one)',
+      value: (latest.vms.find(v => v.connected) || {}).name || '',
+      options: [{ value: '', label: 'none' }, ...latest.vms.filter(v => v.connected).map(v => ({ value: v.name, label: v.name }))]
+    }],
+    confirm: 'Run it',
+    onYes: async ({ machine }) => {
+      showTab('live')
+      say(`Running "${t.name}" — watch the live log.`)
+      const r = await api('plannedRun', { suite: t.suite, name: t.name, machine: machine || undefined })
+      const failed = (r.results || []).filter(x => x.status === 'failed')
+      say(failed.length
+        ? `${failed.length} failed: ${failed.map(x => x.name).join(', ')}`
+        : `"${t.name}" finished — ${(r.results || []).length} step(s), none failed.`,
+      failed.length ? 'bad' : 'ok')
+    }
+  })
+}
+
 // ONE DEFINITION, IN FULL, and what it would actually do.
 //
 // The question these get read with is not "what is it called" -- it is "what
@@ -890,6 +895,31 @@ function paintDefinition (t) {
         title: 'Opens it with the approve and withdraw decisions',
         onclick: () => readDefinition(t.name)
       }),
+      // RUNNING IT IS A DECISION, AND THIS IS WHERE IT CAN BE MADE WELL.
+      //
+      // It lived in the second tab of the write-a-task dialog: three clicks in,
+      // behind a dropdown, with nothing on screen saying what the thing did. So
+      // the one place a person could start one was the one place they could not
+      // read it first, which is the wrong way round for the only act here that
+      // touches repositories.
+      //
+      // Refused rather than hidden when it is not approved: a greyed button that
+      // says why teaches the rule, and a missing one teaches nothing.
+      t.approved
+        ? el('button', {
+            className: 'btn small ok',
+            textContent: 'Run it',
+            title: 'Runs it now, against the workspace that is open',
+            onclick: () => runDefinition(t)
+          })
+        : el('button', {
+            className: 'btn small',
+            textContent: 'Run it',
+            disabled: true,
+            title: t.lapsed
+              ? 'It has been edited since it was approved. Read it again first.'
+              : 'Nothing unapproved runs. Read it first.'
+          }),
       t.approved
         ? el('button', {
             className: 'btn small bad',
