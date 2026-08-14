@@ -14,7 +14,20 @@ rather than remembering.
 
 and, where the work is a job done more than once:
 
-    branch <- task <- defined-task <- defined-prompt
+    branch <- task <- job <- prompt <- contract
+
+Read right to left. A contract is the rules; a prompt is the words that have to
+hold to them; a job is the script that gives those words to a worker; a task is
+one occasion of that; a branch is what comes back. Each arrow is one thing being
+carried into the next, as a COPY rather than a reference, so what a run was
+actually held to stays readable after the library it came from has moved on.
+
+The contract sits at the far end because it is the thing that changes least and
+governs most. It hangs off the prompt rather than off the job because the prompt
+is what has to be consistent with it — a brief saying "refactor across every
+repository" under rules saying "touch nothing you were not asked about" is a
+contradiction visible only when the two are read together, which is the moment
+one is approved.
 
 The chain is the same either way and only one step differs: how work is started,
 and how it is known to be finished. Anything that does not serve that is not on
@@ -24,262 +37,103 @@ this list.
 not a person -- it is whoever writes the task, gives it out, and judges what
 comes back -- and either kind can fill it, in any combination with the worker
 below it. A person supervising Claude is the ordinary case today. Claude
-supervising a person is not a joke: it is what a queue of pre-defined tasks and a
-board of verdicts already almost is.
+supervising a person is not a joke: it is what a queue of jobs and a board of
+verdicts already almost is.
 
 It is also why the boundaries in this app are drawn where they are rather than
-around "the human". Approving a pre-defined task is refused down the pipe --
-`_overTheWire` -- because a model may write one and may not ratify its own; the
-dashboard sits between the supervisor and the workers so distribution goes
+around "the human". Approving a job, a prompt or a contract is refused down the
+pipe -- `_overTheWire` -- because a model may write one and may not ratify its
+own; the dashboard sits between the supervisor and the workers so distribution goes
 through a channel that can be watched, whichever kind is supervising. Neither
 rule would make sense if the supervisor were assumed to be a person, and both are
 load-bearing precisely because it is not.
 
 **The second line is the same chain seen from further back**, and it only appears
-when a job is worth doing more than once. A task is one occasion; a defined task
-is the standing intention to do that job; a defined prompt is the instruction
-itself, which is the part worth improving and worth having exactly one of. Most
-work never needs it -- a task written for an afternoon is a task -- and the
-moment the same brief is being retyped for the third time it is the shape that
-was already wanted. See "Prompts, and the jobs that consume them" below.
+when a job is worth doing more than once. A task is one occasion; a job is the
+standing intention to do that work; a prompt is the instruction itself, which is
+the part worth improving and worth having exactly one of; a contract is the
+limits it holds to, which change least of all. Most work never needs any of it --
+a task written for an afternoon is a task -- and the moment the same brief is
+being retyped for the third time it is the shape that was already wanted. See
+"Contracts, prompts, and the jobs that run them" below.
 
 
-Where it actually stands
-------------------------
+Contracts, prompts, and the jobs that run them — BUILT
+-------------------------------------------------------
 
-The vision names five separable pieces and says the compounding payoff rests on
-the first two, which are the cheapest. Three of the five are built:
+    branch <- task <- job <- prompt <- contract
 
-    review gate          DONE, and enforced at the guest. A worker was told to
-                         push master; the hook refused, master did not move, and
-                         the message said what was refused and why
-    firmware discipline  DONE IN SHAPE. The contract is a per-task file this tool
-                         carries and never interprets, so the discipline is an
-                         input rather than something anybody pastes in
-    isolation            DONE and drilled. Cable pulled, credential vanished,
-                         dashboard restarted mid-run
-    orchestration        DONE. Two machines took two tasks in the same tick and
-                         both delivered
-    self-maintained      NOT STARTED. Nothing proposes work
-    backlog
+**This section used to describe a different design and it is worth saying what
+changed, because the difference is the whole lesson.** It planned a "defined
+task": a data binding of a prompt to its circumstances — which branch, which
+contract, which kind of worker — with a second kind whose body was a checked-in
+JavaScript function, the ten drills. Three things went wrong with that on
+contact.
 
-**The one thing that has never happened: a real repository has never been through
-this loop.** Everything above is proven against `local-repo-a`, `local-repo-b` and
-`local-repo-c` with shell tasks and toy commits. That was the right way to build
-it — a channel and a firmware fix cannot be debugged at once — and it means every
-assumption in here is currently held against a substitute.
+A binding is a form, and every job worth having wanted one more field than the
+form had. The drills were the same thing with a body of code, filed in the same
+list, and the only thing wrong with them was that asserting something was the
+*only* thing a definition could do. And the two kinds needed one approval rule
+between them, which is a rule about two different substances.
 
+**So a job is a Node script, and it runs on a machine.** Not a binding, not a
+function in a checked-in file. It is handed one object and everything it can do
+is on that object: the prompt, the contract, a shell, a worker, a way to hand
+files back, and assertions for a job that checks rather than does. The drills
+became one kind of job with nothing special about them, which is what they should
+always have been.
 
-0. One real fix, end to end
-----------------------------
+It runs on a MACHINE, and that was proved rather than assumed: `require` gives a
+module everything Node has, so the API was never a sandbox — an approved job was
+arbitrary code running as the operator, and a three-line job printed the host's
+name to show it. On a machine the blast radius is something that gets rolled back
+to a snapshot when the work ends.
 
-**Not a feature, and it comes before the features.** Point the workspace at real
-repositories, write one real task, let it run, read the branch, land it by hand.
+**The four layers, as built.**
 
-This will find more than another week of building, because it is the first time
-any of these are tested rather than assumed: how large a real diff is, how long a
-real suite takes, whether a real `setup.sh` survives provisioning, whether a
-contract actually constrains a worker doing work that matters.
+    contract  the rules: what a worker may NOT do. Kept for this computer, since
+              "do not force-push" names no repository
+    prompt    the words: what it is told to do. Names the contract it must hold
+              to, because that pairing is what somebody reads while approving
+    job       the script: how the words get given to a worker, and what is
+              checked about the result
+    task      one occasion, carrying a copy of what it was given
 
-**Nothing blocks it now.** The workspace is a folder the app points at, changeable
-from the title bar, and what belongs to a workspace follows it -- see "Which
-repositories this is about" in `README.md`. What remains is a decision rather than
-work: which repositories, and whether the first real task is a fix or a read. A
-task that only READS and reports exercises the whole loop with nothing at stake on
-the branch, which makes it the cheaper first one.
+**Everything is copied, never pointed at.** A task carries the text of the brief
+it went out with; a run carries the contract's words in `contract.md` beside its
+own script. Read six weeks later, a reference proves nothing about what the
+worker was actually held to, and the library it named has moved on since.
 
+**Approval is per substance, and the ladder composes.** Each of the three hashes
+its own words — a job the bytes of its file, a prompt and a contract their text —
+and an edit lapses it rather than silently keeping the tick. A job is runnable
+when its script is approved AND its prompt is usable, where usable means the
+prompt is approved and its contract is ready. The job asks the prompt rather than
+reaching past it to the contract, so the chain only runs one way, and `whyNot`
+names the one rung that is missing rather than reporting "not approved" about the
+thing that plainly is.
 
-1. Keep the session, so a task can be paused
----------------------------------------------
+Approving is refused over the wire for all three, and it is sharpest for the
+contract: that is the text saying what a worker may not do, and a model ratifying
+its own limits is the review that reviews nothing.
 
-The task is meant to be the durable identity and the machine a resource it
-borrows. Today a task is bound to one uninterrupted run: the machine is rolled
-back when the work ends and the session goes with it.
+**What is still a file path.** A task's contract. The task dialog takes a path on
+this host, from before the library existed, and a task written from a prompt
+should simply take that prompt's contract. It is a small change to what a stored
+task MEANS, which is why it is not folded in with the rest.
 
-`--resume` is already plumbed from `vmDispatch` to `claude --resume`. It names a
-session this tool deletes a moment earlier, so it looks supported and is a trap —
-fixing that is most of this step.
+**Still open:**
 
-    capture   the whole session folder when a run ends, not the .jsonl. Picking a
-              minimal set is a guess that fails quietly later
-    key       to the BRANCH, not the task. A branch is the durable unit; several
-              tasks against one branch should share one session rather than
-              re-reading context every time
-    restore   push it into the one machine resuming that branch, before the run
-              starts. Never a share — one session belongs in one machine
-    forget    one click to start fresh, because a session that spans ten tasks
-              eventually carries more noise than context
-
-Unlocks: pause and resume, several tasks on scarce runners, and reading how a
-branch was reached rather than only what it contains.
-
-Rule to hold when this lands: **a free runner and a parked task produce a prompt,
-never an assignment.** The queue may act on work a person queued; it must not
-decide that a parked task resumes.
-
-
-2. A change note, and something that checks it
------------------------------------------------
-
-The piece that turns *watch it work* into *read what came back* — and attention
-does not fan out to three sessions, so this is what makes more than one job in
-flight possible at all.
-
-    note      the worker writes what was wrong, the mechanism, the fix, the
-              evidence, and what it deliberately did not touch. A deliverable
-              like the branch, not a nicety
-    verify    an independent pass reads the diff, the note AND the surrounding
-              code. A plausible-and-wrong note is worse than none: it is
-              optimised to reassure, which is exactly what floats a bad diff past
-              a reviewer
-    evidence  a run record that names the commits it ran against. Without that a
-              verifier checks a claim about a test against another claim about a
-              test
-
-**Do not automate further before this exists.** The thing that prevents a
-firehose is not a smaller fan-out — it is that every returned change is checked
-by something other than what wrote it. Automation without verification only
-scales trust in claims.
-
-
-3. Something proposes the work
--------------------------------
-
-The front door of the vision: ask for a list, read it, pick one. Least useful of
-the three until the back door is trustworthy, which is why it is third.
-
-Two guards, both general, both worth keeping when the ecosystem-specific version
-is written:
-
-* **provenance** on every proposal — human-written or model-written. An
-  agent-authored proposal steering an agent worker is the case to watch
-* **a proposal is not a narrative.** It is pickable only once something it
-  carries has actually been run. The ecosystem's version is "the repro
-  reproduces"; the general version is that a proposal arrives with evidence
-
-
-Smaller things, worth doing when they are in the way
------------------------------------------------------
-
-* **Tag the log by why you would filter**, not by where a line came from. Every
-  tag today is a source — `vm`, `channel`, `queue`, `task`. The question a
-  console is actually asked is "is anything waiting on me", and it is answered
-  here by reading. Tag at emit, never by parsing afterwards.
-* **Show what a machine is holding while it is working**, not only when
-  something is about to destroy it. `vmHolds` already asks the guest; only the
-  delete, restore and release dialogs call it. Uncommitted work is the one state
-  a branch view cannot see.
-* **The experiment bench is nearly free.** Three approaches is three tasks on
-  three branches, which the machinery already does. What is missing is comparing
-  them side by side.
-* **Record who wrote a task.** Provenance exists in exactly one place —
-  `_overTheWire`, used to refuse approvals from a supervising session.
-* **Keep a task's state transitions.** Attempts append and verdicts append; state
-  does not, so a task that went queued → given → done → rejected → given keeps
-  only the last.
-* **Nothing checks the assumption the whole thing rests on.** The emulator can
-  drift from real silicon, and "the suite is green" then means something narrower
-  than it sounds. When a real ecosystem is wired in, this is the natural place to
-  hold that counter — last reconciled against hardware, N days ago — so it decays
-  visibly rather than quietly.
-
-
-Prompts, and the jobs that consume them
-----------------------------------------
-
-    branch <- task <- defined-task <- defined-prompt
-
-Read right to left, the same way the spine is: a task comes from a defined task,
-which consumes a defined prompt. Three layers where there is currently one and a
-half, and the split is the whole idea rather than a filing decision.
-
-**A defined prompt is the reusable half.** What to do, in words -- the thing that
-is worth improving, worth versioning, and worth having ONE of. "Read the README
-and the code and say where they disagree" is the same instruction whichever
-repository it is pointed at, and today it would be retyped into a brief every
-time, drifting a little each time until there are four versions of it and nobody
-knows which is the good one.
-
-**A defined task is the binding.** A prompt plus the circumstances: which branch
-it works on, which contract it runs under, which kind of worker, how long it is
-allowed. One prompt, several bindings -- the same reading job pointed at three
-repositories is three defined tasks and one prompt, and improving the prompt
-improves all three.
-
-**A task is one occasion.** What already exists: written down, given out,
-delivered, judged, done with. A defined task produces one whenever it is run, and
-the task carries a copy of what it was given rather than a reference -- a task
-must stay readable as what the worker actually got, and a prompt edited after the
-fact would rewrite history that somebody is judging against.
-
-**Why this is a tab and not a field.** A prompt library is a thing you browse,
-compare and improve. Bolted onto the task definition as a text box it is
-invisible, unsearchable and duplicated -- which is exactly the state the ten
-existing definitions were in before they got a pane, one level up.
-
-**Where the drills fit, and it is the "both" answered.** A drill IS a defined
-task; its body is a function rather than a prompt, because asserting something
-is code. So a defined task has one of two bodies:
-
-    code    a function, declared in tasks/planned.js, fingerprinted, approved by
-            reading it. What the ten drills are
-    prompt  a reference to a defined prompt, plus the binding above. Written in
-            the window, approved the same way, runs by creating a task
-
-One list, one approval rule, one run -- two ways of saying what to do. Which is
-the same shape as `worker: claude | person`: one object, one record, and the only
-step that differs is how the work is started.
-
-**Approval covers both, and matters more here.** A prompt that does work is
-closer to a loaded gun than a drill that asserts something: nothing unapproved
-runs, whoever is asking, and editing a prompt has to lapse every defined task
-that consumes it -- otherwise a definition that was read and approved quietly
-becomes a different instruction while still wearing its tick.
-
-**Written, approved, edited, removed -- all four, and approval is what makes the
-other three safe.** The drills already have the mechanism and it generalises
-exactly: `fingerprint` is a hash of the function's source, and approval records
-the hash it was given, so an edit makes a definition *lapse* rather than silently
-stay approved. A prompt is text, which hashes the same way. So:
-
-    create   a prompt or a defined task starts unapproved. It is written, and
-             nothing runs it until somebody has read it and said so
-    edit     changes the hash, which lapses it and everything that consumes it.
-             Not a warning to dismiss -- it stops running until re-read
-    approve  a person, in the window. `plannedApprove` already refuses over the
-             socket, because a model may write one and may not ratify its own
-    remove   refused while a defined task still consumes it, the same way a
-             workspace in use refuses to be forgotten. What is gone should be
-             gone because somebody meant it, not because nothing checked
-
-**The code drills stay read-only in the window.** They are declared in
-`tasks/planned.js` and the app requires that file at startup, so creating and
-removing them means generating and deleting JavaScript in a checked-in file that
-a bad edit stops the dashboard booting with. Editing them is a code change and
-should look like one. The window's job for those is what it does now: read them,
-approve them, withdraw approval, and say what running one would touch.
-
-**Build order, and the run comes last.** The prompt is the leaf -- nothing
-depends on it -- so it is first, and the record can be proved with nothing else
-moving:
-
-    1  defined prompts: the record, the tab, create / edit / remove / approve,
-       and the hash that makes an edit lapse it
-    2  defined tasks as data: the binding, consuming a prompt, the same four
-       acts, and the refusal to remove a prompt something still consumes
-    3  running one: it writes a task onto the board, carrying a COPY of what it
-       was given. Last, because until it exists nothing can be run by accident
-
-**Open, and worth settling before it is built:**
-
-* whether a defined task names a branch or a branch PATTERN. A reading job wants
-  a fresh branch each time; a maintenance job may want the same one always
+* whether a job names a branch or a branch PATTERN. A reading job wants a fresh
+  branch each time; a maintenance job may want the same one always
 * whether a prompt takes parameters, and how hard to resist that. A prompt with
   placeholders is a template language eventually, and this app has no business
   growing one
-* what a task keeps: the prompt's text at the time, its id, and its version, so
+* what a task keeps of its prompt: the text at the time, its id, and its hash, so
   "what was this worker actually told" is answerable a month later without
   depending on the prompt still existing
+* where a job's artifacts are read. They are kept under the run id rather than a
+  task uid, so they land on disk and no pane in the window shows them
 
 
 Judging, as its own kind of run
@@ -368,7 +222,7 @@ a supervisor act -- reading what came back and saying whether it is good -- run
 by Claude. Which is exactly why the authority stops where it does: the spine
 allows either kind in the role, and this app's refusals are drawn around the ACT
 rather than around the human, so "may not ratify its own" applies to a judgement
-as much as to a pre-defined task.
+as much as to a job.
 
 **A judgement says who made it, and a model's says so on its face.** Not a field
 in a record somebody could fail to render -- in the judgement itself, wherever it
@@ -487,7 +341,7 @@ guest being provisioned. Putting the table behind it changes what this app is:
   an action and does not think about it. Better: derive it, the way
   `needs: 'workspace'` is derived, so a new action is refused until it says what
   it is.
-* **`_overTheWire` gets more load, not less.** Approving a pre-defined task is
+* **`_overTheWire` gets more load, not less.** Approving a job, a prompt or a contract is
   deliberately refused down the pipe, because a model drives the pipe and
   approval is a human ratifying what a model wrote. Over a network, "at this
   keyboard" stops being a boundary at all, and that distinction has to become a
