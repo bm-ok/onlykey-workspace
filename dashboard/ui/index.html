@@ -76,7 +76,8 @@
          starts with somebody writing a task; an issue is work that arrived,
          and it is the far end of the chain that has always started midway. -->
     <div class="subtabs">
-      <button class="subtab active" data-pane="repos">Repos</button>
+      <button class="subtab active" data-pane="todo">Overview</button>
+      <button class="subtab" data-pane="repos">Repos</button>
       <button class="subtab" data-pane="issues">Issues</button>
       <button class="subtab" data-pane="pulls">Pull requests</button>
     </div>
@@ -89,6 +90,21 @@
     </div>
     <p class="note" id="repos-note"></p>
 
+    <!-- EVERYTHING WAITING, ACROSS ALL OF THEM. The one pane here that is not
+         about a repository you picked, so it is full width and the picker is
+         hidden while it is up. "What is waiting on me" is not a per-repository
+         question — it only became one because GitHub's pages are. -->
+    <div class="pane active" id="pane-todo">
+      <div class="sync-head" style="margin-bottom:10px">
+        <div class="chips" id="todo-filters" style="margin:0"></div>
+        <div class="sync-controls">
+          <input id="todo-find" class="finder" style="margin:0;width:16rem" placeholder="find a title, a repository, a number">
+          <select id="todo-sort"></select>
+        </div>
+      </div>
+      <div id="todo" class="stack"></div>
+    </div>
+
     <!-- ONE LIST, THREE VIEWS OF WHAT IS PICKED. The repository selection is
          shared across all three sub-tabs rather than repeated in each, because
          it is the same question every time — which repository — and three
@@ -98,12 +114,12 @@
          So the narrow column lives OUTSIDE the panes and only the wide one
          switches. What changes between the sub-tabs is what is being said about
          the repository, not which repository. -->
-    <div class="cols">
+    <div class="cols" id="repos-cols">
       <div class="col narrow">
         <div id="repos" class="stack"></div>
       </div>
       <div class="col wide">
-        <div class="pane active" id="pane-repos"><div id="repo-detail" class="panel"></div></div>
+        <div class="pane" id="pane-repos"><div id="repo-detail" class="panel"></div></div>
         <div class="pane" id="pane-issues"><div id="issue-detail"></div></div>
         <div class="pane" id="pane-pulls"><div id="pull-detail"></div></div>
       </div>

@@ -3636,6 +3636,163 @@ function askForCode (name, url) {
 }
 
 
+
+// ---- everything waiting, in one list -----------------------------------
+//
+// What is open across the whole workspace, read as one list rather than as a
+// tour of three sub-tabs times four repositories. "What is waiting on me" is not
+// a per-repository question — it only became one because GitHub's pages are.
+//
+// A CUT IS ONE ROW, with its pull requests underneath. Reading three of them as
+// three separate things is the exact mistake this app exists to stop: they are
+// approved separately and they are not done separately, and a list showing three
+// ticks for one change invites somebody to act on a third of it.
+//
+// SORTED AND FILTERED IN THE WINDOW, not by the server. Everything here was
+// already gathered by the last "Ask GitHub", so narrowing it costs nothing and
+// happens as fast as a click. Sorting server-side would put a network round trip
+// behind a dropdown, and a dropdown that pauses is one people stop touching.
+let todoSort = been.get('todo-sort', 'newest')
+let todoKinds = been.get('todo-kinds', ['cut', 'pull', 'issue'])
+let todoOpenOnly = been.get('todo-open', true)
+let todoFind = ''
+
+const TODO_SORTS = [
+  ['newest', 'newest first'],
+  ['oldest', 'oldest first'],
+  ['kind', 'by kind'],
+  ['repo', 'by repository'],
+  ['state', 'by state']
+]
+
+const TODO_KINDS = [['cut', 'PR cuts', 'cuts'], ['pull', 'pull requests', 'pulls'], ['issue', 'issues', 'issues']]
+
+function paintTodo () {
+  if (view !== 'repos' || repoPane !== 'todo') return
+
+  api('repoOverview').then(v => {
+    const shown = todoRows(v.items)
+
+    if (changed('todo-chrome', [v.counts, todoKinds, todoOpenOnly, todoSort])) {
+      // A FILTER SAYS WHAT IT WOULD SHOW, not only what it is. A chip reading
+      // "issues" beside an empty list is a chip nobody can tell is switched off,
+      // and the count is the difference between "there are none" and "you are
+      // not looking at them".
+      fill($('todo-filters'),
+        ...TODO_KINDS.map(([id, label, count]) => el('button', {
+          className: `chip linky-chip${todoKinds.includes(id) ? ' on' : ''}`,
+          textContent: `${label} ${v.counts[count]}`,
+          onclick: () => {
+            todoKinds = todoKinds.includes(id) ? todoKinds.filter(x => x !== id) : [...todoKinds, id]
+            been.set('todo-kinds', todoKinds)
+            redrawTodo()
+          }
+        })),
+        el('button', {
+          className: `chip linky-chip${todoOpenOnly ? ' on' : ''}`,
+          textContent: todoOpenOnly ? `open only — ${v.counts.open}` : `open or not — ${v.counts.all}`,
+          onclick: () => { todoOpenOnly = !todoOpenOnly; been.set('todo-open', todoOpenOnly); redrawTodo() }
+        }))
+
+      fill($('todo-sort'), ...TODO_SORTS.map(([id, label]) =>
+        el('option', { value: id, textContent: label, selected: id === todoSort })))
+      $('todo-sort').onchange = () => { todoSort = $('todo-sort').value; been.set('todo-sort', todoSort); redrawTodo() }
+      $('todo-find').oninput = () => { todoFind = $('todo-find').value; redrawTodo() }
+    }
+
+    if (!changed('todo-list', [shown, todoFind])) return
+    fill($('todo'), shown.length
+      ? shown.map(todoCard)
+      : el('p', {
+          className: 'empty',
+          textContent: v.items.length
+            ? 'Nothing matches. Widen the filters above.'
+            : 'Nothing here yet. This is as old as the last time GitHub was asked — "Ask GitHub" reads it again.'
+        }))
+  }).catch(() => { /* the board says when the dashboard itself is unreachable */ })
+}
+
+const redrawTodo = () => { changed('todo-chrome', null); changed('todo-list', null); paintTodo() }
+
+function todoRows (items) {
+  const want = String(todoFind || '').trim().toLowerCase()
+  const rows = items.filter(x =>
+    todoKinds.includes(x.kind) &&
+    (!todoOpenOnly || x.state === 'open') &&
+    (!want || `${x.title} ${x.repos.join(' ')} #${x.number || ''} ${(x.labels || []).join(' ')}`.toLowerCase().includes(want)))
+
+  const when = x => (x.at ? Date.parse(x.at) : 0)
+  const kindAt = x => ['cut', 'pull', 'issue'].indexOf(x.kind)
+  const order = {
+    newest: (a, b) => when(b) - when(a),
+    oldest: (a, b) => when(a) - when(b),
+    // A cut above a loose pull request above an issue, because that is the order
+    // of how much of the workspace each one is holding.
+    kind: (a, b) => kindAt(a) - kindAt(b) || when(b) - when(a),
+    repo: (a, b) => (a.repos[0] || '').localeCompare(b.repos[0] || '') || when(b) - when(a),
+    state: (a, b) => String(a.state).localeCompare(String(b.state)) || when(b) - when(a)
+  }
+  return rows.slice().sort(order[todoSort] || order.newest)
+}
+
+function todoCard (x) {
+  const badge = x.state === 'merged' ? 'ok' : x.state === 'closed' ? 'bad' : x.kind === 'issue' ? 'warn' : 'run'
+  const where = x.kind === 'cut' ? `${x.repos.length} repositories — ${x.repos.join(', ')}` : x.on || x.repo
+  const sub = [where, x.at ? ago(x.at) : null, x.by || null].filter(Boolean).join(' · ')
+
+  return el('div', { className: 'card' },
+    el('div', { className: 'card-title' },
+      el('span', { className: 'badge muted', textContent: x.kind === 'cut' ? 'PR cut' : x.kind === 'pull' ? 'pull' : 'issue' }),
+      x.number ? el('span', { className: 'mono muted', textContent: `#${x.number}` }) : null,
+      el('span', { className: 'grow', textContent: x.title }),
+      x.draft ? el('span', { className: 'badge muted', textContent: 'draft' }) : null,
+      el('span', { className: `badge ${badge}`, textContent: x.summary || x.state })),
+
+    el('div', { className: 'card-sub muted', textContent: sub }),
+
+    ...((x.labels || []).length
+      ? [el('div', { className: 'badges' }, ...x.labels.slice(0, 6).map(l => el('span', { className: 'badge muted', textContent: l })))]
+      : []),
+
+    // A CUT SHOWS ITS PARTS. The row is the change; these are where it actually
+    // got to, and one of them merged while another is not is precisely the state
+    // this list exists to make visible — it is invisible on GitHub.
+    ...(x.parts
+      ? [el('div', { className: 'carries', style: 'margin-top:8px' }, ...x.parts.map(part => el('div', { className: 'group-part' },
+          el('span', { className: 'mono', textContent: `${part.repo} #${part.number}` }),
+          el('span', {},
+            el('span', { className: part.state === 'merged' ? 'ok' : part.state === 'closed' ? 'gone' : 'muted', textContent: part.state }),
+            el('button', { className: 'linky', style: 'margin-left:10px', textContent: 'read it', onclick: () => nw.Shell.openExternal(part.url) })))))]
+      : []),
+
+    el('div', { className: 'row', style: 'margin-top:8px' },
+      x.url ? el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => nw.Shell.openExternal(x.url) }) : null,
+      // AN ISSUE IS THE ONE THING HERE THAT COMES IN, so it is the one row with
+      // somewhere to go next: work that arrived, turned into work this app runs.
+      x.kind === 'issue'
+        ? el('button', {
+            className: 'btn small ok',
+            textContent: 'Write a task from it',
+            title: 'Opens the task dialog with this issue as the brief',
+            onclick: () => newTaskFromIssue(x)
+          })
+        : null,
+      x.kind === 'cut'
+        ? el('button', {
+            className: 'btn small',
+            textContent: 'Open the cut',
+            onclick: () => {
+              pickedCut = x.id
+              been.set('prcut', pickedCut)
+              changed('prcuts', null); changed('prcut-detail', null)
+              const t = document.querySelector('#view-prcuts .subtab[data-pane="cuts"]')
+              if (t) t.click()
+              showTab('prcuts')
+            }
+          })
+        : null))
+}
+
 // ---- the repositories --------------------------------------------------
 //
 // What everything else is made of, asked three ways: what is here and can it be
@@ -3661,7 +3818,9 @@ document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(t => {
     document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
     document.querySelectorAll('#view-repos .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${repoPane}`))
     changed('repo-detail', null)
+    $('repos-cols').classList.toggle('hidden', repoPane === 'todo')
     paintRepos()
+    paintTodo()
   }
 })
 ;(() => {
@@ -3669,6 +3828,7 @@ document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(t => {
   if (!t) { repoPane = 'repos'; return }
   document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
   document.querySelectorAll('#view-repos .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${repoPane}`))
+  $('repos-cols').classList.toggle('hidden', repoPane === 'todo')
 })()
 
 function paintRepos () {
@@ -3702,6 +3862,7 @@ function paintRepos () {
 
     const one = repos.find(r => r.repo === pickedRepo) || null
     if (!changed('repo-detail', [repoPane, one])) return
+    if (repoPane === 'todo') return
     if (repoPane === 'repos') return paintRepoDetail(one)
     if (repoPane === 'issues') return paintRepoIssues(one)
     return paintRepoPulls(one)
@@ -5444,6 +5605,7 @@ async function drawOnce () {
   }
 
   paintRepos()
+  paintTodo()
   paintCuts()
   paintTemplates()
   paintVms()
@@ -5530,10 +5692,10 @@ function shotIfAsked () {
     }
 
     // The Repositories tab has two selections: which sub-tab, and which
-    // repository. `repos` / `issues` / `pulls` picks the reading; anything else
-    // is taken as a repository name.
+    // repository. `todo` / `repos` / `issues` / `pulls` picks the reading;
+    // anything else is taken as a repository name.
     if (want.pick && view === 'repos') {
-      if (['repos', 'issues', 'pulls'].includes(want.pick)) {
+      if (['todo', 'repos', 'issues', 'pulls'].includes(want.pick)) {
         if (repoPane !== want.pick) {
           const t = document.querySelector(`#view-repos .subtab[data-pane="${want.pick}"]`)
           if (t) { t.click(); shotSettle = 2; return }

@@ -2604,6 +2604,103 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
     })
   },
 
+  // ---- everything waiting, in one list -----------------------------------
+  //
+  // Pull requests and issues across every repository, read as one list rather
+  // than as a tour of three tabs. The question it answers is "what is waiting on
+  // me", and that question is not per repository — it only became one because
+  // GitHub's pages are.
+  //
+  // A CUT IS ONE ROW. Three pull requests that are one change appear once, with
+  // the three underneath, because reading them as three separate things is the
+  // exact mistake this app exists to stop: they are approved separately, and
+  // they are not done separately.
+  //
+  // Assembled from what was already gathered, so it costs nothing and is as old
+  // as the last "Ask GitHub". Sorting and filtering happen in the window, where
+  // they are instant.
+  repoOverview: {
+    about: 'Everything open across the workspace — issues, pull requests, and PR cuts as one row each',
+    run: () => {
+      const rows = remotes.read()
+      const cuts = landings.all()
+
+      // Which pull requests belong to a cut, so they are not also listed loose.
+      const partOf = new Map()
+      for (const [key, cut] of Object.entries(cuts)) {
+        for (const p of cut.pulls || []) if (p.number) partOf.set(`${p.repo}#${p.number}`, key)
+      }
+
+      const items = []
+      const grouped = new Map()
+
+      for (const r of rows) {
+        for (const p of r.pulls || []) {
+          const key = partOf.get(`${r.repo}#${p.number}`)
+          if (!key) {
+            items.push({
+              kind: 'pull', id: `${r.repo}#${p.number}`, repo: r.repo, repos: [r.repo],
+              title: p.title, number: p.number, url: p.url,
+              state: p.merged ? 'merged' : p.state, draft: !!p.draft,
+              at: p.updated || p.at || null, on: r.parent || r.repo, parts: null
+            })
+            continue
+          }
+          if (!grouped.has(key)) {
+            const cut = cuts[key]
+            grouped.set(key, {
+              kind: 'cut', id: key, repo: null, repos: [],
+              title: (cut.said && cut.said.title) || cut.source,
+              source: cut.source, target: cut.target,
+              number: null, url: null, state: 'open', at: cut.opened, on: null, parts: []
+            })
+          }
+          const g = grouped.get(key)
+          g.repos.push(r.repo)
+          g.parts.push({ repo: r.repo, number: p.number, url: p.url, state: p.merged ? 'merged' : p.state, draft: !!p.draft })
+        }
+
+        for (const i of r.issues || []) {
+          items.push({
+            kind: 'issue', id: `${r.repo}!${i.number}`, repo: r.repo, repos: [r.repo],
+            title: i.title, number: i.number, url: i.url, state: i.state, draft: false,
+            at: i.updated || i.at || null, on: i.on || r.repo, by: i.by, labels: i.labels || [],
+            // Carried so a task can be written from this list without going
+            // back to the per-repository tab to find the words again.
+            body: i.body || null, parts: null
+          })
+        }
+      }
+
+      // A cut's state is the whole cut's: merged only when every one of them is,
+      // which is the sentence this app exists to be able to say.
+      for (const g of grouped.values()) {
+        const merged = g.parts.filter(p => p.state === 'merged').length
+        g.state = merged === g.parts.length ? 'merged' : g.parts.some(p => p.state === 'open') ? 'open' : 'closed'
+        g.summary = `${merged} of ${g.parts.length} merged`
+      }
+
+      const all = [...grouped.values(), ...items]
+      const gathered = rows.map(r => r.gathered).filter(Boolean).sort()
+
+      return {
+        items: all,
+        repos: rows.map(r => r.repo),
+        asked: gathered.length ? gathered[0] : null,
+        counts: {
+          all: all.length,
+          open: all.filter(x => x.state === 'open').length,
+          issues: all.filter(x => x.kind === 'issue').length,
+          pulls: all.filter(x => x.kind === 'pull').length,
+          cuts: all.filter(x => x.kind === 'cut').length
+        },
+        note: gathered.length
+          ? 'As of the last time GitHub was asked. Ask again for anything newer.'
+          : 'Nothing has been read from GitHub yet.'
+      }
+    }
+  },
+
   repositoriesCheck: {
     about: 'Ask GitHub about the repositories: reachability, what the token may do, open issues and pull requests',
     takes: ['repo'],
