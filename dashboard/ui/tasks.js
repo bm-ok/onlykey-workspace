@@ -139,7 +139,7 @@ async function pickTask (id, card) {
 }
 
 function paintTasks (queued) {
-  Promise.all([api('tasks'), api('defined').catch(() => ({ defined: [] }))]).then(([{ tasks }, jobs]) => {
+  Promise.all([api('tasks'), api('jobs').catch(() => ({ jobs: [] }))]).then(([{ tasks }, work]) => {
     taskList = tasks
     // Reconciled against what exists, for the same reason the machine selection
     // is: a task remembered from the last window may have been thrown away
@@ -157,8 +157,8 @@ function paintTasks (queued) {
     // window is approved by whoever wrote it, so the count is exactly "what
     // arrived down the pipe and is waiting on you", which is the case worth a
     // card rather than a number in a corner.
-    const unread = (jobs.defined || []).filter(d => !d.approved)
-    const lapsed = unread.filter(d => d.lapsed).length
+    const unread = (work.jobs || []).filter(j => !j.approved)
+    const lapsed = unread.filter(j => j.lapsed).length
     const waiting = unread.length
     if (changed('approvals', [waiting, lapsed])) {
       fill($('approvals'), waiting
@@ -178,7 +178,7 @@ function paintTasks (queued) {
               style: 'margin-top:8px',
               textContent: 'Read them',
               onclick: () => {
-                const t = document.querySelector('#view-tasks .subtab[data-pane="planned"]')
+                const t = document.querySelector('#view-tasks .subtab[data-pane="jobs"]')
                 if (t) t.click()
               }
             }))
@@ -776,7 +776,7 @@ function newTask (from = null) {
 // beside a name is a button that gets pressed without anybody having looked. So
 // the source of what will actually run is here, and the button is underneath it.
 //
-// Only in the window. `plannedApprove` refuses over the socket, because that is
+// Only in the window. `jobApprove` refuses over the socket, because that is
 // the socket a supervising model drives — and a model approving a definition it
 // wrote is the one path nothing reviews.
 // ---- the prompt library --------------------------------------------------
@@ -932,15 +932,15 @@ let jobsNow = []
 let promptsNow = []
 
 function paintJobs () {
-  if (view !== 'tasks' || taskPane !== 'planned') return
-  waiting('planned-list', { cards: 3 })
-  waiting('planned-detail', { lines: 8 })
+  if (view !== 'tasks' || taskPane !== 'jobs') return
+  waiting('jobs-list', { cards: 3 })
+  waiting('jobs-detail', { lines: 8 })
   paintJobsNow()
 }
 
 async function paintJobsNow () {
   await settle()
-  if (view !== 'tasks' || taskPane !== 'planned') return
+  if (view !== 'tasks' || taskPane !== 'jobs') return
 
   api('jobs').then(v => {
     jobsNow = v.jobs || []
@@ -948,18 +948,18 @@ async function paintJobsNow () {
     const shown = jobTag ? jobsNow.filter(j => (j.tags || []).includes(jobTag)) : jobsNow
     const stuck = jobsNow.filter(j => !j.runnable).length
 
-    setText($('planned-context'), jobsNow.length
+    setText($('jobs-context'), jobsNow.length
       ? `— ${jobsNow.length}${stuck ? `, ${stuck} not runnable` : ''}`
       : '— none yet')
-    setText($('planned-note'), v.note || '')
+    setText($('jobs-note'), v.note || '')
 
     if (!shown.some(j => j.id === pickedJob)) {
       pickedJob = shown.length ? shown[0].id : null
       been.set('job', pickedJob)
     }
 
-    if (changed('planned', [shown, pickedJob, jobTag, v.tags])) {
-      fill($('planned-list'),
+    if (changed('jobs', [shown, pickedJob, jobTag, v.tags])) {
+      fill($('jobs-list'),
         // TAGS, as a filter rather than as decoration. A drill, a maintenance
         // job and a reading job want to be found separately, and a flat list of
         // forty is the state the ten drills were already in.
@@ -968,12 +968,12 @@ async function paintJobsNow () {
               el('button', {
                 className: `chip linky-chip${jobTag ? '' : ' on'}`,
                 textContent: `all ${jobsNow.length}`,
-                onclick: () => { jobTag = null; been.set('job-tag', null); changed('planned', null); paintJobs() }
+                onclick: () => { jobTag = null; been.set('job-tag', null); changed('jobs', null); paintJobs() }
               }),
               ...v.tags.map(t => el('button', {
                 className: `chip linky-chip${jobTag === t.tag ? ' on' : ''}`,
                 textContent: `${t.tag} ${t.n}`,
-                onclick: () => { jobTag = t.tag; been.set('job-tag', t.tag); changed('planned', null); paintJobs() }
+                onclick: () => { jobTag = t.tag; been.set('job-tag', t.tag); changed('jobs', null); paintJobs() }
               })))
           : null,
         shown.length
@@ -982,7 +982,7 @@ async function paintJobsNow () {
               onclick: () => {
                 pickedJob = j.id
                 been.set('job', pickedJob)
-                changed('planned', null); changed('planned-detail', null)
+                changed('jobs', null); changed('jobs-detail', null)
                 paintJobs()
               }
             },
@@ -1000,16 +1000,16 @@ async function paintJobsNow () {
     }
 
     const one = shown.find(j => j.id === pickedJob) || null
-    if (changed('planned-detail', one)) paintJob(one)
+    if (changed('jobs-detail', one)) paintJob(one)
   }).catch(oops)
 }
 
 function paintJob (j) {
-  if (!j) return fill($('planned-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one with +.' }))
+  if (!j) return fill($('jobs-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one with +.' }))
 
   // The script is not in the list payload -- it is long and the list is a list.
   api('job', { id: j.id }).then(full => {
-    fill($('planned-detail'),
+    fill($('jobs-detail'),
       el('div', { className: 'card-title' },
         el('span', { className: 'grow', textContent: j.name }),
         el('span', {
@@ -1053,7 +1053,7 @@ function paintJob (j) {
                 try {
                   await api('jobWithdraw', { id: j.id })
                   say(`"${j.name}" will not run until it is approved again.`, 'warn')
-                  changed('planned', null); changed('planned-detail', null)
+                  changed('jobs', null); changed('jobs-detail', null)
                   return draw()
                 } catch (e) { oops(e) }
               }
@@ -1073,7 +1073,7 @@ function paintJob (j) {
                 onYes: async ({ note }) => {
                   await api('jobApprove', { id: j.id, note })
                   say(`"${j.name}" approved.`)
-                  changed('planned', null); changed('planned-detail', null)
+                  changed('jobs', null); changed('jobs-detail', null)
                   return draw()
                 }
               })
@@ -1094,7 +1094,7 @@ function paintJob (j) {
               await api('jobForget', { id: j.id })
               say(`"${j.name}" is gone, script and all.`, 'warn')
               pickedJob = null
-              changed('planned', null); changed('planned-detail', null)
+              changed('jobs', null); changed('jobs-detail', null)
               return draw()
             }
           })
@@ -1169,7 +1169,7 @@ function writeJob (j = null) {
       pickedJob = saved.id
       been.set('job', pickedJob)
       say(saved.created ? `"${saved.name}" written.` : `"${saved.name}" saved${saved.approved ? '' : ' — it needs approving again'}.`)
-      changed('planned', null); changed('planned-detail', null)
+      changed('jobs', null); changed('jobs-detail', null)
       return draw()
     }
   })
@@ -1212,6 +1212,6 @@ module.exports = async ({ okc, prompt, log }) => {
 }
 `
 
-$('defined-new').onclick = () => writeJob()
+$('job-new').onclick = () => writeJob()
 
 

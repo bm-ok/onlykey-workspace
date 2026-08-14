@@ -271,7 +271,7 @@
          managing ten of them is not one decision. -->
     <div class="subtabs">
       <button class="subtab active" data-pane="board">Board</button>
-      <button class="subtab" data-pane="planned">Pre-defined</button>
+      <button class="subtab" data-pane="jobs">Jobs</button>
       <button class="subtab" data-pane="prompts">Prompts</button>
     </div>
 
@@ -316,22 +316,22 @@
          that is what a definition is FOR -- "the guards" is a claim about a set,
          and reading them one at a time out of a dropdown is how a gap in the set
          goes unnoticed. -->
-    <div class="pane" id="pane-planned">
-      <p class="note" id="planned-note"></p>
+    <div class="pane" id="pane-jobs">
+      <p class="note" id="jobs-note"></p>
       <div class="cols">
         <div class="col narrow">
           <h2 class="titlerow">
-            Pre-defined <span class="muted" id="planned-context"></span>
-            <button class="plus" id="defined-new" title="Write a job that can be run again">+</button>
+            Jobs <span class="muted" id="jobs-context"></span>
+            <button class="plus" id="job-new" title="Write a job that can be run again">+</button>
           </h2>
-          <div id="planned-list" class="stack"></div>
+          <div id="jobs-list" class="stack"></div>
         </div>
         <!-- THE WHOLE DEFINITION, not a summary of it. The question these are
              read with is "what would this do to my repositories", and that is
              answerable only from what it actually says. A list of names is how
              ten of them sat unread. -->
         <div class="col wide">
-          <div id="planned-detail" class="panel"></div>
+          <div id="jobs-detail" class="panel"></div>
         </div>
       </div>
     </div>

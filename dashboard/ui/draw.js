@@ -418,7 +418,7 @@ async function pickFor (v, pick) {
   if (v === 'tasks') {
     // The sub-tab first: Tasks has two now, and a pane nobody can reach from out
     // here is a pane nobody has seen -- which is the whole reason this exists.
-    if (['board', 'planned', 'prompts'].includes(pick)) {
+    if (['board', 'jobs', 'prompts'].includes(pick)) {
       const t = document.querySelector(`#view-tasks .subtab[data-pane="${pick}"]`)
       if (t) t.click()
       return

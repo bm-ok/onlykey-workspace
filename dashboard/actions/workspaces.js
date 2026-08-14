@@ -75,9 +75,21 @@ module.exports = {
   workspaceData: {
     about: 'What is kept for this computer, what is kept per workspace, and what has been left behind',
     run: () => {
+      // A FOLDER COUNTS AS SOMETHING KEPT. Jobs are scripts, one file each, in a
+      // `jobs/` folder — so a report that listed only files would say a workspace
+      // holds a jobs.json and nothing else, while a dozen scripts sat beside it
+      // unmentioned. That is the exact shape of stray this action exists to find.
       const look = at => {
         try {
           return fs.readdirSync(at, { withFileTypes: true })
+            .flatMap(e => {
+              if (!e.isDirectory()) return [e]
+              try {
+                return fs.readdirSync(path.join(at, e.name), { withFileTypes: true })
+                  .filter(x => x.isFile())
+                  .map(x => ({ name: `${e.name}/${x.name}`, isFile: () => true }))
+              } catch { return [] }
+            })
             .filter(e => e.isFile())
             .map(e => {
               const full = path.join(at, e.name)
@@ -95,7 +107,7 @@ module.exports = {
       const SCOPED = [
         'tasks.json', 'tasks-highest.json', 'repos.json', 'branches.json',
         'baseline-groups.json', 'landings.json', 'remotes.json',
-        'pr-template.json', 'pr-drafts.json', 'judgements.json'
+        'pr-template.json', 'pr-drafts.json', 'judgements.json', 'jobs.json'
       ]
 
       const hostDir = data.state()
@@ -134,13 +146,34 @@ module.exports = {
 
       const unknown = kept.filter(k => !k.knows)
 
+      // AND A FILE IN THE RIGHT PLACE THAT NOTHING READS ANY MORE.
+      //
+      // The strays above are files in the wrong place. This is the other kind and
+      // it is the one that accumulates: a store gets replaced, its file stays
+      // where it always was, and it looks exactly like live data for ever. There
+      // is one right now -- `defined-tasks.json`, from a store that was rewritten
+      // as jobs -- and nothing in this app could have said so.
+      //
+      // Known by NAME rather than by asking each store, because a store that has
+      // been deleted cannot be asked, and those are precisely the ones that leave
+      // something behind.
+      const READ = new Set([...SCOPED, 'jobs/'])
+      const unread = kept.flatMap(k => k.files
+        .filter(f => !READ.has(f.name) && !READ.has(f.name.split('/')[0] + '/'))
+        .map(f => ({ ...f, slug: k.slug, where: path.join(k.dir, f.name) })))
+
       return {
         host: { dir: hostDir, files: host },
         workspaces: kept,
         strays,
         unknown,
-        note: strays.length || unknown.length
-          ? `${strays.length} file(s) at host level that belong to a workspace, and ${unknown.length} folder(s) for a workspace this app is not offering. Nothing is read from either. Neither is deleted here.`
+        unread,
+        note: strays.length || unknown.length || unread.length
+          ? [
+              strays.length ? `${strays.length} file(s) at host level that belong to a workspace` : null,
+              unknown.length ? `${unknown.length} folder(s) for a workspace this app is not offering` : null,
+              unread.length ? `${unread.length} file(s) nothing reads any more` : null
+            ].filter(Boolean).join(', ') + '. Nothing is read from any of them, and none of them is deleted here.'
           : 'Everything that belongs to a workspace is in its own folder, and nothing is left at host level that should not be.'
       }
     }
