@@ -930,8 +930,9 @@ async function paintAddTaskNow () {
   Promise.all([
     api('gitBranches'),
     api('prompts').catch(() => ({ prompts: [] })),
-    api('jobs').catch(() => ({ jobs: [] }))
-  ]).then(([{ branches: known, protected: guarded }, lib, work]) => {
+    api('jobs').catch(() => ({ jobs: [] })),
+    api('lines').catch(() => ({ groups: [] }))
+  ]).then(([{ branches: known, protected: guarded }, lib, work, lines]) => {
     if (view !== 'tasks' || taskPane !== 'add') return
     const taken = new Set((guarded || []).map(g => g.branch))
     contractsNow = lib.contracts || contractsNow
@@ -942,6 +943,24 @@ async function paintAddTaskNow () {
     const { rows, inputs } = buildFields([
       { name: 'title', label: 'Title', value: (from && from.title) || '', placeholder: 'Short enough to read in a list' },
       { name: 'branch', label: 'Branch it delivers on', placeholder: 'fix/the-thing' },
+      // WHICH LINE IT IS CUT FROM, which this form could not say at all.
+      //
+      // Tasks were built before lines were, so a task could only deliver on a
+      // branch that already existed — and naming one that did not was not
+      // refused here. It was refused eighty seconds later, by the queue, after
+      // rolling a machine back and booting it, with the whole cost paid before
+      // anybody found out. Naming the line means the branch can be cut at the
+      // moment the task is written, from the point somebody actually meant.
+      //
+      // Only offered for a branch that does not exist yet. Choosing a line for
+      // a branch that is already cut would be a decision with no effect, which
+      // is worse than no field at all.
+      {
+        name: 'group',
+        label: 'Cut it from which line (only if the branch is new)',
+        value: 'default',
+        options: (lines.groups || []).map(g => ({ value: g.name, label: g.name }))
+      },
       // THE BRIEF IS THE PROMPT. Writing a task is writing one, which is the
       // whole reason the library exists: pick a kept one and it is filled in
       // below, still as text somebody can change before it goes.
@@ -1001,13 +1020,26 @@ async function paintAddTaskNow () {
     // "refactor across every repository" under rules saying "touch nothing you
     // were not asked about" is a contradiction, and it is only ever visible
     // when the two are on one screen. In a modal there was nowhere to put them.
+    const nameOf = b => (typeof b === 'string' ? b : b && b.name) || ''
+    const exists = b => (known || []).some(x => nameOf(x) === b)
+
     const preview = () => {
       const rules = contractsNow.find(c => c.id === inputs.contractId.value) || null
       const job = (work.jobs || []).find(j => j.id === inputs.job.value) || null
+      const branch = inputs.branch.value.trim()
       fill($('add-preview'),
         el('div', { className: 'card-title' }, el('span', { className: 'grow', textContent: 'What this task will carry' })),
 
         el('div', { className: 'carries', style: 'margin-top:10px' },
+          // WHETHER THE BRANCH IS THERE, said while it can still be changed. The
+          // one fact this form knew and never mentioned.
+          el('div', { className: 'group-part' },
+            el('span', { textContent: 'delivers on' }),
+            el('span', {}, !branch
+              ? el('span', { className: 'muted', textContent: 'name a branch' })
+              : exists(branch)
+                ? el('span', { textContent: `${branch} — it already exists` })
+                : el('span', { className: 'ok', textContent: `${branch} — new, cut from the "${inputs.group.value}" line when you write this` }))),
           el('div', { className: 'group-part' },
             el('span', { textContent: 'done by' }),
             el('span', {}, job
@@ -1026,6 +1058,10 @@ async function paintAddTaskNow () {
     preview()
     inputs.contractId.onchange = preview
     inputs.job.onchange = preview
+    inputs.group.onchange = preview
+    // As it is typed, so "this branch does not exist" arrives while somebody is
+    // still looking at the field rather than after they have moved on.
+    inputs.branch.oninput = preview
 
     // FILLED IN, NOT LOCKED TO. Choosing a prompt copies its words into the
     // brief and leaves them editable: a task carries what the worker was
@@ -1098,6 +1134,28 @@ async function paintAddTaskNow () {
         const values = {}
         for (const k in inputs) values[k] = inputs[k].value.trim()
         if (taken.has(values.branch)) throw new Error(`"${values.branch}" is protected here. Work is merged into it, never done on it.`)
+
+        // CUT FIRST, IF IT IS NOT THERE. The refusal that used to arrive from
+        // the queue, eighty seconds and one machine boot later, answered here
+        // instead — and answered by doing the thing rather than by explaining
+        // the command that would have.
+        //
+        // The title is the reason, because branchCreate insists on one and the
+        // title is the only sentence about this branch that exists yet. A reason
+        // somebody typed twice is a reason that disagrees with itself.
+        if (values.branch && !exists(values.branch)) {
+          await api('branchCreate', {
+            branch: values.branch,
+            reason: values.title || 'written from the task board',
+            group: values.group || undefined
+          })
+          say(`Cut "${values.branch}" from the "${values.group}" line.`)
+        }
+        // The line is how the branch was made, not a field of the task. Passing
+        // it on would put a value in the record that nothing reads and that goes
+        // stale the moment the line moves.
+        delete values.group
+
         const made = await api('taskCreate', { task: values })
         pickedTask = made.id
         been.set('task', pickedTask)
