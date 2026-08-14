@@ -618,12 +618,67 @@ function paintArtifact (task) {
     return
   }
 
-  api('taskArtifact', { id: task.id }).then(art => {
-    if (!changed('artifact', [task.id, art])) return
+  // BOTH KINDS OF ARTIFACT, because a task can deliver either.
+  //
+  // This panel read the branch and nothing else, so a run that handed a file
+  // back showed "nothing has arrived on this branch yet" while the file sat on
+  // this host — true about the branch, and the opposite of the truth about the
+  // task. The first job to hand something over said exactly that, and the only
+  // way to find what it produced was a path in a note.
+  Promise.all([
+    api('taskArtifact', { id: task.id }),
+    api('taskFiles', { id: task.id }).catch(() => ({ files: [] }))
+  ]).then(([art, handed]) => {
+    if (!changed('artifact', [task.id, art, handed])) return
 
     const carrying = art.repos.filter(r => !r.missing && !r.empty)
     fill($('artifact'),
       el('p', { className: art.delivered ? 'note' : 'empty', textContent: art.summary }),
+
+      // Above the repositories, because it is the part that is easy to miss:
+      // the branch cards are always there and say something either way, and a
+      // file is the thing that would otherwise go unnoticed entirely.
+      ...(handed.files || []).map(f => el('div', { className: 'card' },
+        el('div', { className: 'card-title' },
+          el('span', { className: 'grow mono', textContent: f.name || f.file }),
+          el('span', { className: 'badge ok', textContent: f.bytes >= 1048576 ? `${(f.bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(f.bytes / 1024))} KB` })),
+        el('div', { className: 'card-sub muted', textContent: `handed over ${ago(f.kept)}${f.run ? ` by ${f.run}` : ''}` }),
+        el('div', { className: 'card-sub muted mono', style: 'user-select:text', textContent: f.path }),
+        el('div', { className: 'row', style: 'margin-top:8px' },
+          el('button', {
+            className: 'btn small ok',
+            textContent: 'Read it',
+            title: 'Show it here, if it is text',
+            onclick: () => readHandedFile(task, f)
+          }),
+          el('button', {
+            className: 'btn small',
+            textContent: 'Show in folder',
+            title: 'Open the folder it is in, with it selected',
+            onclick: () => {
+              if (!host.showInFolder(f.path)) say('This window cannot open a file manager here.', 'bad')
+            }
+          }),
+          el('button', {
+            className: 'btn small danger',
+            textContent: 'Throw it away',
+            onclick: () => ask({
+              title: `Throw away "${f.name || f.file}"?`,
+              plain: [
+                'Only the file. The task, its branch and its log are untouched.',
+                'The machine that made it was rolled back, so this is the only copy.'
+              ],
+              cost: 'It cannot be produced again without running the task again.',
+              confirm: 'Throw it away',
+              danger: true,
+              onYes: async () => {
+                await api('taskFileForget', { id: task.id, file: f.file })
+                say(`"${f.name || f.file}" is gone.`, 'warn')
+                forget('artifact')
+                return draw()
+              }
+            })
+          })))),
 
       // Reported per repository, including the ones with nothing, because "the
       // branch is not there" and "the branch is there and empty" mean different
@@ -649,6 +704,27 @@ function paintArtifact (task) {
           }))))
     )
   }).catch(() => { /* a branch that does not exist yet is not an error */ })
+}
+
+// A handed-back file, read where it arrived.
+//
+// The mode is guessed from the name only for colouring; the refusal to render
+// something that is not text happens on the other side, by looking at the bytes.
+function readHandedFile (task, f) {
+  const name = String(f.name || f.file)
+  const ext = (name.split('.').pop() || '').toLowerCase()
+  const mode = ext === 'md' ? 'markdown' : ext === 'js' || ext === 'json' ? 'javascript' : ext === 'diff' || ext === 'patch' ? 'diff' : 'text'
+
+  api('taskFileRead', { id: task.id, file: f.file }).then(({ text }) => {
+    ask({
+      title: name,
+      plain: [`Handed over by ${f.run || 'a run'} for #${task.number}, and kept on this host.`],
+      confirm: 'Done',
+      onYes: async () => {}
+    })
+    const body = document.querySelector('.dlg-body')
+    if (body) body.append(codeBlock(text, mode, { max: DIFF_LID }))
+  }).catch(oops)
 }
 
 function showDiff (task, repo) {

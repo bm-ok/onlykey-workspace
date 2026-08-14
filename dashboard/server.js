@@ -392,7 +392,12 @@ function handler (req, res) {
         // own id where it is a job. Both are unique and neither is reused, which
         // is the only property this needs of them.
         const kept = task
-          ? files.keep(task.uid, called, Buffer.concat(chunks), { run: task.run || null })
+          ? files.keep(task.uid, called, Buffer.concat(chunks), {
+            run: task.run || null,
+            // Written into the record beside the file so the folder says which
+            // task it belonged to. The uid is still what it is keyed on.
+            taskId: task.id, number: task.number, title: task.title
+          })
           : files.keep(job, called, Buffer.concat(chunks), { run: job })
         log.on('vm', name, 'guest').good(`handed over "${called}" (${Math.round(kept.bytes / 1024)} KB) for ${task ? `#${task.number}` : job}`)
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end('kept\n')

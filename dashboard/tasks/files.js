@@ -68,7 +68,7 @@ function whyNot (name) {
 // runs of one task both produce `firmware.bin`, and quietly overwriting means
 // the artifact on disk belongs to whichever run finished last with no way to
 // tell. Each gets the run it came from in its name.
-function keep (uid, name, bytes, { run = null } = {}) {
+function keep (uid, name, bytes, { run = null, taskId = null, number = null, title = null } = {}) {
   const why = whyNot(name)
   if (why) throw new Error(why)
   if (!bytes || !bytes.length) throw new Error('there was nothing in it')
@@ -92,7 +92,13 @@ function keep (uid, name, bytes, { run = null } = {}) {
 
   fs.writeFileSync(file, bytes)
   fs.writeFileSync(`${file}.about.json`, JSON.stringify({
-    task: uid, run: run || null, name, bytes: bytes.length, kept: new Date().toISOString()
+    // SELF-DESCRIBING, because a folder named by a uid tells nobody anything.
+    // The uid stays the key -- see the note at the top of this file about why
+    // `id` and `number` are the wrong things to key on -- but a person opening
+    // this directory in a file manager should not have to come back here and
+    // cross-reference to find out which task it belonged to.
+    task: uid, taskId: taskId || null, number: number || null, title: title || null,
+    run: run || null, name, bytes: bytes.length, kept: new Date().toISOString()
   }, null, 2))
   return { file, name, bytes: bytes.length, run: run || null }
 }
@@ -115,6 +121,44 @@ function list (uid) {
   }).sort((a, b) => String(b.kept || '').localeCompare(String(a.kept || '')))
 }
 
+// One of them, as text, for reading in the window.
+//
+// REFUSED RATHER THAN MANGLED when it is not text. Most of what lands here is a
+// build product -- a binary, an archive -- and rendering one as UTF-8 produces a
+// screenful of replacement characters that looks like a corrupted file rather
+// than like the wrong question. Decided by looking at the bytes rather than at
+// the extension, because the guest chose the name and the bytes are the thing.
+const READABLE = 2 * 1024 * 1024
+
+function read (uid, file) {
+  const found = list(uid).find(f => f.file === file)
+  if (!found) throw new Error(`There is no file called "${file}" for that task.`)
+  if (found.bytes > READABLE) {
+    throw new Error(`That is ${Math.round(found.bytes / 1048576)} MB. Open it from the folder rather than in a panel.`)
+  }
+  const bytes = fs.readFileSync(found.path)
+  // A NUL byte in the first few kilobytes is the oldest and still the best test
+  // for "this is not text", and it is what `git diff` uses to decide the same
+  // thing about a blob.
+  if (bytes.subarray(0, 8000).includes(0)) {
+    throw new Error(`"${file}" is not text — it has bytes no editor would show. Open it from the folder.`)
+  }
+  return { ...found, text: bytes.toString('utf8') }
+}
+
+// Thrown away, one file at a time.
+//
+// The `.about.json` goes with it: a record of a delivery whose delivery is gone
+// is a row that reads as an artifact and is not one, and this list is read to
+// find out what a task produced.
+function forget (uid, file) {
+  const found = list(uid).find(f => f.file === file)
+  if (!found) throw new Error(`There is no file called "${file}" for that task.`)
+  fs.unlinkSync(found.path)
+  try { fs.unlinkSync(`${found.path}.about.json`) } catch { /* it may never have been written */ }
+  return { forgotten: found.file, name: found.name || found.file, bytes: found.bytes }
+}
+
 // Every task that delivered anything, including ones the board has forgotten.
 function everything () {
   let uids = []
@@ -131,4 +175,4 @@ function everything () {
   }).sort((a, b) => String(b.last || '').localeCompare(String(a.last || '')))
 }
 
-module.exports = { keep, list, everything, whyNot, dirFor, ROOT, MOST }
+module.exports = { keep, list, read, forget, everything, whyNot, dirFor, ROOT, MOST }

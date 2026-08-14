@@ -536,6 +536,34 @@ module.exports = {
     }
   },
 
+  // One of them, as text, so it can be read where it arrived.
+  //
+  // A file handed back used to be a path in a note: to see what a run produced
+  // you left the window, found a folder named after a uid, and opened it in
+  // something else. The whole point of handing it over was that it survived the
+  // machine; reading it should not need a second program.
+  taskFileRead: {
+    about: 'Read a file a task handed over, as text',
+    needs: 'workspace',
+    takes: ['id', 'file'],
+    run: ({ id, file }) => {
+      const task = tasks.get(id)
+      return { ...files.read(task.uid, String(file || '')), task: task.id, number: task.number }
+    }
+  },
+
+  taskFileForget: {
+    about: 'Throw away one file a task handed over. The task and its branch are untouched',
+    needs: 'workspace',
+    takes: ['id', 'file'],
+    run: ({ id, file }) => {
+      const task = tasks.get(id)
+      const gone = files.forget(task.uid, String(file || ''))
+      log.on('task', task.id).warn(`threw away "${gone.name}" from #${task.number}`)
+      return { ...gone, note: 'Only the file. The task, its branch and its log are untouched.' }
+    }
+  },
+
   // What came back, read the way a pull request is read.
   taskArtifact: {
     about: "What arrived on a task's branch: commits and files, per repository",

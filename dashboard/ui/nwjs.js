@@ -66,6 +66,26 @@ const host = {
     require('node:fs').writeFileSync(file, bytes)
   },
 
+  // A FILE, WHERE IT ACTUALLY IS. For anything handed back that this window
+  // should not try to render: a binary, an archive, something the operator wants
+  // to do the next thing with in a program that is not this one.
+  //
+  // Two doors, because they are different intentions. `showInFolder` opens the
+  // file manager with it selected, which is what somebody wants when the next
+  // step is copying or dragging it. `openItem` hands it to whatever the desktop
+  // says opens that kind of file.
+  //
+  // Reported rather than swallowed: a button that quietly does nothing is the
+  // failure this window is written against, and on a desktop with no file
+  // manager registered these do quietly do nothing.
+  showInFolder (file) {
+    try { nw.Shell.showItemInFolder(file); return true } catch { return false }
+  },
+
+  openItem (file) {
+    try { nw.Shell.openItem(file); return true } catch { return false }
+  },
+
   // A FOLDER, CHOSEN THE WAY EVERY OTHER PROGRAM ON THIS COMPUTER CHOOSES ONE.
   //
   // Adding a workspace meant typing an absolute path into a text box, which is

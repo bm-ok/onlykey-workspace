@@ -49,6 +49,11 @@ const host = {
     throw new Error('A browser cannot write to this computer. Download it instead, or run the desktop window.')
   },
 
+  // The file is on the dashboard's computer, which is not necessarily this one.
+  // Both of these would be a lie in a browser even if it were allowed to try.
+  showInFolder () { return false },
+  openItem () { return false },
+
   // A browser will happily show a folder chooser and then hand back the names of
   // the files inside it, relative, with the real location removed on purpose.
   // That is not a path and cannot be turned into one, so a workspace cannot be
