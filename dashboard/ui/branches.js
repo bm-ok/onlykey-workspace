@@ -808,7 +808,7 @@ function paintBranchArtifacts (b) {
                 })),
               codeBlock(
                 r.commits.map(c => `${c.sha}  ${new Date(c.at).toLocaleString()}  ${c.who}\n    ${c.subject}`).join('\n') || 'nothing',
-                'markdown', { lines: Math.min(8, Math.max(2, r.commits.length * 2)) })))
+                'markdown')))
           : el('p', { className: 'empty', textContent: 'Nothing beyond the default branch.' })),
 
       // FILES. What a branch could not hold, handed over by a run before its
@@ -849,7 +849,7 @@ function showDiffOf (branch, repo) {
       onYes: async () => {}
     })
     const body = document.querySelector('.dlg-body')
-    if (body) body.append(codeBlock(diff || 'no changes', 'diff', { lines: 22 }))
+    if (body) body.append(codeBlock(diff || 'no changes', 'diff', { max: DIFF_LID }))
   }).catch(oops)
 }
 

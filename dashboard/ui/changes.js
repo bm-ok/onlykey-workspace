@@ -280,7 +280,7 @@ function paintChangesDiff (cmp) {
   waiting('change-diff', { lines: 10 })
   api('changeDiff', { source: cmp.source, target: cmp.target, repo: changePicked.repo, file: changePicked.file })
     .then(({ diff }) => {
-      if (changeMode === 'unified') return fill($('change-diff'), codeBlock(diff || 'no changes', 'diff', { lines: 30 }))
+      if (changeMode === 'unified') return fill($('change-diff'), codeBlock(diff || 'no changes', 'diff', { max: DIFF_LID }))
       fill($('change-diff'), sideBySide(diff))
     })
     .catch(oops)
@@ -293,7 +293,10 @@ function sideBySide (diff) {
 
   const left = rows.map(r => r.left == null ? '' : r.left).join('\n')
   const right = rows.map(r => r.right == null ? '' : r.right).join('\n')
-  const lines = Math.min(34, Math.max(8, rows.length + 1))
+  // A LID, ON BOTH SIDES. Everything else here grew to full length; a
+  // side-by-side does not, because it lays out two editors rather than one and
+  // there is no ceiling on how many rows a machine-written change has.
+  const max = Math.min(DIFF_LID, Math.max(8, rows.length + 1))
 
   // Scrolled together. Two columns that scroll independently are two views of
   // two files, which is what this exists to stop being.
@@ -355,7 +358,7 @@ function sideBySide (diff) {
       el('div', { className: 'change-side-head' },
         el('span', { className: wasEmpty ? 'gone' : '', textContent: wasEmpty ? 'before — the file did not exist' : 'before' })),
       editorBlock(left, 'text', {
-        lines,
+        max,
         gutter: gutterFor('left'),
         onReady: ed => { a = ed; marks(ed, 'left'); tie() }
       })),
@@ -363,7 +366,7 @@ function sideBySide (diff) {
       el('div', { className: 'change-side-head' },
         el('span', { className: nowEmpty ? 'gone' : 'new', textContent: nowEmpty ? 'after — the file is gone' : 'after' })),
       editorBlock(right, 'text', {
-        lines,
+        max,
         gutter: gutterFor('right'),
         onReady: ed => { b = ed; marks(ed, 'right'); tie() }
       })))

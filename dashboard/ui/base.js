@@ -117,12 +117,38 @@ let queueBusy = new Map()
 // the syntax worker is not loaded. Nothing here is a place to write code.
 ace.config.set('basePath', '../vendors/ace/')
 
-function codeBlock (text, mode = 'javascript', { lines = 18 } = {}) {
+// AS TALL AS WHAT IS IN IT, and ace is the one that knows.
+//
+// The height used to be arithmetic here — line count times an em-and-a-half,
+// clamped to a fixed number of rows. Both halves of that were wrong. Too short,
+// because everything worth reading whole (a job's script, the words a worker is
+// handed) hit the clamp and got a scrollbar inside a page that already scrolls,
+// which is how a hundred lines of JavaScript gets scrolled past and approved
+// anyway. And too tall, because `wrap: true` turns one long line into three
+// screen rows and counting `\n` cannot know that — so a short prompt written as
+// paragraphs came out with empty space below it AND a scrollbar.
+//
+// `minLines`/`maxLines` are ace measuring its own laid-out rows, after wrapping,
+// and resizing the container to them. It grows and shrinks on its own.
+//
+// A LID EXISTS BECAUSE ONE THING HERE HAS NO UPPER BOUND. With maxLines, ace
+// lays out every row instead of only the visible ones, which is fine for a
+// script somebody wrote and is not fine for a ten-thousand-line diff. So a diff
+// asks for a lid and everything read whole does not.
+const HUGE = 100000
+// The lid a diff asks for. Generous enough that an ordinary change is read whole
+// and nothing here has to guess, low enough that a machine-generated diff cannot
+// lay out fifty thousand rows and take the window with it.
+const DIFF_LID = 500
+
+function codeBlock (text, mode = 'javascript', { min = 3, max = Infinity } = {}) {
   const host = el('div', { className: 'code' })
-  // Sized before ace sees it. Ace measures its container to lay out, so a
-  // container with no height renders an editor with no rows in it — which looks
-  // exactly like an empty file.
-  host.style.height = `${Math.min(lines, Math.max(6, String(text || '').split('\n').length + 1)) * 1.5}em`
+  // A height before ace sees it, still. Ace measures its container to lay out,
+  // so a container with no height renders an editor with no rows in it — which
+  // looks exactly like an empty file. This is only the first frame; ace replaces
+  // it with the real one.
+  const rough = Math.max(min, Math.min(max === Infinity ? 40 : max, String(text || '').split('\n').length + 1))
+  host.style.height = `${rough * 1.5}em`
 
   // After it is in the document, for the same reason.
   queueMicrotask(() => {
@@ -141,9 +167,15 @@ function codeBlock (text, mode = 'javascript', { lines = 18 } = {}) {
       // Wrapped, because the alternative is a horizontal scrollbar on the thing
       // somebody is meant to read every line of.
       wrap: true,
-      showFoldWidgets: false
+      showFoldWidgets: false,
+      minLines: min,
+      // Infinity is not a number ace will take; it wants a count.
+      maxLines: max === Infinity ? HUGE : max
     })
     ed.renderer.$cursorLayer.element.style.display = 'none'
+    // The inline height was a guess for one frame. Ace owns it now, and leaving
+    // the guess behind would fight it.
+    host.style.height = ''
   })
   return host
 }
@@ -156,9 +188,10 @@ function codeBlock (text, mode = 'javascript', { lines = 18 } = {}) {
 // the rows that are additions have to be marked. So this is the same
 // construction with a way out, and `codeBlock` stays as it was for everything
 // that only wants to show text.
-function editorBlock (text, mode, { lines = 18, gutter = null, onReady = null, edit = false } = {}) {
+function editorBlock (text, mode, { min = 3, max = Infinity, gutter = null, onReady = null, edit = false } = {}) {
   const host = el('div', { className: 'code' })
-  host.style.height = `${Math.min(lines, Math.max(6, String(text || '').split('\n').length + 1)) * 1.5}em`
+  const rough = Math.max(min, Math.min(max === Infinity ? 40 : max, String(text || '').split('\n').length + 1))
+  host.style.height = `${rough * 1.5}em`
 
   queueMicrotask(() => {
     if (!host.isConnected) return
@@ -182,9 +215,12 @@ function editorBlock (text, mode, { lines = 18, gutter = null, onReady = null, e
       // opposite number, and then the two columns say different things at the
       // same height — which is the one thing this view exists to avoid.
       wrap: false,
-      showFoldWidgets: false
+      showFoldWidgets: false,
+      minLines: min,
+      maxLines: max === Infinity ? HUGE : max
     })
     if (!edit) ed.renderer.$cursorLayer.element.style.display = 'none'
+    host.style.height = ''
 
     // The line numbers of the ORIGINAL file, not of this pane. A side-by-side is
     // built by padding both sides until they line up, so a pane's own row

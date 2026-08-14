@@ -353,7 +353,7 @@ async function paintTemplatesNow () {
                 el('div', { className: 'card-sub muted', textContent: v.guessing
                   ? 'Nothing is cut yet, so the links below show ? until it is.'
                   : 'The links below are the real pull request numbers.' })),
-              codeBlock(text, 'markdown', { lines: 26 })))
+              codeBlock(text, 'markdown')))
         }
 
         // Repainted on input rather than on the draw, because the draw is three

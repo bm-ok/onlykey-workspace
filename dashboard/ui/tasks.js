@@ -536,7 +536,7 @@ function showLog (task, run) {
       onYes: async () => {}
     })
     const body = document.querySelector('.dlg-body')
-    if (body) body.append(codeBlock(l.text || '(nothing)', 'markdown', { lines: 22 }))
+    if (body) body.append(codeBlock(l.text || '(nothing)', 'markdown'))
   }).catch(oops)
 }
 
@@ -593,7 +593,7 @@ function showDiff (task, repo) {
     // is neither a bullet nor an input: it is long, it is read rather than
     // answered, and it needs to scroll and be selectable.
     const body = document.querySelector('.dlg-body')
-    if (body) body.append(codeBlock(diff || 'no changes', 'diff', { lines: 22 }))
+    if (body) body.append(codeBlock(diff || 'no changes', 'diff', { max: DIFF_LID }))
   }).catch(oops)
 }
 
@@ -811,7 +811,10 @@ async function paintPromptsNow () {
       pickedPrompt = prompts.length ? prompts[0].id : null
       been.set('prompt', pickedPrompt)
     }
-    setText($('prompts-context'), prompts.length ? `— ${prompts.length} kept` : '— none yet')
+    const waitingOn = prompts.filter(x => !x.approved || x.lapsed).length
+    setText($('prompts-context'), prompts.length
+      ? `— ${prompts.length} kept${waitingOn ? `, ${waitingOn} waiting to be approved` : ''}`
+      : '— none yet')
     setText($('prompts-note'), note)
 
     if (changed('prompts', [prompts, pickedPrompt])) {
@@ -825,7 +828,9 @@ async function paintPromptsNow () {
               paintPrompts()
             }
           },
-          el('div', { className: 'card-title' }, el('span', { className: 'grow', textContent: x.name })),
+          el('div', { className: 'card-title' },
+            el('span', { className: 'grow', textContent: x.name }),
+            el('span', promptBadge(x))),
           x.about ? el('div', { className: 'card-sub muted', textContent: x.about }) : null,
           el('div', { className: 'card-sub muted', textContent: x.edited ? `edited ${ago(x.edited)}` : `written ${ago(x.written)}` })))
         : el('p', { className: 'empty', textContent: 'Nothing kept yet. Write one the moment you would type the same brief a second time.' }))
@@ -836,20 +841,73 @@ async function paintPromptsNow () {
   }).catch(oops)
 }
 
+// The same ladder as a job's, for the half that is words rather than code.
+const promptBadge = x => x.lapsed
+  ? { className: 'badge bad', textContent: 'edited' }
+  : x.approved
+    ? { className: 'badge ok', textContent: 'approved' }
+    : { className: 'badge warn', textContent: 'not approved' }
+
 function paintPrompt (x) {
   if (!x) return fill($('prompt-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one.' }))
 
   fill($('prompt-detail'),
     el('div', { className: 'card-title' },
       el('span', { className: 'grow', textContent: x.name }),
+      el('span', promptBadge(x)),
       el('span', { className: 'badge muted', textContent: x.id })),
     el('div', { className: 'card-sub muted', textContent: [
       x.edited ? `edited ${ago(x.edited)}` : `written ${ago(x.written)}`,
+      x.approved ? `approved ${ago(x.approvedAt)} by ${x.approvedBy}` : 'never approved',
       `hash ${x.hash}`
     ].join(' · ') }),
     x.about ? el('p', { className: 'note', textContent: x.about }) : null,
+    x.lapsed
+      ? el('p', { className: 'note bad', textContent: 'It was edited after it was approved, so it is waiting to be read again — what was approved is not what would be sent.' })
+      : null,
 
     el('div', { className: 'row', style: 'margin-top:8px' },
+      // APPROVING IT IS DONE HERE OR NOWHERE. The action refuses over the wire
+      // on purpose — a model may write a prompt and may not approve its own —
+      // and for a while there was no button either, so a prompt written by a
+      // model could never become approved at all and the job that needed it sat
+      // there saying why for ever. A refusal with no way through is not a
+      // boundary, it is a dead end.
+      x.approved && !x.lapsed
+        ? el('button', {
+            className: 'btn small',
+            textContent: 'Withdraw approval',
+            title: 'Nothing is deleted — jobs that use it stop being runnable',
+            onclick: async () => {
+              try {
+                await api('promptWithdraw', { id: x.id })
+                say(`"${x.name}" will not be sent until it is approved again.`, 'warn')
+                forget('prompts'); forget('prompt-detail')
+                return draw()
+              } catch (e) { oops(e) }
+            }
+          })
+        : el('button', {
+            className: 'btn small ok',
+            textContent: x.lapsed ? 'Approve it again' : 'Approve it',
+            title: 'Say it is fit to be sent to a worker, having read it',
+            onclick: () => ask({
+              title: `Approve "${x.name}"?`,
+              plain: [
+                'This is the text a worker is actually handed. Read it as instructions to somebody who cannot ask you a question.',
+                'Approval is against the words as they are now — any edit takes it back automatically.'
+              ],
+              fields: [{ name: 'note', label: 'A note, for whoever reads this later (optional)', value: '' }],
+              confirm: 'I have read it',
+              onYes: async ({ note }) => {
+                await api('promptApprove', { id: x.id, note })
+                say(`"${x.name}" approved.`)
+                forget('prompts'); forget('prompt-detail')
+                forget('jobs'); forget('jobs-detail')
+                return draw()
+              }
+            })
+          }),
       // THE ACT THIS LIBRARY EXISTS FOR. Everything else here is upkeep.
       el('button', {
         className: 'btn small ok',
@@ -880,7 +938,7 @@ function paintPrompt (x) {
         })
       })),
 
-    el('div', { style: 'margin-top:10px' }, codeBlock(x.text, 'text', { lines: 16 })))
+    el('div', { style: 'margin-top:10px' }, codeBlock(x.text, 'text')))
 }
 
 // Written or rewritten, in the one dialog everything asks through.
@@ -930,6 +988,30 @@ let pickedJob = been.get('job', null)
 let jobTag = been.get('job-tag', null)
 let jobsNow = []
 let promptsNow = []
+
+// WHY IT CANNOT RUN, IN THE BADGE, AND NEVER A REASON THAT IS FALSE.
+//
+// This used to be `j.runnable ? 'ready' : j.lapsed ? 'edited' : 'not approved'`,
+// which quietly made "not approved" the word for every other reason there is. So
+// approving a job whose prompt was still waiting put "not approved" on the card
+// and "approved 1 second ago by the window" in the panel beside it — the same
+// job, at the same moment, on one screen. The card was the one that was wrong,
+// and it is the half somebody reads first.
+//
+// The server already works the reason out as one sentence, in `whyNot`, and both
+// halves now come from the same ladder. The badge is the short form; the sentence
+// is the title, so hovering gives the whole of it.
+const jobBadge = j => j.runnable
+  ? { className: 'badge ok', textContent: 'ready' }
+  : !j.there
+      ? { className: 'badge bad', textContent: 'no script' }
+      : j.lapsed
+        ? { className: 'badge bad', textContent: 'edited' }
+        : !j.approved
+          ? { className: 'badge warn', textContent: 'not approved' }
+          : j.missingPrompt
+            ? { className: 'badge bad', textContent: 'prompt gone' }
+            : { className: 'badge warn', textContent: 'prompt waiting' }
 
 function paintJobs () {
   if (view !== 'tasks' || taskPane !== 'jobs') return
@@ -988,10 +1070,7 @@ async function paintJobsNow () {
             },
             el('div', { className: 'card-title' },
               el('span', { className: 'grow', textContent: j.name }),
-              el('span', {
-                className: `badge ${j.runnable ? 'ok' : j.lapsed ? 'bad' : 'warn'}`,
-                textContent: j.runnable ? 'ready' : j.lapsed ? 'edited' : 'not approved'
-              })),
+              el('span', Object.assign(jobBadge(j), { title: j.whyNot || 'both halves are approved' }))),
             j.about ? el('div', { className: 'card-sub muted', textContent: j.about }) : null,
             el('div', { className: 'card-sub muted', textContent: `${j.lines} line${j.lines === 1 ? '' : 's'}${(j.tags || []).length ? ` · ${j.tags.join(', ')}` : ''}` })))
           : el('p', { className: 'empty', textContent: jobTag
@@ -1100,7 +1179,7 @@ function paintJob (j) {
           })
         })),
 
-      el('div', { style: 'margin-top:10px' }, codeBlock(full.code || '', 'javascript', { lines: 20 })))
+      el('div', { style: 'margin-top:10px' }, codeBlock(full.code || '', 'javascript')))
   }).catch(oops)
 }
 
@@ -1179,7 +1258,7 @@ function writeJob (j = null) {
   const body = document.querySelector('.dlg-body')
   if (body) {
     body.append(el('label', { textContent: 'The script' }))
-    body.append(editorBlock(j ? j.code : JOB_STARTER, 'javascript', { lines: 16, edit: true, onReady: ed => { editor = ed } }))
+    body.append(editorBlock(j ? j.code : JOB_STARTER, 'javascript', { edit: true, onReady: ed => { editor = ed } }))
   }
 }
 
