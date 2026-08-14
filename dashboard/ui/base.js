@@ -15,12 +15,17 @@
 //
 // require() in a page resolves against the app root, where package.json and
 // server.js are.
-const app = require('./server')
-const liveLog = require('./core/log')
+// Whatever this window is running inside. One of ui/nwjs.js or ui/browser.js
+// has already declared it; everything below asks it for what a page cannot do on
+// its own, and never asks which one it got.
+const app = host.app
+const liveLog = app
+  ? require('./core/log')
+  : { on: () => ({ info () {}, warn () {}, bad () {}, good () {}, out () {} }) }
 
 // Through `call` rather than the table directly, so the window is refused the
 // same things the command line is refused. See server.js.
-const api = async (name, args = {}) => app.call(name, args)
+const api = async (name, args = {}) => host.call(name, args)
 
 const keep = kids => kids.flat(9).filter(k => k !== null && k !== undefined && k !== false && k !== '')
 

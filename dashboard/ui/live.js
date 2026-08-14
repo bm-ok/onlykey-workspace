@@ -103,7 +103,11 @@ function onLine (e) {
 
 // Says so in the same log as everything else, which also proves the window and the
 // server are sharing one node context rather than each holding its own copy.
-liveLog.on('window').good('window opened')
+// WHICH HOST IT GOT, said once at startup. Everything a page cannot do on its
+// own goes through one object with two implementations, chosen at load; when
+// something that needs the desktop quietly refuses, this line is the first thing
+// worth knowing. See ui/load.js.
+liveLog.on('window').good(`window opened — ${host.name}`)
 
 // Everything already logged, then everything from here on.
 lines.push(...liveLog.all())

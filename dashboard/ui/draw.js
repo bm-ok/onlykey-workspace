@@ -451,15 +451,15 @@ function takeShot (file) {
     try {
       // Raw base64 rather than a data URI: it is written to a file, and the
       // `data:image/png;base64,` prefix would have to be sliced off again.
-      nw.Window.get().capturePage(b64 => {
+      host.capturePage().then(b64 => {
         try {
           const bytes = Buffer.from(b64, 'base64')
-          require('node:fs').writeFileSync(file, bytes)
+          host.writeFile(file, bytes)
           api('windowShotDone', { file, bytes: bytes.length })
         } catch (e) {
           api('windowShotDone', { file, error: e.message })
         } finally { shotInFlight = false; done() }
-      }, { format: 'png', datatype: 'raw' })
+      })
     } catch (e) {
       shotInFlight = false
       api('windowShotDone', { file, error: e.message })
@@ -503,11 +503,7 @@ async function capture () {
   //
   // Taken first and awaited, so both files describe the same moment rather than
   // one being a second later than the other.
-  const png = await new Promise(resolve => {
-    try {
-      nw.Window.get().capturePage(b64 => resolve(b64), { format: 'png', datatype: 'raw' })
-    } catch { resolve(null) }
-  })
+  const png = await host.capturePage()
 
   try {
     const { file, bytes, image } = await api('capture', { html, png })

@@ -129,16 +129,10 @@ const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).clic
 // only way to finish what was started on the machine.
 function externalLink (url) {
   const open = () => {
-    // The current API first; `nw.gui` is the old name and is only reached if the
-    // global is missing, which would mean this is not the app page it thinks it
-    // is. Either way a failure says so rather than doing nothing, because a
-    // button that quietly does not work is the failure this whole window is
-    // written against.
-    try {
-      nw.Shell.openExternal(url)
-    } catch {
-      try { require('nw.gui').Shell.openExternal(url) } catch { say('Could not open a browser — copy the address below instead.', 'bad') }
-    }
+    // A failure says so rather than doing nothing, because a button that quietly
+    // does not work is the failure this whole window is written against. Which
+    // APIs are tried, and in what order, is the host's business -- see ui/nwjs.js.
+    if (!host.openExternal(url)) say('Could not open a browser — copy the address below instead.', 'bad')
   }
   return el('div', { style: 'margin: 4px 0 12px' },
     el('button', { className: 'btn ok', textContent: 'Open the sign-in page', onclick: open }),

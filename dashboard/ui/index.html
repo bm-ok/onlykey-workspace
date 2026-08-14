@@ -609,7 +609,17 @@
         <div class="panel">
           <div class="carries-head"><span>Add a folder</span></div>
           <p class="note">A folder whose subdirectories are git repositories. Nothing is written into it — what this app learns about a workspace is kept beside its own state, out of reach of a <code>git clean</code>.</p>
-          <input id="ws-add" class="finder" placeholder="C:\path\to\a\folder\of\repositories">
+          <!-- CHOSEN, OR TYPED. An absolute path is the one input in this window
+               that cannot be checked as it is typed and is the easiest to get
+               subtly wrong. The desktop already has a folder chooser; the box
+               stays because a path can also be pasted, and because it is what
+               shows you what was picked. -->
+          <div class="row" style="margin-top:2px">
+            <!-- width:auto because .finder is 100% wide, which in a flex row
+                 takes the whole line and puts the button under it. -->
+            <input id="ws-add" class="finder" style="margin:0;width:auto;flex:1 1 4rem;min-width:0" placeholder="path to a folder of repositories">
+            <button class="btn" id="ws-add-pick" title="Choose a folder on this computer">Choose</button>
+          </div>
           <div class="row" style="margin-top:8px">
             <button class="btn ok" id="ws-add-go">Remember it</button>
             <button class="btn" id="ws-add-use">Remember and open it</button>

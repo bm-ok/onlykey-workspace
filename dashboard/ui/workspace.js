@@ -200,6 +200,25 @@ function addWorkspace (andUse) {
     .catch(oops)
 }
 
+// THE FOLDER CHOOSER THIS COMPUTER ALREADY HAS.
+//
+// It fills the box rather than adding the workspace outright, because those are
+// two decisions and only the second one changes anything: you can see what was
+// picked, correct it, and then say whether it is merely remembered or opened.
+//
+// Refused rather than hidden where there is no chooser -- a browser is not
+// allowed to know where a folder is, and a button that vanishes teaches nobody
+// why. See ui/browser.js.
+$('ws-add-pick').onclick = async () => {
+  try {
+    const picked = await host.pickFolder({ startAt: $('ws-add').value.trim() || null })
+    // Cancelling is an answer, and it is "nothing changes".
+    if (!picked) return
+    $('ws-add').value = picked
+    $('ws-add').focus()
+  } catch (e) { oops(e) }
+}
+
 $('ws-add-go').onclick = () => addWorkspace(false)
 $('ws-add-use').onclick = () => addWorkspace(true)
 // Enter is what somebody presses after typing a path, and the safer of the two

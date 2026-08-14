@@ -26,7 +26,18 @@
 // and functions would survive. A script element is the thing that has the
 // semantics this needs.
 ;(() => {
+  // WHICH HOST THIS IS, decided once, here, rather than checked at each call.
+  //
+  // Exactly one of these loads and both declare `host`. A page opened from disk
+  // by NW.js has node and the nw.* APIs; a page served over http is a "remote"
+  // page and gets none of them whatever it is whitelisted for -- so this is not
+  // a thing that can change while running, and treating it as one would only
+  // spread `typeof nw` through every file that opens a link.
+  const HOST = typeof nw !== 'undefined' && nw.Window ? 'nwjs' : 'browser'
+
   const FILES = [
+    HOST,        // what this window can ask of the computer it is on
+
     // The toolkit first: everything below is built out of these.
     'base',      // the call into the app, elements, the repaint guard, the editor
     'changes',   // what a line carries, and the files it touches

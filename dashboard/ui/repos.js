@@ -136,11 +136,11 @@ function todoCard (x) {
           el('span', { className: 'mono', textContent: `${part.repo} #${part.number}` }),
           el('span', {},
             el('span', { className: part.state === 'merged' ? 'ok' : part.state === 'closed' ? 'gone' : 'muted', textContent: part.state }),
-            el('button', { className: 'linky', style: 'margin-left:10px', textContent: 'read it', onclick: () => nw.Shell.openExternal(part.url) })))))]
+            el('button', { className: 'linky', style: 'margin-left:10px', textContent: 'read it', onclick: () => host.openExternal(part.url) })))))]
       : []),
 
     el('div', { className: 'row', style: 'margin-top:8px' },
-      x.url ? el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => nw.Shell.openExternal(x.url) }) : null,
+      x.url ? el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => host.openExternal(x.url) }) : null,
       // AN ISSUE IS THE ONE THING HERE THAT COMES IN, so it is the one row with
       // somewhere to go next: work that arrived, turned into work this app runs.
       x.kind === 'issue'
@@ -321,7 +321,7 @@ function paintRepoDetail (r) {
         onclick: () => api('repositoriesCheck', { repo: r.repo }).then(x => { changed('repos', null); changed('repo-detail', null); say(x.note); return draw() }).catch(oops)
       }),
       rem && rem.kind === 'github'
-        ? el('button', { className: 'btn small', textContent: 'Open it on GitHub', onclick: () => nw.Shell.openExternal(`https://${rem.host}/${rem.owner}/${rem.repo}`) })
+        ? el('button', { className: 'btn small', textContent: 'Open it on GitHub', onclick: () => host.openExternal(`https://${rem.host}/${rem.owner}/${rem.repo}`) })
         : null))
 }
 
@@ -359,7 +359,7 @@ function paintRepoIssues (r) {
                 title: 'Opens the task dialog with this issue as the brief',
                 onclick: () => newTaskFromIssue(i)
               }),
-              el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => nw.Shell.openExternal(i.url) })))))
+              el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => host.openExternal(i.url) })))))
         : el('p', { className: 'empty', textContent: 'Nothing open.' }))
 }
 
@@ -393,7 +393,7 @@ function paintRepoPulls (r) {
               p.draft ? el('span', { className: 'badge muted', textContent: 'draft' }) : null),
             el('div', { className: 'card-sub mono', textContent: `${p.head} → ${p.base}` }),
             el('div', { className: 'row', style: 'margin-top:6px' },
-              el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => nw.Shell.openExternal(p.url) })))))
+              el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => host.openExternal(p.url) })))))
         : el('p', { className: 'empty', textContent: 'Nothing open, and nothing closed recently.' }))
 }
 

@@ -102,7 +102,7 @@ function paintCutDetail (c) {
       p.why ? el('div', { className: 'card-sub bad', textContent: p.why }) : null,
       p.url
         ? el('div', { className: 'row', style: 'margin-top:6px' },
-            el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => nw.Shell.openExternal(p.url) }))
+            el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => host.openExternal(p.url) }))
         : null))),
 
     el('div', { className: 'row', style: 'margin-top:12px' },
