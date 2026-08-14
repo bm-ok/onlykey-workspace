@@ -246,4 +246,110 @@ async function check (only = null) {
   return out
 }
 
-module.exports = { read, check, remoteOf, parse }
+// ---- pushing a branch onward -------------------------------------------
+//
+// The one thing in this app that writes to somewhere it does not own. It is
+// done from THIS HOST and never from a machine: a runner pushes to the
+// dashboard's own git server, the host pushes onward, and no runner is ever
+// handed a token it could take to a snapshot.
+//
+// THE TOKEN IS NEVER AN ARGUMENT. See tools/git-credential-okc.js — it arrives
+// through the environment of the child process and leaves with it, rather than
+// in the URL (which lands in .git/config and in every error git prints) or in
+// `-c http.extraheader` (which any process running as this user can read out of
+// the process list).
+function pushBranch (repo, branch) {
+  const at = path.join(serve.DIR, repo)
+  const helper = path.join(__dirname, '..', 'tools', 'git-credential-okc.js')
+
+  const said = execFileSync('git', [
+    '-C', at,
+    // The helper replaces whatever is configured, so a credential manager on
+    // this machine cannot answer instead with somebody else's account.
+    '-c', 'credential.helper=',
+    '-c', `credential.helper=!node "${helper.split('\\').join('/')}"`,
+    'push', 'origin', `refs/heads/${branch}:refs/heads/${branch}`
+  ], {
+    encoding: 'utf8',
+    timeout: 120000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      OKC_GIT_USER: 'x-access-token',
+      OKC_GIT_TOKEN: github.tokenForPush(),
+      // Never let git stop and ask a person who is not there. Without this a
+      // wrong credential hangs the call until it times out.
+      GIT_TERMINAL_PROMPT: '0'
+    }
+  })
+  return String(said || '').trim()
+}
+
+// ---- opening a pull request --------------------------------------------
+//
+// IN THE PARENT, WHEN THERE IS ONE. A pull request from a fork is created in the
+// repository being merged INTO, with the head written `owner:branch`. Getting
+// this wrong does not fail loudly — it opens a pull request inside the fork,
+// from the fork's branch into the fork's own default, which looks perfectly
+// normal and lands the work nowhere anybody is watching.
+async function openPull (repo, { branch, base, title, body }) {
+  const remote = remoteOf(repo)
+  if (!remote || remote.kind !== 'github') throw new Error(`"${repo}" has no GitHub remote to open a pull request on.`)
+
+  const note = seen()[repo] || {}
+  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
+  const crossing = !!note.parent
+  const head = crossing ? `${remote.owner}:${branch}` : branch
+
+  const r = await github.call('POST', `/repos/${into[0]}/${into[1]}/pulls`, {
+    title,
+    body,
+    head,
+    base
+  })
+
+  if (r.status === 201) {
+    return {
+      repo,
+      opened: true,
+      number: r.body.number,
+      url: r.body.html_url,
+      state: r.body.state,
+      into: `${into[0]}/${into[1]}`,
+      head,
+      base
+    }
+  }
+
+  // GitHub answers 422 for "already exists" and for "no commits between", and
+  // they mean opposite things: one is done, the other is nothing to do. Both are
+  // reported as themselves rather than as a failure to open.
+  const said = (r.body && r.body.errors && r.body.errors.map(e => e.message).filter(Boolean).join('; ')) ||
+    (r.body && r.body.message) || `GitHub answered ${r.status}`
+  const already = /already exists/i.test(said)
+  return { repo, opened: false, already, why: said, into: `${into[0]}/${into[1]}`, head, base }
+}
+
+// Everything open on a repository right now, so a landing can be re-read rather
+// than remembered. What GitHub says about a pull request outranks what was
+// written down here when it was opened.
+async function pullsOn (repo) {
+  const note = seen()[repo] || {}
+  const remote = remoteOf(repo)
+  if (!remote) return []
+  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
+  const r = await github.call('GET', `/repos/${into[0]}/${into[1]}/pulls?state=all&per_page=100`)
+  if (r.status !== 200 || !Array.isArray(r.body)) return []
+  return r.body.map(p => ({
+    number: p.number,
+    url: p.html_url,
+    state: p.state,
+    merged: !!p.merged_at,
+    draft: !!p.draft,
+    title: p.title,
+    head: p.head && p.head.label,
+    base: p.base && p.base.ref
+  }))
+}
+
+module.exports = { read, check, remoteOf, parse, pushBranch, openPull, pullsOn }

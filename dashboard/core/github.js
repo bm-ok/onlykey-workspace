@@ -191,4 +191,13 @@ function held () {
   }
 }
 
-module.exports = { held, put, forget, check, call, has, PUBLIC }
+// THE ONE PLACE THE TOKEN LEAVES THIS MODULE, and it is named so that it is
+// obvious in a diff. It is handed to a git push through that child's
+// environment — never into an argument, never into a URL, never onto disk.
+// Nothing else may call this, and nothing else does.
+function tokenForPush () {
+  if (!has()) throw new Error('This host holds no GitHub token, so nothing can be pushed onward. Add one on the Keys tab.')
+  return token()
+}
+
+module.exports = { held, put, forget, check, call, has, tokenForPush, PUBLIC }

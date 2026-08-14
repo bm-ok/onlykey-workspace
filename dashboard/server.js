@@ -22,6 +22,7 @@ const data = require('./core/data')
 const secret = require('./core/secret')
 const github = require('./core/github')
 const remotes = require('./repos/remotes')
+const landings = require('./repos/landings')
 const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
@@ -2286,6 +2287,84 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // machine it was taken from and when; the value is only ever handed to a
   // machine that needs it. A page that displays a secret is a page that gets
   // screenshotted.
+  // ---- sending a change out ----------------------------------------------
+  //
+  // The end of the chain. A line is read here, and then it leaves: each
+  // repository that carries work has its branch pushed onward and a pull request
+  // opened for it. Nothing merges anything — a default branch is protected, and
+  // that includes from this app.
+  //
+  // ONE LANDING, N PULL REQUESTS. GitHub has no idea the three are one change,
+  // so holding them together is the part only this can do.
+  changeOpen: {
+    about: 'Push a line onward and open a pull request per repository, tracked together as one landing',
+    takes: ['source', 'target', 'title', 'body'],
+    run: async ({ source, target, title, body, _overTheWire }) => {
+      const pair = twoLines(source, target)
+      const carrying = []
+      for (const { repo, head, base } of pair.on) {
+        const art = artifact.inRepo(repo, head, base)
+        if (!art.missing && !art.noBase && art.ahead > 0) carrying.push({ repo, head, base, ahead: art.ahead })
+      }
+      if (!carrying.length) throw new Error(`"${pair.source.name}" carries nothing that "${pair.target.name}" does not already have.`)
+
+      const said = String(title || '').trim() || pair.source.name
+      const because = String(body || '').trim() ||
+        `The "${pair.source.name}" line, into "${pair.target.name}".\n\n` +
+        carrying.map(c => `- ${c.repo}: ${c.ahead} commit(s) on ${c.head}`).join('\n') +
+        '\n\nOpened from the dashboard. These are one change across several repositories; it has landed when all of them have.'
+
+      const done = []
+      for (const c of carrying) {
+        // PUSHED FIRST, because a pull request needs a branch that is there. A
+        // push that fails stops this repository and not the others: three
+        // repositories where two are pushable is a real state, and refusing all
+        // three because of one helps nobody.
+        try {
+          remotes.pushBranch(c.repo, c.head)
+          log.on('git', c.repo).good(`pushed ${c.head} to origin`)
+        } catch (e) {
+          const why = String(e.stderr || e.message || e).split('\n').filter(Boolean).pop()
+          log.on('git', c.repo).bad(`could not push ${c.head}: ${why}`)
+          done.push({ repo: c.repo, opened: false, why: `could not push: ${why}` })
+          continue
+        }
+
+        const pr = await remotes.openPull(c.repo, { branch: c.head, base: c.base, title: said, body: because })
+        if (pr.opened) log.on('git', c.repo).good(`pull request #${pr.number} into ${pr.into} — ${pr.url}`)
+        else log.on('git', c.repo)[pr.already ? 'warn' : 'bad'](`no pull request opened: ${pr.why}`)
+        done.push(pr)
+      }
+
+      const record = landings.record(pair.source.name, pair.target.name, done, _overTheWire ? 'the command line' : 'the window')
+      const opened = done.filter(d => d.opened)
+      return {
+        source: pair.source.name,
+        target: pair.target.name,
+        pulls: done,
+        landing: record,
+        note: opened.length === done.length
+          ? `${opened.length} pull request(s) opened: ${opened.map(o => `${o.repo} #${o.number}`).join(', ')}. It has landed when all of them have.`
+          : `${opened.length} of ${done.length} opened. ${done.filter(d => !d.opened).map(d => `${d.repo}: ${d.why}`).join('; ')}`
+      }
+    }
+  },
+
+  changeLanding: {
+    about: 'What became of a change that was sent out: each pull request, read from GitHub',
+    takes: ['source', 'target'],
+    run: async ({ source, target }) => {
+      const at = await landings.state(source, target)
+      if (!at) return { landed: null, note: 'This pair has not been sent out from here.' }
+      return {
+        ...at,
+        note: at.landed
+          ? `Landed: all ${at.count} pull request(s) are merged.`
+          : `${at.summary}. It is not landed until every one of them is.`
+      }
+    }
+  },
+
   // ---- the repositories themselves ---------------------------------------
   //
   // The ground everything else stands on, and until now it had no surface. A
