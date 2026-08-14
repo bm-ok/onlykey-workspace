@@ -299,6 +299,12 @@ let wantedShot = null
 // milliseconds. Zero is the real behaviour; see `windowSlow`.
 let slowMs = 0
 
+// What the window hands back so it can be photographed on demand rather than
+// polled at. Null until a window registers one, which is the ordinary state for
+// a headless run and for the tests. See `windowShot`.
+let capture = null
+const onCapture = fn => { capture = typeof fn === 'function' ? fn : null }
+
 const actions = {
   status: {
     about: 'Is the server up, and what does it have to work with',
@@ -4005,8 +4011,34 @@ done`
   windowShot: {
     about: 'Ask the window to photograph itself, optionally on a given tab or tab/pane, with something picked',
     takes: ['note', 'view', 'pick', 'when'],
-    run: ({ note, view, pick, when }) => {
+    run: async ({ note, view, pick, when }) => {
       const file = path.join(data.sub('window'), `window-${data.stamp()}.png`)
+
+      // TAKEN NOW, WHEN THE WINDOW IS HERE TO TAKE IT.
+      //
+      // This used to leave the request in the table for the window to notice on
+      // its next draw, which is up to twelve seconds away, and then let two or
+      // three more draws pass so the panel had filled -- half a minute for one
+      // picture, and a second request in that window silently replaced the first.
+      //
+      // The polling was never necessary. The window loads this file IN ITS OWN
+      // PROCESS, so it can hand back a function that photographs on demand, and
+      // this waits for the file rather than for a clock. It registers that on
+      // startup; see `onCapture`.
+      //
+      // The poll is kept as the fallback for the case it was actually written
+      // for: nothing has registered because no window is open, which is how a
+      // headless run and the tests load this file.
+      if (capture) {
+        try {
+          const shot = await capture({ file, view: view || null, pick: pick == null ? null : String(pick), when: when === 'loading' ? 'loading' : null })
+          if (note) log.on('window').info(note)
+          return { file, ...shot, took: 'now' }
+        } catch (e) {
+          throw new Error(`The window could not photograph itself: ${e.message}`)
+        }
+      }
+
       // WHICH TAB, because otherwise only the one that happens to be open can
       // ever be checked. The window is the single part of this that fails
       // silently -- a class that matches no rule, a panel that stopped updating,
@@ -5020,7 +5052,7 @@ function call (name, args = {}) {
   return found.run(args)
 }
 
-module.exports = { start, actions, call, handler }
+module.exports = { start, actions, call, handler, onCapture }
 
 if (require.main === module) {
   start()

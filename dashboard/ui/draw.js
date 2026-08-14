@@ -359,6 +359,91 @@ function shotIfAsked () {
   }).catch(() => { shotInFlight = false })
 }
 
+// PHOTOGRAPHED ON DEMAND, rather than asked for and waited on.
+//
+// The window loads server.js in its own process, so it can simply hand back a
+// function that takes the picture -- and `windowShot` calls it and returns when
+// the file is on disk. What that replaced was a request left in a table for the
+// next draw to notice, plus two or three more draws so the panel had filled:
+// half a minute a picture, and a second request inside that window silently
+// replaced the first.
+//
+// Whatever is being asked for is set up FIRST and then a frame is let through,
+// because that is what the draws were buying -- a panel that has been switched
+// to has not drawn yet, and an empty panel in a photograph reads as a rendering
+// fault rather than as a timing one. It did, once, which is why the waiting was
+// there at all.
+app.onCapture(async want => {
+  const [wantView, wantPane] = String(want.view || '').split('/')
+
+  if (wantView && wantView !== view) {
+    const tab = document.querySelector(`.tab[data-view="${wantView}"]`)
+    if (!tab) throw new Error(`there is no tab called "${wantView}"`)
+    tab.click()
+  }
+
+  // A pane inside the tab, and then whatever is picked within it -- each one a
+  // narrower question about the same screen, in the order they nest.
+  if (wantPane) {
+    const t = document.querySelector(`#view-${view} .subtab[data-pane="${wantPane}"]`)
+    if (t) t.click()
+  }
+  if (want.pick) await pickFor(view, want.pick)
+
+  // Asked for BEFORE the wait, so it fires on the placeholder the setup above
+  // just put up rather than on the next unrelated one.
+  if (want.when === 'loading') {
+    return new Promise(resolve => { catchLoading = { file: want.file, resolve } })
+  }
+
+  // Long enough for what was just switched to to have been read and drawn. The
+  // panels answer asynchronously, so this is the same wait the draws were
+  // standing in for, said as a duration instead of as a count of ticks.
+  await new Promise(r => setTimeout(r, 400))
+  await takeShot(want.file)
+  return { bytes: null }
+})
+
+// Which row, once the right tab is open. Every tab that has a list has its own
+// idea of what picking one means, and each of them already had one -- this is
+// only the place they are reached from.
+async function pickFor (v, pick) {
+  if (v === 'tasks') {
+    const t = (taskList || []).find(x => x.id === pick || String(x.number) === pick)
+    if (t && pickedTask !== t.id) return pickTask(t.id, null)
+    return
+  }
+  if (v === 'repos') {
+    if (['todo', 'repos', 'issues', 'pulls'].includes(pick)) {
+      const t = document.querySelector(`#view-repos .subtab[data-pane="${pick}"]`)
+      if (t) t.click()
+    } else if (pickedRepo !== pick) {
+      pickedRepo = pick
+      been.set('repo', pickedRepo)
+      changed('repos', null); changed('repo-detail', null)
+      paintRepos()
+    }
+    return
+  }
+  if (v === 'prcuts' && ['cuts', 'templates'].includes(pick)) {
+    const t = document.querySelector(`#view-prcuts .subtab[data-pane="${pick}"]`)
+    if (t) t.click()
+    return
+  }
+  if (v === 'branches') {
+    const t = document.querySelector(`#view-branches .subtab[data-pane="${pick}"]`)
+    if (t) return t.click()
+    if (pickedBranch !== pick) {
+      pickedBranch = pick
+      been.set('branch', pickedBranch)
+      $('branch-find').value = ''
+      $('branch-mine').checked = false
+      changed('branches', null)
+      paintBranches()
+    }
+  }
+}
+
 // Lifted out so a draw and a loading moment share one copy of it.
 function takeShot (file) {
   shotInFlight = true
