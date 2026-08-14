@@ -295,6 +295,10 @@ function twoLines (source, target) {
 
 let wantedShot = null
 
+// How long the window holds a loading state before reading anything, in
+// milliseconds. Zero is the real behaviour; see `windowSlow`.
+let slowMs = 0
+
 const actions = {
   status: {
     about: 'Is the server up, and what does it have to work with',
@@ -322,6 +326,10 @@ const actions = {
         } catch { return null }
       })(),
       workspaceKnown: (() => { try { return workspaces.known().length } catch { return 0 } })(),
+      // Carried here rather than asked for separately, because it is read on
+      // every paint and an extra call per panel to find out how long to pause
+      // would be its own small joke.
+      slowMs,
       mine: vms.read().length,
       // Repositories left somewhere other than their default branch. Carried on
       // the poll because a dirty one will refuse a push whose owner cannot
@@ -3951,6 +3959,37 @@ done`
     }
   },
 
+  // ---- holding a moment still long enough to look at it ------------------
+  //
+  // A loading state lasts a fifth of a second. That is the right length to live
+  // with and the wrong length to JUDGE: asking for a photograph from outside
+  // takes longer than the state exists, so the picture always shows the finished
+  // panel and the placeholder can never be checked. It was invisible for weeks
+  // for exactly this reason -- every skeleton in the window was being created
+  // and thrown away unseen, and nothing could have caught it from out here.
+  //
+  // So the app holds it, rather than something outside trying to be quick. Every
+  // panel waits one frame before reading anything, which is where the skeleton
+  // gets drawn; this makes that wait as long as you like.
+  //
+  // A SWITCH, NOT A SETTING. It is off unless somebody turns it on, it says so
+  // in the window while it is on -- otherwise the next person to open the
+  // dashboard finds it mysteriously slow and goes looking for a fault that is
+  // not there -- and it changes nothing about what is read or when, only how
+  // long the gap before it lasts.
+  windowSlow: {
+    about: 'Hold every loading state for this many milliseconds, so it can be seen and photographed. 0 turns it off',
+    takes: ['ms'],
+    run: ({ ms }) => {
+      if (ms === undefined) return { ms: slowMs, on: slowMs > 0 }
+      slowMs = Math.max(0, Math.min(10000, Number(ms) || 0))
+      log.on('window')[slowMs ? 'warn' : 'info'](slowMs
+        ? `loading states are being held for ${slowMs}ms — the window is deliberately slow until this is turned off`
+        : 'loading states are back to their real length')
+      return { ms: slowMs, on: slowMs > 0, note: slowMs ? 'Turn it off with --ms 0.' : 'Off.' }
+    }
+  },
+
   // ---- a picture of the window itself ------------------------------------
   //
   // `vmScreenshot` answers "what is that machine doing"; this answers "what does
@@ -3965,8 +4004,8 @@ done`
   // rather than an image — the file appears a second or two later.
   windowShot: {
     about: 'Ask the window to photograph itself, optionally on a given tab or tab/pane, with something picked',
-    takes: ['note', 'view', 'pick'],
-    run: ({ note, view, pick }) => {
+    takes: ['note', 'view', 'pick', 'when'],
+    run: ({ note, view, pick, when }) => {
       const file = path.join(data.sub('window'), `window-${data.stamp()}.png`)
       // WHICH TAB, because otherwise only the one that happens to be open can
       // ever be checked. The window is the single part of this that fails
@@ -3982,7 +4021,18 @@ done`
       // photograph came back showing whichever row was last clicked by hand, and
       // a panel that only appears for one kind of row could not be reached at
       // all. `pick` is a task id or number; the window selects it before drawing.
-      wantedShot = { file, note: note || null, view: view || null, pick: pick == null ? null : String(pick), asked: Date.now() }
+      // WHEN, because some of what this window does lasts a fifth of a second.
+      //
+      // The ordinary shot is taken on a draw, after a couple have been let pass
+      // so the panel has filled -- which is right for photographing a panel and
+      // exactly wrong for photographing one that has NOT filled yet. A loading
+      // state cannot be caught from out here at all: asking for it takes longer
+      // than it exists, and the answer always shows the finished panel.
+      //
+      // So the window takes this one itself, at the moment it puts a placeholder
+      // up and before it reads anything. Pair it with `windowSlow` to make that
+      // moment long enough to be worth a picture.
+      wantedShot = { file, note: note || null, view: view || null, pick: pick == null ? null : String(pick), when: when === 'loading' ? 'loading' : null, asked: Date.now() }
       return {
         file,
         view: view || null,

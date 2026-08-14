@@ -1783,6 +1783,19 @@ function paintBranches () {
   waiting('branches', { cards: 4 })
   waiting('branch-actions', { lines: 4 })
   waiting('branch-artifacts', { lines: 6 })
+  paintBranchesNow()
+}
+
+// Split from the guard and the placeholders above so those happen SYNCHRONOUSLY
+// on the click, and only the reading waits for a frame. A tab that yielded
+// before putting its skeleton up would show the last tab's contents for two
+// frames, which is a different kind of lie.
+async function paintBranchesNow () {
+  await settle()
+  // Asked again after the wait: two frames is long enough to click another tab,
+  // and answering into a panel nobody is looking at is how a stale board gets
+  // painted over a fresh one.
+  if (view !== 'branches') return
   api('branchBoard').then(board => {
     const find = $('branch-find').value.trim().toLowerCase()
     const mine = $('branch-mine').checked
@@ -2375,6 +2388,43 @@ const chip = (text, kind) => el('span', { className: `chip${kind ? ' ' + kind : 
 const skelLine = width => el('div', { className: 'skel skel-line', ...(width ? { style: `width:${width}` } : {}) })
 
 const skelCard = () => el('div', { className: 'skel-card' }, skelLine(), skelLine())
+
+// LET THE BROWSER DRAW WHAT WAS JUST PUT THERE, before doing the work.
+//
+// This is what made every skeleton in this file invisible. Placing one is a DOM
+// change, and a DOM change is not a paint -- the browser renders when JavaScript
+// yields. Nothing here yielded: a paint function put the placeholder in and then
+// called an action, and an action reads git with execFileSync, which blocks this
+// thread. So the sequence was: skeleton written, thread frozen for a fifth of a
+// second, real content written, ONE paint. The placeholder existed for the whole
+// wait and was never on screen once.
+//
+// Two frames rather than one, and the second is the one that matters: a
+// requestAnimationFrame callback runs BEFORE its paint, so a single one would
+// hand control back at exactly the moment the skeleton still has not been drawn.
+// Waiting for the frame after it means the frame carrying the skeleton has been
+// through.
+//
+// The freeze that follows is unchanged -- this makes it VISIBLE, not shorter.
+// That is the whole ask: a panel that says it is working reads as working, and
+// the same panel silent reads as broken.
+// Held longer on purpose while `windowSlow` is on, so a state that lasts a fifth
+// of a second can be looked at, judged and photographed. Off unless asked for,
+// and the banner says so while it is on. See the action of the same name.
+let slowMs = 0
+
+const settle = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(async () => {
+  // THE ONE MOMENT NOTHING OUTSIDE CAN CATCH. The placeholder is on screen and
+  // nothing has been read yet, which is the state a screenshot asked for from
+  // the command line can never land on -- asking takes longer than it lasts. So
+  // it is taken here, by the window, at the moment it exists.
+  if (catchLoading) { const want = catchLoading; catchLoading = null; await takeShot(want.file) }
+  if (slowMs) return setTimeout(r, slowMs)
+  r()
+})))
+
+// A shot armed with when:'loading', waiting for the next placeholder to go up.
+let catchLoading = null
 
 function waiting (id, { cards = 0, lines = 0 } = {}) {
   const box = $(id)
@@ -3621,7 +3671,13 @@ function askForCode (name, url) {
 // into it: the tabs that stop working are disabled, and they say why.
 function paintWorkspace () {
   if (view !== 'workspace') return
+  waiting('ws-list', { cards: 2 })
+  paintWorkspaceNow()
+}
 
+async function paintWorkspaceNow () {
+  await settle()
+  if (view !== 'workspace') return
   api('workspaces').then(w => {
     const open = !!w.open
     const now = w.current
@@ -3854,7 +3910,13 @@ const TODO_KINDS = [['cut', 'PR cuts', 'cuts'], ['pull', 'pull requests', 'pulls
 
 function paintTodo () {
   if (view !== 'repos' || repoPane !== 'todo') return
+  waiting('todo', { cards: 3 })
+  paintTodoNow()
+}
 
+async function paintTodoNow () {
+  await settle()
+  if (view !== 'repos' || repoPane !== 'todo') return
   api('repoOverview').then(v => {
     const shown = todoRows(v.items)
 
@@ -4017,6 +4079,14 @@ document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(t => {
 })()
 
 function paintRepos () {
+  if (view !== 'repos') return
+  waiting('repos', { cards: 3 })
+  waiting('repo-detail', { lines: 6 })
+  paintReposNow()
+}
+
+async function paintReposNow () {
+  await settle()
   if (view !== 'repos') return
   api('repositories').then(({ dir, repos, note }) => {
     // Reconciled against what exists, like every other selection here.
@@ -4453,7 +4523,13 @@ document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(t => {
 
 function paintTemplates () {
   if (view !== 'prcuts' || cutPane !== 'templates') return
+  waiting('prtemplate', { lines: 6 })
+  paintTemplatesNow()
+}
 
+async function paintTemplatesNow () {
+  await settle()
+  if (view !== 'prcuts' || cutPane !== 'templates') return
   Promise.all([api('prTemplate'), api('lines').catch(() => ({ groups: [] }))]).then(([t, { groups }]) => {
     const usable = (groups || []).filter(g => !g.broken.length)
 
@@ -5709,7 +5785,17 @@ async function drawOnce () {
   // conditionals. The previous version wrote the machines in and then, if
   // VirtualBox was missing, REPLACED them -- so the more serious problem hid the
   // other one instead of joining it.
+  // Read here rather than asked for, and applied before anything paints below.
+  slowMs = Number(status.slowMs) || 0
+
   const trouble = [
+    // SAID WHILE IT IS ON, because a window that has been deliberately slowed
+    // and does not admit it is a window somebody debugs for an hour. It is the
+    // only entry here describing something this app was ASKED to do.
+    slowMs
+      ? [`Loading states are being held for ${slowMs}ms. `,
+          'Turned on deliberately so a placeholder can be seen and judged. Nothing is being read any differently. Turn it off with: okc.js windowSlow --ms 0']
+      : null,
     !status.virtualbox
       ? ['VirtualBox was not found. ', 'Nothing here can make or start a machine until it is installed.']
       : null,
@@ -5835,6 +5921,12 @@ function shotIfAsked () {
     // are exactly as unverifiable as tabs were before this existed -- a panel
     // nobody clicked is a panel nobody has seen -- and from outside the window
     // there is no other way to reach one.
+    // ARMED, NOT TAKEN. The tab still has to be switched to below -- that is
+    // what CAUSES the placeholder this is waiting for -- and the next `settle`
+    // fires it. Nothing here lets a draw pass first, because the moment being
+    // photographed is over before the next draw begins.
+    if (want.when === 'loading') catchLoading = want
+
     const [wantView, wantPane] = String(want.view || '').split('/')
 
     if (wantPane && document.querySelector(`#view-branches .subtab[data-pane="${wantPane}"]`) && branchPane !== wantPane) {
@@ -5948,25 +6040,37 @@ function shotIfAsked () {
     }
 
     if (shotSettle > 0) { shotSettle--; return }
+    // Left for `settle` to take. Otherwise a draw would beat it to the file and
+    // the picture would be of the finished panel, which is the one thing it was
+    // asked not to be.
+    if (want.when === 'loading') return
 
-    shotInFlight = true
+    takeShot(want.file)
+  }).catch(() => { shotInFlight = false })
+}
+
+// Lifted out so a draw and a loading moment share one copy of it.
+function takeShot (file) {
+  shotInFlight = true
+  return new Promise(done => {
     try {
       // Raw base64 rather than a data URI: it is written to a file, and the
       // `data:image/png;base64,` prefix would have to be sliced off again.
       nw.Window.get().capturePage(b64 => {
         try {
           const bytes = Buffer.from(b64, 'base64')
-          require('node:fs').writeFileSync(want.file, bytes)
-          api('windowShotDone', { file: want.file, bytes: bytes.length })
+          require('node:fs').writeFileSync(file, bytes)
+          api('windowShotDone', { file, bytes: bytes.length })
         } catch (e) {
-          api('windowShotDone', { file: want.file, error: e.message })
-        } finally { shotInFlight = false }
+          api('windowShotDone', { file, error: e.message })
+        } finally { shotInFlight = false; done() }
       }, { format: 'png', datatype: 'raw' })
     } catch (e) {
       shotInFlight = false
-      api('windowShotDone', { file: want.file, error: e.message })
+      api('windowShotDone', { file, error: e.message })
+      done()
     }
-  }).catch(() => { shotInFlight = false })
+  })
 }
 let shotInFlight = false
 // Draws still to let pass before photographing, so a panel that was switched to
