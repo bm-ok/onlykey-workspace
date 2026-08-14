@@ -3342,6 +3342,18 @@ function paintGithub () {
             ? 'GitHub refused it. Replace it below — and revoke the old one on GitHub, since something that stopped working may have stopped for a reason.'
             : 'Never handed to a machine, and never shown here. Only this host spends it.' }),
 
+          // WHAT A CLASSIC TOKEN COSTS, said where it is held rather than left to
+          // be remembered. `repo` is not "the repositories in this workspace" —
+          // it is every repository the account can reach, in every organisation,
+          // for as long as the token lives. That is a reasonable trade when the
+          // owners are split and a fine-grained token cannot span them, and it
+          // is only reasonable while somebody knows they made it.
+          g.kind === 'classic'
+            ? el('p', { className: 'note' },
+                el('strong', { className: 'bad', textContent: 'This is a classic token. ' }),
+                el('span', { textContent: `Its scopes are not limited to this workspace — ${(g.scopes || []).includes('repo') ? '`repo` reaches every repository this account can, in every organisation' : 'they apply to everything this account can reach'}. That is the price of covering more than one owner with one credential${g.expires ? '' : ', and it has no expiry, so nothing will ever make it stop'}.` }))
+            : null,
+
           el('div', { className: 'row' },
             el('button', {
               className: `btn ${dead ? '' : 'ok'}`,
@@ -3391,11 +3403,16 @@ function askForGithubToken (g) {
       // that field describes the account rather than the token. Naming the
       // permissions here is the difference between a two-minute setup and
       // finding out one repository at a time.
-      'A FINE-GRAINED token, limited to the repositories in this workspace, is the smallest thing to lose. On github.com/settings/personal-access-tokens, give it exactly these:',
-      'Contents — Read and write. To compare what is here with what is there, and to push a branch onward.',
-      'Pull requests — Read and write. To open one and to follow it.',
-      'Metadata — Read. GitHub adds this itself once the others are chosen.',
-      'Nothing else. Not Administration, not Actions, not Workflows — nothing here uses them, and a permission granted is one that has to be trusted.'
+      //
+      // TWO KINDS, AND WHICH ONE IS RIGHT DEPENDS ON THE REPOSITORIES. A
+      // fine-grained token is scoped to ONE resource owner, so a workspace whose
+      // forks live in an organisation and whose parents are personal
+      // repositories cannot be covered by one of them at all — no combination of
+      // permissions fixes that, and finding out costs an evening. The
+      // Repositories tab says which owners are involved.
+      'FINE-GRAINED, if every repository here has the same owner. It is the smallest thing to lose. Give it exactly: Contents — Read and write, to push a branch onward. Pull requests — Read and write, to open one and follow it. Metadata — Read, which GitHub adds itself. Nothing else.',
+      'CLASSIC, if they do not. A fine-grained token covers one owner only, so an organisation fork with a personal-account parent needs a classic one — tick `repo` and nothing else. Add `workflow` only if a branch will ever change files under .github/workflows, which git otherwise refuses to push.',
+      'Either way, give it an expiry. This app reads it and says how long is left; a token that never expires is the one still working long after anybody remembers it exists.'
     ],
     link: 'https://github.com/settings/personal-access-tokens',
     fields: [
