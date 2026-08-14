@@ -69,6 +69,26 @@ const changed = (key, value) => {
   return true
 }
 
+// FORGETTING IS NOT THE SAME AS DRAWING NOTHING, and conflating them cost a
+// panel that would not clear.
+//
+// `changed(key, null)` was the idiom for "throw the signature away so the next
+// paint definitely happens" -- used seventy-five times. But `null` is also a real
+// value: it is what every detail panel here is handed when nothing is selected.
+// So deleting the last prompt did this:
+//
+//     the handler   forget('prompt-detail')   stores "null"
+//     the repaint   forget('prompt-detail')   ALREADY "null" -> false
+//
+// and the panel kept showing the thing that had just been deleted, with buttons
+// that then failed with "there is no prompt called...". The list beside it said
+// "none yet" at the same time, which is the two halves of one screen disagreeing
+// about whether something exists.
+//
+// So invalidating has its own word. It cannot collide with a value because it
+// stores no value.
+const forget = key => { drawnFrom.delete(key) }
+
 const setText = (node, text) => { if (node.textContent !== text) node.textContent = text }
 
 // Everything any machine panel reads, including what its click handlers close

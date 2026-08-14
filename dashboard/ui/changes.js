@@ -111,10 +111,10 @@ function paintChangesPicks (proposed, usable) {
     $(box).onchange = () => onPick($(box).value)
   }
   pick('change-from', proposed, changeFrom, v => {
-    changeFrom = v; been.set('change-from', v); changePicked = null; changeAnswer = null; changed('change', null); paintChanges()
+    changeFrom = v; been.set('change-from', v); changePicked = null; changeAnswer = null; forget('change'); paintChanges()
   })
   pick('change-into', usable.filter(g => g.name !== changeFrom), changeInto, v => {
-    changeInto = v; been.set('change-into', v); changePicked = null; changeAnswer = null; changed('change', null); paintChanges()
+    changeInto = v; been.set('change-into', v); changePicked = null; changeAnswer = null; forget('change'); paintChanges()
   })
 }
 
@@ -183,7 +183,7 @@ function paintChangesActions (cmp) {
         danger: true,
         onYes: async () => {
           const r = await api('lineWithdraw', { name: cmp.source })
-          changeAnswer = null; changed('change', null); changed('baselines', null); changed('branches', null)
+          changeAnswer = null; forget('change'); forget('baselines'); forget('branches')
           say(r.note)
           return draw()
         }
@@ -206,7 +206,7 @@ function paintChangesBody (cmp) {
     b.onclick = () => {
       changeLook = b.dataset.look
       been.set('change-look', changeLook)
-      changed('change', null)
+      forget('change')
       paintChanges()
     }
   })
@@ -250,7 +250,7 @@ function paintChangesFiles (cmp) {
     el('div', { className: 'change-repo', textContent: `${r.repo} — ${r.files.length}${r.moreFiles ? `+${r.moreFiles}` : ''} file(s)` }),
     ...r.files.map(f => el('button', {
       className: `change-file${changePicked && changePicked.repo === r.repo && changePicked.file === f.file ? ' on' : ''}`,
-      onclick: () => { changePicked = { repo: r.repo, file: f.file }; changed('change-file', null); paintChangesFiles(cmp) },
+      onclick: () => { changePicked = { repo: r.repo, file: f.file }; forget('change-file'); paintChangesFiles(cmp) },
       title: f.file
     },
     // The path reads right-to-left so a long one keeps its FILENAME rather than
@@ -271,7 +271,7 @@ function paintChangesDiff (cmp) {
   $('change-mode').onclick = () => {
     changeMode = changeMode === 'sides' ? 'unified' : 'sides'
     been.set('change-mode', changeMode)
-    changed('change-file', null)
+    forget('change-file')
     paintChangesDiff(cmp)
   }
   if (!changePicked) return fill($('change-diff'), null)

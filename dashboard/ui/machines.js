@@ -602,7 +602,7 @@ function currentStateNode (v, s) {
 // same "three places knew and none of them met" problem, at the machine end.
 const goToBranch = branch => {
   $('branch-find').value = branch
-  changed('branches', null)
+  forget('branches')
   showTab('branches')
   paintBranches()
 }
@@ -775,13 +775,13 @@ $('add-prcut-open').onclick = () => {
   if (tab) tab.click()
 }
 $('repos-check').onclick = () => api('repositoriesCheck')
-  .then(r => { changed('repos', null); say(r.note, r.repos.some(x => x.reachable !== true || x.why) ? 'bad' : undefined); return draw() })
+  .then(r => { forget('repos'); say(r.note, r.repos.some(x => x.reachable !== true || x.why) ? 'bad' : undefined); return draw() })
   .catch(oops)
 $('term-close').onclick = () => closeShell(active)
 // Repainted on the spot rather than on the next draw, because a filter that
 // takes up to three seconds to answer reads as one that did not work.
-$('branch-mine').onchange = () => { changed('branches', null); paintBranches() }
-$('branch-find').oninput = () => { changed('branches', null); paintBranches() }
+$('branch-mine').onchange = () => { forget('branches'); paintBranches() }
+$('branch-find').oninput = () => { forget('branches'); paintBranches() }
 window.addEventListener('resize', () => {
   if (view !== 'terminal') return
   sizeTerminal()

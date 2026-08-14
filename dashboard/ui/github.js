@@ -77,7 +77,7 @@ function paintGithub () {
               className: `btn ${dead ? '' : 'ok'}`,
               textContent: proven ? 'Check it again' : 'Check it',
               title: 'Asks GitHub who this token is',
-              onclick: () => api('githubCheck').then(r => { changed('github', null); say(r.note, r.ok ? undefined : 'bad'); return draw() }).catch(oops)
+              onclick: () => api('githubCheck').then(r => { forget('github'); say(r.note, r.ok ? undefined : 'bad'); return draw() }).catch(oops)
             }),
             el('button', {
               className: `btn ${dead ? 'ok' : ''}`,
@@ -97,7 +97,7 @@ function paintGithub () {
                 danger: true,
                 onYes: async () => {
                   const r = await api('githubKeyForget')
-                  changed('github', null)
+                  forget('github')
                   say(r.note)
                   return draw()
                 }
@@ -142,7 +142,7 @@ function askForGithubToken (g) {
     confirm: 'Check it and keep it',
     onYes: async f => {
       const r = await api('githubKeySet', { token: f.token, api: f.api })
-      changed('github', null)
+      forget('github')
       say(r.note)
       return draw()
     }
@@ -286,7 +286,7 @@ function testCredentials () {
     confirm: 'Test it',
     onYes: async () => {
       const r = await api('credentialsTest', {})
-      changed('keys', null)
+      forget('keys')
       say(r.note, r.ready === false ? 'bad' : undefined)
       return draw()
     }

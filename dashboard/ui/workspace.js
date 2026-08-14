@@ -138,7 +138,7 @@ function workspaceCard (k, w) {
           onYes: async () => {
             await api('workspaceForget', { dir: k.dir })
             say(`${k.name} is no longer offered. What it knows was kept.`)
-            changed('ws-list', null)
+            forget('ws-list')
             return draw()
           }
         })
@@ -160,7 +160,7 @@ const AFTER_WORKSPACE = [
 async function useWorkspace (dir) {
   try {
     const now = await api('workspaceUse', { dir })
-    for (const key of AFTER_WORKSPACE) changed(key, null)
+    for (const key of AFTER_WORKSPACE) forget(key)
     say(now.changed ? `Now serving ${now.dir} — ${(now.repos || []).length} repositories.` : now.note)
     return draw()
   } catch (e) { oops(e) }
@@ -178,7 +178,7 @@ function askToCloseWorkspace (now) {
     confirm: 'Close it',
     onYes: async () => {
       const r = await api('workspaceClose')
-      for (const key of AFTER_WORKSPACE) changed(key, null)
+      for (const key of AFTER_WORKSPACE) forget(key)
       say(r.changed ? `Closed ${r.wasName}. Nothing about repositories is being served.` : r.note, 'warn')
       showTab('workspace')
       return draw()
@@ -192,7 +192,7 @@ function addWorkspace (andUse) {
   api('workspaceAdd', { dir: where })
     .then(async added => {
       $('ws-add').value = ''
-      changed('ws-list', null)
+      forget('ws-list')
       if (andUse) return useWorkspace(added.dir)
       say(added.already ? `${added.name} was already known.` : `${added.name} added — ${added.repos} repositor${added.repos === 1 ? 'y' : 'ies'}. It is not in use until you open it.`)
       return draw()

@@ -129,8 +129,8 @@ async function pickTask (id, card) {
   // coming back to a task looked at a moment ago skips the read entirely; without
   // the second, the read happens, matches what was drawn last time, and returns
   // without filling anything.
-  for (const key of ['task-detail', 'artifact']) changed(key, null)
-  changed('history-' + id, null)
+  for (const key of ['task-detail', 'artifact']) forget(key)
+  forget('history-' + id)
   historyAt = 0
 
   await settle()
@@ -821,7 +821,7 @@ async function paintPromptsNow () {
             onclick: () => {
               pickedPrompt = x.id
               been.set('prompt', pickedPrompt)
-              changed('prompts', null); changed('prompt-detail', null)
+              forget('prompts'); forget('prompt-detail')
               paintPrompts()
             }
           },
@@ -874,7 +874,7 @@ function paintPrompt (x) {
             await api('promptForget', { id: x.id })
             say(`"${x.name}" is out of the library.`, 'warn')
             pickedPrompt = null
-            changed('prompts', null); changed('prompt-detail', null)
+            forget('prompts'); forget('prompt-detail')
             return draw()
           }
         })
@@ -904,7 +904,7 @@ function writePrompt (x = null) {
       pickedPrompt = saved.id
       been.set('prompt', pickedPrompt)
       say(saved.created ? `"${saved.name}" kept.` : `"${saved.name}" saved.`)
-      changed('prompts', null); changed('prompt-detail', null)
+      forget('prompts'); forget('prompt-detail')
       return draw()
     }
   })
@@ -968,12 +968,12 @@ async function paintJobsNow () {
               el('button', {
                 className: `chip linky-chip${jobTag ? '' : ' on'}`,
                 textContent: `all ${jobsNow.length}`,
-                onclick: () => { jobTag = null; been.set('job-tag', null); changed('jobs', null); paintJobs() }
+                onclick: () => { jobTag = null; been.set('job-tag', null); forget('jobs'); paintJobs() }
               }),
               ...v.tags.map(t => el('button', {
                 className: `chip linky-chip${jobTag === t.tag ? ' on' : ''}`,
                 textContent: `${t.tag} ${t.n}`,
-                onclick: () => { jobTag = t.tag; been.set('job-tag', t.tag); changed('jobs', null); paintJobs() }
+                onclick: () => { jobTag = t.tag; been.set('job-tag', t.tag); forget('jobs'); paintJobs() }
               })))
           : null,
         shown.length
@@ -982,7 +982,7 @@ async function paintJobsNow () {
               onclick: () => {
                 pickedJob = j.id
                 been.set('job', pickedJob)
-                changed('jobs', null); changed('jobs-detail', null)
+                forget('jobs'); forget('jobs-detail')
                 paintJobs()
               }
             },
@@ -1053,7 +1053,7 @@ function paintJob (j) {
                 try {
                   await api('jobWithdraw', { id: j.id })
                   say(`"${j.name}" will not run until it is approved again.`, 'warn')
-                  changed('jobs', null); changed('jobs-detail', null)
+                  forget('jobs'); forget('jobs-detail')
                   return draw()
                 } catch (e) { oops(e) }
               }
@@ -1073,7 +1073,7 @@ function paintJob (j) {
                 onYes: async ({ note }) => {
                   await api('jobApprove', { id: j.id, note })
                   say(`"${j.name}" approved.`)
-                  changed('jobs', null); changed('jobs-detail', null)
+                  forget('jobs'); forget('jobs-detail')
                   return draw()
                 }
               })
@@ -1094,7 +1094,7 @@ function paintJob (j) {
               await api('jobForget', { id: j.id })
               say(`"${j.name}" is gone, script and all.`, 'warn')
               pickedJob = null
-              changed('jobs', null); changed('jobs-detail', null)
+              forget('jobs'); forget('jobs-detail')
               return draw()
             }
           })
@@ -1169,7 +1169,7 @@ function writeJob (j = null) {
       pickedJob = saved.id
       been.set('job', pickedJob)
       say(saved.created ? `"${saved.name}" written.` : `"${saved.name}" saved${saved.approved ? '' : ' — it needs approving again'}.`)
-      changed('jobs', null); changed('jobs-detail', null)
+      forget('jobs'); forget('jobs-detail')
       return draw()
     }
   })

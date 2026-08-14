@@ -86,7 +86,7 @@ async function paintTodoNow () {
   }).catch(() => { /* the board says when the dashboard itself is unreachable */ })
 }
 
-const redrawTodo = () => { changed('todo-chrome', null); changed('todo-list', null); paintTodo() }
+const redrawTodo = () => { forget('todo-chrome'); forget('todo-list'); paintTodo() }
 
 function todoRows (items) {
   const want = String(todoFind || '').trim().toLowerCase()
@@ -158,7 +158,7 @@ function todoCard (x) {
             onclick: () => {
               pickedCut = x.id
               been.set('prcut', pickedCut)
-              changed('prcuts', null); changed('prcut-detail', null)
+              forget('prcuts'); forget('prcut-detail')
               const t = document.querySelector('#view-prcuts .subtab[data-pane="cuts"]')
               if (t) t.click()
               showTab('prcuts')
@@ -191,7 +191,7 @@ document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(t => {
     been.set('repo-pane', repoPane)
     document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
     document.querySelectorAll('#view-repos .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${repoPane}`))
-    changed('repo-detail', null)
+    forget('repo-detail')
     $('repos-cols').classList.toggle('hidden', repoPane === 'todo')
     paintRepos()
     paintTodo()
@@ -228,7 +228,7 @@ async function paintReposNow () {
       fill($('repos'), repos.length
         ? repos.map(r => el('div', {
             className: `card pick${r.repo === pickedRepo ? ' on' : ''}${r.reachable === false ? ' warn' : ''}`,
-            onclick: () => { pickedRepo = r.repo; been.set('repo', pickedRepo); changed('repos', null); changed('repo-detail', null); paintRepos() }
+            onclick: () => { pickedRepo = r.repo; been.set('repo', pickedRepo); forget('repos'); forget('repo-detail'); paintRepos() }
           },
           el('div', { className: 'card-title' },
             el('span', { className: 'mono', textContent: r.repo }),
@@ -318,7 +318,7 @@ function paintRepoDetail (r) {
       el('button', {
         className: 'btn small',
         textContent: 'Ask GitHub about this one',
-        onclick: () => api('repositoriesCheck', { repo: r.repo }).then(x => { changed('repos', null); changed('repo-detail', null); say(x.note); return draw() }).catch(oops)
+        onclick: () => api('repositoriesCheck', { repo: r.repo }).then(x => { forget('repos'); forget('repo-detail'); say(x.note); return draw() }).catch(oops)
       }),
       rem && rem.kind === 'github'
         ? el('button', { className: 'btn small', textContent: 'Open it on GitHub', onclick: () => host.openExternal(`https://${rem.host}/${rem.owner}/${rem.repo}`) })

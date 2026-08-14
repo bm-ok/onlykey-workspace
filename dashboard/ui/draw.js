@@ -294,8 +294,8 @@ function shotIfAsked () {
       } else if (pickedRepo !== want.pick) {
         pickedRepo = want.pick
         been.set('repo', pickedRepo)
-        changed('repos', null)
-        changed('repo-detail', null)
+        forget('repos')
+        forget('repo-detail')
         shotSettle = 2
         paintRepos()
         return
@@ -309,7 +309,7 @@ function shotIfAsked () {
         if (changeLook !== want.pick) {
           changeLook = want.pick
           been.set('change-look', changeLook)
-          changed('change', null)
+          forget('change')
           shotSettle = 2
           paintBranches()
           return
@@ -321,8 +321,8 @@ function shotIfAsked () {
           changePicked = wanted
           changeLook = 'files'
           been.set('change-look', changeLook)
-          changed('change', null)
-          changed('change-file', null)
+          forget('change')
+          forget('change-file')
           shotSettle = 3
           paintBranches()
           return
@@ -345,7 +345,7 @@ function shotIfAsked () {
       // beside a list that does not contain it.
       $('branch-find').value = ''
       $('branch-mine').checked = false
-      changed('branches', null)
+      forget('branches')
       shotSettle = 2
       paintBranches()
       return
@@ -434,7 +434,7 @@ async function pickFor (v, pick) {
     } else if (pickedRepo !== pick) {
       pickedRepo = pick
       been.set('repo', pickedRepo)
-      changed('repos', null); changed('repo-detail', null)
+      forget('repos'); forget('repo-detail')
       paintRepos()
     }
     return
@@ -452,7 +452,7 @@ async function pickFor (v, pick) {
       been.set('branch', pickedBranch)
       $('branch-find').value = ''
       $('branch-mine').checked = false
-      changed('branches', null)
+      forget('branches')
       paintBranches()
     }
   }

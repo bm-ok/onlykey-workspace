@@ -63,7 +63,7 @@ function paintCuts () {
     fill($('prcuts'), rows.length
       ? rows.map(r => el('div', {
           className: `card pick${key(r) === pickedCut ? ' on' : ''}`,
-          onclick: () => { pickedCut = key(r); been.set('prcut', pickedCut); changed('prcuts', null); changed('prcut-detail', null); paintCuts() }
+          onclick: () => { pickedCut = key(r); been.set('prcut', pickedCut); forget('prcuts'); forget('prcut-detail'); paintCuts() }
         },
         el('div', { className: 'card-title' },
           el('span', { textContent: r.source }),
@@ -138,7 +138,7 @@ function paintCutDetail (c) {
             const r = await api('prCutForget', { source: c.source, target: c.target })
             pickedCut = null
             cutsSeen = null
-            changed('prcuts', null)
+            forget('prcuts')
             say(r.note)
             return refreshCuts()
           }
@@ -166,8 +166,8 @@ function editCut (c) {
   been.set('tmpl-from', tmplFrom)
   been.set('tmpl-into', tmplInto)
   tmplSeen = null
-  changed('prwrite-fields', null)
-  changed('prtemplate', null)
+  forget('prwrite-fields')
+  forget('prtemplate')
   const tab = document.querySelector('#view-prcuts .subtab[data-pane="templates"]')
   if (tab) tab.click()
 }
@@ -203,8 +203,8 @@ function setCutState (c, state) {
 function refreshCuts () {
   return api('prCuts').then(r => {
     cutsSeen = r
-    changed('prcuts', null)
-    changed('prcut-detail', null)
+    forget('prcuts')
+    forget('prcut-detail')
     paintCuts()
   }).catch(oops)
 }
@@ -234,7 +234,7 @@ document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(t => {
     been.set('prcut-pane', cutPane)
     document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
     document.querySelectorAll('#view-prcuts .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${cutPane}`))
-    changed('prtemplate', null)
+    forget('prtemplate')
     paintTemplates()
   }
 })
@@ -266,7 +266,7 @@ async function paintTemplatesNow () {
               type: 'checkbox',
               checked: b.on,
               onchange: e => api('prTemplateSet', { id: b.id, on: e.target.checked })
-                .then(() => { tmplSeen = null; changed('prtemplate', null); changed('prtemplate-preview', null); paintTemplates() })
+                .then(() => { tmplSeen = null; forget('prtemplate'); forget('prtemplate-preview'); paintTemplates() })
                 .catch(oops)
             }),
             el('span', {},
@@ -286,7 +286,7 @@ async function paintTemplatesNow () {
 
       const pick = (box, value, onPick) => {
         fill($(box), ...usable.map(g => el('option', { value: g.name, textContent: g.name, selected: g.name === value })))
-        $(box).onchange = () => { onPick($(box).value); tmplSeen = null; changed('prtemplate', null); changed('prtemplate-preview', null); paintTemplates() }
+        $(box).onchange = () => { onPick($(box).value); tmplSeen = null; forget('prtemplate'); forget('prtemplate-preview'); paintTemplates() }
       }
       pick('prtemplate-source', tmplFrom, v => { tmplFrom = v; been.set('tmpl-from', v) })
       pick('prtemplate-target', tmplInto, v => { tmplInto = v; been.set('tmpl-into', v) })
@@ -315,7 +315,7 @@ async function paintTemplatesNow () {
         // an average of them is the point of the selector.
         if (changed('prtemplate-as', [v.repos, v.showing])) {
           fill($('prtemplate-as'), ...(v.repos || []).map(r => el('option', { value: r, textContent: `as ${r}`, selected: r === v.showing })))
-          $('prtemplate-as').onchange = () => { tmplAs = $('prtemplate-as').value; tmplSeen = null; changed('prtemplate-preview', null); paintTemplates() }
+          $('prtemplate-as').onchange = () => { tmplAs = $('prtemplate-as').value; tmplSeen = null; forget('prtemplate-preview'); paintTemplates() }
         }
 
         if (!v.text && !v.additions) {
@@ -434,7 +434,7 @@ function cutFromWriter (v) {
       pickedCut = `${tmplFrom} -> ${tmplInto}`
       been.set('prcut', pickedCut)
       tmplSeen = null
-      changed('prwrite-fields', null)
+      forget('prwrite-fields')
       setText($('prwrite-state'), '')
       say(r.note, r.pulls.some(x => !x.opened) ? 'bad' : undefined)
       return refreshCuts()

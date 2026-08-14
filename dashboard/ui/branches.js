@@ -145,7 +145,7 @@ async function paintBranchesNow () {
           ? el('button', {
               className: 'chip warn linky-chip',
               textContent: `${hidden} hidden — show`,
-              onclick: () => { $('branch-mine').checked = false; changed('branches', null); paintBranches() }
+              onclick: () => { $('branch-mine').checked = false; forget('branches'); paintBranches() }
             })
           : null,
 
@@ -297,7 +297,7 @@ function paintBaselines () {
           // "In use" already has a badge, which is where a fact about the group
           // belongs; the highlight is about what YOU are looking at.
           className: `card pick${g.name === pickedGroup ? ' on' : ''}${g.broken.length ? ' warn' : ''}`,
-          onclick: () => { pickedGroup = g.name; been.set('group', pickedGroup); changed('baselines', null); paintBaselines() }
+          onclick: () => { pickedGroup = g.name; been.set('group', pickedGroup); forget('baselines'); paintBaselines() }
         },
         el('div', { className: 'card-title' },
           el('span', { className: 'mono', textContent: g.name }),
@@ -422,8 +422,8 @@ function newGroup () {
         }
 
         const saved = await api('lineSave', { name: f.name, why: f.why, on })
-        changed('baselines', null)
-        changed('branches', null)
+        forget('baselines')
+        forget('branches')
         const left = repos.filter(r => !(r.repo in on)).map(r => r.repo)
         say(`"${saved.name}" — ${saved.on.map(p => `${p.repo}:${p.branch}`).join(', ')}${left.length ? `. Not part of it: ${left.join(', ')}.` : ''}`)
         return draw()
@@ -453,8 +453,8 @@ function proposeGroup (g) {
     onYes: async f => {
       const r = await api('linePropose', { name: g.name, why: f.why })
       changeAnswer = null
-      changed('baselines', null)
-      changed('change', null)
+      forget('baselines')
+      forget('change')
       say(r.note)
       return draw()
     }
@@ -474,8 +474,8 @@ function unproposeGroup (g) {
     onYes: async () => {
       const r = await api('lineWithdraw', { name: g.name })
       changeAnswer = null
-      changed('baselines', null)
-      changed('change', null)
+      forget('baselines')
+      forget('change')
       say(r.note)
       return draw()
     }
@@ -498,8 +498,8 @@ function askToForgetGroup (g) {
     danger: true,
     onYes: async () => {
       await api('lineForget', { name: g.name })
-      changed('baselines', null)
-      changed('branches', null)
+      forget('baselines')
+      forget('branches')
       say(`"${g.name}" forgotten. Its branches are untouched.`)
       return draw()
     }
@@ -927,7 +927,7 @@ async function newBranch () {
       const r = await api('branchCreate', { branch: f.branch, reason: f.reason, group: f.group })
       pickedBranch = r.branch
       been.set('branch', r.branch)
-      changed('branches', null)
+      forget('branches')
       say(r.already
         ? `"${r.branch}" already existed everywhere.`
         // Says where it was cut from, not only that it happened. It is the fact
@@ -967,8 +967,8 @@ function askToMakeALine (b) {
       const r = await api('branchAsLine', { branch: b.name, name: f.name, why: f.why })
       pickedGroup = r.name
       been.set('group', pickedGroup)
-      changed('branches', null)
-      changed('baselines', null)
+      forget('branches')
+      forget('baselines')
       say(r.note)
       return draw()
     }
@@ -1003,8 +1003,8 @@ function takeTaskByHand (task, open = 'editor') {
     confirm: term ? 'Take a machine and open a terminal' : 'Take a machine and open it',
     onYes: async () => {
       const r = await api('taskWorkOn', { id: task.id, open })
-      changed('tasks', null)
-      changed('branches', null)
+      forget('tasks')
+      forget('branches')
 
       // THE SHELL IS OPENED HERE, because a terminal is the one thing the action
       // table cannot hand over: there is no terminal on the other side of it.
@@ -1037,8 +1037,8 @@ function finishTaskByHand (task) {
     confirm: 'Give it back',
     onYes: async () => {
       const r = await api('taskFinished', { id: task.id })
-      changed('tasks', null)
-      changed('branches', null)
+      forget('tasks')
+      forget('branches')
       say(r.note || `#${task.number} is finished and up for a verdict.`)
       return draw()
     }
@@ -1100,8 +1100,8 @@ function workOnBranch (b) {
         task: { title: f.title.trim(), brief: f.brief.trim(), branch: b.name, worker: 'person' }
       })
       const task = made.task || made
-      changed('branches', null)
-      changed('tasks', null)
+      forget('branches')
+      forget('tasks')
 
       if (f.start === 'no') {
         say(`#${task.number} "${task.title}" is on the board, on "${b.name}". Start it when you want a machine.`)

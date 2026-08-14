@@ -572,3 +572,28 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   environmental, stop touching it, and carry on with the parts of the task that
   need no machine — which is most of them, since the actions split into host and
   workspace and neither half needs a hypervisor to answer.
+
+* **An invalidation idiom that stores a value collides with that value.** The
+  repaint guard keys panels on a signature, and the way to force a redraw was
+  `changed(key, null)` — "store something nothing will match". That was used
+  ninety-five times. But `null` is not a spare token here: it is what every
+  detail panel is handed when nothing is selected. So deleting the last prompt
+  did this — the handler stored `"null"`, the repaint that followed compared the
+  real `null` against `"null"`, matched, and drew nothing. The panel kept showing
+  the prompt that had just been thrown away, with buttons that then failed with
+  "there is no prompt called…", while the list beside it said "none yet". Two
+  halves of one screen disagreeing about whether something exists.
+
+  It survived because it is invisible in review. Both call sites read
+  `changed(key, null)`; nothing in the line says one means "forget" and the other
+  means "compare". And it only bites where the empty value happens to be the
+  same as the sentinel, which is why it looked fine everywhere else for months.
+
+  The fix is that invalidating has its own word — `forget(key)`, which deletes
+  the entry rather than storing a signature, so it cannot collide with any value
+  because it holds none. The eight sites that genuinely compare against "nothing
+  selected" still say `changed(key, null)` and mean it.
+
+  Proved by lifting `changed` and `forget` straight out of `ui/base.js` and
+  running the delete sequence against both idioms: the old one still shows the
+  deleted prompt, the new one shows the empty state.
