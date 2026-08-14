@@ -14,6 +14,48 @@
 
 * { box-sizing: border-box; }
 
+/* ---------- scrollbars ----------
+
+   THE ONE PART OF THIS WINDOW THAT WAS NOT DARK. Chromium's default bar is a
+   pale grey trough with a white face, and against a dark panel it is the
+   brightest thing on the screen -- so the eye goes to a control that says
+   nothing rather than to the content it is beside. In a dialog it lands
+   directly against the fields, which is where it was noticed.
+
+   Both spellings, on purpose. `scrollbar-color` is the standard one and is what
+   a future Chromium will honour; the `::-webkit-` rules are what this one
+   actually paints, and they are the only way to reach the corner and the
+   buttons. Neither is redundant, and dropping the first would be writing to a
+   vendor prefix and calling it done.
+
+   NOT HIDDEN, and not made thinner than the pointer expects. A scrollbar is how
+   somebody knows there is more below the fold, which this window has been caught
+   getting wrong twice -- a branch list that ran past the bottom, and a dialog
+   whose confirm button sat below it. Something that dim and quiet still has to
+   be visible. */
+:root {
+  scrollbar-color: var(--line) transparent;
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+
+::-webkit-scrollbar-track { background: transparent; }
+
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 6px;
+  /* A border in the track's colour, so the thumb reads as a rounded bar with air
+     around it rather than a block filling the gutter. */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: padding-box; }
+
+/* The little square where two bars meet, which is otherwise the default grey and
+   the last pale pixel on the screen. */
+::-webkit-scrollbar-corner { background: transparent; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -172,7 +214,11 @@ h2:first-child { margin-top: 0; }
 }
 /* The part that moves. What is being READ scrolls; the title above it and the
    buttons below it stay where they are, because they are the question. */
-.dlg-body { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+/* Padded on both sides, because the scrolling half is the only part of a dialog
+   with a scrollbar in it: without the gap a field's border sits against the bar
+   and the two read as one control. Equal on both sides so the fields stay
+   centred under the title. */
+.dlg-body { overflow-y: auto; min-height: 0; flex: 1 1 auto; padding: 0 5px; }
 /* A block of text to read INSIDE a dialog, which cannot use the viewport height
    the way a full-page console does -- the dialog is already bounded, and 100vh
    inside it is what pushed the buttons off the screen. */
