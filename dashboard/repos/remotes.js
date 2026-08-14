@@ -101,6 +101,8 @@ function read () {
       why: note.why || null,
       may: note.may || null,
       accountMay: note.accountMay || null,
+      parent: note.parent || null,
+      intoParent: note.intoParent || null,
       branchesThere: note.branchesThere || null,
       privateRepo: note.privateRepo == null ? null : note.privateRepo,
       fork: note.fork == null ? null : note.fork,
@@ -185,9 +187,37 @@ async function check (only = null) {
         if (!canReadCode) missing.push('Contents')
         if (!canReadPulls) missing.push('Pull requests')
 
+        // WHERE A PULL REQUEST WOULD ACTUALLY GO.
+        //
+        // A fork is not a detail about a repository, it is the answer to that
+        // question — a pull request from a fork is created IN THE PARENT, with
+        // `head: owner:branch`. So a token scoped to the forks can push a branch
+        // and still be unable to open anything, which is a failure that would
+        // arrive at the last possible moment and look like a bug in this app.
+        //
+        // The parent is asked about separately and on its own terms: reachable
+        // is one question, and may-open-a-pull-request-there is another.
+        const parent = r.body.parent ? r.body.parent.full_name : null
+        let intoParent = null
+        if (parent) {
+          const [po, pr] = parent.split('/')
+          const up = await github.call('GET', `/repos/${po}/${pr}/pulls?state=open&per_page=1`)
+          intoParent = {
+            repo: parent,
+            defaultBranch: r.body.parent.default_branch || null,
+            mayOpen: up.status === 200,
+            why: up.status === 200 ? null : (up.status === 404
+              ? 'this token was not granted the parent, so a pull request cannot be opened there'
+              : (up.body && up.body.message) || `GitHub answered ${up.status}`)
+          }
+          if (!intoParent.mayOpen) missing.push(`Pull requests on ${parent}`)
+        }
+
         notes[name] = {
           checked: at,
           reachable: true,
+          parent,
+          intoParent,
           why: missing.length
             ? `the token cannot use ${missing.join(' or ')} here — add ${missing.length === 1 ? 'that permission' : 'those permissions'} to it on GitHub`
             : null,

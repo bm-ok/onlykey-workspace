@@ -3644,7 +3644,7 @@ function paintRepos () {
               el('span', { className: 'mono', textContent: r.repo }),
               el('span', { className: 'badge muted', textContent: `${r.branches} branch(es)` }),
               r.privateRepo ? el('span', { className: 'badge muted', textContent: 'private' }) : null,
-              r.fork ? el('span', { className: 'badge muted', textContent: 'fork' }) : null,
+              r.fork ? el('span', { className: 'badge muted', textContent: r.parent ? 'fork of ' + r.parent : 'fork' }) : null,
               !asked
                 ? el('span', { className: 'badge', textContent: 'not asked about yet' })
                 : bad
@@ -3689,6 +3689,26 @@ function paintRepos () {
                         ? el('span', { className: r.inStep ? 'ok' : '', textContent: r.inStep ? '  same commit as here' : `  at ${String(r.upstreamHead).slice(0, 8)} — different from here` })
                         : el('span', { className: 'muted', textContent: '  its head could not be read' })))
                 : null,
+
+              // WHERE A PULL REQUEST WOULD GO, which a fork makes a real
+              // question rather than an obvious one: a PR from a fork is created
+              // in the PARENT, so a token scoped to the fork can push a branch
+              // and still be unable to open anything. That failure would arrive
+              // at the last possible moment and look like a bug in this app.
+              asked && r.intoParent
+                ? el('tr', {}, el('th', { textContent: 'a pull request goes to' }),
+                    el('td', {},
+                      el('span', { className: 'mono', textContent: r.intoParent.repo }),
+                      el('span', { textContent: '  ' }),
+                      el('span', {
+                        className: r.intoParent.mayOpen ? 'ok' : 'bad',
+                        textContent: r.intoParent.mayOpen ? 'this token may open one there' : 'this token may NOT open one there'
+                      }),
+                      r.intoParent.why ? el('div', { className: 'muted', textContent: r.intoParent.why }) : null))
+                : asked && r.fork === false
+                  ? el('tr', {}, el('th', { textContent: 'a pull request goes to' }),
+                      el('td', { className: 'muted', textContent: 'itself — this is not a fork' }))
+                  : null,
 
               asked && r.openPulls != null
                 ? el('tr', {}, el('th', { textContent: 'open pull requests' }),
