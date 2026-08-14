@@ -284,18 +284,23 @@
          finished or thrown away. -->
     <div class="pane" id="pane-add">
       <p class="note" id="add-note"></p>
+      <!-- NARROW FIRST, WIDE SECOND, like every other pane here. The columns
+           were the other way round for a few minutes and it read as a different
+           kind of screen: every list-and-detail pane in this window puts the
+           short column on the left, and a form is not special enough to break
+           the one thing somebody does not have to relearn per tab.
+
+           The form still takes the wide half, because the widest column holds
+           the thing being read and here that is the brief -- the most important
+           text on the screen, and unreadable in a 260px box. -->
       <div class="cols">
-        <!-- The FORM is the wide half here, which is the opposite of every other
-             pane in this window and is right for the same reason they are: the
-             widest column holds the thing being read. Everywhere else that is a
-             detail panel; here it is the brief, which is the most important text
-             on the screen and unreadable in a 260px box. -->
-        <div class="col wide">
-          <h2 class="titlerow">The task <span class="muted" id="add-context"></span></h2>
-          <div id="add-form" class="stack form"></div>
-        </div>
         <div class="col narrow">
+          <h2 class="titlerow">It will carry <span class="muted" id="add-context"></span></h2>
           <div id="add-preview" class="panel"></div>
+        </div>
+        <div class="col wide">
+          <h2 class="titlerow">The task</h2>
+          <div id="add-form" class="stack form"></div>
         </div>
       </div>
     </div>
