@@ -762,35 +762,48 @@ module.exports = {
   },
 
   jobRun: {
-    about: 'Run a job against the workspace that is open, with a prompt',
+    about: 'Send a job to a machine and let it run there, with a prompt',
     needs: 'workspace',
-    takes: ['id', 'promptId'],
-    run: async ({ id, promptId }) => {
+    takes: ['id', 'promptId', 'name', 'folder'],
+    run: async ({ id, promptId, name, folder }) => {
       const one = jobs.get(id)
       if (!one) throw new Error(`There is no job called "${id}".`)
 
-      const to = log.on('job', id)
-      to.info(`running "${one.name}"${promptId ? ` with the prompt "${promptId}"` : ''}`)
+      // A MACHINE IS REQUIRED, and it is refused rather than chosen for you.
+      // Which machine a job runs on decides what it can see and what it leaves
+      // behind, and picking one quietly is how work lands somewhere nobody meant.
+      if (!name) {
+        const free = vms.read().filter(v => channel.connected(v.name))
+        throw new Error(free.length
+          ? `Say which machine. Connected right now: ${free.map(v => v.name).join(', ')}.`
+          : 'Say which machine — and none is connected right now, so start one first.')
+      }
+      const vm = vms.get(name)
+      if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in, so it cannot be given anything.`)
 
-      // `call` rather than the raw table, so a job is refused exactly what a
-      // person is refused -- including everything gated on a workspace.
-      //
-      // REQUIRED HERE RATHER THAN AT THE TOP, because server.js requires this
-      // file: at load time its exports are half-built and `call` would be
-      // undefined for ever. By the time anything runs it is there. Same reason
-      // actions/table.js is filled rather than built.
-      const { call } = require('../server')
+      const to = log.on('job', id, name)
+
+      // Where artifacts go. The guest knows its own token and this app's
+      // authority; what it does not know is which port to hand a file back on.
+      let base = null
+      try {
+        const where = await vbox.hostAddress()
+        if (where) base = `https://${where}:${net.port}`
+      } catch { /* no address means no helper, and the job still runs */ }
 
       const out = await jobrun.run({
         id,
         promptId: promptId || one.promptId || null,
-        call,
+        machine: name,
         prompts,
-        log: line => to.out(line)
+        dispatch,
+        channel,
+        base,
+        folder: folder || (vm.spec && vm.spec.folder) || workspace.FOLDER,
+        log: line => to.info(String(line))
       })
 
-      if (out.ok) to.good(`"${one.name}" finished in ${out.seconds}s`)
-      else to.bad(`"${one.name}" failed after ${out.seconds}s — ${out.error}`)
+      to.good(`${name} is running "${one.name}" as ${out.run}`)
       return out
     }
   },

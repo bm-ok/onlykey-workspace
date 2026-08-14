@@ -57,7 +57,24 @@ function heredoc (path, body, tag) {
 // It is a real run in every other respect -- same directory, same pid file, same
 // status, same detachment, same log kept here afterwards -- so what it proves
 // about the machinery is what a worker would have proved.
-function script ({ id, task, folder, contract, resume, shell, base }) {
+// A JOB IS THE THIRD KIND OF RUN, and it is the same machinery as the other two.
+//
+// `claude -p` gives the brief to a worker. `shell` runs it as a command. A job
+// runs a SCRIPT the operator wrote, with node, in the guest -- same directory,
+// same pid file, same status, same detachment, same log kept here afterwards.
+//
+// IT RUNS ON THE MACHINE, WHICH IS THE WHOLE POINT. A job is arbitrary code, and
+// code that runs on the operator's own computer is a program running as them --
+// the API it is handed is a convenience, not a sandbox, because a Node module can
+// require anything it likes. On a machine the blast radius is a thing that gets
+// rolled back to a snapshot when the work ends.
+//
+// AND IT DOES NOT GET `okc`. "This machine cannot reach the dashboard's actions
+// at all" is stated a few lines below as part of why a worker may run with
+// permissions skipped, and it stays true: a job gets the same door everything
+// else on this machine gets -- a command on its PATH, authenticated by the
+// machine's own token -- and nothing wider.
+function script ({ id, task, folder, contract, resume, shell, job, prompt, base }) {
   const dir = `${RUNS}/${id}`
 
   // THE CONTRACT IS CARRIED, NOT REFERENCED.
@@ -114,6 +131,62 @@ exec curl -fsS --cacert "\${OKC_CA:-/etc/okc/ca.pem}" \\
 chmod +x ${dir}/okc-artifact
 ` : ''}
 
+${job ? `
+# THE JOB'S OWN API, written as a file beside it.
+#
+# Everything a job can do is on the one object below, and what is NOT on it is
+# the point: no okc, no dashboard, no network of its own. What it has is what
+# this machine already had -- a shell, the workspace it was set up with, and
+# okc-artifact on PATH.
+${heredoc(`${dir}/prompt.txt`, prompt ? prompt.text : '', 'OKC_PROMPT_EOF')}
+${heredoc(`${dir}/job.js`, job, 'OKC_JOB_EOF')}
+${heredoc(`${dir}/run-job.js`, `'use strict'
+// Written by the dashboard. It requires the job beside it and hands it the one
+// object a job is given.
+const fs = require('fs')
+const cp = require('child_process')
+const path = require('path')
+
+const here = __dirname
+const read = f => { try { return fs.readFileSync(path.join(here, f), 'utf8') } catch { return '' } }
+
+const prompt = process.env.OKC_PROMPT_ID
+  ? { id: process.env.OKC_PROMPT_ID, name: process.env.OKC_PROMPT_NAME || null, text: read('prompt.txt') }
+  : null
+
+// Straight to stdout, which is already captured to out.log and read back by
+// vmRunOutput. A job needs no channel of its own to be watched.
+const log = line => process.stdout.write(String(line) + '\\n')
+
+// A command in the guest. Synchronous on purpose: a job is a script somebody
+// reads top to bottom, and the first thing an async shell helper costs is that.
+const sh = (cmd, opts = {}) => cp.execSync(cmd, { encoding: 'utf8', cwd: opts.cwd || process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] })
+
+// The same okc-artifact every run already has, called rather than reimplemented.
+const artifact = (file, name) => cp.execFileSync('okc-artifact', name ? [file, name] : [file], { encoding: 'utf8' })
+
+const api = {
+  prompt,
+  log,
+  sh,
+  artifact,
+  workspace: process.env.OKC_FOLDER || process.cwd(),
+  machine: process.env.OKC_VM || null
+}
+
+const job = require(path.join(here, 'job.js'))
+if (typeof job !== 'function') {
+  console.error('okc: a job has to export a function: module.exports = async (api) => { ... }')
+  process.exit(2)
+}
+
+Promise.resolve()
+  .then(() => job(api))
+  .then(out => { if (out !== undefined) log('okc-result ' + JSON.stringify(out)) })
+  .catch(e => { console.error(e && e.stack ? e.stack : String(e)); process.exit(1) })
+`, 'OKC_RUNNER_EOF')}
+` : ''}
+
 # --dangerously-skip-permissions is the point rather than a shortcut. A worker
 # that stops to ask cannot run unattended, and asking is exactly what nobody is
 # there for. It is defensible HERE and would not be anywhere else: this machine
@@ -143,9 +216,23 @@ cd ${q(folder)} 2>/dev/null || cd "$HOME"
 # rather than a path it has to be told.
 PATH=${dir}:$PATH
 export PATH
-${shell
-  ? `bash ${dir}/task.txt`
-  : `claude -p "$(cat ${dir}/task.txt)" --dangerously-skip-permissions --output-format json${rules ? ` --append-system-prompt-file ${rules}` : ''}${resume ? ` --resume ${q(resume)}` : ''}`} > ${dir}/out.log 2>&1
+${job ? `# What the job's API reads.
+#
+# The prompt TEXT is a file beside the script rather than an environment
+# variable: a prompt is prose, and prose in an environment is one newline away
+# from being unreadable -- and env is exactly what a transcript dumps, which is
+# the interaction the note at the top of this file is about.
+OKC_FOLDER=${q(folder)}
+export OKC_FOLDER
+${prompt ? `OKC_PROMPT_ID=${q(prompt.id)}
+OKC_PROMPT_NAME=${q(prompt.name || prompt.id)}
+export OKC_PROMPT_ID OKC_PROMPT_NAME` : ''}`
+: ''}
+${job
+  ? `node ${dir}/run-job.js`
+  : shell
+    ? `bash ${dir}/task.txt`
+    : `claude -p "$(cat ${dir}/task.txt)" --dangerously-skip-permissions --output-format json${rules ? ` --append-system-prompt-file ${rules}` : ''}${resume ? ` --resume ${q(resume)}` : ''}`} > ${dir}/out.log 2>&1
 echo $? > ${dir}/status
 OKC_RUN_EOF
 
