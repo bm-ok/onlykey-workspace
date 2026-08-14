@@ -658,6 +658,23 @@ document.querySelectorAll('.tab').forEach(b => {
     // Only on a real change: switching to the tab you are on is a click that
     // says nothing, and a watcher full of those learns to ignore the tag.
     if (from !== view) liveLog.on('window').info(`looking at ${view}`)
+
+    // DRAWN NOW, NOT ON THE NEXT TICK.
+    //
+    // Every panel here is empty until its paint function runs, and every paint
+    // function refuses to run unless its tab is the one being looked at -- which
+    // is right, and left switching tabs waiting for the poll. That poll is
+    // TWELVE SECONDS when no machine is running, so a tab could sit blank for
+    // twelve seconds after being clicked and the window looked broken rather
+    // than busy.
+    //
+    // The two costs are worth telling apart, because only one of them was real:
+    // reading the branch board takes under a second, and the wait before it
+    // STARTED was the other eleven. Nothing here is faster than it was; it
+    // simply begins when asked.
+    //
+    // The sub-tab handlers already did this. Only the tabs themselves did not.
+    if (from !== view) draw()
   }
 })
 const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).click()
