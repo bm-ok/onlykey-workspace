@@ -111,7 +111,20 @@ function read () {
       fork: note.fork == null ? null : note.fork,
       upstreamDefault: note.upstreamDefault || null,
       upstreamHead: note.upstreamHead || null,
-      openPulls: note.openPulls == null ? null : note.openPulls,
+      // COUNTED FROM THE LIST THAT IS SHOWN, not from a separate query.
+      // The check counted pull requests on the FORK and the list reads them from
+      // the PARENT, which is where they actually are -- so the badge said 0
+      // beside a pane showing one. Two places knowing the same thing and
+      // disagreeing is the fault this window keeps finding; the list wins,
+      // because the list is what somebody reads.
+      openPulls: note.pulls ? note.pulls.filter(x => x.state === 'open').length : (note.openPulls == null ? null : note.openPulls),
+      // Gathered on the same trip as the check, and null until somebody asks --
+      // which is different from an empty list, and the panes say so.
+      pulls: note.pulls || null,
+      issues: note.issues || null,
+      openIssues: note.issues ? note.issues.length : null,
+      issuesOn: note.parent || null,
+      gathered: note.gathered || null,
       // Computed here rather than stored, so it is right even when the local
       // branch moved after the last check.
       inStep: note.upstreamHead && head ? note.upstreamHead === head : null
@@ -392,4 +405,58 @@ async function pullsOn (repo) {
   }))
 }
 
-module.exports = { read, check, remoteOf, parse, pushBranch, openPull, pullsOn }
+// What is being ASKED of a repository, as opposed to what is waiting to go into
+// it. Issues are the one thing in this app that arrives from outside: everything
+// else begins with somebody writing a task, and an issue is work that turned up.
+//
+// ON THE SAME REPOSITORY A PULL REQUEST WOULD GO TO, because that is where a
+// conversation about the project happens. A fork's own issue tracker is usually
+// empty and usually disabled, and listing it would be a column of nothing beside
+// a parent full of work.
+//
+// GITHUB'S ISSUES ENDPOINT RETURNS PULL REQUESTS TOO — a pull request IS an
+// issue there, with an extra field. Left unfiltered, every pull request would
+// appear in both lists and every count would be wrong in the same direction.
+async function issuesOn (repo) {
+  const note = seen()[repo] || {}
+  const remote = remoteOf(repo)
+  if (!remote) return []
+  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
+  const r = await github.call('GET', `/repos/${into[0]}/${into[1]}/issues?state=open&per_page=100`)
+  if (r.status !== 200 || !Array.isArray(r.body)) return []
+  return r.body
+    .filter(i => !i.pull_request)
+    .map(i => ({
+      number: i.number,
+      title: i.title,
+      url: i.html_url,
+      state: i.state,
+      by: i.user && i.user.login,
+      at: i.created_at,
+      updated: i.updated_at,
+      comments: i.comments,
+      labels: (i.labels || []).map(l => (typeof l === 'string' ? l : l.name)),
+      on: `${into[0]}/${into[1]}`,
+      body: i.body || null
+    }))
+}
+
+// Everything asked for in one go, and written down. One button, because
+// "reachable", "what is open" and "what is being asked" are the same trip.
+async function gather (only = null) {
+  const rows = await check(only)
+  const notes = seen()
+
+  for (const row of rows) {
+    if (row.reachable !== true) continue
+    try {
+      notes[row.repo] = { ...notes[row.repo], pulls: await pullsOn(row.repo), issues: await issuesOn(row.repo), gathered: new Date().toISOString() }
+    } catch (e) {
+      notes[row.repo] = { ...notes[row.repo], gatherWhy: e.message }
+    }
+  }
+  keep(notes)
+  return rows
+}
+
+module.exports = { read, check, gather, remoteOf, parse, pushBranch, openPull, pullsOn, issuesOn }

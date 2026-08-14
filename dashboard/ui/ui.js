@@ -1544,7 +1544,11 @@ function judgeTask (task) {
 // plan, not inventing a task at the moment of dispatch, because a task invented
 // then has been reviewed by nobody and is judged afterwards by whoever wrote it.
 // Authoring belongs to the operator, at a keyboard, in the first tab.
-function newTask () {
+// PREFILLED WHEN THE WORK CAME FROM SOMEWHERE, which is what an issue is:
+// somebody already wrote what they want, and retyping it into a brief is how the
+// two drift apart. The dialog is otherwise identical -- a task from an issue is
+// a task, and gets the same reason, contract and branch as any other.
+function newTask (from = null) {
   Promise.all([api('gitBranches'), api('planned')]).then(([{ branches: known, protected: guarded }, plan]) => {
     const taken = new Set((guarded || []).map(g => g.branch))
 
@@ -1569,9 +1573,9 @@ function newTask () {
             'Nothing is given out yet — writing a task touches no machine.'
           ],
           fields: [
-            { name: 'title', label: 'Title', placeholder: 'Short enough to read in a list' },
+            { name: 'title', label: 'Title', value: (from && from.title) || '', placeholder: 'Short enough to read in a list' },
             { name: 'branch', label: 'Branch it delivers on', placeholder: 'fix/the-thing' },
-            { name: 'brief', label: 'The brief — what the worker is actually told', multiline: true, rows: 10, placeholder: 'Write it as instructions to somebody who cannot ask you a question.' },
+            { name: 'brief', label: 'The brief — what the worker is actually told', value: (from && from.brief) || '', multiline: true, rows: 10, placeholder: 'Write it as instructions to somebody who cannot ask you a question.' },
             { name: 'contract', label: 'Contract (a file on this host, optional)', placeholder: 'the rules the worker is given' },
             { name: 'folder', label: 'Folder on the machine (optional)', placeholder: 'defaults to its workspace' }
           ],
@@ -1737,12 +1741,12 @@ let pickedGroup = been.get('group', null)
 // has two of its own inside it for commits and files — caught by a document-wide
 // selector, those would set `branchPane` to undefined and blank the tab. The
 // styling is shared on purpose; what distinguishes them is what they carry.
-document.querySelectorAll('.subtab[data-pane]').forEach(b => {
+document.querySelectorAll('#view-branches .subtab[data-pane]').forEach(b => {
   b.onclick = () => {
     branchPane = b.dataset.pane
     been.set('branch-pane', branchPane)
-    document.querySelectorAll('.subtab[data-pane]').forEach(x => x.classList.toggle('active', x === b))
-    document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === `pane-${branchPane}`))
+    document.querySelectorAll('#view-branches .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === b))
+    document.querySelectorAll('#view-branches .pane').forEach(p => p.classList.toggle('active', p.id === `pane-${branchPane}`))
     // Painted at once rather than on the next tick, or switching to a pane that
     // has never been drawn shows an empty one for up to three seconds.
     paintBranches()
@@ -1751,10 +1755,10 @@ document.querySelectorAll('.subtab[data-pane]').forEach(b => {
 
 // Applied before anything is drawn, so the remembered pane and the markup agree.
 ;(() => {
-  const tab = document.querySelector(`.subtab[data-pane="${branchPane}"]`)
+  const tab = document.querySelector(`#view-branches .subtab[data-pane="${branchPane}"]`)
   if (!tab) { branchPane = 'overview'; return }
-  document.querySelectorAll('.subtab[data-pane]').forEach(x => x.classList.toggle('active', x === tab))
-  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === `pane-${branchPane}`))
+  document.querySelectorAll('#view-branches .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === tab))
+  document.querySelectorAll('#view-branches .pane').forEach(p => p.classList.toggle('active', p.id === `pane-${branchPane}`))
 })()
 
 function paintBranches () {
@@ -3634,145 +3638,229 @@ function askForCode (name, url) {
 
 // ---- the repositories --------------------------------------------------
 //
-// What everything else is made of. A branch is cut across these, a task delivers
-// into them, a machine checks them out — and until now nothing said where one
-// came from or whether the far end could still be reached.
+// What everything else is made of, asked three ways: what is here and can it be
+// reached, what is being asked of it, and what is waiting to go into it.
 //
-// LOCAL FACTS ARE DRAWN EVERY TIME; REMOTE ONES CARRY A DATE. The path, the
-// default branch, the remote URL and the head are read from disk and are true
-// now. Everything about GitHub was asked for on purpose and is only as true as
-// the moment it was asked, so it says when — a repository row that quietly mixed
-// the two would be a row nobody could trust either half of.
+// ONE SELECTION ACROSS ALL THREE. The narrow column is a repository picker and
+// it lives outside the panes, because "which repository" is the same question on
+// every sub-tab — three independent selections would mean picking one here and
+// finding another there.
+//
+// LOCAL FACTS ARE DRAWN EVERY TIME; REMOTE ONES CARRY A DATE. The path, default
+// branch, remote and head are read from disk and are true now. Issues, pull
+// requests and reachability were asked for on purpose and are only as true as
+// the moment they were asked, so they say when. A row that quietly mixed the two
+// would be a row nobody could trust either half of.
+let pickedRepo = been.get('repo', null)
+let repoPane = been.get('repo-pane', 'repos')
+
+document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(t => {
+  t.onclick = () => {
+    repoPane = t.dataset.pane
+    been.set('repo-pane', repoPane)
+    document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
+    document.querySelectorAll('#view-repos .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${repoPane}`))
+    changed('repo-detail', null)
+    paintRepos()
+  }
+})
+;(() => {
+  const t = document.querySelector(`#view-repos .subtab[data-pane="${repoPane}"]`)
+  if (!t) { repoPane = 'repos'; return }
+  document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
+  document.querySelectorAll('#view-repos .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${repoPane}`))
+})()
+
 function paintRepos () {
   api('repositories').then(({ dir, repos, note }) => {
-    if (!changed('repos', [dir, repos])) return
+    // Reconciled against what exists, like every other selection here.
+    if (!repos.some(r => r.repo === pickedRepo)) {
+      pickedRepo = repos.length ? repos[0].repo : null
+      been.set('repo', pickedRepo)
+    }
     setText($('repos-context'), repos.length ? `— ${repos.length} in ${dir}` : '— none')
     setText($('repos-note'), note)
 
-    fill($('repos'), repos.length
-      ? repos.map(r => {
-          const rem = r.remote
-          const asked = !!r.checked
-          const bad = r.reachable === false
-          const warn = r.reachable === true && !!r.why
+    if (changed('repos', [repos, pickedRepo])) {
+      fill($('repos'), repos.length
+        ? repos.map(r => el('div', {
+            className: `card pick${r.repo === pickedRepo ? ' on' : ''}${r.reachable === false ? ' warn' : ''}`,
+            onclick: () => { pickedRepo = r.repo; been.set('repo', pickedRepo); changed('repos', null); changed('repo-detail', null); paintRepos() }
+          },
+          el('div', { className: 'card-title' },
+            el('span', { className: 'mono', textContent: r.repo }),
+            r.reachable === false ? el('span', { className: 'badge bad', textContent: 'unreachable' }) : null,
+            r.reachable === true && r.why ? el('span', { className: 'badge warn', textContent: 'limited' }) : null),
+          el('div', { className: 'card-sub mono', textContent: r.default || '(no default branch)' }),
+          el('div', { className: 'badges' },
+            el('span', { className: 'muted', textContent: `${r.branches} branch(es)` }),
+            r.openIssues != null ? el('span', { className: 'muted', textContent: `${r.openIssues} issue(s)` }) : null,
+            r.openPulls != null ? el('span', { className: 'muted', textContent: `${r.openPulls} pull(s)` }) : null)))
+        : el('p', { className: 'empty', textContent: 'No repositories in this workspace folder.' }))
+    }
 
-          return el('div', { className: `card${bad ? ' warn' : ''}` },
-            el('div', { className: 'card-title' },
-              el('span', { className: 'mono', textContent: r.repo }),
-              el('span', { className: 'badge muted', textContent: `${r.branches} branch(es)` }),
-              r.privateRepo ? el('span', { className: 'badge muted', textContent: 'private' }) : null,
-              r.fork ? el('span', { className: 'badge muted', textContent: r.chained ? 'fork of ' + r.parent + ' of ' + r.source : (r.parent ? 'fork of ' + r.parent : 'fork') }) : null,
-              !asked
-                ? el('span', { className: 'badge', textContent: 'not asked about yet' })
-                : bad
-                  ? el('span', { className: 'badge bad', textContent: 'cannot be reached' })
-                  : warn
-                    ? el('span', { className: 'badge warn', textContent: 'reachable, not usable' })
-                    : el('span', { className: 'badge ok', textContent: 'reachable' })),
-
-            el('table', { className: 'kv', style: 'margin-top:8px' },
-              el('tr', {}, el('th', { textContent: 'here' }),
-                el('td', { className: 'mono', style: 'user-select:text', textContent: r.path })),
-              el('tr', {}, el('th', { textContent: 'default branch' }),
-                el('td', {}, el('span', { className: 'mono', textContent: r.default || '(none)' }),
-                  el('span', { className: 'muted', textContent: r.head ? `  at ${String(r.head).slice(0, 8)}` : '' }))),
-              el('tr', {}, el('th', { textContent: 'origin' }),
-                el('td', {}, rem
-                  ? el('span', { className: 'mono', style: 'user-select:text', textContent: rem.url })
-                  : el('span', { className: 'bad', textContent: 'no remote called origin — nothing here can be pushed onward' }))),
-
-              // WHAT THE TOKEN MAY DO, probed rather than read off the
-              // repository. GitHub's own `permissions` field describes the
-              // ACCOUNT and reported read+push+admin on a token that could not
-              // list a branch. Both are shown, labelled, because the difference
-              // is the whole answer to "why did that fail".
-              asked && r.may
-                ? el('tr', {}, el('th', { textContent: 'this token may' }),
-                    el('td', {},
-                      el('span', { className: r.may.code ? 'ok' : 'bad', textContent: r.may.code ? 'read code' : 'NOT read code' }),
-                      el('span', { textContent: ' · ' }),
-                      el('span', { className: r.may.pulls ? 'ok' : 'bad', textContent: r.may.pulls ? 'use pull requests' : 'NOT use pull requests' })))
-                : null,
-              asked && r.accountMay
-                ? el('tr', {}, el('th', { textContent: 'your account may' }),
-                    el('td', { className: 'muted', textContent: `${Object.entries(r.accountMay).filter(([, v]) => v).map(([k]) => k).join(', ')} — which is not the same as what the token may do` }))
-                : null,
-
-              asked && r.upstreamDefault
-                ? el('tr', {}, el('th', { textContent: 'there' }),
-                    el('td', {},
-                      el('span', { className: 'mono', textContent: r.upstreamDefault }),
-                      r.upstreamHead
-                        ? el('span', { className: r.inStep ? 'ok' : '', textContent: r.inStep ? '  same commit as here' : `  at ${String(r.upstreamHead).slice(0, 8)} — different from here` })
-                        : el('span', { className: 'muted', textContent: '  its head could not be read' })))
-                : null,
-
-              // WHERE A PULL REQUEST WOULD GO, which a fork makes a real
-              // question rather than an obvious one: a PR from a fork is created
-              // in the PARENT, so a token scoped to the fork can push a branch
-              // and still be unable to open anything. That failure would arrive
-              // at the last possible moment and look like a bug in this app.
-              asked && r.intoParent
-                ? el('tr', {}, el('th', { textContent: 'a pull request goes to' }),
-                    el('td', {},
-                      el('span', { className: 'mono', textContent: r.intoParent.repo }),
-                      el('span', { textContent: '  ' }),
-                      el('span', {
-                        className: r.intoParent.mayOpen ? 'ok' : 'bad',
-                        textContent: r.intoParent.mayOpen ? 'this token may open one there' : 'this token may NOT open one there'
-                      }),
-                      r.intoParent.why ? el('div', { className: 'muted', textContent: r.intoParent.why }) : null,
-                      // A CHAIN MAKES THIS A CHOICE. GitHub reports the parent
-                      // one level up and the root of the network, and nothing
-                      // reports the middle of a longer one — so a fork of a fork
-                      // has two honest answers and this says both rather than
-                      // picking one silently.
-                      r.chained
-                        ? el('div', { className: 'note', style: 'margin-top:4px' },
-                            el('strong', { textContent: 'This is a fork of a fork. ' }),
-                            el('span', { textContent: `One level up is ${r.parent}; the root of the network is ${r.source}. Work goes one step up by default, which is how a chain is normally worked — sending it to the root instead is a choice, not a correction.` }),
-                            r.intoSource
-                              ? el('div', { className: r.intoSource.mayOpen ? 'ok' : 'bad', textContent: r.intoSource.mayOpen ? `The token may also open one directly in ${r.source}.` : `The token may not open one in ${r.source}: ${r.intoSource.why}` })
-                              : null)
-                        : null))
-                : asked && r.fork === false
-                  ? el('tr', {}, el('th', { textContent: 'a pull request goes to' }),
-                      el('td', { className: 'muted', textContent: 'itself — this is not a fork' }))
-                  : null,
-
-              asked && r.openPulls != null
-                ? el('tr', {}, el('th', { textContent: 'open pull requests' }),
-                    el('td', { textContent: String(r.openPulls) }))
-                : null,
-
-              el('tr', {}, el('th', { textContent: 'asked GitHub' }),
-                el('td', {}, asked
-                  ? el('span', { className: 'muted', textContent: ago(r.checked) })
-                  : el('span', { className: 'muted', textContent: 'never' })))),
-
-            r.why
-              ? el('p', { className: 'note', style: 'margin-top:8px' },
-                  el('strong', { className: bad ? 'bad' : '', textContent: bad ? 'Cannot be reached. ' : 'Reachable, but not usable yet. ' }),
-                  el('span', { textContent: r.why }))
-              : null,
-
-            el('div', { className: 'row', style: 'margin-top:8px' },
-              el('button', {
-                className: 'btn small',
-                textContent: 'Check this one',
-                onclick: () => api('repositoriesCheck', { repo: r.repo })
-                  .then(x => { changed('repos', null); say(x.note); return draw() }).catch(oops)
-              }),
-              rem && rem.kind === 'github'
-                ? el('button', {
-                    className: 'btn small',
-                    textContent: 'Open it on GitHub',
-                    onclick: () => nw.Shell.openExternal(`https://${rem.host}/${rem.owner}/${rem.repo}`)
-                  })
-                : null))
-        })
-      : el('p', { className: 'empty', textContent: 'No repositories in this workspace folder.' }))
+    const one = repos.find(r => r.repo === pickedRepo) || null
+    if (!changed('repo-detail', [repoPane, one])) return
+    if (repoPane === 'repos') return paintRepoDetail(one)
+    if (repoPane === 'issues') return paintRepoIssues(one)
+    return paintRepoPulls(one)
   }).catch(() => { /* the board says when the dashboard is unreachable */ })
+}
+
+function paintRepoDetail (r) {
+  if (!r) return fill($('repo-detail'), el('p', { className: 'empty', textContent: 'Pick a repository on the left.' }))
+  const rem = r.remote
+  const asked = !!r.checked
+
+  fill($('repo-detail'),
+    el('div', { className: 'card-title' },
+      el('span', { className: 'mono', textContent: r.repo }),
+      r.privateRepo ? el('span', { className: 'badge muted', textContent: 'private' }) : null,
+      r.fork ? el('span', { className: 'badge muted', textContent: r.chained ? `fork of ${r.parent} of ${r.source}` : (r.parent ? `fork of ${r.parent}` : 'fork') }) : null,
+      !asked
+        ? el('span', { className: 'badge', textContent: 'not asked about yet' })
+        : r.reachable === false
+          ? el('span', { className: 'badge bad', textContent: 'cannot be reached' })
+          : r.why
+            ? el('span', { className: 'badge warn', textContent: 'reachable, not usable' })
+            : el('span', { className: 'badge ok', textContent: 'reachable' })),
+
+    el('table', { className: 'kv', style: 'margin-top:8px' },
+      el('tr', {}, el('th', { textContent: 'here' }), el('td', { className: 'mono', style: 'user-select:text', textContent: r.path })),
+      el('tr', {}, el('th', { textContent: 'default branch' }),
+        el('td', {}, el('span', { className: 'mono', textContent: r.default || '(none)' }),
+          el('span', { className: 'muted', textContent: r.head ? `  at ${String(r.head).slice(0, 8)}` : '' }))),
+      el('tr', {}, el('th', { textContent: 'origin' }),
+        el('td', {}, rem
+          ? el('span', { className: 'mono', style: 'user-select:text', textContent: rem.url })
+          : el('span', { className: 'bad', textContent: 'no remote called origin — nothing here can be pushed onward' }))),
+      asked && r.may
+        ? el('tr', {}, el('th', { textContent: 'this token may' }),
+            el('td', {},
+              el('span', { className: r.may.code ? 'ok' : 'bad', textContent: r.may.code ? 'read code' : 'NOT read code' }),
+              el('span', { textContent: ' · ' }),
+              el('span', { className: r.may.pulls ? 'ok' : 'bad', textContent: r.may.pulls ? 'use pull requests' : 'NOT use pull requests' })))
+        : null,
+      asked && r.accountMay
+        ? el('tr', {}, el('th', { textContent: 'your account may' }),
+            el('td', { className: 'muted', textContent: `${Object.entries(r.accountMay).filter(([, v]) => v).map(([k]) => k).join(', ')} — which is not the same as what the token may do` }))
+        : null,
+      asked && r.upstreamDefault
+        ? el('tr', {}, el('th', { textContent: 'there' }),
+            el('td', {}, el('span', { className: 'mono', textContent: r.upstreamDefault }),
+              r.upstreamHead
+                ? el('span', { className: r.inStep ? 'ok' : '', textContent: r.inStep ? '  same commit as here' : `  at ${String(r.upstreamHead).slice(0, 8)} — different from here` })
+                : el('span', { className: 'muted', textContent: '  its head could not be read' })))
+        : null,
+      asked && r.intoParent
+        ? el('tr', {}, el('th', { textContent: 'a pull request goes to' }),
+            el('td', {},
+              el('span', { className: 'mono', textContent: r.intoParent.repo }),
+              el('span', { textContent: '  ' }),
+              el('span', { className: r.intoParent.mayOpen ? 'ok' : 'bad', textContent: r.intoParent.mayOpen ? 'this token may open one there' : 'this token may NOT open one there' }),
+              r.intoParent.why ? el('div', { className: 'muted', textContent: r.intoParent.why }) : null,
+              r.chained
+                ? el('div', { className: 'note', style: 'margin-top:4px' },
+                    el('strong', { textContent: 'This is a fork of a fork. ' }),
+                    el('span', { textContent: `One level up is ${r.parent}; the root of the network is ${r.source}. Work goes one step up by default, which is how a chain is normally worked — sending it to the root instead is a choice, not a correction.` }))
+                : null))
+        : null,
+      el('tr', {}, el('th', { textContent: 'asked GitHub' }),
+        el('td', { className: 'muted', textContent: asked ? ago(r.checked) : 'never' }))),
+
+    r.why ? el('p', { className: 'note' }, el('strong', { className: r.reachable === false ? 'bad' : '', textContent: r.reachable === false ? 'Cannot be reached. ' : 'Reachable, but not usable yet. ' }), el('span', { textContent: r.why })) : null,
+
+    el('div', { className: 'row', style: 'margin-top:8px' },
+      el('button', {
+        className: 'btn small',
+        textContent: 'Ask GitHub about this one',
+        onclick: () => api('repositoriesCheck', { repo: r.repo }).then(x => { changed('repos', null); changed('repo-detail', null); say(x.note); return draw() }).catch(oops)
+      }),
+      rem && rem.kind === 'github'
+        ? el('button', { className: 'btn small', textContent: 'Open it on GitHub', onclick: () => nw.Shell.openExternal(`https://${rem.host}/${rem.owner}/${rem.repo}`) })
+        : null))
+}
+
+// WORK THAT ARRIVED, as opposed to work somebody wrote down here. This is the
+// only thing in this app that comes IN, and the reason it is worth a tab: every
+// other chain starts with a task, and an issue is the step before that.
+function paintRepoIssues (r) {
+  if (!r) return fill($('issue-detail'), el('p', { className: 'empty', textContent: 'Pick a repository on the left.' }))
+  const list = r.issues || null
+
+  fill($('issue-detail'),
+    el('div', { className: 'carries' },
+      el('div', { className: 'carries-head' },
+        el('span', { textContent: 'Issues' }),
+        el('span', { className: 'muted', textContent: r.issuesOn ? `on ${r.issuesOn}` : r.repo }),
+        r.gathered ? el('span', { className: 'muted', textContent: ago(r.gathered) }) : null),
+      // A FORK'S OWN TRACKER IS USUALLY EMPTY. These are read from the
+      // repository a pull request would go to, because that is where a
+      // conversation about the project happens.
+      r.parent ? el('p', { className: 'note', textContent: `Read from ${r.parent}, which is where a pull request from this fork would go.` }) : null),
+
+    list == null
+      ? el('p', { className: 'empty', textContent: 'Not asked yet. "Ask GitHub" reads issues and pull requests for every repository here.' })
+      : list.length
+        ? el('div', { className: 'stack' }, ...list.map(i => el('div', { className: 'card' },
+            el('div', { className: 'card-title' },
+              el('span', { className: 'mono muted', textContent: `#${i.number}` }),
+              el('span', { textContent: i.title }),
+              ...(i.labels || []).slice(0, 4).map(l => el('span', { className: 'badge muted', textContent: l }))),
+            el('div', { className: 'card-sub muted', textContent: `${i.by || 'somebody'}, ${ago(i.at)}${i.comments ? ` · ${i.comments} comment(s)` : ''}` }),
+            el('div', { className: 'row', style: 'margin-top:6px' },
+              el('button', {
+                className: 'btn small ok',
+                textContent: 'Write a task from it',
+                title: 'Opens the task dialog with this issue as the brief',
+                onclick: () => newTaskFromIssue(i)
+              }),
+              el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => nw.Shell.openExternal(i.url) })))))
+        : el('p', { className: 'empty', textContent: 'Nothing open.' }))
+}
+
+// WHAT IS WAITING TO GO IN. The same objects the Changes tab holds as one
+// landing, listed per repository — because "what is open against this
+// repository" and "is my change in" are different questions and the second one
+// cannot be answered from this list.
+function paintRepoPulls (r) {
+  if (!r) return fill($('pull-detail'), el('p', { className: 'empty', textContent: 'Pick a repository on the left.' }))
+  const list = r.pulls || null
+
+  fill($('pull-detail'),
+    el('div', { className: 'carries' },
+      el('div', { className: 'carries-head' },
+        el('span', { textContent: 'Pull requests' }),
+        el('span', { className: 'muted', textContent: r.parent ? `on ${r.parent}` : r.repo }),
+        r.gathered ? el('span', { className: 'muted', textContent: ago(r.gathered) }) : null),
+      r.parent ? el('p', { className: 'note', textContent: `Opened into ${r.parent}, because this is a fork. A pull request from a fork is created in the repository it is merged into.` }) : null),
+
+    list == null
+      ? el('p', { className: 'empty', textContent: 'Not asked yet. "Ask GitHub" reads issues and pull requests for every repository here.' })
+      : list.length
+        ? el('div', { className: 'stack' }, ...list.map(p => el('div', { className: 'card' },
+            el('div', { className: 'card-title' },
+              el('span', { className: 'mono muted', textContent: `#${p.number}` }),
+              el('span', { textContent: p.title }),
+              el('span', {
+                className: `badge ${p.merged ? 'ok' : p.state === 'closed' ? 'bad' : 'run'}`,
+                textContent: p.merged ? 'merged' : p.state
+              }),
+              p.draft ? el('span', { className: 'badge muted', textContent: 'draft' }) : null),
+            el('div', { className: 'card-sub mono', textContent: `${p.head} → ${p.base}` }),
+            el('div', { className: 'row', style: 'margin-top:6px' },
+              el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => nw.Shell.openExternal(p.url) })))))
+        : el('p', { className: 'empty', textContent: 'Nothing open, and nothing closed recently.' }))
+}
+
+// An issue, turned into the thing this app actually runs on. The brief is what
+// the issue says, because that is what somebody asked for — and a task written
+// from an issue should be answerable by reading the task alone.
+function newTaskFromIssue (i) {
+  newTask({
+    title: i.title,
+    brief: `${i.body ? i.body.trim() + '\n\n' : ''}From ${i.on} issue #${i.number} — ${i.url}`
+  })
 }
 
 // ---- the machines ----------------------------------------------------
@@ -4930,8 +5018,8 @@ function shotIfAsked () {
     // there is no other way to reach one.
     const [wantView, wantPane] = String(want.view || '').split('/')
 
-    if (wantPane && document.querySelector(`.subtab[data-pane="${wantPane}"]`) && branchPane !== wantPane) {
-      document.querySelector(`.subtab[data-pane="${wantPane}"]`).click()
+    if (wantPane && document.querySelector(`#view-branches .subtab[data-pane="${wantPane}"]`) && branchPane !== wantPane) {
+      document.querySelector(`#view-branches .subtab[data-pane="${wantPane}"]`).click()
       shotSettle = 2
       // Deliberately not returning: the view itself may still need switching,
       // and clicking a sub-tab inside a hidden view changes nothing on screen.
@@ -4961,6 +5049,26 @@ function shotIfAsked () {
         been.set('task', pickedTask)
         shotSettle = 2
         paintTasks()
+        return
+      }
+    }
+
+    // The Repositories tab has two selections: which sub-tab, and which
+    // repository. `repos` / `issues` / `pulls` picks the reading; anything else
+    // is taken as a repository name.
+    if (want.pick && view === 'repos') {
+      if (['repos', 'issues', 'pulls'].includes(want.pick)) {
+        if (repoPane !== want.pick) {
+          const t = document.querySelector(`#view-repos .subtab[data-pane="${want.pick}"]`)
+          if (t) { t.click(); shotSettle = 2; return }
+        }
+      } else if (pickedRepo !== want.pick) {
+        pickedRepo = want.pick
+        been.set('repo', pickedRepo)
+        changed('repos', null)
+        changed('repo-detail', null)
+        shotSettle = 2
+        paintRepos()
         return
       }
     }

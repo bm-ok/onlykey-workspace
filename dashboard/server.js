@@ -2389,10 +2389,12 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   },
 
   repositoriesCheck: {
-    about: 'Ask GitHub about the repositories: can this token reach them, and what may it do there',
+    about: 'Ask GitHub about the repositories: reachability, what the token may do, open issues and pull requests',
     takes: ['repo'],
     run: async ({ repo }) => {
-      const rows = await remotes.check(repo || null)
+      // Everything on one trip: reachability, what is open, and what is being
+      // asked. They are the same journey, and three buttons would be three.
+      const rows = await remotes.gather(repo || null)
       for (const r of rows) {
         if (r.reachable === true && !r.why) log.on('git', r.repo).good('reachable, and the token may use its code and pull requests')
         else if (r.reachable === true) log.on('git', r.repo).warn(r.why)

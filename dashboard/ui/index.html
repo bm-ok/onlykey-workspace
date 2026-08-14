@@ -62,14 +62,49 @@
        still be reached. Everything above the fold here is local and instant;
        anything about GitHub was asked for on purpose and carries when. -->
   <section class="view" id="view-repos">
+
+    <!-- THREE QUESTIONS ABOUT THE SAME PLACES. What is here and can it be
+         reached; what is being asked of it; what is waiting to go into it.
+         They share a shape — a list on the left, the one you picked on the
+         right — because they are all "which of these, and then what about it".
+
+         Issues are the one thing in this app that comes IN. Everything else
+         starts with somebody writing a task; an issue is work that arrived,
+         and it is the far end of the chain that has always started midway. -->
+    <div class="subtabs">
+      <button class="subtab active" data-pane="repos">Repos</button>
+      <button class="subtab" data-pane="issues">Issues</button>
+      <button class="subtab" data-pane="pulls">Pull requests</button>
+    </div>
+
     <div class="sync-head">
-      <h2>Repositories <span class="muted" id="repos-context"></span></h2>
+      <h2 id="repos-title">Repositories <span class="muted" id="repos-context"></span></h2>
       <div class="sync-controls">
-        <button class="btn" id="repos-check">Check them against GitHub</button>
+        <button class="btn" id="repos-check">Ask GitHub</button>
       </div>
     </div>
     <p class="note" id="repos-note"></p>
-    <div id="repos" class="stack"></div>
+
+    <!-- ONE LIST, THREE VIEWS OF WHAT IS PICKED. The repository selection is
+         shared across all three sub-tabs rather than repeated in each, because
+         it is the same question every time — which repository — and three
+         independent selections would mean picking local-repo-c on one tab and
+         finding local-repo-a on the next.
+
+         So the narrow column lives OUTSIDE the panes and only the wide one
+         switches. What changes between the sub-tabs is what is being said about
+         the repository, not which repository. -->
+    <div class="cols">
+      <div class="col narrow">
+        <div id="repos" class="stack"></div>
+      </div>
+      <div class="col wide">
+        <div class="pane active" id="pane-repos"><div id="repo-detail" class="panel"></div></div>
+        <div class="pane" id="pane-issues"><div id="issue-detail"></div></div>
+        <div class="pane" id="pane-pulls"><div id="pull-detail"></div></div>
+      </div>
+    </div>
+
   </section>
 
   <!-- ---------------- Virtual machines ---------------- -->
