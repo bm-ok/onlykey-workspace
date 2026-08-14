@@ -56,6 +56,13 @@
    the last pale pixel on the screen. */
 ::-webkit-scrollbar-corner { background: transparent; }
 
+/* The arrows at each end go. They are the last part Chromium still paints in its
+   own grey — a pale triangle top and bottom, which after the trough and the
+   thumb are dark is the only bright thing left on the bar. Nothing is lost: the
+   wheel, the thumb and the keyboard all still scroll, and an arrow that moves
+   the view by one line is not how anybody here reads a diff. */
+::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
+
 body {
   margin: 0;
   background: var(--bg);
