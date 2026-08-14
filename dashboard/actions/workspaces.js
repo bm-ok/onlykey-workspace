@@ -53,6 +53,99 @@ module.exports = {
     }
   },
 
+  // ---- what is kept, and where ------------------------------------------
+  //
+  // The split this app is built on is invisible from inside it. Some of what it
+  // knows is about THIS COMPUTER -- its machines, its keys, its approvals, its
+  // prompt library -- and some is about a WORKSPACE, and the second kind lives in
+  // a folder of its own so that switching does not leave it describing somewhere
+  // else. That is core/workspaces.js's whole argument, and until now nothing
+  // could check it had actually happened.
+  //
+  // IT HAD NOT, QUITE. The one-time move of the pre-workspace files skips
+  // anything whose destination already exists, which is the right call -- the
+  // newer file is the real one -- and it leaves the old copy where it was, for
+  // ever, looking authoritative. There is one of those. There is also a folder
+  // for a workspace nobody remembers adding.
+  //
+  // NOTHING HERE DELETES ANYTHING. Data that is merely unreferenced is not data
+  // that is safe to throw away, and the difference between "orphaned" and "the
+  // only copy of something" is a judgement this cannot make. It reports; a
+  // person decides.
+  workspaceData: {
+    about: 'What is kept for this computer, what is kept per workspace, and what has been left behind',
+    run: () => {
+      const look = at => {
+        try {
+          return fs.readdirSync(at, { withFileTypes: true })
+            .filter(e => e.isFile())
+            .map(e => {
+              const full = path.join(at, e.name)
+              let size = 0
+              let touched = null
+              try { const st = fs.statSync(full); size = st.size; touched = new Date(st.mtimeMs).toISOString() } catch { /* gone between the two calls */ }
+              return { name: e.name, size, touched }
+            })
+            .sort((a, b) => a.name.localeCompare(b.name))
+        } catch { return [] }
+      }
+
+      // The names that BELONG to a workspace. Anything with one of these at host
+      // level is a copy that predates the split and is no longer read.
+      const SCOPED = [
+        'tasks.json', 'tasks-highest.json', 'repos.json', 'branches.json',
+        'baseline-groups.json', 'landings.json', 'remotes.json',
+        'pr-template.json', 'pr-drafts.json', 'judgements.json'
+      ]
+
+      const hostDir = data.state()
+      const host = look(hostDir)
+      const known = workspaces.known()
+      const bySlug = new Map(known.map(w => [w.slug, w]))
+
+      const root = path.join(data.DIR, 'workspaces')
+      let folders = []
+      try {
+        folders = fs.readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name)
+      } catch { /* nothing has been kept for any workspace yet */ }
+
+      const kept = folders.map(slug => {
+        const w = bySlug.get(slug) || null
+        return {
+          slug,
+          dir: path.join(root, slug),
+          name: w ? w.name : null,
+          // A folder whose workspace is not in the list. It is not rubbish --
+          // point the app at that folder again and this is its tasks -- it is
+          // just nothing this app is currently offering.
+          knows: !!w,
+          current: !!(w && w.current),
+          files: look(path.join(root, slug))
+        }
+      })
+
+      const strays = host.filter(x => SCOPED.includes(x.name)).map(x => ({
+        ...x,
+        where: path.join(hostDir, x.name),
+        // Which workspace folder now holds the same name, if any -- that is the
+        // one being read, and this one is not.
+        supersededBy: kept.filter(k => k.files.some(y => y.name === x.name)).map(k => k.slug)
+      }))
+
+      const unknown = kept.filter(k => !k.knows)
+
+      return {
+        host: { dir: hostDir, files: host },
+        workspaces: kept,
+        strays,
+        unknown,
+        note: strays.length || unknown.length
+          ? `${strays.length} file(s) at host level that belong to a workspace, and ${unknown.length} folder(s) for a workspace this app is not offering. Nothing is read from either. Neither is deleted here.`
+          : 'Everything that belongs to a workspace is in its own folder, and nothing is left at host level that should not be.'
+      }
+    }
+  },
+
   workspaceAdd: {
     about: 'Remember a folder of repositories, without switching to it',
     takes: ['dir', 'name'],
