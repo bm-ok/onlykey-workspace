@@ -351,7 +351,7 @@ function paintTaskDetail (task) {
                   onYes: async () => {},
                   onOpen: () => {
                     const body = document.querySelector('.dlg-body')
-                    if (body) body.append(codeBlock(task.rules, 'markdown'))
+                    if (body) body.append(markdownBlock(task.rules))
                   }
                 })
               })
@@ -741,12 +741,19 @@ function readHandedFile (task, f) {
   api('taskFileRead', { id: task.id, file: f.file }).then(({ text }) => {
     ask({
       title: name,
-      plain: [`Handed over by ${f.run || 'a run'} for #${task.number}, and kept on this host.`],
+      plain: [
+        `Handed over by ${f.run || 'a run'} for #${task.number}, and kept on this host.`,
+        mode === 'markdown'
+          // Said, because it is not obvious that a rendered view is showing
+          // somebody else's document with its teeth taken out.
+          ? 'Rendered in a frame that cannot run anything and cannot reach the network — this came off a machine.'
+          : null
+      ].filter(Boolean),
       confirm: 'Done',
       onYes: async () => {}
     })
     const body = document.querySelector('.dlg-body')
-    if (body) body.append(codeBlock(text, mode, { max: DIFF_LID }))
+    if (body) body.append(mode === 'markdown' ? markdownBlock(text) : codeBlock(text, mode, { max: DIFF_LID }))
   }).catch(oops)
 }
 

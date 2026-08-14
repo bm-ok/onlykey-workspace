@@ -353,7 +353,10 @@ async function paintTemplatesNow () {
                 el('div', { className: 'card-sub muted', textContent: v.guessing
                   ? 'Nothing is cut yet, so the links below show ? until it is.'
                   : 'The links below are the real pull request numbers.' })),
-              codeBlock(text, 'markdown')))
+              // A pull request body is markdown that GitHub will render, so a
+              // preview of it that is not rendered is a preview of the wrong
+              // thing. The source view is one click away for checking a link.
+              markdownBlock(text)))
         }
 
         // Repainted on input rather than on the draw, because the draw is three

@@ -48,6 +48,34 @@ same path at the new version, change the number above, and check the two places
 that call `codeBlock()` still render.
 
 
+marked/ — marked 18.0.9
+------------------------
+
+Markdown to HTML, for the things here that are written to be READ rather than
+inspected: a report a run handed back, the rules a task carries, a pull request
+body before it goes out. As source those are a wall of pipes and hashes, and the
+one thing the formatting was for is the thing that does not happen.
+
+MIT licensed; `marked/LICENSE` is the copy that came with it.
+
+    marked.js   the UMD build, from https://unpkg.com/marked@18.0.9/lib/marked.umd.js
+
+The UMD one specifically. marked's `main` is now ESM, and this window loads its
+vendors as classic `<script>` tags — the same reason ace is the `src-noconflict`
+build.
+
+**It does not sanitise, and is not asked to.** marked passes raw HTML through by
+design and removed its `sanitize` option years ago for saying otherwise. That is
+fine here because nothing rendered by it is trusted OR trusted-adjacent: it goes
+into an iframe with `sandbox=""` and a `default-src 'none'` policy, so a
+`<script>` in a machine's report is inert and a remote `<img>` cannot report that
+the file was opened. See `markdownFrame` in `ui/base.js` — the frame is the
+defence, not the parser, and swapping the parser would not change that.
+
+To move to a newer version, replace `marked.js` with the UMD build at the new
+version, change the number above, and open any handed-back `.md` file.
+
+
 xterm/ — xterm.js 6.0.0, and its fit addon 0.11.0
 -------------------------------------------------
 

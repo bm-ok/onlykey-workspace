@@ -180,6 +180,112 @@ function codeBlock (text, mode = 'javascript', { min = 3, max = Infinity } = {})
   return host
 }
 
+// ---- markdown, read as markdown ---------------------------------------
+//
+// A report handed back by a run is written to be read: headings, a table, a
+// quoted brief. As source it is a wall of pipes and hashes, and the one thing it
+// was formatted for is the thing that does not happen.
+//
+// IN AN IFRAME, AND THAT IS THE WHOLE DESIGN, not a convenience for styling.
+// This text came off a machine running a script somebody wrote, so it is exactly
+// as trustworthy as that script -- and markdown carries raw HTML through by
+// design, which marked does not sanitise and never claimed to. Put in this
+// document it would be running inside an app page that has node.
+//
+// So it renders into a frame that can do nothing:
+//
+//   sandbox=""      no scripts, and no same-origin. A <script> or an onerror in
+//                   the markdown is inert, and nothing in the frame can reach
+//                   this document, its globals, or require()
+//   a CSP as well   default-src 'none', so a remote <img> cannot phone home --
+//                   which would otherwise turn "somebody opened this artifact"
+//                   into a request to a host of the author's choosing
+//   srcdoc          no file is written anywhere to show it
+//
+// The cost of a real sandbox is that this side cannot measure the frame's
+// content to size it, because reading contentDocument needs allow-same-origin.
+// So it gets a height and scrolls inside, which a dialog does anyway.
+const MD_STYLE = `
+  :root { color-scheme: dark }
+  body { margin: 0; padding: 14px 16px; background: #0a0d12; color: #d7dee8;
+         font: 13px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  h1, h2, h3, h4 { color: #fff; line-height: 1.25; margin: 1.2em 0 .5em; }
+  h1 { font-size: 1.5em; border-bottom: 1px solid #2a323d; padding-bottom: .3em }
+  h2 { font-size: 1.25em; border-bottom: 1px solid #2a323d; padding-bottom: .3em }
+  h1:first-child, h2:first-child, h3:first-child { margin-top: 0 }
+  a { color: #4aa3ff }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+         background: #161b22; padding: .15em .4em; border-radius: 4px }
+  pre { background: #161b22; border: 1px solid #2a323d; border-radius: 8px;
+        padding: 12px; overflow-x: auto }
+  pre code { background: none; padding: 0 }
+  blockquote { margin: 0 0 1em; padding: .2em 0 .2em 14px; border-left: 3px solid #2a323d; color: #9aa6b5 }
+  table { border-collapse: collapse; margin: 0 0 1em; display: block; overflow-x: auto }
+  th, td { border: 1px solid #2a323d; padding: 6px 10px; text-align: left }
+  th { background: #161b22 }
+  hr { border: 0; border-top: 1px solid #2a323d; margin: 1.5em 0 }
+  img { max-width: 100% }
+  ul, ol { padding-left: 22px }
+  li { margin: .2em 0 }
+`
+
+function markdownFrame (text, { height = '60vh' } = {}) {
+  let body
+  try {
+    body = marked.parse(String(text == null ? '' : text))
+  } catch (e) {
+    // Said in the frame rather than thrown, because the source view beside it
+    // still works and is what somebody would fall back to anyway.
+    body = `<p>This could not be rendered as markdown: ${String(e.message).replace(/[<&]/g, c => (c === '<' ? '&lt;' : '&amp;'))}</p>`
+  }
+  const frame = el('iframe', {
+    className: 'md',
+    sandbox: '',
+    srcdoc: `<!doctype html><html><head><meta charset="utf-8">` +
+      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">` +
+      `<style>${MD_STYLE}</style></head><body>${body}</body></html>`
+  })
+  frame.style.height = height
+  return frame
+}
+
+// Rendered or as written, and the toggle remembers which you last chose.
+//
+// Both, because they answer different questions. The rendered view is for
+// reading what a run produced; the source is for seeing what it actually wrote,
+// which is what matters when the formatting is the thing that went wrong.
+// NOT READ AT LOAD TIME. `been` is declared in ui/shell.js, which loads after
+// this file -- see ui/load.js on why the order is not a preference. Reading it
+// here at the top level would be a ReferenceError before the window ever drew.
+let mdLook = null
+
+function markdownBlock (text, { height = '60vh' } = {}) {
+  if (mdLook === null) mdLook = been.get('md-look', 'rendered')
+  const box = el('div', {})
+  const rendered = el('button', { className: 'btn small', textContent: 'Rendered' })
+  const source = el('button', { className: 'btn small', textContent: 'Source' })
+  const view = el('div', {})
+
+  const show = which => {
+    mdLook = which
+    been.set('md-look', which)
+    rendered.classList.toggle('ok', which === 'rendered')
+    source.classList.toggle('ok', which === 'source')
+    fill(view, which === 'rendered'
+      ? markdownFrame(text, { height })
+      // Not auto-height here: the two views swapping between a fixed frame and
+      // a page-length editor makes the dialog jump under the pointer.
+      : codeBlock(text, 'markdown', { max: 400 }))
+  }
+
+  rendered.onclick = () => show('rendered')
+  source.onclick = () => show('source')
+
+  fill(box, el('div', { className: 'row', style: 'margin-bottom:8px' }, rendered, source), view)
+  show(mdLook)
+  return box
+}
+
 // The same, but it hands back the editor.
 //
 // `codeBlock` deliberately returns only a node — nothing needed the editor, and

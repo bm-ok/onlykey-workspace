@@ -274,6 +274,19 @@ h2:first-child { margin-top: 0; }
 .dlg-tab.active { color: var(--text); border-bottom-color: var(--accent); }
 .dlg-tab:hover { color: var(--text); }
 .dlg-actions { display: flex; gap: 8px; justify-content: flex-end; flex: none; padding-top: 12px; }
+/* Markdown, rendered in a frame that can do nothing. The border and radius match
+   .code, because they are the two ways of looking at the same thing and swapping
+   between them should not move the box. See markdownFrame in ui/base.js for why
+   it is an iframe at all. */
+.md {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0a0d12;
+  margin: 0 0 12px;
+}
+
 /* FORM CONTROLS, WHEREVER A FORM IS. These were .dlg-only, from when every
    form in this window was a modal. Writing a task is a pane now, and without
    this its inputs fell back to the browser's defaults -- a title box sized to
