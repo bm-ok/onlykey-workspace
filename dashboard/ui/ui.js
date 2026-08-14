@@ -3672,6 +3672,7 @@ document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(t => {
 })()
 
 function paintRepos () {
+  if (view !== 'repos') return
   api('repositories').then(({ dir, repos, note }) => {
     // Reconciled against what exists, like every other selection here.
     if (!repos.some(r => r.repo === pickedRepo)) {
@@ -3885,6 +3886,7 @@ let cutsSeen = null
 let cutsAsking = false
 
 function paintCuts () {
+  if (view !== 'prcuts') return
   // READ ONCE WHEN THE TAB IS OPENED, and not again until asked. Never on the
   // draw: every line here is a network call to somebody else's service, and the
   // window redraws every three seconds.
@@ -4143,6 +4145,8 @@ let cutPane = been.get('prcut-pane', 'cuts')
 let tmplFrom = been.get('tmpl-from', null)
 let tmplInto = been.get('tmpl-into', null)
 let tmplAs = null
+// The last preview, and what it was of. See paintTemplates.
+let tmplSeen = null
 
 document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(t => {
   t.onclick = () => {
@@ -4177,7 +4181,7 @@ function paintTemplates () {
               type: 'checkbox',
               checked: b.on,
               onchange: e => api('prTemplateSet', { id: b.id, on: e.target.checked })
-                .then(() => { changed('prtemplate', null); changed('prtemplate-preview', null); paintTemplates() })
+                .then(() => { tmplSeen = null; changed('prtemplate', null); changed('prtemplate-preview', null); paintTemplates() })
                 .catch(oops)
             }),
             el('span', {},
@@ -4197,7 +4201,7 @@ function paintTemplates () {
 
       const pick = (box, value, onPick) => {
         fill($(box), ...usable.map(g => el('option', { value: g.name, textContent: g.name, selected: g.name === value })))
-        $(box).onchange = () => { onPick($(box).value); changed('prtemplate', null); changed('prtemplate-preview', null); paintTemplates() }
+        $(box).onchange = () => { onPick($(box).value); tmplSeen = null; changed('prtemplate', null); changed('prtemplate-preview', null); paintTemplates() }
       }
       pick('prtemplate-source', tmplFrom, v => { tmplFrom = v; been.set('tmpl-from', v) })
       pick('prtemplate-target', tmplInto, v => { tmplInto = v; been.set('tmpl-into', v) })
@@ -4208,7 +4212,16 @@ function paintTemplates () {
       return fill($('prtemplate-preview'), el('p', { className: 'empty', textContent: 'Two different lines are needed to preview what a pull request between them would say.' }))
     }
 
-    api('prTemplatePreview', { source: tmplFrom, target: tmplInto, repo: tmplAs || undefined })
+    // ASKED WHEN THE QUESTION CHANGES, not every three seconds. Composing a
+    // preview reads git twice per repository, and the answer only moves when the
+    // pair of lines, the chosen copy, or the blocks that are on do.
+    const key = JSON.stringify([tmplFrom, tmplInto, tmplAs, t.blocks.filter(b => b.on).map(b => b.id)])
+    const asked = tmplSeen && tmplSeen.key === key
+      ? Promise.resolve(tmplSeen.value)
+      : api('prTemplatePreview', { source: tmplFrom, target: tmplInto, repo: tmplAs || undefined })
+          .then(value => { tmplSeen = { key, value }; return value })
+
+    asked
       .then(v => {
         if (!changed('prtemplate-preview', v)) return
         setText($('prtemplate-context'), v.note || '')
@@ -4217,7 +4230,7 @@ function paintTemplates () {
         // others — the cross-links — and that difference is the whole point of
         // being able to look at one rather than an average of them.
         fill($('prtemplate-as'), ...(v.repos || []).map(r => el('option', { value: r, textContent: `as ${r}`, selected: r === v.showing })))
-        $('prtemplate-as').onchange = () => { tmplAs = $('prtemplate-as').value; changed('prtemplate-preview', null); paintTemplates() }
+        $('prtemplate-as').onchange = () => { tmplAs = $('prtemplate-as').value; tmplSeen = null; changed('prtemplate-preview', null); paintTemplates() }
 
         fill($('prtemplate-preview'), v.text
           ? el('div', {},

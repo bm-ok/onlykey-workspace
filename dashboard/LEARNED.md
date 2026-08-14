@@ -468,3 +468,25 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   one. Diagnosing that afterwards is good; naming it in the dialog that asks for
   the token is better, and is the difference between a two-minute setup and
   finding out one repository at a time.
+
+* **The rule existed, was right, and was not applied to the next three panels
+  built.** A third trace put `spawn` back at 25% of the window's samples with
+  nothing happening. Not a new fault — the same one: `paintRepos` ran on every
+  draw whatever tab was on screen, and one call cost nine git processes (a remote
+  url, a head and a branch list per repository). The template preview cost six
+  more, also every draw.
+
+  The Branches tab had solved this before either was written: `if (branchPane ===
+  'baselines') paintBaselines()`. A panel behind a tab nobody is looking at asks
+  nothing. That line was three feet away in the same file and got copied for
+  neither new tab.
+
+  So the lesson is not "cache things" — it is that a rule which lives only as an
+  instance of itself does not generalise on its own. Every paint function now
+  starts by asking whether it is the one being looked at, and the two that reach
+  the network cache on what they depend on rather than on time.
+
+  Measured across the three traces: spawn 70% -> 13% -> 25% -> and 4 samples with
+  a git process alive out of 40 after this. The regression cost as much as the
+  original fix saved, and would have kept costing it, because each new panel
+  looked reasonable in isolation.

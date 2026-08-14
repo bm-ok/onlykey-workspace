@@ -39,6 +39,24 @@ const git = (dir, args) => execFileSync('git', ['--git-dir', dir, ...args], {
   encoding: 'utf8', timeout: 30000, windowsHide: true
 }).trim()
 
+// THE SAME TRAP AS BEFORE, THROUGH A NEW DOOR. `read()` is called from a paint
+// function, paint functions run every three seconds, and each read asked git
+// nine times: a remote url, a head and a branch list per repository. A trace put
+// spawn back up to 25% of the window's samples with nothing happening -- the
+// third time this exact shape has cost something here.
+//
+// A second is the whole window, the same as branches.js: no single draw asks
+// twice, and a remote changed underneath shows up before anybody has finished
+// reading the sentence about it.
+const brief = new Map()
+const once1s = (key, make) => {
+  const hit = brief.get(key)
+  if (hit && Date.now() - hit.at < 1000) return hit.value
+  const value = make()
+  brief.set(key, { at: Date.now(), value })
+  return value
+}
+
 // ---- what a remote URL says --------------------------------------------
 //
 // Both spellings, because both are ordinary and a repository cloned by ssh is
@@ -69,9 +87,11 @@ const hide = url => String(url).replace(/\/\/[^@/]+@/, '//[redacted]@')
 const kindOf = host => /(^|\.)github\.com$/i.test(host) ? 'github' : 'other'
 
 function remoteOf (repo) {
-  const dir = serve.gitDirOf(repo)
-  if (!dir) return null
-  try { return parse(git(dir, ['remote', 'get-url', 'origin'])) } catch { return null }
+  return once1s(`remote ${repo}`, () => {
+    const dir = serve.gitDirOf(repo)
+    if (!dir) return null
+    try { return parse(git(dir, ['remote', 'get-url', 'origin'])) } catch { return null }
+  })
 }
 
 // ---- the local half: instant, no network -------------------------------
@@ -81,8 +101,9 @@ function read () {
     const dir = serve.gitDirOf(name)
     const remote = remoteOf(name)
     const home = branches.defaultOf(name)
-    let head = null
-    try { head = home ? git(dir, ['rev-parse', home]) : null } catch { /* an unborn default */ }
+    const head = once1s(`head ${name} ${home}`, () => {
+      try { return home ? git(dir, ['rev-parse', home]) : null } catch { return null }
+    })
 
     const note = notes[name] || {}
     return {
