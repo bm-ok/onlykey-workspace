@@ -8,12 +8,28 @@ rather than remembering.
 
 **The spine this is built around:**
 
-    branch <- task <- claude <- supervisor
+    branch <- task <- claude  <- supervisor
     branch <- task <- person <- supervisor
+    supervisor = person || claude
 
 The chain is the same either way and only one step differs: how work is started,
 and how it is known to be finished. Anything that does not serve that is not on
 this list.
+
+**The third line is not a footnote to the first two.** A supervisor is a role,
+not a person -- it is whoever writes the task, gives it out, and judges what
+comes back -- and either kind can fill it, in any combination with the worker
+below it. A person supervising Claude is the ordinary case today. Claude
+supervising a person is not a joke: it is what a queue of pre-defined tasks and a
+board of verdicts already almost is.
+
+It is also why the boundaries in this app are drawn where they are rather than
+around "the human". Approving a pre-defined task is refused down the pipe --
+`_overTheWire` -- because a model may write one and may not ratify its own; the
+dashboard sits between the supervisor and the workers so distribution goes
+through a channel that can be watched, whichever kind is supervising. Neither
+rule would make sense if the supervisor were assumed to be a person, and both are
+load-bearing precisely because it is not.
 
 
 Where it actually stands

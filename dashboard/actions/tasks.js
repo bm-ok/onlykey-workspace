@@ -572,6 +572,7 @@ module.exports = {
   //
   //     branch <- task <- claude <- supervisor
   //     branch <- task <- person <- supervisor
+  //     supervisor = person || claude
   //
   // The chain is identical and only one step differs: how the work is started,
   // and how it is known to be finished. A worker is dispatched and reports an

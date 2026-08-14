@@ -220,6 +220,7 @@ function add (input) {
     //
     //     branch <- task <- claude <- supervisor
     //     branch <- task <- person <- supervisor
+    //     supervisor = person || claude
     //
     // What differs is one step: how the work is started, and how it is known to
     // be finished. Everything on both sides of that -- the branch, the contract,
