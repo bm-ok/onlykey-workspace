@@ -20,6 +20,7 @@ const keys = require('./core/keys')
 const ssh = require('./core/ssh')
 const data = require('./core/data')
 const secret = require('./core/secret')
+const github = require('./core/github')
 const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
@@ -2284,6 +2285,62 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // machine it was taken from and when; the value is only ever handed to a
   // machine that needs it. A page that displays a secret is a page that gets
   // screenshotted.
+  // ---- the token this host reaches GitHub with ---------------------------
+  //
+  // The second credential this app keeps, and the second it cannot remake. A
+  // machine is never handed it: runners push to this host's own git server, and
+  // the host pushes onward — so a rolled-back machine cannot leak a token it
+  // never had. That is the whole reason for the extra hop.
+  //
+  // NONE OF THESE RETURN IT. Not once, not partially, not in an error. The only
+  // code that reads the file is the request that spends it.
+
+  githubHeld: {
+    about: 'Whether this host holds a GitHub token, who it belongs to, and whether it works',
+    run: () => github.held()
+  },
+
+  githubKeySet: {
+    about: 'Keep a GitHub token on this host, sealed. It is checked against GitHub before it is kept',
+    takes: ['token', 'api'],
+    run: async ({ token, api }) => {
+      const said = await github.put(token, { api })
+      // The login, never the token — and said out loud, because "which account
+      // is this acting as" is the question somebody asks after something has
+      // been opened under the wrong one.
+      log.on('github').good(`token kept for ${said.login}${said.kind ? ` (${said.kind})` : ''}${said.expires ? `, expires ${said.expires}` : ''}`)
+      return {
+        ...said,
+        note: `Kept and checked: GitHub says this is ${said.login}. It is sealed for this Windows account and no machine is ever handed it.`
+      }
+    }
+  },
+
+  githubCheck: {
+    about: 'Ask GitHub whether the token still works, and what it is',
+    run: async () => {
+      const said = await github.check()
+      log.on('github')[said.ok ? 'good' : 'bad'](said.ok
+        ? `token works — ${said.login}`
+        : `token does not work: ${said.why}`)
+      return {
+        ...said,
+        note: said.ok
+          ? `It works. GitHub says this is ${said.login}.`
+          : `It does not work: ${said.why}. Replace it on the Keys tab.`
+      }
+    }
+  },
+
+  githubKeyForget: {
+    about: 'Throw away the GitHub token this host holds',
+    run: () => {
+      const gone = github.forget()
+      log.on('github').warn(gone.forgotten ? 'the GitHub token was thrown away' : 'there was no GitHub token to throw away')
+      return { ...gone, note: gone.forgotten ? 'Gone from this host. Revoke it on GitHub too if it may have been seen.' : 'There was none.' }
+    }
+  },
+
   credentialsHeld: {
     about: 'Whether this host holds a worker credential, how long it has left, and where it came from',
     run: () => {

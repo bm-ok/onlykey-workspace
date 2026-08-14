@@ -3286,6 +3286,124 @@ function paintTerminal () {
   if (view === 'terminal' && active) { try { active.fit.fit() } catch { /* not open yet */ } }
 }
 
+
+// ---- the GitHub token --------------------------------------------------
+//
+// The same shape as the worker credential above, because the questions are the
+// same: is one held, does it work, and what do I do about it. What differs is
+// where it is spent — that one goes out to a machine per task, this one never
+// leaves this host.
+//
+// THE TOKEN IS NEVER SHOWN, and never returned by anything the window can call.
+// What is shown is who GitHub says it is, which is the fact somebody actually
+// needs: "opened under the wrong account" is the mistake this prevents.
+function paintGithub () {
+  api('githubHeld').then(g => {
+    if (!changed('github', g)) return
+
+    const tried = g.checked || null
+    const dead = tried && tried.ok === false
+    const proven = tried && tried.ok === true
+
+    fill($('github-key'), g.held
+      ? el('div', { className: `card${dead ? ' warn' : ''}` },
+          el('div', { className: 'card-title' },
+            el('span', { textContent: g.login ? `@${g.login}` : 'GitHub token' }),
+            el('span', {
+              className: `badge ${dead ? 'bad' : proven ? 'ok' : 'warn'}`,
+              textContent: dead ? 'will not work' : proven ? 'working' : 'not tried yet'
+            }),
+            g.kind ? el('span', { className: 'badge muted', textContent: g.kind }) : null),
+          el('table', { className: 'kv', style: 'margin-top:8px' },
+            g.name ? el('tr', {}, el('th', { textContent: 'account' }), el('td', { textContent: `${g.name} (@${g.login})` })) : null,
+            el('tr', {}, el('th', { textContent: 'last tried' }),
+              el('td', {}, tried
+                ? el('span', { className: tried.ok ? 'ok' : 'bad', textContent: `${tried.ok ? 'worked' : 'refused'}, ${ago(tried.at)}${tried.why ? ` — ${tried.why}` : ''}` })
+                : el('span', { className: 'muted', textContent: 'never — nothing has used it since it was added' }))),
+            // A fine-grained token does not report its scopes, and an empty list
+            // is not the same as none. Said as unknown rather than guessed at,
+            // because the guess would be about what this app may do to somebody
+            // else's repositories.
+            el('tr', {}, el('th', { textContent: 'may do' }),
+              el('td', {}, g.scopes && g.scopes.length
+                ? el('span', { className: 'mono', textContent: g.scopes.join(', ') })
+                : el('span', { className: 'muted', textContent: g.kind === 'fine-grained'
+                    ? 'a fine-grained token does not say — GitHub reports its permissions nowhere this can read'
+                    : 'it reported no scopes' }))),
+            g.expires ? el('tr', {}, el('th', { textContent: 'expires' }), el('td', { className: 'mono', textContent: g.expires })) : null,
+            el('tr', {}, el('th', { textContent: 'api' }), el('td', { className: 'mono', textContent: g.api })),
+            el('tr', {}, el('th', { textContent: 'added' }), el('td', { className: 'mono', textContent: `${new Date(g.added).toLocaleString()} — ${ago(g.added)}` })),
+            el('tr', {}, el('th', { textContent: 'kept in' }), el('td', { className: 'mono', style: 'user-select:text', textContent: g.dir })),
+            el('tr', {}, el('th', { textContent: 'at rest' }),
+              el('td', {}, el('span', { className: `badge ${g.sealed ? 'ok' : 'warn'}`, textContent: g.sealed ? 'sealed' : 'plain' }))),
+            el('tr', {}, el('th', { textContent: '' }), el('td', { className: 'muted', textContent: g.protection || '' }))),
+
+          el('p', { className: 'note', style: 'margin-top:10px', textContent: dead
+            ? 'GitHub refused it. Replace it below — and revoke the old one on GitHub, since something that stopped working may have stopped for a reason.'
+            : 'Never handed to a machine, and never shown here. Only this host spends it.' }),
+
+          el('div', { className: 'row' },
+            el('button', {
+              className: `btn ${dead ? '' : 'ok'}`,
+              textContent: proven ? 'Check it again' : 'Check it',
+              title: 'Asks GitHub who this token is',
+              onclick: () => api('githubCheck').then(r => { changed('github', null); say(r.note, r.ok ? undefined : 'bad'); return draw() }).catch(oops)
+            }),
+            el('button', {
+              className: `btn ${dead ? 'ok' : ''}`,
+              textContent: 'Replace it',
+              onclick: () => askForGithubToken(g)
+            }),
+            el('button', {
+              className: 'btn danger',
+              textContent: 'Throw it away',
+              onclick: () => ask({
+                title: 'Throw the GitHub token away?',
+                plain: [
+                  'It is deleted from this host. Nothing else changes — no branch, no pull request, no repository.',
+                  'It is NOT revoked on GitHub. If it may have been seen by anything, revoke it there as well; deleting a copy is not the same as ending a credential.'
+                ],
+                confirm: 'Throw it away',
+                danger: true,
+                onYes: async () => {
+                  const r = await api('githubKeyForget')
+                  changed('github', null)
+                  say(r.note)
+                  return draw()
+                }
+              })
+            })))
+      : el('div', {},
+          el('p', { className: 'empty', textContent: 'No GitHub token, so nothing here can push a branch onward or open a pull request.' }),
+          el('button', { className: 'btn ok', textContent: 'Add a token', onclick: () => askForGithubToken(null) })))
+  }).catch(() => { /* the panel beside it is the one worth an error */ })
+}
+
+function askForGithubToken (g) {
+  ask({
+    title: g && g.held ? 'Replace the GitHub token' : 'Add a GitHub token',
+    plain: [
+      'It is checked against GitHub before it is kept, so a token that does not work never replaces one that does.',
+      'Sealed for this Windows account, beside the worker credential, outside the repository. It is never shown again — not here, not in the log, not in an error — and never handed to a machine.',
+      'A fine-grained token limited to the repositories this workspace serves is the smaller thing to lose. It needs to read them, push branches, and open pull requests.'
+    ],
+    link: 'https://github.com/settings/personal-access-tokens',
+    fields: [
+      // A password field, because this is typed on a screen that gets
+      // photographed — including by this app, on purpose, several times a day.
+      { name: 'token', label: 'Token', type: 'password', placeholder: 'github_pat_… or ghp_…' },
+      { name: 'api', label: 'API host, if not github.com', value: (g && g.api) || 'api.github.com', placeholder: 'api.github.com' }
+    ],
+    confirm: 'Check it and keep it',
+    onYes: async f => {
+      const r = await api('githubKeySet', { token: f.token, api: f.api })
+      changed('github', null)
+      say(r.note)
+      return draw()
+    }
+  })
+}
+
 // The two keys this app needs in order to be itself.
 //
 // Together because they are the same kind of thing: a credential the app owns,
@@ -4597,6 +4715,7 @@ async function drawOnce () {
 
   paintVms()
   paintKeys()
+  paintGithub()
   paintAppKeys()
   paintTerminal()
   paintBranches()

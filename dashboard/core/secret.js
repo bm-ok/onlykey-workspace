@@ -110,7 +110,24 @@ const PATTERNS = [
   [/("(?:accessToken|refreshToken|apiKey)"\s*:\s*")[^"]+(")/g, '$1[redacted]$2'],
   // Anything handed over as a bearer.
   [/(Authorization:\s*Bearer\s+)\S+/gi, '$1[redacted]'],
-  [/(ANTHROPIC_API_KEY\s*[=:]\s*)\S+/g, '$1[redacted]']
+  [/(ANTHROPIC_API_KEY\s*[=:]\s*)\S+/g, '$1[redacted]'],
+
+  // GITHUB TOKENS, for the same reason and with less excuse.
+  //
+  // No machine is ever handed one — the host pushes onward and a runner only
+  // ever reaches this host's own git server — so a GitHub token appearing in a
+  // machine's output means something has gone wrong. That is exactly when
+  // redaction has to already be here: this list is not a description of what
+  // does happen, it is what stops the first time being permanent. Run logs are
+  // pulled to this host and KEPT.
+  //
+  // Every prefix GitHub issues: personal (ghp), oauth (gho), user-to-server
+  // (ghu), server-to-server (ghs), refresh (ghr), and fine-grained (github_pat).
+  [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, 'gh[redacted]'],
+  [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, 'github_pat_[redacted]'],
+  // A token in a remote URL, which is how one ends up in a git error message.
+  [/(https:\/\/)[^@/\s:]+(?::[^@/\s]+)?@github\.com/gi, '$1[redacted]@github.com'],
+  [/(GITHUB_TOKEN|GH_TOKEN|GITHUB_PAT)(\s*[=:]\s*)\S+/g, '$1$2[redacted]']
 ]
 
 const redact = text => PATTERNS.reduce((s, [re, to]) => s.replace(re, to), String(text == null ? '' : text))

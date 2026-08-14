@@ -376,6 +376,19 @@
     </p>
     <div id="keys" class="stack"></div>
 
+    <!-- ---------------- GitHub ----------------
+         The other credential this host keeps, and the other one it cannot
+         remake. Separate from the worker sign-in above because it is used at the
+         opposite end: that one goes OUT to a machine per task, this one never
+         leaves — the host pushes onward and opens pull requests with it. -->
+    <h2 style="margin-top:22px">GitHub</h2>
+    <p class="note">
+      Used by this host only. A machine pushes to this app's own git server and
+      never to GitHub, so no runner is ever handed this token — which is why
+      rolling one back cannot lose it.
+    </p>
+    <div id="github-key" class="stack"></div>
+
     <!-- The two keys this app needs in order to be itself: the certificate a
          machine verifies this host by, and the ssh key this host gets back into
          a machine with. Both live in the app's own directory rather than in
