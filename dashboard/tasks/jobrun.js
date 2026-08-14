@@ -29,7 +29,7 @@ const jobs = require('./jobs')
 // Everything it needs to reach a machine is handed in rather than required, so
 // this file cannot find a private path to any of it -- the same reason a job
 // gets a command on its PATH instead of an action table.
-async function run ({ id, promptId, machine, prompts, dispatch, channel, base, folder, log }) {
+async function run ({ id, promptId, machine, token, prompts, dispatch, channel, base, folder, log }) {
   const job = jobs.get(id)
   if (!job) throw new Error(`There is no job called "${id}".`)
   if (!job.there) throw new Error(`"${job.name}" has no script. Its file is missing from the jobs folder.`)
@@ -63,6 +63,8 @@ async function run ({ id, promptId, machine, prompts, dispatch, channel, base, f
     id: runId,
     task: job.code,
     job: job.code,
+    vm: machine,
+    token,
     prompt: prompt ? { id: prompt.id, name: prompt.name, text: prompt.text } : null,
     folder,
     base

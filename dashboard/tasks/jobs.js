@@ -101,33 +101,31 @@ const idFor = name => String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-
 // sees. It names every part of the API in a shape that runs.
 const STARTER = `'use strict'
 
-// A job. It is given one object and everything it can do is on it.
+// A job. It runs ON A MACHINE, not on the dashboard's computer, and it is given
+// one object -- everything it can do is on that object.
 //
-//   okc(action, args)   every action this app has, with every refusal
-//   prompt              the prompt this was run with: { id, name, text }
-//   log(line)           into the live log, tagged with this job
-//   shell(name, cmd)    a command on a machine
-//   artifact(file)      hand a file back, kept with the run
-//   assert              refuses / needs / equal, for a job that checks something
-//   tags                what this job was tagged with
+//   prompt      the prompt it was run with, or null: { id, name, text }
+//   log(line)   a line of output, kept with the run and readable afterwards
+//   sh(cmd)     a command in the guest, returning what it printed
+//   artifact(f) hand a file back to the dashboard, kept against this run
+//   workspace   the folder the machine was set up in
+//   machine     the name of the machine it is running on
 //
-// It is async, and whatever it returns is reported when it finishes.
-module.exports = async ({ okc, prompt, log }) => {
-  log(\`starting with the prompt "\${prompt.name}"\`)
+// There is no \`okc\` and that is deliberate: a machine cannot reach the
+// dashboard's actions, which is what makes it safe to run a script on one.
+//
+// It is async, and whatever it returns is written to the log when it finishes.
+module.exports = async ({ prompt, log, sh, workspace }) => {
+  log('running in ' + workspace)
 
-  const task = await okc('taskCreate', {
-    task: {
-      title: prompt.name,
-      brief: prompt.text,
-      branch: 'jobs/' + prompt.id
-    }
-  })
+  const repos = sh('ls -1').trim().split('\\n').filter(Boolean)
+  log(\`\${repos.length} thing(s) here: \${repos.join(', ')}\`)
 
-  log(\`wrote task #\${task.number}\`)
-  return { wrote: task.id }
+  if (prompt) log('the prompt was: ' + prompt.name)
+
+  return { saw: repos.length }
 }
 `
-
 // Written, or rewritten. The code goes to its own file; everything else to the
 // record beside it.
 function save (fields, by = 'the window') {

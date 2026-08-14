@@ -795,11 +795,21 @@ module.exports = {
         id,
         promptId: promptId || one.promptId || null,
         machine: name,
+        // The machine's own token, which the host holds and the guest does not
+        // have until something puts it there. See job-api.js.
+        token: vm.spec && vm.spec.token,
         prompts,
         dispatch,
         channel,
         base,
-        folder: folder || (vm.spec && vm.spec.folder) || workspace.FOLDER,
+        // RESOLVED AGAINST THE MACHINE'S OWN HOME, not passed through as
+        // written. The folder is configured as `$HOME/workspace`, which is a
+        // shell expansion — and everything that reaches the guest is
+        // single-quoted, deliberately, so nothing in a path can run as code.
+        // Passing it raw meant `cd '$HOME/workspace'` failing and falling back to
+        // the home directory, which a job then reported as its workspace: wrong,
+        // and wrong quietly. `workFolder` asks the machine where home is.
+        folder: await workFolder(name, folder),
         log: line => to.info(String(line))
       })
 

@@ -28,6 +28,12 @@ const branches = require('./repos/branches')
 const workspaces = require('./core/workspaces')
 const tasks = require('./tasks/store')
 const queue = require('./tasks/queue')
+// Only the HTTP handler below uses this — a guest handing a file over. It went
+// missing when the require block was rebuilt around what the ACTIONS needed,
+// and nothing said so: a ReferenceError inside a request handler does not crash
+// anything, it leaves the socket open with no response. The guest saw a POST
+// that never answered, and the artifact endpoint had been dead since the split.
+const files = require('./tasks/files')
 const shared = require('./actions/shared')
 
 // ---- the actions ------------------------------------------------------
@@ -342,9 +348,23 @@ function handler (req, res) {
     // with taskGive is just as real, and looking in the wrong place would have
     // refused every artifact from one. Both paths write the same two fields.
     const task = tasks.read().find(t => t.machine === name && t.state === 'given') || null
-    if (!task) {
+
+    // A JOB IS NOT A TASK, and it hands things back too.
+    //
+    // A run says which it is in its own id, and a job's is unique by
+    // construction, so it can be the thing the file is filed under. Without this
+    // every artifact from a job was refused for the honest but useless reason
+    // that the machine was not running a task -- true, and not what it was doing.
+    //
+    // The task is still preferred where there is one: a machine running a task
+    // that ALSO runs a job is filing against the work, which is what somebody
+    // reading it afterwards is looking for.
+    const run = String(url.searchParams.get('run') || '')
+    const job = !task && /^job-/.test(run) ? run : null
+
+    if (!task && !job) {
       res.writeHead(409, { 'content-type': 'text/plain; charset=utf-8' })
-        .end('this machine is not running a task, so there is nothing for an artifact to belong to.\n')
+        .end('this machine is not running a task or a job, so there is nothing for an artifact to belong to.\n')
       return
     }
 
@@ -368,8 +388,13 @@ function handler (req, res) {
     req.on('end', () => {
       if (refused) return
       try {
-        const kept = files.keep(task.uid, called, Buffer.concat(chunks), { run: task.run || null })
-        log.on('vm', name, 'guest').good(`handed over "${called}" (${Math.round(kept.bytes / 1024)} KB) for #${task.number}`)
+        // Filed under the task's uid where there is a task, and under the run's
+        // own id where it is a job. Both are unique and neither is reused, which
+        // is the only property this needs of them.
+        const kept = task
+          ? files.keep(task.uid, called, Buffer.concat(chunks), { run: task.run || null })
+          : files.keep(job, called, Buffer.concat(chunks), { run: job })
+        log.on('vm', name, 'guest').good(`handed over "${called}" (${Math.round(kept.bytes / 1024)} KB) for ${task ? `#${task.number}` : job}`)
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end('kept\n')
       } catch (e) {
         log.on('vm', name, 'guest').bad(`could not keep "${called}": ${e.message}`)

@@ -20,7 +20,16 @@
 // own credential file, which is Claude Code's and not something the agent is
 // handed a copy of in its environment.
 
+const fs = require('node:fs')
 const path = require('node:path')
+
+// WHAT A JOB IS HANDED, and the runner that hands it. Real files rather than
+// strings in this one, so both can be linted, checked and read like the code
+// they are -- see machines/job-api.js. Read once at load: they cannot change
+// while the app is running, and re-reading them per dispatch would put a file
+// read on a path a guest is waiting at the end of.
+const GUEST_API = fs.readFileSync(path.join(__dirname, 'job-api.js'), 'utf8')
+const GUEST_RUNNER = fs.readFileSync(path.join(__dirname, 'job-runner.js'), 'utf8')
 
 // Shell-single-quoted. Everything here crosses into a script, and a task is
 // written by a person -- or by another agent -- so its shape is not this file's
@@ -74,7 +83,7 @@ function heredoc (path, body, tag) {
 // permissions skipped, and it stays true: a job gets the same door everything
 // else on this machine gets -- a command on its PATH, authenticated by the
 // machine's own token -- and nothing wider.
-function script ({ id, task, folder, contract, resume, shell, job, prompt, base }) {
+function script ({ id, task, folder, contract, resume, shell, job, prompt, vm, token, base }) {
   const dir = `${RUNS}/${id}`
 
   // THE CONTRACT IS CARRIED, NOT REFERENCED.
@@ -132,59 +141,24 @@ chmod +x ${dir}/okc-artifact
 ` : ''}
 
 ${job ? `
-# THE JOB'S OWN API, written as a file beside it.
+# THE JOB'S OWN API, and the three lines that start it.
 #
-# Everything a job can do is on the one object below, and what is NOT on it is
-# the point: no okc, no dashboard, no network of its own. What it has is what
-# this machine already had -- a shell, the workspace it was set up with, and
-# okc-artifact on PATH.
+# Both are real files in machines/, read at dispatch and written here. They are
+# code that runs somewhere consequential, and code that cannot be opened by an
+# editor or checked for syntax is code that gets read less carefully
+# than it deserves. See machines/job-api.js.
+#
+# THE CREDENTIAL IS A FILE. The note at the top of this file is about exactly
+# that: env is what a transcript dumps, and the output of a run is captured
+# here and kept. It is the token belonging to this machine, the one already
+# written into its git remotes, so this adds no exposure that pushing did not
+# already have.
+umask 077
+${heredoc(`${dir}/auth`, `${vm}:${token}`, 'OKC_AUTH_EOF')}
 ${heredoc(`${dir}/prompt.txt`, prompt ? prompt.text : '', 'OKC_PROMPT_EOF')}
 ${heredoc(`${dir}/job.js`, job, 'OKC_JOB_EOF')}
-${heredoc(`${dir}/run-job.js`, `'use strict'
-// Written by the dashboard. It requires the job beside it and hands it the one
-// object a job is given.
-const fs = require('fs')
-const cp = require('child_process')
-const path = require('path')
-
-const here = __dirname
-const read = f => { try { return fs.readFileSync(path.join(here, f), 'utf8') } catch { return '' } }
-
-const prompt = process.env.OKC_PROMPT_ID
-  ? { id: process.env.OKC_PROMPT_ID, name: process.env.OKC_PROMPT_NAME || null, text: read('prompt.txt') }
-  : null
-
-// Straight to stdout, which is already captured to out.log and read back by
-// vmRunOutput. A job needs no channel of its own to be watched.
-const log = line => process.stdout.write(String(line) + '\\n')
-
-// A command in the guest. Synchronous on purpose: a job is a script somebody
-// reads top to bottom, and the first thing an async shell helper costs is that.
-const sh = (cmd, opts = {}) => cp.execSync(cmd, { encoding: 'utf8', cwd: opts.cwd || process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] })
-
-// The same okc-artifact every run already has, called rather than reimplemented.
-const artifact = (file, name) => cp.execFileSync('okc-artifact', name ? [file, name] : [file], { encoding: 'utf8' })
-
-const api = {
-  prompt,
-  log,
-  sh,
-  artifact,
-  workspace: process.env.OKC_FOLDER || process.cwd(),
-  machine: process.env.OKC_VM || null
-}
-
-const job = require(path.join(here, 'job.js'))
-if (typeof job !== 'function') {
-  console.error('okc: a job has to export a function: module.exports = async (api) => { ... }')
-  process.exit(2)
-}
-
-Promise.resolve()
-  .then(() => job(api))
-  .then(out => { if (out !== undefined) log('okc-result ' + JSON.stringify(out)) })
-  .catch(e => { console.error(e && e.stack ? e.stack : String(e)); process.exit(1) })
-`, 'OKC_RUNNER_EOF')}
+${heredoc(`${dir}/api.js`, GUEST_API, 'OKC_API_EOF')}
+${heredoc(`${dir}/run-job.js`, GUEST_RUNNER, 'OKC_RUNNER_EOF')}
 ` : ''}
 
 # --dangerously-skip-permissions is the point rather than a shortcut. A worker
@@ -224,6 +198,11 @@ ${job ? `# What the job's API reads.
 # the interaction the note at the top of this file is about.
 OKC_FOLDER=${q(folder)}
 export OKC_FOLDER
+# Where to hand things back, and which run this is. The API reads both; the
+# credential it uses is the file written above rather than anything here.
+OKC_BASE=${q(base || "")}
+OKC_RUN=${q(id)}
+export OKC_BASE OKC_RUN
 ${prompt ? `OKC_PROMPT_ID=${q(prompt.id)}
 OKC_PROMPT_NAME=${q(prompt.name || prompt.id)}
 export OKC_PROMPT_ID OKC_PROMPT_NAME` : ''}`
