@@ -197,6 +197,7 @@ async function drawOnce () {
   paintBranches()
   paintTasks(running)
   paintPlanned()
+  paintPrompts()
 
   // Last, so the picture is of a window that has finished drawing.
   shotIfAsked()
@@ -400,7 +401,12 @@ app.onCapture(async want => {
   // Long enough for what was just switched to to have been read and drawn. The
   // panels answer asynchronously, so this is the same wait the draws were
   // standing in for, said as a duration instead of as a count of ticks.
-  await new Promise(r => setTimeout(r, 400))
+  //
+  // 800 rather than 400, because a pane now yields a frame before it reads
+  // anything -- `settle` is 250ms on its own -- and 400 photographed a panel
+  // mid-load twice, which is the ambiguous picture this whole mechanism exists
+  // to avoid: an empty panel is indistinguishable from a broken one.
+  await new Promise(r => setTimeout(r, 800))
   await takeShot(want.file)
   return { bytes: null }
 })
@@ -412,7 +418,7 @@ async function pickFor (v, pick) {
   if (v === 'tasks') {
     // The sub-tab first: Tasks has two now, and a pane nobody can reach from out
     // here is a pane nobody has seen -- which is the whole reason this exists.
-    if (['board', 'planned'].includes(pick)) {
+    if (['board', 'planned', 'prompts'].includes(pick)) {
       const t = document.querySelector(`#view-tasks .subtab[data-pane="${pick}"]`)
       if (t) t.click()
       return

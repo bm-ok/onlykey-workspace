@@ -752,6 +752,139 @@ const definitionState = t => t.lapsed
     ? { cls: 'ok', label: 'approved', why: null }
     : { cls: 'warn', label: 'never read', why: 'Written by a model. Nothing runs until a person has read it and said so.' }
 
+// ---- the prompt library --------------------------------------------------
+//
+// The third of three, and the one the other two are made of:
+//
+//     task <- pre-defined <- prompt
+//
+// A task is one occasion. A pre-defined task is the standing intention to do
+// that job. A prompt is the instruction itself -- the part worth improving, and
+// the part worth having exactly one of.
+//
+// FILLED IN FROM, NOT POINTED AT. Writing a task copies the text; the task then
+// carries what the worker was actually given, and editing the library afterwards
+// cannot rewrite history somebody is judging against. That is the same reason a
+// task keeps its own contract rather than a path to one.
+let pickedPrompt = been.get('prompt', null)
+
+function paintPrompts () {
+  if (view !== 'tasks' || taskPane !== 'prompts') return
+  waiting('prompts-list', { cards: 3 })
+  waiting('prompt-detail', { lines: 8 })
+  paintPromptsNow()
+}
+
+async function paintPromptsNow () {
+  await settle()
+  if (view !== 'tasks' || taskPane !== 'prompts') return
+
+  api('prompts').then(({ prompts, note }) => {
+    if (!prompts.some(x => x.id === pickedPrompt)) {
+      pickedPrompt = prompts.length ? prompts[0].id : null
+      been.set('prompt', pickedPrompt)
+    }
+    setText($('prompts-context'), prompts.length ? `— ${prompts.length} kept` : '— none yet')
+    setText($('prompts-note'), note)
+
+    if (changed('prompts', [prompts, pickedPrompt])) {
+      fill($('prompts-list'), prompts.length
+        ? prompts.map(x => el('div', {
+            className: `card pick${x.id === pickedPrompt ? ' on' : ''}`,
+            onclick: () => {
+              pickedPrompt = x.id
+              been.set('prompt', pickedPrompt)
+              changed('prompts', null); changed('prompt-detail', null)
+              paintPrompts()
+            }
+          },
+          el('div', { className: 'card-title' }, el('span', { className: 'grow', textContent: x.name })),
+          x.about ? el('div', { className: 'card-sub muted', textContent: x.about }) : null,
+          el('div', { className: 'card-sub muted', textContent: x.edited ? `edited ${ago(x.edited)}` : `written ${ago(x.written)}` })))
+        : el('p', { className: 'empty', textContent: 'Nothing kept yet. Write one the moment you would type the same brief a second time.' }))
+    }
+
+    const one = prompts.find(x => x.id === pickedPrompt) || null
+    if (changed('prompt-detail', one)) paintPrompt(one)
+  }).catch(oops)
+}
+
+function paintPrompt (x) {
+  if (!x) return fill($('prompt-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one.' }))
+
+  fill($('prompt-detail'),
+    el('div', { className: 'card-title' },
+      el('span', { className: 'grow', textContent: x.name }),
+      el('span', { className: 'badge muted', textContent: x.id })),
+    el('div', { className: 'card-sub muted', textContent: [
+      x.edited ? `edited ${ago(x.edited)}` : `written ${ago(x.written)}`,
+      `hash ${x.hash}`
+    ].join(' · ') }),
+    x.about ? el('p', { className: 'note', textContent: x.about }) : null,
+
+    el('div', { className: 'row', style: 'margin-top:8px' },
+      // THE ACT THIS LIBRARY EXISTS FOR. Everything else here is upkeep.
+      el('button', {
+        className: 'btn small ok',
+        textContent: 'Write a task from it',
+        title: 'Opens the task dialog with this as the brief',
+        onclick: () => newTask({ title: x.name, brief: x.text })
+      }),
+      el('button', { className: 'btn small', textContent: 'Edit', onclick: () => writePrompt(x) }),
+      el('button', {
+        className: 'btn small bad',
+        textContent: 'Throw it away',
+        onclick: () => ask({
+          title: `Throw away "${x.name}"?`,
+          plain: [
+            'It leaves the library.',
+            // The thing worth saying, because "delete" sounds bigger than it is.
+            'Every task written from it keeps the text it was given — a task carries its own copy, so nothing that already went out changes.'
+          ],
+          confirm: 'Throw it away',
+          danger: true,
+          onYes: async () => {
+            await api('promptForget', { id: x.id })
+            say(`"${x.name}" is out of the library.`, 'warn')
+            pickedPrompt = null
+            changed('prompts', null); changed('prompt-detail', null)
+            return draw()
+          }
+        })
+      })),
+
+    el('div', { style: 'margin-top:10px' }, codeBlock(x.text, 'text', { lines: 16 })))
+}
+
+// Written or rewritten, in the one dialog everything asks through.
+function writePrompt (x = null) {
+  ask({
+    title: x ? `Edit "${x.name}"` : 'Write a prompt',
+    plain: [
+      'This is what a worker is told. Write it as instructions to somebody who cannot ask you a question.',
+      x
+        ? 'Editing it changes the library only. Tasks already written from it keep the text they were given.'
+        : 'It is kept for this computer rather than for a workspace, because an instruction is not about one folder of repositories.'
+    ],
+    fields: [
+      { name: 'name', label: 'Name', value: x ? x.name : '', placeholder: 'Short enough to recognise in a list' },
+      { name: 'about', label: 'What it is for (optional)', value: x && x.about ? x.about : '', placeholder: 'One line, so somebody else knows when to reach for it' },
+      { name: 'text', label: 'The prompt', value: x ? x.text : '', multiline: true, rows: 14, placeholder: 'Read the README and the code, and say where they disagree.' }
+    ],
+    confirm: x ? 'Save it' : 'Write it',
+    onYes: async f => {
+      const saved = await api('promptSave', { id: x ? x.id : undefined, name: f.name, about: f.about, text: f.text })
+      pickedPrompt = saved.id
+      been.set('prompt', pickedPrompt)
+      say(saved.created ? `"${saved.name}" kept.` : `"${saved.name}" saved.`)
+      changed('prompts', null); changed('prompt-detail', null)
+      return draw()
+    }
+  })
+}
+
+$('prompt-new').onclick = () => writePrompt()
+
 function paintPlanned () {
   if (view !== 'tasks' || taskPane !== 'planned') return
   waiting('planned-list', { cards: 3 })

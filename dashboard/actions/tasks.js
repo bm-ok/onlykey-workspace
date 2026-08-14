@@ -18,7 +18,7 @@ const s = require('./shared')
 const {
   log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact, harness, approval,
-  archive, files, workspaces, queue, machines, provision, reach, editor, repos,
+  archive, files, prompts, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
@@ -641,6 +641,50 @@ module.exports = {
         machine: back.name,
         note: `${back.note} #${task.number} is done and waiting to be judged — what it delivered is whatever reached "${task.branch}".`
       }
+    }
+  },
+
+  // ---- the prompt library ------------------------------------------------
+  //
+  // Writing a task is writing a prompt. The brief IS the instruction, and it was
+  // typed fresh every time -- so the same intention ended up with four wordings
+  // and nobody knew which was the good one. These are the kept ones.
+  //
+  // NOT GATED ON A WORKSPACE, unlike everything else in this file. A task belongs
+  // to the folder of repositories it delivers into; "read the README against the
+  // code" names no branch and no repository, and a library that emptied itself
+  // when somebody switched workspace is one nobody would build.
+  prompts: {
+    about: 'The prompt library: what a worker can be told, written once and kept',
+    run: () => {
+      const list = prompts.all()
+      return {
+        prompts: list,
+        where: prompts.FILE(),
+        note: list.length
+          ? 'A task copies the text it was given rather than pointing at it, so editing one here never rewrites a task that already went out.'
+          : 'Nothing kept yet. A prompt is the brief of a task, written once — worth keeping the moment you would type it a second time.'
+      }
+    }
+  },
+
+  promptSave: {
+    about: 'Write a prompt, or rewrite one. The id never changes once it is made',
+    takes: ['id', 'name', 'text', 'about'],
+    run: ({ id, name, text, about }) => {
+      const saved = prompts.save({ id, name, text, about })
+      log.on('task').info(saved.created ? `prompt "${saved.name}" written` : `prompt "${saved.name}" rewritten`)
+      return saved
+    }
+  },
+
+  promptForget: {
+    about: 'Throw a prompt away. Tasks written from it are untouched — they carry their own copy',
+    takes: ['id'],
+    run: ({ id }) => {
+      const gone = prompts.forget(id)
+      log.on('task').warn(`prompt "${gone.name}" thrown away`)
+      return { ...gone, note: 'Any task written from it keeps the text it was given. This only removes it from the library.' }
     }
   },
 

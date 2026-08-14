@@ -32,6 +32,7 @@ const scripts = require('../machines/scripts')
 const channel = require('../machines/channel')
 const tasks = require('../tasks/store')
 const artifact = require('../tasks/artifact')
+const prompts = require('../tasks/prompts')
 const harness = require('../tasks/harness')
 const approval = require('../tasks/approval')
 const archive = require('../tasks/archive')
@@ -285,7 +286,7 @@ module.exports = {
   log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact, harness, approval,
-  archive, files, workspaces, queue, machines, provision, reach, editor, repos,
+  archive, files, prompts, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace,
   fs, path, https,
   started, net, win,

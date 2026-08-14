@@ -272,6 +272,7 @@
     <div class="subtabs">
       <button class="subtab active" data-pane="board">Board</button>
       <button class="subtab" data-pane="planned">Pre-defined</button>
+      <button class="subtab" data-pane="prompts">Prompts</button>
     </div>
 
     <div class="pane active" id="pane-board">
@@ -330,6 +331,28 @@
              ten of them sat unread. -->
         <div class="col wide">
           <div id="planned-detail" class="panel"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WHAT A WORKER IS TOLD, KEPT. Writing a task is writing a prompt: the
+         brief IS the instruction, and it was retyped every time until the same
+         intention had four wordings. These are the kept ones, and a task is
+         filled in from one rather than pointing at it. -->
+    <div class="pane" id="pane-prompts">
+      <div class="sync-head">
+        <h2 id="prompts-title">Prompts <span class="muted" id="prompts-context"></span></h2>
+        <div class="sync-controls">
+          <button class="btn ok" id="prompt-new">Write one</button>
+        </div>
+      </div>
+      <p class="note" id="prompts-note"></p>
+      <div class="cols">
+        <div class="col narrow">
+          <div id="prompts-list" class="stack"></div>
+        </div>
+        <div class="col wide">
+          <div id="prompt-detail" class="panel"></div>
         </div>
       </div>
     </div>
