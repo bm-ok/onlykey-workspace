@@ -126,22 +126,27 @@
       <button class="subtab" data-pane="templates">Templates</button>
     </div>
 
-    <div class="sync-head">
-      <h2 class="titlerow">
-        <span id="prcuts-title">PR cuts</span> <span class="muted" id="prcuts-context"></span>
-        <span class="grow"></span>
-        <button class="plus" id="add-prcut-open" title="Cut a pull request across every repository a line touches">+</button>
-      </h2>
-      <div class="sync-controls">
-        <button class="btn" id="prcuts-refresh">Read them from GitHub</button>
-      </div>
-    </div>
-    <p class="note" id="prcuts-note"></p>
-
+    <!-- EACH COLUMN CARRIES ITS OWN HEADING, and each pane its own controls.
+         A shared header above both panes put "Read them from GitHub" over the
+         Templates pane, which reads nothing from GitHub — and it sat a heading
+         for the left column in a row with a button for the right one, so
+         neither said what it was over. -->
     <div class="pane active" id="pane-cuts">
       <div class="cols">
-        <div class="col narrow"><div id="prcuts" class="stack"></div></div>
-        <div class="col wide"><div id="prcut-detail" class="panel"></div></div>
+        <div class="col narrow">
+          <h2 class="titlerow">
+            Cuts <span class="muted" id="prcuts-context"></span>
+            <span class="grow"></span>
+            <button class="btn small" id="prcuts-refresh" title="Ask GitHub what became of each one">Read</button>
+            <button class="plus" id="add-prcut-open" title="Cut a pull request across every repository a line touches">+</button>
+          </h2>
+          <p class="note" id="prcuts-note"></p>
+          <div id="prcuts" class="stack"></div>
+        </div>
+        <div class="col wide">
+          <h2>The cut</h2>
+          <div id="prcut-detail" class="panel"></div>
+        </div>
       </div>
     </div>
 
@@ -157,17 +162,20 @@
          are worth saying. -->
     <div class="pane" id="pane-templates">
       <div class="cols">
-        <div class="col narrow"><div id="prtemplate" class="stack"></div></div>
+        <div class="col narrow">
+          <h2>What every pull request says</h2>
+          <div id="prtemplate" class="stack"></div>
+        </div>
         <div class="col wide">
-          <div class="sync-head" style="margin-bottom:8px">
-            <h2>Preview <span class="muted" id="prtemplate-context"></span></h2>
-            <div class="sync-controls">
-              <select id="prtemplate-source"></select>
-              <span class="change-into">into</span>
-              <select id="prtemplate-target"></select>
-              <select id="prtemplate-as"></select>
-            </div>
-          </div>
+          <h2 class="titlerow">
+            Preview
+            <span class="grow"></span>
+            <select id="prtemplate-source"></select>
+            <span class="change-into">into</span>
+            <select id="prtemplate-target"></select>
+            <select id="prtemplate-as"></select>
+          </h2>
+          <p class="note" id="prtemplate-context"></p>
           <div id="prtemplate-preview"></div>
         </div>
       </div>

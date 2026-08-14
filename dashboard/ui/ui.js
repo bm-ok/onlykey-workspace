@@ -4154,7 +4154,6 @@ document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(t => {
     been.set('prcut-pane', cutPane)
     document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
     document.querySelectorAll('#view-prcuts .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${cutPane}`))
-    setText($('prcuts-title'), cutPane === 'templates' ? 'What every pull request says' : 'PR cuts')
     changed('prtemplate', null)
     paintTemplates()
   }
