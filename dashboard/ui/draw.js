@@ -196,6 +196,7 @@ async function drawOnce () {
   paintTerminal()
   paintBranches()
   paintTasks(running)
+  paintPlanned()
 
   // Last, so the picture is of a window that has finished drawing.
   shotIfAsked()
@@ -409,6 +410,13 @@ app.onCapture(async want => {
 // only the place they are reached from.
 async function pickFor (v, pick) {
   if (v === 'tasks') {
+    // The sub-tab first: Tasks has two now, and a pane nobody can reach from out
+    // here is a pane nobody has seen -- which is the whole reason this exists.
+    if (['board', 'planned'].includes(pick)) {
+      const t = document.querySelector(`#view-tasks .subtab[data-pane="${pick}"]`)
+      if (t) t.click()
+      return
+    }
     const t = (taskList || []).find(x => x.id === pick || String(x.number) === pick)
     if (t && pickedTask !== t.id) return pickTask(t.id, null)
     return

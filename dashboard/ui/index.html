@@ -260,6 +260,21 @@
        request is read. Nothing on this side drives a machine except the one
        button that hands work over. -->
   <section class="view" id="view-tasks">
+
+    <!-- TWO KINDS OF THING, AND ONLY ONE OF THEM IS A TASK.
+         The board is work: written, given out, delivered, judged. A pre-defined
+         task is a DEFINITION of work -- written once, approved once, and run
+         whenever it is wanted -- and it had no home at all. It was reachable
+         from a nudge card that only appears when something is waiting, and from
+         inside the write-a-task dialog three clicks in, so ten definitions could
+         sit there and the window said nothing. A dialog is for one decision;
+         managing ten of them is not one decision. -->
+    <div class="subtabs">
+      <button class="subtab active" data-pane="board">Board</button>
+      <button class="subtab" data-pane="planned">Pre-defined</button>
+    </div>
+
+    <div class="pane active" id="pane-board">
     <div class="cols">
 
       <div class="col narrow">
@@ -294,6 +309,20 @@
       </div>
 
     </div>
+    </div>
+
+    <!-- WHAT IS DEFINED, rather than what is happening. Grouped by suite because
+         that is what a definition is FOR -- "the guards" is a claim about a set,
+         and reading them one at a time out of a dropdown is how a gap in the set
+         goes unnoticed. -->
+    <div class="pane" id="pane-planned">
+      <div class="sync-head">
+        <h2 id="planned-title">Pre-defined tasks <span class="muted" id="planned-context"></span></h2>
+      </div>
+      <p class="note" id="planned-note"></p>
+      <div id="planned-list" class="stack"></div>
+    </div>
+
   </section>
 
   <!-- ---------------- Branches ----------------

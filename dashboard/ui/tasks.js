@@ -730,6 +730,116 @@ function newTask (from = null) {
 // Only in the window. `plannedApprove` refuses over the socket, because that is
 // the socket a supervising model drives — and a model approving a definition it
 // wrote is the one path nothing reviews.
+// ---- what is defined, rather than what is happening ---------------------
+//
+// A pre-defined task is not a task. It is a DEFINITION of a job -- a prompt, or a
+// script, written once to do one thing -- approved once by a person who read it,
+// and run whenever it is wanted. The board next to it is work: written for an
+// occasion, given out, delivered, judged, and then done with. These outlive the
+// occasion, which is the whole point of them.
+//
+// WHAT IS REGISTERED TODAY IS DRILLS, and that is a fact about this moment rather
+// than about the shape. They are jobs that happen to assert something; a job that
+// reads a repository and reports, or one that applies a known fix wherever it
+// finds it, is the same object with the same approval and the same run. Naming
+// this pane "tests" would have written that limit into the window.
+//
+// APPROVAL IS THE POINT, and it matters more the less test-like these get. A
+// model may write one; only a person may say it is fit to run, and `plannedRun`
+// refuses anything unapproved. A definition that does work rather than asserting
+// makes that boundary load-bearing rather than tidy.
+//
+// Until now the only ways in were a nudge card that appears when something is
+// waiting, and the write-a-task dialog three clicks in. So the ordinary state --
+// ten definitions, all approved, nothing waiting -- had no surface at all, and
+// "what does this app already know how to do" was a question you could only
+// answer from a terminal.
+let taskPane = been.get('task-pane', 'board')
+
+document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
+  t.onclick = () => {
+    taskPane = t.dataset.pane
+    been.set('task-pane', taskPane)
+    document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
+    document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
+    paintPlanned()
+  }
+})
+;(() => {
+  const t = document.querySelector(`#view-tasks .subtab[data-pane="${taskPane}"]`)
+  if (!t) { taskPane = 'board'; return }
+  document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
+  document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
+})()
+
+// WHAT EACH STATE MEANS, said as the sentence rather than the flag. "Approved" is
+// not one thing: a definition can be approved as it stands, approved and then
+// EDITED since -- which is the dangerous one, because it reads as approved and is
+// not what anybody read -- or never read at all.
+const definitionState = t => t.lapsed
+  ? { cls: 'bad', label: 'changed since you approved it', why: 'Somebody has edited this since it was read. It will not run until it is read again.' }
+  : t.approved
+    ? { cls: 'ok', label: 'approved', why: null }
+    : { cls: 'warn', label: 'never read', why: 'Written by a model. Nothing runs until a person has read it and said so.' }
+
+function paintPlanned () {
+  if (view !== 'tasks' || taskPane !== 'planned') return
+  waiting('planned-list', { cards: 3 })
+  paintPlannedNow()
+}
+
+async function paintPlannedNow () {
+  await settle()
+  if (view !== 'tasks' || taskPane !== 'planned') return
+
+  api('planned').then(plan => {
+    const suites = plan.suites || []
+    const all = suites.flatMap(s => s.tests)
+    const waitingOn = all.filter(t => !t.approved || t.lapsed).length
+
+    setText($('planned-context'), all.length
+      ? `— ${all.length} in ${suites.length} suite${suites.length === 1 ? '' : 's'}${waitingOn ? `, ${waitingOn} needing you` : ''}`
+      : '— none registered')
+    setText($('planned-note'), plan.note || '')
+
+    if (!changed('planned', suites)) return
+
+    fill($('planned-list'), suites.length
+      ? suites.map(su => el('div', { className: 'carries' },
+          el('div', { className: 'carries-head' },
+            el('span', { textContent: su.name }),
+            el('span', { className: 'muted', textContent: `${su.tests.length} defined` })),
+          ...su.tests.map(t => {
+            const st = definitionState(t)
+            return el('div', { className: 'card' },
+              el('div', { className: 'card-title' },
+                el('span', { className: 'grow', textContent: t.name }),
+                el('span', { className: `badge ${st.cls}`, textContent: st.label })),
+              // WHEN it was approved, because "approved" with no date is a claim
+              // nobody can weigh against a definition that has been sitting for
+              // months.
+              el('div', { className: 'card-sub muted', textContent: [
+                t.at ? `read ${ago(t.at)}` : 'never read',
+                `fingerprint ${t.fingerprint}`
+              ].join(' · ') }),
+              st.why ? el('p', { className: 'note', textContent: st.why }) : null,
+              t.note ? el('div', { className: 'card-sub', textContent: `"${t.note}"` }) : null,
+              // A REQUEST IS SOMEBODY ASKING, and it is the one thing here that
+              // arrives from outside the window -- a session that wrote a
+              // definition may ask for it to be read, and may not read it itself.
+              t.request ? el('p', { className: 'note warn', textContent: `Asked to be read: ${t.request}` }) : null,
+              el('div', { className: 'row', style: 'margin-top:8px' },
+                el('button', {
+                  className: 'btn small',
+                  textContent: st.cls === 'ok' ? 'Read it again' : 'Read it',
+                  title: 'Opens the definition, in full, with what it would do',
+                  onclick: () => readDefinition(t.name)
+                })))
+          })))
+      : el('p', { className: 'empty', textContent: 'No jobs are defined yet. A pre-defined task is a job written once — declared in tasks/planned.js — and run whenever it is wanted.' }))
+  }).catch(oops)
+}
+
 function readDefinition (which) {
   api('planned').then(plan => {
     const all = (plan.suites || []).flatMap(s => s.tests.map(t => ({ suite: s.name, ...t })))
