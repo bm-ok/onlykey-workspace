@@ -531,3 +531,44 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   None of those are edge cases of closing. They are all "this value was never
   absent, so nothing was written for absent", and the only way to find them was
   to make it absent.
+
+* **Serialise VBoxManage. VBoxSVC is one service and it can be asked into a
+  corner.** It locked up: `list vms` stopped answering at all, `startvm` failed,
+  and getting it back took closing every VirtualBox process and restarting the
+  service. Nothing abusive caused it — the window polls `vmList`, which is four
+  processes with two machines (`list vms`, `list runningvms`, and a `showvminfo`
+  each), and the command line calls the same action into the same process with
+  none of the window's pacing.
+
+  The window was never the hammer and it is worth being precise about that,
+  because the obvious fix would have been to slow it down and that would have
+  fixed nothing. `draw()` already refuses to overlap itself, `sync()` awaits
+  before rescheduling, it skips entirely while the window is hidden, and it polls
+  at twelve seconds unless a machine is running. **The gap was that there was no
+  coordination BETWEEN callers**, and a service that is slow when it is unwell
+  turns every new caller into another process held for up to the two-minute
+  timeout. That is how slow becomes stuck.
+
+  So every call goes through one strictly serial chain, and identical reads in
+  flight are one read — without the second half a serial queue only converts
+  "four at once" into "four in a row". Measured after: 24 concurrent calls, 649
+  samples of the live process table, **most VBoxManage processes alive at once:
+  1**.
+
+  Two properties keep it safe. The queue wraps only the leaf that spawns, so a
+  nested call is impossible by construction and it cannot deadlock. And a failed
+  call does not poison the chain — the next one runs whatever the last one did.
+
+  The cost is real and is the right cost: a read can wait behind a write, and a
+  write here can be five minutes (`closemedium --delete`, `unattended install`).
+  It is bounded, because the draw loop will not stack reads behind it, and it
+  says so in the log when anything waits more than ten seconds — otherwise
+  "VirtualBox is unwell" and "the window has gone quiet" look identical.
+
+* **Do not race the operator for a wedged service.** While they were closing
+  VirtualBox and restarting VBoxSVC, this session kept running `vmList` and then
+  ran `VBoxManage list vms` directly. Their words: "me and you where fighting to
+  start it." On the first `VBoxManage` failure the right move is to say it looks
+  environmental, stop touching it, and carry on with the parts of the task that
+  need no machine — which is most of them, since the actions split into host and
+  workspace and neither half needs a hypervisor to answer.

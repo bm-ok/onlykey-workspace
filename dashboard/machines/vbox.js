@@ -33,7 +33,96 @@ const there = p => { try { return fs.existsSync(p) } catch { return false } }
 const exe = () => CANDIDATES.find(there) || 'VBoxManage'
 const available = () => CANDIDATES.some(there)
 
-function run (args, { timeout = 120000, quiet = false, tags = [] } = {}) {
+// ---- one at a time ------------------------------------------------------
+//
+// EVERY VBoxManage CALL IN THIS APP GOES THROUGH `run`, AND THEY GO ONE AT A
+// TIME. VBoxSVC is a single service with a session model, and asking it several
+// things at once is not a way of getting several answers faster -- it is a way
+// of getting a locked-up service. That has now happened: `list vms` stopped
+// answering at all, `startvm` failed, and it took closing every VirtualBox
+// process and restarting the service to get it back.
+//
+// What got it there was ordinary use, not abuse. The window polls `vmList`,
+// which is four processes with two machines -- `list vms`, `list runningvms`
+// and a `showvminfo` each -- and the command line calls the same action into
+// the same process with none of the window's pacing. Two callers, no coordination
+// between them, and a service that is slow precisely when it is unwell: every
+// caller that arrives while it is struggling adds another process, for up to the
+// two minutes of the default timeout, which is how a slow service becomes a
+// stuck one.
+//
+// A STRICTLY SERIAL QUEUE IS THE WHOLE FIX, and the cost is stated plainly: a
+// read can wait behind a write, and a write here can be five minutes
+// (`closemedium --delete` on a large disk, `unattended install`). The machines
+// panel goes stale for that long. That is the correct price -- it is one caller
+// waiting rather than twenty asking -- and it is bounded, because the window's
+// draw loop already refuses to overlap itself, so at most one read queues behind
+// a write rather than one per tick.
+//
+// IDENTICAL READS IN FLIGHT ARE ONE READ. Without this a serial queue would just
+// convert "four at once" into "four in a row", which is the same work spread
+// thinner. `list vms` asked by the window and by the terminal in the same second
+// is one question, and the second caller gets the first one's answer.
+let chain = Promise.resolve()
+let waiting = 0
+let lastSlow = 0
+
+// Commands that only ASK. Everything else is assumed to change something, and
+// changing something makes every remembered answer stale -- so the memo below is
+// dropped after any of them, in the same shape as `forgetRefs` in
+// repos/branches.js, and for the same reason.
+const asks = args =>
+  args[0] === 'list' ||
+  args[0] === 'showvminfo' ||
+  args[0] === 'getextradata' ||
+  args[0] === 'guestproperty' ||
+  (args[0] === 'snapshot' && args[2] === 'list')
+
+// Long enough to collapse a burst of callers arriving together, short enough
+// that nothing observes a state it could have acted on. `waitForState` polls at
+// two seconds, so it never sees an answer older than its own interval.
+const ASKED_MS = 1200
+const asked = new Map()
+
+function run (args, opts = {}) {
+  if (asks(args)) {
+    const key = args.join(' ')
+    const hit = asked.get(key)
+    if (hit && Date.now() - hit.at < ASKED_MS) return hit.answer
+    const answer = queued(args, opts)
+    // Dropped on failure so the next caller asks again rather than being handed
+    // a remembered error for the next second and a bit.
+    asked.set(key, { at: Date.now(), answer })
+    answer.catch(() => asked.delete(key))
+    return answer
+  }
+
+  return queued(args, opts).finally(() => asked.clear())
+}
+
+function queued (args, opts) {
+  const started = Date.now()
+  waiting++
+
+  // Run whatever the one before did, so a failure does not stop the queue.
+  const mine = chain.then(() => {
+    // SAID WHEN IT IS SLOW, because a serial queue turns "VirtualBox is unwell"
+    // into "the window has gone quiet", and those look identical from outside.
+    // At most one line a minute: a stall produces hundreds of waits and one of
+    // them is the whole message.
+    const held = Date.now() - started
+    if (held > 10000 && Date.now() - lastSlow > 60000) {
+      lastSlow = Date.now()
+      log.on('vm', ...(opts.tags || [])).warn(`VirtualBox is answering slowly — "${args.slice(0, 2).join(' ')}" waited ${Math.round(held / 1000)}s behind ${waiting - 1} other call(s)`)
+    }
+    return spawn(args, opts)
+  })
+
+  chain = mine.then(() => {}, () => {})
+  return mine.finally(() => { waiting-- })
+}
+
+function spawn (args, { timeout = 120000, quiet = false, tags = [] } = {}) {
   const to = log.on('vm', ...tags)
   if (!quiet) to.info(`VBoxManage ${args.join(' ')}`)
   return new Promise((resolve, reject) => {
