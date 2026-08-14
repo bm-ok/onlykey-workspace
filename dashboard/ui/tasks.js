@@ -44,6 +44,38 @@ document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
   document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
 })()
 
+// GOING TO THE OTHER HALF.
+//
+// A job names the prompt it runs with, and a prompt is named by the jobs that
+// use it. They live in different sub-tabs, so a panel that says which one is
+// stopping a run used to leave the reader to do the lookup themselves: read the
+// name, switch tab, find it in a list. Both directions are a click now, because
+// a screen that knows the answer should be able to go to it.
+//
+// THROUGH THE TAB'S OWN CLICK, rather than setting the four things a switch sets.
+// The handler above is the one place that knows how to change sub-tab; a second
+// copy here would be the one that stops being updated.
+const showPane = pane => {
+  const tab = document.querySelector(`#view-tasks .subtab[data-pane="${pane}"]`)
+  if (tab) tab.click()
+}
+
+// Selected BEFORE the switch, so the pane paints with it already picked rather
+// than painting whatever was there and then moving.
+function showPrompt (id) {
+  pickedPrompt = id
+  been.set('prompt', id)
+  forget('prompts'); forget('prompt-detail')
+  showPane('prompts')
+}
+
+function showJob (id) {
+  pickedJob = id
+  been.set('job', id)
+  forget('jobs'); forget('jobs-detail')
+  showPane('jobs')
+}
+
 // What a task's card and its detail panel read, including what the buttons close
 // over. A field missed here is a panel that silently stops updating, which is
 // worse than the flicker the signature exists to prevent.
@@ -806,7 +838,13 @@ async function paintPromptsNow () {
   await settle()
   if (view !== 'tasks' || taskPane !== 'prompts') return
 
-  api('prompts').then(({ prompts, note }) => {
+  // The jobs too, only to say which ones use each prompt. Allowed to fail and
+  // still paint: prompts are kept for this computer and jobs belong to a
+  // workspace, so with none open the library is still readable and the answer to
+  // "what uses this" is simply nothing.
+  Promise.all([api('prompts'), api('jobs').catch(() => ({ jobs: [] }))]).then(([{ prompts, note }, work]) => {
+    const usersOf = id => (work.jobs || []).filter(j => j.promptId === id)
+
     if (!prompts.some(x => x.id === pickedPrompt)) {
       pickedPrompt = prompts.length ? prompts[0].id : null
       been.set('prompt', pickedPrompt)
@@ -837,7 +875,10 @@ async function paintPromptsNow () {
     }
 
     const one = prompts.find(x => x.id === pickedPrompt) || null
-    if (changed('prompt-detail', one)) paintPrompt(one)
+    // The jobs are part of the signature, or approving one would leave the
+    // "used by" line showing the state it had before.
+    const used = one ? usersOf(one.id) : []
+    if (changed('prompt-detail', [one, used])) paintPrompt(one, used)
   }).catch(oops)
 }
 
@@ -848,7 +889,7 @@ const promptBadge = x => x.lapsed
     ? { className: 'badge ok', textContent: 'approved' }
     : { className: 'badge warn', textContent: 'not approved' }
 
-function paintPrompt (x) {
+function paintPrompt (x, used = []) {
   if (!x) return fill($('prompt-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one.' }))
 
   fill($('prompt-detail'),
@@ -865,6 +906,25 @@ function paintPrompt (x) {
     x.lapsed
       ? el('p', { className: 'note bad', textContent: 'It was edited after it was approved, so it is waiting to be read again — what was approved is not what would be sent.' })
       : null,
+
+    // WHAT DEPENDS ON IT, and the way back to each. The other half of the link
+    // from a job to its prompt — and the more useful direction of the two, since
+    // withdrawing approval here stops those jobs running and this is the only
+    // place that says which ones they are before you do it.
+    el('div', { className: 'carries', style: 'margin-top:10px' },
+      el('div', { className: 'group-part' },
+        el('span', { textContent: 'used by' }),
+        el('span', {}, used.length
+          ? used.flatMap((j, n) => [
+              n ? el('span', { className: 'muted', textContent: ', ' }) : null,
+              el('button', {
+                className: 'linky',
+                textContent: j.name,
+                title: j.runnable ? 'Ready to run' : `It will not run: ${j.whyNot}`,
+                onclick: () => showJob(j.id)
+              })
+            ])
+          : el('span', { className: 'muted', textContent: 'no job — a prompt is worth keeping on its own, and a task can be written from it directly' })))),
 
     el('div', { className: 'row', style: 'margin-top:8px' },
       // APPROVING IT IS DONE HERE OR NOWHERE. The action refuses over the wire
@@ -1110,8 +1170,22 @@ function paintJob (j) {
       el('div', { className: 'carries', style: 'margin-top:10px' },
         el('div', { className: 'group-part' },
           el('span', { textContent: 'run with the prompt' }),
+          // THE OTHER HALF, ONE CLICK AWAY. This line is where somebody finds
+          // out that the thing stopping a run is the prompt rather than the
+          // script — and until now finding out was the whole of the help: the
+          // next move was to read the sentence, switch sub-tab, and pick the
+          // prompt out of a list by the name they had just been shown. A panel
+          // that names the obstacle should go to it.
           el('span', {}, j.prompt
-            ? el('span', { className: j.prompt.approved ? '' : 'warn', textContent: `${j.prompt.name}${j.prompt.approved ? '' : ' — not approved'}` })
+            ? [
+                el('button', {
+                  className: 'linky',
+                  textContent: j.prompt.name,
+                  title: j.prompt.approved ? 'Read it' : 'Read it, and approve it if it is fit to send',
+                  onclick: () => showPrompt(j.prompt.id)
+                }),
+                j.prompt.approved ? null : el('span', { className: 'warn', textContent: ' — not approved' })
+              ]
             : el('span', { className: 'muted', textContent: j.promptId ? `${j.promptId} — gone` : 'none, it is chosen when you run it' })))),
 
       el('div', { className: 'row', style: 'margin-top:10px' },
