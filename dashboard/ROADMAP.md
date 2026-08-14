@@ -172,6 +172,94 @@ Smaller things, worth doing when they are in the way
   visibly rather than quietly.
 
 
+Judging, as its own kind of run
+--------------------------------
+
+A tab of its own, because judging is not a task and pretending it is one is what
+has kept it from existing. A task produces work; a judgement is a reading OF
+work, it is short, something is waiting on it, and it goes stale on its own the
+moment the thing it read moves.
+
+**What is judged is a PR cut, at a state.** Not a task -- `taskJudge` already
+records a person's verdict on what a task delivered to a branch, and that stays
+what it is. This is the outgoing side: the change as it will actually land, one
+line into another, across every repository that carries work. It is the first
+thing in this app that reads a change the way a reviewer does rather than the way
+its author does.
+
+**A judgement is bound to the commits it read.** `prtemplate.about()` already
+computes the tip of each repository's branch, so a judgement records
+`{repo -> tip}` for every repository in the cut. Any tip moves and the judgement
+is **stale** -- shown as stale rather than hidden, because "judged, then changed"
+and "never judged" are different states and only one of them means somebody has
+already read this.
+
+Editing the title or the description does NOT make it stale. The judgement is of
+the change; the description is the claim about the change, and invalidating a
+reading of the code because a sentence was rewritten would train people to stop
+believing the word. That is a decision, and it is the kind somebody will
+reasonably question, so it is written here rather than left in the code.
+
+**It recommends. A person still decides.** The judge writes its judgement onto
+the PR cut and into the Judge tab, with reasons; accepting or rejecting stays a
+person's act, and nothing lands on a judgement alone. That is the same rule
+`taskJudge` already holds and for the same reason: a wrong judgement should cost
+a read, not a landing.
+
+This is also the first real piece of `supervisor = person || claude`. A judge IS
+a supervisor act -- reading what came back and saying whether it is good -- run
+by Claude. Which is exactly why the authority stops where it does: the spine
+allows either kind in the role, and this app's refusals are drawn around the ACT
+rather than around the human, so "may not ratify its own" applies to a judgement
+as much as to a pre-defined task.
+
+**A judgement says who made it, and a model's says so on its face.** Not a field
+in a record somebody could fail to render -- in the judgement itself, wherever it
+is read: the Judge tab, and the text published onto the pull requests. A
+judgement is written once and read afterwards by people deciding whether to
+trust it, and one that reads as a person's when a model made it has misled every
+one of them. It is also the half of `supervisor = person || claude` that costs
+something: the spine says either kind may fill the role, and the price of that is
+that the role must always say which kind filled it. Which model and when, too --
+a judgement from a model that has since been replaced is worth re-running, and
+nobody can know that from prose alone.
+
+**Queued, and taken first.** A judge run asks the same queue for a machine --
+one path to a machine, not two -- and is taken before any queued task, but never
+interrupts one that is running. That asymmetry is the whole reason it is
+prioritised: a judgement is minutes and something is waiting on it, a task is
+hours and nothing is. A judge run that sits behind a six-hour task is a feature
+nobody uses twice.
+
+**Publishing is a separate act, from the Judge tab.** The judgement exists first
+and is pushed onto the pull requests second, because those are two decisions --
+and because a judgement of a cut is one thing while the pull requests are N, so
+publishing it is the same fan-out `prCutUpdate` already does.
+
+**What it needs that does not exist:**
+
+* a judgement record, keyed like a landing (`source -> target`), holding the tips
+  it read, the verdict, the reasons, when, and **who or what judged** -- the
+  model and its version where it was a model, a name where it was a person
+* a run kind the queue understands as *judge*, and the rule above about what it
+  is taken before
+* what a judge is actually given: the diff of the cut, the branch's reason, the
+  brief of every task that delivered on it, and the contract -- all of which
+  `prtemplate.about()` already gathers for the description, which is the argument
+  for it being the same gathering
+* a Judge tab: what is waiting, what was judged, what is stale, and the reasons
+* the standing question of what a judge is asked to look FOR. A judge with no
+  stated rubric produces prose; the contract is the nearest thing this app has to
+  one, and whether that is what a judge should be measured against has not been
+  decided
+
+**What has to be true first.** Nothing merges yet -- see `TODO.md` -- so a
+judgement currently has nothing to be acted on downstream of it. That is not a
+blocker for building this, and it is the reason judging is worth having before
+merging rather than after: the thing that should decide whether work lands ought
+to exist before the thing that lands it.
+
+
 Served over http, to a browser that is not on this computer
 ------------------------------------------------------------
 
