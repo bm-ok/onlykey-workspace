@@ -23,7 +23,13 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const UI = path.join(__dirname, '..', 'ui')
-const js = fs.readFileSync(path.join(UI, 'ui.js'), 'utf8')
+
+// EVERY SCRIPT IN ui/, not one named file. The window was one file and is now a
+// list of them, and a check that reads only the file it was written against
+// passes by looking at less and less of what it is meant to be checking -- which
+// is the quietest way for a test to stop being one.
+const scripts = fs.readdirSync(UI).filter(f => f.endsWith('.js')).sort()
+const js = scripts.map(f => fs.readFileSync(path.join(UI, f), 'utf8')).join('\n')
 const css = fs.readFileSync(path.join(UI, 'ui.css'), 'utf8')
 const html = fs.readFileSync(path.join(UI, 'index.html'), 'utf8')
 
