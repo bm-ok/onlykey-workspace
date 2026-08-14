@@ -12,6 +12,10 @@ rather than remembering.
     branch <- task <- person <- supervisor
     supervisor = person || claude
 
+and, where the work is a job done more than once:
+
+    branch <- task <- defined-task <- defined-prompt
+
 The chain is the same either way and only one step differs: how work is started,
 and how it is known to be finished. Anything that does not serve that is not on
 this list.
@@ -30,6 +34,14 @@ dashboard sits between the supervisor and the workers so distribution goes
 through a channel that can be watched, whichever kind is supervising. Neither
 rule would make sense if the supervisor were assumed to be a person, and both are
 load-bearing precisely because it is not.
+
+**The second line is the same chain seen from further back**, and it only appears
+when a job is worth doing more than once. A task is one occasion; a defined task
+is the standing intention to do that job; a defined prompt is the instruction
+itself, which is the part worth improving and worth having exactly one of. Most
+work never needs it -- a task written for an afternoon is a task -- and the
+moment the same brief is being retyped for the third time it is the shape that
+was already wanted. See "Prompts, and the jobs that consume them" below.
 
 
 Where it actually stands
@@ -170,6 +182,70 @@ Smaller things, worth doing when they are in the way
   than it sounds. When a real ecosystem is wired in, this is the natural place to
   hold that counter — last reconciled against hardware, N days ago — so it decays
   visibly rather than quietly.
+
+
+Prompts, and the jobs that consume them
+----------------------------------------
+
+    branch <- task <- defined-task <- defined-prompt
+
+Read right to left, the same way the spine is: a task comes from a defined task,
+which consumes a defined prompt. Three layers where there is currently one and a
+half, and the split is the whole idea rather than a filing decision.
+
+**A defined prompt is the reusable half.** What to do, in words -- the thing that
+is worth improving, worth versioning, and worth having ONE of. "Read the README
+and the code and say where they disagree" is the same instruction whichever
+repository it is pointed at, and today it would be retyped into a brief every
+time, drifting a little each time until there are four versions of it and nobody
+knows which is the good one.
+
+**A defined task is the binding.** A prompt plus the circumstances: which branch
+it works on, which contract it runs under, which kind of worker, how long it is
+allowed. One prompt, several bindings -- the same reading job pointed at three
+repositories is three defined tasks and one prompt, and improving the prompt
+improves all three.
+
+**A task is one occasion.** What already exists: written down, given out,
+delivered, judged, done with. A defined task produces one whenever it is run, and
+the task carries a copy of what it was given rather than a reference -- a task
+must stay readable as what the worker actually got, and a prompt edited after the
+fact would rewrite history that somebody is judging against.
+
+**Why this is a tab and not a field.** A prompt library is a thing you browse,
+compare and improve. Bolted onto the task definition as a text box it is
+invisible, unsearchable and duplicated -- which is exactly the state the ten
+existing definitions were in before they got a pane, one level up.
+
+**Where the drills fit, and it is the "both" answered.** A drill IS a defined
+task; its body is a function rather than a prompt, because asserting something
+is code. So a defined task has one of two bodies:
+
+    code    a function, declared in tasks/planned.js, fingerprinted, approved by
+            reading it. What the ten drills are
+    prompt  a reference to a defined prompt, plus the binding above. Written in
+            the window, approved the same way, runs by creating a task
+
+One list, one approval rule, one run -- two ways of saying what to do. Which is
+the same shape as `worker: claude | person`: one object, one record, and the only
+step that differs is how the work is started.
+
+**Approval covers both, and matters more here.** A prompt that does work is
+closer to a loaded gun than a drill that asserts something: nothing unapproved
+runs, whoever is asking, and editing a prompt has to lapse every defined task
+that consumes it -- otherwise a definition that was read and approved quietly
+becomes a different instruction while still wearing its tick.
+
+**Open, and worth settling before it is built:**
+
+* whether a defined task names a branch or a branch PATTERN. A reading job wants
+  a fresh branch each time; a maintenance job may want the same one always
+* whether a prompt takes parameters, and how hard to resist that. A prompt with
+  placeholders is a template language eventually, and this app has no business
+  growing one
+* what a task keeps: the prompt's text at the time, its id, and its version, so
+  "what was this worker actually told" is answerable a month later without
+  depending on the prompt still existing
 
 
 Judging, as its own kind of run
