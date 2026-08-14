@@ -1386,13 +1386,35 @@ nothing is indistinguishable afterwards from a judgement of something.
 Looking at the window itself
 ----------------------------
 
-    okc.js windowShot          ask it to photograph itself
-    Ctrl+Shift+D               markup AND a picture, saved together
+    okc.js windowShot --view <tab> [--pick <row>]   returns when the file is written
+    okc.js windowShot --when loading                the placeholder, not the answer
+    okc.js windowSlow --ms 4000                     hold a loading state, to judge it
+    Ctrl+Shift+D                                    markup AND a picture, together
 
 The window is the one part of this that cannot be checked from a terminal, and
-for a long time it was not checked at all. NW.js can photograph its own page,
-so `windowShot` leaves a request and the window answers on its next draw —
-which is why it returns a path rather than an image.
+for a long time it was not checked at all. NW.js can photograph its own page, and
+the window loads this app in its own process — so it hands back a function that
+photographs on demand, and `windowShot` returns when the file is on disk. Ten
+tabs can be swept in sixteen seconds.
+
+It used to leave a request for the next draw and let two more pass so the panel
+had filled, which was half a minute a picture and silently lost one if a second
+was asked for inside it. What those draws were buying is kept, said as what it
+is: switch to the tab, then the pane, then the row, then let a beat pass. The old
+poll remains for the case it was written for — nothing has registered because
+there is no window, which is how a headless run and the tests load this file.
+
+**Some of what the window does is shorter than the act of asking about it.** A
+loading placeholder lasts a fifth of a second, so a photograph requested from
+outside always arrives to find the finished panel — and every skeleton in this
+window turned out to have been invisible for exactly that reason, created and
+thrown away unseen, for weeks. Two switches answer it, and both are for the same
+problem from opposite ends: `--when loading` has the window take the picture
+ITSELF at the moment the placeholder is up and before it has read anything, and
+`windowSlow` holds that moment for as long as you like so a person can look at
+it. The second says so in a banner while it is on, or the next person to open the
+dashboard finds it mysteriously slow and goes hunting for a fault that is not
+there.
 
 **The markup and the picture answer different questions.** The first says what
 the window is made of and can be searched and diffed. Only the second says what
@@ -1432,8 +1454,23 @@ The shape
 ---------
 
     main.js         NW.js node-main: starts the API for machines to reach
-    server.js       one flat table of actions; the API and nothing else
-    ui/             the window: an app page, loaded from disk
+    server.js       serves machines, and fills the one table below; nothing else
+    actions/        the table, grouped by what each action is ABOUT. Still one
+      table.js      surface -- this is the object they are filled into, empty at
+      shared.js     load, which is what lets an action call another across files
+      app.js        the window, the log, what this process is
+      machines.js   making, starting, snapshotting, borrowing, putting away
+      runs.js       work in flight: dispatch, shells, editors, what it holds
+      credentials.js  signing a worker in, handing it out, taking it back
+      host.js       this computer's keys, and the machines it can reach
+      branches.js   the work, the lines, what is waiting to go in
+      tasks.js      the board, and judging what came back
+      repos.js      the repositories, GitHub, and a change once it has left
+      workspaces.js which folder of repositories all of this is about
+    ui/             the window: an app page, loaded from disk. One file per tab,
+      load.js       listed here, in an order that is load-bearing
+      nwjs.js       what this window can ask of the computer it is on --
+      browser.js    and, in the other file, what a page cannot
     core/log.js     one tagged live log that everything writes into
     core/ipc.js     the same actions, over a local socket, for the terminal
     core/keys.js    the certificate this host serves with, and its authority

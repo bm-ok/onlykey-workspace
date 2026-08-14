@@ -12,23 +12,20 @@ list: not what is missing, but what is unproven. Something that is not built yet
 because it is not its turn belongs in `ROADMAP.md`.
 
 
-The window can be looked at now
--------------------------------
+How the window gets checked
+---------------------------
 
-NW.js can photograph itself, so it does. `okc.js windowShot --view <tab>` leaves
-a request that the window answers on its next draw — switching to that tab first,
-so a panel nobody clicked is checkable too — and Ctrl+Shift+D saves a picture
-beside the markup it already saved. Both were needed: the markup says what the
-window is MADE of and can be searched; only the picture says what it looks like,
-and the faults that matter here -- a class matching no rule, a panel off the
-bottom, an empty badge -- are invisible in the first and obvious in the second.
+It photographs itself, which is how every open item below with the word "panel"
+in it will be settled. `README.md` has the detail; the short form is:
 
-It has now caught, among others: a tasks list that could not be selected, a
-Branches tab photographed blank because its panels fill asynchronously, a banner
-scolding somebody for a credential the same window had just told them to place,
-and a machine reported "changed" one minute after being reverted. `npm test`
-catches the cheaper half of that class without a photograph — every class the
-window applies, every custom property it reads and every id it looks up.
+    okc.js windowShot --view <tab> [--pick <row>]   returns when the file is on disk
+    okc.js windowShot --when loading                the placeholder, not the answer
+    okc.js windowSlow --ms 4000                     hold a loading state to judge it
+    npm test                                        every class, property and id exists
+
+The picture and the markup answer different questions and both are needed: a
+class matching no rule, a panel off the bottom and an empty badge are invisible
+in the markup and obvious in the photograph.
 
 
 Where the bigger picture lives now
@@ -83,8 +80,41 @@ Outstanding
   should say so, or it should refuse the transitions that make no sense.
 
 * **The Branches tab runs past the bottom of the window.** The baselines block
-  pushed the left column past the viewport and the page scrolls. Same class of
-  thing as the terminal's height, which is measured rather than guessed.
+  that first caused it is gone with the setting it described, and the left column
+  still runs past the viewport once there are half a dozen branch cuts — so it is
+  the column that wants a height, not that one block. Same class of thing as the
+  terminal's height, which is measured rather than guessed.
+
+* **The branch board is re-read from git on every poll, and thrown away.** Three
+  `symbolic-ref` calls run whatever tab is open, for the banner about repositories
+  parked off their default; the board itself is another ten while Branches is up.
+  Each is ~70ms of `execFileSync`, which blocks the window's own thread because
+  the page and node share one. The fix is not to cache on a clock but on a
+  SIGNATURE — the refs are files, so stat them and only spawn git when something
+  moved, the same trick `snapshotTimes` already uses on the `.vbox` file.
+
+  Making git async instead was considered and written down as the wrong first
+  move: it does not remove the work, only stops it blocking, and it converts the
+  file that decides what is protected and what may be pushed. **The trigger to
+  revisit it is workspace size** — at three repositories a cold read is 0.22s and
+  not worth that risk; at twenty it is ~1.5s on every real change and it is.
+
+* **No list of drafts anywhere.** A pull request draft is kept per pair of lines
+  and only surfaces when that pair happens to be selected in the writer, so
+  something written and left is findable only by retracing the steps to it. The
+  drafts know their own age; nothing shows it.
+
+* **Repositories still has the header layout that was wrong on PR cuts.** "Ask
+  GitHub" sits in the same row as a heading for the column beside it, so neither
+  says what it is over. PR cuts was fixed by giving each column its own heading;
+  this was not, and the two now disagree.
+
+* **The folder chooser has never been clicked.** `Workspaces → Choose` opens the
+  desktop's own directory picker, which is the one control here that cannot be
+  driven from a terminal — everything around it is verified and the dialog itself
+  is not. Cancelling is the case to try: it is handled deliberately, because
+  `change` does not fire when somebody backs out and waiting only for that would
+  hang whatever was awaiting it for the life of the window.
 
 * **`legacy/contracts/dashboard/supervisor-mode.md` is still on disk.** Its rules
   now live in the supervisor skill. The file is two sentences of generic filler
@@ -153,11 +183,12 @@ the four that only have anything to look at while a machine is mid-work.
   the ten minutes, and rebuilding one takes twenty.
 
 
-Debris
-------
+What is on the board, on purpose
+--------------------------------
 
-Cleared. Two tasks remain on the board and both are kept deliberately, because
-between them they are the record of what this thing can do:
+Two tasks, kept because between them they are the record of what this thing can
+do -- and because both are accepted and still sitting on their branches, which is
+the open joint above:
 
 * **#1 `task/first-round-trip`** — accepted. The first time work went out and
   anything came back.
@@ -165,9 +196,9 @@ between them they are the record of what this thing can do:
   once**. Two repositories, two attempts, the verdict that caused the second one
   still in its record. The whole loop, in one task.
 
-The eight drill tasks and their branches are gone. Their kept logs are not:
-those are filed under a uid that is never reused, so throwing away the note
-about the work does not throw away the evidence of it.
+The drill tasks and their branches are gone; their kept logs are not, being
+filed under a uid that is never reused. Throwing away the note about the work
+does not throw away the evidence of it.
 
 
 Decisions waiting on the operator
@@ -175,72 +206,26 @@ Decisions waiting on the operator
 
 Not work, and not for a session to settle on its own.
 
-* **Nine commits have never been pushed.** `origin` is
-  `github.com/bm-ok/onlykey-workspace`, `main` is nine behind, and everything
-  from the README split through the worker half is local only. This was one of
-  the three things in the original handoff and it is the one that never got
-  answered.
+* **Pushing happens, and nothing here tracks when.** This said "nine commits have
+  never been pushed" for long enough that it stopped being true without anybody
+  noticing: `origin/main` is at `5bfd5f6`, so most of it has gone. Check rather
+  than read — `git rev-list --count origin/main..main`, after a fetch, because
+  the remote-tracking ref is only as fresh as the last one. A number written down
+  here is a number that is wrong by tomorrow, which is the argument for the
+  command instead.
 
 
-Housekeeping on the machines
+What is finished is not here
 ----------------------------
 
-* **Nothing.** Both runners are off, clean, claiming nothing, holding nothing,
-  borrowed by nobody, and in the pool. Kept as a heading because this is the
-  state to return them to, not because there is anything to do.
+The round trip, dispatch, the credential end to end, two machines at once, a
+machine built from nothing, and the push enforcement proven against a guest --
+all done, all checked by running them rather than reading them, and all recorded
+where they will stay true: the drills with their dates in `TEST-PLAN.md`, what
+each one taught in `LEARNED.md`, and how the thing works in `README.md`.
 
-
-Nothing else is outstanding
----------------------------
-
-Everything on the previous lists is done, and each was checked by running it
-rather than by reading it. The snapshot drill passed in all three directions,
-the actions are off the network entirely, the destructive dialogs say what they
-would destroy, ssh hardening survives an install, and the debris is cleared.
-
-The credential round trip is proven end to end: signed in on `runner2`,
-harvested, sealed on this host with DPAPI, handed to `runner1`, and `runner1`
-authenticated and completed a request with it.
-
-Dispatch is proven end to end as well — task given, run detached, session
-appeared, file written, exit 0 — which is worth saying because until it was
-actually used, every dispatch it produced had been dying instantly. See
-`LEARNED.md`.
-
-`lost` has now been observed rather than reasoned about: a run was killed with
-its process group, `vmRuns` reported `lost`, and the watcher said so. Exercising
-it found that the watcher announced "ended with status null" — describing a
-result the run never produced, which sends a supervisor looking for one.
-
-**The round trip is closed.** A task was written, given to `runner2`, worked on
-under a contract, committed, pushed, and arrived here as `d8b18a2` on
-`task/first-round-trip` — then read as a diff and accepted. That was the last
-joint: work went out and nothing had ever come back before.
-
-**Two machines worked at once.** #8 and #9 were queued together, taken in the
-same tick by the two rebuilt runners, and both delivered — `3372dde` by
-`runner1` and `635f542` by `runner2`. The log interleaves them: credentials at
-:28 and :32, workspaces at :33 and :40, dispatches at :34 and :48. Until
-tonight there had never been two machines in the pool, so everything about
-*choosing* between them was reasoning rather than evidence.
-
-**A machine built from nothing did work, credential and all.** `runner1` was
-deleted, remade, installed, provisioned, snapshotted and then given a queued
-task — and the credential reached it through the queue's ordinary path rather
-than through a test. It had never been signed in. That was the last thing about
-the credential half that had only ever been shown on a machine with history.
-
-**The enforcement is proven against a guest.** A worker was told to commit on
-`master` and push it; the hook refused, `master` did not move in either
-repository, and the message said what was refused, why, and that nothing had
-been taken. Every rule about pushing had until then been tested only by this
-host pushing to itself. The same drill showed a run reporting `exit 0` while
-nothing had arrived — which is exactly why `delivered` is read from the branch.
-See `TEST-PLAN.md`, drill 1.
-
-What remains beyond the list above is the "Honest gaps" section of `README.md`,
-which is a different kind of thing: what has never been tried, rather than what
-is half-built.
+What has never been TRIED, as opposed to what is half-built, is the "Honest gaps"
+section of `README.md`. That is a different list and it is kept there.
 
 
 Where the machines are
@@ -250,21 +235,11 @@ Volatile, and the first thing to check rather than trust:
 
     okc.js vmList --json
 
-At the time of writing **both runners are off**, each on a single snapshot
-called `base` that predates any branch, claiming nothing, holding no credential,
-and both free to the queue. That is the resting state the whole design is
-arranged around.
+Last checked, **both runners were off**, each on a single snapshot called
+`base` that predates any branch, claiming nothing, holding no credential,
+borrowed by nobody, and free to the queue. That is the resting state the whole
+design is arranged around, and the state to put them back into.
 
-**Both were deleted and rebuilt tonight**, twenty minutes and eighteen minutes,
-and neither has anything on it that a script did not put there — the worker is
-installed by `extra-user.sh` rather than by hand, and neither has ever been
-signed in. The credential arrives only when the queue gives them work, and
-leaves before they shut down.
-
-What they replaced is the reason: `runner1` had a hand-installed worker, a
-snapshot tree carrying two entries called `base`, and disks merged twice in one
-afternoon. `runner2` was the older build and carried some of the same history.
-
-**`task/first-round-trip` exists in both repositories, carrying one commit in
-`local-repo-a`.** It is accepted but not merged, which is the intended shape: a
-verdict is a person's decision, and landing work is a separate act.
+Nothing is on either of them that a script did not put there, and neither has
+ever been signed in: the credential arrives only when the queue gives them work,
+and leaves before they shut down.
