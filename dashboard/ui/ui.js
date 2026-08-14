@@ -3604,6 +3604,117 @@ function askForCode (name, url) {
   })
 }
 
+
+// ---- the repositories --------------------------------------------------
+//
+// What everything else is made of. A branch is cut across these, a task delivers
+// into them, a machine checks them out — and until now nothing said where one
+// came from or whether the far end could still be reached.
+//
+// LOCAL FACTS ARE DRAWN EVERY TIME; REMOTE ONES CARRY A DATE. The path, the
+// default branch, the remote URL and the head are read from disk and are true
+// now. Everything about GitHub was asked for on purpose and is only as true as
+// the moment it was asked, so it says when — a repository row that quietly mixed
+// the two would be a row nobody could trust either half of.
+function paintRepos () {
+  api('repositories').then(({ dir, repos, note }) => {
+    if (!changed('repos', [dir, repos])) return
+    setText($('repos-context'), repos.length ? `— ${repos.length} in ${dir}` : '— none')
+    setText($('repos-note'), note)
+
+    fill($('repos'), repos.length
+      ? repos.map(r => {
+          const rem = r.remote
+          const asked = !!r.checked
+          const bad = r.reachable === false
+          const warn = r.reachable === true && !!r.why
+
+          return el('div', { className: `card${bad ? ' warn' : ''}` },
+            el('div', { className: 'card-title' },
+              el('span', { className: 'mono', textContent: r.repo }),
+              el('span', { className: 'badge muted', textContent: `${r.branches} branch(es)` }),
+              r.privateRepo ? el('span', { className: 'badge muted', textContent: 'private' }) : null,
+              r.fork ? el('span', { className: 'badge muted', textContent: 'fork' }) : null,
+              !asked
+                ? el('span', { className: 'badge', textContent: 'not asked about yet' })
+                : bad
+                  ? el('span', { className: 'badge bad', textContent: 'cannot be reached' })
+                  : warn
+                    ? el('span', { className: 'badge warn', textContent: 'reachable, not usable' })
+                    : el('span', { className: 'badge ok', textContent: 'reachable' })),
+
+            el('table', { className: 'kv', style: 'margin-top:8px' },
+              el('tr', {}, el('th', { textContent: 'here' }),
+                el('td', { className: 'mono', style: 'user-select:text', textContent: r.path })),
+              el('tr', {}, el('th', { textContent: 'default branch' }),
+                el('td', {}, el('span', { className: 'mono', textContent: r.default || '(none)' }),
+                  el('span', { className: 'muted', textContent: r.head ? `  at ${String(r.head).slice(0, 8)}` : '' }))),
+              el('tr', {}, el('th', { textContent: 'origin' }),
+                el('td', {}, rem
+                  ? el('span', { className: 'mono', style: 'user-select:text', textContent: rem.url })
+                  : el('span', { className: 'bad', textContent: 'no remote called origin — nothing here can be pushed onward' }))),
+
+              // WHAT THE TOKEN MAY DO, probed rather than read off the
+              // repository. GitHub's own `permissions` field describes the
+              // ACCOUNT and reported read+push+admin on a token that could not
+              // list a branch. Both are shown, labelled, because the difference
+              // is the whole answer to "why did that fail".
+              asked && r.may
+                ? el('tr', {}, el('th', { textContent: 'this token may' }),
+                    el('td', {},
+                      el('span', { className: r.may.code ? 'ok' : 'bad', textContent: r.may.code ? 'read code' : 'NOT read code' }),
+                      el('span', { textContent: ' · ' }),
+                      el('span', { className: r.may.pulls ? 'ok' : 'bad', textContent: r.may.pulls ? 'use pull requests' : 'NOT use pull requests' })))
+                : null,
+              asked && r.accountMay
+                ? el('tr', {}, el('th', { textContent: 'your account may' }),
+                    el('td', { className: 'muted', textContent: `${Object.entries(r.accountMay).filter(([, v]) => v).map(([k]) => k).join(', ')} — which is not the same as what the token may do` }))
+                : null,
+
+              asked && r.upstreamDefault
+                ? el('tr', {}, el('th', { textContent: 'there' }),
+                    el('td', {},
+                      el('span', { className: 'mono', textContent: r.upstreamDefault }),
+                      r.upstreamHead
+                        ? el('span', { className: r.inStep ? 'ok' : '', textContent: r.inStep ? '  same commit as here' : `  at ${String(r.upstreamHead).slice(0, 8)} — different from here` })
+                        : el('span', { className: 'muted', textContent: '  its head could not be read' })))
+                : null,
+
+              asked && r.openPulls != null
+                ? el('tr', {}, el('th', { textContent: 'open pull requests' }),
+                    el('td', { textContent: String(r.openPulls) }))
+                : null,
+
+              el('tr', {}, el('th', { textContent: 'asked GitHub' }),
+                el('td', {}, asked
+                  ? el('span', { className: 'muted', textContent: ago(r.checked) })
+                  : el('span', { className: 'muted', textContent: 'never' })))),
+
+            r.why
+              ? el('p', { className: 'note', style: 'margin-top:8px' },
+                  el('strong', { className: bad ? 'bad' : '', textContent: bad ? 'Cannot be reached. ' : 'Reachable, but not usable yet. ' }),
+                  el('span', { textContent: r.why }))
+              : null,
+
+            el('div', { className: 'row', style: 'margin-top:8px' },
+              el('button', {
+                className: 'btn small',
+                textContent: 'Check this one',
+                onclick: () => api('repositoriesCheck', { repo: r.repo })
+                  .then(x => { changed('repos', null); say(x.note); return draw() }).catch(oops)
+              }),
+              rem && rem.kind === 'github'
+                ? el('button', {
+                    className: 'btn small',
+                    textContent: 'Open it on GitHub',
+                    onclick: () => nw.Shell.openExternal(`https://${rem.host}/${rem.owner}/${rem.repo}`)
+                  })
+                : null))
+        })
+      : el('p', { className: 'empty', textContent: 'No repositories in this workspace folder.' }))
+  }).catch(() => { /* the board says when the dashboard is unreachable */ })
+}
+
 // ---- the machines ----------------------------------------------------
 //
 // Only machines this app made ever appear here. Anything else on the host is
@@ -4365,6 +4476,9 @@ $('add-group-open').onclick = newGroup
 // and its button, and they are gone: a terminal is started from a task now. The
 // sign-in line follows the front tab instead of the picker, which is repainted
 // by showShell rather than by an onchange.
+$('repos-check').onclick = () => api('repositoriesCheck')
+  .then(r => { changed('repos', null); say(r.note, r.repos.some(x => x.reachable !== true || x.why) ? 'bad' : undefined); return draw() })
+  .catch(oops)
 $('term-close').onclick = () => closeShell(active)
 // Repainted on the spot rather than on the next draw, because a filter that
 // takes up to three seconds to answer reads as one that did not work.
@@ -4713,6 +4827,7 @@ async function drawOnce () {
       el('span', { textContent: rest }))))
   }
 
+  paintRepos()
   paintVms()
   paintKeys()
   paintGithub()

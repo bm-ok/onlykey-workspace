@@ -28,6 +28,12 @@
 
          So a branch is where you start and a machine is an implementation
          detail you visit when something is wrong with one. -->
+    <!-- Repositories first, because they are what everything else is made of:
+         a branch is cut across them, a task delivers into them, a machine
+         checks them out. They had no surface at all while they were local
+         folders, which stopped being tolerable the moment they had somewhere
+         to go and a token that may or may not reach it. -->
+    <button class="tab" data-view="repos">Repositories</button>
     <button class="tab active" data-view="branches">Branches</button>
     <button class="tab" data-view="tasks">Tasks <span class="tab-badge hidden" id="tasks-badge"></span></button>
     <!-- The badge is what makes a tab you cannot see safe to have: output
@@ -50,6 +56,21 @@
 <div id="trouble" class="stale-banner hidden"></div>
 
 <main>
+
+  <!-- ---------------- Repositories ----------------
+       What this workspace is made of, and whether the far end of each one can
+       still be reached. Everything above the fold here is local and instant;
+       anything about GitHub was asked for on purpose and carries when. -->
+  <section class="view" id="view-repos">
+    <div class="sync-head">
+      <h2>Repositories <span class="muted" id="repos-context"></span></h2>
+      <div class="sync-controls">
+        <button class="btn" id="repos-check">Check them against GitHub</button>
+      </div>
+    </div>
+    <p class="note" id="repos-note"></p>
+    <div id="repos" class="stack"></div>
+  </section>
 
   <!-- ---------------- Virtual machines ---------------- -->
   <section class="view" id="view-ops">

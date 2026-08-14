@@ -21,6 +21,7 @@ const ssh = require('./core/ssh')
 const data = require('./core/data')
 const secret = require('./core/secret')
 const github = require('./core/github')
+const remotes = require('./repos/remotes')
 const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
@@ -2285,6 +2286,49 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   // machine it was taken from and when; the value is only ever handed to a
   // machine that needs it. A page that displays a secret is a page that gets
   // screenshotted.
+  // ---- the repositories themselves ---------------------------------------
+  //
+  // The ground everything else stands on, and until now it had no surface. A
+  // repository appeared only as a column inside a branch or a task, with nothing
+  // saying where it came from, whether this host is in step with it, or whether
+  // the token can reach it. That was invisible while they were local folders. It
+  // stopped being invisible the moment they had somewhere to go.
+  //
+  // TWO ACTIONS, AND THE SPLIT IS THE POINT. `repositories` is local and instant
+  // and safe to call on every draw; `repositoriesCheck` goes to GitHub and is
+  // asked for. The window redraws every three seconds, so anything it calls is
+  // on a timer — and this codebase has already paid twice for forgetting that
+  // with git processes. Doing it with somebody else's service would be the same
+  // fault with rate limits attached.
+  repositories: {
+    about: 'Every repository in this workspace: where it is, its default branch, its remote, and what was last learnt about it',
+    run: () => ({
+      dir: repos.DIR,
+      repos: remotes.read(),
+      note: 'What is known about a remote is only as true as the moment it was read. Check it to ask again.'
+    })
+  },
+
+  repositoriesCheck: {
+    about: 'Ask GitHub about the repositories: can this token reach them, and what may it do there',
+    takes: ['repo'],
+    run: async ({ repo }) => {
+      const rows = await remotes.check(repo || null)
+      for (const r of rows) {
+        if (r.reachable === true && !r.why) log.on('git', r.repo).good('reachable, and the token may use its code and pull requests')
+        else if (r.reachable === true) log.on('git', r.repo).warn(r.why)
+        else if (r.reachable === false) log.on('git', r.repo).bad(`cannot be reached: ${r.why}`)
+      }
+      const stuck = rows.filter(r => r.reachable !== true || r.why)
+      return {
+        repos: rows,
+        note: stuck.length
+          ? `${stuck.length} of ${rows.length} need attention: ${stuck.map(r => `${r.repo} — ${r.why}`).join('; ')}`
+          : `All ${rows.length} are reachable and the token may use them.`
+      }
+    }
+  },
+
   // ---- the token this host reaches GitHub with ---------------------------
   //
   // The second credential this app keeps, and the second it cannot remake. A
