@@ -123,7 +123,7 @@
 
     <div class="subtabs">
       <button class="subtab active" data-pane="cuts">Overview</button>
-      <button class="subtab" data-pane="templates">Templates</button>
+      <button class="subtab" data-pane="templates">Write one</button>
     </div>
 
     <!-- EACH COLUMN CARRIES ITS OWN HEADING, and each pane its own controls.
@@ -166,9 +166,14 @@
           <h2>What every pull request says</h2>
           <div id="prtemplate" class="stack"></div>
         </div>
+        <!-- THE PREVIEW IS THE EDITOR. A template you cannot act on is a
+             settings page: you look at what a pull request would say, and then
+             go somewhere else to say it. So this is where one is written and
+             where an existing one is changed — the same fields, and a button
+             that says which of the two it will do. -->
         <div class="col wide">
           <h2 class="titlerow">
-            Preview
+            The pull request
             <span class="grow"></span>
             <select id="prtemplate-source"></select>
             <span class="change-into">into</span>
@@ -176,6 +181,13 @@
             <select id="prtemplate-as"></select>
           </h2>
           <p class="note" id="prtemplate-context"></p>
+          <div class="writer">
+            <label for="prwrite-title">Title — one sentence on every pull request in the cut</label>
+            <input id="prwrite-title" class="finder" placeholder="what this change is">
+            <label for="prwrite-body">What you want to say — everything below is added by the blocks on the left</label>
+            <textarea id="prwrite-body" class="finder" rows="6" placeholder="Left blank, the blocks speak for themselves."></textarea>
+          </div>
+          <div class="row" id="prwrite-actions" style="margin:0 0 10px"></div>
           <div id="prtemplate-preview"></div>
         </div>
       </div>

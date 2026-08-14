@@ -763,3 +763,16 @@ table.kv td .ok { color: var(--ok); }
 .authline.ok { border-left-color: var(--ok); }
 .authline strong { color: var(--text); }
 .btn.small { padding: 3px 8px; font-size: 11px; }
+
+/* Writing the thing rather than only looking at it. The preview below these is
+   composed as they are typed in, so a person sees the sentence they are writing
+   in the place it will appear. */
+.writer { margin-bottom: 10px; }
+.writer label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 0 0 3px;
+}
+.writer textarea { resize: vertical; min-height: 5rem; font-family: var(--mono); }
+.writer input, .writer textarea { margin-bottom: 8px; }

@@ -2424,19 +2424,36 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
       if (!context) throw new Error('Those two lines are not both named here.')
       if (!context.repos.length) return { text: '', repos: [], note: `"${source}" carries nothing that "${target}" does not already have, so no pull request would be opened.` }
 
-      // Cross-links are shown with the numbers a cut WOULD get, marked as such,
-      // because pretending to know them would be the one dishonest thing a
-      // preview could do.
-      const pretend = context.repos.map(r => ({ repo: r.repo, number: '?', url: `https://github.com/…/pull/?  (${r.repo})` }))
+      // REAL NUMBERS WHEN THERE ARE ANY. Once a cut exists its pull requests
+      // have numbers, so the cross-links can be the actual ones — which is what
+      // an edit is going to write. Before that they cannot be known, and are
+      // shown as ? rather than invented, because a preview that guesses is the
+      // one thing a preview must not do.
+      const cut = landings.all()[landings.key(source, target)]
+      const real = cut && cut.pulls ? cut.pulls.filter(p => p.number) : []
+      const pulls = real.length
+        ? real.map(p => ({ repo: p.repo, number: p.number, url: p.url }))
+        : context.repos.map(r => ({ repo: r.repo, number: '?', url: `https://github.com/…/pull/?  (${r.repo})` }))
+
       const on = context.repos.map(r => r.repo)
       const which = repo && on.includes(repo) ? repo : on[0]
+      const typed = String(body || '').trim()
 
       return {
         repos: on,
         showing: which,
-        text: prtemplate.composeFor(String(body || '').trim(), { ...context, pulls: pretend }, which),
-        title: String(title || '').trim() || source,
-        note: `As ${which} would read it. ${on.length} repositor${on.length === 1 ? 'y' : 'ies'} carry work: ${on.join(', ')}.`
+        // SEPARATELY, so the window can recompose as somebody types without
+        // asking again. What the blocks add does not depend on what is typed —
+        // only on the pair of lines and which copy — so it is fetched once and
+        // the sentence in front of it is joined on locally.
+        additions: prtemplate.composeFor('', { ...context, pulls }, which),
+        text: prtemplate.composeFor(typed, { ...context, pulls }, which),
+        title: String(title || '').trim() || (cut && cut.said && cut.said.title) || source,
+        said: (cut && cut.said) || null,
+        existing: cut ? { count: real.length, opened: cut.opened } : null,
+        guessing: !real.length,
+        note: `As ${which} would read it. ${on.length} repositor${on.length === 1 ? 'y' : 'ies'} carry work: ${on.join(', ')}.` +
+          (real.length ? ' The links are the real pull request numbers.' : ' Nothing is cut yet, so the links show ? until it is.')
       }
     }
   },

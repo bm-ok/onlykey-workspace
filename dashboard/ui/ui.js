@@ -4222,25 +4222,128 @@ function paintTemplates () {
 
     asked
       .then(v => {
-        if (!changed('prtemplate-preview', v)) return
         setText($('prtemplate-context'), v.note || '')
 
-        // WHICH REPOSITORY'S COPY. They differ only where a block is about the
-        // others — the cross-links — and that difference is the whole point of
-        // being able to look at one rather than an average of them.
-        fill($('prtemplate-as'), ...(v.repos || []).map(r => el('option', { value: r, textContent: `as ${r}`, selected: r === v.showing })))
-        $('prtemplate-as').onchange = () => { tmplAs = $('prtemplate-as').value; tmplSeen = null; changed('prtemplate-preview', null); paintTemplates() }
+        // WHICH REPOSITORY'S COPY. They differ exactly where a block is about
+        // the others — the cross-links — and being able to read one rather than
+        // an average of them is the point of the selector.
+        if (changed('prtemplate-as', [v.repos, v.showing])) {
+          fill($('prtemplate-as'), ...(v.repos || []).map(r => el('option', { value: r, textContent: `as ${r}`, selected: r === v.showing })))
+          $('prtemplate-as').onchange = () => { tmplAs = $('prtemplate-as').value; tmplSeen = null; changed('prtemplate-preview', null); paintTemplates() }
+        }
 
-        fill($('prtemplate-preview'), v.text
-          ? el('div', {},
+        if (!v.text && !v.additions) {
+          fill($('prwrite-actions'), null)
+          return fill($('prtemplate-preview'), el('p', { className: 'empty', textContent: v.note }))
+        }
+
+        // THE FIELDS ARE FILLED FROM WHAT THE CUT ALREADY SAYS, once, and then
+        // left alone. Rewriting them on every draw would take the cursor out of
+        // somebody's hands mid-sentence — which is the same fault as repainting
+        // a list while it is being read, and worse, because it eats typing.
+        if (changed('prwrite-fields', [tmplFrom, tmplInto])) {
+          $('prwrite-title').value = (v.said && v.said.title) || ''
+          $('prwrite-body').value = (v.said && v.said.body) || ''
+        }
+
+        // COMPOSED HERE AS IT IS TYPED, not asked for again. What the blocks add
+        // does not depend on what is typed — only on the pair of lines and which
+        // copy — so the sentence in front is joined on locally and every
+        // keystroke costs nothing.
+        const show = () => {
+          const typed = $('prwrite-body').value.trim()
+          const text = [typed, v.additions].filter(Boolean).join('\n\n---\n\n')
+          fill($('prtemplate-preview'),
+            el('div', {},
               el('div', { className: 'card', style: 'margin-bottom:8px' },
-                el('div', { className: 'card-title' }, el('span', { textContent: v.title })),
-                el('div', { className: 'card-sub muted', textContent: 'The title. One sentence on every pull request in the cut.' })),
-              codeBlock(v.text, 'markdown', { lines: 30 }))
-          : el('p', { className: 'empty', textContent: v.note }))
+                el('div', { className: 'card-title' }, el('span', { textContent: $('prwrite-title').value.trim() || v.title })),
+                el('div', { className: 'card-sub muted', textContent: v.guessing
+                  ? 'Nothing is cut yet, so the links below show ? until it is.'
+                  : 'The links below are the real pull request numbers.' })),
+              codeBlock(text, 'markdown', { lines: 26 })))
+        }
+
+        // Repainted on input rather than on the draw, because the draw is three
+        // seconds away and a preview that lags a sentence behind is one nobody
+        // trusts.
+        $('prwrite-title').oninput = show
+        $('prwrite-body').oninput = show
+        show()
+
+        const existing = v.existing && v.existing.count
+        fill($('prwrite-actions'),
+          el('button', {
+            className: 'btn ok',
+            textContent: existing ? `Write it to all ${v.existing.count}` : `Cut it — ${v.repos.length} pull request(s)`,
+            title: existing
+              ? 'Changes the title and description of every pull request in this cut'
+              : 'Pushes each branch onward and opens a pull request in every repository that carries work',
+            onclick: () => existing ? writeToCut(v) : cutFromWriter(v)
+          }),
+          existing
+            ? el('span', { className: 'muted', style: 'align-self:center', textContent: `cut ${ago(v.existing.opened)} — ${v.repos.length} repositor${v.repos.length === 1 ? 'y' : 'ies'} carry work` })
+            : el('span', { className: 'muted', style: 'align-self:center', textContent: `${tmplFrom} into ${tmplInto}` }))
       })
       .catch(e => fill($('prtemplate-preview'), el('p', { className: 'empty bad', textContent: e.message })))
   }).catch(() => { /* the tab beside it says when the dashboard is unreachable */ })
+}
+
+
+// WRITING A NEW ONE. The same act as + on the Overview pane, from the surface
+// where it was composed — so what was previewed is what is opened, rather than
+// a second dialog asking for the same two sentences again.
+function cutFromWriter (v) {
+  ask({
+    title: `Cut ${v.repos.length} pull request(s)?`,
+    plain: [
+      `One in each of: ${v.repos.join(', ')}. Only repositories that carry something get one.`,
+      'Each branch is pushed onward from this host first. No machine is ever handed the token.',
+      'They are opened, and then written again with links to each other — those numbers do not exist until all of them are open.'
+    ],
+    cost: 'This pushes branches to GitHub and opens pull requests. Both are visible to anyone who can see those repositories.',
+    confirm: 'Push and open them',
+    onYes: async () => {
+      const r = await api('prCutMake', {
+        source: tmplFrom,
+        target: tmplInto,
+        title: $('prwrite-title').value.trim(),
+        body: $('prwrite-body').value.trim()
+      })
+      pickedCut = `${tmplFrom} -> ${tmplInto}`
+      been.set('prcut', pickedCut)
+      tmplSeen = null
+      changed('prwrite-fields', null)
+      say(r.note, r.pulls.some(x => !x.opened) ? 'bad' : undefined)
+      return refreshCuts()
+    }
+  })
+}
+
+// CHANGING ONE THAT EXISTS. Every pull request in the cut gets the same title
+// and the same description, which is the only way three of them keep saying the
+// same thing.
+function writeToCut (v) {
+  ask({
+    title: `Write this to all ${v.existing.count} pull request(s)?`,
+    plain: [
+      `${v.repos.join(', ')} — each one gets this title and this description.`,
+      'Whether each is open or merged is GitHub\'s and is not touched here.',
+      'The blocks are written again too, so anything turned on since it was cut appears now.'
+    ],
+    confirm: 'Write it to all of them',
+    onYes: async () => {
+      const typed = $('prwrite-body').value.trim()
+      const r = await api('prCutUpdate', {
+        source: tmplFrom,
+        target: tmplInto,
+        title: $('prwrite-title').value.trim(),
+        body: [typed, v.additions].filter(Boolean).join('\n\n---\n\n')
+      })
+      tmplSeen = null
+      say(r.note, r.changed.some(x => !x.ok) ? 'bad' : undefined)
+      return refreshCuts()
+    }
+  })
 }
 
 // ---- the machines ----------------------------------------------------
