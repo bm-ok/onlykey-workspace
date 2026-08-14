@@ -156,6 +156,69 @@ Smaller things, worth doing when they are in the way
   visibly rather than quietly.
 
 
+Served over http, to a browser that is not on this computer
+------------------------------------------------------------
+
+The window is an app page loaded from disk, and that is what lets it call the
+actions in its own process with no socket in between. A remote version is the
+same panels reaching the same actions across a network, and the work splits into
+one decision and a short list of chores.
+
+**Started, and the reason the rest is legible.** The window's NW.js half is one
+object with two implementations — `ui/nwjs.js` and `ui/browser.js`, chosen once
+in `ui/load.js`. Everything else in `ui/` is ordinary DOM code. So the list of
+what a browser cannot do is executable rather than remembered, and it is short:
+
+    call         the actions run in this process; over http they are nowhere
+    capturePage  a page can draw itself, it cannot see itself
+    writeFile    not a browser's to do
+    pickFolder   a browser is not allowed to know where a folder is
+    openExternal works either way
+
+The last four degrade honestly and already say so. Only the first is a design
+question rather than a shim.
+
+**The decision: what goes on a port, and who may reach it.**
+
+The HTTP side today serves machines and nothing else, and says so in its own 404:
+*the actions are not on this port at all.* That is not an oversight to correct on
+the way to a browser — it is the property that makes the port safe to expose to a
+guest being provisioned. Putting the table behind it changes what this app is:
+
+* **The actions are not equally safe.** `vmRemove`, `branchDelete`,
+  `workspaceForget` and everything under `credentials` are not "read the board".
+  A remote surface needs to say which are reachable and by whom, and that is a
+  list somebody has to keep — the kind that is wrong the first time somebody adds
+  an action and does not think about it. Better: derive it, the way
+  `needs: 'workspace'` is derived, so a new action is refused until it says what
+  it is.
+* **`_overTheWire` gets more load, not less.** Approving a pre-defined task is
+  deliberately refused down the pipe, because a model drives the pipe and
+  approval is a human ratifying what a model wrote. Over a network, "at this
+  keyboard" stops being a boundary at all, and that distinction has to become a
+  real one — a signed-in person — or be dropped honestly rather than kept as a
+  word that no longer means anything.
+* **The credentials are the sharp edge.** The worker credential and the GitHub
+  token are sealed at rest, never shown, never handed to a machine. They are
+  reachable through actions. A remote surface that can reach those actions can
+  spend them.
+
+**The chores, once that is settled.**
+
+* Serve `ui/` — the markup, the scripts and the stylesheet are not served at all
+  today.
+* `host.call` over http, and a live log that streams. `logWatch` already answers
+  forever on a socket rather than once, which is the right shape for it; the
+  window currently reads `core/log` in-process.
+* The terminal reaches a machine through a channel this host holds. Remotely it
+  is a relay, not a connection, and that is its own piece.
+* Everything that answers with a path — a screenshot, a capture, a task's files —
+  is answering about a disk the reader cannot see.
+
+**What it is worth.** Reading the board from another machine, and starting work
+from one. Not driving a machine's install, which wants the host anyway.
+
+
 Not on this list, on purpose
 -----------------------------
 
