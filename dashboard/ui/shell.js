@@ -152,7 +152,7 @@ function externalLink (url) {
 //
 // Each tab is `{ label, plain, cost, fields, confirm, danger, onYes }` and the
 // outer arguments are the first tab's defaults.
-function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, extra, tabs, _tabsBar }) {
+function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, onOpen, extra, tabs, _tabsBar }) {
   const errBox = el('p', { className: 'dlg-err hidden' })
   const inputs = {}
 
@@ -172,6 +172,7 @@ function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, e
         fields: t.fields || [],
         confirm: t.confirm || confirm,
         danger: t.danger || danger,
+        onOpen: t.onOpen || onOpen,
         onYes: t.onYes || onYes,
         _tabsBar: el('div', { className: 'dlg-tabs' }, ...tabs.map((x, i) =>
           el('button', {
@@ -234,6 +235,12 @@ function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, e
     inputs[f.name] = input
     body.append(el('div', {}, el('label', { textContent: f.label }), input))
   }
+
+  // ONE FIELD ANSWERING ANOTHER. Handed the inputs by name, so a dialog where
+  // choosing one thing fills in another does not have to reach into this
+  // function's DOM -- which would tie every such dialog to markup that is this
+  // function's business and nobody else's.
+  if (onOpen) { try { onOpen(inputs) } catch { /* a dialog that cannot wire itself still opens */ } }
 
   const close = () => overlay.remove()
   no.onclick = close

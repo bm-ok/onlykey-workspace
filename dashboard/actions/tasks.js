@@ -18,7 +18,7 @@ const s = require('./shared')
 const {
   log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
-  archive, files, prompts, defined, workspaces, queue, machines, provision, reach, editor, repos,
+  archive, files, prompts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
@@ -644,100 +644,154 @@ module.exports = {
     }
   },
 
-  // ---- jobs worth doing more than once -----------------------------------
+  // ---- jobs, and the prompts they are given ------------------------------
   //
-  //     task <- defined-task <- prompt
+  //     task <- job <- prompt
   //
-  // The middle one, and the only one of the three a person can write here. A
-  // prompt is the instruction; a defined task binds it to the circumstances --
-  // which branch it delivers on, which contract, which kind of worker.
+  // A job is a SCRIPT: a Node file this app owns, which decides what to do with
+  // a prompt. A prompt is what a worker is told. Both are approved by a person
+  // who read them, and both are hashed on the thing that will actually be used
+  // -- the file's bytes, and the words -- so an edit to either lapses it.
   //
-  // These are DATA, and that is what makes them writable. The ten drills beside
-  // them are JavaScript declared in tasks/planned.js, which the app requires at
-  // startup, so creating one of those from a window would mean generating code
-  // into a file a bad edit stops the dashboard booting with. One list, two kinds,
-  // and only one of them is a thing a window has any business writing.
-  defined: {
-    about: 'Jobs written down to be run again: what a worker is told, and where it delivers',
+  // See tasks/jobs.js for why the code is a file rather than a string, and
+  // tasks/jobrun.js for what a running job is handed.
+  jobs: {
+    about: 'The jobs this workspace has: scripts that take a prompt and do something with it',
     needs: 'workspace',
-    run: () => {
-      const list = defined.all()
+    takes: ['tag'],
+    run: ({ tag }) => {
       const library = prompts.all()
-
-      // A job pointing at a prompt that is gone is worth saying out loud rather
-      // than discovering when it runs. Nothing repairs it here: which prompt it
-      // should point at instead is not a guess an action gets to make.
-      const rows = list.map(d => {
-        const from = d.promptId ? library.find(p => p.id === d.promptId) || null : null
-        return {
-          ...d,
-          prompt: from ? { id: from.id, name: from.name, hash: from.hash } : null,
-          missingPrompt: !!(d.promptId && !from),
-          // What a worker would actually be told, which is the prompt's text
-          // where there is one and the brief where there is not.
-          says: from ? from.text : (d.brief || '')
-        }
-      })
+      const rows = jobs.all()
+        .filter(j => !tag || (j.tags || []).includes(tag))
+        .map(j => {
+          const from = j.promptId ? library.find(p => p.id === j.promptId) || null : null
+          return {
+            ...j,
+            // The code is long and this list is read as a list. It is served in
+            // full by `job`, which is what the editor asks for.
+            code: undefined,
+            lines: (j.code || '').split('\n').length,
+            prompt: from ? { id: from.id, name: from.name, approved: from.approved } : null,
+            missingPrompt: !!(j.promptId && !from),
+            // WHETHER IT COULD RUN RIGHT NOW, as one answer rather than three
+            // flags a reader has to combine. Both halves have to be approved.
+            runnable: j.approved && (!j.promptId || !!(from && from.approved)),
+            whyNot: !j.there
+              ? 'its script is missing'
+              : j.lapsed
+                ? 'edited since it was approved'
+                : !j.approved
+                  ? 'not approved'
+                  : j.promptId && !from
+                    ? 'its prompt is gone'
+                    : j.promptId && from && !from.approved
+                      ? `its prompt "${from.name}" is not approved`
+                      : null
+          }
+        })
 
       return {
-        defined: rows,
-        prompts: library.map(p => ({ id: p.id, name: p.name })),
-        where: defined.FILE(),
+        jobs: rows,
+        tags: jobs.tags(),
+        prompts: library.map(p => ({ id: p.id, name: p.name, approved: p.approved })),
+        where: jobs.DIR(),
         note: rows.length
-          ? 'A task made from one of these copies the words it was given, so improving a prompt never rewrites a task that already went out.'
-          : 'Nothing written down yet. A job is worth defining the moment you would write the same task a second time.'
+          ? 'A job runs against the workspace that is open. Nothing unapproved runs, and that means the script AND the prompt it is given.'
+          : 'No jobs yet. A job is a script that takes a prompt and does something with it — write one with +.'
       }
     }
   },
 
-  definedSave: {
-    about: 'Write a job, or rewrite one. Written at the window it is approved by whoever wrote it; written over the wire it waits for a person',
+  job: {
+    about: 'One job, with its script in full',
     needs: 'workspace',
-    takes: ['id', 'name', 'about', 'promptId', 'brief', 'branch', 'contract', 'worker', 'hours'],
-    run: ({ _overTheWire, ...fields }) => {
-      // WHO IS ASKING DECIDES APPROVAL, and this is `_overTheWire` meaning what
-      // it already means everywhere else here: a model may write one of these and
-      // may not ratify its own. Writing it at the window IS the reading.
-      const saved = defined.save(fields, _overTheWire ? 'the command line' : 'the window')
-      log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the job "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
-      return saved
+    takes: ['id'],
+    run: ({ id }) => {
+      const one = jobs.get(id)
+      if (!one) throw new Error(`There is no job called "${id}".`)
+      return one
     }
   },
 
-  definedApprove: {
-    about: 'Say a job is fit to run, having read it',
+  jobSave: {
+    about: 'Write a job, or rewrite it. Written at the window it is approved by whoever wrote it; written over the wire it waits',
+    needs: 'workspace',
+    takes: ['id', 'name', 'about', 'code', 'promptId', 'tags'],
+    run: ({ _overTheWire, ...fields }) => {
+      const saved = jobs.save(fields, _overTheWire ? 'the command line' : 'the window')
+      log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the job "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
+      return { ...saved, code: undefined }
+    }
+  },
+
+  jobApprove: {
+    about: 'Say a job is fit to run, having read its script',
     needs: 'workspace',
     takes: ['id', 'note'],
     run: ({ id, note, _overTheWire }) => {
-      // The same refusal `plannedApprove` makes, for the same reason: this socket
-      // is what a supervising model drives, and approval is a person ratifying
-      // what a model wrote.
-      if (_overTheWire) throw new Error('Approving is done in the window, by a person who has read it. A model may write one of these and may not approve its own.')
-      const done = defined.approve(id, note)
+      // The boundary, not a courtesy. This socket is what a supervising model
+      // drives, and a job is a program: approving one is a person saying they
+      // have read what will run as them.
+      if (_overTheWire) throw new Error('Approving is done in the window, by a person who has read the script. A model may write one and may not approve its own.')
+      const done = jobs.approve(id, note)
       log.on('task').good(`job "${done.name}" approved`)
-      return done
+      return { ...done, code: undefined }
     }
   },
 
-  definedWithdraw: {
-    about: 'Take approval back. Nothing is deleted; it stops being runnable',
+  jobWithdraw: {
+    about: 'Take a job\'s approval back. Nothing is deleted; it stops being runnable',
     needs: 'workspace',
     takes: ['id'],
     run: ({ id }) => {
-      const done = defined.withdraw(id)
-      log.on('task').warn(`approval withdrawn for "${done.name}"`)
-      return done
+      const done = jobs.withdraw(id)
+      log.on('task').warn(`approval withdrawn for the job "${done.name}"`)
+      return { ...done, code: undefined }
     }
   },
 
-  definedForget: {
-    about: 'Throw a job away. Tasks already made from it are untouched',
+  jobForget: {
+    about: 'Throw a job away, script and all',
     needs: 'workspace',
     takes: ['id'],
     run: ({ id }) => {
-      const gone = defined.forget(id)
+      const gone = jobs.forget(id)
       log.on('task').warn(`job "${gone.name}" thrown away`)
-      return { ...gone, note: 'Any task made from it keeps the words it was given. This only removes the definition.' }
+      return { ...gone, note: 'Its script went with it. Anything it already did is untouched.' }
+    }
+  },
+
+  jobRun: {
+    about: 'Run a job against the workspace that is open, with a prompt',
+    needs: 'workspace',
+    takes: ['id', 'promptId'],
+    run: async ({ id, promptId }) => {
+      const one = jobs.get(id)
+      if (!one) throw new Error(`There is no job called "${id}".`)
+
+      const to = log.on('job', id)
+      to.info(`running "${one.name}"${promptId ? ` with the prompt "${promptId}"` : ''}`)
+
+      // `call` rather than the raw table, so a job is refused exactly what a
+      // person is refused -- including everything gated on a workspace.
+      //
+      // REQUIRED HERE RATHER THAN AT THE TOP, because server.js requires this
+      // file: at load time its exports are half-built and `call` would be
+      // undefined for ever. By the time anything runs it is there. Same reason
+      // actions/table.js is filled rather than built.
+      const { call } = require('../server')
+
+      const out = await jobrun.run({
+        id,
+        promptId: promptId || one.promptId || null,
+        call,
+        prompts,
+        log: line => to.out(line)
+      })
+
+      if (out.ok) to.good(`"${one.name}" finished in ${out.seconds}s`)
+      else to.bad(`"${one.name}" failed after ${out.seconds}s — ${out.error}`)
+      return out
     }
   },
 
@@ -747,10 +801,10 @@ module.exports = {
   // typed fresh every time -- so the same intention ended up with four wordings
   // and nobody knew which was the good one. These are the kept ones.
   //
-  // NOT GATED ON A WORKSPACE, unlike everything else in this file. A task belongs
-  // to the folder of repositories it delivers into; "read the README against the
-  // code" names no branch and no repository, and a library that emptied itself
-  // when somebody switched workspace is one nobody would build.
+  // NOT GATED ON A WORKSPACE, unlike the jobs that consume them. A job names a
+  // branch and belongs to a folder of repositories; "read the README against the
+  // code" names neither, and a library that emptied itself when somebody
+  // switched workspace is one nobody would build.
   prompts: {
     about: 'The prompt library: what a worker can be told, written once and kept',
     run: () => {
@@ -768,10 +822,33 @@ module.exports = {
   promptSave: {
     about: 'Write a prompt, or rewrite one. The id never changes once it is made',
     takes: ['id', 'name', 'text', 'about'],
-    run: ({ id, name, text, about }) => {
-      const saved = prompts.save({ id, name, text, about })
-      log.on('task').info(saved.created ? `prompt "${saved.name}" written` : `prompt "${saved.name}" rewritten`)
+    run: ({ id, name, text, about, _overTheWire }) => {
+      const saved = prompts.save({ id, name, text, about }, _overTheWire ? 'the command line' : 'the window')
+      log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the prompt "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
       return saved
+    }
+  },
+
+  promptApprove: {
+    about: 'Say a prompt is fit to be sent to a worker, having read it',
+    takes: ['id', 'note'],
+    run: ({ id, note, _overTheWire }) => {
+      // The same boundary as a job, and for the sharper reason: this is the text
+      // a worker is actually handed.
+      if (_overTheWire) throw new Error('Approving is done in the window, by a person who has read it. A model may write a prompt and may not approve its own.')
+      const done = prompts.approve(id, note)
+      log.on('task').good(`prompt "${done.name}" approved`)
+      return done
+    }
+  },
+
+  promptWithdraw: {
+    about: 'Take a prompt\'s approval back. Jobs that use it stop being runnable',
+    takes: ['id'],
+    run: ({ id }) => {
+      const done = prompts.withdraw(id)
+      log.on('task').warn(`approval withdrawn for the prompt "${done.name}"`)
+      return done
     }
   },
 

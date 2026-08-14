@@ -196,7 +196,7 @@ async function drawOnce () {
   paintTerminal()
   paintBranches()
   paintTasks(running)
-  paintPlanned()
+  paintJobs()
   paintPrompts()
 
   // Last, so the picture is of a window that has finished drawing.

@@ -227,6 +227,15 @@ function add (input) {
     // the artifacts, the verdict -- is identical, and treating the human path as
     // a different kind of thing is what kept it off the board.
     worker: WORKERS.includes(input.worker) ? input.worker : (input.shell ? 'shell' : 'claude'),
+
+    // WHICH JOB IS TO RUN IT, if one is. Optional, and most tasks have none: the
+    // queue dispatches a worker with the brief and that is the ordinary path. A
+    // job is for when the doing is itself a script.
+    //
+    // The id rather than the script, for the same reason the brief is a copy and
+    // the contract is a path: a task records what it was told to do, and a job
+    // that is edited afterwards must not silently rewrite what this task was for.
+    job: String(input.job || '').trim() || null,
     // Kept because a great deal reads it, and derived so the two cannot disagree.
     shell: WORKERS.includes(input.worker) ? input.worker === 'shell' : !!input.shell,
     // How long the queue waits before giving up on it, in hours. Six unless the

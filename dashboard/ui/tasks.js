@@ -19,6 +19,31 @@
 let pickedTask = been.get('task', null)
 let taskList = []
 
+// WHICH SUB-TAB IS OPEN, and the wiring that switches them.
+//
+// Up here with the tab's own state rather than beside the pane it belongs to.
+// It lived next to the Jobs pane and was deleted twice by edits that replaced
+// that pane -- both times the whole tab stopped working, because everything
+// below reads it. State the tab owns belongs where the tab is declared.
+let taskPane = been.get('task-pane', 'board')
+
+document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
+  t.onclick = () => {
+    taskPane = t.dataset.pane
+    been.set('task-pane', taskPane)
+    document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
+    document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
+    paintJobs()
+    paintPrompts()
+  }
+})
+;(() => {
+  const t = document.querySelector(`#view-tasks .subtab[data-pane="${taskPane}"]`)
+  if (!t) { taskPane = 'board'; return }
+  document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
+  document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
+})()
+
 // What a task's card and its detail panel read, including what the buttons close
 // over. A field missed here is a panel that silently stops updating, which is
 // worse than the flicker the signature exists to prevent.
@@ -653,7 +678,11 @@ function judgeTask (task) {
 // two drift apart. The dialog is otherwise identical -- a task from an issue is
 // a task, and gets the same reason, contract and branch as any other.
 function newTask (from = null) {
-  api('gitBranches').then(({ branches: known, protected: guarded }) => {
+  Promise.all([
+    api('gitBranches'),
+    api('prompts').catch(() => ({ prompts: [] })),
+    api('jobs').catch(() => ({ jobs: [] }))
+  ]).then(([{ branches: known, protected: guarded }, lib, work]) => {
     const taken = new Set((guarded || []).map(g => g.branch))
 
     // ONE THING, SO NO TABS. This dialog used to carry pre-defined jobs behind a
@@ -673,11 +702,61 @@ function newTask (from = null) {
           fields: [
             { name: 'title', label: 'Title', value: (from && from.title) || '', placeholder: 'Short enough to read in a list' },
             { name: 'branch', label: 'Branch it delivers on', placeholder: 'fix/the-thing' },
+            // THE BRIEF IS THE PROMPT. Writing a task is writing one, which is
+            // the whole reason the library exists: pick a kept one and it is
+            // filled in below, still as text somebody can change before it goes.
+            {
+              name: 'promptId',
+              label: 'Fill the brief from a prompt (optional)',
+              value: '',
+              options: [
+                { value: '', label: 'none — write it below' },
+                ...(lib.prompts || []).map(x => ({ value: x.id, label: `${x.name}${x.approved ? '' : ' — not approved'}` }))
+              ]
+            },
             { name: 'brief', label: 'The brief — what the worker is actually told', value: (from && from.brief) || '', multiline: true, rows: 10, placeholder: 'Write it as instructions to somebody who cannot ask you a question.' },
+            // A JOB IS HOW IT GETS DONE, and it is optional because most tasks do
+            // not need one: the queue dispatches a worker with the brief, and that
+            // is the ordinary path. A job is for when the doing is itself a script.
+            {
+              name: 'job',
+              label: 'Run it with a job (optional)',
+              value: '',
+              options: [
+                { value: '', label: 'none — the queue dispatches a worker' },
+                ...(work.jobs || []).map(x => ({ value: x.id, label: `${x.name}${x.runnable ? '' : ` — ${x.whyNot}`}` }))
+              ]
+            },
             { name: 'contract', label: 'Contract (a file on this host, optional)', placeholder: 'the rules the worker is given' },
             { name: 'folder', label: 'Folder on the machine (optional)', placeholder: 'defaults to its workspace' }
           ],
           confirm: 'Write it',
+          // FILLED IN, NOT LOCKED TO. Choosing a prompt copies its words into the
+          // brief and leaves them editable: a task carries what the worker was
+          // actually given, so changing it here changes this task and nothing
+          // else.
+          //
+          // AND IT WILL NOT OVERWRITE SOMETHING SOMEBODY TYPED. Filling an empty
+          // box is help; replacing a paragraph half-written is the same act and
+          // is destructive, and from inside a dropdown the two are
+          // indistinguishable. So it fills when the brief is empty or still holds
+          // the last thing it filled, and otherwise says why it did not.
+          onOpen: inputs => {
+            const pick = inputs.promptId
+            const brief = inputs.brief
+            if (!pick || !brief) return
+            let filled = brief.value
+            pick.onchange = () => {
+              const chosen = (lib.prompts || []).find(x => x.id === pick.value)
+              if (!chosen) return
+              if (brief.value.trim() && brief.value !== filled) {
+                say('The brief has been edited, so it was left alone. Clear it to fill from a prompt.', 'warn')
+                return
+              }
+              brief.value = chosen.text
+              filled = chosen.text
+            }
+          },
           onYes: async values => {
             if (taken.has(values.branch)) throw new Error(`"${values.branch}" is protected here. Work is merged into it, never done on it.`)
             const made = await api('taskCreate', { task: values })
@@ -833,248 +912,305 @@ function writePrompt (x = null) {
 
 $('prompt-new').onclick = () => writePrompt()
 
-// ---- jobs, written down to be run again ---------------------------------
+// ---- jobs, and the prompts they are given -------------------------------
 //
-//     task <- pre-defined <- prompt
+//     task <- job <- prompt
 //
-// A task is one occasion: written, given out, delivered, judged, done with. A
-// pre-defined task is the standing intention to do that job -- a prompt bound to
-// the circumstances it runs in: which branch it delivers on, which contract,
-// which kind of worker.
+// A job is a SCRIPT. Not a form with a branch in it -- a Node file that decides
+// what to do with a prompt: write a task from it and queue it, run it across
+// three repositories, dispatch it and then assert something about what came
+// back. The drills that used to be checked into this repository were one kind of
+// job, and the only thing wrong with them was that they were the only kind.
 //
-// THIS PANE HELD TWO DIFFERENT THINGS AND SAID SO BADLY. Ten drills declared in
-// tasks/planned.js sat here beside jobs somebody wrote, because both were
-// "pre-defined" -- one meaning "a test written in code while this app was being
-// built", the other meaning "work I want to do again". They were approved the
-// same way and listed together and nothing could be done to half of them, which
-// made the whole pane read as broken rather than as two things.
-//
-// The drills are gone. Their reasoning is in TEST-PLAN.md, which is where it had
-// always been and where an assertion could never have put it.
-let taskPane = been.get('task-pane', 'board')
-let pickedPlan = been.get('planned', null)
-let definedNow = []
+// BOTH HALVES ARE APPROVED, and the pane says which half is stopping a run. The
+// script is a program that runs as you; the prompt is what a worker is actually
+// told. Either can be edited after the other was read, and each hashes the thing
+// that will really be used -- the file's bytes, and the words.
+let pickedJob = been.get('job', null)
+let jobTag = been.get('job-tag', null)
+let jobsNow = []
 let promptsNow = []
 
-document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
-  t.onclick = () => {
-    taskPane = t.dataset.pane
-    been.set('task-pane', taskPane)
-    document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
-    document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
-    paintPlanned()
-    paintPrompts()
-  }
-})
-;(() => {
-  const t = document.querySelector(`#view-tasks .subtab[data-pane="${taskPane}"]`)
-  if (!t) { taskPane = 'board'; return }
-  document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
-  document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
-})()
-
-function paintPlanned () {
+function paintJobs () {
   if (view !== 'tasks' || taskPane !== 'planned') return
   waiting('planned-list', { cards: 3 })
   waiting('planned-detail', { lines: 8 })
-  paintPlannedNow()
+  paintJobsNow()
 }
 
-async function paintPlannedNow () {
+async function paintJobsNow () {
   await settle()
   if (view !== 'tasks' || taskPane !== 'planned') return
 
-  api('defined').then(mine => {
-    definedNow = mine.defined || []
-    promptsNow = mine.prompts || []
+  api('jobs').then(v => {
+    jobsNow = v.jobs || []
+    promptsNow = v.prompts || []
+    const shown = jobTag ? jobsNow.filter(j => (j.tags || []).includes(jobTag)) : jobsNow
+    const stuck = jobsNow.filter(j => !j.runnable).length
 
-    const needing = definedNow.filter(d => !d.approved).length
-    setText($('planned-context'), definedNow.length
-      ? `— ${definedNow.length}${needing ? `, ${needing} to approve` : ''}`
+    setText($('planned-context'), jobsNow.length
+      ? `— ${jobsNow.length}${stuck ? `, ${stuck} not runnable` : ''}`
       : '— none yet')
-    setText($('planned-note'), mine.note || '')
+    setText($('planned-note'), v.note || '')
 
-    // Reconciled against what exists, like every other selection here.
-    if (!definedNow.some(d => d.id === pickedPlan)) {
-      pickedPlan = definedNow.length ? definedNow[0].id : null
-      been.set('planned', pickedPlan)
+    if (!shown.some(j => j.id === pickedJob)) {
+      pickedJob = shown.length ? shown[0].id : null
+      been.set('job', pickedJob)
     }
 
-    if (changed('planned', [definedNow, pickedPlan])) {
-      fill($('planned-list'), definedNow.length
-        ? definedNow.map(d => {
-            const st = d.lapsed
-              ? { cls: 'bad', label: 'edited since approval' }
-              : d.approved
-                ? { cls: 'ok', label: 'approved' }
-                : { cls: 'warn', label: 'not approved' }
-            return el('div', {
-              className: `card pick${d.id === pickedPlan ? ' on' : ''}`,
+    if (changed('planned', [shown, pickedJob, jobTag, v.tags])) {
+      fill($('planned-list'),
+        // TAGS, as a filter rather than as decoration. A drill, a maintenance
+        // job and a reading job want to be found separately, and a flat list of
+        // forty is the state the ten drills were already in.
+        (v.tags || []).length
+          ? el('div', { className: 'chips' },
+              el('button', {
+                className: `chip linky-chip${jobTag ? '' : ' on'}`,
+                textContent: `all ${jobsNow.length}`,
+                onclick: () => { jobTag = null; been.set('job-tag', null); changed('planned', null); paintJobs() }
+              }),
+              ...v.tags.map(t => el('button', {
+                className: `chip linky-chip${jobTag === t.tag ? ' on' : ''}`,
+                textContent: `${t.tag} ${t.n}`,
+                onclick: () => { jobTag = t.tag; been.set('job-tag', t.tag); changed('planned', null); paintJobs() }
+              })))
+          : null,
+        shown.length
+          ? shown.map(j => el('div', {
+              className: `card pick${j.id === pickedJob ? ' on' : ''}`,
               onclick: () => {
-                pickedPlan = d.id
-                been.set('planned', pickedPlan)
+                pickedJob = j.id
+                been.set('job', pickedJob)
                 changed('planned', null); changed('planned-detail', null)
-                paintPlanned()
+                paintJobs()
               }
             },
             el('div', { className: 'card-title' },
-              el('span', { className: 'grow', textContent: d.name }),
-              el('span', { className: `badge ${st.cls}`, textContent: st.label })),
-            el('div', { className: 'card-sub mono muted', textContent: d.branch }),
-            d.missingPrompt ? el('div', { className: 'card-sub bad', textContent: 'its prompt is gone' }) : null)
-          })
-        : el('p', { className: 'empty', textContent: 'Nothing yet. Write one with + — a job is worth defining the moment you would write the same task a second time.' }))
+              el('span', { className: 'grow', textContent: j.name }),
+              el('span', {
+                className: `badge ${j.runnable ? 'ok' : j.lapsed ? 'bad' : 'warn'}`,
+                textContent: j.runnable ? 'ready' : j.lapsed ? 'edited' : 'not approved'
+              })),
+            j.about ? el('div', { className: 'card-sub muted', textContent: j.about }) : null,
+            el('div', { className: 'card-sub muted', textContent: `${j.lines} line${j.lines === 1 ? '' : 's'}${(j.tags || []).length ? ` · ${j.tags.join(', ')}` : ''}` })))
+          : el('p', { className: 'empty', textContent: jobTag
+              ? 'Nothing with that tag.'
+              : 'No jobs yet. A job is a script that takes a prompt and does something with it — write one with +.' }))
     }
 
-    const one = definedNow.find(d => d.id === pickedPlan) || null
-    if (changed('planned-detail', one)) paintWrittenJob(one)
+    const one = shown.find(j => j.id === pickedJob) || null
+    if (changed('planned-detail', one)) paintJob(one)
   }).catch(oops)
 }
 
+function paintJob (j) {
+  if (!j) return fill($('planned-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one with +.' }))
 
-function paintWrittenJob (d) {
-  if (!d) return fill($('planned-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one with +.' }))
+  // The script is not in the list payload -- it is long and the list is a list.
+  api('job', { id: j.id }).then(full => {
+    fill($('planned-detail'),
+      el('div', { className: 'card-title' },
+        el('span', { className: 'grow', textContent: j.name }),
+        el('span', {
+          className: `badge ${j.runnable ? 'ok' : j.lapsed ? 'bad' : 'warn'}`,
+          textContent: j.runnable ? 'ready to run' : j.whyNot
+        })),
+      el('div', { className: 'card-sub muted', textContent: [
+        j.edited ? `edited ${ago(j.edited)}` : `written ${ago(j.written)}`,
+        j.approvedAt ? `approved ${ago(j.approvedAt)} by ${j.approvedBy}` : 'never approved',
+        `hash ${j.hash}`
+      ].join(' · ') }),
+      j.about ? el('p', { className: 'note', textContent: j.about }) : null,
+      (j.tags || []).length ? el('div', { className: 'badges' }, ...j.tags.map(t => el('span', { className: 'badge muted', textContent: t }))) : null,
 
-  const st = d.lapsed
-    ? { cls: 'bad', label: 'edited since approval', why: 'It has been changed since it was approved. It will not run until somebody approves it again.' }
-    : d.approved
-      ? { cls: 'ok', label: 'approved', why: null }
-      : { cls: 'warn', label: 'not approved', why: 'Nothing unapproved runs, whoever is asking.' }
+      // WHICH HALF IS STOPPING IT, named. "Not runnable" with two possible
+      // causes is a state somebody has to go and investigate; this says which.
+      j.whyNot ? el('p', { className: 'note warn', textContent: `It will not run: ${j.whyNot}.` }) : null,
 
-  fill($('planned-detail'),
-    el('div', { className: 'card-title' },
-      el('span', { className: 'grow', textContent: d.name }),
-      el('span', { className: `badge ${st.cls}`, textContent: st.label })),
-    el('div', { className: 'card-sub muted', textContent: [
-      d.edited ? `edited ${ago(d.edited)}` : `written ${ago(d.written)}`,
-      d.approvedAt ? `approved ${ago(d.approvedAt)} by ${d.approvedBy}` : null
-    ].filter(Boolean).join(' · ') }),
-    d.about ? el('p', { className: 'note', textContent: d.about }) : null,
-    st.why ? el('p', { className: 'note', textContent: st.why }) : null,
+      el('div', { className: 'carries', style: 'margin-top:10px' },
+        el('div', { className: 'group-part' },
+          el('span', { textContent: 'run with the prompt' }),
+          el('span', {}, j.prompt
+            ? el('span', { className: j.prompt.approved ? '' : 'warn', textContent: `${j.prompt.name}${j.prompt.approved ? '' : ' — not approved'}` })
+            : el('span', { className: 'muted', textContent: j.promptId ? `${j.promptId} — gone` : 'none, it is chosen when you run it' })))),
 
-    el('div', { className: 'carries', style: 'margin-top:10px' },
-      el('div', { className: 'group-part' },
-        el('span', { textContent: 'delivers on' }),
-        el('span', { className: 'mono', textContent: d.branch })),
-      el('div', { className: 'group-part' },
-        el('span', { textContent: 'worked by' }),
-        el('span', {}, el('span', { className: `badge ${workerOf(d).cls}`, textContent: workerOf(d).label }))),
-      el('div', { className: 'group-part' },
-        el('span', { textContent: 'contract' }),
-        el('span', { className: 'mono muted', textContent: d.contract || 'none — the worker gets no rules' })),
-      el('div', { className: 'group-part' },
-        el('span', { textContent: 'what it says' }),
-        el('span', { className: 'muted', textContent: d.prompt ? `the prompt "${d.prompt.name}"` : 'written into this job' }))),
-
-    // A JOB POINTING AT A PROMPT THAT IS GONE. Said loudly, because it would
-    // otherwise be found by running it and handing a worker nothing.
-    d.missingPrompt
-      ? el('p', { className: 'note bad', textContent: `It points at a prompt called "${d.promptId}" that is not in the library any more. Edit it and pick another, or write the brief into the job itself.` })
-      : null,
-
-    el('div', { className: 'row', style: 'margin-top:10px' },
-      el('button', { className: 'btn small', textContent: 'Edit', onclick: () => writeJob(d) }),
-      d.approved
-        ? el('button', {
-            className: 'btn small',
-            textContent: 'Withdraw approval',
-            title: 'It stops being runnable until somebody approves it again',
-            onclick: async () => {
-              try {
-                await api('definedWithdraw', { id: d.id })
-                say(`"${d.name}" will not run until it is approved again.`, 'warn')
-                changed('planned', null); changed('planned-detail', null)
-                return draw()
-              } catch (e) { oops(e) }
+      el('div', { className: 'row', style: 'margin-top:10px' },
+        el('button', {
+          className: 'btn small ok',
+          textContent: 'Run it',
+          disabled: !j.runnable,
+          title: j.runnable ? 'Runs it now, against the workspace that is open' : j.whyNot,
+          onclick: () => runJob(j)
+        }),
+        el('button', { className: 'btn small', textContent: 'Edit', onclick: () => writeJob(full) }),
+        j.approved
+          ? el('button', {
+              className: 'btn small',
+              textContent: 'Withdraw approval',
+              title: 'It stops being runnable until somebody reads it again',
+              onclick: async () => {
+                try {
+                  await api('jobWithdraw', { id: j.id })
+                  say(`"${j.name}" will not run until it is approved again.`, 'warn')
+                  changed('planned', null); changed('planned-detail', null)
+                  return draw()
+                } catch (e) { oops(e) }
+              }
+            })
+          : el('button', {
+              className: 'btn small ok',
+              textContent: 'Approve it',
+              title: 'Say the script is fit to run, having read it',
+              onclick: () => ask({
+                title: `Approve "${j.name}"?`,
+                plain: [
+                  'It becomes runnable. This is a program, and running it runs as you.',
+                  'Approval is against the script as it is now — any edit takes it back automatically.'
+                ],
+                fields: [{ name: 'note', label: 'A note, for whoever reads this later (optional)', value: '' }],
+                confirm: 'I have read it',
+                onYes: async ({ note }) => {
+                  await api('jobApprove', { id: j.id, note })
+                  say(`"${j.name}" approved.`)
+                  changed('planned', null); changed('planned-detail', null)
+                  return draw()
+                }
+              })
+            }),
+        el('button', {
+          className: 'btn small danger',
+          textContent: 'Throw it away',
+          onclick: () => ask({
+            title: `Throw away "${j.name}"?`,
+            plain: [
+              'The job and its script are deleted. This cannot be undone from here.',
+              'Anything it already did — tasks it wrote, branches it cut — is untouched.'
+            ],
+            cost: 'Writing it again means writing it again.',
+            confirm: 'Throw it away',
+            danger: true,
+            onYes: async () => {
+              await api('jobForget', { id: j.id })
+              say(`"${j.name}" is gone, script and all.`, 'warn')
+              pickedJob = null
+              changed('planned', null); changed('planned-detail', null)
+              return draw()
             }
           })
-        : el('button', {
-            className: 'btn small ok',
-            textContent: 'Approve it',
-            title: 'Say it is fit to run, having read it',
-            onclick: async () => {
-              try {
-                await api('definedApprove', { id: d.id })
-                say(`"${d.name}" approved.`)
-                changed('planned', null); changed('planned-detail', null)
-                return draw()
-              } catch (e) { oops(e) }
-            }
-          }),
-      // THE ONE THAT DESTROYS SOMETHING, and the only one here wearing red.
-      el('button', {
-        className: 'btn small danger',
-        textContent: 'Throw it away',
-        onclick: () => ask({
-          title: `Throw away "${d.name}"?`,
-          plain: [
-            'The definition is deleted. It is not kept anywhere and this cannot be undone from here.',
-            'Any task already made from it is untouched — a task carries the words it was given, so nothing that already went out changes.'
-          ],
-          cost: 'Writing it again means writing it again.',
-          confirm: 'Throw it away',
-          danger: true,
-          onYes: async () => {
-            await api('definedForget', { id: d.id })
-            say(`"${d.name}" is gone.`, 'warn')
-            pickedPlan = null
-            changed('planned', null); changed('planned-detail', null)
-            return draw()
-          }
-        })
-      })),
+        })),
 
-    el('div', { style: 'margin-top:10px' }, codeBlock(d.says || '', 'text', { lines: 14 })))
+      el('div', { style: 'margin-top:10px' }, codeBlock(full.code || '', 'javascript', { lines: 20 })))
+  }).catch(oops)
 }
 
-// Writing one, or rewriting it.
-//
-// The same fields the write-a-task dialog asks for, because that is what this
-// produces -- a task -- and a definition whose form differed from the thing it
-// makes would be two ideas of what a task is.
-function writeJob (d = null) {
+// RUNNING ONE NAMES WHAT IT WILL ACT ON, and lets the prompt be chosen here: a
+// job is the part that does not change and the prompt is the part that does, so
+// picking one at the moment of running is the whole point of separating them.
+function runJob (j) {
+  const here = latest.workspace
+  const usable = promptsNow.filter(p => p.approved)
   ask({
-    title: d ? `Edit "${d.name}"` : 'Write a job',
+    title: `Run "${j.name}"?`,
     plain: [
-      'A job worth doing more than once: what a worker is told, and where it delivers.',
-      d
-        ? 'Changing any of this takes its approval back, because what was approved is no longer what it says.'
+      here ? `It runs against "${here.name}" — ${here.dir}` : 'No workspace is open, so it will be refused.',
+      'It drives the same actions a person does: it can write a task, cut a branch, or borrow a machine. Everything it does appears in the live log.',
+      usable.length ? null : 'No approved prompt is available. A job that reads one will be refused.'
+    ].filter(Boolean),
+    cost: 'Anything it leaves behind is left behind. Nothing here undoes it afterwards.',
+    fields: [{
+      name: 'promptId',
+      label: 'With which prompt',
+      value: j.promptId || (usable[0] || {}).id || '',
+      options: [
+        { value: '', label: 'none — the job reads no prompt' },
+        ...usable.map(p => ({ value: p.id, label: p.name }))
+      ]
+    }],
+    confirm: 'Run it',
+    onYes: async ({ promptId }) => {
+      showTab('live')
+      say(`Running "${j.name}" — watch the live log.`)
+      const out = await api('jobRun', { id: j.id, promptId: promptId || undefined })
+      say(out.ok
+        ? `"${j.name}" finished in ${out.seconds}s.`
+        : `"${j.name}" failed after ${out.seconds}s — ${out.error}`,
+      out.ok ? 'ok' : 'bad')
+    }
+  })
+}
+
+// Writing one. The script is the point, so it gets an editor rather than a box.
+function writeJob (j = null) {
+  let editor = null
+  ask({
+    title: j ? `Edit "${j.name}"` : 'Write a job',
+    plain: [
+      'A job is a Node script. It is handed one object: okc, prompt, log, shell, artifact, assert and tags.',
+      j
+        ? 'Saving it takes its approval back, because what was approved is no longer what will run.'
         : 'Writing it here approves it — you are reading it as you write it. One written by a model over the command line waits for you instead.'
     ],
     fields: [
-      { name: 'name', label: 'Name', value: d ? d.name : '', placeholder: 'Short enough to recognise in a list' },
-      { name: 'about', label: 'What it is for (optional)', value: d && d.about ? d.about : '' },
+      { name: 'name', label: 'Name', value: j ? j.name : '' },
+      { name: 'about', label: 'What it is for (optional)', value: j && j.about ? j.about : '' },
+      { name: 'tags', label: 'Tags, comma separated', value: j && j.tags ? j.tags.join(', ') : '', placeholder: 'drill, maintenance, reading' },
       {
         name: 'promptId',
-        label: 'Say it with a prompt from the library',
-        value: d && d.promptId ? d.promptId : '',
-        options: [{ value: '', label: 'none — write it below instead' }, ...promptsNow.map(x => ({ value: x.id, label: x.name }))]
-      },
-      { name: 'brief', label: 'Or the brief, written here', value: d && d.brief ? d.brief : '', multiline: true, rows: 8, placeholder: 'Only used when no prompt is chosen above.' },
-      { name: 'branch', label: 'Branch it delivers on', value: d ? d.branch : '', placeholder: 'fix/the-thing' },
-      { name: 'contract', label: 'Contract (a file on this host, optional)', value: d && d.contract ? d.contract : '' },
-      {
-        name: 'worker',
-        label: 'Worked by',
-        value: d ? d.worker : 'claude',
-        options: [
-          { value: 'claude', label: 'Claude, run by the queue on a machine' },
-          { value: 'person', label: 'A person, in VS Code on a machine' },
-          { value: 'shell', label: 'A shell command, no model involved' }
-        ]
+        label: 'The prompt it is usually run with (optional)',
+        value: j && j.promptId ? j.promptId : '',
+        options: [{ value: '', label: 'none — chosen when it is run' }, ...promptsNow.map(p => ({ value: p.id, label: p.name }))]
       }
     ],
-    confirm: d ? 'Save it' : 'Write it',
+    confirm: j ? 'Save it' : 'Write it',
     onYes: async f => {
-      const saved = await api('definedSave', { id: d ? d.id : undefined, ...f })
-      pickedPlan = 'defined:' + saved.id
-      been.set('planned', pickedPlan)
+      const code = editor ? editor.getValue() : undefined
+      const saved = await api('jobSave', { id: j ? j.id : undefined, ...f, code })
+      pickedJob = saved.id
+      been.set('job', pickedJob)
       say(saved.created ? `"${saved.name}" written.` : `"${saved.name}" saved${saved.approved ? '' : ' — it needs approving again'}.`)
       changed('planned', null); changed('planned-detail', null)
       return draw()
     }
   })
+
+  // Appended after the dialog is up, the way every other dialog carrying code
+  // does it -- `ask` builds fields, and a code editor is not a field.
+  const body = document.querySelector('.dlg-body')
+  if (body) {
+    body.append(el('label', { textContent: 'The script' }))
+    body.append(editorBlock(j ? j.code : JOB_STARTER, 'javascript', { lines: 16, edit: true, onReady: ed => { editor = ed } }))
+  }
 }
+
+// What a new one starts as, so an empty editor is never the first thing seen.
+// It names every part of the API in a shape that runs.
+const JOB_STARTER = `'use strict'
+
+// A job. It is given one object and everything it can do is on it.
+//
+//   okc(action, args)   every action this app has, with every refusal
+//   prompt              the prompt it was run with: { id, name, text }
+//   log(line)           into the live log, tagged with this job
+//   shell(name, cmd)    a command on a machine
+//   artifact(file)      hand a file back, kept with the run
+//   assert              refuses / needs / equal, for a job that checks something
+//   tags                what this job was tagged with
+module.exports = async ({ okc, prompt, log }) => {
+  log('starting')
+
+  const task = await okc('taskCreate', {
+    task: {
+      title: prompt ? prompt.name : 'A job wrote this',
+      brief: prompt ? prompt.text : 'no prompt was given',
+      branch: 'jobs/something'
+    }
+  })
+
+  log('wrote task #' + task.number)
+  return { wrote: task.id }
+}
+`
 
 $('defined-new').onclick = () => writeJob()
 

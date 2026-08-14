@@ -136,7 +136,7 @@ function codeBlock (text, mode = 'javascript', { lines = 18 } = {}) {
 // the rows that are additions have to be marked. So this is the same
 // construction with a way out, and `codeBlock` stays as it was for everything
 // that only wants to show text.
-function editorBlock (text, mode, { lines = 18, gutter = null, onReady = null } = {}) {
+function editorBlock (text, mode, { lines = 18, gutter = null, onReady = null, edit = false } = {}) {
   const host = el('div', { className: 'code' })
   host.style.height = `${Math.min(lines, Math.max(6, String(text || '').split('\n').length + 1)) * 1.5}em`
 
@@ -147,10 +147,15 @@ function editorBlock (text, mode, { lines = 18, gutter = null, onReady = null } 
     ed.session.setMode(`ace/mode/${mode}`)
     ed.session.setUseWorker(false)
     ed.setValue(String(text == null ? '' : text), -1)
-    ed.setReadOnly(true)
+    // WRITABLE ONLY WHEN ASKED. Almost everything shown here is read rather
+    // than written -- a diff, a prompt, a definition -- with one exception: a
+    // job is code somebody writes, and code written in a <textarea> is code
+    // written with no bracket matching and no indentation, which is how an
+    // unreadable script gets approved.
+    ed.setReadOnly(!edit)
     ed.setOptions({
-      highlightActiveLine: false,
-      highlightGutterLine: false,
+      highlightActiveLine: edit,
+      highlightGutterLine: edit,
       showPrintMargin: false,
       fontSize: 12,
       // NOT WRAPPED, for a side-by-side. Wrapping makes one row taller than its
@@ -159,7 +164,7 @@ function editorBlock (text, mode, { lines = 18, gutter = null, onReady = null } 
       wrap: false,
       showFoldWidgets: false
     })
-    ed.renderer.$cursorLayer.element.style.display = 'none'
+    if (!edit) ed.renderer.$cursorLayer.element.style.display = 'none'
 
     // The line numbers of the ORIGINAL file, not of this pane. A side-by-side is
     // built by padding both sides until they line up, so a pane's own row
