@@ -755,6 +755,9 @@ function newTask (from = null) {
 // "what does this app already know how to do" was a question you could only
 // answer from a terminal.
 let taskPane = been.get('task-pane', 'board')
+// Which definition is being read. Kept like every other selection here, so
+// coming back to the tab comes back to what you were looking at.
+let pickedPlan = been.get('planned', null)
 
 document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
   t.onclick = () => {
@@ -785,6 +788,7 @@ const definitionState = t => t.lapsed
 function paintPlanned () {
   if (view !== 'tasks' || taskPane !== 'planned') return
   waiting('planned-list', { cards: 3 })
+  waiting('planned-detail', { lines: 8 })
   paintPlannedNow()
 }
 
@@ -804,40 +808,112 @@ async function paintPlannedNow () {
 
     if (!changed('planned', suites)) return
 
-    fill($('planned-list'), suites.length
-      ? suites.map(su => el('div', { className: 'carries' },
-          el('div', { className: 'carries-head' },
-            el('span', { textContent: su.name }),
-            el('span', { className: 'muted', textContent: `${su.tests.length} defined` })),
-          ...su.tests.map(t => {
-            const st = definitionState(t)
-            return el('div', { className: 'card' },
+    // Reconciled against what is registered, like every other selection here.
+    if (!all.some(t => t.name === pickedPlan)) {
+      pickedPlan = all.length ? all[0].name : null
+      been.set('planned', pickedPlan)
+    }
+
+    if (changed('planned', [suites, pickedPlan])) {
+      fill($('planned-list'), suites.length
+        ? suites.map(su => el('div', { className: 'carries' },
+            el('div', { className: 'carries-head' },
+              el('span', { textContent: su.name }),
+              el('span', { className: 'muted', textContent: `${su.tests.length} defined` })),
+            ...su.tests.map(t => {
+              const st = definitionState(t)
+              return el('div', {
+                className: `card pick${t.name === pickedPlan ? ' on' : ''}`,
+                onclick: () => {
+                  pickedPlan = t.name
+                  been.set('planned', pickedPlan)
+                  changed('planned', null); changed('planned-detail', null)
+                  paintPlanned()
+                }
+              },
               el('div', { className: 'card-title' },
                 el('span', { className: 'grow', textContent: t.name }),
                 el('span', { className: `badge ${st.cls}`, textContent: st.label })),
               // WHEN it was approved, because "approved" with no date is a claim
               // nobody can weigh against a definition that has been sitting for
               // months.
-              el('div', { className: 'card-sub muted', textContent: [
-                t.at ? `read ${ago(t.at)}` : 'never read',
-                `fingerprint ${t.fingerprint}`
-              ].join(' · ') }),
-              st.why ? el('p', { className: 'note', textContent: st.why }) : null,
-              t.note ? el('div', { className: 'card-sub', textContent: `"${t.note}"` }) : null,
-              // A REQUEST IS SOMEBODY ASKING, and it is the one thing here that
-              // arrives from outside the window -- a session that wrote a
-              // definition may ask for it to be read, and may not read it itself.
-              t.request ? el('p', { className: 'note warn', textContent: `Asked to be read: ${t.request}` }) : null,
-              el('div', { className: 'row', style: 'margin-top:8px' },
-                el('button', {
-                  className: 'btn small',
-                  textContent: st.cls === 'ok' ? 'Read it again' : 'Read it',
-                  title: 'Opens the definition, in full, with what it would do',
-                  onclick: () => readDefinition(t.name)
-                })))
-          })))
-      : el('p', { className: 'empty', textContent: 'No jobs are defined yet. A pre-defined task is a job written once — declared in tasks/planned.js — and run whenever it is wanted.' }))
+              el('div', { className: 'card-sub muted', textContent: t.at ? `read ${ago(t.at)}` : 'never read' }),
+              t.request ? el('div', { className: 'card-sub warn', textContent: 'asked to be read' }) : null)
+            })))
+        : el('p', { className: 'empty', textContent: 'No jobs are defined yet. A pre-defined task is a job written once — declared in tasks/planned.js — and run whenever it is wanted.' }))
+    }
+
+    const one = all.find(t => t.name === pickedPlan) || null
+    if (changed('planned-detail', one)) paintDefinition(one)
   }).catch(oops)
+}
+
+// ONE DEFINITION, IN FULL, and what it would actually do.
+//
+// The question these get read with is not "what is it called" -- it is "what
+// would this do to my repositories if I ran it". That is answerable only from
+// what it says, so the source is here rather than behind a dialog, in an editor
+// rather than a paragraph, because code that is read has to look like code or it
+// gets approved without being read.
+function paintDefinition (t) {
+  if (!t) return fill($('planned-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left.' }))
+  const st = definitionState(t)
+
+  fill($('planned-detail'),
+    el('div', { className: 'card-title' },
+      el('span', { className: 'grow', textContent: t.name }),
+      el('span', { className: `badge ${st.cls}`, textContent: st.label })),
+    el('div', { className: 'card-sub muted', textContent: [
+      t.suite,
+      t.at ? `read ${ago(t.at)}` : 'never read',
+      `fingerprint ${t.fingerprint}`
+    ].filter(Boolean).join(' · ') }),
+
+    st.why ? el('p', { className: 'note', textContent: st.why }) : null,
+    t.note ? el('p', { className: 'note', textContent: `Approved with: "${t.note}"` }) : null,
+    t.request ? el('p', { className: 'note warn', textContent: `Asked to be read: ${t.request}` }) : null,
+
+    // WHAT RUNNING IT WOULD TOUCH, said before the source rather than left to be
+    // inferred from it. These were written against the scaffolding repositories
+    // while this app was being built, and they do real things: create tasks, cut
+    // branches, borrow a machine. Nothing binds a definition to the workspace it
+    // was written for, so the one that is open is the one it would act on.
+    el('div', { className: 'carries', style: 'margin-top:10px' },
+      el('div', { className: 'carries-head' }, el('span', { textContent: 'If it ran, it would run here' })),
+      el('p', { className: 'note', textContent: 'A definition acts through the same actions a person does, on whichever workspace is open — there is nothing tying one to the workspace it was written against. Several of these create tasks and cut branches named "drill/…"; some borrow a machine for ten minutes.' }),
+      el('p', { className: 'note', textContent: 'Withdrawing approval is what makes one unrunnable: nothing unapproved runs, whoever is asking, and it can be read and approved again whenever it is wanted.' })),
+
+    el('div', { className: 'row', style: 'margin-top:10px' },
+      el('button', {
+        className: 'btn small',
+        textContent: st.cls === 'ok' ? 'Read it again' : 'Read it',
+        title: 'Opens it with the approve and withdraw decisions',
+        onclick: () => readDefinition(t.name)
+      }),
+      t.approved
+        ? el('button', {
+            className: 'btn small bad',
+            textContent: 'Withdraw approval',
+            title: 'It stops being runnable until somebody reads it again',
+            onclick: () => ask({
+              title: `Withdraw approval for "${t.name}"?`,
+              plain: [
+                'It stops being runnable — nothing unapproved runs, whoever is asking.',
+                'Nothing is deleted. The definition stays where it is and can be read and approved again whenever it is wanted.'
+              ],
+              confirm: 'Withdraw it',
+              danger: true,
+              onYes: async () => {
+                await api('plannedWithdraw', { suite: t.suite, name: t.name })
+                say(`Approval withdrawn for "${t.name}". It will not run until it is read again.`, 'warn')
+                changed('planned', null); changed('planned-detail', null)
+                return draw()
+              }
+            })
+          })
+        : null),
+
+    el('div', { style: 'margin-top:10px' }, codeBlock(t.source || '', 'javascript', { lines: 18 })))
 }
 
 function readDefinition (which) {

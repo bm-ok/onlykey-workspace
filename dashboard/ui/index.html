@@ -320,7 +320,18 @@
         <h2 id="planned-title">Pre-defined tasks <span class="muted" id="planned-context"></span></h2>
       </div>
       <p class="note" id="planned-note"></p>
-      <div id="planned-list" class="stack"></div>
+      <div class="cols">
+        <div class="col narrow">
+          <div id="planned-list" class="stack"></div>
+        </div>
+        <!-- THE WHOLE DEFINITION, not a summary of it. The question these are
+             read with is "what would this do to my repositories", and that is
+             answerable only from what it actually says. A list of names is how
+             ten of them sat unread. -->
+        <div class="col wide">
+          <div id="planned-detail" class="panel"></div>
+        </div>
+      </div>
     </div>
 
   </section>
