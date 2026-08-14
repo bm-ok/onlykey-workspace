@@ -273,6 +273,7 @@
       <button class="subtab active" data-pane="board">Board</button>
       <button class="subtab" data-pane="jobs">Jobs</button>
       <button class="subtab" data-pane="prompts">Prompts</button>
+      <button class="subtab" data-pane="contracts">Contracts</button>
     </div>
 
     <div class="pane active" id="pane-board">
@@ -354,6 +355,25 @@
         </div>
         <div class="col wide">
           <div id="prompt-detail" class="panel"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- The rules a worker is given, as opposed to the brief it is given. Same
+         shape as Prompts, because it is the same kind of thing: text somebody
+         has to read, approve, and be told about when it changes. -->
+    <div class="pane" id="pane-contracts">
+      <p class="note" id="contracts-note"></p>
+      <div class="cols">
+        <div class="col narrow">
+          <h2 class="titlerow">
+            Contracts <span class="muted" id="contracts-context"></span>
+            <button class="plus" id="contract-new" title="Write a contract">+</button>
+          </h2>
+          <div id="contracts-list" class="stack"></div>
+        </div>
+        <div class="col wide">
+          <div id="contract-detail" class="panel"></div>
         </div>
       </div>
     </div>

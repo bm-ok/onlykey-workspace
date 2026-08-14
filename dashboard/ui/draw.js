@@ -198,6 +198,7 @@ async function drawOnce () {
   paintTasks(running)
   paintJobs()
   paintPrompts()
+  paintContracts()
 
   // Last, so the picture is of a window that has finished drawing.
   shotIfAsked()
@@ -239,11 +240,25 @@ function shotIfAsked () {
 
     const [wantView, wantPane] = String(want.view || '').split('/')
 
-    if (wantPane && document.querySelector(`#view-branches .subtab[data-pane="${wantPane}"]`) && branchPane !== wantPane) {
-      document.querySelector(`#view-branches .subtab[data-pane="${wantPane}"]`).click()
-      shotSettle = 2
-      // Deliberately not returning: the view itself may still need switching,
-      // and clicking a sub-tab inside a hidden view changes nothing on screen.
+    // IN THE VIEW BEING ASKED FOR, not in the Branches tab.
+    //
+    // This was `#view-branches` hardcoded, written when Branches was the only
+    // tab with sub-tabs. Three of them have panes now, and `tasks/contracts`
+    // matched nothing here and photographed whichever pane had been left open —
+    // a picture that looks like evidence and is of somewhere else, which is the
+    // one failure a screenshot mechanism must not have.
+    //
+    // Read off `.active` rather than compared against that tab's own variable,
+    // so a fourth tab with panes needs nothing added here.
+    if (wantPane) {
+      const inside = wantView || view
+      const t = document.querySelector(`#view-${inside} .subtab[data-pane="${wantPane}"]`)
+      if (t && !t.classList.contains('active')) {
+        t.click()
+        shotSettle = 2
+        // Deliberately not returning: the view itself may still need switching,
+        // and clicking a sub-tab inside a hidden view changes nothing on screen.
+      }
     }
 
     if (wantView && wantView !== view) {
@@ -263,6 +278,20 @@ function shotIfAsked () {
     // only by clicking that row by hand, which is the thing this whole mechanism
     // exists to avoid. Taken by number or by id, because a number is what the
     // board shows and an id is what every action takes.
+    // WHICH SUB-TAB, first. The Tasks tab grew three of them and was the only
+    // tab whose panes could not be reached from outside — so a photograph of
+    // Jobs, Prompts or Contracts was a photograph of whichever one had been left
+    // open, which is exactly the "measure before claiming" fault: a picture that
+    // looks like evidence and is of somewhere else.
+    if (want.pick && view === 'tasks' && ['board', 'jobs', 'prompts', 'contracts'].includes(want.pick) && taskPane !== want.pick) {
+      const t = document.querySelector(`#view-tasks .subtab[data-pane="${want.pick}"]`)
+      if (t) {
+        shotSettle = 2
+        t.click()
+        return
+      }
+    }
+
     if (want.pick && view === 'tasks') {
       const t = (taskList || []).find(x => x.id === want.pick || String(x.number) === want.pick)
       // THROUGH THE SAME DOOR A PERSON USES. This set the selection and repainted

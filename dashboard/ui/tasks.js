@@ -35,6 +35,7 @@ document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
     document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
     paintJobs()
     paintPrompts()
+    paintContracts()
   }
 })
 ;(() => {
@@ -776,17 +777,42 @@ function newTask (from = null) {
           onOpen: inputs => {
             const pick = inputs.promptId
             const brief = inputs.brief
+            const jobPick = inputs.job
             if (!pick || !brief) return
             let filled = brief.value
+            let filledJob = jobPick ? jobPick.value : ''
+
             pick.onchange = () => {
               const chosen = (lib.prompts || []).find(x => x.id === pick.value)
               if (!chosen) return
-              if (brief.value.trim() && brief.value !== filled) {
+
+              if (!brief.value.trim() || brief.value === filled) {
+                brief.value = chosen.text
+                filled = chosen.text
+              } else {
                 say('The brief has been edited, so it was left alone. Clear it to fill from a prompt.', 'warn')
-                return
               }
-              brief.value = chosen.text
-              filled = chosen.text
+
+              // AND THE JOB THAT USES IT, because the pairing is the thing.
+              //
+              // A job names the prompt it runs with, so picking the prompt has
+              // already answered "which job" in every case where the answer is
+              // not "none" -- and leaving the reader to find it in the dropdown
+              // by name is asking them to redo a lookup the screen just did.
+              //
+              // Same rule as the brief: it fills, it does not overwrite. A job
+              // somebody chose deliberately stays chosen, and a prompt with no
+              // job leaves whatever was there rather than clearing it, since
+              // "none" is a real answer somebody may have meant.
+              if (!jobPick) return
+              const tied = (work.jobs || []).filter(j => j.promptId === chosen.id)
+              if (!tied.length) return
+              if (jobPick.value && jobPick.value !== filledJob) return
+              jobPick.value = tied[0].id
+              filledJob = tied[0].id
+              if (tied.length > 1) {
+                say(`${tied.length} jobs use that prompt — "${tied[0].name}" was filled in. Change it below if you meant another.`)
+              }
             }
           },
           onYes: async values => {
@@ -1029,6 +1055,195 @@ function writePrompt (x = null) {
 }
 
 $('prompt-new').onclick = () => writePrompt()
+
+// ---- the contract library ------------------------------------------------
+//
+// The rules a worker is given, as opposed to the brief. The same shape as the
+// prompts pane on purpose: it is the same kind of thing -- text somebody has to
+// read, approve, and be told about when it changes -- and two libraries that
+// behave differently would be two things to learn for no reason.
+//
+// See tasks/contracts.js for why this stopped being a path to a file on disk.
+let pickedContract = been.get('contract', null)
+
+const contractBadge = c => c.lapsed
+  ? { className: 'badge bad', textContent: 'edited' }
+  : c.approved
+    ? { className: 'badge ok', textContent: 'approved' }
+    : { className: 'badge warn', textContent: 'not approved' }
+
+function paintContracts () {
+  if (view !== 'tasks' || taskPane !== 'contracts') return
+  waiting('contracts-list', { cards: 3 })
+  waiting('contract-detail', { lines: 8 })
+  paintContractsNow()
+}
+
+async function paintContractsNow () {
+  await settle()
+  if (view !== 'tasks' || taskPane !== 'contracts') return
+
+  api('contracts').then(({ contracts, note }) => {
+    if (!contracts.some(c => c.id === pickedContract)) {
+      pickedContract = contracts.length ? contracts[0].id : null
+      been.set('contract', pickedContract)
+    }
+    const waitingOn = contracts.filter(c => !c.approved || c.lapsed).length
+    setText($('contracts-context'), contracts.length
+      ? `— ${contracts.length} kept${waitingOn ? `, ${waitingOn} waiting to be approved` : ''}`
+      : '— none yet')
+    setText($('contracts-note'), note)
+
+    if (changed('contracts', [contracts, pickedContract])) {
+      fill($('contracts-list'), contracts.length
+        ? contracts.map(c => el('div', {
+            className: `card pick${c.id === pickedContract ? ' on' : ''}`,
+            onclick: () => {
+              pickedContract = c.id
+              been.set('contract', pickedContract)
+              forget('contracts'); forget('contract-detail')
+              paintContracts()
+            }
+          },
+          el('div', { className: 'card-title' },
+            el('span', { className: 'grow', textContent: c.name }),
+            el('span', contractBadge(c))),
+          c.about ? el('div', { className: 'card-sub muted', textContent: c.about }) : null,
+          el('div', { className: 'card-sub muted', textContent: `${c.lines} line${c.lines === 1 ? '' : 's'} · ${c.edited ? `edited ${ago(c.edited)}` : `written ${ago(c.written)}`}` })))
+        : el('p', { className: 'empty', textContent: 'Nothing kept yet. A contract is what a worker may and may not do while it works — the same rules for a hundred different briefs.' }))
+    }
+
+    const one = contracts.find(c => c.id === pickedContract) || null
+    if (changed('contract-detail', one)) paintContract(one)
+  }).catch(oops)
+}
+
+function paintContract (c) {
+  if (!c) return fill($('contract-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one.' }))
+
+  fill($('contract-detail'),
+    el('div', { className: 'card-title' },
+      el('span', { className: 'grow', textContent: c.name }),
+      el('span', contractBadge(c)),
+      el('span', { className: 'badge muted', textContent: c.id })),
+    el('div', { className: 'card-sub muted', textContent: [
+      c.edited ? `edited ${ago(c.edited)}` : `written ${ago(c.written)}`,
+      c.approved ? `approved ${ago(c.approvedAt)} by ${c.approvedBy}` : 'never approved',
+      `hash ${c.hash}`
+    ].join(' · ') }),
+    c.about ? el('p', { className: 'note', textContent: c.about }) : null,
+    c.lapsed
+      ? el('p', { className: 'note bad', textContent: 'It was edited after it was approved, so it is waiting to be read again — what was approved is not what would govern a run.' })
+      : null,
+
+    el('div', { className: 'row', style: 'margin-top:8px' },
+      c.approved && !c.lapsed
+        ? el('button', {
+            className: 'btn small',
+            textContent: 'Withdraw approval',
+            title: 'Nothing is deleted — it stops being offered when a task is written',
+            onclick: async () => {
+              try {
+                await api('contractWithdraw', { id: c.id })
+                say(`"${c.name}" will not govern a run until it is approved again.`, 'warn')
+                forget('contracts'); forget('contract-detail')
+                return draw()
+              } catch (e) { oops(e) }
+            }
+          })
+        : el('button', {
+            className: 'btn small ok',
+            textContent: c.lapsed ? 'Approve it again' : 'Approve it',
+            title: 'Say it is fit to govern a run, having read it',
+            onclick: () => ask({
+              title: `Approve "${c.name}"?`,
+              plain: [
+                'This is what a worker may and may not do. Read it as limits, and check that what is missing from it is missing on purpose.',
+                'Approval is against the words as they are now — any edit takes it back automatically.'
+              ],
+              fields: [{ name: 'note', label: 'A note, for whoever reads this later (optional)', value: '' }],
+              confirm: 'I have read it',
+              onYes: async ({ note }) => {
+                await api('contractApprove', { id: c.id, note })
+                say(`"${c.name}" approved.`)
+                forget('contracts'); forget('contract-detail')
+                return draw()
+              }
+            })
+          }),
+      el('button', { className: 'btn small', textContent: 'Edit', onclick: () => writeContract(c) }),
+      el('button', {
+        className: 'btn small danger',
+        textContent: 'Throw it away',
+        onclick: () => ask({
+          title: `Throw away "${c.name}"?`,
+          plain: [
+            'It leaves the library.',
+            'Every task already written under it keeps the rules it was given — a task carries its own copy, so nothing that already went out changes.'
+          ],
+          confirm: 'Throw it away',
+          danger: true,
+          onYes: async () => {
+            await api('contractForget', { id: c.id })
+            say(`"${c.name}" is out of the library.`, 'warn')
+            pickedContract = null
+            forget('contracts'); forget('contract-detail')
+            return draw()
+          }
+        })
+      })),
+
+    el('div', { style: 'margin-top:10px' }, codeBlock(c.text, 'markdown')))
+}
+
+function writeContract (c = null) {
+  ask({
+    title: c ? `Edit "${c.name}"` : 'Write a contract',
+    plain: [
+      'This is what a worker may and may not do while it works — the limits, not the brief.',
+      c
+        ? 'Editing it takes its approval back, because what was approved is no longer what would govern a run.'
+        : 'It is kept for this computer rather than for a workspace: "do not force-push" names no repository.'
+    ],
+    fields: [
+      { name: 'name', label: 'Name', value: c ? c.name : '', placeholder: 'Short enough to recognise in a list' },
+      { name: 'about', label: 'What it is for (optional)', value: c && c.about ? c.about : '', placeholder: 'One line, so somebody else knows when to reach for it' },
+      { name: 'text', label: 'The rules', value: c ? c.text : CONTRACT_STARTER, multiline: true, rows: 16 }
+    ],
+    confirm: c ? 'Save it' : 'Write it',
+    onYes: async f => {
+      const saved = await api('contractSave', { id: c ? c.id : undefined, name: f.name, about: f.about, text: f.text })
+      pickedContract = saved.id
+      been.set('contract', pickedContract)
+      say(saved.created ? `"${saved.name}" kept.` : `"${saved.name}" saved.`)
+      forget('contracts'); forget('contract-detail')
+      return draw()
+    }
+  })
+}
+
+// A first one to edit rather than a blank box. Rules are hard to start and easy
+// to continue, and a blank box is how a contract ends up being three lines that
+// only cover what went wrong last time.
+const CONTRACT_STARTER = `# What this worker may and may not do
+
+- Work only on the branch you were given. Never commit to the default branch.
+- Do not force-push, and do not rewrite history that is already pushed.
+- Do not install anything. If something is missing, say so and stop.
+- Do not edit anything outside the repositories in this folder.
+
+# When you are unsure
+
+Say what you were unsure about and what you did instead. A note in the
+transcript is worth more than a guess that looks like a decision.
+
+# When you finish
+
+Leave the work on the branch. Say in one paragraph what you changed and what you
+did not get to.
+`
+
+$('contract-new').onclick = () => writeContract()
 
 // ---- jobs, and the prompts they are given -------------------------------
 //

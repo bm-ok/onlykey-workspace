@@ -18,7 +18,7 @@ const s = require('./shared')
 const {
   log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
-  archive, files, prompts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
+  archive, files, prompts, contracts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
@@ -906,4 +906,80 @@ module.exports = {
       return { ...gone, note: 'Any task written from it keeps the text it was given. This only removes it from the library.' }
     }
   },
+
+  // ---- the contract library ------------------------------------------------
+  //
+  // The rules a worker is given, as opposed to the brief. See tasks/contracts.js
+  // for why these are separate things and why one had to stop being a file path.
+  //
+  // NOT GATED ON A WORKSPACE, for the same reason prompts are not: "do not
+  // force-push" names no repository.
+  contracts: {
+    about: 'The contract library: the rules a worker is given, written once and kept',
+    run: () => {
+      const list = contracts.all()
+      const waiting = list.filter(c => !c.approved).length
+      return {
+        contracts: list,
+        where: contracts.FILE(),
+        note: list.length
+          ? `${list.length} kept${waiting ? `, ${waiting} waiting to be approved` : ''}. A task copies the rules it was given rather than pointing at them, so editing one here never changes what a task already went out under.`
+          : 'Nothing kept yet. A contract is what a worker may and may not do while it works — the same rules for a hundred different briefs.'
+      }
+    }
+  },
+
+  contract: {
+    about: 'One contract, with its rules in full',
+    takes: ['id'],
+    run: ({ id }) => {
+      const one = contracts.get(id)
+      if (!one) throw new Error(`There is no contract called "${id}".`)
+      return one
+    }
+  },
+
+  contractSave: {
+    about: 'Write a contract, or rewrite one. Written at the window it is approved by whoever wrote it; written over the wire it waits',
+    takes: ['id', 'name', 'about', 'text'],
+    run: ({ id, name, about, text, _overTheWire }) => {
+      const saved = contracts.save({ id, name, about, text }, _overTheWire ? 'the command line' : 'the window')
+      log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the contract "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
+      return saved
+    }
+  },
+
+  contractApprove: {
+    about: 'Say a contract is fit to govern a run, having read it',
+    takes: ['id', 'note'],
+    run: ({ id, note, _overTheWire }) => {
+      // The same boundary as a prompt and a job, and here it is the sharpest of
+      // the three: this is the text that says what a worker may NOT do, and a
+      // model ratifying its own limits is the one review that reviews nothing.
+      if (_overTheWire) throw new Error('Approving is done in the window, by a person who has read it. A model may write a contract and may not approve its own.')
+      const done = contracts.approve(id, note)
+      log.on('task').good(`contract "${done.name}" approved`)
+      return done
+    }
+  },
+
+  contractWithdraw: {
+    about: 'Take a contract\'s approval back. Nothing is deleted; it stops being usable',
+    takes: ['id'],
+    run: ({ id }) => {
+      const done = contracts.withdraw(id)
+      log.on('task').warn(`approval withdrawn for the contract "${done.name}"`)
+      return done
+    }
+  },
+
+  contractForget: {
+    about: 'Throw a contract away. Tasks written under it are untouched — they carry their own copy',
+    takes: ['id'],
+    run: ({ id }) => {
+      const gone = contracts.forget(id)
+      log.on('task').warn(`contract "${gone.name}" thrown away`)
+      return { ...gone, note: 'Any task already written under it keeps the rules it was given. This only removes it from the library.' }
+    }
+  }
 }
