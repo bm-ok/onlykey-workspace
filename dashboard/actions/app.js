@@ -20,7 +20,7 @@ const actions = require('./table')
 // block repeated nine times. See actions/shared.js.
 const s = require('./shared')
 const {
-  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts,
+  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact, harness, approval,
   archive, files, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,

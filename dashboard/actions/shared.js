@@ -22,6 +22,7 @@ const secret = require('../core/secret')
 const github = require('../core/github')
 const remotes = require('../repos/remotes')
 const landings = require('../repos/landings')
+const judgements = require('../repos/judgements')
 const prtemplate = require('../repos/prtemplate')
 const drafts = require('../repos/drafts')
 const vbox = require('../machines/vbox')
@@ -281,7 +282,8 @@ function twoLines (source, target) {
 // trusting the dry run.
 
 module.exports = {
-  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts,
+  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
+  judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact, harness, approval,
   archive, files, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace,

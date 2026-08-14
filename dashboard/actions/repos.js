@@ -16,7 +16,7 @@ const actions = require('./table')
 // block repeated nine times. See actions/shared.js.
 const s = require('./shared')
 const {
-  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts,
+  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact, harness, approval,
   archive, files, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
@@ -388,6 +388,74 @@ module.exports = {
         note: rows.length
           ? `${rows.filter(r => r.landed).length} of ${rows.length} landed.`
           : 'Nothing has been cut yet. A PR cut is made from a proposed line on the Changes tab.'
+      }
+    }
+  },
+
+  // ---- what anybody thought of it ---------------------------------------
+  //
+  // Every cut, with the judgements made on it and whether each still describes
+  // what is there. Read-only: this says what is known, and nothing here makes a
+  // judgement or asks for one.
+  //
+  // THE TIPS ARE READ FRESH, from git, every time. A judgement carries the commit
+  // each repository ended at when it was made; whether that is still where they
+  // are is a fact about the repositories now, and remembering it here would be
+  // this app keeping a copy of something that changes without asking it. That is
+  // the same rule the landings follow for what GitHub says.
+  judgements: {
+    about: 'Every PR cut, what has been judged about it, and which judgements still describe what is there',
+    needs: 'workspace',
+    run: () => {
+      const cuts = landings.all()
+      const rows = []
+
+      for (const k of Object.keys(cuts)) {
+        const cut = cuts[k]
+        const made = judgements.on(cut.source, cut.target)
+
+        // Where each repository actually is now. `about` returns null when the
+        // lines behind a cut have gone, which is a thing to say rather than a
+        // thing to crash on.
+        const now = {}
+        let context = null
+        try { context = prtemplate.about(cut.source, cut.target) } catch { context = null }
+        for (const r of (context ? context.repos : [])) now[r.repo] = r.tip
+
+        const list = made.map(j => ({ ...j, stale: judgements.staleAgainst(j, now) }))
+        const live = list.filter(j => !j.stale)
+
+        rows.push({
+          id: k,
+          source: cut.source,
+          target: cut.target,
+          title: (cut.said && cut.said.title) || cut.source,
+          repos: Object.keys(now),
+          tips: now,
+          judgements: list,
+          // A cut whose only judgement predates the last push is exactly as
+          // unjudged as one with none, and the count that matters says so.
+          count: list.length,
+          current: live.length,
+          stale: list.length - live.length,
+          // Said rather than counted, because "none" and "one, but not of this"
+          // are the two states worth telling apart at a glance.
+          reads: !list.length
+            ? 'not judged'
+            : live.length
+              ? `${live.length} judgement${live.length === 1 ? '' : 's'} of what is there now`
+              : `${list.length} judgement${list.length === 1 ? '' : 's'}, all of an earlier state`
+        })
+      }
+
+      return {
+        cuts: rows,
+        // JUDGING IS OPTIONAL, and this is the sentence that has to keep saying
+        // so. Nothing here is owed, nothing is blocked on it, and the moment this
+        // reads as a chore it has become a checklist rather than a tool.
+        note: rows.length
+          ? 'A judgement is a reading of a change at the commits it was read at. Nothing is owed one.'
+          : 'Nothing has been cut yet, so there is nothing to judge. A judgement is made on a PR cut.'
       }
     }
   },
