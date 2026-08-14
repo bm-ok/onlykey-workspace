@@ -783,6 +783,28 @@ module.exports = {
 
       const to = log.on('job', id, name)
 
+      // THE WORKER CREDENTIAL, BECAUSE A JOB MAY START A WORKER.
+      //
+      // The queue does three things before it dispatches a task -- bring the
+      // machine up, hand it the credential, set the workspace up -- and a job
+      // dispatched here did none of them. That was invisible until the API grew
+      // `claude()`: a job that ran a worker got
+      //
+      //     {"is_error":true,"result":"Not logged in · Please run /login"}
+      //
+      // every time, on a machine whose only fault was that nobody had given it
+      // the credential this host has been holding since yesterday.
+      //
+      // Not fatal, on purpose. Most jobs never start a worker, and a machine
+      // that cannot be given one is a reason to say so rather than to refuse
+      // work that does not need it -- `claude()` will say the same thing far
+      // more precisely if it turns out to matter.
+      try {
+        await actions.vmCredentialsPut.run({ name })
+      } catch (e) {
+        to.warn(`${name} has no worker credential — a job that starts one will be refused: ${e.message}`)
+      }
+
       // Where artifacts go. The guest knows its own token and this app's
       // authority; what it does not know is which port to hand a file back on.
       let base = null

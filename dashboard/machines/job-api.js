@@ -79,14 +79,21 @@ const q = o => Object.entries(o)
   .map(([k, v]) => k + '=' + encodeURIComponent(String(v)))
   .join('&')
 
+// A CONST RATHER THAN A PROPERTY READ THROUGH `this`, because a job is handed
+// this object and destructures it -- `({ claude, log })` -- and a destructured
+// method has no receiver. `this.prompt` inside one is undefined, always, and
+// would have made `claude()` with no argument fail with "there is no brief" on a
+// run that had a perfectly good prompt.
+const PROMPT = process.env.OKC_PROMPT_ID
+  ? Object.freeze({
+      id: process.env.OKC_PROMPT_ID,
+      name: process.env.OKC_PROMPT_NAME || null,
+      text: read('prompt.txt')
+    })
+  : null
+
 module.exports = {
-  prompt: process.env.OKC_PROMPT_ID
-    ? Object.freeze({
-        id: process.env.OKC_PROMPT_ID,
-        name: process.env.OKC_PROMPT_NAME || null,
-        text: read('prompt.txt')
-      })
-    : null,
+  prompt: PROMPT,
 
   // WHERE IT ACTUALLY IS, not where it was meant to be. The run script cds to
   // the configured folder and falls back to the home directory when there is
@@ -143,6 +150,109 @@ module.exports = {
       cwd: opts.cwd || process.cwd(),
       stdio: ['ignore', 'pipe', 'pipe']
     })
+  },
+
+  // A WORKER, GIVEN THE PROMPT, HERE.
+  //
+  // This is the helper the rest of the API was built around and did not have. A
+  // job could survey a machine, run commands and hand files back, but the one
+  // thing the whole arrangement exists for -- give a worker a brief and let it
+  // work -- was only reachable by dispatching a task, which is the dashboard's
+  // job and not a job's. So a job could orchestrate everything except the work.
+  //
+  // THE SAME COMMAND A TASK GETS, deliberately: `claude -p` with permissions
+  // skipped and JSON out, which is what machines/dispatch.js writes into a run
+  // script. A worker started here and a worker started by the queue are the same
+  // worker on the same machine, or the difference would show up as a job that
+  // "worked" and a task that did not.
+  //
+  // THE BRIEF IS AN ARGUMENT, NOT A SHELL WORD. execFile, no shell, so prose
+  // containing quotes, backticks or a $ is passed through byte for byte. The run
+  // script has to write the brief to a file and `cat` it precisely because it IS
+  // a shell; from node there is a straighter way and this takes it.
+  //
+  // SYNCHRONOUS, like sh, and this one is worth saying out loud: a worker takes
+  // minutes, and nothing else in the job runs while it does -- no log line, no
+  // progress. So `report()` before it and after it, rather than during.
+  claude (text, { contract = null, resume = null, timeout = 30 * 60 * 1000, cwd = null } = {}) {
+    // Defaulting to the prompt is the ordinary case, not a shortcut: a job whose
+    // work IS the prompt should not have to name it.
+    const brief = String(text == null ? (PROMPT ? PROMPT.text : '') : text).trim()
+    if (!brief) throw new Error('there is no brief to give a worker — pass one, or run this job with a prompt')
+
+    try {
+      cp.execFileSync('sh', ['-c', 'command -v claude'], { stdio: 'ignore' })
+    } catch {
+      throw new Error('claude is not installed on this machine, so it cannot be given work')
+    }
+
+    // Rules beside the run rather than named by a path, for the reason
+    // dispatch.js gives: a path read six weeks later proves nothing about what
+    // the worker was actually told.
+    let rulesFile = null
+    if (contract) {
+      rulesFile = path.join(here, 'contract.md')
+      fs.writeFileSync(rulesFile, String(contract))
+    }
+
+    const args = ['-p', brief, '--dangerously-skip-permissions', '--output-format', 'json']
+    if (rulesFile) args.push('--append-system-prompt-file', rulesFile)
+    if (resume) args.push('--resume', String(resume))
+
+    // THE ANSWER IS READ WHETHER OR NOT IT EXITED WELL, and that is not
+    // defensive coding — it is the ordinary case. A machine with no worker
+    // credential answers
+    //
+    //     {"is_error":true, ... ,"result":"Not logged in · Please run /login"}
+    //
+    // and exits 1. Treating a non-zero exit as opaque would report that as "the
+    // worker failed: {"is_error":true,"duration_api_ms":0,...}" — the one useful
+    // sentence buried in four hundred characters of telemetry, for the single
+    // most likely thing to be wrong with a machine.
+    let out = ''
+    let died = null
+    try {
+      out = cp.execFileSync('claude', args, {
+        encoding: 'utf8',
+        cwd: cwd || process.cwd(),
+        timeout,
+        // A transcript is not small, and truncating one at the default 1MB turns
+        // a finished run into unparseable JSON -- which reads as the worker
+        // having failed.
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe']
+      })
+    } catch (e) {
+      if (e.killed) throw new Error(`the worker was still going after ${Math.round(timeout / 60000)} minutes, so it was stopped`)
+      out = String(e.stdout || '')
+      died = e
+    }
+
+    let said = null
+    try { said = JSON.parse(out) } catch { /* it said something else, handled below */ }
+
+    // ITS OWN ANSWER FIRST. A worker that ran and refused is not a worker that
+    // did the work, and the difference is inside this JSON rather than in the
+    // exit code -- `claude -p` exits 0 having declined, and exits 1 with the
+    // reason in `result`.
+    if (said && said.is_error) throw new Error('the worker stopped: ' + (said.result || 'it did not say why'))
+    if (!said) {
+      const loudest = String((died && died.stderr) || out || '').trim().split('\n').slice(-3).join(' ')
+      throw new Error((died ? 'the worker failed' : 'the worker answered with something that is not JSON') +
+        (loudest ? ': ' + loudest.slice(0, 300) : ''))
+    }
+    if (died) throw new Error(`the worker exited ${died.status} having said: ${String(said.result || '').slice(0, 300)}`)
+
+    return {
+      text: said.result || '',
+      session: said.session_id || null,
+      turns: said.num_turns || 0,
+      // Named for what it is rather than passed through, because `total_cost_usd`
+      // is a field of somebody else's JSON and this is an API.
+      cost: said.total_cost_usd == null ? null : said.total_cost_usd,
+      ms: said.duration_ms || null,
+      raw: said
+    }
   },
 
   // Where this machine clones and pushes. The token is already in the remote

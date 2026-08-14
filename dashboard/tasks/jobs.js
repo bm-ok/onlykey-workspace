@@ -105,11 +105,18 @@ const STARTER = `'use strict'
 // one object -- everything it can do is on that object.
 //
 //   prompt      the prompt it was run with, or null: { id, name, text }
+//   claude(t)   give a worker a brief HERE and wait for it. No argument means
+//               the prompt above -- which is the ordinary case
 //   log(line)   a line of output, kept with the run and readable afterwards
+//   report(s)   how far along it is, while it is still going
 //   sh(cmd)     a command in the guest, returning what it printed
 //   artifact(f) hand a file back to the dashboard, kept against this run
-//   workspace   the folder the machine was set up in
+//   gitUrl(r)   where this machine clones and pushes, credential included
+//   assert      ok, equal, refuses -- for a job that checks rather than does
+//   workspace   the folder it is actually in
+//   configured  the folder it was set up to use, which is not always the same
 //   machine     the name of the machine it is running on
+//   run         the id of this run
 //
 // There is no \`okc\` and that is deliberate: a machine cannot reach the
 // dashboard's actions, which is what makes it safe to run a script on one.

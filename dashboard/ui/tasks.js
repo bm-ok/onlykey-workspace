@@ -1225,7 +1225,7 @@ function writeJob (j = null) {
   ask({
     title: j ? `Edit "${j.name}"` : 'Write a job',
     plain: [
-      'A job is a Node script. It is handed one object: okc, prompt, log, shell, artifact, assert and tags.',
+      'A job is a Node script, and it runs on a machine. It is handed one object: prompt, claude, log, report, sh, artifact, gitUrl, assert, and where it is.',
       j
         ? 'Saving it takes its approval back, because what was approved is no longer what will run.'
         : 'Writing it here approves it — you are reading it as you write it. One written by a model over the command line waits for you instead.'
