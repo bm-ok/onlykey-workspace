@@ -1267,7 +1267,14 @@ function runJob (j) {
     title: `Run "${j.name}"?`,
     plain: [
       here ? `It runs against "${here.name}" — ${here.dir}` : 'No workspace is open, so it will be refused.',
-      'It drives the same actions a person does: it can write a task, cut a branch, or borrow a machine. Everything it does appears in the live log.',
+      // WHAT IT ACTUALLY IS, in the dialog that asks permission for it. This
+      // said "it drives the same actions a person does: it can write a task,
+      // cut a branch, or borrow a machine" — true of the old jobs, which ran
+      // here and were handed `okc`. A job runs on a machine now and cannot
+      // reach these actions at all, which is the property that makes running
+      // one safe. A confirmation is the worst place to be out of date: it is
+      // the sentence somebody agrees to.
+      'It runs on a machine, not here — so it cannot reach this dashboard\'s actions. It gets a shell, a worker, and a way to hand files back. Everything it says appears in the live log.',
       usable.length ? null : 'No approved prompt is available. A job that reads one will be refused.'
     ].filter(Boolean),
     cost: 'Anything it leaves behind is left behind. Nothing here undoes it afterwards.',
