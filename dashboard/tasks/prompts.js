@@ -51,7 +51,25 @@ const write = list => {
   return list
 }
 
-const all = () => read().map(p => ({ ...p, hash: hash(p.text) }))
+// Every prompt, with what it is approved against compared to what it says now.
+//
+// APPROVAL IS ON THE WORDS, not on the record. A prompt is what a worker is
+// actually told, and it is the half of a job that changes -- so a job read and
+// approved in January can be handed a rewritten instruction in March and do
+// something nobody agreed to, while every tick on the screen stays green. The
+// hash is of the text, so an edit lapses it and the run is refused until
+// somebody reads it again.
+const all = () => read().map(p => {
+  const now = hash(p.text)
+  return {
+    ...p,
+    hash: now,
+    approved: !!(p.approval && p.approval.hash === now),
+    lapsed: !!(p.approval && p.approval.hash !== now),
+    approvedAt: p.approval ? p.approval.at : null,
+    approvedBy: p.approval ? p.approval.by : null
+  }
+})
 const get = id => all().find(p => p.id === id) || null
 
 // An id from the name, so a prompt is findable by a person reading the file and
@@ -61,7 +79,7 @@ const idFor = name => String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-
 // Written, or rewritten. The id never changes once made: something may be
 // pointing at it, and a rename that silently becomes a different prompt is the
 // quietest way to break a reference.
-function save ({ id, name, text, about }) {
+function save ({ id, name, text, about }, by = 'the window') {
   const title = String(name || '').trim()
   if (!title) throw new Error('Give it a name. A prompt with no name is one nobody finds again.')
   const body = String(text || '').trim()
@@ -74,14 +92,26 @@ function save ({ id, name, text, about }) {
   const at = list.findIndex(p => p.id === key)
   const now = new Date().toISOString()
 
+  // Written at the window is approved by whoever wrote it -- writing it there IS
+  // the reading. Written down the pipe it waits for a person, because a model may
+  // write one and may not ratify its own.
+  const stamp = by === 'the window' ? { at: now, by, hash: hash(body) } : null
+
   if (at === -1) {
-    if (list.some(p => p.id === key)) throw new Error(`There is already a prompt called "${title}".`)
-    list.push({ id: key, name: title, about: String(about || '').trim() || null, text: body, written: now, edited: null })
+    list.push({ id: key, name: title, about: String(about || '').trim() || null, text: body, written: now, edited: null, approval: stamp })
   } else {
-    // WHAT CHANGED IS WORTH KNOWING, because an edit lapses whatever approved it.
     const was = list[at]
     const changed = was.text !== body
-    list[at] = { ...was, name: title, about: String(about || '').trim() || null, text: body, edited: changed ? now : was.edited }
+    list[at] = {
+      ...was,
+      name: title,
+      about: String(about || '').trim() || null,
+      text: body,
+      edited: changed ? now : was.edited,
+      // An unchanged save keeps whatever approval it had; a changed one is
+      // re-approved only if a person is the one saving it.
+      approval: changed ? stamp : was.approval
+    }
   }
 
   write(list)
@@ -96,4 +126,22 @@ function forget (id) {
   return { forgotten: found.id, name: found.name }
 }
 
-module.exports = { all, get, save, forget, hash, idFor, FILE }
+function approve (id, note = null) {
+  const list = read()
+  const at = list.findIndex(p => p.id === id)
+  if (at === -1) throw new Error(`There is no prompt called "${id}".`)
+  list[at] = { ...list[at], approval: { at: new Date().toISOString(), by: 'the window', note: String(note || '').trim() || null, hash: hash(list[at].text) } }
+  write(list)
+  return get(id)
+}
+
+function withdraw (id) {
+  const list = read()
+  const at = list.findIndex(p => p.id === id)
+  if (at === -1) throw new Error(`There is no prompt called "${id}".`)
+  list[at] = { ...list[at], approval: null }
+  write(list)
+  return get(id)
+}
+
+module.exports = { all, get, save, approve, withdraw, forget, hash, idFor, FILE }
