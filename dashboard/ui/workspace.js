@@ -119,7 +119,7 @@ function workspaceCard (k, w) {
             onclick: () => useWorkspace(k.dir)
           }),
       el('button', {
-        className: 'btn small bad',
+        className: 'btn small danger',
         textContent: 'Forget it',
         disabled: !!k.current,
         title: k.current

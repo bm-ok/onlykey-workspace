@@ -725,6 +725,10 @@ let taskPane = been.get('task-pane', 'board')
 // Which definition is being read. Kept like every other selection here, so
 // coming back to the tab comes back to what you were looking at.
 let pickedPlan = been.get('planned', null)
+// The written jobs, and the prompt library they can point at. Held so the
+// dialog below can offer the list without asking again.
+let definedNow = []
+let promptsNow = []
 
 document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
   t.onclick = () => {
@@ -832,7 +836,7 @@ function paintPrompt (x) {
       }),
       el('button', { className: 'btn small', textContent: 'Edit', onclick: () => writePrompt(x) }),
       el('button', {
-        className: 'btn small bad',
+        className: 'btn small danger',
         textContent: 'Throw it away',
         onclick: () => ask({
           title: `Throw away "${x.name}"?`,
@@ -896,8 +900,10 @@ async function paintPlannedNow () {
   await settle()
   if (view !== 'tasks' || taskPane !== 'planned') return
 
-  api('planned').then(plan => {
+  Promise.all([api('planned'), api('defined').catch(() => ({ defined: [], prompts: [] }))]).then(([plan, mine]) => {
     const suites = plan.suites || []
+    definedNow = mine.defined || []
+    promptsNow = mine.prompts || []
     const all = suites.flatMap(s => s.tests)
     const waitingOn = all.filter(t => !t.approved || t.lapsed).length
 
@@ -908,14 +914,56 @@ async function paintPlannedNow () {
 
     if (!changed('planned', suites)) return
 
-    // Reconciled against what is registered, like every other selection here.
-    if (!all.some(t => t.name === pickedPlan)) {
-      pickedPlan = all.length ? all[0].name : null
+    // Reconciled against what is registered, like every other selection here --
+    // and there are two lists to be registered in now. A written job is named
+    // "defined:<id>" so the two cannot collide: a drill's name is a sentence and
+    // an id is a slug, but relying on that is the sort of assumption that holds
+    // until somebody writes a job called exactly what a drill is called.
+    const mineId = String(pickedPlan || '').startsWith('defined:') ? pickedPlan.slice(8) : null
+    const stillThere = mineId
+      ? definedNow.some(d => d.id === mineId)
+      : all.some(t => t.name === pickedPlan)
+    if (!stillThere) {
+      pickedPlan = definedNow.length
+        ? 'defined:' + definedNow[0].id
+        : all.length ? all[0].name : null
       been.set('planned', pickedPlan)
     }
 
-    if (changed('planned', [suites, pickedPlan])) {
-      fill($('planned-list'), suites.length
+    if (changed('planned', [suites, definedNow, pickedPlan])) {
+      fill($('planned-list'),
+        // WRITTEN ONES FIRST. They are the ones this window can create, edit and
+        // throw away; the declared ones below are code and can only be read.
+        // Putting the editable half at the top is what makes the + above it mean
+        // something rather than looking like it adds to the whole list.
+        definedNow.length
+          ? el('div', { className: 'carries' },
+              el('div', { className: 'carries-head' },
+                el('span', { textContent: 'written here' }),
+                el('span', { className: 'muted', textContent: `${definedNow.length}` })),
+              ...definedNow.map(d => {
+                const st = d.lapsed
+                  ? { cls: 'bad', label: 'edited since approval' }
+                  : d.approved
+                    ? { cls: 'ok', label: 'approved' }
+                    : { cls: 'warn', label: 'not approved' }
+                return el('div', {
+                  className: `card pick${pickedPlan === 'defined:' + d.id ? ' on' : ''}`,
+                  onclick: () => {
+                    pickedPlan = 'defined:' + d.id
+                    been.set('planned', pickedPlan)
+                    changed('planned', null); changed('planned-detail', null)
+                    paintPlanned()
+                  }
+                },
+                el('div', { className: 'card-title' },
+                  el('span', { className: 'grow', textContent: d.name }),
+                  el('span', { className: `badge ${st.cls}`, textContent: st.label })),
+                el('div', { className: 'card-sub mono muted', textContent: d.branch }),
+                d.missingPrompt ? el('div', { className: 'card-sub bad', textContent: 'its prompt is gone' }) : null)
+              }))
+          : null,
+        suites.length
         ? suites.map(su => el('div', { className: 'carries' },
             el('div', { className: 'carries-head' },
               el('span', { textContent: su.name }),
@@ -940,9 +988,14 @@ async function paintPlannedNow () {
               el('div', { className: 'card-sub muted', textContent: t.at ? `read ${ago(t.at)}` : 'never read' }),
               t.request ? el('div', { className: 'card-sub warn', textContent: 'asked to be read' }) : null)
             })))
-        : el('p', { className: 'empty', textContent: 'No jobs are defined yet. A pre-defined task is a job written once — declared in tasks/planned.js — and run whenever it is wanted.' }))
+          : (definedNow.length ? null : el('p', { className: 'empty', textContent: 'Nothing defined yet. Write one with + — a job is worth defining the moment you would write the same task a second time.' })))
     }
 
+    if (String(pickedPlan || '').startsWith('defined:')) {
+      const mineOne = definedNow.find(d => 'defined:' + d.id === pickedPlan) || null
+      if (changed('planned-detail', mineOne)) paintWrittenJob(mineOne)
+      return
+    }
     const one = all.find(t => t.name === pickedPlan) || null
     if (changed('planned-detail', one)) paintDefinition(one)
   }).catch(oops)
@@ -985,6 +1038,158 @@ function runDefinition (t) {
     }
   })
 }
+
+// A JOB SOMEBODY WROTE HERE, which is the half of this pane that can be changed.
+//
+// Everything below the buttons is what a worker would be handed. The words come
+// from the prompt where one is named and from the brief where one is not, and it
+// says which -- because "where did this instruction come from" is the question
+// somebody asks when it turns out to have been wrong.
+function paintWrittenJob (d) {
+  if (!d) return fill($('planned-detail'), el('p', { className: 'empty', textContent: 'Pick one on the left, or write one with +.' }))
+
+  const st = d.lapsed
+    ? { cls: 'bad', label: 'edited since approval', why: 'It has been changed since it was approved. It will not run until somebody approves it again.' }
+    : d.approved
+      ? { cls: 'ok', label: 'approved', why: null }
+      : { cls: 'warn', label: 'not approved', why: 'Nothing unapproved runs, whoever is asking.' }
+
+  fill($('planned-detail'),
+    el('div', { className: 'card-title' },
+      el('span', { className: 'grow', textContent: d.name }),
+      el('span', { className: `badge ${st.cls}`, textContent: st.label })),
+    el('div', { className: 'card-sub muted', textContent: [
+      d.edited ? `edited ${ago(d.edited)}` : `written ${ago(d.written)}`,
+      d.approvedAt ? `approved ${ago(d.approvedAt)} by ${d.approvedBy}` : null
+    ].filter(Boolean).join(' · ') }),
+    d.about ? el('p', { className: 'note', textContent: d.about }) : null,
+    st.why ? el('p', { className: 'note', textContent: st.why }) : null,
+
+    el('div', { className: 'carries', style: 'margin-top:10px' },
+      el('div', { className: 'group-part' },
+        el('span', { textContent: 'delivers on' }),
+        el('span', { className: 'mono', textContent: d.branch })),
+      el('div', { className: 'group-part' },
+        el('span', { textContent: 'worked by' }),
+        el('span', {}, el('span', { className: `badge ${workerOf(d).cls}`, textContent: workerOf(d).label }))),
+      el('div', { className: 'group-part' },
+        el('span', { textContent: 'contract' }),
+        el('span', { className: 'mono muted', textContent: d.contract || 'none — the worker gets no rules' })),
+      el('div', { className: 'group-part' },
+        el('span', { textContent: 'what it says' }),
+        el('span', { className: 'muted', textContent: d.prompt ? `the prompt "${d.prompt.name}"` : 'written into this job' }))),
+
+    // A JOB POINTING AT A PROMPT THAT IS GONE. Said loudly, because it would
+    // otherwise be found by running it and handing a worker nothing.
+    d.missingPrompt
+      ? el('p', { className: 'note bad', textContent: `It points at a prompt called "${d.promptId}" that is not in the library any more. Edit it and pick another, or write the brief into the job itself.` })
+      : null,
+
+    el('div', { className: 'row', style: 'margin-top:10px' },
+      el('button', { className: 'btn small', textContent: 'Edit', onclick: () => writeJob(d) }),
+      d.approved
+        ? el('button', {
+            className: 'btn small',
+            textContent: 'Withdraw approval',
+            title: 'It stops being runnable until somebody approves it again',
+            onclick: async () => {
+              try {
+                await api('definedWithdraw', { id: d.id })
+                say(`"${d.name}" will not run until it is approved again.`, 'warn')
+                changed('planned', null); changed('planned-detail', null)
+                return draw()
+              } catch (e) { oops(e) }
+            }
+          })
+        : el('button', {
+            className: 'btn small ok',
+            textContent: 'Approve it',
+            title: 'Say it is fit to run, having read it',
+            onclick: async () => {
+              try {
+                await api('definedApprove', { id: d.id })
+                say(`"${d.name}" approved.`)
+                changed('planned', null); changed('planned-detail', null)
+                return draw()
+              } catch (e) { oops(e) }
+            }
+          }),
+      // THE ONE THAT DESTROYS SOMETHING, and the only one here wearing red.
+      el('button', {
+        className: 'btn small danger',
+        textContent: 'Throw it away',
+        onclick: () => ask({
+          title: `Throw away "${d.name}"?`,
+          plain: [
+            'The definition is deleted. It is not kept anywhere and this cannot be undone from here.',
+            'Any task already made from it is untouched — a task carries the words it was given, so nothing that already went out changes.'
+          ],
+          cost: 'Writing it again means writing it again.',
+          confirm: 'Throw it away',
+          danger: true,
+          onYes: async () => {
+            await api('definedForget', { id: d.id })
+            say(`"${d.name}" is gone.`, 'warn')
+            pickedPlan = null
+            changed('planned', null); changed('planned-detail', null)
+            return draw()
+          }
+        })
+      })),
+
+    el('div', { style: 'margin-top:10px' }, codeBlock(d.says || '', 'text', { lines: 14 })))
+}
+
+// Writing one, or rewriting it.
+//
+// The same fields the write-a-task dialog asks for, because that is what this
+// produces -- a task -- and a definition whose form differed from the thing it
+// makes would be two ideas of what a task is.
+function writeJob (d = null) {
+  ask({
+    title: d ? `Edit "${d.name}"` : 'Write a job',
+    plain: [
+      'A job worth doing more than once: what a worker is told, and where it delivers.',
+      d
+        ? 'Changing any of this takes its approval back, because what was approved is no longer what it says.'
+        : 'Writing it here approves it — you are reading it as you write it. One written by a model over the command line waits for you instead.'
+    ],
+    fields: [
+      { name: 'name', label: 'Name', value: d ? d.name : '', placeholder: 'Short enough to recognise in a list' },
+      { name: 'about', label: 'What it is for (optional)', value: d && d.about ? d.about : '' },
+      {
+        name: 'promptId',
+        label: 'Say it with a prompt from the library',
+        value: d && d.promptId ? d.promptId : '',
+        options: [{ value: '', label: 'none — write it below instead' }, ...promptsNow.map(x => ({ value: x.id, label: x.name }))]
+      },
+      { name: 'brief', label: 'Or the brief, written here', value: d && d.brief ? d.brief : '', multiline: true, rows: 8, placeholder: 'Only used when no prompt is chosen above.' },
+      { name: 'branch', label: 'Branch it delivers on', value: d ? d.branch : '', placeholder: 'fix/the-thing' },
+      { name: 'contract', label: 'Contract (a file on this host, optional)', value: d && d.contract ? d.contract : '' },
+      {
+        name: 'worker',
+        label: 'Worked by',
+        value: d ? d.worker : 'claude',
+        options: [
+          { value: 'claude', label: 'Claude, run by the queue on a machine' },
+          { value: 'person', label: 'A person, in VS Code on a machine' },
+          { value: 'shell', label: 'A shell command, no model involved' }
+        ]
+      }
+    ],
+    confirm: d ? 'Save it' : 'Write it',
+    onYes: async f => {
+      const saved = await api('definedSave', { id: d ? d.id : undefined, ...f })
+      pickedPlan = 'defined:' + saved.id
+      been.set('planned', pickedPlan)
+      say(saved.created ? `"${saved.name}" written.` : `"${saved.name}" saved${saved.approved ? '' : ' — it needs approving again'}.`)
+      changed('planned', null); changed('planned-detail', null)
+      return draw()
+    }
+  })
+}
+
+$('defined-new').onclick = () => writeJob()
 
 // ONE DEFINITION, IN FULL, and what it would actually do.
 //
@@ -1055,7 +1260,13 @@ function paintDefinition (t) {
           }),
       t.approved
         ? el('button', {
-            className: 'btn small bad',
+            // NOT red. Red is for something that will not be there afterwards,
+            // and this deletes nothing -- it takes a permission back, and the
+            // thing it took it from can be read and approved again in a click.
+            // Colouring every consequential act red is how red stops meaning
+            // anything, which matters because two buttons away is one that does
+            // destroy something.
+            className: 'btn small',
             textContent: 'Withdraw approval',
             title: 'It stops being runnable until somebody reads it again',
             onclick: () => ask({
@@ -1065,7 +1276,6 @@ function paintDefinition (t) {
                 'Nothing is deleted. The definition stays where it is and can be read and approved again whenever it is wanted.'
               ],
               confirm: 'Withdraw it',
-              danger: true,
               onYes: async () => {
                 await api('plannedWithdraw', { suite: t.suite, name: t.name })
                 say(`Approval withdrawn for "${t.name}". It will not run until it is read again.`, 'warn')

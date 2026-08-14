@@ -18,7 +18,7 @@ const s = require('./shared')
 const {
   log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact, harness, approval,
-  archive, files, prompts, workspaces, queue, machines, provision, reach, editor, repos,
+  archive, files, prompts, defined, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
@@ -641,6 +641,103 @@ module.exports = {
         machine: back.name,
         note: `${back.note} #${task.number} is done and waiting to be judged — what it delivered is whatever reached "${task.branch}".`
       }
+    }
+  },
+
+  // ---- jobs worth doing more than once -----------------------------------
+  //
+  //     task <- defined-task <- prompt
+  //
+  // The middle one, and the only one of the three a person can write here. A
+  // prompt is the instruction; a defined task binds it to the circumstances --
+  // which branch it delivers on, which contract, which kind of worker.
+  //
+  // These are DATA, and that is what makes them writable. The ten drills beside
+  // them are JavaScript declared in tasks/planned.js, which the app requires at
+  // startup, so creating one of those from a window would mean generating code
+  // into a file a bad edit stops the dashboard booting with. One list, two kinds,
+  // and only one of them is a thing a window has any business writing.
+  defined: {
+    about: 'Jobs written down to be run again: what a worker is told, and where it delivers',
+    needs: 'workspace',
+    run: () => {
+      const list = defined.all()
+      const library = prompts.all()
+
+      // A job pointing at a prompt that is gone is worth saying out loud rather
+      // than discovering when it runs. Nothing repairs it here: which prompt it
+      // should point at instead is not a guess an action gets to make.
+      const rows = list.map(d => {
+        const from = d.promptId ? library.find(p => p.id === d.promptId) || null : null
+        return {
+          ...d,
+          prompt: from ? { id: from.id, name: from.name, hash: from.hash } : null,
+          missingPrompt: !!(d.promptId && !from),
+          // What a worker would actually be told, which is the prompt's text
+          // where there is one and the brief where there is not.
+          says: from ? from.text : (d.brief || '')
+        }
+      })
+
+      return {
+        defined: rows,
+        prompts: library.map(p => ({ id: p.id, name: p.name })),
+        where: defined.FILE(),
+        note: rows.length
+          ? 'A task made from one of these copies the words it was given, so improving a prompt never rewrites a task that already went out.'
+          : 'Nothing written down yet. A job is worth defining the moment you would write the same task a second time.'
+      }
+    }
+  },
+
+  definedSave: {
+    about: 'Write a job, or rewrite one. Written at the window it is approved by whoever wrote it; written over the wire it waits for a person',
+    needs: 'workspace',
+    takes: ['id', 'name', 'about', 'promptId', 'brief', 'branch', 'contract', 'worker', 'hours'],
+    run: ({ _overTheWire, ...fields }) => {
+      // WHO IS ASKING DECIDES APPROVAL, and this is `_overTheWire` meaning what
+      // it already means everywhere else here: a model may write one of these and
+      // may not ratify its own. Writing it at the window IS the reading.
+      const saved = defined.save(fields, _overTheWire ? 'the command line' : 'the window')
+      log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the job "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
+      return saved
+    }
+  },
+
+  definedApprove: {
+    about: 'Say a job is fit to run, having read it',
+    needs: 'workspace',
+    takes: ['id', 'note'],
+    run: ({ id, note, _overTheWire }) => {
+      // The same refusal `plannedApprove` makes, for the same reason: this socket
+      // is what a supervising model drives, and approval is a person ratifying
+      // what a model wrote.
+      if (_overTheWire) throw new Error('Approving is done in the window, by a person who has read it. A model may write one of these and may not approve its own.')
+      const done = defined.approve(id, note)
+      log.on('task').good(`job "${done.name}" approved`)
+      return done
+    }
+  },
+
+  definedWithdraw: {
+    about: 'Take approval back. Nothing is deleted; it stops being runnable',
+    needs: 'workspace',
+    takes: ['id'],
+    run: ({ id }) => {
+      const done = defined.withdraw(id)
+      log.on('task').warn(`approval withdrawn for "${done.name}"`)
+      return done
+    }
+  },
+
+  definedForget: {
+    about: 'Throw a job away. Tasks already made from it are untouched',
+    needs: 'workspace',
+    takes: ['id'],
+    run: ({ id }) => {
+      const gone = defined.forget(id)
+      log.on('task').warn(`job "${gone.name}" thrown away`)
+      return { ...gone, note: 'Any task made from it keeps the words it was given. This only removes the definition.' }
     }
   },
 

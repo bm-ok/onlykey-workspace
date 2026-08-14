@@ -317,12 +317,13 @@
          and reading them one at a time out of a dropdown is how a gap in the set
          goes unnoticed. -->
     <div class="pane" id="pane-planned">
-      <div class="sync-head">
-        <h2 id="planned-title">Pre-defined tasks <span class="muted" id="planned-context"></span></h2>
-      </div>
       <p class="note" id="planned-note"></p>
       <div class="cols">
         <div class="col narrow">
+          <h2 class="titlerow">
+            Pre-defined <span class="muted" id="planned-context"></span>
+            <button class="plus" id="defined-new" title="Write a job that can be run again">+</button>
+          </h2>
           <div id="planned-list" class="stack"></div>
         </div>
         <!-- THE WHOLE DEFINITION, not a summary of it. The question these are
@@ -340,15 +341,15 @@
          intention had four wordings. These are the kept ones, and a task is
          filled in from one rather than pointing at it. -->
     <div class="pane" id="pane-prompts">
-      <div class="sync-head">
-        <h2 id="prompts-title">Prompts <span class="muted" id="prompts-context"></span></h2>
-        <div class="sync-controls">
-          <button class="btn ok" id="prompt-new">Write one</button>
-        </div>
-      </div>
       <p class="note" id="prompts-note"></p>
       <div class="cols">
         <div class="col narrow">
+          <!-- The + belongs on the list it adds to, which is where it is
+               everywhere else here: branch cuts, PR cuts, machines, tasks. -->
+          <h2 class="titlerow">
+            Prompts <span class="muted" id="prompts-context"></span>
+            <button class="plus" id="prompt-new" title="Write a prompt">+</button>
+          </h2>
           <div id="prompts-list" class="stack"></div>
         </div>
         <div class="col wide">
