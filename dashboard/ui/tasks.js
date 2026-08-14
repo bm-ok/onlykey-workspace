@@ -159,12 +159,13 @@ async function pickTask (id, card) {
   // Cleared, not just re-skeletoned: the previous task's attempts and commits
   // sitting under a new task's heading is worse than an empty panel, because it
   // is readable and wrong.
-  for (const [box, shape] of [['task-detail', { lines: 6 }], ['task-history', { cards: 2 }], ['artifact', { cards: 2 }]]) {
+  for (const [box, shape] of [['task-detail', { lines: 6 }], ['task-history', { cards: 2 }], ['artifact', { cards: 2 }], ['handed', { cards: 1 }]]) {
     if (!$(box)) continue
     fill($(box), null)
     waiting(box, shape)
   }
   setText($('artifact-context'), '')
+  setText($('handed-context'), '')
 
   // THE SIGNATURES TOO, or the paint that follows compares against what it drew
   // for the last task and decides nothing has changed -- leaving the placeholder
@@ -614,7 +615,13 @@ function showLog (task, run) {
 function paintArtifact (task) {
   setText($('artifact-context'), task ? `— ${task.branch}` : '')
   if (!task) {
-    if (changed('artifact', null)) fill($('artifact'), el('p', { className: 'empty', textContent: 'Select a task.' }))
+    if (changed('artifact', null)) {
+      fill($('artifact'), el('p', { className: 'empty', textContent: 'Select a task.' }))
+      // Both panels, or the second keeps showing the last task's files under a
+      // heading that no longer refers to anything.
+      fill($('handed'), el('p', { className: 'empty', textContent: 'Select a task.' }))
+      setText($('handed-context'), '')
+    }
     return
   }
 
@@ -632,13 +639,21 @@ function paintArtifact (task) {
     if (!changed('artifact', [task.id, art, handed])) return
 
     const carrying = art.repos.filter(r => !r.missing && !r.empty)
-    fill($('artifact'),
-      el('p', { className: art.delivered ? 'note' : 'empty', textContent: art.summary }),
+    const kept = handed.files || []
 
-      // Above the repositories, because it is the part that is easy to miss:
-      // the branch cards are always there and say something either way, and a
-      // file is the thing that would otherwise go unnoticed entirely.
-      ...(handed.files || []).map(f => el('div', { className: 'card' },
+    // ITS OWN PANEL, not another card in the list of repositories. Sitting in
+    // that list it read as though it were one of them, when it is the opposite
+    // thing: a repository card is about commits a branch holds, and this is
+    // about a file no branch could hold, which is the entire reason handing one
+    // back exists.
+    setText($('handed-context'), kept.length
+      ? `— ${kept.length} file${kept.length === 1 ? '' : 's'}, ${kept.reduce((n, f) => n + (f.bytes || 0), 0) >= 1048576
+          ? `${(kept.reduce((n, f) => n + (f.bytes || 0), 0) / 1048576).toFixed(1)} MB`
+          : `${Math.max(1, Math.round(kept.reduce((n, f) => n + (f.bytes || 0), 0) / 1024))} KB`}`
+      : '')
+
+    fill($('handed'), kept.length
+      ? kept.map(f => el('div', { className: 'card' },
         el('div', { className: 'card-title' },
           el('span', { className: 'grow mono', textContent: f.name || f.file }),
           el('span', { className: 'badge ok', textContent: f.bytes >= 1048576 ? `${(f.bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(f.bytes / 1024))} KB` })),
@@ -678,7 +693,15 @@ function paintArtifact (task) {
                 return draw()
               }
             })
-          })))),
+          }))))
+      // SAID WHEN THERE IS NOTHING, rather than left blank. An empty panel and a
+      // panel whose answer is "none" look identical and mean opposite things --
+      // and here the difference is whether a run was supposed to produce
+      // something, so it says how one would.
+      : el('p', { className: 'empty', textContent: 'Nothing was handed over. A run hands a file back by calling "okc-artifact <file>", which is on its PATH — or, from a job, by awaiting artifact(file).' }))
+
+    fill($('artifact'),
+      el('p', { className: art.delivered ? 'note' : 'empty', textContent: art.summary }),
 
       // Reported per repository, including the ones with nothing, because "the
       // branch is not there" and "the branch is there and empty" mean different
