@@ -1039,6 +1039,65 @@ const STATE_BADGE = {
   rejected: 'bad'
 }
 
+// A CLICK IS ANSWERED BEFORE ANYTHING IS READ.
+//
+// Selecting a task used to set the selection and call draw(), and draw() reads
+// the branch's artifact, which reads git, which blocks this thread. So the whole
+// window locked, then unlocked showing the new task -- and for the length of the
+// freeze the screen still showed the OLD task, with the OLD row highlighted. It
+// looked like the click had not registered, which is the one thing a click must
+// never look like.
+//
+// Three things, in this order, and the order is the point:
+//
+//   1. the highlight moves, so the click is acknowledged instantly
+//   2. the panels about the old task are EMPTIED and given placeholders --
+//      emptied first, because `waiting` refuses to overwrite a panel that has
+//      something in it, which is right everywhere else and wrong here: what is
+//      in it belongs to a task nobody is looking at any more
+//   3. a frame is let through, so all of that is actually drawn, and only then
+//      is anything read
+//
+// The reading is no faster. It is just no longer the first thing that happens.
+async function pickTask (id, card) {
+  if (id === pickedTask) return
+  pickedTask = id
+  been.set('task', pickedTask)
+
+  // Moved here rather than left to the next paint, which is on the far side of
+  // the read this is trying to get in front of.
+  if (card && card.parentElement) {
+    card.parentElement.querySelectorAll('.card.pick').forEach(x => x.classList.toggle('on', x === card))
+  }
+
+  // Cleared, not just re-skeletoned: the previous task's attempts and commits
+  // sitting under a new task's heading is worse than an empty panel, because it
+  // is readable and wrong.
+  for (const [box, shape] of [['task-detail', { lines: 6 }], ['task-history', { cards: 2 }], ['artifact', { cards: 2 }]]) {
+    if (!$(box)) continue
+    fill($(box), null)
+    waiting(box, shape)
+  }
+  setText($('artifact-context'), '')
+
+  // THE SIGNATURES TOO, or the paint that follows compares against what it drew
+  // for the last task and decides nothing has changed -- leaving the placeholder
+  // up for ever, which is a worse failure than the one this replaced.
+  //
+  // History keeps its own, PER TASK, behind a ten-second guard meant to stop a
+  // guest round trip on every draw. Both have to go here: without the first,
+  // coming back to a task looked at a moment ago skips the read entirely; without
+  // the second, the read happens, matches what was drawn last time, and returns
+  // without filling anything.
+  for (const key of ['task-detail', 'artifact']) changed(key, null)
+  changed('history-' + id, null)
+  historyAt = 0
+
+  await settle()
+  if (view !== 'tasks') return
+  draw()
+}
+
 function paintTasks (queued) {
   Promise.all([api('tasks'), api('planned')]).then(([{ tasks }, plan]) => {
     taskList = tasks
@@ -1083,7 +1142,7 @@ function paintTasks (queued) {
         // like a control reads as broken, and is reported as "not selectable".
         ? tasks.map(t => el('div', {
             className: `card pick${t.id === pickedTask ? ' on' : ''}`,
-            onclick: () => { pickedTask = t.id; been.set('task', pickedTask); draw() }
+            onclick: ev => pickTask(t.id, ev.currentTarget)
           },
           el('div', { className: 'card-title' },
             el('span', {}, el('span', { className: 'muted mono', textContent: '#' + t.number + ' ' }), t.title),
@@ -2413,15 +2472,34 @@ const skelCard = () => el('div', { className: 'skel-card' }, skelLine(), skelLin
 // and the banner says so while it is on. See the action of the same name.
 let slowMs = 0
 
-const settle = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(async () => {
-  // THE ONE MOMENT NOTHING OUTSIDE CAN CATCH. The placeholder is on screen and
-  // nothing has been read yet, which is the state a screenshot asked for from
-  // the command line can never land on -- asking takes longer than it lasts. So
-  // it is taken here, by the window, at the moment it exists.
-  if (catchLoading) { const want = catchLoading; catchLoading = null; await takeShot(want.file) }
-  if (slowMs) return setTimeout(r, slowMs)
-  r()
-})))
+const settle = () => new Promise(r => {
+  let went = false
+  const go = async () => {
+    if (went) return
+    went = true
+    // THE ONE MOMENT NOTHING OUTSIDE CAN CATCH. The placeholder is on screen and
+    // nothing has been read yet, which is the state a screenshot asked for from
+    // the command line can never land on -- asking takes longer than it lasts.
+    // So it is taken here, by the window, at the moment it exists.
+    if (catchLoading) { const want = catchLoading; catchLoading = null; await takeShot(want.file) }
+    if (slowMs) return setTimeout(r, slowMs)
+    r()
+  }
+
+  requestAnimationFrame(() => requestAnimationFrame(go))
+
+  // AND A WAY OUT, because requestAnimationFrame is not a promise that something
+  // will happen. A window behind another window gets its frames throttled, and a
+  // minimised one gets none at all -- so waiting on frames alone means every
+  // panel that yields here stops loading whenever nobody is looking directly at
+  // it, and comes back stuck on a placeholder. Measured at thirteen seconds for
+  // two frames with this window merely covered.
+  //
+  // The frames are the PREFERRED path because they are what guarantees the
+  // placeholder was actually drawn. This is the floor under them: past a quarter
+  // of a second, reading late is better than not reading.
+  setTimeout(go, 250)
+})
 
 // A shot armed with when:'loading', waiting for the next placeholder to go up.
 let catchLoading = null
@@ -5955,11 +6033,13 @@ function shotIfAsked () {
     // board shows and an id is what every action takes.
     if (want.pick && view === 'tasks') {
       const t = (taskList || []).find(x => x.id === want.pick || String(x.number) === want.pick)
+      // THROUGH THE SAME DOOR A PERSON USES. This set the selection and repainted
+      // by hand, which meant the one path a click actually takes -- clear the
+      // panels, put placeholders up, let a frame through, then read -- was the
+      // one path no photograph could ever be of.
       if (t && pickedTask !== t.id) {
-        pickedTask = t.id
-        been.set('task', pickedTask)
         shotSettle = 2
-        paintTasks()
+        pickTask(t.id, null)
         return
       }
     }
