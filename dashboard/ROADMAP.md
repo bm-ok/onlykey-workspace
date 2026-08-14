@@ -236,6 +236,40 @@ runs, whoever is asking, and editing a prompt has to lapse every defined task
 that consumes it -- otherwise a definition that was read and approved quietly
 becomes a different instruction while still wearing its tick.
 
+**Written, approved, edited, removed -- all four, and approval is what makes the
+other three safe.** The drills already have the mechanism and it generalises
+exactly: `fingerprint` is a hash of the function's source, and approval records
+the hash it was given, so an edit makes a definition *lapse* rather than silently
+stay approved. A prompt is text, which hashes the same way. So:
+
+    create   a prompt or a defined task starts unapproved. It is written, and
+             nothing runs it until somebody has read it and said so
+    edit     changes the hash, which lapses it and everything that consumes it.
+             Not a warning to dismiss -- it stops running until re-read
+    approve  a person, in the window. `plannedApprove` already refuses over the
+             socket, because a model may write one and may not ratify its own
+    remove   refused while a defined task still consumes it, the same way a
+             workspace in use refuses to be forgotten. What is gone should be
+             gone because somebody meant it, not because nothing checked
+
+**The code drills stay read-only in the window.** They are declared in
+`tasks/planned.js` and the app requires that file at startup, so creating and
+removing them means generating and deleting JavaScript in a checked-in file that
+a bad edit stops the dashboard booting with. Editing them is a code change and
+should look like one. The window's job for those is what it does now: read them,
+approve them, withdraw approval, and say what running one would touch.
+
+**Build order, and the run comes last.** The prompt is the leaf -- nothing
+depends on it -- so it is first, and the record can be proved with nothing else
+moving:
+
+    1  defined prompts: the record, the tab, create / edit / remove / approve,
+       and the hash that makes an edit lapse it
+    2  defined tasks as data: the binding, consuming a prompt, the same four
+       acts, and the refusal to remove a prompt something still consumes
+    3  running one: it writes a task onto the board, carrying a COPY of what it
+       was given. Last, because until it exists nothing can be run by accident
+
 **Open, and worth settling before it is built:**
 
 * whether a defined task names a branch or a branch PATTERN. A reading job wants
