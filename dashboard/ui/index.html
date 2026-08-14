@@ -35,6 +35,10 @@
          to go and a token that may or may not reach it. -->
     <button class="tab" data-view="repos">Repositories</button>
     <button class="tab active" data-view="branches">Branches</button>
+    <!-- The outgoing counterpart of a branch cut: one act, one pull request per
+         repository, edited as one thing. Three descriptions of one change drift
+         apart the moment anybody edits one of them by hand. -->
+    <button class="tab" data-view="prcuts">PR cuts</button>
     <button class="tab" data-view="tasks">Tasks <span class="tab-badge hidden" id="tasks-badge"></span></button>
     <!-- The badge is what makes a tab you cannot see safe to have: output
          arriving behind it is announced, and a failure differently from
@@ -102,6 +106,70 @@
         <div class="pane active" id="pane-repos"><div id="repo-detail" class="panel"></div></div>
         <div class="pane" id="pane-issues"><div id="issue-detail"></div></div>
         <div class="pane" id="pane-pulls"><div id="pull-detail"></div></div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ---------------- PR cuts ----------------
+       A change, once it has left. One cut is one act -- a line proposed here,
+       pushed onward, and opened as a pull request in every repository that
+       carries work -- and it is edited as one thing from here afterwards.
+
+       This is the part GitHub cannot do. It has no idea the three are one
+       change: each repository sees its own, each is approved on its own, and
+       "is it in" cannot be answered by looking at any single one. -->
+  <section class="view" id="view-prcuts">
+
+    <div class="subtabs">
+      <button class="subtab active" data-pane="cuts">Overview</button>
+      <button class="subtab" data-pane="templates">Templates</button>
+    </div>
+
+    <div class="sync-head">
+      <h2 class="titlerow">
+        <span id="prcuts-title">PR cuts</span> <span class="muted" id="prcuts-context"></span>
+        <span class="grow"></span>
+        <button class="plus" id="add-prcut-open" title="Cut a pull request across every repository a line touches">+</button>
+      </h2>
+      <div class="sync-controls">
+        <button class="btn" id="prcuts-refresh">Read them from GitHub</button>
+      </div>
+    </div>
+    <p class="note" id="prcuts-note"></p>
+
+    <div class="pane active" id="pane-cuts">
+      <div class="cols">
+        <div class="col narrow"><div id="prcuts" class="stack"></div></div>
+        <div class="col wide"><div id="prcut-detail" class="panel"></div></div>
+      </div>
+    </div>
+
+    <!-- WHAT A PULL REQUEST SAYS BEYOND WHAT SOMEBODY TYPED. The things worth
+         having in a description are all things this app already knows and a
+         person would otherwise look up — and one of them, the links between
+         the pull requests in a change, cannot be written by anything else,
+         because the numbers do not exist until all of them are open.
+
+         The preview is composed from REAL facts about the pair of lines
+         chosen, not from placeholders: a preview of a layout says whether it
+         is pretty, and a preview of the actual sentences says whether they
+         are worth saying. -->
+    <div class="pane" id="pane-templates">
+      <div class="cols">
+        <div class="col narrow"><div id="prtemplate" class="stack"></div></div>
+        <div class="col wide">
+          <div class="sync-head" style="margin-bottom:8px">
+            <h2>Preview <span class="muted" id="prtemplate-context"></span></h2>
+            <div class="sync-controls">
+              <select id="prtemplate-source"></select>
+              <span class="change-into">into</span>
+              <select id="prtemplate-target"></select>
+              <select id="prtemplate-as"></select>
+            </div>
+          </div>
+          <div id="prtemplate-preview"></div>
+        </div>
       </div>
     </div>
 

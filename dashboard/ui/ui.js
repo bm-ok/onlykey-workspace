@@ -3863,6 +3863,374 @@ function newTaskFromIssue (i) {
   })
 }
 
+
+// ---- PR cuts -----------------------------------------------------------
+//
+// A change once it has left: one act, one pull request per repository, held
+// together and edited as one thing.
+//
+// GITHUB CANNOT DO THIS PART. It has no idea the three are one change — each
+// repository sees its own, each is approved on its own, and "is it in" cannot be
+// answered by looking at any single one of them. Nor can three descriptions of
+// one change stay in step by hand: the second repository ends up with last
+// week's title, and a reviewer reads a different story depending on which one
+// they happened to open.
+//
+// READ FROM GITHUB ON PURPOSE, never on the draw. Every state here is somebody
+// else's fact and a network call to learn — the same rule as the Repositories
+// tab, and the reason both have a button rather than a timer.
+let pickedCut = been.get('prcut', null)
+let cutsSeen = null
+
+let cutsAsking = false
+
+function paintCuts () {
+  // READ ONCE WHEN THE TAB IS OPENED, and not again until asked. Never on the
+  // draw: every line here is a network call to somebody else's service, and the
+  // window redraws every three seconds.
+  //
+  // Arriving at a tab that says "not read yet" and does nothing is a tab that
+  // looks broken — so the first look pays for itself, and every look after that
+  // is a button. The same trade as the Repositories tab, made once here rather
+  // than left to the person to notice.
+  if (view === 'prcuts' && cutsSeen === null && !cutsAsking) {
+    cutsAsking = true
+    refreshCuts().finally(() => { cutsAsking = false })
+    return
+  }
+
+  const rows = cutsSeen ? cutsSeen.cuts : null
+  if (cutPane !== 'cuts') return paintTemplates()
+  setText($('prcuts-context'), rows ? `— ${rows.length}` : '')
+  setText($('prcuts-note'), rows ? cutsSeen.note : 'Not read yet. "Read them from GitHub" asks what became of each one.')
+
+  if (!rows) {
+    if (changed('prcuts', 'unread')) {
+      fill($('prcuts'), el('p', { className: 'empty', textContent: 'Not read yet.' }))
+      fill($('prcut-detail'), el('p', { className: 'empty', textContent: 'Read them from GitHub to see what became of each cut.' }))
+    }
+    return
+  }
+
+  if (!rows.some(r => key(r) === pickedCut)) {
+    pickedCut = rows.length ? key(rows[0]) : null
+    been.set('prcut', pickedCut)
+  }
+
+  if (changed('prcuts', [rows, pickedCut])) {
+    fill($('prcuts'), rows.length
+      ? rows.map(r => el('div', {
+          className: `card pick${key(r) === pickedCut ? ' on' : ''}`,
+          onclick: () => { pickedCut = key(r); been.set('prcut', pickedCut); changed('prcuts', null); changed('prcut-detail', null); paintCuts() }
+        },
+        el('div', { className: 'card-title' },
+          el('span', { textContent: r.source }),
+          el('span', { className: `badge ${r.landed ? 'ok' : 'run'}`, textContent: r.landed ? 'landed' : r.summary })),
+        el('div', { className: 'card-sub muted', textContent: `into ${r.target}` }),
+        el('div', { className: 'card-sub muted', textContent: ago(r.opened) })))
+      : el('p', { className: 'empty', textContent: 'Nothing has been cut yet. Propose a line on the Lines tab, read it on Changes, then cut it with +.' }))
+  }
+
+  const one = rows.find(r => key(r) === pickedCut) || null
+  if (!changed('prcut-detail', one)) return
+  paintCutDetail(one)
+}
+
+const key = r => `${r.source} -> ${r.target}`
+
+function paintCutDetail (c) {
+  if (!c) return fill($('prcut-detail'), el('p', { className: 'empty', textContent: 'Pick a cut on the left.' }))
+
+  const said = c.said || {}
+  fill($('prcut-detail'),
+    el('div', { className: 'card-title' },
+      el('span', { textContent: said.title || c.source }),
+      el('span', { className: `badge ${c.landed ? 'ok' : 'run'}`, textContent: c.summary })),
+    el('p', { className: 'note', textContent: `"${c.source}" into "${c.target}", cut ${ago(c.opened)}${c.by ? ` from ${c.by}` : ''}. It is landed when every one of these is merged — not before, and not because one of them is.` }),
+
+    el('div', { className: 'stack' }, ...c.pulls.map(p => el('div', { className: 'card' },
+      el('div', { className: 'card-title' },
+        el('span', { className: 'mono', textContent: p.repo }),
+        p.number ? el('span', { className: 'mono muted', textContent: `#${p.number}` }) : null,
+        el('span', {
+          className: `badge ${p.merged ? 'ok' : p.state === 'closed' ? 'bad' : p.number ? 'run' : 'warn'}`,
+          textContent: p.merged ? 'merged' : (p.state || 'never opened')
+        })),
+      p.head ? el('div', { className: 'card-sub mono', textContent: `${p.head} → ${p.base}` }) : null,
+      p.why ? el('div', { className: 'card-sub bad', textContent: p.why }) : null,
+      p.url
+        ? el('div', { className: 'row', style: 'margin-top:6px' },
+            el('button', { className: 'btn small', textContent: 'Read it on GitHub', onclick: () => nw.Shell.openExternal(p.url) }))
+        : null))),
+
+    el('div', { className: 'row', style: 'margin-top:12px' },
+      el('button', {
+        className: 'btn ok',
+        textContent: 'Edit all of them',
+        title: 'One title and one description, written to every pull request in this cut',
+        onclick: () => editCut(c)
+      }),
+      el('button', {
+        className: 'btn',
+        textContent: 'Read them again',
+        onclick: () => refreshCuts()
+      }),
+      el('button', {
+        className: 'btn danger',
+        textContent: c.pulls.some(p => p.state === 'open') ? 'Close all of them' : 'Reopen all of them',
+        onclick: () => setCutState(c, c.pulls.some(p => p.state === 'open') ? 'closed' : 'open')
+      }),
+      el('button', {
+        className: 'btn danger',
+        textContent: 'Stop tracking it',
+        title: 'Forgets the cut here. Nothing on GitHub is closed or changed',
+        onclick: () => ask({
+          title: `Stop tracking "${c.source}" into "${c.target}"?`,
+          plain: [
+            'The pull requests are untouched — none is closed, none is changed, and each carries on being read on GitHub.',
+            'What is lost is holding them together: nothing here will say "2 of 3 merged" about them again, and editing all of them at once stops being possible.'
+          ],
+          confirm: 'Stop tracking it',
+          danger: true,
+          onYes: async () => {
+            const r = await api('prCutForget', { source: c.source, target: c.target })
+            pickedCut = null
+            cutsSeen = null
+            changed('prcuts', null)
+            say(r.note)
+            return refreshCuts()
+          }
+        })
+      })))
+}
+
+// ONE TITLE AND ONE DESCRIPTION, WRITTEN TO ALL OF THEM. This is what "one pull
+// request in the dashboard updates all three" means, and it is the only reliable
+// way three descriptions of one change stay the same sentence.
+function editCut (c) {
+  const said = c.said || {}
+  ask({
+    title: 'Edit every pull request in this cut',
+    plain: [
+      `${c.pulls.filter(p => p.number).length} pull request(s) are changed, in ${c.pulls.filter(p => p.number).map(p => p.repo).join(', ')}.`,
+      'Leave a field as it is to leave it alone. What is written here is this app\'s statement of the change; whether each one is open or merged stays GitHub\'s and is read back rather than set here.'
+    ],
+    fields: [
+      { name: 'title', label: 'Title', value: said.title || '', placeholder: 'the same sentence on all of them' },
+      { name: 'body', label: 'Description', value: said.body || '', multiline: true, rows: 10, placeholder: 'what this change is, written once' }
+    ],
+    confirm: 'Write it to all of them',
+    onYes: async f => {
+      const r = await api('prCutUpdate', { source: c.source, target: c.target, title: f.title, body: f.body })
+      say(r.note, r.changed.some(x => !x.ok) ? 'bad' : undefined)
+      return refreshCuts()
+    }
+  })
+}
+
+function setCutState (c, state) {
+  const open = state === 'open'
+  ask({
+    title: open ? 'Reopen every pull request in this cut?' : 'Close every pull request in this cut?',
+    plain: [
+      open
+        ? 'Each one is reopened on GitHub. Nothing is merged and no branch moves.'
+        : 'Each one is closed on GitHub. Nothing is merged, no branch moves, and the work stays on its branch.',
+      // CLOSING TWO OF THREE IS THE STATE WORTH AVOIDING: a change that is
+      // neither in nor withdrawn, with one still open for somebody to merge by
+      // accident a month later.
+      'All of them together, because a change half-closed is neither in nor withdrawn — and the one still open is the one somebody merges by accident later.'
+    ],
+    confirm: open ? 'Reopen all' : 'Close all',
+    danger: !open,
+    onYes: async () => {
+      const r = await api('prCutUpdate', { source: c.source, target: c.target, state })
+      say(r.note, r.changed.some(x => !x.ok) ? 'bad' : undefined)
+      return refreshCuts()
+    }
+  })
+}
+
+// CUTTING ONE, FROM A LINE.
+//
+// The source is a line and not a branch, because a line is what a change IS
+// here: one branch per repository, named together. And only the repositories
+// that actually carry something get a pull request — a change that touched two
+// of three should not open an empty one in the third, which is a pull request
+// nobody can review and a notification nobody can act on.
+//
+// The dialog reads the comparison first and shows exactly which repositories
+// will get one, because "3 of 3" and "2 of 3, local-repo-b has nothing" are
+// different acts and only one of them is what somebody meant.
+async function newPrCut () {
+  const { groups } = await api('lines').catch(() => ({ groups: [] }))
+  const usable = (groups || []).filter(g => !g.broken.length)
+  if (usable.length < 2) {
+    return ask({
+      title: 'There is nothing to cut yet',
+      plain: [
+        usable.length ? 'Only one line is named, and a pull request goes from one line into another.' : 'No lines are named yet.',
+        'Name them on the Lines tab: one branch per repository, given a name. Then a change is a line going into another line.'
+      ],
+      confirm: 'Go to the lines',
+      onYes: () => { showTab('branches'); const t = document.querySelector('#view-branches .subtab[data-pane="baselines"]'); if (t) t.click() }
+    })
+  }
+
+  const from = usable.find(g => g.marked) || usable[0]
+  const into = pickTargetFor(from.name, usable)
+
+  ask({
+    title: 'Cut a pull request',
+    plain: [
+      'One act, one pull request per repository, edited afterwards as one thing.',
+      'Only repositories that carry something get one. A change that touched two of three should not open an empty pull request in the third — nobody can review it and nobody can act on it.',
+      'The branch is pushed onward first, from this host. No machine is ever handed the token.'
+    ],
+    fields: [
+      { name: 'source', label: 'This line', value: from.name, options: usable.map(g => ({ value: g.name, label: `${g.name}${g.marked ? ' — proposed' : ''}` })) },
+      { name: 'target', label: 'goes into', value: into ? into.name : '', options: usable.map(g => ({ value: g.name, label: g.name })) },
+      { name: 'title', label: 'Called', placeholder: 'the same sentence on every one of them' },
+      { name: 'body', label: 'What it is', multiline: true, rows: 8, placeholder: 'Left blank, this says which line went where and how many commits each repository carries.' }
+    ],
+    cost: 'This pushes branches to GitHub and opens pull requests. Both are visible to anyone who can see those repositories.',
+    confirm: 'Push and open them',
+    onYes: async f => {
+      if (f.source === f.target) throw new Error('A line cannot go into itself. Pick a different one to land in.')
+      const r = await api('prCutMake', { source: f.source, target: f.target, title: f.title, body: f.body })
+      pickedCut = `${f.source} -> ${f.target}`
+      been.set('prcut', pickedCut)
+      say(r.note, r.pulls.some(p => !p.opened) ? 'bad' : undefined)
+      return refreshCuts()
+    }
+  })
+}
+
+// WHICH LINE A CHANGE WOULD GO INTO, guessed well enough to be right most of the
+// time and never silently wrong: not merely a different name, but a line naming
+// DIFFERENT BRANCHES -- two lines can name the same ones, and a pair like that
+// carries nothing by construction. A line nobody has proposed is preferred,
+// because a proposal goes into something settled rather than into another
+// proposal.
+function pickTargetFor (sourceName, lines) {
+  const from = lines.find(g => g.name === sourceName)
+  const same = g => from && g.on.length === from.on.length &&
+    g.on.every(p => from.on.some(q => q.repo === p.repo && q.branch === p.branch))
+  const others = lines.filter(g => g.name !== sourceName && !same(g))
+  return others.find(g => !g.marked) || others[0] || null
+}
+
+function refreshCuts () {
+  return api('prCuts').then(r => {
+    cutsSeen = r
+    changed('prcuts', null)
+    changed('prcut-detail', null)
+    paintCuts()
+  }).catch(oops)
+}
+
+
+// ---- what a pull request says ------------------------------------------
+//
+// The blocks that are on, and what a real pull request would say with them.
+//
+// THE PREVIEW IS MADE OF REAL FACTS, not placeholders. A preview of a layout
+// tells you whether it looks tidy; a preview of the actual sentences tells you
+// whether they are worth saying — which is the only question a template raises.
+// The one thing it cannot know is the pull request numbers, because those do not
+// exist until the cut is made, so it shows them as ? and says so.
+let cutPane = been.get('prcut-pane', 'cuts')
+let tmplFrom = been.get('tmpl-from', null)
+let tmplInto = been.get('tmpl-into', null)
+let tmplAs = null
+
+document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(t => {
+  t.onclick = () => {
+    cutPane = t.dataset.pane
+    been.set('prcut-pane', cutPane)
+    document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
+    document.querySelectorAll('#view-prcuts .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${cutPane}`))
+    setText($('prcuts-title'), cutPane === 'templates' ? 'What every pull request says' : 'PR cuts')
+    changed('prtemplate', null)
+    paintTemplates()
+  }
+})
+;(() => {
+  const t = document.querySelector(`#view-prcuts .subtab[data-pane="${cutPane}"]`)
+  if (!t) { cutPane = 'cuts'; return }
+  document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
+  document.querySelectorAll('#view-prcuts .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${cutPane}`))
+})()
+
+function paintTemplates () {
+  if (view !== 'prcuts' || cutPane !== 'templates') return
+
+  Promise.all([api('prTemplate'), api('lines').catch(() => ({ groups: [] }))]).then(([t, { groups }]) => {
+    const usable = (groups || []).filter(g => !g.broken.length)
+
+    if (changed('prtemplate', [t.blocks, usable.map(g => g.name), tmplFrom, tmplInto])) {
+      fill($('prtemplate'), el('div', {},
+        el('p', { className: 'note', textContent: t.note }),
+        ...t.blocks.map(b => el('div', { className: `card pick${b.on ? ' on' : ''}` },
+          el('label', { className: 'inline', style: 'align-items:flex-start;gap:8px' },
+            el('input', {
+              type: 'checkbox',
+              checked: b.on,
+              onchange: e => api('prTemplateSet', { id: b.id, on: e.target.checked })
+                .then(() => { changed('prtemplate', null); changed('prtemplate-preview', null); paintTemplates() })
+                .catch(oops)
+            }),
+            el('span', {},
+              el('div', { className: 'card-title' },
+                el('span', { textContent: b.label }),
+                b.manyOnly ? el('span', { className: 'badge muted', textContent: 'only when several repositories' }) : null),
+              el('div', { className: 'card-sub muted', textContent: b.about })))))))
+
+      // Which pair is being previewed. Defaulted to a proposed line going into
+      // one that is not, because that is the pair somebody is about to cut.
+      if (!usable.some(g => g.name === tmplFrom)) tmplFrom = (usable.find(g => g.marked) || usable[0] || {}).name || null
+      if (!usable.some(g => g.name === tmplInto) || tmplInto === tmplFrom) {
+        tmplInto = (pickTargetFor(tmplFrom, usable) || {}).name || null
+      }
+      been.set('tmpl-from', tmplFrom)
+      been.set('tmpl-into', tmplInto)
+
+      const pick = (box, value, onPick) => {
+        fill($(box), ...usable.map(g => el('option', { value: g.name, textContent: g.name, selected: g.name === value })))
+        $(box).onchange = () => { onPick($(box).value); changed('prtemplate', null); changed('prtemplate-preview', null); paintTemplates() }
+      }
+      pick('prtemplate-source', tmplFrom, v => { tmplFrom = v; been.set('tmpl-from', v) })
+      pick('prtemplate-target', tmplInto, v => { tmplInto = v; been.set('tmpl-into', v) })
+    }
+
+    if (!tmplFrom || !tmplInto || tmplFrom === tmplInto) {
+      setText($('prtemplate-context'), '')
+      return fill($('prtemplate-preview'), el('p', { className: 'empty', textContent: 'Two different lines are needed to preview what a pull request between them would say.' }))
+    }
+
+    api('prTemplatePreview', { source: tmplFrom, target: tmplInto, repo: tmplAs || undefined })
+      .then(v => {
+        if (!changed('prtemplate-preview', v)) return
+        setText($('prtemplate-context'), v.note || '')
+
+        // WHICH REPOSITORY'S COPY. They differ only where a block is about the
+        // others — the cross-links — and that difference is the whole point of
+        // being able to look at one rather than an average of them.
+        fill($('prtemplate-as'), ...(v.repos || []).map(r => el('option', { value: r, textContent: `as ${r}`, selected: r === v.showing })))
+        $('prtemplate-as').onchange = () => { tmplAs = $('prtemplate-as').value; changed('prtemplate-preview', null); paintTemplates() }
+
+        fill($('prtemplate-preview'), v.text
+          ? el('div', {},
+              el('div', { className: 'card', style: 'margin-bottom:8px' },
+                el('div', { className: 'card-title' }, el('span', { textContent: v.title })),
+                el('div', { className: 'card-sub muted', textContent: 'The title. One sentence on every pull request in the cut.' })),
+              codeBlock(v.text, 'markdown', { lines: 30 }))
+          : el('p', { className: 'empty', textContent: v.note }))
+      })
+      .catch(e => fill($('prtemplate-preview'), el('p', { className: 'empty bad', textContent: e.message })))
+  }).catch(() => { /* the tab beside it says when the dashboard is unreachable */ })
+}
+
 // ---- the machines ----------------------------------------------------
 //
 // Only machines this app made ever appear here. Anything else on the host is
@@ -4624,6 +4992,8 @@ $('add-group-open').onclick = newGroup
 // and its button, and they are gone: a terminal is started from a task now. The
 // sign-in line follows the front tab instead of the picker, which is repainted
 // by showShell rather than by an onchange.
+$('prcuts-refresh').onclick = () => refreshCuts()
+$('add-prcut-open').onclick = () => newPrCut()
 $('repos-check').onclick = () => api('repositoriesCheck')
   .then(r => { changed('repos', null); say(r.note, r.repos.some(x => x.reachable !== true || x.why) ? 'bad' : undefined); return draw() })
   .catch(oops)
@@ -4976,6 +5346,8 @@ async function drawOnce () {
   }
 
   paintRepos()
+  paintCuts()
+  paintTemplates()
   paintVms()
   paintKeys()
   paintGithub()
@@ -5051,6 +5423,12 @@ function shotIfAsked () {
         paintTasks()
         return
       }
+    }
+
+    // The PR cuts tab: which of its two readings is open.
+    if (want.pick && view === 'prcuts' && ['cuts', 'templates'].includes(want.pick) && cutPane !== want.pick) {
+      const t = document.querySelector(`#view-prcuts .subtab[data-pane="${want.pick}"]`)
+      if (t) { t.click(); shotSettle = 3; return }
     }
 
     // The Repositories tab has two selections: which sub-tab, and which

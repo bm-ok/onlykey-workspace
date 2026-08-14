@@ -359,6 +359,16 @@ function groupFromBranch (branch, { name = null, why = null } = {}) {
   if (!row.in.length) throw new Error(`"${branch}" is not in any repository here, so there is no line to make from it.`)
 
   const title = String(name || branch).trim()
+
+  // A LINE THAT ALREADY EXISTS UNDER ANOTHER NAME is not a second line, it is
+  // the same one twice -- and two of them make every comparison between them
+  // carry nothing, which reads as a broken change rather than as a duplicate.
+  const same = groups().find(g => g.name !== title &&
+    g.on.length === row.in.length && g.on.every(p => p.branch === branch && row.in.includes(p.repo)))
+  if (same) {
+    throw new Error(`"${same.name}" already names exactly these branches. Two lines naming the same branches carry nothing between them, so a change from one into the other would always be empty — use that one, or forget it first.`)
+  }
+
   return saveGroup(title, {
     on: Object.fromEntries(row.in.map(repo => [repo, branch])),
     why: why || `the "${branch}" line`

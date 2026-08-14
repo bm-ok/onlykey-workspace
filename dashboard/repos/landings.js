@@ -51,6 +51,18 @@ function record (source, target, pulls, by = null) {
   return data[k]
 }
 
+// What was ASKED FOR, kept because it is ours. A title and a description are
+// this app's statement of the change; whether a pull request is open is
+// GitHub's, and is re-read every time rather than written down here.
+function describe (source, target, fields) {
+  const data = all()
+  const k = key(source, target)
+  if (!data[k]) return null
+  data[k] = { ...data[k], said: { ...(data[k].said || {}), ...fields, at: new Date().toISOString() } }
+  keep(data)
+  return data[k]
+}
+
 function forget (source, target) {
   const data = all()
   delete data[key(source, target)]
@@ -90,4 +102,4 @@ async function state (source, target) {
   }
 }
 
-module.exports = { record, forget, state, all, key }
+module.exports = { record, describe, forget, state, all, key }

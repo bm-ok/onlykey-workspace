@@ -23,6 +23,7 @@ const secret = require('./core/secret')
 const github = require('./core/github')
 const remotes = require('./repos/remotes')
 const landings = require('./repos/landings')
+const prtemplate = require('./repos/prtemplate')
 const vbox = require('./machines/vbox')
 const vms = require('./machines/vms')
 const provisioner = require('./machines/provisioner')
@@ -2296,7 +2297,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
   //
   // ONE LANDING, N PULL REQUESTS. GitHub has no idea the three are one change,
   // so holding them together is the part only this can do.
-  changeOpen: {
+  prCutMake: {
     about: 'Push a line onward and open a pull request per repository, tracked together as one landing',
     takes: ['source', 'target', 'title', 'body', 'into'],
     run: async ({ source, target, title, body, into, _overTheWire }) => {
@@ -2309,10 +2310,12 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
       if (!carrying.length) throw new Error(`"${pair.source.name}" carries nothing that "${pair.target.name}" does not already have.`)
 
       const said = String(title || '').trim() || pair.source.name
-      const because = String(body || '').trim() ||
-        `The "${pair.source.name}" line, into "${pair.target.name}".\n\n` +
-        carrying.map(c => `- ${c.repo}: ${c.ahead} commit(s) on ${c.head}`).join('\n') +
-        '\n\nOpened from the dashboard. These are one change across several repositories; it has landed when all of them have.'
+      // WHAT SOMEBODY TYPED, PLUS WHAT THIS APP ALREADY KNOWS. The blocks that
+      // are on are written from facts nobody should have to look up -- why the
+      // branch was cut, what the task asked for, which commit each repository
+      // ends at. See repos/prtemplate.js.
+      const context = prtemplate.about(pair.source.name, pair.target.name)
+      const typed = String(body || '').trim()
 
       const done = []
       for (const c of carrying) {
@@ -2330,14 +2333,35 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
           continue
         }
 
-        const pr = await remotes.openPull(c.repo, { branch: c.head, base: c.base, title: said, body: because, into: into || null })
+        const pr = await remotes.openPull(c.repo, {
+          branch: c.head,
+          base: c.base,
+          title: said,
+          body: prtemplate.composeFor(typed, context, c.repo),
+          into: into || null
+        })
         if (pr.opened) log.on('git', c.repo).good(`pull request #${pr.number} into ${pr.into} — ${pr.url}`)
         else log.on('git', c.repo)[pr.already ? 'warn' : 'bad'](`no pull request opened: ${pr.why}`)
         done.push(pr)
       }
 
-      const record = landings.record(pair.source.name, pair.target.name, done, _overTheWire ? 'the command line' : 'the window')
+      // THE SECOND PASS, and the reason a cut is worth being a thing.
+      //
+      // Cross-links are numbers that did not exist when the first pull request
+      // was opened -- each one can only name the others once all of them are
+      // there. So they are opened, and then every one of them is written again
+      // with the full set. Nothing outside this app is in a position to do that.
       const opened = done.filter(d => d.opened)
+      if (opened.length > 1 && prtemplate.on().crosslinks) {
+        const withLinks = { ...context, pulls: opened.map(o => ({ repo: o.repo, number: o.number, url: o.url })) }
+        for (const o of opened) {
+          const r = await remotes.updatePull(o.repo, o.number, { body: prtemplate.composeFor(typed, withLinks, o.repo) })
+          if (!r.ok) log.on('git', o.repo).warn(`opened, but the links to the others were not added: ${r.why}`)
+        }
+        log.on('git').good(`${opened.length} pull requests now name each other`)
+      }
+
+      const record = landings.record(pair.source.name, pair.target.name, done, _overTheWire ? 'the command line' : 'the window')
       return {
         source: pair.source.name,
         target: pair.target.name,
@@ -2350,7 +2374,7 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
     }
   },
 
-  changeLanding: {
+  prCutState: {
     about: 'What became of a change that was sent out: each pull request, read from GitHub',
     takes: ['source', 'target'],
     run: async ({ source, target }) => {
@@ -2362,6 +2386,136 @@ echo okc-rotated`, { what: 'taking a new token', timeout: 60000 })
           ? `Landed: all ${at.count} pull request(s) are merged.`
           : `${at.summary}. It is not landed until every one of them is.`
       }
+    }
+  },
+
+
+
+  prTemplate: {
+    about: 'What a pull request says beyond what somebody typed: the blocks that are on, and what each adds',
+    run: () => ({
+      blocks: prtemplate.blocks(),
+      note: 'Every block is off until it is turned on. A description that adds things nobody asked for is one people stop reading.'
+    })
+  },
+
+  prTemplateSet: {
+    about: 'Turn a template block on or off',
+    takes: ['id', 'on'],
+    run: ({ id, on }) => {
+      if (!prtemplate.BLOCKS.some(b => b.id === id)) {
+        throw new Error(`There is no block called "${id}". There is: ${prtemplate.BLOCKS.map(b => b.id).join(', ')}.`)
+      }
+      const want = on === true || on === 'true' || on === 1 || on === '1'
+      prtemplate.set({ [id]: want })
+      log.on('git').info(`pull request template: ${id} ${want ? 'on' : 'off'}`)
+      return { blocks: prtemplate.blocks(), note: `"${id}" is ${want ? 'on' : 'off'}.` }
+    }
+  },
+
+  // WRITTEN FROM REAL FACTS, not from a sample. A preview made of placeholders
+  // shows whether the layout is pretty; this shows whether the thing it will
+  // actually say is worth saying.
+  prTemplatePreview: {
+    about: 'What a pull request would say for a given pair of lines, composed from the blocks that are on',
+    takes: ['source', 'target', 'title', 'body', 'repo'],
+    run: ({ source, target, title, body, repo }) => {
+      const context = prtemplate.about(source, target)
+      if (!context) throw new Error('Those two lines are not both named here.')
+      if (!context.repos.length) return { text: '', repos: [], note: `"${source}" carries nothing that "${target}" does not already have, so no pull request would be opened.` }
+
+      // Cross-links are shown with the numbers a cut WOULD get, marked as such,
+      // because pretending to know them would be the one dishonest thing a
+      // preview could do.
+      const pretend = context.repos.map(r => ({ repo: r.repo, number: '?', url: `https://github.com/…/pull/?  (${r.repo})` }))
+      const on = context.repos.map(r => r.repo)
+      const which = repo && on.includes(repo) ? repo : on[0]
+
+      return {
+        repos: on,
+        showing: which,
+        text: prtemplate.composeFor(String(body || '').trim(), { ...context, pulls: pretend }, which),
+        title: String(title || '').trim() || source,
+        note: `As ${which} would read it. ${on.length} repositor${on.length === 1 ? 'y' : 'ies'} carry work: ${on.join(', ')}.`
+      }
+    }
+  },
+
+  prCuts: {
+    about: 'Every PR cut: one act, one pull request per repository, and how far each has got',
+    run: async () => {
+      const all = landings.all()
+      const rows = []
+      for (const k of Object.keys(all)) {
+        const at = await landings.state(all[k].source, all[k].target)
+        if (at) rows.push(at)
+      }
+      return {
+        cuts: rows,
+        note: rows.length
+          ? `${rows.filter(r => r.landed).length} of ${rows.length} landed.`
+          : 'Nothing has been cut yet. A PR cut is made from a proposed line on the Changes tab.'
+      }
+    }
+  },
+
+  // CHANGING ALL OF THEM AT ONCE, which is the whole reason a cut is a thing.
+  //
+  // Three pull requests describing one change drift apart the moment one of them
+  // is edited, and then a reviewer reads a different story depending on which
+  // repository they happened to open. Nobody keeps three descriptions in step by
+  // hand; this is what "one PR in the dashboard updates all three" means.
+  prCutUpdate: {
+    about: 'Change the title, the description, or the state of every pull request in a cut at once',
+    takes: ['source', 'target', 'title', 'body', 'state'],
+    run: async ({ source, target, title, body, state }) => {
+      const rec = landings.all()[landings.key(source, target)]
+      if (!rec) throw new Error(`Nothing has been cut from "${source}" into "${target}".`)
+
+      const fields = {}
+      if (title != null && String(title).trim()) fields.title = String(title).trim()
+      if (body != null) fields.body = String(body)
+      if (state) {
+        const want = String(state).toLowerCase()
+        if (want !== 'open' && want !== 'closed') throw new Error('A pull request is "open" or "closed".')
+        fields.state = want
+      }
+      if (!Object.keys(fields).length) throw new Error('Nothing to change. Give a title, a description, or a state.')
+
+      const done = []
+      for (const p of rec.pulls) {
+        if (!p.number) { done.push({ repo: p.repo, ok: false, why: 'never opened' }); continue }
+        const r = await remotes.updatePull(p.repo, p.number, fields)
+        log.on('git', p.repo)[r.ok ? 'good' : 'bad'](r.ok
+          ? `#${p.number} updated`
+          : `#${p.number} not updated: ${r.why}`)
+        done.push(r)
+      }
+
+      // KEPT ONLY WHERE IT IS OURS TO KEEP. The title and body of the cut are
+      // this app's record of what was asked for; whether a pull request is open
+      // is GitHub's, and is re-read rather than written down.
+      landings.describe(source, target, fields)
+
+      const ok = done.filter(d => d.ok)
+      return {
+        source,
+        target,
+        changed: done,
+        note: ok.length === done.length
+          ? `All ${ok.length} updated.`
+          : `${ok.length} of ${done.length} updated. ${done.filter(d => !d.ok).map(d => `${d.repo}: ${d.why}`).join('; ')}`
+      }
+    }
+  },
+
+  prCutForget: {
+    about: 'Stop tracking a PR cut here. The pull requests on GitHub are untouched',
+    takes: ['source', 'target'],
+    run: ({ source, target }) => {
+      const gone = landings.forget(source, target)
+      log.on('git').warn(`stopped tracking the PR cut ${gone.forgotten}`)
+      return { ...gone, note: 'Forgotten here. Nothing on GitHub was closed or changed — this only stops holding them together.' }
     }
   },
 

@@ -383,6 +383,27 @@ async function openPull (repo, { branch, base, title, body, into = null }) {
   return { repo, opened: false, already, why: said, into: target, head, base }
 }
 
+// CHANGING ONE OF THEM, which is the point of holding N as one.
+//
+// A pull request cut across three repositories is one piece of work with three
+// descriptions of it, and keeping those three in step by hand is the thing
+// nobody does — so the second repository ends up with last week's title and a
+// reviewer reads a different story depending on which one they opened.
+//
+// `state` is here too, because closing a change means closing all of it. Closing
+// two of three leaves a change that is neither in nor withdrawn, and the one
+// still open is the one somebody merges by accident a month later.
+async function updatePull (repo, number, fields) {
+  const note = seen()[repo] || {}
+  const remote = remoteOf(repo)
+  if (!remote) throw new Error(`"${repo}" has no remote.`)
+  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
+
+  const r = await github.call('PATCH', `/repos/${into[0]}/${into[1]}/pulls/${number}`, fields)
+  if (r.status === 200) return { repo, number, ok: true, state: r.body.state, url: r.body.html_url }
+  return { repo, number, ok: false, why: (r.body && r.body.message) || `GitHub answered ${r.status}` }
+}
+
 // Everything open on a repository right now, so a landing can be re-read rather
 // than remembered. What GitHub says about a pull request outranks what was
 // written down here when it was opened.
@@ -459,4 +480,4 @@ async function gather (only = null) {
   return rows
 }
 
-module.exports = { read, check, gather, remoteOf, parse, pushBranch, openPull, pullsOn, issuesOn }
+module.exports = { read, check, gather, remoteOf, parse, pushBranch, openPull, updatePull, pullsOn, issuesOn }
