@@ -274,7 +274,14 @@ h2:first-child { margin-top: 0; }
 .dlg-tab.active { color: var(--text); border-bottom-color: var(--accent); }
 .dlg-tab:hover { color: var(--text); }
 .dlg-actions { display: flex; gap: 8px; justify-content: flex-end; flex: none; padding-top: 12px; }
-.dlg input, .dlg select, .dlg textarea {
+/* FORM CONTROLS, WHEREVER A FORM IS. These were .dlg-only, from when every
+   form in this window was a modal. Writing a task is a pane now, and without
+   this its inputs fell back to the browser's defaults -- a title box sized to
+   nothing next to a select sized to its longest option, in a column neither of
+   them filled. A form should look the same wherever it is; where it is, is a
+   question about how much room it deserves, not about what an input looks like. */
+.dlg input, .dlg select, .dlg textarea,
+.form input, .form select, .form textarea {
   width: 100%;
   background: #0d1117;
   border: 1px solid var(--line);
@@ -285,7 +292,7 @@ h2:first-child { margin-top: 0; }
   font-size: 12px;
   margin-bottom: 10px;
 }
-.dlg label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+.dlg label, .form label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
 
 /* ---------- layout ---------- */
 
@@ -451,7 +458,7 @@ label.inline { display: inline-flex; align-items: center; gap: 5px; font-size: 1
 /* A brief is read while it is being judged, so it gets room without taking the
    panel over. */
 .console.short { max-height: 14rem; white-space: pre-wrap; word-break: break-word; margin: 0; }
-.dlg textarea { resize: vertical; min-height: 6rem; font-family: var(--mono); }
+.dlg textarea, .form textarea { resize: vertical; min-height: 6rem; font-family: var(--mono); }
 .line { display: flex; gap: 10px; white-space: pre-wrap; word-break: break-word; }
 .line .t { color: var(--muted); opacity: .65; flex: none; }
 .line .g { color: var(--muted); flex: none; }

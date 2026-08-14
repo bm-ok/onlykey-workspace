@@ -196,6 +196,7 @@ async function drawOnce () {
   paintTerminal()
   paintBranches()
   paintTasks(running)
+  paintAddTask()
   paintJobs()
   paintPrompts()
   paintContracts()
@@ -283,7 +284,7 @@ function shotIfAsked () {
     // Jobs, Prompts or Contracts was a photograph of whichever one had been left
     // open, which is exactly the "measure before claiming" fault: a picture that
     // looks like evidence and is of somewhere else.
-    if (want.pick && view === 'tasks' && ['board', 'jobs', 'prompts', 'contracts'].includes(want.pick) && taskPane !== want.pick) {
+    if (want.pick && view === 'tasks' && ['board', 'add', 'jobs', 'prompts', 'contracts'].includes(want.pick) && taskPane !== want.pick) {
       const t = document.querySelector(`#view-tasks .subtab[data-pane="${want.pick}"]`)
       if (t) {
         shotSettle = 2

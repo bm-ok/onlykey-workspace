@@ -152,6 +152,33 @@ function externalLink (url) {
 //
 // Each tab is `{ label, plain, cost, fields, confirm, danger, onYes }` and the
 // outer arguments are the first tab's defaults.
+// A row per field, and the inputs by name.
+//
+// Lifted out of `ask` because a form is no longer only ever a dialog: writing a
+// task outgrew a modal and moved into a pane of its own, and the alternative was
+// a second place deciding what a select or a textarea looks like. Two of those
+// drift, and the one that drifts is always the one nobody is looking at.
+//
+// A list of real choices beats a path to type out, and it cannot be typed wrong.
+// Three kinds, because a brief is prose and a one-line input turns prose into a
+// slot you scroll sideways through -- what a worker is actually told is the most
+// important text on the screen and should be readable while it is being written.
+function buildFields (fields = []) {
+  const inputs = {}
+  const rows = []
+  for (const f of fields) {
+    const input = f.options
+      ? el('select', {}, ...f.options.map(o =>
+          el('option', { value: o.value, textContent: o.label, selected: o.value === f.value })))
+      : f.multiline
+        ? el('textarea', { placeholder: f.placeholder || '', value: f.value || '', rows: f.rows || 8 })
+        : el('input', { placeholder: f.placeholder || '', value: f.value || '', type: f.type || 'text' })
+    inputs[f.name] = input
+    rows.push(el('div', {}, el('label', { textContent: f.label }), input))
+  }
+  return { rows, inputs }
+}
+
 function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, onOpen, extra, tabs, _tabsBar }) {
   const errBox = el('p', { className: 'dlg-err hidden' })
   const inputs = {}
@@ -220,21 +247,9 @@ function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, o
       el('div', { className: 'dlg-actions' }, no, other, yes)))
 
   // Fields go in the scrolling half, after whatever explains them.
-  for (const f of fields) {
-    // A list of real choices beats a path to type out, and it cannot be typed
-    // wrong. Three kinds, because a brief is prose and a one-line input turns
-    // prose into a slot you scroll sideways through -- what a worker is actually
-    // told is the most important text on the screen and should be readable while
-    // it is being written.
-    const input = f.options
-      ? el('select', {}, ...f.options.map(o =>
-          el('option', { value: o.value, textContent: o.label, selected: o.value === f.value })))
-      : f.multiline
-        ? el('textarea', { placeholder: f.placeholder || '', value: f.value || '', rows: f.rows || 8 })
-        : el('input', { placeholder: f.placeholder || '', value: f.value || '', type: f.type || 'text' })
-    inputs[f.name] = input
-    body.append(el('div', {}, el('label', { textContent: f.label }), input))
-  }
+  const built = buildFields(fields)
+  Object.assign(inputs, built.inputs)
+  for (const row of built.rows) body.append(row)
 
   // ONE FIELD ANSWERING ANOTHER. Handed the inputs by name, so a dialog where
   // choosing one thing fills in another does not have to reach into this

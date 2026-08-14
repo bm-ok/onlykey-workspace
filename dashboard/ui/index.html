@@ -271,9 +271,33 @@
          managing ten of them is not one decision. -->
     <div class="subtabs">
       <button class="subtab active" data-pane="board">Board</button>
+      <button class="subtab" data-pane="add">Add task</button>
       <button class="subtab" data-pane="jobs">Jobs</button>
       <button class="subtab" data-pane="prompts">Prompts</button>
       <button class="subtab" data-pane="contracts">Contracts</button>
+    </div>
+
+    <!-- WRITING ONE IS THE WORK, so it gets a pane rather than a modal. It grew
+         a prompt, a job and a contract that answer each other as they are
+         chosen, and a dialog is the wrong shape for something you read while
+         filling it in: it covers the board it is about and it has to be
+         finished or thrown away. -->
+    <div class="pane" id="pane-add">
+      <p class="note" id="add-note"></p>
+      <div class="cols">
+        <!-- The FORM is the wide half here, which is the opposite of every other
+             pane in this window and is right for the same reason they are: the
+             widest column holds the thing being read. Everywhere else that is a
+             detail panel; here it is the brief, which is the most important text
+             on the screen and unreadable in a 260px box. -->
+        <div class="col wide">
+          <h2 class="titlerow">The task <span class="muted" id="add-context"></span></h2>
+          <div id="add-form" class="stack form"></div>
+        </div>
+        <div class="col narrow">
+          <div id="add-preview" class="panel"></div>
+        </div>
+      </div>
     </div>
 
     <div class="pane active" id="pane-board">

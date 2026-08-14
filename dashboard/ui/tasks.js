@@ -33,6 +33,12 @@ document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
     been.set('task-pane', taskPane)
     document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
     document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
+    // REBUILT ON ENTRY, so the dropdowns are what the libraries say now.
+    // paintAddTaskNow refuses to rebuild otherwise, because it must not swallow
+    // what somebody has typed -- so arriving at the pane is the one moment it is
+    // safe, and the only moment it is needed.
+    if (taskPane === 'add') addBuiltFor = null
+    paintAddTask()
     paintJobs()
     paintPrompts()
     paintContracts()
@@ -741,168 +747,239 @@ function judgeTask (task) {
 // somebody already wrote what they want, and retyping it into a brief is how the
 // two drift apart. The dialog is otherwise identical -- a task from an issue is
 // a task, and gets the same reason, contract and branch as any other.
+// ---- writing one, in a pane of its own -----------------------------------
+//
+// This was a modal, and it outgrew one. A task now names a prompt, a job and a
+// contract that answer each other as they are chosen — pick the prompt and two
+// other fields fill themselves in — and a dialog is the wrong shape for
+// something you READ while filling it in. It covered the board it was about, it
+// had to be finished or thrown away, and there was nowhere to put the rules the
+// worker will be held to while you write the words that have to hold to them.
+//
+// So: a pane. The form on the left, and on the right what this task will
+// actually carry.
+//
+// PREFILLED WHEN THE WORK CAME FROM SOMEWHERE — an issue, or a prompt somebody
+// was reading. Somebody already wrote what they want, and retyping it into a
+// brief is how the two drift apart.
+let addPrefill = null
+// What the form was last built from. The draw loop comes round every few
+// seconds and this pane is a form somebody is typing into: rebuilding it on a
+// tick would swallow what they had written, which is the one thing a form must
+// never do. So it is built once per visit, and only the preview beside it moves.
+let addBuiltFor = null
+
 function newTask (from = null) {
+  addPrefill = from
+  showPane('add')
+}
+
+function paintAddTask () {
+  if (view !== 'tasks' || taskPane !== 'add') return
+  waiting('add-form', { lines: 6 })
+  paintAddTaskNow()
+}
+
+async function paintAddTaskNow () {
+  await settle()
+  if (view !== 'tasks' || taskPane !== 'add') return
+
+  const token = JSON.stringify(addPrefill)
+  if (addBuiltFor === token) return
+  addBuiltFor = token
+  const from = addPrefill
+
   Promise.all([
     api('gitBranches'),
     api('prompts').catch(() => ({ prompts: [] })),
     api('jobs').catch(() => ({ jobs: [] }))
   ]).then(([{ branches: known, protected: guarded }, lib, work]) => {
+    if (view !== 'tasks' || taskPane !== 'add') return
     const taken = new Set((guarded || []).map(g => g.branch))
-
-    // The contracts come back with the prompts, from the one call that already
-    // resolves the tie between them. Asked for here rather than read from the
-    // last paint of the Prompts pane -- this dialog opens from the Board, where
-    // that pane may never have been drawn at all, and a dropdown that is empty
-    // because of which tab somebody was last on is the worst kind of empty.
     contractsNow = lib.contracts || contractsNow
 
-    // ONE THING, SO NO TABS. This dialog used to carry pre-defined jobs behind a
-    // second tab: three clicks in, behind a dropdown, with nothing on screen
-    // saying what the thing did. They have a pane of their own now, where one
-    // can be read before it is started -- see the Pre-defined sub-tab.
-    ask({
-      title: 'A task for a worker',
-      tabs: [
-        {
-          label: 'Write a task',
-          plain: [
-            'A task is what a worker is told, and the branch it delivers on.',
-            'That branch is the artifact: it is what comes back, and what gets judged.',
-            'Nothing is given out yet — writing a task touches no machine.'
-          ],
-          fields: [
-            { name: 'title', label: 'Title', value: (from && from.title) || '', placeholder: 'Short enough to read in a list' },
-            { name: 'branch', label: 'Branch it delivers on', placeholder: 'fix/the-thing' },
-            // THE BRIEF IS THE PROMPT. Writing a task is writing one, which is
-            // the whole reason the library exists: pick a kept one and it is
-            // filled in below, still as text somebody can change before it goes.
-            {
-              name: 'promptId',
-              label: 'Fill the brief from a prompt (optional)',
-              value: '',
-              options: [
-                { value: '', label: 'none — write it below' },
-                ...(lib.prompts || []).map(x => ({ value: x.id, label: `${x.name}${x.approved ? '' : ' — not approved'}` }))
-              ]
-            },
-            { name: 'brief', label: 'The brief — what the worker is actually told', value: (from && from.brief) || '', multiline: true, rows: 10, placeholder: 'Write it as instructions to somebody who cannot ask you a question.' },
-            // A JOB IS HOW IT GETS DONE, and it is optional because most tasks do
-            // not need one: the queue dispatches a worker with the brief, and that
-            // is the ordinary path. A job is for when the doing is itself a script.
-            {
-              name: 'job',
-              label: 'Run it with a job (optional)',
-              value: '',
-              options: [
-                { value: '', label: 'none — the queue dispatches a worker' },
-                ...(work.jobs || []).map(x => ({ value: x.id, label: `${x.name}${x.runnable ? '' : ` — ${x.whyNot}`}` }))
-              ]
-            },
-            // THE RULES, FROM THE LIBRARY, not a path typed from memory.
-            //
-            // This was a text box wanting a file on this host, which is why the
-            // field went unused: the rules a run was governed by lived outside
-            // everything that governs runs. Only approved ones are offered —
-            // an unapproved contract in a dropdown is a thing somebody picks.
-            {
-              name: 'contractId',
-              label: 'Under which contract (optional)',
-              value: '',
-              options: [
-                { value: '', label: 'none — the worker gets no rules' },
-                ...contractsNow.filter(c => c.approved).map(c => ({ value: c.id, label: c.name }))
-              ]
-            },
-            { name: 'folder', label: 'Folder on the machine (optional)', placeholder: 'defaults to its workspace' }
-          ],
-          confirm: 'Write it',
-          // FILLED IN, NOT LOCKED TO. Choosing a prompt copies its words into the
-          // brief and leaves them editable: a task carries what the worker was
-          // actually given, so changing it here changes this task and nothing
-          // else.
-          //
-          // AND IT WILL NOT OVERWRITE SOMETHING SOMEBODY TYPED. Filling an empty
-          // box is help; replacing a paragraph half-written is the same act and
-          // is destructive, and from inside a dropdown the two are
-          // indistinguishable. So it fills when the brief is empty or still holds
-          // the last thing it filled, and otherwise says why it did not.
-          onOpen: inputs => {
-            const pick = inputs.promptId
-            const brief = inputs.brief
-            const jobPick = inputs.job
-            const rulePick = inputs.contractId
-            if (!pick || !brief) return
-            let filled = brief.value
-            let filledJob = jobPick ? jobPick.value : ''
-            let filledRule = rulePick ? rulePick.value : ''
+    setText($('add-context'), from ? '— from what you were reading' : '')
+    setText($('add-note'), 'A task is what a worker is told, and the branch it delivers on. That branch is the artifact: it is what comes back, and what gets judged. Nothing is given out yet — writing a task touches no machine.')
 
-            pick.onchange = () => {
-              const chosen = (lib.prompts || []).find(x => x.id === pick.value)
-              if (!chosen) return
+    const { rows, inputs } = buildFields([
+      { name: 'title', label: 'Title', value: (from && from.title) || '', placeholder: 'Short enough to read in a list' },
+      { name: 'branch', label: 'Branch it delivers on', placeholder: 'fix/the-thing' },
+      // THE BRIEF IS THE PROMPT. Writing a task is writing one, which is the
+      // whole reason the library exists: pick a kept one and it is filled in
+      // below, still as text somebody can change before it goes.
+      {
+        name: 'promptId',
+        label: 'Fill the brief from a prompt (optional)',
+        value: '',
+        options: [
+          { value: '', label: 'none — write it below' },
+          ...(lib.prompts || []).map(x => ({ value: x.id, label: `${x.name}${x.approved ? '' : ' — not approved'}` }))
+        ]
+      },
+      { name: 'brief', label: 'The brief — what the worker is actually told', value: (from && from.brief) || '', multiline: true, rows: 8, placeholder: 'Write it as instructions to somebody who cannot ask you a question.' },
+      // A JOB IS HOW IT GETS DONE, and it is optional because most tasks do not
+      // need one: the queue dispatches a worker with the brief, and that is the
+      // ordinary path. A job is for when the doing is itself a script.
+      {
+        name: 'job',
+        label: 'Run it with a job (optional)',
+        value: '',
+        options: [
+          { value: '', label: 'none — the queue dispatches a worker' },
+          ...(work.jobs || []).map(x => ({ value: x.id, label: `${x.name}${x.runnable ? '' : ` — ${x.whyNot}`}` }))
+        ]
+      },
+      // THE RULES, FROM THE LIBRARY, not a path typed from memory. This was a
+      // text box wanting a file on this host, which is why the field went
+      // unused: the rules a run was governed by lived outside everything that
+      // governs runs. Only approved ones are offered — an unapproved contract
+      // in a dropdown is a thing somebody picks.
+      {
+        name: 'contractId',
+        label: 'Under which contract (optional)',
+        value: '',
+        options: [
+          { value: '', label: 'none — the worker gets no rules' },
+          ...contractsNow.filter(c => c.approved).map(c => ({ value: c.id, label: c.name }))
+        ]
+      },
+      { name: 'folder', label: 'Folder on the machine (optional)', placeholder: 'defaults to its workspace' }
+    ])
 
-              if (!brief.value.trim() || brief.value === filled) {
-                brief.value = chosen.text
-                filled = chosen.text
-              } else {
-                say('The brief has been edited, so it was left alone. Clear it to fill from a prompt.', 'warn')
-              }
+    const err = el('p', { className: 'dlg-err hidden' })
+    const write = el('button', { className: 'btn ok', textContent: 'Write it' })
+    const clear = el('button', { className: 'btn', textContent: 'Start over' })
 
-              // AND THE JOB THAT USES IT, because the pairing is the thing.
-              //
-              // A job names the prompt it runs with, so picking the prompt has
-              // already answered "which job" in every case where the answer is
-              // not "none" -- and leaving the reader to find it in the dropdown
-              // by name is asking them to redo a lookup the screen just did.
-              //
-              // Same rule as the brief: it fills, it does not overwrite. A job
-              // somebody chose deliberately stays chosen, and a prompt with no
-              // job leaves whatever was there rather than clearing it, since
-              // "none" is a real answer somebody may have meant.
-              // AND THE CONTRACT IT RUNS UNDER, which is not a convenience the
-              // way the job is. A prompt names its contract because the words
-              // have to hold to those rules — so a task written from that prompt
-              // and NOT under those rules is the one combination the pairing
-              // exists to prevent. It is still only filled in rather than
-              // locked: a task is one occasion, and somebody may mean to run
-              // this occasion differently.
-              if (rulePick) {
-                const under = chosen.contractId || ''
-                if (!rulePick.value || rulePick.value === filledRule) {
-                  // Only if it is actually on offer. The dropdown carries
-                  // approved contracts only, so a prompt whose rules have
-                  // lapsed would otherwise be "filled in" with a value that
-                  // silently does not exist and reads as none.
-                  if (!under || [...rulePick.options].some(o => o.value === under)) {
-                    rulePick.value = under
-                    filledRule = under
-                  } else {
-                    say(`"${chosen.name}" runs under a contract that is not approved, so it was not filled in.`, 'warn')
-                  }
-                }
-              }
+    // THE BUTTON STAYS ON THE SCREEN. The brief is a twelve-row box by
+    // temperament and the pane is as tall as the window, so at full size the one
+    // control that does anything sat below the fold -- which is the exact fault
+    // this window already learned about dialogs, in a pane instead. Eight rows,
+    // and the box is still draggable for anybody writing an essay.
+    fill($('add-form'), ...rows, err, el('div', { className: 'row', style: 'margin-top:10px' }, write, clear))
 
-              if (!jobPick) return
-              const tied = (work.jobs || []).filter(j => j.promptId === chosen.id)
-              if (!tied.length) return
-              if (jobPick.value && jobPick.value !== filledJob) return
-              jobPick.value = tied[0].id
-              filledJob = tied[0].id
-              if (tied.length > 1) {
-                say(`${tied.length} jobs use that prompt — "${tied[0].name}" was filled in. Change it below if you meant another.`)
-              }
-            }
-          },
-          onYes: async values => {
-            if (taken.has(values.branch)) throw new Error(`"${values.branch}" is protected here. Work is merged into it, never done on it.`)
-            const made = await api('taskCreate', { task: values })
-            pickedTask = made.id
-            say(`Task "${made.title}" written, delivering on ${made.branch}. Known branches: ${(known || []).length}.`)
-          }
-        },
-      ]
-    })
-  }).catch(oops)
+    // ---- what it will carry, beside what is being written ------------------
+    //
+    // The rules are the reason this pane has two columns. A brief saying
+    // "refactor across every repository" under rules saying "touch nothing you
+    // were not asked about" is a contradiction, and it is only ever visible
+    // when the two are on one screen. In a modal there was nowhere to put them.
+    const preview = () => {
+      const rules = contractsNow.find(c => c.id === inputs.contractId.value) || null
+      const job = (work.jobs || []).find(j => j.id === inputs.job.value) || null
+      fill($('add-preview'),
+        el('div', { className: 'card-title' }, el('span', { className: 'grow', textContent: 'What this task will carry' })),
+
+        el('div', { className: 'carries', style: 'margin-top:10px' },
+          el('div', { className: 'group-part' },
+            el('span', { textContent: 'done by' }),
+            el('span', {}, job
+              ? el('span', { className: job.runnable ? '' : 'warn', textContent: `${job.name}${job.runnable ? '' : ` — ${job.whyNot}`}` })
+              : el('span', { className: 'muted', textContent: 'the queue, dispatching a worker with the brief' }))),
+          el('div', { className: 'group-part' },
+            el('span', { textContent: 'held to' }),
+            el('span', {}, rules
+              ? el('span', { textContent: rules.name })
+              : el('span', { className: 'warn', textContent: 'nothing — the worker gets no rules' })))),
+
+        rules
+          ? el('div', { style: 'margin-top:10px' }, codeBlock(rules.text, 'markdown'))
+          : el('p', { className: 'note warn', style: 'margin-top:10px' }, 'No contract chosen. A worker with no rules is not a worker doing as it likes — it is one that was never told what it may not do, and nothing afterwards can tell that apart from rules that failed to load.'))
+    }
+    preview()
+    inputs.contractId.onchange = preview
+    inputs.job.onchange = preview
+
+    // FILLED IN, NOT LOCKED TO. Choosing a prompt copies its words into the
+    // brief and leaves them editable: a task carries what the worker was
+    // actually given, so changing it here changes this task and nothing else.
+    //
+    // AND IT WILL NOT OVERWRITE SOMETHING SOMEBODY TYPED. Filling an empty box
+    // is help; replacing a paragraph half-written is the same act and is
+    // destructive, and from inside a dropdown the two are indistinguishable. So
+    // it fills when the brief is empty or still holds the last thing it filled,
+    // and otherwise says why it did not.
+    const pick = inputs.promptId
+    const brief = inputs.brief
+    const jobPick = inputs.job
+    const rulePick = inputs.contractId
+    let filled = brief.value
+    let filledJob = jobPick.value
+    let filledRule = rulePick.value
+
+    pick.onchange = () => {
+      const chosen = (lib.prompts || []).find(x => x.id === pick.value)
+      if (!chosen) return
+
+      if (!brief.value.trim() || brief.value === filled) {
+        brief.value = chosen.text
+        filled = chosen.text
+      } else {
+        say('The brief has been edited, so it was left alone. Clear it to fill from a prompt.', 'warn')
+      }
+
+      // AND THE CONTRACT IT RUNS UNDER, which is not the convenience the job is.
+      // A prompt names its contract because the words have to hold to those
+      // rules — so a task written from that prompt and NOT under those rules is
+      // the one combination the pairing exists to prevent. Still only filled in
+      // rather than locked: a task is one occasion, and somebody may mean to run
+      // this occasion differently.
+      const under = chosen.contractId || ''
+      if (!rulePick.value || rulePick.value === filledRule) {
+        // Only if it is actually on offer. The dropdown carries approved
+        // contracts only, so a prompt whose rules have lapsed would otherwise be
+        // "filled in" with a value that silently does not exist and reads as none.
+        if (!under || [...rulePick.options].some(o => o.value === under)) {
+          rulePick.value = under
+          filledRule = under
+        } else {
+          say(`"${chosen.name}" runs under a contract that is not approved, so it was not filled in.`, 'warn')
+        }
+      }
+
+      // AND THE JOB THAT USES IT, because the pairing is the thing. A job names
+      // the prompt it runs with, so picking the prompt has already answered
+      // "which job" in every case where the answer is not "none" — and leaving
+      // the reader to find it in the dropdown by name is asking them to redo a
+      // lookup the screen just did.
+      const tied = (work.jobs || []).filter(j => j.promptId === chosen.id)
+      if (tied.length && (!jobPick.value || jobPick.value === filledJob)) {
+        jobPick.value = tied[0].id
+        filledJob = tied[0].id
+        if (tied.length > 1) say(`${tied.length} jobs use that prompt — "${tied[0].name}" was filled in. Change it below if you meant another.`)
+      }
+
+      preview()
+    }
+
+    clear.onclick = () => { addPrefill = null; addBuiltFor = null; paintAddTask() }
+
+    write.onclick = async () => {
+      write.disabled = true
+      err.classList.add('hidden')
+      try {
+        const values = {}
+        for (const k in inputs) values[k] = inputs[k].value.trim()
+        if (taken.has(values.branch)) throw new Error(`"${values.branch}" is protected here. Work is merged into it, never done on it.`)
+        const made = await api('taskCreate', { task: values })
+        pickedTask = made.id
+        been.set('task', pickedTask)
+        say(`Task "${made.title}" written, delivering on ${made.branch}. Known branches: ${(known || []).length}.`)
+        // ONTO THE BOARD, because the task now exists and this pane is about one
+        // that does not. Leaving the filled-in form up after it was written is
+        // how somebody writes the same task twice.
+        addPrefill = null
+        addBuiltFor = null
+        showPane('board')
+        return draw()
+      } catch (e) {
+        err.textContent = e.message
+        err.classList.remove('hidden')
+        write.disabled = false
+      }
+    }
+  }).catch(e => { addBuiltFor = null; oops(e) })
 }
+
 
 // Reading a definition, and deciding about it.
 //
