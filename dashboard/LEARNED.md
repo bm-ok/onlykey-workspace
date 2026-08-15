@@ -707,3 +707,31 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   which is why it survived: invisible to every check except looking at it. A
   left-to-right mark before the text (`::before { content: "\200e" }`) gives the
   dot a strong LTR neighbour on both sides and it stays where it was written.
+
+* **Every "is this merged" answer in this app was asked by sha, and GitHub
+  squashes.** A squashed pull request turns a branch's commits into ONE new
+  commit with a new sha on the target; the original is still on the branch,
+  untouched. So `rev-list --count base..branch` truthfully reports unmerged work
+  about work that landed a week ago — and the board said "1 commit no default
+  branch has", and `branchDelete` demanded `force` to delete finished work. That
+  last one is the real cost: it trains somebody to force the one refusal that is
+  the whole safety.
+
+  `git cherry` compares PATCH IDS, so a change already applied — squashed,
+  rebased or cherry-picked — is marked `-` and only genuinely new work is `+`.
+  Proved in a throwaway repo rather than reasoned about: after a `merge
+  --squash`, `rev-list --count` says 1 and `git cherry` says `-`.
+
+  Cached on the PAIR OF COMMITS with no clock in it. The answer is a pure
+  function of two commits: unchanged commits cannot have a changed answer, and
+  changed ones have a different key. A panel asking every few seconds spawns
+  nothing in the steady state and recomputes the instant something moves, which
+  no time-based cache can promise.
+
+* **A checker that cries wolf stops being read.** `declared-test` collected the
+  first name after `const`/`let`/`var` and no more, so `let baseAt, branchAt`
+  declared one of two and reported the other as undeclared — in a file where both
+  are plainly on the same line. Fixing it to take the whole line then swallowed
+  `for (const line of rows)` and produced six new false alarms. The shape that
+  works is the LEADING identifier of each comma-separated part. Confirmed both
+  ways afterwards: a deliberately undeclared name is still caught.

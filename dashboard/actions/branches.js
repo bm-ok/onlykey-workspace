@@ -24,6 +24,35 @@ const {
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
 } = s
 
+// WHAT A BRANCH STILL CARRIES, ACROSS EVERY REPOSITORY THAT HAS IT, by content.
+//
+// Deleting is across all of them, so a branch landed in two repositories out of
+// three is not landed. Summed rather than answered per repository, because the
+// question the caller is asking is "will this lose anything".
+//
+// Null when nothing could be read — no repository has it, or git would not
+// answer — and null is not zero: a caller must not read "could not tell" as
+// "safe". See unlandedIn in repos/branches.js for why content and not commits.
+function whatIsUnlanded (branch) {
+  const name = String(branch || '').trim()
+  let total = 0
+  let asked = 0
+  for (const { name: repo } of repos.list()) {
+    const dir = repos.gitDirOf(repo)
+    if (!dir) continue
+    let has = []
+    try { has = branches.branchesIn(dir) } catch { continue }
+    if (!has.includes(name)) continue
+    const def = branches.defaultOf(repo)
+    if (!def || !has.includes(def)) continue
+    const n = branches.unlandedIn(dir, def, name)
+    if (n === null) continue
+    asked++
+    total += n
+  }
+  return asked ? { total, repos: asked } : null
+}
+
 module.exports = {
   // Every branch across the workspace, so a machine can be pointed at work that
   // already exists instead of a name being typed twice and spelled differently.
@@ -386,9 +415,24 @@ module.exports = {
       if (!row) throw new Error(`No repository here has a branch called "${branch}".`)
       if (row.whyNot) throw new Error(row.whyNot)
 
-      if (!row.contained && !force) {
+      // ASKED AGAIN BY CONTENT BEFORE REFUSING.
+      //
+      // `contained` counts commits, and a pull request that GitHub SQUASHED
+      // leaves the branch's commits nowhere in the default branch even though
+      // every line of them is. So this refused to delete finished work and told
+      // somebody to force it — training them to force it, on the one operation
+      // where the refusal is the whole safety.
+      //
+      // Only when the sha answer already said no, so the ordinary case costs
+      // nothing, and only at the moment somebody presses delete rather than on
+      // any draw. See unlandedIn in repos/branches.js.
+      const landed = !row.contained ? whatIsUnlanded(branch) : null
+      if (!row.contained && landed && landed.total === 0 && !force) {
+        log.on('git').info(`"${branch}" is not in any default branch by commit, but every change on it is — a squashed merge. Deleting it loses nothing.`)
+      } else if (!row.contained && !force) {
         throw new Error(
-          `"${branch}" carries ${row.commits} commit(s) that ${row.tasks.length ? 'its task delivered and ' : ''}no default branch has. ` +
+          `"${branch}" carries ${landed && landed.total ? `${landed.total}` : row.commits} commit(s) that ${row.tasks.length ? 'its task delivered and ' : ''}no default branch has` +
+          `${landed && landed.total ? ', by content as well as by commit' : ''}. ` +
           'Deleting it is the only way that work is lost here, so it has to be asked for on purpose: pass force.'
         )
       }
@@ -658,8 +702,39 @@ module.exports = {
       const dir = repos.gitDirOf(name)
       if (!dir) throw new Error(`There is no repository called "${name}" here.`)
 
+      const def = branches.defaultOf(name)
+
+      // WHERE EACH BRANCH STANDS AGAINST THE DEFAULT, said by content.
+      //
+      // The remote columns answer "is my copy current". This answers the
+      // question somebody actually has, which is "am I done with this branch" —
+      // and it is the one nothing could answer, because a squashed pull request
+      // leaves work that is landed and looks unmerged. See unlandedIn.
       const rows = Object.values(branches.trackedIn(dir))
         .sort((a, b) => a.branch.localeCompare(b.branch))
+        .map(b => {
+          if (!def || b.branch === def || !b.local) return { ...b, against: null }
+          let behind = 0
+          try {
+            behind = Number(branches.countBetween(dir, b.branch, def)) || 0
+          } catch { behind = 0 }
+          const unlanded = branches.unlandedIn(dir, def, b.branch)
+          return {
+            ...b,
+            against: {
+              base: def,
+              behind,
+              unlanded,
+              // Three states, and the middle one is the whole point of this.
+              //
+              //   live      it has work the default branch has not got
+              //   landed    its changes ARE in the default branch, under other
+              //             shas — a squashed or rebased merge
+              //   same      nothing to say; it adds nothing and is not behind
+              state: unlanded === null ? 'unknown' : unlanded > 0 ? 'live' : 'landed'
+            }
+          }
+        })
 
       // OUT OF STEP MEANS BOTH SIDES HAVE IT AND THEY DISAGREE.
       //

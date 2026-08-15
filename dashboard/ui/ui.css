@@ -781,6 +781,10 @@ table.kv td .ok { color: var(--ok); }
    is space-between, so these have to be one child or the branch name ends up
    adrift in the middle of the row. */
 .group-part .where { display: flex; align-items: baseline; gap: 8px; }
+/* The sentence under a branch row saying what it is and what to do about it.
+   Indented under the name it belongs to, and quiet, because it is an
+   explanation rather than a second row of facts. */
+.group-why { font-size: 11px; padding: 2px 0 6px 0; line-height: 1.5; }
 
 /* The branch list's own controls, in the narrow column with it rather than in a
    header bar the other two columns would have to leave room for. */

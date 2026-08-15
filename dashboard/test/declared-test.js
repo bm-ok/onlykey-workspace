@@ -142,7 +142,27 @@ function codeOnly (src) {
 // enough to stop being run, which is the only way a check like this fails.
 function declaredIn (src, into = new Set()) {
   const add = s => { if (s && /^[A-Za-z_$][\w$]*$/.test(s)) into.add(s) }
-  for (const m of src.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) add(m[1])
+  // EVERY NAME ON THE LINE, not only the first.
+  //
+  // This took the one name after the keyword, so `let a, b` declared `a` and
+  // left `b` looking undeclared — and this checker's whole value is that it is
+  // believed, so a false alarm costs more than a missed name would. It reported
+  // one against `let baseAt, branchAt` in repos/branches.js, where both are
+  // plainly there.
+  //
+  // The LEADING identifier of each comma-separated part, which is the one being
+  // bound. Taking the whole part instead swallowed `for (const line of rows)`
+  // as a single unparseable string and lost `line` — six false alarms in one
+  // change, which is how a checker stops being read.
+  //
+  // Destructuring is left to the two rules below: `{` and `[` end the match, so
+  // those forms fall through to the patterns written for them.
+  for (const m of src.matchAll(/\b(?:const|let|var)\s+([^=(\[{\n;]+)/g)) {
+    for (const part of m[1].split(',')) {
+      const first = /^\s*([A-Za-z_$][\w$]*)/.exec(part)
+      if (first) add(first[1])
+    }
+  }
   for (const m of src.matchAll(/\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)/g)) add(m[1])
   for (const m of src.matchAll(/\bclass\s+([A-Za-z_$][\w$]*)/g)) add(m[1])
   for (const m of src.matchAll(/\{([^{}]*)\}\s*=/g)) {

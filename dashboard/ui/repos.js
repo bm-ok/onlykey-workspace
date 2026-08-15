@@ -356,6 +356,33 @@ const syncState = {
 // `diverged` is a decision this app does not make.
 const canCatchUp = b => b.state === 'behind' || b.state === 'different'
 
+// WHAT THIS BRANCH IS, AND WHAT TO DO ABOUT IT — in words, not in git's.
+//
+// Written for somebody who does not want to think about patch ids. The three
+// cases are the three that actually come up, and the middle one is the whole
+// reason this exists: work that landed through a squashed pull request reads as
+// unmerged everywhere that compares by sha, which is everywhere.
+function saysAbout (b) {
+  const a = b.against
+  const behind = a.behind ? `${a.behind} commit(s) behind ${a.base}` : null
+
+  if (a.state === 'landed') {
+    return [
+      el('span', { className: 'ok', textContent: `Everything on this branch is already in ${a.base}` }),
+      el('span', { className: 'muted', textContent: ' — the commits look different because the pull request was squashed when it merged. Nothing here is unsaved. It can be deleted on the Branches tab.' })
+    ]
+  }
+  if (a.state === 'live') {
+    return [
+      el('span', { textContent: `${a.unlanded} commit(s) not in ${a.base} yet` }),
+      behind ? el('span', { className: 'muted', textContent: ` · ${behind}, so it was cut before the latest work landed` }) : null
+    ]
+  }
+  // Nothing unique and nothing behind is the ordinary resting state of a branch
+  // that is simply level, and it needs no sentence at all.
+  return behind ? [el('span', { className: 'muted', textContent: `Nothing of its own · ${behind}` })] : []
+}
+
 // ASKED EVERY DRAW, DRAWN ONLY WHEN IT MOVED.
 //
 // The first version guarded the FETCH on the repository name, so it read git
@@ -415,7 +442,7 @@ function paintRepoBranches (r) {
       el('p', { className: 'note', textContent: note }),
 
       branches.length
-        ? branches.map(b => el('div', { className: 'group-part' },
+        ? branches.map(b => [el('div', { className: 'group-part' },
             el('span', { className: 'mono', textContent: b.branch }),
             el('span', { className: 'where' },
               // HERE, THEN THERE, in that order, because the question is "is
@@ -444,7 +471,15 @@ function paintRepoBranches (r) {
                         : b.state === 'only here' ? 'Origin has no branch by this name'
                           : 'There is nothing here to fast-forward',
                 onclick: e => sync(b.branch, e.currentTarget)
-              }))))
+              }))),
+          // WHAT TO DO ABOUT IT, in a sentence, under the row.
+          //
+          // The shas above answer "is my copy current". This answers the
+          // question somebody actually has — am I done with this branch — and
+          // it is the one that is genuinely hard to see, because a squashed
+          // pull request leaves work that has landed and looks unmerged. See
+          // unlandedIn in repos/branches.js.
+          b.against ? el('div', { className: 'group-why' }, ...saysAbout(b)) : null]).flat()
         : el('p', { className: 'empty', textContent: 'This repository has no branches.' }))
   }).catch(e => {
     // Said once. This runs on the draw loop now, so reporting a failing repository

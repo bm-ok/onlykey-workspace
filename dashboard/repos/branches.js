@@ -170,6 +170,73 @@ const trackedIn = dir => remember1s(`tracked ${dir}`, () => {
   return rows
 })
 
+// WHAT A BRANCH STILL CARRIES THAT THE BASE HAS NOT GOT — BY CONTENT, NOT BY SHA.
+//
+// This is the answer to the single most confusing thing about working through
+// pull requests, and everything in this app got it wrong in the same way.
+//
+// GitHub usually SQUASHES a merge: the commits on the branch become one new
+// commit, with a new sha, on the target. The original commit still sits on the
+// branch, untouched. Every `rev-list --count base..branch` in this codebase then
+// says the branch carries unmerged work — truthfully, by sha — about work that
+// landed a week ago. So the board says "1 commit no default branch has", and
+// deleting the branch demands `force` as though something were about to be lost.
+//
+// `git cherry` is the tool for exactly this. It compares PATCH IDS, so a commit
+// whose changes are already applied — squashed, rebased, cherry-picked, however
+// it got there — is marked `-`, and only genuinely new work is marked `+`.
+//
+// CACHED ON THE PAIR OF COMMITS, with no clock in it. The answer is a pure
+// function of two commits: if neither has moved it cannot have changed, and if
+// either has, the key is different. So a panel that asks every few seconds
+// spawns nothing at all in the steady state, and recomputes the moment something
+// actually moves — which no time-based cache can promise.
+const landedSeen = new Map()
+function unlandedIn (dir, base, branch) {
+  let baseAt, branchAt
+  try {
+    baseAt = git(dir, ['rev-parse', base])
+    branchAt = git(dir, ['rev-parse', branch])
+  } catch { return null }
+  if (baseAt === branchAt) return 0
+
+  const key = `${dir}|${baseAt}|${branchAt}`
+  if (landedSeen.has(key)) return landedSeen.get(key)
+
+  let out = null
+  try {
+    // `+` is a commit whose change is NOT in base. `-` is one that is, under a
+    // different sha. An empty answer means the branch adds nothing.
+    out = git(dir, ['cherry', base, branch])
+      .split('\n').filter(l => l.trim().startsWith('+')).length
+  } catch { out = null }
+
+  // Bounded, because the key includes commits and commits keep being made. Far
+  // more than a session needs, and nothing here is expensive to recompute.
+  if (landedSeen.size > 500) landedSeen.clear()
+  landedSeen.set(key, out)
+  return out
+}
+
+// How many commits `to` has that `from` has not. Cached on the same terms and
+// for the same reason as unlandedIn: two commits, one answer, no clock.
+const betweenSeen = new Map()
+function countBetween (dir, from, to) {
+  let a, b
+  try {
+    a = git(dir, ['rev-parse', from])
+    b = git(dir, ['rev-parse', to])
+  } catch { return 0 }
+  if (a === b) return 0
+  const key = `${dir}|${a}|${b}`
+  if (betweenSeen.has(key)) return betweenSeen.get(key)
+  let n = 0
+  try { n = Number(git(dir, ['rev-list', '--count', `${from}..${to}`])) || 0 } catch { n = 0 }
+  if (betweenSeen.size > 500) betweenSeen.clear()
+  betweenSeen.set(key, n)
+  return n
+}
+
 // Where a repository is right now. Read rather than assumed: `master` and `main`
 // are both common, and a repository that uses neither is not unusual.
 function headOf (dir) {
@@ -1122,7 +1189,7 @@ function remove (branch, { force = false } = {}) {
 }
 
 module.exports = {
-  all, ensure, remove, nameIsOk, branchesIn, headsIn, trackedIn, headOf, defaultHeads, noteFor, notes, scopeOf,
+  all, ensure, remove, nameIsOk, branchesIn, headsIn, trackedIn, unlandedIn, countBetween, headOf, defaultHeads, noteFor, notes, scopeOf,
   defaultOf, baseFor, baselines, groups, saveGroup, deleteGroup, inAnyGroup,
   markGroup, unmarkGroup, groupFromBranch,
   protectedBranches, isProtected, whyProtected,
