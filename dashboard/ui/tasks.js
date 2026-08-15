@@ -111,7 +111,11 @@ const workerOf = t => WORKERS[t && t.worker] || WORKERS.claude
 const taskKey = t => t && [
   t.number,
   t.id, t.title, t.branch, t.state, t.reads, t.machine || '', t.run || '', t.worker || '',
-  t.delivered, t.artifact, t.contract || '', t.contractId || '', (t.verdict && t.verdict.call) || ''
+  t.delivered, t.artifact, t.contract || '', t.contractId || '', (t.verdict && t.verdict.call) || '',
+  // The three ties and whether a worker has run. Missed here, the panel would
+  // keep saying "to be done by" after one had — which is the exact failure this
+  // signature exists to prevent, in the row that was just fixed for lying.
+  t.job || '', t.promptId || '', !!t.usedClaude
 ]
 
 const STATE_BADGE = {
@@ -323,11 +327,51 @@ function paintTaskDetail (task) {
     el('table', { className: 'kv' },
       el('tr', {}, el('th', { textContent: 'branch' }), el('td', { className: 'mono', style: 'user-select:text', textContent: task.branch })),
       el('tr', {}, el('th', { textContent: 'state' }), el('td', {}, el('span', { className: `badge ${STATE_BADGE[task.reads] || 'muted'}`, textContent: task.reads }))),
-      el('tr', {}, el('th', { textContent: 'worked by' }),
-        el('td', {}, el('span', { className: `badge ${workerOf(task).cls}`, textContent: workerOf(task).label }),
-          el('div', { className: 'muted', textContent: workerOf(task).long }))),
+      // TO BE DONE BY, UNTIL SOMETHING HAS DONE IT.
+      //
+      // This said "worked by Claude" about a draft nobody had touched, which is
+      // a prediction written in the past tense. `worker` is the PLAN — set when
+      // the task is written, before a machine exists — and the board was reading
+      // it as a record.
+      //
+      // So it says which it is. `usedClaude` is set when a worker actually runs:
+      // by the queue on the plain path, where dispatch writes `claude -p`, and
+      // by the /session handler on the job path, where a transcript arriving is
+      // the only proof a job started one.
+      el('tr', {}, el('th', { textContent: task.usedClaude ? 'worked by' : 'to be done by' }),
+        el('td', {},
+          el('span', { className: `badge ${workerOf(task).cls}`, textContent: workerOf(task).label }),
+          task.usedClaude
+            ? el('span', { className: 'badge ok', style: 'margin-left:6px', textContent: 'a worker ran' })
+            : null,
+          el('div', { className: 'muted', textContent: task.usedClaude
+            ? workerOf(task).long
+            : `${workerOf(task).long} Nothing has run yet, so nothing has used it.` }))),
       el('tr', {}, el('th', { textContent: 'given to' }), el('td', { className: 'mono', textContent: task.machine || 'nobody yet' })),
       el('tr', {}, el('th', { textContent: 'run' }), el('td', { className: 'mono', textContent: task.run || '—' })),
+
+      // THE THREE THINGS TIED TO IT, which the panel never said. A task carries
+      // a job, a prompt and a contract, and the only one of them on screen was
+      // the contract — so a task written from a prompt, to be run by a job,
+      // looked identical to one typed from nothing.
+      el('tr', {}, el('th', { textContent: 'job' }),
+        el('td', {}, task.job
+          ? el('button', {
+              className: 'linky',
+              textContent: task.job,
+              title: 'Read the script that will run',
+              onclick: () => { pickedJob = task.job; been.set('job', pickedJob); forget('jobs'); forget('jobs-detail'); showPane('jobs') }
+            })
+          : el('span', { className: 'muted', textContent: 'none — the queue dispatches a worker with the brief' }))),
+      el('tr', {}, el('th', { textContent: 'prompt' }),
+        el('td', {}, task.promptId
+          ? el('button', {
+              className: 'linky',
+              textContent: task.promptName || task.promptId,
+              title: 'The library entry the brief was filled in from. The task carries its own copy.',
+              onclick: () => showPrompt(task.promptId)
+            })
+          : el('span', { className: 'muted', textContent: 'none — the brief was written here' }))),
       // Said whether or not there is one, because "no rules" is the dangerous
       // reading and it is also the silent one: a task with no contract looks
       // exactly like a task with one from everywhere except here.
@@ -1184,6 +1228,12 @@ async function paintAddTaskNow () {
         // Which also means the refusal that prompted all this cannot happen: a
         // branch that does not exist is not on the list, so it cannot be named.
         if (!values.branch) throw new Error('Pick the branch cut this work belongs to. If there is not one yet, cut it on the Branches tab.')
+
+        // The prompt's NAME as well as its id, so a task can still say where its
+        // brief came from after the library entry is gone. The same reason the
+        // contract's name is carried.
+        const cameFrom = (lib.prompts || []).find(p => p.id === values.promptId)
+        if (cameFrom) values.promptName = cameFrom.name
 
         const made = await api('taskCreate', { task: values })
         pickedTask = made.id

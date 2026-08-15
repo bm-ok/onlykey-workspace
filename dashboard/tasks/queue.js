@@ -230,6 +230,16 @@ async function run (actions, log, task, machine) {
       id,
       task: {
         run: started.run,
+        // A WORKER ACTUALLY RAN, recorded rather than assumed. `worker` says
+        // what this task was written to be done by and is set before anything
+        // happens; the board was reading it as a statement of fact, so a draft
+        // nobody had touched said "worked by Claude".
+        //
+        // This is the plain path: no job and not a shell means dispatch wrote
+        // `claude -p` into the run script, so a worker started. A job sets the
+        // same flag from the other end -- see the /session handler, which knows
+        // because the worker handed its memory back.
+        ...(task.job || task.shell ? {} : { usedClaude: true }),
         attempts: [...(now.attempts || []), { run: started.run, machine, at: new Date().toISOString() }]
       }
     })

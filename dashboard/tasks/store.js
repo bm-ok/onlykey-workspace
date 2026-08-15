@@ -217,6 +217,20 @@ function add (input) {
     rules: input.rules ? String(input.rules) : null,
     contractId: input.contractId ? String(input.contractId) : null,
     contractName: input.contractName ? String(input.contractName) : null,
+
+    // WHICH PROMPT THE BRIEF CAME FROM. The words are copied into `brief` and
+    // that is what the worker gets -- but the tie was thrown away, so a task
+    // could not say where its brief came from and the Prompts library could not
+    // say what had been written from it. Kept as a name too, for the same reason
+    // the contract's is: the library entry may be gone by the time anybody reads
+    // this, and the task should still be able to say what it was.
+    promptId: input.promptId ? String(input.promptId) : null,
+    promptName: input.promptName ? String(input.promptName) : null,
+
+    // WHETHER A WORKER ACTUALLY RAN, as opposed to what this task was written
+    // to be done by. `worker` below is the plan and is set before anything has
+    // happened; this is set when something has. See the note there.
+    usedClaude: false,
     folder: input.folder ? String(input.folder) : null,
     // WHO DOES IT. A slot with three implementations, not a special case.
     //

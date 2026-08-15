@@ -425,6 +425,12 @@ function handler (req, res) {
           number: task.number,
           folder: url.searchParams.get('folder') || null
         })
+        // A TRANSCRIPT ARRIVING IS PROOF A WORKER RAN. It is the only proof a
+        // job's task gets: the job itself is a node script, so nothing else
+        // about the run says whether it started a worker or only moved files
+        // around. Recorded on the task, because "was Claude used for this" is a
+        // question about the work and not about the archive.
+        try { tasks.update(task.id, { usedClaude: true }) } catch { /* the board may have moved on */ }
         log.on('vm', name, 'guest').good(`kept what #${task.number} remembers — ${Math.round(kept.bytes / 1024)} KB, run ${kept.runs}`)
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end('kept\n')
       } catch (e) {
