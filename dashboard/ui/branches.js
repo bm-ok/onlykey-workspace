@@ -382,7 +382,17 @@ function paintBaselines () {
         el('div', { className: 'card-title' },
           el('span', { className: 'mono', textContent: g.name }),
           g.marked ? el('span', { className: 'badge warn', textContent: 'proposed' }) : null,
-          g.broken.length ? el('span', { className: 'badge bad', textContent: 'broken' }) : null),
+          g.broken.length ? el('span', { className: 'badge bad', textContent: 'broken' }) : null,
+          // WHETHER THE LINE IS CURRENT, on the card rather than only inside it.
+          //
+          // A line is the thing work is cut FROM, so one that is out of date is
+          // cutting every new branch from a stale point — and that is invisible
+          // until somebody opens it. Said where the line is chosen instead.
+          //
+          // Nothing when it is level: a badge on every row is a badge nobody
+          // reads, and "in step" is the resting state rather than news.
+          g.sync === 'conflict' ? el('span', { className: 'badge bad', textContent: 'conflict' }) : null,
+          g.sync === 'behind' ? el('span', { className: 'badge warn', textContent: 'out of date' }) : null),
         el('div', { className: 'badges' },
           el('span', { className: 'muted', textContent: `${g.on.length} repositor${g.on.length === 1 ? 'y' : 'ies'}` }),
           g.missing.length ? el('span', { className: 'muted', textContent: `${g.missing.length} not named` }) : null)))
@@ -402,7 +412,39 @@ function paintBaselines () {
           el('div', { className: 'carries-head' },
             el('span', { textContent: g.name }),
               g.marked ? el('span', { className: 'badge warn', textContent: 'proposed' }) : null,
-            g.why ? el('span', { className: 'muted', textContent: g.why }) : null),
+            g.why ? el('span', { className: 'muted', textContent: g.why }) : null,
+            el('span', { className: 'grow' }),
+            // ONE BUTTON FOR THE WHOLE LINE, because a line is one thing said
+            // across repositories and the point of naming it is that they move
+            // together. Three buttons would be three chances to catch up two of
+            // three, which reads as a single state no repository is in.
+            //
+            // Red when a part has moved on both sides: a fast-forward cannot
+            // help there and it is not this button's job to decide. The message
+            // says where that is handled.
+            g.sync
+              ? el('button', {
+                  className: `plus${g.sync === 'conflict' ? ' sync-bad' : g.sync === 'behind' ? ' sync-off' : ' sync-ok'}`,
+                  textContent: '⟳',
+                  disabled: g.sync === 'conflict',
+                  title: g.sync === 'conflict'
+                    ? 'Part of this line has moved on both sides. A fast-forward cannot help — see the Conflicts tab under Repositories.'
+                    : g.sync === 'behind'
+                      ? `Fetch from origin and fast-forward every branch "${g.name}" names, as one act`
+                      : 'Every branch this line names already matches origin',
+                  onclick: async e => {
+                    const b = e.currentTarget
+                    b.disabled = true
+                    b.textContent = '…'
+                    try {
+                      const r = await api('lineSync', { name: g.name })
+                      say(r.note, r.stuck ? 'warn' : r.moved ? 'ok' : 'warn')
+                      forget('baselines'); forget('groups'); forget('group-detail'); forget('branches')
+                      return draw()
+                    } catch (err) { oops(err) } finally { b.disabled = false; b.textContent = '⟳' }
+                  }
+                })
+              : null),
           g.marked
             ? el('p', { className: 'note', textContent: `Proposed for landing ${ago(g.marked.at)}${g.marked.why ? ` — ${g.marked.why}` : ''}. Read it on the Merge tab.` })
             : null,

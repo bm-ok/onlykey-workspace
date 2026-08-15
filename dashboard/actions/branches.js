@@ -820,6 +820,121 @@ module.exports = {
     }
   },
 
+  // EVERYTHING THAT CANNOT BE CAUGHT UP BY FAST-FORWARDING, in one list.
+  //
+  // The sync buttons handle every case where the answer is computable. What is
+  // left is the case where it is not: both sides have moved, and which change
+  // wins is a decision somebody has to make. Those were previously visible only
+  // as a red button on whichever repository you happened to be looking at.
+  //
+  // WHETHER IT WOULD ACTUALLY CONFLICT IS ASKED, not assumed. Diverged does not
+  // mean conflicting — two people editing different files diverge and merge
+  // cleanly. `git merge-tree --write-tree` answers it exactly, and it does so
+  // WITHOUT a working tree, a checkout, or anything to undo: it writes an object
+  // and reports. So this can say "these three files" rather than "there may be
+  // trouble", and it changes nothing by asking.
+  conflicts: {
+    about: 'Every branch that has moved on both sides, and which files would actually conflict',
+    needs: 'workspace',
+    run: () => {
+      const lines = branches.groups()
+      const out = []
+
+      for (const { name: repo } of repos.list()) {
+        const dir = repos.gitDirOf(repo)
+        if (!dir) continue
+        let rows = {}
+        try { rows = branches.trackedIn(dir) } catch { continue }
+
+        for (const b of Object.values(rows)) {
+          if (b.state !== 'diverged') continue
+          const would = branches.wouldConflict(dir, b.branch, `refs/remotes/origin/${b.branch}`)
+          out.push({
+            repo,
+            branch: b.branch,
+            local: b.local,
+            remote: b.remote,
+            ahead: b.ahead,
+            behind: b.behind,
+            // Which lines name this branch, so a conflict can be read as "the
+            // line is stuck" rather than as one repository's problem.
+            lines: lines.filter(g => g.on.some(p => p.repo === repo && p.branch === b.branch)).map(g => g.name),
+            files: would.files,
+            clean: would.clean,
+            why: would.why
+          })
+        }
+      }
+
+      const real = out.filter(c => !c.clean)
+      return {
+        conflicts: out,
+        stuck: real.length,
+        note: !out.length
+          ? 'Nothing has moved on both sides. Everything that is behind can be caught up with a sync.'
+          : real.length
+            ? `${real.length} of ${out.length} would actually conflict. The rest have moved on both sides and still merge cleanly.`
+            : `${out.length} branch(es) have moved on both sides, and every one of them would merge cleanly — they cannot be fast-forwarded, but nothing has to be decided.`
+      }
+    }
+  },
+
+  // A LINE IS ONE THING, SO IT SYNCS AS ONE THING.
+  //
+  // A line names one branch per repository and the point of naming it is that
+  // they move together. Catching them up one repository at a time is how two of
+  // three end up current — which is worse than all three being behind, because
+  // the line then reads as a single state that no repository is actually in.
+  //
+  // Same fetch-and-fast-forward as everywhere else, through the same syncBranch.
+  // A part that has moved on both sides is reported and left alone: that is a
+  // decision rather than a computation, and it belongs on the Conflicts tab.
+  lineSync: {
+    about: 'Fetch from origin and fast-forward every branch a line names, as one act',
+    needs: 'workspace',
+    takes: ['name'],
+    run: ({ name }) => {
+      const want = String(name || '').trim()
+      if (!want) throw new Error('Say which line.')
+      const line = branches.groups().find(g => g.name === want)
+      if (!line) throw new Error(`There is no line called "${want}".`)
+
+      const done = []
+      for (const p of line.on) {
+        if (!p.stillHere || !p.there) {
+          done.push({ repo: p.repo, branch: p.branch, moved: false, why: 'it is not here' })
+          continue
+        }
+        if (!p.remote) {
+          done.push({ repo: p.repo, branch: p.branch, moved: false, why: 'origin has no branch by this name' })
+          continue
+        }
+        try {
+          done.push(remotes.syncBranch(p.repo, p.branch))
+        } catch (e) {
+          done.push({ repo: p.repo, branch: p.branch, moved: false, why: (e.message || String(e)).split('\n')[0] })
+        }
+      }
+
+      const moved = done.filter(d => d.moved)
+      for (const d of moved) log.on('git', d.repo).good(`${d.branch} ${d.from} → ${d.to}, ${d.commits} commit(s) from origin`)
+      const stuck = done.filter(d => !d.moved && d.why && d.why !== 'already up to date')
+      for (const d of stuck) log.on('git', d.repo).warn(`${d.branch}: ${d.why}`)
+
+      return {
+        line: want,
+        parts: done,
+        moved: moved.length,
+        stuck: stuck.length,
+        note: moved.length
+          ? `"${want}": ${moved.map(d => `${d.repo} +${d.commits}`).join(', ')}${stuck.length ? `. ${stuck.length} could not be — see the Conflicts tab.` : '. Every part is level with origin.'}`
+          : stuck.length
+            ? `Nothing moved. ${stuck.length} part(s) of "${want}" cannot be fast-forwarded — see the Conflicts tab.`
+            : `Every branch "${want}" names already matches origin.`
+      }
+    }
+  },
+
   // ONE REPOSITORY, ONE BRANCH OR ALL OF THEM. The same fetch-and-fast-forward
   // as repoSync, aimed at what the branch panel is showing rather than at every
   // repository's default.

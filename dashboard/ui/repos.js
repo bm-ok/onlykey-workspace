@@ -192,9 +192,12 @@ document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(t => {
     document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
     document.querySelectorAll('#view-repos .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${repoPane}`))
     forget('repo-detail')
-    $('repos-cols').classList.toggle('hidden', repoPane === 'todo')
+    // Two panes are about the whole workspace rather than about one repository,
+    // so the picker is out of the way for both.
+    $('repos-cols').classList.toggle('hidden', repoPane === 'todo' || repoPane === 'conflicts')
     paintRepos()
     paintTodo()
+    paintConflicts()
   }
 })
 ;(() => {
@@ -202,7 +205,7 @@ document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(t => {
   if (!t) { repoPane = 'repos'; return }
   document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
   document.querySelectorAll('#view-repos .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${repoPane}`))
-  $('repos-cols').classList.toggle('hidden', repoPane === 'todo')
+  $('repos-cols').classList.toggle('hidden', repoPane === 'todo' || repoPane === 'conflicts')
 })()
 
 function paintRepos () {
@@ -329,6 +332,118 @@ function paintRepoDetail (r) {
       rem && rem.kind === 'github'
         ? el('button', { className: 'btn small', textContent: 'Open it on GitHub', onclick: () => host.openExternal(`https://${rem.host}/${rem.owner}/${rem.repo}`) })
         : null))
+}
+
+// ---- what has to be decided -------------------------------------------
+//
+// Everything else about a branch is computable and has a button. A conflict is
+// two people having meant different things, and no amount of code resolves that
+// — somebody decides. So it gets its own pane rather than a red button on
+// whichever repository happened to be selected, and from here it becomes a TASK:
+// a machine, a branch, a brief, an artifact, a verdict. Run by a worker or by a
+// person, which is the same task with one step different.
+//
+// DIVERGED IS NOT CONFLICTING, and the difference is most of the value here. Two
+// people editing different files both move their side and merge cleanly; a panel
+// that demands a decision about that is crying wolf. `git merge-tree` is asked,
+// so the rows say "these two files" rather than "there may be trouble" — and it
+// answers without a checkout, so asking costs nothing and undoes nothing.
+function paintConflicts () {
+  if (view !== 'repos' || repoPane !== 'conflicts') return
+  waiting('conflicts', { cards: 2 })
+  paintConflictsNow()
+}
+
+async function paintConflictsNow () {
+  await settle()
+  if (view !== 'repos' || repoPane !== 'conflicts') return
+
+  api('conflicts').then(({ conflicts, stuck, note }) => {
+    if (view !== 'repos' || repoPane !== 'conflicts') return
+    setText($('conflicts-note'), note)
+    if (!changed('conflicts', conflicts)) return
+
+    fill($('conflicts'), conflicts.length
+      ? conflicts.map(c => el('div', { className: `card${c.clean === false ? ' warn' : ''}` },
+          el('div', { className: 'card-title' },
+            el('span', { className: 'mono', textContent: `${c.repo} · ${c.branch}` }),
+            c.clean === false
+              ? el('span', { className: 'badge bad', textContent: `${c.files.length} file(s) conflict` })
+              : c.clean === true
+                ? el('span', { className: 'badge warn', textContent: 'merges cleanly' })
+                : el('span', { className: 'badge muted', textContent: 'could not be read' }),
+            ...(c.lines || []).map(l => el('span', { className: 'badge muted', textContent: l }))),
+
+          el('div', { className: 'card-sub muted', textContent:
+            `${c.ahead} commit(s) here that origin has not, ${c.behind} there that this has not. A fast-forward cannot help either way.` }),
+
+          c.clean === false
+            ? el('div', { className: 'carries', style: 'margin-top:8px' },
+                ...c.files.map(f => el('div', { className: 'group-part' },
+                  el('span', { className: 'mono', textContent: f }))))
+            : null,
+
+          c.why ? el('p', { className: 'note', textContent: c.why }) : null,
+
+          el('div', { className: 'row', style: 'margin-top:8px' },
+            // THE WAY OUT IS A TASK, which is the whole reason this pane is
+            // worth having rather than being a warning. The brief is written
+            // from what is actually known — which two commits, which files —
+            // because a worker sent to resolve a conflict with "there is a
+            // conflict" has to go and find out what this already knows.
+            //
+            // Whether a job runs it or a person opens VS Code is chosen on the
+            // task, not here: they are the same task with one step different.
+            el('button', {
+              className: 'btn small ok',
+              textContent: 'Write a task to resolve it',
+              title: 'Opens the task pane with the conflict as the brief. Pick a job to have a worker do it, or none to do it yourself.',
+              onclick: () => newTask({
+                title: `resolve ${c.branch} in ${c.repo}`,
+                branch: c.branch,
+                brief: [
+                  `The branch "${c.branch}" in ${c.repo} has moved on both sides and cannot be fast-forwarded.`,
+                  '',
+                  `Here it is at ${c.local}, with ${c.ahead} commit(s) origin does not have.`,
+                  `Origin has it at ${c.remote}, with ${c.behind} commit(s) this side does not have.`,
+                  '',
+                  c.clean === false
+                    ? `Merging origin/${c.branch} into ${c.branch} conflicts in:\n${c.files.map(f => `  - ${f}`).join('\n')}`
+                    : `Merging origin/${c.branch} into ${c.branch} does NOT conflict — git can reconcile it, but it is not a fast-forward, so it needs doing deliberately.`,
+                  '',
+                  'Reconcile the two sides. Change no behaviour that neither side changed:',
+                  'the job is to keep both intentions, not to improve on either.',
+                  '',
+                  'If the two sides disagree about what the code should DO — not merely',
+                  'about text — stop and say so plainly rather than choosing one. A',
+                  'conflict resolved by guessing leaves a diff that looks clean and is wrong.',
+                  '',
+                  'Commit the result on this branch.'
+                ].join('\n')
+              })
+            }),
+            el('button', {
+              className: 'btn small',
+              textContent: 'Read the branch',
+              title: 'The Branches tab, on this branch',
+              onclick: () => {
+                pickedBranch = c.branch
+                been.set('branch', pickedBranch)
+                forget('branches'); forget('branch-detail')
+                showTab('branches')
+              }
+            }))))
+      : el('p', { className: 'empty', textContent: 'Nothing is stuck. Everything that is behind origin can be caught up with a sync — the ⟳ buttons on Repos and on Branches.' }))
+
+    // Said on the tab as well, because this is a pane nobody thinks to open:
+    // the whole point is that it is empty almost always, and the one time it is
+    // not, somebody should not have to go looking.
+    const badge = $('conflicts-badge')
+    if (badge && changed('conflicts-badge', stuck)) {
+      badge.textContent = String(stuck || '')
+      badge.classList.toggle('hidden', !stuck)
+    }
+  }).catch(e => { if (changed('conflicts-bad', String(e.message))) oops(e) })
 }
 
 // WHERE EVERY BRANCH STANDS AGAINST ORIGIN, and a way to catch each one up.

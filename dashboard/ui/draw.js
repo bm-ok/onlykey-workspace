@@ -187,6 +187,7 @@ async function drawOnce () {
   paintWorkspace()
   paintRepos()
   paintTodo()
+  paintConflicts()
   paintCuts()
   paintTemplates()
   paintVms()

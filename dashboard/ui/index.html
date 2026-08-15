@@ -92,6 +92,13 @@
       <button class="subtab" data-pane="repos">Repos</button>
       <button class="subtab" data-pane="issues">Issues</button>
       <button class="subtab" data-pane="pulls">Pull requests</button>
+      <!-- WHERE A DECISION LIVES. Everything else about a branch is computable
+           and has a button; a conflict is two people having meant different
+           things, and the only way through it is somebody deciding. So it gets
+           its own place rather than being a red button on whichever repository
+           you happened to have selected — and from here it becomes a task, run
+           by a worker or by a person, like any other work. -->
+      <button class="subtab" data-pane="conflicts">Conflicts <span class="tab-badge hidden" id="conflicts-badge"></span></button>
     </div>
 
     <div class="sync-head">
@@ -106,6 +113,15 @@
          about a repository you picked, so it is full width and the picker is
          hidden while it is up. "What is waiting on me" is not a per-repository
          question — it only became one because GitHub's pages are. -->
+    <!-- Full width and outside the repository picker, like Overview, because a
+         conflict is not a question about the repository you have selected — it
+         is "what is stuck anywhere", and a per-repository view of that is how
+         one gets missed. -->
+    <div class="pane" id="pane-conflicts">
+      <p class="note" id="conflicts-note"></p>
+      <div id="conflicts" class="stack"></div>
+    </div>
+
     <div class="pane active" id="pane-todo">
       <div class="sync-head" style="margin-bottom:10px">
         <div class="chips" id="todo-filters" style="margin:0"></div>

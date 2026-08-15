@@ -238,6 +238,60 @@ function unlandedIn (dir, base, branch) {
   return out
 }
 
+// WHETHER MERGING TWO BRANCHES WOULD ACTUALLY CONFLICT, and in which files.
+//
+// DIVERGED IS NOT CONFLICTING. Two people editing different files both move
+// their side and merge cleanly; the panel that says "you must decide" about that
+// is crying wolf, and the one thing worse than a conflict is being told to
+// resolve one that does not exist.
+//
+// `git merge-tree --write-tree` answers it exactly and answers it SAFELY: it
+// needs no working tree, checks nothing out, leaves no half-merged state, and
+// there is nothing to undo afterwards. It writes an object into the database and
+// prints what it found — so this can be asked on a panel that anybody might have
+// open, which no other way of finding out could be.
+//
+// Exit 0 means it merged cleanly. Non-zero means conflicts, and the lines after
+// the tree name the paths, one per stage entry — deduplicated here, because a
+// content conflict lists the same path three times, once per side.
+//
+// Cached on the pair of commits like its neighbours: two commits, one answer.
+const conflictSeen = new Map()
+function wouldConflict (dir, ours, theirs) {
+  let a, b
+  try {
+    a = git(dir, ['rev-parse', ours])
+    b = git(dir, ['rev-parse', theirs])
+  } catch { return { clean: null, files: [], why: 'one of the two could not be read' } }
+
+  const key = `${dir}|${a}|${b}`
+  if (conflictSeen.has(key)) return conflictSeen.get(key)
+
+  let out
+  try {
+    git(dir, ['merge-tree', '--write-tree', a, b])
+    out = { clean: true, files: [], why: null }
+  } catch (e) {
+    // git() throws on a non-zero exit, and a non-zero exit here is the ANSWER
+    // rather than a failure. The paths are in what it printed.
+    const said = String((e && (e.stdout || e.message)) || '')
+    const files = [...new Set(
+      said.split('\n')
+        .map(l => /^\d{6} [0-9a-f]+ [123]\t(.+)$/.exec(l.trim()))
+        .filter(Boolean).map(m => m[1]))]
+    out = files.length
+      ? { clean: false, files, why: null }
+      // Non-zero with nothing that looks like a conflict listing is a real
+      // failure — an unrelated history, a missing object — and is reported as
+      // not knowing rather than as "clean".
+      : { clean: null, files: [], why: said.split('\n').filter(Boolean).pop() || 'git would not say' }
+  }
+
+  if (conflictSeen.size > 500) conflictSeen.clear()
+  conflictSeen.set(key, out)
+  return out
+}
+
 // How many commits `to` has that `from` has not. Cached on the same terms and
 // for the same reason as unlandedIn: two commits, one answer, no clock.
 const betweenSeen = new Map()
@@ -433,30 +487,43 @@ function readGroups () {
     return names
   }
 
-  // Where each of those branches is, on the same terms: one read per repository,
-  // reused across every line that names it.
+  // Where each of those branches is AND where origin has it, on the same terms:
+  // one read per repository, reused across every line that names it.
+  //
+  // `trackedIn` rather than `headsIn`, because a line has to stay in step across
+  // repositories and "in step with what" is the remote — so the panel that shows
+  // a line needs the same answer the Repositories tab shows, from the same read.
   const seen = new Map()
   const headsOf = repo => {
     if (seen.has(repo)) return seen.get(repo)
     const dir = serve.gitDirOf(repo)
     let at = {}
-    try { at = dir ? headsIn(dir) : {} } catch { at = {} }
+    try { at = dir ? trackedIn(dir) : {} } catch { at = {} }
     seen.set(repo, at)
     return at
   }
 
   return Object.entries(all).map(([name, g]) => {
     const on = g.on || {}
-    const parts = Object.entries(on).map(([repo, branch]) => ({
-      repo,
-      branch,
-      there: branchesOf(repo).includes(branch),
-      // WHERE IT IS, not just that it exists. Null when the branch is gone,
-      // which is the one case where there is no honest answer — and it reads
-      // differently from a branch that is there and has never moved.
-      at: headsOf(repo)[branch] || null,
-      stillHere: here.includes(repo)
-    }))
+    const parts = Object.entries(on).map(([repo, branch]) => {
+      const track = headsOf(repo)[branch] || null
+      return {
+        repo,
+        branch,
+        there: branchesOf(repo).includes(branch),
+        // WHERE IT IS, not just that it exists. Null when the branch is gone,
+        // which is the one case where there is no honest answer — and it reads
+        // differently from a branch that is there and has never moved.
+        at: track ? track.local : null,
+        // AND WHERE ORIGIN HAS IT. A line is one thing across repositories, so
+        // one part being behind is the whole line being behind — which is not
+        // visible from any single repository and is the reason a line has its
+        // own sync rather than three.
+        remote: track ? track.remote : null,
+        state: track ? track.state : null,
+        stillHere: here.includes(repo)
+      }
+    })
     return {
       name,
       why: g.why || null,
@@ -466,6 +533,22 @@ function readGroups () {
       // repositories still describes those three when a fourth arrives.
       missing: here.filter(r => !(r in on)),
       broken: parts.filter(p => p.stillHere && !p.there).map(p => `${p.branch} is gone from ${p.repo}`),
+      // WHERE THE LINE AS A WHOLE STANDS, which is the worst of its parts.
+      //
+      // A line is one thing said across repositories, so it is only in step when
+      // every part is. Averaging that — "two of three are fine" — would be the
+      // one answer a line must never give, because the whole point of naming one
+      // is that the three move together.
+      //
+      //   conflict   some part has moved on both sides. A fast-forward cannot
+      //              help and somebody has to decide. See the Conflicts tab
+      //   behind     some part can be caught up, and the button will do it
+      //   ok         every part that origin also has matches it
+      sync: parts.some(p => p.state === 'diverged') ? 'conflict'
+        : parts.some(p => p.state === 'behind' || p.state === 'different' || p.state === 'ahead') ? 'behind'
+          : parts.some(p => p.state === 'same') ? 'ok'
+            : null,
+      behind: parts.filter(p => p.state && p.state !== 'same' && p.state !== 'only here'),
       // Proposed for landing: `{ at, by, why }`, or null. See markGroup.
       marked: g.marked || null
     }
@@ -1225,7 +1308,7 @@ function remove (branch, { force = false } = {}) {
 }
 
 module.exports = {
-  all, ensure, remove, nameIsOk, branchesIn, headsIn, trackedIn, unlandedIn, countBetween, headOf, defaultHeads, noteFor, notes, scopeOf,
+  all, ensure, remove, nameIsOk, branchesIn, headsIn, trackedIn, unlandedIn, countBetween, wouldConflict, headOf, defaultHeads, noteFor, notes, scopeOf,
   defaultOf, baseFor, baselines, groups, saveGroup, deleteGroup, inAnyGroup,
   markGroup, unmarkGroup, groupFromBranch,
   protectedBranches, isProtected, whyProtected,
