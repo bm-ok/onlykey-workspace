@@ -18,7 +18,7 @@
 
 const actions = require('./table')
 const s = require('./shared')
-const { log, harness, suites, settings, workspaces } = s
+const { log, harness, suites, settings, workspaces, repos } = s
 
 // WHETHER THE DRILLS MAY RUN AT ALL, asked in one place.
 //
@@ -90,6 +90,93 @@ module.exports = {
     }
   },
 
+  // WHAT THE DRILLS LEFT BEHIND, and a way to take it away.
+  //
+  // This is the thing tasks/planned.js did not have, and it is why that file
+  // became "a loaded thing in a drawer". A drill that writes cleans up in a
+  // `finally` — and a `finally` does not run when the process is killed, the
+  // dashboard is restarted mid-run, or a machine stops answering. Fifty writing
+  // drills without a sweeper is a workspace filling with debris nobody can tell
+  // apart from real work.
+  //
+  // WHICH IS WHY EVERY WRITING DRILL USES A RESERVED NAME. `drill/` on a branch,
+  // `drill:` on a task title. Not a convention to be polite about: it is what
+  // makes cleaning up possible without a judgement call, because anything
+  // matching was made by a drill and nothing else here ever writes those names.
+  //
+  // IT LISTS BEFORE IT REMOVES. `--remove` is the second call, on purpose: this
+  // deletes branches, and the whole point of a sweeper is to be run when
+  // something has already gone wrong, which is exactly when a tool should say
+  // what it is about to do first.
+  drillSweep: {
+    about: 'What the drills left behind — drill/ branches and drill: tasks. Pass remove to take them away',
+    needs: 'workspace',
+    takes: ['remove'],
+    run: async ({ remove }) => {
+      const doIt = remove === true || remove === 'true'
+      const here = repos.list().map(r => r.name)
+
+      const branches = (await actions.gitBranches.run({})).branches
+        .filter(b => String(b.name).startsWith('drill/'))
+      const tasks = (await actions.tasks.run({})).tasks
+        .filter(t => /^drill:/i.test(String(t.title || '')))
+
+      // Remote branches too, because a drill that pushed left one on the fork —
+      // and a remote branch is the half somebody cannot see from here.
+      const remote = []
+      for (const repo of here) {
+        try {
+          const rows = await actions.repoBranches.run({ repo })
+          for (const b of rows.branches) {
+            if (String(b.branch).startsWith('drill/') && b.remote) remote.push({ repo, branch: b.branch })
+          }
+        } catch { /* a repository that cannot be read is reported by its own panel */ }
+      }
+
+      const found = { branches: branches.map(b => b.name), tasks: tasks.map(t => `#${t.number} ${t.title}`), remote }
+      const total = branches.length + tasks.length + remote.length
+
+      if (!doIt) {
+        return {
+          ...found,
+          total,
+          removed: false,
+          note: total
+            ? `${total} thing(s) left by drills. Nothing has been touched — pass remove to take them away.`
+            : 'Nothing left behind. Every drill that writes removes what it wrote.'
+        }
+      }
+
+      const gone = { tasks: [], branches: [], failed: [] }
+      // Tasks first: a task naming a branch is the thing that makes the branch
+      // look claimed, and deleting the branch under it would leave a task
+      // pointing at nothing.
+      for (const t of tasks) {
+        try { await actions.taskRemove.run({ id: t.id }); gone.tasks.push(t.id) } catch (e) { gone.failed.push(`${t.id}: ${e.message}`) }
+      }
+      for (const b of branches) {
+        // Forced, because a drill branch is ours by construction: nothing else
+        // in this app ever writes that name, and refusing to remove one because
+        // it carries a commit is refusing to clean up after a test that failed
+        // halfway — which is the only time this is ever run.
+        try { await actions.branchDelete.run({ branch: b.name, force: true }); gone.branches.push(b.name) } catch (e) { gone.failed.push(`${b.name}: ${e.message}`) }
+      }
+
+      log.on('test').warn(`swept ${gone.tasks.length} task(s) and ${gone.branches.length} branch(es) left by drills`)
+      return {
+        ...found,
+        removed: true,
+        gone,
+        // Said rather than done. Deleting a branch on the fork is a push, and a
+        // pull request open against it is somebody else's repository — neither
+        // is something a tidy-up button should decide.
+        note: remote.length
+          ? `${gone.tasks.length} task(s) and ${gone.branches.length} branch(es) removed here. ${remote.length} branch(es) are also on origin and are NOT touched — deleting those is a push, and any pull request open from one is on somebody else's repository.`
+          : `${gone.tasks.length} task(s) and ${gone.branches.length} branch(es) removed.`
+      }
+    }
+  },
+
   suiteRun: {
     about: 'Run every test, one suite, or one test. Reports per test as it goes',
     takes: ['suite', 'test'],
@@ -122,6 +209,25 @@ module.exports = {
           okc: (name, args = {}) => {
             const found = actions[name]
             if (!found) throw new Error(`No action called "${name}"`)
+
+            // THE THREE REPOSITORIES IN THE OPEN WORKSPACE, AND NOTHING ELSE.
+            //
+            // The drills may push to the forks and open pull requests on their
+            // parents, which means a drill naming the wrong repository writes to
+            // somebody's actual work on a live account. The workspace already
+            // scopes this — it holds exactly the three — so the guard is to
+            // check what a drill NAMES against what is open, rather than to
+            // trust that no drill will ever name anything else.
+            //
+            // A promise would do for today and not for the fiftieth suite
+            // written six weeks from now. This is the same reason `needs:
+            // workspace` is enforced in call() rather than remembered.
+            if (args && args.repo) {
+              const here = repos.list().map(r => r.name)
+              if (!here.includes(String(args.repo))) {
+                throw new Error(`"${args.repo}" is not a repository in the open workspace. The drills reach ${here.join(', ')} and nothing else — a drill that names another repository is writing to somebody's work on a live account.`)
+              }
+            }
             return found.run(args)
           },
           log: line => to.info(String(line).trim()),

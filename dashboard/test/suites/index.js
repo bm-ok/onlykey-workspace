@@ -30,4 +30,18 @@ function load () {
   for (const f of files) require(path.join(here, f))
 }
 
+// REQUIRE THE HARNESS BY A RELATIVE PATH — `require('../../tasks/harness')` —
+// and never by an absolute one.
+//
+// `suites` in the harness is a module-level array, and Node keys its module
+// cache on the RESOLVED path. An absolute require that differs in any way the
+// resolver does not normalise — on Windows, a drive letter in the other case is
+// enough — loads a SECOND copy of the harness with its own empty array. The
+// suite then registers into a registry nothing reads: no error, no warning, and
+// the file simply does not appear.
+//
+// Found by writing a probe suite that way. It ran, it registered, and
+// `suiteRun --suite probe` answered "0 passed, 0 failed" about a suite sitting
+// in the directory.
+
 module.exports = { load }

@@ -77,9 +77,41 @@ const been = {
 // class has to agree with this or a fresh window shows one tab selected and a
 // different one's panel.
 let view = been.get('view', 'branches')
+// WHERE SETTINGS WAS OPENED FROM, so ☰ closes as well as opens.
+//
+// Settings is not somewhere you go to work — it is somewhere you go to change
+// one thing and come back from, which is why it sits outside the row of tabs at
+// all. A button that only ever goes one way leaves somebody to remember which of
+// eleven tabs they were on, and the app already knows.
+//
+// Not remembered across restarts on purpose: coming back to a window and being
+// bounced somewhere by a button you pressed yesterday is worse than landing on
+// the tab you left it on.
+let beforeSettings = null
+
+// Whether a view change is a person pressing a tab or something sending them
+// there. showTab() works by clicking the tab, so the ☰ toggle has to be able to
+// tell the two apart — see showTab below.
+let goingDirect = false
+
 document.querySelectorAll('.tab').forEach(b => {
   b.onclick = () => {
     const from = view
+
+    // THE TOGGLE. Pressed while Settings is open, ☰ goes back to where it was
+    // opened from, and falls back to the first tab if this window opened
+    // straight into Settings — the one case where there is no back.
+    //
+    // Only a REAL press. Without that check the banner's "Switch it off" would
+    // bounce somebody off Settings when they were already on it: a button doing
+    // the opposite of what it says, in exactly the case it exists for.
+    if (!goingDirect && b.dataset.view === 'settings' && view === 'settings') {
+      const back = beforeSettings || (document.querySelector('.tabs .tab[data-view]') || {}).dataset?.view || 'repos'
+      beforeSettings = null
+      return showTab(back)
+    }
+    if (b.dataset.view === 'settings') beforeSettings = from
+
     view = b.dataset.view
     been.set('view', view)
     document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === b))
@@ -114,7 +146,14 @@ document.querySelectorAll('.tab').forEach(b => {
     if (from !== view) draw()
   }
 })
-const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).click()
+// SEND SOMEBODY SOMEWHERE, as opposed to a person pressing a tab. Through the
+// tab's own click so there is one place that knows how to switch a view — and
+// flagged, because the ☰ toggles on a press and must not toggle when something
+// is deliberately sending you to Settings.
+const showTab = name => {
+  goingDirect = true
+  try { document.querySelector(`.tab[data-view="${name}"]`).click() } finally { goingDirect = false }
+}
 
 // Applied immediately, before anything is drawn.
 //
