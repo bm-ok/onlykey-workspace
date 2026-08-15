@@ -375,7 +375,6 @@ function shotIfAsked () {
       // typed is selected and not on screen -- a photograph of a detail panel
       // beside a list that does not contain it.
       $('branch-find').value = ''
-      $('branch-mine').checked = false
       forget('branches')
       shotSettle = 2
       paintBranches()
@@ -482,7 +481,6 @@ async function pickFor (v, pick) {
       pickedBranch = pick
       been.set('branch', pickedBranch)
       $('branch-find').value = ''
-      $('branch-mine').checked = false
       forget('branches')
       paintBranches()
     }

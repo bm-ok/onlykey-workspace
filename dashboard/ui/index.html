@@ -435,7 +435,13 @@
          constantly, the second when work changes direction, the third almost
          never but with the most consequence. -->
     <div class="subtabs">
-      <button class="subtab active" data-pane="overview">Overview</button>
+      <!-- CUTS AND LINES ARE THE SAME THING, EXCEPT LINES ARE PROTECTED, and
+           this pane was called "Overview" while showing both — which is what
+           taught everyone reading it that "branch cut" meant "any branch". A
+           cut is where work is done; a line is what work is measured against
+           and what a PR cut is made from, which is why it is protected: it must
+           not be tainted by the work being proposed into it. -->
+      <button class="subtab active" data-pane="overview">Cuts</button>
       <button class="subtab" data-pane="baselines">Lines</button>
       <button class="subtab" data-pane="changes">Changes</button>
       <button class="subtab" data-pane="protected">Protected</button>
@@ -445,15 +451,18 @@
       <div class="cols">
 
         <div class="col narrow">
-          <!-- "Branch cuts" rather than "Branches", because that is what this
-               list is: every branch was CUT, from a named line, for a reason, and
-               all three are recorded. The tab is called Branches; this column is
-               the cuts made in it, which is what distinguishes it from the lines
-               on Baselines and the protected ones next door. -->
+          <!-- CUTS, AND ONLY CUTS. A cut is a branch this app made, with a
+               reason and a starting point, for work to be done on. A line is the
+               same thing protected — what work is measured against, and what a
+               PR cut is proposed into, which is why nothing may be built
+               directly on one.
+
+               This column used to show both under this heading, which is where
+               the word stopped meaning anything. The lines are next door under
+               Lines and the protected ones under Protected. -->
           <h2 class="titlerow">
             Branch cuts
             <span class="grow"></span>
-            <label class="inline mine"><input type="checkbox" id="branch-mine" checked> ours</label>
             <!-- Making one is a deliberate act with a reason now. It used to
                  happen as a side effect of setting a machine up, from whatever
                  string a task carried — so a typo made a branch, not an error. -->

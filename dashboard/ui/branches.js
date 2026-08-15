@@ -18,13 +18,18 @@
 // ahead means the name is all there is and sweeping it up loses nothing;
 // anything ahead means work exists here and nowhere else.
 
-// Which branches are worth looking at by default.
+// There was an "ours" filter here -- protected, or claimed, or held, or
+// orphaned -- because a workspace accumulates names and a list showing all of
+// them equally was the confusion this tab exists to remove.
 //
-// A workspace accumulates names -- a drill's branch outlives the drill, somebody
-// cuts one by hand -- and a list that shows everything equally is the confusion
-// this tab exists to remove rather than to display. So the default is what this
-// system made or is using, and the toggle is right there for the rest.
-const oursOnly = b => b.protected || b.tasks.length || b.heldBy || b.orphaned
+// It is gone because the question it answered is now answered properly. "Ours"
+// was a guess at which branches this system made; `cut` is the RECORD of it,
+// written when the branch was cut. Every row in this pane is one by definition,
+// so a filter for them would hide nothing and a checkbox offering it would be a
+// control with no off state worth having.
+//
+// It would also have been actively wrong here: your cuts are mostly "spare" --
+// no task, no machine, nothing ahead -- and that filter hid exactly those.
 
 // Which branch the other two columns are about. Remembered, like the machine
 // selection, and reconciled against what exists on every draw -- a branch can be
@@ -101,34 +106,55 @@ async function paintBranchesNow () {
   if (view !== 'branches') return
   api('branchBoard').then(board => {
     const find = $('branch-find').value.trim().toLowerCase()
-    const mine = $('branch-mine').checked
-    const rows = board.branches
-      // THE SELECTED ONE IS ALWAYS SHOWN, whatever the filter says. Two columns
+
+    // CUTS ONLY, WHICH IS WHAT THIS PANE IS NOW CALLED.
+    //
+    // A cut and a line are the same thing except that a line is protected --
+    // and this list showed both, under a heading that said "branch cuts". That
+    // is where the word stopped meaning anything: half the rows were things
+    // work is measured against rather than done on.
+    //
+    // Two tests, and both are needed. `cut` is the record this app wrote when
+    // it made the branch, so a repository's own default and anything made by
+    // hand are not cuts. `protected` then takes precedence over that record: a
+    // branch cut here and later named into a line IS a line now, because that
+    // is what naming it meant. The record is of an act that happened, not of
+    // what the branch is today.
+    //
+    // The lines are next door under Lines, and the protected ones under
+    // Protected. Nothing is hidden; it is filed.
+    const cuts = board.branches.filter(b => b.cut && !b.protected)
+    const rows = cuts
+      // THE SELECTED ONE IS ALWAYS SHOWN, whatever the finder says. Two columns
       // describe it, and a selection you cannot see is worse than a row the
       // filter would rather hide -- the panels then look like they belong to
       // something else on screen, or to nothing.
-      .filter(b => b.name === pickedBranch || !mine || oursOnly(b))
       .filter(b => b.name === pickedBranch || !find || b.name.toLowerCase().includes(find))
 
-    // Against the WHOLE board rather than the filtered rows: typing in the
-    // finder should not silently move the selection to something else.
-    if (!board.branches.some(b => b.name === pickedBranch)) {
-      // Not the first row, which is alphabetical and therefore usually the
-      // default branch -- the one branch where every action is refused and there
-      // is nothing to read. Landing there says "this tab does nothing".
-      const worth = rows.find(b => !b.protected) || rows[0] || board.branches[0]
-      pickedBranch = (worth || {}).name || null
+    // Against every cut rather than the filtered rows: typing in the finder
+    // should not silently move the selection to something else.
+    if (!cuts.some(b => b.name === pickedBranch)) {
+      pickedBranch = (rows[0] || cuts[0] || {}).name || null
       been.set('branch', pickedBranch)
     }
 
-    const c = board.counts
+    // COUNTED OVER THE CUTS, not over the board. The chips used the board-wide
+    // figures, which was right while the list was the board and became a set of
+    // numbers about other panes' rows the moment it was not.
+    const c = {
+      all: cuts.length,
+      claimed: cuts.filter(b => b.tasks.length).length,
+      held: cuts.filter(b => b.heldBy).length,
+      orphaned: cuts.filter(b => b.orphaned).length,
+      spare: cuts.filter(b => b.spare).length
+    }
     // WHAT IS NOT ON SCREEN, SAID WHERE THE COUNT IS. The chips describe the
     // whole workspace and the list is filtered, so "4 in all" above three rows
     // reads as a fault in the list rather than as a filter doing its job. It is
     // the count that has to say so, because it is the count that is disagreed
     // with -- and it is worth keeping the board-wide numbers, since "there is an
     // orphan somewhere" is exactly the thing a filtered list would hide.
-    const hidden = board.branches.length - rows.length
+    const hidden = cuts.length - rows.length
 
     if (changed('branches', [rows, c, hidden, pickedBranch])) {
       fill($('branch-counts'),
@@ -141,11 +167,13 @@ async function paintBranchesNow () {
         c.spare ? chip(`${c.spare} spare`, 'warn') : null,
         // Actionable rather than merely honest: the thing you want on reading
         // "1 hidden" is to see it, so this is the button that does that.
+        // Only the finder can hide a cut now, so this clears that rather than a
+        // checkbox that no longer exists.
         hidden
           ? el('button', {
               className: 'chip warn linky-chip',
-              textContent: `${hidden} hidden — show`,
-              onclick: () => { $('branch-mine').checked = false; forget('branches'); paintBranches() }
+              textContent: `${hidden} hidden by the finder — show`,
+              onclick: () => { $('branch-find').value = ''; forget('branches'); paintBranches() }
             })
           : null,
 

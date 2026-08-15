@@ -780,7 +780,6 @@ $('repos-check').onclick = () => api('repositoriesCheck')
 $('term-close').onclick = () => closeShell(active)
 // Repainted on the spot rather than on the next draw, because a filter that
 // takes up to three seconds to answer reads as one that did not work.
-$('branch-mine').onchange = () => { forget('branches'); paintBranches() }
 $('branch-find').oninput = () => { forget('branches'); paintBranches() }
 window.addEventListener('resize', () => {
   if (view !== 'terminal') return
