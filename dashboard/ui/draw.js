@@ -286,9 +286,13 @@ function shotIfAsked () {
     // Jobs, Prompts or Contracts was a photograph of whichever one had been left
     // open, which is exactly the "measure before claiming" fault: a picture that
     // looks like evidence and is of somewhere else.
-    if (want.pick && view === 'tasks' && ['board', 'add', 'jobs', 'prompts', 'contracts'].includes(want.pick) && taskPane !== want.pick) {
-      const t = document.querySelector(`#view-tasks .subtab[data-pane="${want.pick}"]`)
-      if (t) {
+    // ASKED OF THE MARKUP, not from a list written here. This named the five
+    // panes Tasks had, and three of them have since moved to their own tab —
+    // so the list was wrong the moment they did, in a way nothing would report.
+    // Whether a name is a pane is a question the document can answer.
+    if (want.pick) {
+      const t = document.querySelector(`#view-${view} .subtab[data-pane="${want.pick}"]`)
+      if (t && !t.classList.contains('active')) {
         shotSettle = 2
         t.click()
         return
@@ -488,7 +492,12 @@ const words = n => (n.textContent || '').replace(/\s+/g, ' ').trim()
 function drivingRegion () {
   const dlg = document.querySelector('.dlg-overlay .dlg')
   if (dlg) return { where: 'the open dialog', node: dlg, dialog: true }
-  return { where: `${view}${taskPane && view === 'tasks' ? `/${taskPane}` : ''}`, node: document.body, dialog: false }
+  // Which pane, read off the markup for whichever view is open, rather than from
+  // one view's variable. `windowControls` reported "tasks/board" and plain
+  // "repos" for every other tab that has panes, which made the one answer this
+  // returns depend on which tab somebody happened to be on.
+  const open = document.querySelector(`#view-${view} .subtab[data-pane].active`)
+  return { where: `${view}${open ? `/${open.dataset.pane}` : ''}`, node: document.body, dialog: false }
 }
 
 // The label a field goes by, in the words on the screen. `buildFields` puts a
@@ -633,14 +642,14 @@ if (app) app.onDrive(async want => {
 // idea of what picking one means, and each of them already had one -- this is
 // only the place they are reached from.
 async function pickFor (v, pick) {
+  // A SUB-TAB FIRST, IN WHICHEVER VIEW, asked of the markup rather than from a
+  // list kept here. A pane nobody can reach from outside is a pane nobody has
+  // seen, which is the whole reason this exists — and a hardcoded list of pane
+  // names goes stale the first time one moves, silently.
+  const pane = document.querySelector(`#view-${v} .subtab[data-pane="${pick}"]`)
+  if (pane) { pane.click(); return }
+
   if (v === 'tasks') {
-    // The sub-tab first: Tasks has two now, and a pane nobody can reach from out
-    // here is a pane nobody has seen -- which is the whole reason this exists.
-    if (['board', 'jobs', 'prompts'].includes(pick)) {
-      const t = document.querySelector(`#view-tasks .subtab[data-pane="${pick}"]`)
-      if (t) t.click()
-      return
-    }
     const t = (taskList || []).find(x => x.id === pick || String(x.number) === pick)
     if (t && pickedTask !== t.id) return pickTask(t.id, null)
     return

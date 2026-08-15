@@ -51,6 +51,11 @@
          apart the moment anybody edits one of them by hand. -->
     <button class="tab" data-view="prcuts">PR cuts</button>
     <button class="tab" data-view="tasks">Tasks <span class="tab-badge hidden" id="tasks-badge"></span></button>
+    <!-- WHAT IS DEFINED, beside what is happening. A contract, a prompt and a
+         job are written once, approved once and run whenever — a task is one
+         occasion of them. They were sub-tabs of Tasks, which put a library
+         inside its own consumer and said the two were the same kind of thing. -->
+    <button class="tab" data-view="actions">Actions</button>
     <!-- The badge is what makes a tab you cannot see safe to have: output
          arriving behind it is announced, and a failure differently from
          ordinary chatter. -->
@@ -59,7 +64,11 @@
     <button class="tab" data-view="live">Live <span class="tab-badge hidden" id="live-badge"></span></button>
     <button class="tab" data-view="terminal">Terminal</button>
     <button class="tab" data-view="keys">Keys</button>
-    <button class="tab" data-view="actions">All actions</button>
+    <!-- WHAT THIS SERVER CAN DO, which is a reference and not a place to work.
+         It was called "All actions" and that name went to the wrong tab: the
+         three things you actually run — a job, a prompt, a contract — are next
+         door under Actions, and this is the surface they reach through. -->
+    <button class="tab" data-view="api">API</button>
   </nav>
   <div class="topright muted" id="topright"></div>
 </header>
@@ -288,20 +297,14 @@
        button that hands work over. -->
   <section class="view" id="view-tasks">
 
-    <!-- TWO KINDS OF THING, AND ONLY ONE OF THEM IS A TASK.
-         The board is work: written, given out, delivered, judged. A pre-defined
-         task is a DEFINITION of work -- written once, approved once, and run
-         whenever it is wanted -- and it had no home at all. It was reachable
-         from a nudge card that only appears when something is waiting, and from
-         inside the write-a-task dialog three clicks in, so ten definitions could
-         sit there and the window said nothing. A dialog is for one decision;
-         managing ten of them is not one decision. -->
+    <!-- WORK, AND ONLY WORK. The board is what is happening: written, given out,
+         delivered, judged. What it is made OF -- a job, a prompt, a contract --
+         is next door under Actions, because a definition is written once and run
+         whenever, while a task is one occasion and gets a verdict. They were
+         three more sub-tabs here, which put a library inside its own consumer. -->
     <div class="subtabs">
       <button class="subtab active" data-pane="board">Board</button>
       <button class="subtab" data-pane="add">Add task</button>
-      <button class="subtab" data-pane="jobs">Jobs</button>
-      <button class="subtab" data-pane="prompts">Prompts</button>
-      <button class="subtab" data-pane="contracts">Contracts</button>
     </div>
 
     <!-- WRITING ONE IS THE WORK, so it gets a pane rather than a modal. It grew
@@ -377,71 +380,6 @@
       </div>
 
     </div>
-    </div>
-
-    <!-- WHAT IS DEFINED, rather than what is happening. Grouped by suite because
-         that is what a definition is FOR -- "the guards" is a claim about a set,
-         and reading them one at a time out of a dropdown is how a gap in the set
-         goes unnoticed. -->
-    <div class="pane" id="pane-jobs">
-      <p class="note" id="jobs-note"></p>
-      <div class="cols">
-        <div class="col narrow">
-          <h2 class="titlerow">
-            Jobs <span class="muted" id="jobs-context"></span>
-            <button class="plus" id="job-new" title="Write a job that can be run again">+</button>
-          </h2>
-          <div id="jobs-list" class="stack"></div>
-        </div>
-        <!-- THE WHOLE DEFINITION, not a summary of it. The question these are
-             read with is "what would this do to my repositories", and that is
-             answerable only from what it actually says. A list of names is how
-             ten of them sat unread. -->
-        <div class="col wide">
-          <div id="jobs-detail" class="panel"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- WHAT A WORKER IS TOLD, KEPT. Writing a task is writing a prompt: the
-         brief IS the instruction, and it was retyped every time until the same
-         intention had four wordings. These are the kept ones, and a task is
-         filled in from one rather than pointing at it. -->
-    <div class="pane" id="pane-prompts">
-      <p class="note" id="prompts-note"></p>
-      <div class="cols">
-        <div class="col narrow">
-          <!-- The + belongs on the list it adds to, which is where it is
-               everywhere else here: branch cuts, PR cuts, machines, tasks. -->
-          <h2 class="titlerow">
-            Prompts <span class="muted" id="prompts-context"></span>
-            <button class="plus" id="prompt-new" title="Write a prompt">+</button>
-          </h2>
-          <div id="prompts-list" class="stack"></div>
-        </div>
-        <div class="col wide">
-          <div id="prompt-detail" class="panel"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- The rules a worker is given, as opposed to the brief it is given. Same
-         shape as Prompts, because it is the same kind of thing: text somebody
-         has to read, approve, and be told about when it changes. -->
-    <div class="pane" id="pane-contracts">
-      <p class="note" id="contracts-note"></p>
-      <div class="cols">
-        <div class="col narrow">
-          <h2 class="titlerow">
-            Contracts <span class="muted" id="contracts-context"></span>
-            <button class="plus" id="contract-new" title="Write a contract">+</button>
-          </h2>
-          <div id="contracts-list" class="stack"></div>
-        </div>
-        <div class="col wide">
-          <div id="contract-detail" class="panel"></div>
-        </div>
-      </div>
     </div>
 
   </section>
@@ -751,8 +689,94 @@
     <div id="app-keys" class="stack"></div>
   </section>
 
-  <!-- ---------------- All actions ---------------- -->
+  <!-- ---------------- Actions ----------------
+       WHAT IS DEFINED, rather than what is happening. A contract is the rules,
+       a prompt is the words that must hold to them, a job is the script that
+       gives those words to a worker -- read right to left, they are the chain
+       a task is one occasion OF.
+
+       They lived under Tasks, which put a library inside the thing that uses
+       it: writing a task and writing the job a hundred tasks will run are
+       different acts on different days, and the sub-tabs said they were the
+       same kind of thing. A definition is approved once and run whenever;
+       a task is one occasion and is judged. -->
   <section class="view" id="view-actions">
+
+    <div class="subtabs">
+      <button class="subtab active" data-pane="jobs">Jobs</button>
+      <button class="subtab" data-pane="prompts">Prompts</button>
+      <button class="subtab" data-pane="contracts">Contracts</button>
+    </div>
+
+    <!-- WHAT IS DEFINED, rather than what is happening. Grouped by suite because
+         that is what a definition is FOR -- "the guards" is a claim about a set,
+         and reading them one at a time out of a dropdown is how a gap in the set
+         goes unnoticed. -->
+    <div class="pane" id="pane-jobs">
+      <p class="note" id="jobs-note"></p>
+      <div class="cols">
+        <div class="col narrow">
+          <h2 class="titlerow">
+            Jobs <span class="muted" id="jobs-context"></span>
+            <button class="plus" id="job-new" title="Write a job that can be run again">+</button>
+          </h2>
+          <div id="jobs-list" class="stack"></div>
+        </div>
+        <!-- THE WHOLE DEFINITION, not a summary of it. The question these are
+             read with is "what would this do to my repositories", and that is
+             answerable only from what it actually says. A list of names is how
+             ten of them sat unread. -->
+        <div class="col wide">
+          <div id="jobs-detail" class="panel"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WHAT A WORKER IS TOLD, KEPT. Writing a task is writing a prompt: the
+         brief IS the instruction, and it was retyped every time until the same
+         intention had four wordings. These are the kept ones, and a task is
+         filled in from one rather than pointing at it. -->
+    <div class="pane" id="pane-prompts">
+      <p class="note" id="prompts-note"></p>
+      <div class="cols">
+        <div class="col narrow">
+          <!-- The + belongs on the list it adds to, which is where it is
+               everywhere else here: branch cuts, PR cuts, machines, tasks. -->
+          <h2 class="titlerow">
+            Prompts <span class="muted" id="prompts-context"></span>
+            <button class="plus" id="prompt-new" title="Write a prompt">+</button>
+          </h2>
+          <div id="prompts-list" class="stack"></div>
+        </div>
+        <div class="col wide">
+          <div id="prompt-detail" class="panel"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- The rules a worker is given, as opposed to the brief it is given. Same
+         shape as Prompts, because it is the same kind of thing: text somebody
+         has to read, approve, and be told about when it changes. -->
+    <div class="pane" id="pane-contracts">
+      <p class="note" id="contracts-note"></p>
+      <div class="cols">
+        <div class="col narrow">
+          <h2 class="titlerow">
+            Contracts <span class="muted" id="contracts-context"></span>
+            <button class="plus" id="contract-new" title="Write a contract">+</button>
+          </h2>
+          <div id="contracts-list" class="stack"></div>
+        </div>
+        <div class="col wide">
+          <div id="contract-detail" class="panel"></div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ---------------- All actions ---------------- -->
+  <section class="view" id="view-api">
     <p class="note">
       Every capability this server has, generated from <code>/api/actions</code>.
       Nothing can exist without appearing here.

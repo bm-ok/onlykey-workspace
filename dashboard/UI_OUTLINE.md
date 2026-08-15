@@ -110,7 +110,7 @@ WRITE THE TASK
    who cannot ask you a question.
 4. Leave job, prompt and contract as "none" for now. Most work needs none of
    them; they are for when the same brief is being retyped for the third time.
-5. If you do want them, they are three sub-tabs along and are written right to
+5. If you do want them, they live on the Actions tab and are written right to
    left: Contracts (the rules — what a worker may NOT do), then Prompts (the
    words, naming the contract they hold to), then Jobs (the script that gives
    those words to a worker). Each is approved where it is written, and approving

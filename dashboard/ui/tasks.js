@@ -27,29 +27,55 @@ let taskList = []
 // below reads it. State the tab owns belongs where the tab is declared.
 let taskPane = been.get('task-pane', 'board')
 
-document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
-  t.onclick = () => {
-    taskPane = t.dataset.pane
-    been.set('task-pane', taskPane)
-    document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
-    document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
-    // REBUILT ON ENTRY, so the dropdowns are what the libraries say now.
-    // paintAddTaskNow refuses to rebuild otherwise, because it must not swallow
-    // what somebody has typed -- so arriving at the pane is the one moment it is
-    // safe, and the only moment it is needed.
-    if (taskPane === 'add') addBuiltFor = null
-    paintAddTask()
-    paintJobs()
-    paintPrompts()
-    paintContracts()
+// WHICH DEFINITION IS BEING READ, and it is a different question from which task.
+//
+// Jobs, prompts and contracts moved out of Tasks and into their own tab. They
+// were sub-tabs of the thing that USES them, which put a library inside its
+// consumer: writing a task and writing the job a hundred tasks will run are
+// different acts on different days, and being sub-tabs of one thing said they
+// were the same kind of thing. A definition is approved once and run whenever; a
+// task is one occasion and gets judged.
+//
+// Its own variable rather than sharing `taskPane`, because they are now two
+// independent selections — coming back to Tasks should find the board, not
+// whichever contract was last read.
+let actionPane = been.get('action-pane', 'jobs')
+
+// ONE SWITCHER, TOLD WHICH TAB IT IS FOR. Two copies of this existed for two
+// seconds and the second was already subtly different; a sub-tab bar is a sub-tab
+// bar, and what changes is which variable it writes and what it repaints.
+const paneSwitcher = (viewId, get, set, after) => {
+  const apply = pane => {
+    document.querySelectorAll(`#${viewId} .subtab[data-pane]`).forEach(x => x.classList.toggle('active', x.dataset.pane === pane))
+    document.querySelectorAll(`#${viewId} .pane`).forEach(x => x.classList.toggle('active', x.id === `pane-${pane}`))
   }
+  document.querySelectorAll(`#${viewId} .subtab[data-pane]`).forEach(t => {
+    t.onclick = () => { set(t.dataset.pane); apply(t.dataset.pane); after() }
+  })
+  // Applied before anything is drawn, so the remembered pane and the markup
+  // agree. A pane that is not there any more falls back to the first.
+  const known = document.querySelector(`#${viewId} .subtab[data-pane="${get()}"]`)
+  if (!known) {
+    const first = document.querySelector(`#${viewId} .subtab[data-pane]`)
+    if (first) set(first.dataset.pane)
+  }
+  apply(get())
+}
+
+paneSwitcher('view-tasks', () => taskPane, p => { taskPane = p; been.set('task-pane', p) }, () => {
+  // REBUILT ON ENTRY, so the dropdowns are what the libraries say now.
+  // paintAddTaskNow refuses to rebuild otherwise, because it must not swallow
+  // what somebody has typed -- so arriving at the pane is the one moment it is
+  // safe, and the only moment it is needed.
+  if (taskPane === 'add') addBuiltFor = null
+  paintAddTask()
 })
-;(() => {
-  const t = document.querySelector(`#view-tasks .subtab[data-pane="${taskPane}"]`)
-  if (!t) { taskPane = 'board'; return }
-  document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
-  document.querySelectorAll('#view-tasks .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${taskPane}`))
-})()
+
+paneSwitcher('view-actions', () => actionPane, p => { actionPane = p; been.set('action-pane', p) }, () => {
+  paintJobs()
+  paintPrompts()
+  paintContracts()
+})
 
 // GOING TO THE OTHER HALF.
 //
@@ -60,10 +86,16 @@ document.querySelectorAll('#view-tasks .subtab[data-pane]').forEach(t => {
 // a screen that knows the answer should be able to go to it.
 //
 // THROUGH THE TAB'S OWN CLICK, rather than setting the four things a switch sets.
-// The handler above is the one place that knows how to change sub-tab; a second
+// The switcher above is the one place that knows how to change sub-tab; a second
 // copy here would be the one that stops being updated.
-const showPane = pane => {
-  const tab = document.querySelector(`#view-tasks .subtab[data-pane="${pane}"]`)
+//
+// The view as well as the pane, now that the definitions are a tab of their own.
+// Switching only the sub-tab moved a pane behind a tab nobody was looking at,
+// which reads as a button that does nothing — the same fault `newTask` already
+// had to fix when it was called from Branches.
+const showPane = (pane, inView = 'tasks') => {
+  if (view !== inView) showTab(inView)
+  const tab = document.querySelector(`#view-${inView} .subtab[data-pane="${pane}"]`)
   if (tab) tab.click()
 }
 
@@ -73,21 +105,21 @@ function showPrompt (id) {
   pickedPrompt = id
   been.set('prompt', id)
   forget('prompts'); forget('prompt-detail')
-  showPane('prompts')
+  showPane('prompts', 'actions')
 }
 
 function showJob (id) {
   pickedJob = id
   been.set('job', id)
   forget('jobs'); forget('jobs-detail')
-  showPane('jobs')
+  showPane('jobs', 'actions')
 }
 
 function showContract (id) {
   pickedContract = id
   been.set('contract', id)
   forget('contracts'); forget('contract-detail')
-  showPane('contracts')
+  showPane('contracts', 'actions')
 }
 
 // What a task's card and its detail panel read, including what the buttons close
@@ -473,7 +505,10 @@ function paintTaskDetail (task) {
               // somebody who already knew they were the same thing.
               textContent: task.jobName || task.job,
               title: 'Read the script that will run',
-              onclick: () => { pickedJob = task.job; been.set('job', pickedJob); forget('jobs'); forget('jobs-detail'); showPane('jobs') }
+              // Through showJob, which is the one place that knows where jobs
+              // live now. This had its own copy of the same four lines and was
+              // the one left pointing at the old tab.
+              onclick: () => showJob(task.job)
             })
           : el('span', { className: 'muted', textContent: 'none — the machine is set up on the branch cut and left running for you' }))),
       el('tr', {}, el('th', { textContent: 'prompt' }),
@@ -1709,7 +1744,7 @@ let pickedPrompt = been.get('prompt', null)
 let contractsNow = []
 
 function paintPrompts () {
-  if (view !== 'tasks' || taskPane !== 'prompts') return
+  if (view !== 'actions' || actionPane !== 'prompts') return
   waiting('prompts-list', { cards: 3 })
   waiting('prompt-detail', { lines: 8 })
   paintPromptsNow()
@@ -1717,7 +1752,7 @@ function paintPrompts () {
 
 async function paintPromptsNow () {
   await settle()
-  if (view !== 'tasks' || taskPane !== 'prompts') return
+  if (view !== 'actions' || actionPane !== 'prompts') return
 
   // The jobs too, only to say which ones use each prompt. Allowed to fail and
   // still paint: prompts are kept for this computer and jobs belong to a
@@ -1970,7 +2005,7 @@ const contractBadge = c => c.lapsed
     : { className: 'badge warn', textContent: 'not approved' }
 
 function paintContracts () {
-  if (view !== 'tasks' || taskPane !== 'contracts') return
+  if (view !== 'actions' || actionPane !== 'contracts') return
   waiting('contracts-list', { cards: 3 })
   waiting('contract-detail', { lines: 8 })
   paintContractsNow()
@@ -1978,7 +2013,7 @@ function paintContracts () {
 
 async function paintContractsNow () {
   await settle()
-  if (view !== 'tasks' || taskPane !== 'contracts') return
+  if (view !== 'actions' || actionPane !== 'contracts') return
 
   // The prompts too, only to say which run under each. A contract with nothing
   // under it is not a fault — it is one somebody wrote before the brief that
@@ -2211,7 +2246,7 @@ const jobBadge = j => j.runnable
             : { className: 'badge warn', textContent: 'prompt waiting' }
 
 function paintJobs () {
-  if (view !== 'tasks' || taskPane !== 'jobs') return
+  if (view !== 'actions' || actionPane !== 'jobs') return
   waiting('jobs-list', { cards: 3 })
   waiting('jobs-detail', { lines: 8 })
   paintJobsNow()
@@ -2219,7 +2254,7 @@ function paintJobs () {
 
 async function paintJobsNow () {
   await settle()
-  if (view !== 'tasks' || taskPane !== 'jobs') return
+  if (view !== 'actions' || actionPane !== 'jobs') return
 
   api('jobs').then(v => {
     jobsNow = v.jobs || []

@@ -85,8 +85,8 @@ disk is not bootable, so the dvd is reached without touching the order, and the
 installer meets the same blank disk it met when the machine was new.
 
 Neither has a button of its own in the window any more: making a machine already
-installs on its own, and both remain as actions, listed with everything else in
-**All actions**. Removing a button is not the same as removing what it did.
+installs on its own, and both remain as actions, listed with everything else on
+the **API** tab. Removing a button is not the same as removing what it did.
 
 **The server listens on every interface, and that is deliberate.** A guest reaches
 this host by its network address; loopback would be useless to it. **This port is
