@@ -258,9 +258,18 @@ function paintTasks (queued) {
             el('span', {}, el('span', { className: 'muted mono', textContent: '#' + t.number + ' ' }), t.title),
             el('span', { className: `badge ${STATE_BADGE[t.reads] || 'muted'}`, textContent: t.reads })),
           el('div', { className: 'card-sub mono', textContent: t.branch }),
+          // A BADGE FOR WHAT HAPPENED, NOT FOR WHAT IS PLANNED.
+          //
+          // This carried the worker — "Claude" on every row, because that is the
+          // default and is set before anything runs. A column of identical
+          // badges predicting the same thing about work that has not started is
+          // a column that costs a glance and returns nothing.
+          //
+          // Now it appears only when a worker actually ran, which makes it worth
+          // reading: the rows with it are the ones Claude touched.
           el('div', { className: 'card-sub' },
-            el('span', { className: `badge ${workerOf(t).cls}`, textContent: workerOf(t).label }),
-            el('span', { className: 'muted', style: 'margin-left:6px', textContent: t.artifact }))))
+            t.usedClaude ? el('span', { className: 'badge run', textContent: 'Claude' }) : null,
+            el('span', { className: 'muted', style: t.usedClaude ? 'margin-left:6px' : '', textContent: t.artifact }))))
         : el('p', { className: 'empty', textContent: 'No tasks yet. Write one with +.' }))
     }
 
