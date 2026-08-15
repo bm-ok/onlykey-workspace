@@ -434,7 +434,7 @@ function paintRepoBranches (r) {
         onlyHere ? el('span', { className: 'badge muted', textContent: `${onlyHere} only here` }) : null,
         el('button', {
           className: 'plus',
-          textContent: '↓',
+          textContent: '⟳',
           title: 'Fetch from origin and fast-forward every branch here that has one. Only fast-forwards.',
           onclick: e => sync(null, e.currentTarget)
         })),
@@ -458,7 +458,7 @@ function paintRepoBranches (r) {
               syncState[b.state] ? el('span', syncState[b.state]) : null,
               el('button', {
                 className: 'btn small',
-                textContent: '↓',
+                textContent: '⟳',
                 disabled: !canCatchUp(b),
                 // The reason a row cannot be caught up is the useful part, and
                 // it differs per row — which is why this is a title rather than

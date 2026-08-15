@@ -323,7 +323,7 @@ function paintBaselines () {
             // pressing it, which is the whole value of the button.
             el('button', {
               className: 'plus',
-              textContent: '↓',
+              textContent: '⟳',
               title: 'Fetch from origin and fast-forward every default branch. Only fast-forwards: anything that has moved on here is reported and left alone.',
               onclick: async e => {
                 const b = e.currentTarget
@@ -340,7 +340,7 @@ function paintBaselines () {
                   oops(err)
                 } finally {
                   b.disabled = false
-                  b.textContent = '↓'
+                  b.textContent = '⟳'
                 }
               }
             })),
