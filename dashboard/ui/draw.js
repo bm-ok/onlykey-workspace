@@ -192,12 +192,17 @@ async function drawOnce () {
   // off a machine in THIS folder. Nothing else may push it out of the way.
   $('testing-banner').classList.toggle('hidden', !status.testingHere)
   if (status.testingHere && changed('testing-banner', ws && ws.name)) {
+    // ONE SLIM LINE. It is permanent while testing is on, and a permanent thing
+    // that costs two lines and fifty pixels is a thing that gets resented and
+    // then ignored. What it has to do is be UNMISSABLE and say which folder —
+    // the paragraph about what the drills actually do belongs on the Settings
+    // card, where somebody is deciding, rather than repeated over every tab for
+    // as long as it is switched on.
     fill($('testing-banner'),
-      el('strong', { textContent: 'Testing mode is on' }),
-      el('span', { textContent: ` for ${ws ? ws.name : 'this workspace'}. The drills drive this app for real — a task written and removed, a credential taken off a machine and put back. It stays on across restarts, and goes off when the workspace changes.` }),
+      el('strong', { textContent: 'Testing mode' }),
+      el('span', { textContent: ` — ${ws ? ws.name : 'this workspace'}. The drills may write a task and take a credential off a machine here.` }),
       el('button', {
         className: 'linky',
-        style: 'margin-left:10px',
         textContent: 'Switch it off',
         onclick: () => showTab('settings')
       }))

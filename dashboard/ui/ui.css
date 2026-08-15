@@ -197,13 +197,26 @@ h2:first-child { margin-top: 0; }
 .testing-banner {
   background: linear-gradient(180deg, #3a2c08, #241b05);
   border-bottom: 1px solid var(--warn);
-  padding: 12px 16px;
-  line-height: 1.5;
+  /* Slim, because it is permanent while testing is on. The banner below is for
+     something wrong and is worth the room it takes; this one has to sit there
+     for as long as somebody is working, and a permanent strip that costs two
+     lines is one they learn to look past. */
+  padding: 5px 16px;
+  font-size: 12px;
+  line-height: 1.4;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  /* One line. Long enough to be read at a glance and no longer -- the paragraph
+     about what the drills do lives on the Settings card. */
+  white-space: nowrap;
+  overflow: hidden;
 }
+.testing-banner span { overflow: hidden; text-overflow: ellipsis; }
 .testing-banner strong { color: var(--warn); }
 /* Readable against amber rather than the accent blue, which on this ground is
    the one thing on the line somebody cannot read. */
-.testing-banner .linky { color: var(--warn); text-decoration: underline; }
+.testing-banner .linky { color: var(--warn); text-decoration: underline; margin-left: auto; white-space: nowrap; }
 
 /* ---------- dialog ----------
    In-page, not native: it has to carry plain words about what an action does, what
