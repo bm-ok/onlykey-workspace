@@ -659,7 +659,15 @@ function syncBranch (repo, branch) {
   if (!branch) return { repo, moved: false, why: 'no branch was named' }
 
   const before = String(run(['rev-parse', branch])).trim()
-  run(['fetch', '--quiet', 'origin'])
+  // PRUNED, because a branch deleted on origin is otherwise still here for ever.
+  //
+  // A fetch adds and never removes: delete a branch on the fork — which is what
+  // GitHub offers the moment a pull request is merged, and what
+  // `branchDeleteRemote` does — and this host keeps `refs/remotes/origin/<it>`
+  // with nothing behind it. Every panel that reads "where origin has it" then
+  // reports a branch that is gone, and the one place it showed was the sweeper
+  // saying a drill had left something behind after the drill had removed it.
+  run(['fetch', '--quiet', '--prune', 'origin'])
   const onto = String(run(['rev-parse', `refs/remotes/origin/${branch}`])).trim()
 
   if (before === onto) return { repo, branch, moved: false, why: 'already up to date' }
