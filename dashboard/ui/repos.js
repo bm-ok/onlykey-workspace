@@ -243,6 +243,12 @@ async function paintReposNow () {
     }
 
     const one = repos.find(r => r.repo === pickedRepo) || null
+    // BEFORE the guard below, and with a guard of its own. This reads git for
+    // one repository, so it must not run on the draw timer — but it must also
+    // still run after a sync, when the repository row itself has not changed and
+    // the check below would return early. Its own `changed` key is what makes
+    // both true, and `forget('repo-branches')` is what a sync presses on.
+    if (repoPane === 'repos') paintRepoBranches(one)
     if (!changed('repo-detail', [repoPane, one])) return
     if (repoPane === 'todo') return
     if (repoPane === 'repos') return paintRepoDetail(one)
@@ -323,6 +329,128 @@ function paintRepoDetail (r) {
       rem && rem.kind === 'github'
         ? el('button', { className: 'btn small', textContent: 'Open it on GitHub', onclick: () => host.openExternal(`https://${rem.host}/${rem.owner}/${rem.repo}`) })
         : null))
+}
+
+// WHERE EVERY BRANCH STANDS AGAINST ORIGIN, and a way to catch each one up.
+//
+// The repository card above says what the repository IS. This says what is true
+// about it right now, which is a different kind of fact and the one that goes
+// stale — so it is the one with buttons on it.
+//
+// THE REMOTE COLUMN IS AS OLD AS THE LAST FETCH. `refs/remotes/origin/*` is a
+// local cache of what origin had when somebody last asked, so a panel that shows
+// it without saying so reports "in step" about a repository nobody has checked
+// for a week. The note says it, and the sync button is what makes it true.
+const syncState = {
+  same: null,
+  behind: { className: 'badge warn', textContent: 'behind' },
+  ahead: { className: 'badge muted', textContent: 'ahead' },
+  diverged: { className: 'badge bad', textContent: 'diverged' },
+  different: { className: 'badge warn', textContent: 'out of step' },
+  'only here': { className: 'badge muted', textContent: 'only here' },
+  'only on origin': { className: 'badge muted', textContent: 'only on origin' }
+}
+
+// Which of them a fast-forward can actually help. `ahead` and `only here` are
+// not problems to be fixed — they are work that has not gone anywhere yet — and
+// `diverged` is a decision this app does not make.
+const canCatchUp = b => b.state === 'behind' || b.state === 'different'
+
+// ASKED EVERY DRAW, DRAWN ONLY WHEN IT MOVED.
+//
+// The first version guarded the FETCH on the repository name, so it read git
+// once per selection — and then sat there stale against anything it had not done
+// itself. Syncing a branch from the command line, or from the Branches tab, left
+// this panel confidently showing the commit that branch used to be at, which is
+// worse than showing nothing: it is the panel whose entire job is saying whether
+// two things match.
+//
+// Two processes for a repository, memoised a second inside repos/branches.js,
+// against a draw every few seconds — the same order as the `repositories` call
+// this pane already makes on every draw, and far less than the board does. What
+// is guarded is the FILL, which is the thing that would flicker and eat a
+// selection.
+function paintRepoBranches (r) {
+  if (!r) {
+    if (changed('repo-branches', null)) fill($('repo-branches'), el('p', { className: 'empty', textContent: 'Pick a repository on the left.' }))
+    return
+  }
+
+  api('repoBranches', { repo: r.repo }).then(({ branches, outOfStep, onlyHere, note }) => {
+    // Still the same repository. A slow answer for one somebody has clicked away
+    // from would paint the wrong repository's branches under the right title.
+    if (pickedRepo !== r.repo) return
+    if (!changed('repo-branches', [r.repo, branches])) return
+
+    const sync = (branch, b) => {
+      b.disabled = true
+      const was = b.textContent
+      b.textContent = '…'
+      return api('repoSyncBranch', { repo: r.repo, ...(branch ? { branch } : {}) })
+        .then(x => {
+          say(x.note, x.moved ? 'ok' : 'warn')
+          // Everything measured against these moves with them.
+          forget('repo-branches'); forget('repos'); forget('repo-detail')
+          return draw()
+        })
+        .catch(oops)
+        .finally(() => { b.disabled = false; b.textContent = was })
+    }
+
+    fill($('repo-branches'),
+      el('div', { className: 'card-title' },
+        el('span', { textContent: 'Branches' }),
+        // The badge is about what is WRONG. A branch that exists only here is
+        // not wrong — it is unpushed work — so it gets a plain count beside the
+        // warning rather than being folded into it.
+        el('span', { className: outOfStep ? 'badge warn' : 'badge ok', textContent: outOfStep ? `${outOfStep} out of step` : 'in step with origin' }),
+        onlyHere ? el('span', { className: 'badge muted', textContent: `${onlyHere} only here` }) : null,
+        el('button', {
+          className: 'plus',
+          textContent: '↓',
+          title: 'Fetch from origin and fast-forward every branch here that has one. Only fast-forwards.',
+          onclick: e => sync(null, e.currentTarget)
+        })),
+
+      el('p', { className: 'note', textContent: note }),
+
+      branches.length
+        ? branches.map(b => el('div', { className: 'group-part' },
+            el('span', { className: 'mono', textContent: b.branch }),
+            el('span', { className: 'where' },
+              // HERE, THEN THERE, in that order, because the question is "is
+              // mine current" and the answer is read left to right. A dash for
+              // the side that has nothing, rather than a blank that reads as a
+              // rendering fault.
+              el('span', { className: 'mono', textContent: b.local || '—' }),
+              el('span', { className: 'muted', textContent: '→' }),
+              el('span', { className: 'mono muted', textContent: b.remote || '—' }),
+              b.ahead != null || b.behind != null
+                ? el('span', { className: 'muted', textContent: `${b.ahead ? `+${b.ahead}` : ''}${b.behind ? ` −${b.behind}` : ''}` })
+                : null,
+              syncState[b.state] ? el('span', syncState[b.state]) : null,
+              el('button', {
+                className: 'btn small',
+                textContent: '↓',
+                disabled: !canCatchUp(b),
+                // The reason a row cannot be caught up is the useful part, and
+                // it differs per row — which is why this is a title rather than
+                // a hidden button.
+                title: canCatchUp(b)
+                  ? `Fast-forward ${b.branch} to origin`
+                  : b.state === 'same' ? 'Already the same commit as origin'
+                    : b.state === 'ahead' ? 'It is ahead of origin — there is nothing here to catch up to'
+                      : b.state === 'diverged' ? 'It and origin have both moved. This only fast-forwards, so it will not touch it'
+                        : b.state === 'only here' ? 'Origin has no branch by this name'
+                          : 'There is nothing here to fast-forward',
+                onclick: e => sync(b.branch, e.currentTarget)
+              }))))
+        : el('p', { className: 'empty', textContent: 'This repository has no branches.' }))
+  }).catch(e => {
+    // Said once. This runs on the draw loop now, so reporting a failing repository
+    // every three seconds would fill the notice bar with one sentence.
+    if (changed('repo-branches-bad', String(e.message))) oops(e)
+  })
 }
 
 // WORK THAT ARRIVED, as opposed to work somebody wrote down here. This is the

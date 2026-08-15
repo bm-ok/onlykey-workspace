@@ -641,6 +641,59 @@ module.exports = {
     }
   },
 
+  // ONE REPOSITORY'S BRANCHES, HERE AND ON ORIGIN.
+  //
+  // `gitBranches` answers across the workspace and is about lines and cuts;
+  // this is about one repository's relationship with its remote, which is a
+  // different question and the one nothing could answer. Kept separate rather
+  // than folded in, because the board reads that one every few seconds for every
+  // repository and this reads remote refs for one.
+  repoBranches: {
+    about: "One repository's branches: where each is here, where origin has it, and which are out of step",
+    needs: 'workspace',
+    takes: ['repo'],
+    run: ({ repo }) => {
+      const name = String(repo || '').trim()
+      if (!name) throw new Error('Say which repository.')
+      const dir = repos.gitDirOf(name)
+      if (!dir) throw new Error(`There is no repository called "${name}" here.`)
+
+      const rows = Object.values(branches.trackedIn(dir))
+        .sort((a, b) => a.branch.localeCompare(b.branch))
+
+      // OUT OF STEP MEANS BOTH SIDES HAVE IT AND THEY DISAGREE.
+      //
+      // Counting every branch that is not identical to origin made this read "3
+      // out of step" for a repository where one branch differed and two had
+      // simply never been pushed. A branch that exists only here is not a
+      // problem to be fixed — it is work that has not gone anywhere yet, and
+      // there is nothing to catch it up TO. Reported separately, because it is
+      // worth knowing and is not the same news.
+      const off = rows.filter(r => r.local && r.remote && r.state !== 'same')
+      const onlyHere = rows.filter(r => r.local && !r.remote)
+
+      return {
+        repo: name,
+        default: branches.defaultOf(name),
+        branches: rows,
+        outOfStep: off.length,
+        onlyHere: onlyHere.length,
+        // SAID PLAINLY, BECAUSE THE ANSWER IS OLDER THAN IT LOOKS. These remote
+        // shas are `refs/remotes/origin/*` — what origin had when somebody last
+        // fetched. A panel that shows a remote column without saying that is a
+        // panel that reports "in step" about a repository nobody has asked about
+        // for a week.
+        note: [
+          off.length
+            ? `${off.length} branch(es) differ from origin`
+            : 'Every branch origin also has matches it',
+          onlyHere.length ? `${onlyHere.length} exist only here` : '',
+          'as of the last fetch — sync to ask again'
+        ].filter(Boolean).join(', ') + '.'
+      }
+    }
+  },
+
   // BRINGING THE ANSWER BACK, which is the half of the round trip this app never
   // had. It pushes a line onward and opens pull requests; once those are merged
   // and the fork is synced, every default branch HERE is behind — and a branch
@@ -687,6 +740,59 @@ module.exports = {
           ? `${moved.map(d => `${d.repo} ${d.branch} +${d.commits}`).join(', ')}. Branches cut from here now start from what origin has.`
           : done.every(d => d.why === 'already up to date')
             ? 'Every default branch already matches origin.'
+            : 'Nothing moved. See the reasons above — this only fast-forwards.'
+      }
+    }
+  },
+
+  // ONE REPOSITORY, ONE BRANCH OR ALL OF THEM. The same fetch-and-fast-forward
+  // as repoSync, aimed at what the branch panel is showing rather than at every
+  // repository's default.
+  //
+  // Naming no branch means every branch in that repository, because "sync this
+  // repository" is the button people actually want and it should not require
+  // pressing one per row.
+  repoSyncBranch: {
+    about: 'Fetch from origin and fast-forward one branch, or every branch in a repository',
+    needs: 'workspace',
+    takes: ['repo', 'branch'],
+    run: ({ repo, branch }) => {
+      const name = String(repo || '').trim()
+      if (!name) throw new Error('Say which repository.')
+      const dir = repos.gitDirOf(name)
+      if (!dir) throw new Error(`There is no repository called "${name}" here.`)
+
+      const wanted = String(branch || '').trim()
+      const known = branches.trackedIn(dir)
+      if (wanted && !known[wanted]) throw new Error(`"${name}" has no branch called "${wanted}".`)
+
+      // ONLY WHAT ORIGIN ACTUALLY HAS. A branch that exists only here has
+      // nothing to fast-forward to, and asking git anyway produces a refusal
+      // about a ref rather than the sentence somebody needs.
+      const doing = wanted ? [wanted] : Object.values(known).filter(b => b.remote && b.local).map(b => b.branch)
+      if (!doing.length) throw new Error(`Nothing in "${name}" has a matching branch on origin to catch up to.`)
+
+      const done = []
+      for (const b of doing) {
+        try {
+          done.push(remotes.syncBranch(name, b))
+        } catch (e) {
+          done.push({ repo: name, branch: b, moved: false, why: (e.message || String(e)).split('\n')[0] })
+        }
+      }
+
+      const moved = done.filter(d => d.moved)
+      for (const d of moved) log.on('git', name).good(`${d.branch} ${d.from} → ${d.to}, ${d.commits} commit(s) from origin`)
+      for (const d of done.filter(d => !d.moved && d.why !== 'already up to date')) log.on('git', name).warn(`${d.branch}: ${d.why}`)
+
+      return {
+        repo: name,
+        branches: done,
+        moved: moved.length,
+        note: moved.length
+          ? `${moved.map(d => `${d.branch} +${d.commits}`).join(', ')}.`
+          : done.every(d => d.why === 'already up to date')
+            ? `Every branch asked for in "${name}" already matches origin.`
             : 'Nothing moved. See the reasons above — this only fast-forwards.'
       }
     }

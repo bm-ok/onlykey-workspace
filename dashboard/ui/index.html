@@ -131,7 +131,17 @@
         <div id="repos" class="stack"></div>
       </div>
       <div class="col wide">
-        <div class="pane" id="pane-repos"><div id="repo-detail" class="panel"></div></div>
+        <!-- Two panels, in a stack so the gap between them belongs to something
+             rather than to whichever of them remembers a margin. What the
+             repository IS, and then where each of its branches stands against
+             origin — separate cards because the first is settled facts and the
+             second is a thing you act on. -->
+        <div class="pane" id="pane-repos">
+          <div class="stack">
+            <div id="repo-detail" class="panel"></div>
+            <div id="repo-branches" class="panel"></div>
+          </div>
+        </div>
         <div class="pane" id="pane-issues"><div id="issue-detail"></div></div>
         <div class="pane" id="pane-pulls"><div id="pull-detail"></div></div>
       </div>

@@ -527,7 +527,11 @@ async function gather (only = null) {
 //
 // A dirty working tree is left alone and said out loud. Somebody's uncommitted
 // work is not something a sync button gets to have an opinion about.
-function syncDefault (repo) {
+// ONE BRANCH, and `syncDefault` is this with the branch filled in. Written as
+// the general thing because the panel that lists a repository's branches wants
+// to move any one of them, and two copies of "fetch and fast-forward" would be
+// two places for the refusals to stop matching.
+function syncBranch (repo, branch) {
   const at = path.join(serve.DIR, repo)
   const helper = path.join(__dirname, '..', 'tools', 'git-credential-okc.js')
 
@@ -553,8 +557,7 @@ function syncDefault (repo) {
     }
   })
 
-  const branch = branches.defaultOf(repo)
-  if (!branch) return { repo, moved: false, why: 'no default branch could be read' }
+  if (!branch) return { repo, moved: false, why: 'no branch was named' }
 
   const before = String(run(['rev-parse', branch])).trim()
   run(['fetch', '--quiet', 'origin'])
@@ -586,4 +589,12 @@ function syncDefault (repo) {
   return { repo, branch, moved: after !== before, commits: count, from: before.slice(0, 7), to: after.slice(0, 7) }
 }
 
-module.exports = { read, check, gather, remoteOf, parse, pushBranch, syncDefault, openPull, updatePull, pullsOn, issuesOn }
+// The default branch is the common case and has its own name, because "sync the
+// repositories" means this and a caller should not have to look the branch up.
+const syncDefault = repo => {
+  const branch = branches.defaultOf(repo)
+  if (!branch) return { repo, moved: false, why: 'no default branch could be read' }
+  return syncBranch(repo, branch)
+}
+
+module.exports = { read, check, gather, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, pullsOn, issuesOn }

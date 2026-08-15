@@ -94,6 +94,82 @@ const headsIn = dir => remember1s(`heads ${dir}`, () => {
   return out
 })
 
+// EVERY BRANCH, WHERE IT IS HERE, AND WHERE ORIGIN HAS IT.
+//
+// Two processes for a whole repository however many branches it has, and that is
+// the entire design constraint. The obvious way to write this is `rev-parse` and
+// `rev-list --count` per branch, which for a repository with fifteen branches is
+// thirty processes for one panel — and this file already carries the scar of
+// that: a trace once found 39% of the window's samples inside `spawn`.
+//
+// `%(upstream:track)` is what makes it possible. git already knows how far ahead
+// or behind each branch is and will print it during the ref walk it is doing
+// anyway, so ahead-and-behind costs nothing extra.
+//
+// IT ONLY WORKS WHERE AN UPSTREAM IS CONFIGURED, and a branch made here has
+// none. So the remote refs are read too and matched BY NAME, which is what
+// somebody means by "the remote one" whether or not git was ever told. Where
+// there is no upstream the counts are unknown and it says so rather than
+// guessing a direction — "different" is honest, "behind" would not be.
+//
+// AND ALL OF IT IS AS FRESH AS THE LAST FETCH. `refs/remotes/origin/*` is a
+// local cache of what origin had when somebody last asked. That is why the panel
+// this feeds has a sync button on it: the button is what makes the answer true.
+const trackedIn = dir => remember1s(`tracked ${dir}`, () => {
+  const rows = {}
+  const local = git(dir, ['for-each-ref', '--format=%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(upstream:track)', 'refs/heads/'])
+  for (const line of local.split('\n')) {
+    if (!line.trim()) continue
+    const [name, sha, upstream, track] = line.split('\t')
+    if (!name) continue
+    rows[name] = { branch: name, local: sha || null, upstream: upstream || null, track: track || '', remote: null }
+  }
+
+  // Matched by name. A repository with no origin has none of these, and every
+  // branch then reads "only here", which is exactly what it is.
+  let remotes = ''
+  try {
+    // THE FULL REFNAME, NOT THE SHORT ONE. `%(refname:short)` turns
+    // `refs/remotes/origin/HEAD` into `origin` — git's shortening rule, not a
+    // typo — so stripping an `origin/` prefix left the string "origin" and a
+    // phantom branch by that name appeared in the panel, sitting on whatever
+    // commit the default was at. Reading the full ref and cutting a known prefix
+    // has no such surprise in it.
+    remotes = git(dir, ['for-each-ref', '--format=%(refname)%09%(objectname:short)', 'refs/remotes/origin/'])
+  } catch { /* no origin, or no fetch has ever happened */ }
+  for (const line of remotes.split('\n')) {
+    if (!line.trim()) continue
+    const [full, sha] = line.split('\t')
+    const name = String(full || '').replace(/^refs\/remotes\/origin\//, '')
+    // A symbolic ref, not a branch. Listing it would put a duplicate of the
+    // default branch in the panel under a name nobody has.
+    if (!name || name === 'HEAD') continue
+    if (rows[name]) rows[name].remote = sha || null
+    else rows[name] = { branch: name, local: null, upstream: null, track: '', remote: sha || null }
+  }
+
+  // AHEAD AND BEHIND, from git's own words where it has them.
+  //
+  // `%(upstream:track)` prints `[ahead 2, behind 1]`, `[gone]`, or nothing at
+  // all when a branch is level with its upstream — and "nothing at all" is also
+  // what a branch with no upstream prints, which is why the sha comparison below
+  // is what decides `same` rather than the empty string.
+  for (const r of Object.values(rows)) {
+    const ahead = /ahead (\d+)/.exec(r.track)
+    const behind = /behind (\d+)/.exec(r.track)
+    r.ahead = ahead ? Number(ahead[1]) : null
+    r.behind = behind ? Number(behind[1]) : null
+    r.state = !r.remote ? 'only here'
+      : !r.local ? 'only on origin'
+        : r.local === r.remote ? 'same'
+          : r.ahead && r.behind ? 'diverged'
+            : r.ahead ? 'ahead'
+              : r.behind ? 'behind'
+                : 'different'
+  }
+  return rows
+})
+
 // Where a repository is right now. Read rather than assumed: `master` and `main`
 // are both common, and a repository that uses neither is not unusual.
 function headOf (dir) {
@@ -1046,7 +1122,7 @@ function remove (branch, { force = false } = {}) {
 }
 
 module.exports = {
-  all, ensure, remove, nameIsOk, branchesIn, headOf, defaultHeads, noteFor, notes, scopeOf,
+  all, ensure, remove, nameIsOk, branchesIn, headsIn, trackedIn, headOf, defaultHeads, noteFor, notes, scopeOf,
   defaultOf, baseFor, baselines, groups, saveGroup, deleteGroup, inAnyGroup,
   markGroup, unmarkGroup, groupFromBranch,
   protectedBranches, isProtected, whyProtected,
