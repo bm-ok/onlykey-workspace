@@ -50,18 +50,24 @@ try {
 // at. Started in the background, that lands in the log whatever started it is
 // writing — so `npm start` and `npm run restart` both keep it.
 //
-// `--enable-logging` WITHOUT `=stderr` IS THE ONE THAT LOOKS RIGHT AND IS NOT.
-// It writes to a chrome_debug.log in the user data directory rather than to the
-// pipe, so the stdio inherited above stays empty and the output lands somewhere
-// nobody is reading.
+// THE THREE FORMS, MEASURED ON ONE CLEAN START RATHER THAN ASSUMED:
 //
-// AND NOT `--v=1`, which is the next thing anybody reaches for. Measured rather
-// than assumed: a clean start goes from 5 lines to 342, of which 278 are
-// Chromium's own internals — 72 about Chromecast socket probing, 50 about the
-// segmentation platform, 44 about an identity manager this app does not use.
-// The line that matters is in there, and finding it is the problem this flag was
-// supposed to solve. Add it by hand for one run if something in the browser
-// process itself is being chased; it is not worth carrying.
+//   --enable-logging=stderr           5 lines here, including the console line
+//   --enable-logging                  0 lines here. Same content, written to
+//                                     %LOCALAPPDATA%\okc-dashboard\User Data\
+//                                     chrome_debug.log instead
+//   --enable-logging=stderr --v=1     342 lines here, 278 of them Chromium's own
+//                                     internals: 72 about Chromecast socket
+//                                     probing, 50 about the segmentation
+//                                     platform, 44 about an identity manager
+//                                     this app does not use
+//
+// So `=stderr` is not decoration. Without it the output is identical and lands
+// in a file nobody is watching, which for a backgrounded process is silence.
+// And `--v=1` is the next flag anybody reaches for: it does not add anything
+// about THIS app, it adds Chromium talking about itself, and the line that
+// matters is then somewhere in three hundred. Add it by hand for one run if the
+// browser process itself is what is being chased.
 const FLAGS = ['--enable-logging=stderr']
 
 console.log(`launching ${path.relative(APP, binary)}`)
