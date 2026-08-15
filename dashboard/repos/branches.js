@@ -74,6 +74,26 @@ const branchesIn = dir => remember1s(`branches ${dir}`, () =>
   git(dir, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])
     .split('\n').map(s => s.trim()).filter(Boolean))
 
+// THE SAME READ, WITH WHERE EACH BRANCH IS.
+//
+// A branch name says which line of work; the commit says which VERSION of it,
+// and without it a line reads the same before and after everything in it moved.
+//
+// One process for the whole repository, memoised beside `branchesIn` and for the
+// identical reason. `rev-parse` per branch is the obvious way to write this and
+// is exactly what put 39% of this window's samples inside `spawn`: a line naming
+// three repositories, asked several times per draw, is a spawn per branch per
+// call. `for-each-ref` already walks every ref once, so the hash is free.
+const headsIn = dir => remember1s(`heads ${dir}`, () => {
+  const out = {}
+  for (const line of git(dir, ['for-each-ref', '--format=%(refname:short) %(objectname:short)', 'refs/heads/']).split('\n')) {
+    const at = line.trim().lastIndexOf(' ')
+    if (at < 1) continue
+    out[line.trim().slice(0, at)] = line.trim().slice(at + 1)
+  }
+  return out
+})
+
 // Where a repository is right now. Read rather than assumed: `master` and `main`
 // are both common, and a repository that uses neither is not unusual.
 function headOf (dir) {
@@ -250,12 +270,28 @@ function readGroups () {
     return names
   }
 
+  // Where each of those branches is, on the same terms: one read per repository,
+  // reused across every line that names it.
+  const seen = new Map()
+  const headsOf = repo => {
+    if (seen.has(repo)) return seen.get(repo)
+    const dir = serve.gitDirOf(repo)
+    let at = {}
+    try { at = dir ? headsIn(dir) : {} } catch { at = {} }
+    seen.set(repo, at)
+    return at
+  }
+
   return Object.entries(all).map(([name, g]) => {
     const on = g.on || {}
     const parts = Object.entries(on).map(([repo, branch]) => ({
       repo,
       branch,
       there: branchesOf(repo).includes(branch),
+      // WHERE IT IS, not just that it exists. Null when the branch is gone,
+      // which is the one case where there is no honest answer — and it reads
+      // differently from a branch that is there and has never moved.
+      at: headsOf(repo)[branch] || null,
       stillHere: here.includes(repo)
     }))
     return {

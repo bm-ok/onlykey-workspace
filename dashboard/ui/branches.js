@@ -398,9 +398,22 @@ function paintBaselines () {
           g.marked
             ? el('p', { className: 'note', textContent: `Proposed for landing ${ago(g.marked.at)}${g.marked.why ? ` — ${g.marked.why}` : ''}. Read it on the Merge tab.` })
             : null,
+          // THE BRANCH AND WHERE IT IS. A name says which line of work; the
+          // commit says which VERSION of it — so without the hash this panel
+          // read identically before and after everything in the line moved,
+          // which is the one thing somebody looking at a line before landing it
+          // is trying to find out.
+          //
+          // Grouped on the right rather than added as a third column, because
+          // `.group-part` is space-between and a third child puts the branch
+          // name adrift in the middle of the row.
           ...g.on.map(p => el('div', { className: 'group-part' },
             el('span', { className: 'mono', textContent: p.repo }),
-            el('span', { className: p.there ? 'mono' : 'mono gone', textContent: p.there ? p.branch : `${p.branch} — gone` }))),
+            el('span', { className: 'where' },
+              el('span', { className: p.there ? 'mono' : 'mono gone', textContent: p.there ? p.branch : `${p.branch} — gone` }),
+              // Null only when the branch is gone, and then the row already says
+              // so — an empty space beside "gone" is not a second failure.
+              p.at ? el('span', { className: 'mono muted', textContent: p.at }) : null))),
           g.missing.length
             ? el('p', { className: 'note', textContent: `${g.missing.join(', ')} ${g.missing.length === 1 ? 'is' : 'are'} not named in this group and keep whatever they are counting from.` })
             : null,

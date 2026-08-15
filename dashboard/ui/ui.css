@@ -777,6 +777,10 @@ table.kv td .ok { color: var(--ok); }
 }
 .group-part:last-child { border-bottom: 0; }
 .group-part .gone { color: var(--fail); }
+/* The branch and the commit it is at, kept together on the right. `.group-part`
+   is space-between, so these have to be one child or the branch name ends up
+   adrift in the middle of the row. */
+.group-part .where { display: flex; align-items: baseline; gap: 8px; }
 
 /* The branch list's own controls, in the narrow column with it rather than in a
    header bar the other two columns would have to leave room for. */
