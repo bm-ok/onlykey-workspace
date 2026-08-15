@@ -681,3 +681,29 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   it has no `recall`. Before the flag: silence. After it, on stderr and in the
   live log, `the window threw (tasks.js:20): TypeError: been.recall is not a
   function`. Not `--v=1`, which buries that under Chromium's own internals.
+
+* **Spacing that belongs to the container cannot describe the join between two.**
+  `.stack` has a gap inside itself and `.chips` carries its own margin, but a
+  column holding two of them had no rule about where they meet -- so whether
+  there was a gap depended on which classes happened to be adjacent. On Branches
+  -> Lines the "Default branches" card sat flush against the first line while the
+  lines below it were spaced: one list, two answers, because the first card is
+  outside the stack. Three places had it, and every one was somebody adding a
+  second container to a column with nothing to remind them. The relationship
+  between two siblings is the parent's business, so the rule went on `.col`.
+
+  The two cases that make such a rule correct rather than nearly correct: skip
+  panes, because a column holds several and shows one, and a margin on the second
+  makes a sub-tab jump depending which; and undo it after a `hidden` sibling,
+  because an adjacent-sibling selector counts elements that are not on the
+  screen, so the first visible container gets pushed down by a gap under nothing.
+
+* **`direction: rtl` moves leading punctuation to the other end.** It is the
+  standard way to truncate a path from the left -- `...ory/src/store.js` beats
+  `src/very/long/direct...` -- and it hands every leading NEUTRAL character to
+  the paragraph direction. A dot is neutral, so `.gitignore` rendered as
+  `gitignore.`, and so did every dotfile in the changed-files list. The markup
+  was right, the `title` was right, and the only thing wrong was the screen --
+  which is why it survived: invisible to every check except looking at it. A
+  left-to-right mark before the text (`::before { content: "\200e" }`) gives the
+  dot a strong LTR neighbour on both sides and it stays where it was written.

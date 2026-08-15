@@ -318,6 +318,35 @@ main { padding: 16px; }
 .col.narrow { flex: 0 1 260px; }
 .col.wide { flex: 1.6 1 0; }
 
+/* TWO CONTAINERS IN ONE COLUMN, WITH NOTHING BETWEEN THEM.
+ *
+ * Spacing here was a property of the CONTAINER and never of the column: .stack
+ * has a gap inside itself, .chips carries its own margin, and .panel carries
+ * nothing at all. So a column holding two of them had no rule about the join,
+ * and whether there was a gap depended entirely on which classes happened to
+ * meet. On Branches -> Lines the "Default branches" card sat flush against the
+ * first line below it, while the lines below THAT were spaced -- one list, two
+ * different answers, because the first card is outside the stack.
+ *
+ * Three places had it: baselines-now + groups, change-actions + change-summary,
+ * and approvals + queue on the board. Every one of them was somebody adding a
+ * second container to a column and there being nothing to remember.
+ *
+ * 8px, which is what .stack already uses -- the join should not be able to look
+ * different from the gaps either side of it.
+ *
+ * NOT PANES. A column can hold several and only one is shown; giving the second
+ * and third a margin makes a sub-tab jump 8px depending on which one it is.
+ *
+ * AND NOT AFTER SOMETHING HIDDEN, which is the case that makes this correct
+ * rather than nearly correct. Half these containers are `hidden` until they have
+ * something to say, and an adjacent-sibling rule counts them anyway -- so the
+ * first VISIBLE container would be pushed down by a gap under an element that is
+ * not on the screen. CSS cannot ask whether the previous sibling is visible, but
+ * it can undo the rule when it is not, which comes to the same thing. */
+.col > div + div:not(.pane) { margin-top: 8px; }
+.col > .hidden + div { margin-top: 0; }
+
 @media (max-width: 1100px) {
   .cols { flex-wrap: wrap; }
   .col, .col.narrow, .col.wide { flex: 1 1 320px; }
@@ -696,6 +725,20 @@ table.kv td .ok { color: var(--ok); }
   font-family: var(--mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; flex: 1 1 auto; direction: rtl; text-align: left;
 }
+/* AND THE PRICE OF THAT `direction: rtl`, PAID BACK.
+ *
+ * It is there so a long path is cut from the LEFT -- the end of a path is the
+ * part worth reading, so `...ory/src/store.js` beats `src/very/long/direct...`.
+ * What it also does is hand every leading NEUTRAL character to the paragraph
+ * direction, and a dot is neutral: `.gitignore` rendered as `gitignore.`, and
+ * so did every dotfile in the list. The markup was right and the tooltip was
+ * right; only the screen lied, which is why it survived -- it is invisible to
+ * everything except looking.
+ *
+ * A left-to-right mark before it gives that dot a strong LTR character on both
+ * sides, so it resolves LTR and stays where it was written. Zero width, and the
+ * cut-from-the-left behaviour is untouched. */
+.change-file .path::before { content: "\200e"; }
 .change-file .plus { color: var(--ok); font-size: 11px; }
 .change-file .minus { color: var(--fail); font-size: 11px; }
 
