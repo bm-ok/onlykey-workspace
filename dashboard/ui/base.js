@@ -23,6 +23,39 @@ const liveLog = app
   ? require('./core/log')
   : { on: () => ({ info () {}, warn () {}, bad () {}, good () {}, out () {} }) }
 
+// NOTHING IN THE WINDOW FAILS QUIETLY ANY MORE.
+//
+// The renderer is a second process and it used to be the silent one: an error
+// in a paint function left a blank panel, which looks exactly like a panel with
+// nothing to show — and that is the question somebody is asking when they look
+// at an empty tab. It is written down as a rule and it only ever got applied to
+// the panels somebody remembered to wrap.
+//
+// This is the backstop for the ones nobody wrapped, and it says so twice on
+// purpose. `console.error` reaches the process stdout, because the app is now
+// launched with --enable-logging=stderr — so a fault is legible from outside
+// with no window open to look at, which is how anything driving this from the
+// command line finds out. The live log is for whoever IS looking at the window.
+//
+// An unhandled rejection counts. Every panel here reads through a promise, and
+// a `.then` with no `.catch` is the ordinary way one of these gets made.
+;(() => {
+  const said = new Set()
+  const report = (what, e) => {
+    const where = e && e.filename ? ` (${String(e.filename).split('/').pop()}:${e.lineno})` : ''
+    const why = (e && (e.reason || e.error || e.message)) || e
+    const text = `${what}${where}: ${(why && (why.stack || why.message)) || why}`
+    // Once each. A paint that throws does it again on every draw, and a fault
+    // repeated every three seconds buries the rest of the log in itself.
+    if (said.has(text)) return
+    said.add(text)
+    console.error(text)
+    try { liveLog.on('window').bad(text) } catch { /* before the log exists */ }
+  }
+  window.addEventListener('error', e => report('the window threw', e))
+  window.addEventListener('unhandledrejection', e => report('a panel gave up', e))
+})()
+
 // WHETHER THIS WINDOW IS BEING DRIVEN FROM OUTSIDE.
 //
 // `windowClick` and `windowFill` exist so the window can be tested from the

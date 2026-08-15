@@ -32,6 +32,29 @@ try {
   process.exit(1)
 }
 
+// TWO PROCESSES, AND ONLY ONE OF THEM WAS AUDIBLE.
+//
+// NW.js runs a node context (`node-main`, this app's main.js) and a renderer
+// (the window, ui/*.js). `stdio: 'inherit'` was already here, so anything the
+// node side printed came through — and the renderer's did not, because Chromium
+// keeps console output for its devtools unless told otherwise. So a window that
+// threw on load looked exactly like a window that had nothing to draw: a blank
+// panel and silence, which is the ambiguity that has cost the most time here.
+//
+// `--enable-logging=stderr` is what routes it out. Every console.* and every
+// uncaught error in the page arrives as
+//
+//     [INFO:CONSOLE(412)] "message", source: file:///.../ui/tasks.js (412)
+//
+// which is a file and a line number, from outside, with no window open to look
+// at. Started in the background, that lands in the log whatever started it is
+// writing — so `npm start` and `npm run restart` both keep it.
+//
+// NOT `--v=1`, which is the next thing anybody reaches for and is a mistake: it
+// turns on Chromium's own verbose internals and buries the one line that matters
+// under a few hundred about GPU probing and network sockets.
+const FLAGS = ['--enable-logging=stderr']
+
 console.log(`launching ${path.relative(APP, binary)}`)
-const child = spawn(binary, [APP, ...process.argv.slice(2)], { stdio: 'inherit' })
+const child = spawn(binary, [APP, ...FLAGS, ...process.argv.slice(2)], { stdio: 'inherit' })
 child.on('exit', code => process.exit(code === null ? 1 : code))

@@ -667,3 +667,17 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   being certain and wrong. Hence `--dry`: say which button you would press,
   press nothing. The values were recoverable only because `windowControls` had
   been run a moment earlier and its output was still on screen.
+
+* **The renderer was the silent process for the whole life of this app.** NW.js
+  runs a node context and a window, `stdio: 'inherit'` was already on the spawn,
+  and only the first was ever heard from — Chromium keeps console output for its
+  devtools unless `--enable-logging=stderr` says otherwise. So a window that
+  threw on load produced a blank panel and nothing else, which is
+  indistinguishable from a panel with nothing to show.
+
+  Proved by breaking it on purpose: `been.recall('tasks')` at the top of
+  `ui/tasks.js`. `node --check` passed, and so did `npm test` including the
+  declared-names checker — `been` IS declared, and nothing static can see that
+  it has no `recall`. Before the flag: silence. After it, on stderr and in the
+  live log, `the window threw (tasks.js:20): TypeError: been.recall is not a
+  function`. Not `--v=1`, which buries that under Chromium's own internals.
