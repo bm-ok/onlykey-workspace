@@ -200,10 +200,45 @@ let repoPane = been.get('repo-pane', 'repos')
 // list of repositories beside something that is not about one.
 const REPO_PICKING = new Set(['repos', 'issues', 'pulls'])
 
+// WHAT EACH PANE IS, in one place, said in the same voice as the rest of the
+// window: what the thing is, and the one fact about it that is easy to get
+// wrong. Eleven panes under one bar is a lot to arrive at cold.
+//
+// Here rather than in the markup because four of these panes live inside the
+// shared repository picker, and a note written inside one of those renders in a
+// column beside the list instead of under the tab that named it — which is
+// exactly why those four read as having no note at all.
+//
+// STATIC, AND ONLY WHAT THE PANE IS. Anything about its current state — how many
+// cuts, how old the last read is, whether a remote answered — stays in the pane
+// and is written by whatever knows it.
+const PANE_IS = {
+  todo: "Everything open across every repository, in one list. This is the question GitHub's own pages cannot answer, because each of them is about a single repository — and a PR cut is one row here rather than three.",
+  repos: 'What this workspace is made of, and whether the far end of each one can still be reached. Everything above is local and instant; anything about GitHub was asked for on purpose and carries when it was asked.',
+  issues: 'Work that arrived, rather than work written here — the one thing in this app that comes IN. An issue becomes a task from the button on its card, which is the far end of a chain that otherwise starts midway.',
+  pulls: 'Pull requests open on the repository picked on the left, one repository at a time. A change cut across several repositories is one thing, and is read on the PR cuts pane instead.',
+  conflicts: 'What cannot be caught up by fast-forwarding, because both sides have moved. Everything else about a branch is computable and has a button; this is the part somebody has to decide, and from here it becomes a task.',
+  branchcuts: 'A cut is a branch this app made across the repositories a line touches, with a reason and a starting point recorded on it. Work is done on a cut. A line is the same thing protected, and is next door.',
+  baselines: 'A line names one branch per repository, so work can be cut from a point rather than from a branch at a time. A line is protected: work is merged into one and never done on one, which is what keeps it clean enough to open pull requests from.',
+  changes: 'What a proposed line would land, read before anything leaves this computer: the commits, and the diff per repository. Nothing here changes anything — it is the last look.',
+  protected: 'What may not be built on, and whether you could change that. A repository\'s own default is a fact about git and cannot be unmade here; a link in a line is a decision somebody made by naming it.',
+  cuts: 'A change once it has left: one act, one pull request per repository, tracked together. This is the part GitHub cannot do — each repository sees only its own, and "is it in" cannot be answered by looking at any single one.',
+  templates: 'What every pull request in a cut says beyond what somebody typed. The preview is the editor, and it is composed from real facts about the two lines chosen — including the links between the cut\'s own pull requests, which nothing else can write.'
+}
+
+// The three things a pane switch changes about the chrome around it, in one
+// function rather than three lines repeated at load and on every click.
+const repoChrome = () => {
+  setText($('repos-pane-note'), PANE_IS[repoPane] || '')
+  $('repos-cols').classList.toggle('hidden', !REPO_PICKING.has(repoPane))
+  // The repository header is about the repositories, so it belongs to the panes
+  // that are. Over a branch pane it is a heading for one thing above another.
+  $('repos-head').classList.toggle('hidden', !REPO_PICKING.has(repoPane) && repoPane !== 'todo')
+}
+
 paneSwitcher('view-repos', () => repoPane, p => { repoPane = p; been.set('repo-pane', p) }, () => {
   forget('repo-detail')
-  $('repos-cols').classList.toggle('hidden', !REPO_PICKING.has(repoPane))
-  $('repos-head').classList.toggle('hidden', !REPO_PICKING.has(repoPane) && repoPane !== 'todo')
+  repoChrome()
   paintRepos()
   paintTodo()
   paintConflicts()
@@ -211,9 +246,10 @@ paneSwitcher('view-repos', () => repoPane, p => { repoPane = p; been.set('repo-p
   paintCuts()
   paintTemplates()
 })
-// The same two, applied before the first draw rather than only on a click.
-$('repos-cols').classList.toggle('hidden', !REPO_PICKING.has(repoPane))
-$('repos-head').classList.toggle('hidden', !REPO_PICKING.has(repoPane) && repoPane !== 'todo')
+// Applied before the first draw rather than only on a click, or the window
+// opens on whichever pane was remembered with the chrome of whichever pane the
+// markup happens to mark active.
+repoChrome()
 
 function paintRepos () {
   if (view !== 'repos') return

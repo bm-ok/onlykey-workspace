@@ -121,6 +121,14 @@
       <button class="subtab" data-pane="templates">New PR Cut</button>
     </div>
 
+    <!-- WHAT THE OPEN PANE IS, in the same place for all eleven of them.
+         Static, and set from a map in ui/repos.js rather than written here,
+         because four of these panes sit inside the shared repository picker and
+         a note inside one of those renders in a column beside the list — which
+         is why they read as having none. Anything DYNAMIC about a pane stays in
+         the pane: this says what the thing is, not what state it is in. -->
+    <p class="note" id="repos-pane-note"></p>
+
     <div id="repos-head">
       <div class="sync-head">
         <h2 id="repos-title">Repositories <span class="muted" id="repos-context"></span></h2>
@@ -145,7 +153,6 @@
     </div>
 
     <div class="pane active" id="pane-todo">
-      <p class="note">Everything open across every repository, in one list. This is the question GitHub's own pages cannot answer, because each of them is about a single repository — and a PR cut is one row here rather than three.</p>
       <div class="sync-head" style="margin-bottom:10px">
         <div class="chips" id="todo-filters" style="margin:0"></div>
         <div class="sync-controls">
@@ -182,11 +189,9 @@
           </div>
         </div>
         <div class="pane" id="pane-issues">
-          <p class="note">Work that arrived, rather than work written here — the one thing in this app that comes IN. An issue becomes a task from the button on its card, which is the far end of a chain that otherwise starts midway.</p>
           <div id="issue-detail"></div>
         </div>
         <div class="pane" id="pane-pulls">
-          <p class="note">Pull requests open on the repository picked on the left, one repository at a time. A change cut across several repositories is one thing and is read on the PR cuts pane instead.</p>
           <div id="pull-detail"></div>
         </div>
       </div>
@@ -195,7 +200,6 @@
 
 
     <div class="pane" id="pane-branchcuts">
-      <p class="note">A cut is a branch this app made across the repositories a line touches, with a reason and a starting point recorded on it. Work is done on a cut. A line is the same thing protected, and is next door.</p>
       <div class="cols">
 
         <div class="col narrow">
@@ -254,7 +258,6 @@
          chaining safe: work is cut from a link, merges back into it, and the
          link itself is never built on directly. -->
     <div class="pane" id="pane-baselines">
-      <p class="note">A line names one branch per repository, so work can be cut from a point rather than from a branch at a time. A line is protected: work is merged into one and never done on one, which is what keeps it clean enough to open pull requests from.</p>
       <div class="cols">
         <div class="col narrow">
           <h2 class="titlerow">
@@ -300,7 +303,6 @@
          the whole width. Reading a change in a 300px column is why the last
          version of this was a modal. -->
     <div class="pane" id="pane-changes">
-      <p class="note">What a proposed line would land, read before anything leaves this computer: the commits, and the diff per repository. Nothing here changes anything — it is the last look.</p>
       <div class="change-pick">
         <select id="change-from"></select>
         <span class="change-into">into</span>
