@@ -46,7 +46,19 @@ const DEFAULTS = {
   // It also survives the case a hook would miss — a workspace closed and
   // reopened, a second window, the app restarted — because it compares two
   // facts rather than trusting an event to have fired.
-  testsFor: null
+  testsFor: null,
+
+  // SOMEBODY DOWN THE PIPE ASKING TO BE ALLOWED, and nothing more than that.
+  //
+  // A model may want the drills run and may not decide that somebody's
+  // repository is a fine place to run them — so it can raise its hand, and a
+  // person answers in the window. `{ at, why, forDir }`, or null.
+  //
+  // Kept on disk with the rest rather than in memory, so a request outlives the
+  // restart that a code change causes. Being asked and then having the question
+  // vanish because the app reloaded is how somebody ends up running the drills
+  // by hand to find out what was wanted.
+  testsAsked: null
 }
 
 function read () {

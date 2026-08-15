@@ -30,7 +30,7 @@ async function paintSettingsNow () {
     setText($('settings-note'), `Kept in ${v.where}. These survive switching workspace, closing one, and having none open — anything that belongs to a folder of repositories is kept with the folder instead.`)
     if (!changed('settings', v)) return
 
-    fill($('settings'), testCard(v.tests))
+    fill($('settings'), testCard(v.tests, v.settings.testsAsked))
   }).catch(e => { if (changed('settings-bad', String(e.message))) oops(e) })
 }
 
@@ -44,9 +44,13 @@ async function paintSettingsNow () {
 // So the card leads with the folder. "On" is not a state this setting has — it
 // is on FOR somewhere, and the sentence has to say which, because that is the
 // whole of what somebody is agreeing to.
-function testCard (t) {
+function testCard (t, asked) {
   const on = !!t.enabled
   const here = t.allowed
+  // A request standing against THIS folder. One raised against another workspace
+  // is not a question anybody here can answer, and showing it would invite an
+  // answer about the wrong place.
+  const waiting = asked && !here && asked.forDir === t.openDir ? asked : null
 
   return el('div', { className: `card${on && !here ? ' warn' : ''}` },
     el('div', { className: 'card-title' },
@@ -56,6 +60,15 @@ function testCard (t) {
         : on
           ? { className: 'badge warn', textContent: 'on, elsewhere' }
           : { className: 'badge muted', textContent: 'off' })),
+
+    // ASKED, AND STILL WAITING. On the card as well as in the dialog, because a
+    // dialog can be dismissed and a question that then exists nowhere is a
+    // question nobody answers.
+    waiting
+      ? el('p', { className: 'note warn' },
+          el('strong', { textContent: `Asked ${ago(waiting.at)}: ` }),
+          el('span', { textContent: waiting.why }))
+      : null,
 
     el('p', { className: 'note' },
       el('span', { textContent: 'The drills in the Test tab drive this app for real — one writes a task and removes it again, one takes a credential off a machine and puts it back. Against scaffolding repositories that is exactly what they are for. Against work you care about it is a stranger typing into your repository, and this app cannot tell the two apart, so it does not guess.' })),
@@ -110,4 +123,55 @@ function setTests (on) {
       return draw()
     })
     .catch(oops)
+}
+
+// ---- being asked -------------------------------------------------------
+//
+// The pipe may ASK to run the drills and may not decide. This is where the
+// asking lands: a dialog, wherever you happen to be standing, because it is a
+// question for whoever is at the keyboard rather than for whoever thinks to open
+// the Settings tab.
+//
+// ONCE PER REQUEST. Keyed on when it was made, so a question that reappeared on
+// every draw — every three seconds — cannot happen. A dialog somebody dismisses
+// without reading is the opposite of having asked them.
+let askedShown = null
+
+function askToTest (req) {
+  if (askedShown === req.at) return
+  // Not over the top of something else. A dialog that opens while somebody is
+  // mid-decision in another one steals the keyboard and answers the wrong
+  // question — this can wait three seconds for the screen to be free.
+  if (document.querySelector('.dlg-overlay')) return
+  askedShown = req.at
+
+  ask({
+    title: 'Run the drills against this workspace?',
+    plain: [
+      `Asked ${ago(req.at)} — for ${req.forDir}.`,
+      `The reason given: ${req.why}`,
+      'The drills drive this app for real. One writes a task on a branch cut and removes it again. One takes the worker credential off a machine, proves a signed-out machine is refused work, and puts it back. They never touch a machine the queue is driving.',
+      'Saying yes keeps them on for this folder only, across restarts, until the workspace changes.'
+    ],
+    cost: 'If a guard has already stopped working, the thing it was meant to stop happens here, in this folder. That is what a drill is: an attempt to do the wrong thing.',
+    confirm: 'Allow, for this workspace',
+    danger: true,
+    // Declining is the other button rather than "never mind", because closing
+    // the dialog and answering "no" are different acts: one leaves the request
+    // standing for later, the other says no.
+    extra: {
+      label: 'No',
+      onClick: () => api('testsAnswer', { allow: false })
+        .then(r => { say(r.note); forget('settings'); return draw() })
+        .catch(oops)
+    },
+    onYes: () => api('testsAnswer', { allow: true })
+      .then(r => {
+        say(r.note, 'warn')
+        forget('settings'); forget('tests-note')
+        forget('test-suites'); forget('test-list'); forget('test-detail')
+        return draw()
+      })
+      .catch(oops)
+  })
 }

@@ -79,6 +79,15 @@ async function drawOnce () {
   // Everything that is a question about a folder of repositories, switched off
   // while there is none. See gateTabs.
   gateTabs(!!ws)
+
+  // SOMEBODY ASKED TO BE ALLOWED TO RUN THE DRILLS, and it is a question for
+  // whoever is at the keyboard rather than for whoever opens the Settings tab.
+  // Raised wherever you are standing, on the poll that is already happening.
+  //
+  // Once per request, keyed on when it was made. A dialog that reappeared every
+  // three seconds would be a dialog somebody dismisses without reading, which is
+  // the opposite of asking.
+  if (status.askedToTest) askToTest(status.askedToTest)
   // The count of machines used to be written here. It is the Settings button
   // now — a number the Runners tab states better was holding the one corner of
   // the chrome with no way in to anything.

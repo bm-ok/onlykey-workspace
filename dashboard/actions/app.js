@@ -88,6 +88,20 @@ module.exports = {
         } catch { return null }
       })(),
       workspaceKnown: (() => { try { return workspaces.known().length } catch { return 0 } })(),
+      // A REQUEST WAITING TO BE ANSWERED, carried on the poll the window already
+      // makes rather than behind a call somebody has to remember. It is a
+      // question for whoever is at the keyboard, wherever they are standing —
+      // the same reason the trouble banner rides here.
+      askedToTest: (() => {
+        try {
+          const a = settings.read().testsAsked
+          if (!a) return null
+          // Only about the folder open now. A request raised against a workspace
+          // that has since been closed is not a question anybody can answer.
+          const open = workspaces.dir() || null
+          return open && a.forDir === open ? a : null
+        } catch { return null }
+      })(),
       // Carried here rather than asked for separately, because it is read on
       // every paint and an extra call per panel to find out how long to pause
       // would be its own small joke.
@@ -316,6 +330,70 @@ module.exports = {
         ? (on ? `the drills are ON for ${now.testsFor} — they write a task and take a credential off a machine` : 'the drills are off')
         : `${key} is now ${JSON.stringify(now[key])}`)
       return { settings: now, note: key === 'testsEnabled' && on ? `On for ${now.testsFor}. Opening a different workspace switches them off.` : 'Saved.' }
+    }
+  },
+
+  // ASKING TO BE ALLOWED, which is the one thing the pipe MAY do about this.
+  //
+  // The refusal in settingSet is right and it left a model with nowhere to go:
+  // it can want the drills run and cannot say so, which in practice means
+  // somebody types the request into a chat window and it is lost the moment the
+  // conversation moves on. This puts the question where the answer is.
+  //
+  // It changes nothing by itself. What it does is raise a hand — the window
+  // notices on its next draw and asks, wherever you happen to be standing.
+  testsAsk: {
+    about: 'Ask to be allowed to run the drills. A person answers in the window',
+    takes: ['why'],
+    run: ({ why }) => {
+      const open = workspaces.dir() || null
+      if (!open) throw new Error('No workspace is open, so there is nothing to ask about.')
+      const already = settings.testsAllowed(open)
+      if (already.allowed) return { asked: false, note: 'The drills are already allowed here. Nothing to ask.' }
+
+      const reason = String(why || '').trim()
+      if (!reason) throw new Error('Say what they are wanted for. A request with no reason is one somebody has to interrupt you to understand, which is the thing this exists to avoid.')
+
+      const now = settings.write({ testsAsked: { at: new Date().toISOString(), why: reason, forDir: open } })
+      log.on('app').warn(`asked to run the drills against ${open}: ${reason}`)
+      return { asked: true, request: now.testsAsked, note: 'Asked. The window will put the question up; nothing runs until somebody answers it.' }
+    }
+  },
+
+  // ANSWERED IN THE WINDOW, by somebody who can see which folder is open.
+  //
+  // Refused down the pipe for the same reason settingSet is: a request that
+  // could answer itself is not a request. `_driven` counts as the pipe — a press
+  // made in the window BY the command line is still the command line.
+  testsAnswer: {
+    about: 'Answer a request to run the drills — yes for this workspace, or no',
+    takes: ['allow'],
+    run: ({ allow, _overTheWire, _driven }) => {
+      if (_overTheWire || _driven) {
+        throw new Error('A request to run the drills is answered in the window, by somebody who can see which folder is open. Something that could answer its own request has not asked for anything.')
+      }
+      const yes = allow === true || allow === 'true' || allow === 1 || allow === '1'
+      const asked = settings.read().testsAsked
+      const open = workspaces.dir() || null
+
+      if (!yes) {
+        settings.write({ testsAsked: null })
+        log.on('app').info('the request to run the drills was declined')
+        return { allowed: false, note: 'Declined. Nothing changed, and the request is cleared.' }
+      }
+
+      // The folder is checked rather than taken from the request. A request
+      // raised against one workspace and answered after switching to another
+      // would otherwise turn the drills on somewhere nobody was asked about.
+      if (asked && asked.forDir && open && asked.forDir !== open) {
+        settings.write({ testsAsked: null })
+        throw new Error(`That was asked about ${asked.forDir}, and the folder open now is ${open}. The request is cleared rather than answered — ask again here if that is what is wanted.`)
+      }
+      if (!open) throw new Error('No workspace is open, so there is nothing to allow.')
+
+      const now = settings.write({ testsEnabled: true, testsFor: open, testsAsked: null })
+      log.on('app').warn(`the drills are ON for ${now.testsFor} — they write a task and take a credential off a machine`)
+      return { allowed: true, settings: now, note: `On for ${now.testsFor}. Opening a different workspace switches them off.` }
     }
   },
 
