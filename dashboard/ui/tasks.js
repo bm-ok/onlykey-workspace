@@ -951,19 +951,17 @@ async function paintAddTaskNow () {
     //
     // `cut` is the record of the act, kept when branchCreate made it. See
     // repos/branches.js.
-    const isCut = b => b && b.cut
-    const cuts = (known || []).filter(isCut).map(nameOf).filter(b => !taken.has(b)).sort()
-    // A LINE CAN BE WORKED IN, READ-ONLY, and leaving lines off the list said
-    // otherwise. A task that reads, measures or reports has to be where the work
-    // it is reading actually is, and that is often a line. What it cannot do is
-    // push back — the host refuses that, and the machine is given a pre-push
-    // hook so a worker finds out where it stands rather than in a rejection an
-    // hour later. It can still commit locally, hand files back, and keep its
-    // session for the next run.
-    // A cut that has since been made into a line. It is still a cut — work was
-    // done on it and it is a line of work this system knows — so it belongs on
-    // the list; what it cannot be is pushed to.
-    const protectedLines = (known || []).filter(isCut).map(nameOf).filter(b => taken.has(b)).sort()
+    // AND PROTECTED WINS. A branch that was cut here and has since been made a
+    // line is a line: that is what making one MEANT. It keeps its cut record
+    // because the record is of an act that happened, not of what the branch is
+    // now — so `cut` alone still offered it, and the list came out one too long.
+    const isCut = b => b && b.cut && !b.protected
+    const cuts = (known || []).filter(isCut).map(nameOf).sort()
+    // LINES ARE NOT OFFERED HERE AT ALL, and the read-only machinery behind them
+    // stays anyway. A machine set up on a line is refused its push by the host's
+    // hook and told so by a pre-push hook in the guest — that is true however
+    // the machine got there, and it is not this form's business to be the only
+    // thing preventing it.
 
     const { rows, inputs } = buildFields([
       { name: 'title', label: 'Title', value: (from && from.title) || '', placeholder: 'Short enough to read in a list' },
@@ -996,10 +994,7 @@ async function paintAddTaskNow () {
         value: '',
         options: [
           { value: '', label: cuts.length ? 'pick the cut this work belongs to' : 'there are no cuts yet — make one on the Branches tab' },
-          ...cuts.map(b => ({ value: b, label: b })),
-          // Said in the option itself, because a dropdown is read one row at a
-          // time and a note underneath is read after the choice is made.
-          ...protectedLines.map(b => ({ value: b, label: `${b} — protected, read-only` }))
+          ...cuts.map(b => ({ value: b, label: b }))
         ]
       },
       // THE BRIEF IS THE PROMPT. Writing a task is writing one, which is the
@@ -1071,14 +1066,12 @@ async function paintAddTaskNow () {
 
         el('div', { className: 'carries', style: 'margin-top:10px' },
           // WORKS IN, AND DELIVERS TO. One line, because it is one fact: the
-          // work goes where the work is — unless it is a line, where the work
-          // stays and only what it hands back leaves.
+          // work goes where the work is. Only cuts are on the list, so there is
+          // no read-only case to report here — a line cannot be picked.
           el('div', { className: 'group-part' },
             el('span', { textContent: 'works in' }),
             el('span', {}, branch
-              ? taken.has(branch)
-                ? el('span', { className: 'warn', textContent: `${branch} — a line, read-only` })
-                : el('span', { textContent: branch })
+              ? el('span', { textContent: branch })
               : el('span', { className: 'muted', textContent: 'pick the cut this work belongs to' }))),
           el('div', { className: 'group-part' },
             el('span', { textContent: 'done by' }),
