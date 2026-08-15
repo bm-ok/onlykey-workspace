@@ -280,9 +280,28 @@ stays: an archive is kept for a long time and read by anything that can open a
 gzip, which is the opposite of what a credential wants. What changes is that the
 refresh a worker performs is no longer thrown away with the machine.
 
-Then this needs an answer: a machine that is deleted leaves a credential assigned
-to nothing, and that is a live token with no owner. It should be forgettable from
-the Keys tab, and probably revoked rather than merely deleted.
+**A machine that is deleted leaves a live token assigned to nothing, and nothing
+about that is automatic.** Revoking it on the machine's way out would be wrong
+more often than right: replacing a runner is ordinary — deleted, rebuilt, same
+job — and the credential is meant to carry over. A rule that destroys it is a
+rule that costs a sign-in every time somebody rebuilds a machine, to solve a
+problem they were in the middle of solving.
+
+So it is SAID, not acted on, and it uses the two things this window already has
+for exactly this shape:
+
+* **the banner under the title bar**, which is where a fact about the whole app
+  goes when it is nobody's tab in particular — the same place a machine that
+  VirtualBox no longer has, or a repository parked off its default, already
+  appears. It names the credential, says its machine is gone, and goes to Keys.
+* **the card, marked so it cannot be scrolled past.** An orphaned credential is
+  not an error and it is not fine either; it is a live token nobody is using,
+  which is the one state where "I will deal with it later" costs something.
+
+Then the operator decides, and both answers are one click: assign it to the
+machine that replaced the old one, or revoke it. Revoking is real revocation
+rather than deleting the file — a forgotten file is still a working credential
+somewhere, which is the whole reason this is on the screen at all.
 
 **Note what it does not fix.** Once written, the credential is a file on a
 machine that can be snapshotted — which is why snapshotting a machine holding one
