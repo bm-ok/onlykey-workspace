@@ -614,3 +614,43 @@ the record should say what happened; see `whoAsked` in actions/shared.js.
   distinct kind. It wants a credential, and it must not be handed work
 * how the operator sees what it is doing. The event stream is the record; a
   supervisor acting through its own API should be as legible there as the queue is
+
+
+A conflict is a decision, so it is a task
+------------------------------------------
+
+**An idea, recorded rather than scheduled.** Bringing a line into a branch that
+was cut before it can conflict, and a conflict is the one thing here that no
+amount of code resolves: it is two people having meant different things, and
+somebody has to decide which. That is not a failure mode to be handled — it is
+work, and this app already has a shape for work.
+
+**Detecting one is free, which is what makes this cheap.** `git merge-tree
+--write-tree A B` reports the conflicting files and exits non-zero WITHOUT a
+working tree, a checkout, or anything to clean up afterwards. Checked on git
+2.55. So a branch can be told "this will conflict, in these three files" before
+anybody commits to anything, and the card that already says "12 behind" can say
+it without becoming a thing that changes repositories.
+
+**Then the resolution is an ordinary task.** A cut made for it, a brief that is
+the conflict, a machine, and an artifact that is the resolved merge — with the
+same accounting as everything else: what was asked, who did it, what came back,
+and a verdict. Either worker can take it, which is the point of the spine: a
+person in VS Code and a worker given the conflict are the same task with one step
+different.
+
+**What it wants that does not exist yet:**
+
+* the resolution has to happen ON A MACHINE. The host's repositories are served
+  to guests, and leaving one with a half-merged working tree would hand every
+  machine a broken checkout. The queue already brings a machine up on a branch;
+  this is that, with a merge started before the worker is let in
+* a contract almost writes itself, and should be written rather than assumed:
+  reconcile only, do not change behaviour, and if the two sides disagree about
+  intent then STOP and say so rather than picking one. A conflict resolved by
+  guessing is invisible afterwards — the diff looks clean
+* the verdict matters more here than anywhere else, for that same reason, so
+  this is an argument for the judging screen rather than a separate feature
+* whether the merge is attempted at all before a human looks. Starting it makes
+  the conflict markers real and gives the worker something to edit; not starting
+  it keeps the branch clean. Probably start it on the machine, never here
