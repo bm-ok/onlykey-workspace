@@ -22,11 +22,33 @@
 // through the same surface, with the same refusals -- rather than reaching past
 // it into the modules underneath and proving something about code nobody uses.
 
+// THREE LEVELS, NOT TWO, and that is the one structural addition to the ported
+// shape. A directory is a SUITE, a file in it is a TEST, and the it()s inside
+// that file are the CHECKS that test is made of — so a test is a series of steps
+// rather than a single claim, and the order of the steps is part of what is
+// being said. See test/suites/index.js for how a folder becomes this.
+//
+// In the names below: `group` is the suite (the folder), `suite` is the test
+// (the file), `test` is one check. The ported words are kept because the ported
+// code is kept; the translation happens once, in actions/tests.js.
 const suites = []
 let currentSuite = null
+let currentGroup = null
+
+// The folder, wrapped around the requires of everything in it. Exactly the same
+// device as describe/it one level up: set, run, unset in a finally.
+function group (name, fn) {
+  const before = currentGroup
+  currentGroup = name
+  try {
+    fn()
+  } finally {
+    currentGroup = before
+  }
+}
 
 function describe (name, fn) {
-  const suite = { name, tests: [] }
+  const suite = { name, group: currentGroup, tests: [], cleanups: [] }
   suites.push(suite)
   currentSuite = suite
   try {
@@ -39,6 +61,19 @@ function describe (name, fn) {
 function it (name, fn) {
   if (!currentSuite) throw new Error('it() must be called inside describe()')
   currentSuite.tests.push({ name, fn })
+}
+
+// WHAT TO UNDO WHEN THE SERIES IS OVER, however it ends.
+//
+// A step that arranges something — a cut made, a credential taken — used to put
+// it back in its own `finally`, because a step was the whole test. In a series
+// the arranging happens in one step and the using happens in the next, so the
+// undoing belongs to the file rather than to any step in it. Registered here,
+// run after the last check whatever happened to the ones before it — including
+// when a failure stopped the rest, which is exactly when debris gets left.
+function cleanup (fn) {
+  if (!currentSuite) throw new Error('cleanup() must be called inside describe()')
+  currentSuite.cleanups.push(fn)
 }
 
 // The assertions, deliberately three. A rich assertion library is a language to
@@ -114,11 +149,26 @@ async function run (context = {}) {
     : ((...args) => { try { console.log('[harness]', ...args) } catch { /* nowhere to say it */ } })
 
   for (const suite of suites) {
-    const suiteRes = { name: suite.name, tests: [] }
+    const suiteRes = { name: suite.name, group: suite.group, tests: [] }
     let announced = false
+    // What the steps of this one file hand to each other. A series that cannot
+    // pass anything along is a series in name only: the cut made in the first
+    // step is the cut the second step writes a task on.
+    const state = {}
+    // AND WHAT A FAILED STEP DOES TO THE ONES AFTER IT. It stops them, because
+    // a step that failed leaves the world in a state nobody described, and a
+    // check run against that state is not evidence of anything.
+    //
+    // A failure only. An unmet precondition does NOT stop the series: "no
+    // machine is dialled in" is a fact about the moment, every later step says
+    // for itself what it needed, and replacing those precise sentences with one
+    // borrowed from the step above loses the only useful thing they said.
+    let stoppedBy = null
 
     for (const t of suite.tests) {
-      if (typeof testFilter === 'function' && !testFilter(t.name, suite.name)) continue
+      // The folder is passed too, so a run can be asked for by suite, by test,
+      // or by one check — which is what the three columns in the window offer.
+      if (typeof testFilter === 'function' && !testFilter(t.name, suite.name, suite.group)) continue
 
       // Moved inside the loop, after the filter. The original announces every
       // suite before filtering, which for a run of one drill prints the name of
@@ -129,12 +179,26 @@ async function run (context = {}) {
       const testRes = { name: t.name, ok: false, error: null }
       const started = Date.now()
 
-      try { if (onTestStart) onTestStart({ suiteName: suite.name, testName: t.name }) } catch { /* a reporter must not fail a test */ }
-      try { if (context.onTestUpdate) context.onTestUpdate({ suiteName: suite.name, testName: t.name, status: 'running' }) } catch { /* as above */ }
+      try { if (onTestStart) onTestStart({ groupName: suite.group, suiteName: suite.name, testName: t.name }) } catch { /* a reporter must not fail a test */ }
+
+      // A step after one that failed. Not tried, and said as what it is — the
+      // step above is the thing to read, and this one has nothing to add.
+      if (stoppedBy) {
+        testRes.ok = null
+        testRes.unrunnable = `an earlier step did not pass — "${stoppedBy}"`
+        testRes.ms = 0
+        results.unrunnable++
+        log(`  SKIP ${t.name} -> ${testRes.unrunnable}`)
+        try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'unrunnable', error: testRes.unrunnable }) } catch {}
+        try { if (onTestEnd) onTestEnd({ groupName: suite.group, suiteName: suite.name, testName: t.name, result: testRes }) } catch {}
+        suiteRes.tests.push(testRes)
+        continue
+      }
+      try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'running' }) } catch { /* as above */ }
 
       try {
         const testPromise = (async () => {
-          await t.fn({ ...context, assert })
+          await t.fn({ ...context, assert, state })
         })()
 
         if (timeoutMs > 0) {
@@ -149,7 +213,7 @@ async function run (context = {}) {
           await testPromise
         }
 
-        try { if (context.onTestUpdate) context.onTestUpdate({ suiteName: suite.name, testName: t.name, status: 'passed' }) } catch { /* as above */ }
+        try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'passed' }) } catch { /* as above */ }
         testRes.ok = true
         testRes.ms = Date.now() - started
         results.passed++
@@ -163,23 +227,38 @@ async function run (context = {}) {
           testRes.unrunnable = why.slice(UNMET.length)
           testRes.ms = Date.now() - started
           results.unrunnable++
-          try { if (context.onTestUpdate) context.onTestUpdate({ suiteName: suite.name, testName: t.name, status: 'unrunnable', error: testRes.unrunnable }) } catch {}
+          try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'unrunnable', error: testRes.unrunnable }) } catch {}
           log(`  SKIP ${t.name} -> ${testRes.unrunnable}`)
-          try { if (onTestEnd) onTestEnd({ suiteName: suite.name, testName: t.name, result: testRes }) } catch { /* a reporter must not fail a test */ }
+          try { if (onTestEnd) onTestEnd({ groupName: suite.group, suiteName: suite.name, testName: t.name, result: testRes }) } catch { /* a reporter must not fail a test */ }
           suiteRes.tests.push(testRes)
           continue
         }
         testRes.ok = false
         testRes.ms = Date.now() - started
         testRes.error = e && (e.stack || e.message || String(e))
-        try { if (context.onTestUpdate) context.onTestUpdate({ suiteName: suite.name, testName: t.name, status: 'failed', error: testRes.error }) } catch { /* as above */ }
+        try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'failed', error: testRes.error }) } catch { /* as above */ }
         results.failed++
+        stoppedBy = t.name
         log(`  FAIL ${t.name} -> ${e && (e.message || e)}`)
       }
 
-      try { if (onTestEnd) onTestEnd({ suiteName: suite.name, testName: t.name, result: testRes }) } catch { /* as above */ }
+      try { if (onTestEnd) onTestEnd({ groupName: suite.group, suiteName: suite.name, testName: t.name, result: testRes }) } catch { /* as above */ }
 
       suiteRes.tests.push(testRes)
+    }
+
+    // Undoing what the series arranged, only if the series ran at all — a suite
+    // that was filtered out arranged nothing. A cleanup that throws is logged
+    // and does not fail anything: it is the tidy-up after the answer is already
+    // known, and turning it into a red line would report the wrong thing.
+    if (suiteRes.tests.length) {
+      for (const fn of suite.cleanups) {
+        try {
+          await fn({ ...context, assert, state })
+        } catch (e) {
+          log(`  cleanup after ${suite.name} did not finish -> ${e && (e.message || e)}`)
+        }
+      }
     }
 
     // Only suites that actually ran something. A run of one drill should report
@@ -217,6 +296,7 @@ function fingerprint (fn) {
 function getRegisteredSuites () {
   return suites.map(s => ({
     name: s.name,
+    group: s.group,
     tests: s.tests.map(t => ({
       name: t.name,
       fingerprint: fingerprint(t.fn),
@@ -225,4 +305,4 @@ function getRegisteredSuites () {
   }))
 }
 
-module.exports = { describe, it, run, assert, getRegisteredSuites, fingerprint }
+module.exports = { group, describe, it, cleanup, run, assert, getRegisteredSuites, fingerprint }

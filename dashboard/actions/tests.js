@@ -52,32 +52,60 @@ module.exports = {
   // does is the only way to know what a green tick means. It is the same reason
   // a job shows its script before it is approved.
   suites: {
-    about: 'Every test suite registered, what each one asserts, and how it went last time',
+    about: 'Every suite, the tests in it, the checks each test is made of, and how they went last time',
     run: () => {
       const registered = ready()
       const was = lastRun.results
-      const found = (suite, test) => {
+
+      // THE HARNESS SAYS SUITE AND TEST; THIS SAYS SUITE, TEST AND CHECK.
+      //
+      // A folder is a suite, a file in it is a test, and the it()s in that file
+      // are the checks that test is made of — because what this app does is an
+      // ORDER, and an order cannot be stated as a bag of independent assertions.
+      // The harness keeps the ported two-level words and carries the folder as
+      // `group`; the translation happens here, once, so nothing above this line
+      // has to know that history.
+      const found = (group, test, check) => {
         if (!was) return null
-        const s2 = (was.suites || []).find(x => x.name === suite)
-        return (s2 && s2.tests.find(t => t.name === test)) || null
+        const file = (was.suites || []).find(x => x.name === test && x.group === group)
+        return (file && file.tests.find(t => t.name === check)) || null
       }
+      const worst = list =>
+        list.some(c => c.state === 'failed') ? 'failed'
+          : list.some(c => c.state === 'unrunnable') ? 'unrunnable'
+            : list.every(c => c.state === 'passed') ? 'passed'
+              : 'not run'
+
+      const byGroup = []
+      for (const file of registered) {
+        const checks = file.tests.map(t => {
+          const r = found(file.group, file.name, t.name)
+          return {
+            ...t,
+            // Three outcomes, not two. A precondition that was not met is not
+            // a failure — see `needs` in the harness — and reporting them the
+            // same way is the fastest route to a red number nobody reads.
+            state: !r ? 'not run' : r.ok === true ? 'passed' : r.ok === null ? 'unrunnable' : 'failed',
+            ms: r ? r.ms : null,
+            why: r ? (r.unrunnable || r.error || null) : null,
+            log: (r && r.log) || []
+          }
+        })
+        let group = byGroup.find(g => g.name === file.group)
+        if (!group) byGroup.push(group = { name: file.group, tests: [] })
+        group.tests.push({
+          name: file.name,
+          checks,
+          // The test's own state is the worst thing in it: a series with one
+          // failed step is a failed test, and an average would hide the only
+          // line worth reading.
+          state: worst(checks),
+          ms: checks.some(c => c.ms != null) ? checks.reduce((n, c) => n + (c.ms || 0), 0) : null
+        })
+      }
+
       return {
-        suites: registered.map(su => ({
-          ...su,
-          tests: su.tests.map(t => {
-            const r = found(su.name, t.name)
-            return {
-              ...t,
-              // Three outcomes, not two. A precondition that was not met is not
-              // a failure — see `needs` in the harness — and reporting them the
-              // same way is the fastest route to a red number nobody reads.
-              state: !r ? 'not run' : r.ok === true ? 'passed' : r.ok === null ? 'unrunnable' : 'failed',
-              ms: r ? r.ms : null,
-              why: r ? (r.unrunnable || r.error || null) : null,
-              log: (r && r.log) || []
-            }
-          })
-        })),
+        suites: byGroup,
         // Said while LISTING, so the tab can explain why its buttons are off
         // without anybody pressing one to find out.
         ...mayRun(),
@@ -179,9 +207,9 @@ module.exports = {
   },
 
   suiteRun: {
-    about: 'Run every test, one suite, or one test. Reports per test as it goes',
-    takes: ['suite', 'test'],
-    run: async ({ suite, test }) => {
+    about: 'Run everything, one suite, one test in it, or one check of that test. Reports as it goes',
+    takes: ['suite', 'test', 'check'],
+    run: async ({ suite, test, check }) => {
       // REFUSED HERE, at the only door that runs a test. The window disables the
       // buttons too, and that is a courtesy — this is the boundary, and it is
       // the one a drill reached from the command line meets as well.
@@ -193,6 +221,7 @@ module.exports = {
 
       const want = String(suite || '').trim()
       const one = String(test || '').trim()
+      const step = String(check || '').trim()
       lastRun.running = true
       const to = log.on('test')
 
@@ -207,8 +236,11 @@ module.exports = {
       // Routed by whichever test is running when the line arrives. The harness
       // hands every test the same log function, so this is the only way to know
       // which one is talking.
+      // Keyed by all THREE, because a file's title is only unique inside its
+      // folder: two suites may each have a test called the same thing, and a
+      // key made of two of the three would quietly merge their logs.
       const said = new Map()
-      const key = (a, b) => `${a} ${b}`
+      const key = (g, a, b) => [g, a, b].join(' / ')
       let current = null
       to.info(want || one ? `running ${one || want}` : 'running every suite')
 
@@ -256,26 +288,31 @@ module.exports = {
             to.info(text)
             if (current && said.has(current)) said.get(current).push(text)
           },
-          onTestStart: ({ suiteName, testName }) => {
-            current = key(suiteName, testName)
+          onTestStart: ({ groupName, suiteName, testName }) => {
+            current = key(groupName, suiteName, testName)
             said.set(current, [])
           },
           // Cleared AFTER the harness has written its own PASS/SKIP/FAIL line,
           // so that line lands with the test it is about rather than with
           // whatever runs next.
           onTestEnd: () => { current = null },
-          testFilter: (testName, suiteName) => {
-            if (want && suiteName !== want) return false
+          // Suite, then test, then check — the three columns in the window, and
+          // the three things the command line can be given. Each narrows the one
+          // above it, and none of them is a pattern: a filter that half-matches
+          // runs something nobody asked for.
+          testFilter: (checkName, testName, groupName) => {
+            if (want && groupName !== want) return false
             if (one && testName !== one) return false
+            if (step && checkName !== step) return false
             return true
           },
           // A test that hangs holds the whole run, and half of these touch
           // machines. Long enough for a real refusal to be reached and short
           // enough that a wedged one is a failure rather than an afternoon.
           timeoutMs: 60000,
-          onTestUpdate: ({ suiteName, testName, status, error }) => {
+          onTestUpdate: ({ groupName, suiteName, testName, status, error }) => {
             if (status === 'running') return
-            const said = `${suiteName} — ${testName}`
+            const said = `${groupName} / ${suiteName} — ${testName}`
             if (status === 'passed') to.good(said)
             else if (status === 'unrunnable') to.warn(`${said}: ${error}`)
             else to.bad(`${said}: ${String(error || '').split('\n')[0]}`)
@@ -285,7 +322,7 @@ module.exports = {
         // Folded onto each result, so what a test SAID travels with how it went
         // rather than being a second thing to look up by name.
         for (const su of results.suites || []) {
-          for (const t of su.tests || []) t.log = said.get(key(su.name, t.name)) || []
+          for (const t of su.tests || []) t.log = said.get(key(su.group, su.name, t.name)) || []
         }
         lastRun = { at: new Date().toISOString(), results, running: false }
         const note = `${results.passed} passed, ${results.failed} failed, ${results.unrunnable} could not be tried.`

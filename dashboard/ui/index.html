@@ -783,14 +783,21 @@
 
   <!-- ---------------- All actions ---------------- -->
   <!-- ---------------- Test ----------------
-       THREE COLUMNS, AND THE THIRD IS THE POINT. Suites, then what each one
-       asserts, then the SOURCE of the check you picked beside what it said when
-       it ran.
+       THREE COLUMNS BECAUSE THERE ARE THREE THINGS. A suite is a folder under
+       test/suites, a test is a file in it, and a test is made of CHECKS — the
+       it()s inside that file, run in the order they are written. So the third
+       column is not one assertion: it is the whole series, in order, each step
+       with its source and what it said.
+
+       That order is the point. What this app does is an order — cut a branch,
+       write a task on it, give it out, judge it, cut a PR — and an order cannot
+       be stated as a bag of independent assertions. A step that fails stops the
+       ones after it, and they say so rather than pretending to be untested.
 
        A green tick means nothing on its own — it means whatever the check
        actually does, and the only way to know that is to read it. The harness
-       already carries each test's source for exactly this reason, the same way a
-       job shows its script before anybody approves it. So the widest column is
+       already carries each check's source for exactly this reason, the same way
+       a job shows its script before anybody approves it. So the widest column is
        not output: it is the code, with the result under it. -->
   <section class="view" id="view-tests">
     <p class="note" id="tests-note"></p>
@@ -806,12 +813,12 @@
       </div>
 
       <div class="col narrow">
-        <h2 class="titlerow">What it asserts <span class="muted" id="test-suite-context"></span></h2>
+        <h2 class="titlerow">Tests <span class="muted" id="test-suite-context"></span></h2>
         <div id="test-list" class="stack"></div>
       </div>
 
       <div class="col wide">
-        <h2 class="titlerow">The check <span class="muted" id="test-context"></span></h2>
+        <h2 class="titlerow">The test <span class="muted" id="test-context"></span></h2>
         <div id="test-detail" class="panel"></div>
       </div>
 

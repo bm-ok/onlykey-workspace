@@ -5,15 +5,22 @@
 // Part of the window. See ui/load.js for the order these are read in and why
 // the order matters.
 //
-// THREE OUTCOMES, NOT TWO, and that is most of what this pane is for. A test
-// that could not be TRIED is not a test that failed: half these drills need a
+// THREE THINGS, ONE PER COLUMN. A suite is a folder under test/suites, a test is
+// a file in it, and the checks are the it()s inside that file. A test is a
+// SERIES: its checks run in the order they are written, they hand things to each
+// other, and one that fails stops the rest. So the third column shows the whole
+// series in order rather than one assertion at a time — the order is the thing
+// being asserted.
+//
+// THREE OUTCOMES, NOT TWO, and that is most of what this pane is for. A check
+// that could not be TRIED is not a check that failed: half these drills need a
 // machine that is on, or a credential, or a branch claimed — and the whole
 // design of this tool puts machines at rest. A suite reporting "4 failed" on a
 // quiet system is the fastest way to teach somebody to ignore a red number.
 //
-// THE THIRD COLUMN IS THE SOURCE. A green tick means whatever the check actually
+// THE SOURCE IS SHOWN, ALWAYS. A green tick means whatever the check actually
 // does, and the only way to know that is to read it — which is why the harness
-// carries each test's source, and why the widest column here is the code rather
+// carries each check's source, and why the widest column here is the code rather
 // than the output. It is the same rule as a job showing its script before it is
 // approved: reading is the whole of what a tick is worth.
 
@@ -38,14 +45,21 @@ const TEST_LOOK = {
   'not run': { className: 'badge muted', textContent: 'not run' }
 }
 
-// The worst thing in a suite, for the badge on its card. Failed beats not-tried
+// The worst thing in a list, for the badge on a card. Failed beats not-tried
 // beats passed: an aggregate that averages away one failure is an aggregate that
 // hides the only line worth reading.
-const worstOf = tests =>
-  tests.some(t => t.state === 'failed') ? 'failed'
-    : tests.some(t => t.state === 'unrunnable') ? 'unrunnable'
-      : tests.every(t => t.state === 'passed') ? 'passed'
+const worstOf = states =>
+  states.some(s => s === 'failed') ? 'failed'
+    : states.some(s => s === 'unrunnable') ? 'unrunnable'
+      : states.length && states.every(s => s === 'passed') ? 'passed'
         : 'not run'
+
+// Only the counts that are not zero. A row of three zeroes is three things to
+// read past on every suite that is simply fine.
+const countBadges = states => ['passed', 'failed', 'unrunnable'].map(k => {
+  const n = states.filter(s => s === k).length
+  return n ? el('span', { ...TEST_LOOK[k], textContent: `${n} ${TEST_LOOK[k].textContent}` }) : null
+})
 
 function paintTests () {
   if (view !== 'tests') return
@@ -61,7 +75,7 @@ async function paintTestsNow () {
 
   // LISTING RUNS NOTHING, which is the property that makes it safe to ask for on
   // a draw at all: some of these drills borrow a machine, and opening a tab is
-  // not consent to do that. The action reads the register and calls no test.
+  // not consent to do that. The action reads the register and calls no check.
   api('suites').then(v => {
     if (view !== 'tests') return
     testsRunning = !!v.running
@@ -80,12 +94,12 @@ async function paintTestsNow () {
     const runAll = $('tests-run-all')
     if (runAll) {
       runAll.disabled = testsRunning || !testsAllowed
-      runAll.title = !testsAllowed ? testsWhy : testsRunning ? 'A run is already going' : 'Run every test in every suite'
+      runAll.title = !testsAllowed ? testsWhy : testsRunning ? 'A run is already going' : 'Run every check in every suite'
     }
 
-    const all = v.suites.flatMap(s => s.tests)
+    const everyCheck = v.suites.flatMap(s => s.tests.flatMap(t => t.checks))
     const badge = $('tests-badge')
-    const bad = all.filter(t => t.state === 'failed').length
+    const bad = everyCheck.filter(c => c.state === 'failed').length
     if (badge && changed('tests-badge', bad)) {
       badge.textContent = String(bad || '')
       badge.classList.toggle('hidden', !bad)
@@ -106,35 +120,34 @@ async function paintTestsNow () {
 
     if (changed('test-suites', [v.suites, pickedSuite, testsRunning, testsAllowed])) {
       fill($('test-suites'), v.suites.length
-        ? v.suites.map(s => el('div', {
-            className: `card pick${s.name === pickedSuite ? ' on' : ''}`,
-            onclick: () => {
-              pickedSuite = s.name
-              been.set('test-suite', pickedSuite)
-              pickedTest = null
-              forget('test-suites'); forget('test-list'); forget('test-detail')
-              paintTests()
-            }
-          },
-          el('div', { className: 'card-title' },
-            el('span', { className: 'grow', textContent: s.name }),
-            el('span', TEST_LOOK[worstOf(s.tests)])),
-          el('div', { className: 'badges' },
-            el('span', { className: 'muted', textContent: `${s.tests.length} check${s.tests.length === 1 ? '' : 's'}` }),
-            // Only the counts that are not zero. A row of three zeroes is three
-            // things to read past on every suite that is simply fine.
-            ...['passed', 'failed', 'unrunnable'].map(k => {
-              const n = s.tests.filter(t => t.state === k).length
-              return n ? el('span', { ...TEST_LOOK[k], textContent: `${n} ${TEST_LOOK[k].textContent}` }) : null
-            }),
-            el('button', {
-              className: 'btn small',
-              textContent: 'Run it',
-              disabled: testsRunning || !testsAllowed,
-              title: !testsAllowed ? testsWhy : testsRunning ? 'A run is already going' : `Run only "${s.name}"`,
-              onclick: e => { e.stopPropagation(); runTests({ suite: s.name }) }
-            }))))
-        : el('p', { className: 'empty', textContent: 'No suites are registered. They live in test/suites — a file that calls describe/it is a suite, and adding one is all there is to it.' }))
+        ? v.suites.map(s => {
+            const states = s.tests.map(t => t.state)
+            const checks = s.tests.reduce((n, t) => n + t.checks.length, 0)
+            return el('div', {
+              className: `card pick${s.name === pickedSuite ? ' on' : ''}`,
+              onclick: () => {
+                pickedSuite = s.name
+                been.set('test-suite', pickedSuite)
+                pickedTest = null
+                forget('test-suites'); forget('test-list'); forget('test-detail')
+                paintTests()
+              }
+            },
+            el('div', { className: 'card-title' },
+              el('span', { className: 'grow', textContent: s.name }),
+              el('span', TEST_LOOK[worstOf(states)])),
+            el('div', { className: 'badges' },
+              el('span', { className: 'muted', textContent: `${s.tests.length} test${s.tests.length === 1 ? '' : 's'}, ${checks} check${checks === 1 ? '' : 's'}` }),
+              ...countBadges(states),
+              el('button', {
+                className: 'btn small',
+                textContent: 'Run it',
+                disabled: testsRunning || !testsAllowed,
+                title: !testsAllowed ? testsWhy : testsRunning ? 'A run is already going' : `Run every test in "${s.name}"`,
+                onclick: e => { e.stopPropagation(); runTests({ suite: s.name }) }
+              })))
+          })
+        : el('p', { className: 'empty', textContent: 'No suites are registered. A suite is a folder under test/suites, a test is a numbered file in it, and adding one is all there is to it.' }))
     }
 
     if (changed('test-list', [suite, pickedTest, testsRunning, testsAllowed])) {
@@ -151,11 +164,13 @@ async function paintTestsNow () {
           el('div', { className: 'card-title' },
             el('span', { className: 'grow', textContent: t.name }),
             el('span', TEST_LOOK[t.state])),
+          // The steps it is made of, and how far it got. This is the whole
+          // difference from a list of assertions: a test here is a sequence,
+          // and "3 checks" is a statement about how much of an order it covers.
           el('div', { className: 'badges' },
-            t.ms != null ? el('span', { className: 'muted', textContent: `${t.ms}ms` }) : null,
-            // The fingerprint of the SOURCE, not the name — an edited check with
-            // the same name is a different check, and this is what says so.
-            el('span', { className: 'mono muted', textContent: t.fingerprint }))))
+            el('span', { className: 'muted', textContent: `${t.checks.length} check${t.checks.length === 1 ? '' : 's'}` }),
+            ...countBadges(t.checks.map(c => c.state)),
+            t.ms != null ? el('span', { className: 'muted', textContent: `${t.ms}ms` }) : null)))
         : el('p', { className: 'empty', textContent: 'Pick a suite on the left.' }))
     }
 
@@ -166,8 +181,77 @@ async function paintTestsNow () {
   }).catch(e => { if (changed('tests-bad', String(e.message))) oops(e) })
 }
 
+// One check of the series: what step it is, how it went, what it does, and what
+// it said. Everything about a step is in one block, because the alternative is
+// reading a result in one place and the code for it in another.
+function checkBlock (suite, test, c, n) {
+  return el('div', { className: 'card', style: 'margin-top:10px' },
+    el('div', { className: 'card-title' },
+      // The number is the ORDER, which is the thing this whole level exists to
+      // state. Written 1, 2, 3 rather than the file's 00 — the file numbers
+      // order the tests, and these order the steps.
+      el('span', { className: 'mono muted', textContent: `${n}.` }),
+      el('span', { className: 'grow', textContent: c.name }),
+      c.ms != null ? el('span', { className: 'muted', textContent: `${c.ms}ms` }) : null,
+      el('span', TEST_LOOK[c.state])),
+
+    // WHAT IT SAID, and the wording follows what kind of answer it is. A
+    // precondition that was not met is a fact about the moment — nothing is
+    // wrong — and it must not be dressed as a failure.
+    c.state === 'unrunnable'
+      ? el('p', { className: 'note warn' },
+          el('strong', { textContent: 'Could not be tried. ' }),
+          el('span', { textContent: `${c.why} Nothing is wrong with the check or with the code — it asked for something this system does not have right now, which is the ordinary resting state here.` }))
+      : null,
+
+    c.state === 'failed'
+      ? el('div', { style: 'margin-top:8px' },
+          el('div', { className: 'dlg-heading', textContent: 'What went wrong' }),
+          codeBlock(String(c.why || 'no message'), 'text'))
+      : null,
+
+    el('div', { className: 'dlg-heading', style: 'margin-top:8px', textContent: 'What it does' }),
+    codeBlock(String(c.source || ''), 'javascript'),
+
+    // AND WHAT IT SAID WHILE IT RAN.
+    //
+    // The live log is the whole run interleaved, which is right while it is
+    // happening and useless afterwards for one step. Half these drills log what
+    // they ARRANGED — "taking runner1's credential for the duration, and putting
+    // it back afterwards" — and that is most of what a result means: the same
+    // green tick is worth different things depending on what the step had to set
+    // up to earn it.
+    //
+    // From the last run only, and absent rather than empty when there has not
+    // been one. An empty box under a heading reads as "it said nothing", which
+    // is a different claim from "it has not run".
+    (c.log || []).length
+      ? [
+          el('div', { className: 'dlg-heading', style: 'margin-top:8px', textContent: 'The log' }),
+          codeBlock((c.log || []).join('\n'), 'text')
+        ]
+      : null,
+
+    el('div', { className: 'row', style: 'margin-top:8px' },
+      el('span', { className: 'mono muted grow', textContent: c.fingerprint }),
+      el('button', {
+        className: 'btn small',
+        textContent: 'Run this check',
+        disabled: testsRunning || !testsAllowed,
+        // Worth saying: a step lifted out of its series is not the series. It
+        // runs alone, with nothing arranged by the steps above it, which is
+        // exactly what makes it useful for working on one and exactly what makes
+        // its answer weaker than the test's.
+        title: !testsAllowed ? testsWhy : 'Runs this step on its own, without the steps before it',
+        onclick: () => runTests({ suite: suite.name, test: test.name, check: c.name })
+      })))
+}
+
 function paintTestDetail (suite, t) {
-  if (!t) return fill($('test-detail'), el('p', { className: 'empty', textContent: 'Pick a check.' }))
+  if (!t) return fill($('test-detail'), el('p', { className: 'empty', textContent: 'Pick a test.' }))
+
+  const states = t.checks.map(c => c.state)
+  const stopped = t.checks.find(c => c.state === 'unrunnable' && /^an earlier step/.test(String(c.why || '')))
 
   fill($('test-detail'),
     el('div', { className: 'card-title' },
@@ -176,64 +260,35 @@ function paintTestDetail (suite, t) {
 
     el('table', { className: 'kv', style: 'margin-top:8px' },
       el('tr', {}, el('th', { textContent: 'suite' }), el('td', { textContent: suite.name })),
+      el('tr', {}, el('th', { textContent: 'checks' }),
+        el('td', { className: 'muted', textContent: `${t.checks.length}, in the order below` })),
       el('tr', {}, el('th', { textContent: 'took' }),
-        el('td', { className: 'muted', textContent: t.ms != null ? `${t.ms}ms` : 'it has not been run in this window' })),
-      el('tr', {}, el('th', { textContent: 'fingerprint' }),
-        el('td', { className: 'mono', style: 'user-select:text', textContent: t.fingerprint }))),
+        el('td', { className: 'muted', textContent: t.ms != null ? `${t.ms}ms` : 'it has not been run in this window' }))),
 
-    // WHAT IT SAID, and the wording follows what kind of answer it is. A
-    // precondition that was not met is a fact about the moment — nothing is
-    // wrong — and it must not be dressed as a failure.
-    t.state === 'unrunnable'
+    // A series that stopped. Said once at the top, because the steps below it
+    // each say "an earlier step did not pass" and that is not the sentence
+    // somebody needs to read three times.
+    stopped
       ? el('p', { className: 'note warn' },
-          el('strong', { textContent: 'Could not be tried. ' }),
-          el('span', { textContent: `${t.why} Nothing is wrong with the check or with the code — it asked for something this system does not have right now, which is the ordinary resting state here.` }))
-      : null,
-
-    t.state === 'failed'
-      ? el('div', { style: 'margin-top:10px' },
-          el('div', { className: 'dlg-heading', textContent: 'What went wrong' }),
-          codeBlock(String(t.why || 'no message'), 'text'))
+          el('strong', { textContent: 'The series stopped. ' }),
+          el('span', { textContent: 'A check that fails stops the ones after it — the world is in a state nobody described, and a step run against that proves nothing. Read the failure, not the ones below it.' }))
       : null,
 
     t.state === 'passed'
-      ? el('p', { className: 'note' }, el('strong', { className: 'ok', textContent: 'Passed. ' }),
-          el('span', { textContent: 'Which means what the code below does, and nothing more — read it before trusting the tick.' }))
+      ? el('p', { className: 'note' }, el('strong', { className: 'ok', textContent: 'Every check passed. ' }),
+          el('span', { textContent: 'Which means what the code below does, in this order, and nothing more — read it before trusting the tick.' }))
       : null,
 
     t.state === 'not run'
       ? el('p', { className: 'note muted', textContent: 'Not run in this window. A result is a statement about this process and this workspace at one moment, so none is kept across a restart.' })
       : null,
 
-    // THE CHECK ITSELF, which is the whole reason this column is the wide one.
-    el('div', { className: 'dlg-heading', style: 'margin-top:12px', textContent: 'What it does' }),
-    codeBlock(String(t.source || ''), 'javascript'),
-
-    // AND WHAT IT SAID WHILE IT RAN.
-    //
-    // The live log is the whole run interleaved, which is right while it is
-    // happening and useless afterwards for one check. Half these drills log what
-    // they ARRANGED — "taking runner1's credential for the duration, and putting
-    // it back afterwards" — and that is most of what a result means: the same
-    // green tick is worth different things depending on what the drill had to
-    // set up to earn it.
-    //
-    // From the last run only, and absent rather than empty when there has not
-    // been one. An empty box under a heading reads as "it said nothing", which
-    // is a different claim from "it has not run".
-    (t.log || []).length
-      ? [
-          el('div', { className: 'dlg-heading', style: 'margin-top:12px', textContent: 'The log' }),
-          codeBlock((t.log || []).join('\n'), 'text')
-        ]
-      : null,
-
     el('div', { className: 'row', style: 'margin-top:10px' },
       el('button', {
         className: 'btn ok',
-        textContent: 'Run this one',
+        textContent: 'Run this test',
         disabled: testsRunning || !testsAllowed,
-        title: !testsAllowed ? testsWhy : testsRunning ? 'A run is already going' : 'Runs only this check',
+        title: !testsAllowed ? testsWhy : testsRunning ? 'A run is already going' : 'Runs every check in this test, in order',
         onclick: () => runTests({ suite: suite.name, test: t.name })
       }),
       el('button', {
@@ -242,11 +297,15 @@ function paintTestDetail (suite, t) {
         disabled: testsRunning || !testsAllowed,
         title: !testsAllowed ? testsWhy : '',
         onclick: () => runTests({ suite: suite.name })
-      })))
+      }),
+      el('span', { className: 'grow' }),
+      ...countBadges(states)),
+
+    ...t.checks.map((c, i) => checkBlock(suite, t, c, i + 1)))
 }
 
-// One way in for all three buttons. Every one of them reports through the live
-// log as it goes — the harness calls back per test — so a long run is legible
+// One way in for all four buttons. Every one of them reports through the live
+// log as it goes — the harness calls back per check — so a long run is legible
 // while it happens rather than only in the answer at the end.
 function runTests (what) {
   testsRunning = true
