@@ -24,6 +24,29 @@ const {
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
 } = s
 
+// THE CUT COMES FIRST, and this is where that stops being a habit.
+//
+// A task delivers on a branch. Naming one nobody has cut writes a task that
+// cannot be delivered and that nothing will notice until a machine has been
+// borrowed, set up and pointed at a branch that is not there — which is the
+// expensive end of a mistake made at the cheap end.
+//
+// The window has always enforced it by offering a list to pick from, and a UI
+// that offers a list is a habit rather than a rule: the command line, the queue
+// and anything written six weeks from now go through here instead. A drill
+// asking for it in the wrong order is what showed it was only a habit.
+//
+// Asked of the repositories rather than of a record. A branch is a fact about a
+// folder — somebody may have cut it in a terminal a second ago, or deleted it —
+// and a list kept alongside would be a second opinion about it.
+function mustBeCut (branch) {
+  if (!branch) return
+  const here = (branches.all().branches || []).some(b => b.name === branch)
+  if (!here) {
+    throw new Error(`There is no branch called "${branch}" in this workspace. Cut it first, on the Branches tab — a task delivers on a branch, and one nobody has cut is work with nowhere to land.`)
+  }
+}
+
 // WHOSE MEMORY THIS IS, WHEN THE TASK MAY BE GONE.
 //
 // These outlive the tasks that made them, on purpose -- what was produced
@@ -103,6 +126,7 @@ module.exports = {
       if (!input || typeof input !== 'object') throw new Error('Pass the task as an object.')
       const why = branches.nameIsOk(String(input.branch || '').trim())
       if (why) throw new Error(why)
+      mustBeCut(String(input.branch || '').trim())
 
       // THE RULES ARE COPIED IN, the same way the brief is.
       //
@@ -161,6 +185,10 @@ module.exports = {
       if (changes.branch) {
         const why = branches.nameIsOk(String(changes.branch).trim())
         if (why) throw new Error(why)
+        // The same rule as writing one. Without it the order holds at the door
+        // and not at the window beside it: write the task correctly, then edit
+        // the branch to one nobody has cut.
+        mustBeCut(String(changes.branch).trim())
       }
 
       // THE SAME COPY taskCreate MAKES, because this is now how a draft is
