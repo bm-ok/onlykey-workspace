@@ -148,7 +148,9 @@ function paintSession (s) {
         title: 'Open the folder it is kept in',
         onclick: () => { if (!host.showInFolder(s.path)) say('This window cannot open a file manager here.', 'bad') }
       }),
-      s.taskId
+      // Only where the task is still on the board. Offering it for an orphan
+      // would be a button that switches tab and lands on nothing.
+      s.taskId && !s.orphaned
         ? el('button', {
             className: 'btn small',
             textContent: 'Go to the task',
@@ -168,7 +170,11 @@ function paintSession (s) {
           confirm: 'Forget it',
           danger: true,
           onYes: async () => {
-            await api('sessionForget', { id: s.taskId })
+            // BY UID, not by task id. These outlive their tasks on purpose, so
+            // the name that still resolves after a board is cleared is the uid
+            // — passing the task id answered "there is no task called…" about a
+            // thing sitting on the screen in front of you.
+            await api('sessionForget', { id: s.uid })
             say('Forgotten. The next run starts fresh.', 'warn')
             pickedSession = null
             forget('sessions'); forget('session-detail')

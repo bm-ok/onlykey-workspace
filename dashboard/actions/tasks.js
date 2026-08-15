@@ -24,6 +24,28 @@ const {
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
 } = s
 
+// WHOSE MEMORY THIS IS, WHEN THE TASK MAY BE GONE.
+//
+// These outlive the tasks that made them, on purpose -- what was produced
+// outlives the note about it. That was written down and then not followed
+// through: every action reached one by looking the task up first, so the moment
+// a board was cleared its own sessions became unreachable, and the Forget button
+// answered `There is no task "testing-claude"` about a thing sitting on screen
+// in front of somebody. Kept deliberately and then impossible to throw away is
+// the worst of both.
+//
+// So the task is looked up if it is there, and the id is taken as a uid if it is
+// not. Nothing is invented: it only falls through when something is actually
+// stored under that name.
+function whoseSession (id) {
+  const key = String(id || '')
+  let task = null
+  try { task = tasks.get(key) } catch { /* the board may have moved on without it */ }
+  if (task) return { task, uid: task.uid }
+  if (sessions.get(key)) return { task: null, uid: key }
+  throw new Error(`There is nothing kept under "${key}" — no task by that name, and no session either. Ask for "sessions" to see what is there.`)
+}
+
 module.exports = {
   tasks: {
     about: 'The board: every task, newest first, and whether its branch has anything on it yet',
@@ -580,9 +602,14 @@ module.exports = {
     about: 'What one task remembers: which conversation, how many runs, and where it is kept',
     takes: ['id'],
     run: ({ id }) => {
-      const task = tasks.get(id)
-      const memory = sessions.get(task.uid)
+      // The task where there is one, so "has this task got a memory yet" is
+      // answerable for a task that has never run — which is the ordinary case
+      // and cannot go through whoseSession, since nothing is stored yet.
+      let task = null
+      try { task = tasks.get(String(id)) } catch { /* it may be an orphan's uid */ }
+      const memory = sessions.get(task ? task.uid : String(id))
       if (!memory) {
+        if (!task) throw new Error(`There is nothing kept under "${id}", and no task by that name either.`)
         return {
           task: task.id,
           number: task.number,
@@ -594,7 +621,14 @@ module.exports = {
       // written, and a boolean of the same name would have quietly replaced a
       // timestamp with `true` — the panel would then say "kept true" and nobody
       // would know where the date had gone.
-      return { ...memory, has: true, task: task.id, number: task.number, title: task.title }
+      return {
+        ...memory,
+        has: true,
+        task: task ? task.id : memory.taskId,
+        number: task ? task.number : memory.number,
+        title: task ? task.title : null,
+        orphaned: !task
+      }
     }
   },
 
@@ -602,10 +636,20 @@ module.exports = {
     about: 'Throw away what a task remembers. The next run starts a fresh conversation',
     takes: ['id'],
     run: ({ id }) => {
-      const task = tasks.get(id)
-      const gone = sessions.forget(task.uid)
-      log.on('task', task.id).warn(`#${task.number} will start a fresh conversation next time — what it remembered was thrown away`)
-      return { ...gone, note: 'The task, its branch, its files and its logs are untouched. Only the memory is gone.' }
+      // By uid when the task is gone. A memory that outlives its task and cannot
+      // then be deleted is kept twice over.
+      const { task, uid } = whoseSession(id)
+      const gone = sessions.forget(uid)
+      log.on('task', task ? task.id : uid).warn(task
+        ? `#${task.number} will start a fresh conversation next time — what it remembered was thrown away`
+        : `threw away a session left behind by a task that is gone (${uid})`)
+      return {
+        ...gone,
+        orphaned: !task,
+        note: task
+          ? 'The task, its branch, its files and its logs are untouched. Only the memory is gone.'
+          : 'It belonged to a task that no longer exists. Its branch, its files and its logs are untouched.'
+      }
     }
   },
 
