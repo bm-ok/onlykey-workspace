@@ -74,3 +74,5 @@ legacy/
 # several megabytes each, and only ever interesting for the hour after they
 # were taken.
 Trace-*.json
+
+no_commit_*
