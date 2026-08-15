@@ -22,10 +22,30 @@
 
 allowed="${OKC_ALLOW_BRANCH:-}"
 machine="${OKC_MACHINE:-this machine}"
+readonly_line="${OKC_READ_ONLY:-}"
 
 if [ -z "$allowed" ]; then
   echo "refused: no branch is recorded for $machine."
   echo "set the machine up on a branch from the dashboard, then push again."
+  exit 1
+fi
+
+# A LINE IS READ-ONLY, AND THAT IS CHECKED BEFORE THE REFS ARE.
+#
+# A machine can be set up on a protected branch on purpose -- a task that reads,
+# measures or reports has to be where the work it is reading actually is. What it
+# must not do is push back, and the per-ref test below cannot catch that: on a
+# line, the branch being pushed to IS the branch this machine was set up on, so
+# that test says yes.
+#
+# The dashboard decides this, not the hook. Only that side knows what is
+# protected, and a hook that had to look it up would need a copy of the rule.
+if [ -n "$readonly_line" ]; then
+  echo "refused: $allowed is a line, and this machine is working in it read-only."
+  echo "work is merged into a line, never pushed to it. nothing was taken - your"
+  echo "commits are still on your own copy."
+  echo "if this work should land somewhere, cut a branch for it and set the"
+  echo "machine up on that instead."
   exit 1
 fi
 

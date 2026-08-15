@@ -26,7 +26,7 @@ const q = s => `'${String(s).replace(/'/g, `'\\''`)}'`
 // machine's business and not this app's.
 const FOLDER = '$HOME/workspace'
 
-function script ({ repos, branch, folder = FOLDER, origin, machine, token, ca, caFile = '/etc/okc/ca.pem' }) {
+function script ({ repos, branch, folder = FOLDER, origin, machine, token, ca, caFile = '/etc/okc/ca.pem', readOnly = false }) {
   const dir = folder || FOLDER
 
   // A real loop over the names, rather than the same block written out once per
@@ -73,7 +73,32 @@ for repo in ${repos.map(q).join(' ')}; do
     git checkout --quiet -b "$branch" </dev/null
   fi
 
-  echo "$repo: on $(git rev-parse --abbrev-ref HEAD) at $(git log -1 --format=%h 2>/dev/null || echo 'nothing yet')"
+  # READ-ONLY, SAID HERE AS WELL AS ENFORCED ON THE HOST.
+  #
+  # The host's pre-receive hook is the guard: it runs in a directory no guest can
+  # reach and cannot be edited, skipped or pushed past. This is not that. This is
+  # so a worker finds out at the moment it tries, in the repository it is in,
+  # rather than at the end of an hour's work in a rejection from a server.
+  #
+  # A worker CAN remove this -- it is an ordinary file in a checkout it owns --
+  # and that is fine, because removing it does not get the push through. The two
+  # are not the same defence written twice; one is a rule and this is a sign.
+  if [ -n "$READ_ONLY" ]; then
+    mkdir -p .git/hooks
+    cat > .git/hooks/pre-push <<'OKC_NO_PUSH'
+#!/bin/sh
+echo "refused: this machine is working in a line, read-only." >&2
+echo "work is merged into a line, never pushed to it. commit freely -- your" >&2
+echo "commits stay here -- and hand anything that has to leave back as an" >&2
+echo "artifact instead: okc-artifact <file>" >&2
+exit 1
+OKC_NO_PUSH
+    chmod +x .git/hooks/pre-push
+  else
+    rm -f .git/hooks/pre-push
+  fi
+
+  echo "$repo: on $(git rev-parse --abbrev-ref HEAD) at $(git log -1 --format=%h 2>/dev/null || echo 'nothing yet')${'$'}{READ_ONLY:+ (read-only)}"
 done`
 
   return `set -u
@@ -81,6 +106,7 @@ failed=0
 WS="${dir}"
 branch=${q(branch)}
 ORIGIN=${q(origin)}
+READ_ONLY=${q(readOnly ? '1' : '')}
 OKC_CA_FILE=${q(caFile)}
 
 # The authority, written from here rather than fetched.

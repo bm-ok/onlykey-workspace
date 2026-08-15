@@ -281,6 +281,18 @@ function gitRoute (req, res, url) {
 
     env.OKC_ALLOW_BRANCH = who.branch
     env.OKC_MACHINE = who.name
+    // READ-ONLY WHERE THE BRANCH IS A LINE.
+    //
+    // A machine may now be set up on a protected branch on purpose: a task that
+    // reads, measures or reports has to be somewhere, and a line is where the
+    // work it is reading actually is. What it must not do is push back.
+    //
+    // The hook already refuses anything that is not the machine's branch, which
+    // is exactly why this is needed: on a line, the branch being pushed to IS
+    // the machine's branch, so the existing test says yes. Told here rather than
+    // worked out in the hook, because only this side knows what is protected --
+    // and told as a fact rather than a name, so the hook has nothing to look up.
+    if (branches.isProtected(who.branch)) env.OKC_READ_ONLY = '1'
   }
 
   if (tail === '/info/refs') return repos.advertise(res, { dir, service, repo, env })

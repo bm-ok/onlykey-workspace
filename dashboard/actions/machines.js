@@ -755,7 +755,13 @@ module.exports = {
         origin: `https://${host}:${net.port}`,
         machine: name,
         token: vm.spec.token,
-        ca: tls.ca.toString()
+        ca: tls.ca.toString(),
+        // A LINE IS WORKED IN, NOT PUSHED TO. Setting a machine up on one is
+        // allowed and is the point of a reading task; what it may not do is
+        // push back. The host's hook is what actually stops that — this puts a
+        // pre-push hook in the guest so a worker finds out where it is working
+        // rather than in a rejection an hour later.
+        readOnly: branches.isProtected(on)
       })
 
       const r = await channel.run(name, script, { what: `setting up the workspace on ${on}`, timeout: 10 * 60 * 1000 })

@@ -941,11 +941,15 @@ async function paintAddTaskNow () {
     setText($('add-note'), 'A task is what a worker is told, and the branch it delivers on. That branch is the artifact: it is what comes back, and what gets judged. Nothing is given out yet — writing a task touches no machine.')
 
     const nameOf = b => (typeof b === 'string' ? b : b && b.name) || ''
-    // THE CUTS, WHICH IS EVERY BRANCH THAT IS NOT PROTECTED. A protected branch
-    // is a line -- work is merged into it and never done on it -- and offering
-    // one here as somewhere to deliver would be offering the one thing that is
-    // refused later anyway, three screens further on.
     const cuts = (known || []).map(nameOf).filter(b => b && !taken.has(b)).sort()
+    // A LINE CAN BE WORKED IN, READ-ONLY, and leaving lines off the list said
+    // otherwise. A task that reads, measures or reports has to be where the work
+    // it is reading actually is, and that is often a line. What it cannot do is
+    // push back — the host refuses that, and the machine is given a pre-push
+    // hook so a worker finds out where it stands rather than in a rejection an
+    // hour later. It can still commit locally, hand files back, and keep its
+    // session for the next run.
+    const protectedLines = (known || []).map(nameOf).filter(b => b && taken.has(b)).sort()
 
     const { rows, inputs } = buildFields([
       { name: 'title', label: 'Title', value: (from && from.title) || '', placeholder: 'Short enough to read in a list' },
@@ -978,7 +982,10 @@ async function paintAddTaskNow () {
         value: '',
         options: [
           { value: '', label: cuts.length ? 'pick the cut this work belongs to' : 'there are no cuts yet — make one on the Branches tab' },
-          ...cuts.map(b => ({ value: b, label: b }))
+          ...cuts.map(b => ({ value: b, label: b })),
+          // Said in the option itself, because a dropdown is read one row at a
+          // time and a note underneath is read after the choice is made.
+          ...protectedLines.map(b => ({ value: b, label: `${b} — protected, read-only` }))
         ]
       },
       // THE BRIEF IS THE PROMPT. Writing a task is writing one, which is the
@@ -1050,11 +1057,14 @@ async function paintAddTaskNow () {
 
         el('div', { className: 'carries', style: 'margin-top:10px' },
           // WORKS IN, AND DELIVERS TO. One line, because it is one fact: the
-          // work goes where the work is.
+          // work goes where the work is — unless it is a line, where the work
+          // stays and only what it hands back leaves.
           el('div', { className: 'group-part' },
             el('span', { textContent: 'works in' }),
             el('span', {}, branch
-              ? el('span', { textContent: branch })
+              ? taken.has(branch)
+                ? el('span', { className: 'warn', textContent: `${branch} — a line, read-only` })
+                : el('span', { textContent: branch })
               : el('span', { className: 'muted', textContent: 'pick the cut this work belongs to' }))),
           el('div', { className: 'group-part' },
             el('span', { textContent: 'done by' }),
@@ -1157,7 +1167,6 @@ async function paintAddTaskNow () {
         // Which also means the refusal that prompted all this cannot happen: a
         // branch that does not exist is not on the list, so it cannot be named.
         if (!values.branch) throw new Error('Pick the branch cut this work belongs to. If there is not one yet, cut it on the Branches tab.')
-        if (taken.has(values.branch)) throw new Error(`"${values.branch}" is a line, not a cut. Work is merged into a line and never done on it.`)
 
         const made = await api('taskCreate', { task: values })
         pickedTask = made.id
