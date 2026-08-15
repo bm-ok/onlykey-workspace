@@ -447,7 +447,15 @@ app.onCapture(async want => {
   // to avoid: an empty panel is indistinguishable from a broken one.
   await new Promise(r => setTimeout(r, 800))
   await takeShot(want.file)
-  return { bytes: null }
+  // AND THE MARKUP, beside the picture and of the same moment.
+  //
+  // A photograph has to be looked at; markup can be searched, diffed and read.
+  // Anything reading this window from outside — the command line, a session
+  // following along — wants the second at least as often as the first, and used
+  // to have only the first. Taken after the shot rather than before, so a
+  // difference between them can only ever be the window having moved on, never
+  // the order they were taken in.
+  return { bytes: null, html: markupNow() }
 })
 
 // ---- driving the window from outside -----------------------------------
@@ -707,12 +715,23 @@ let shotSettle = 0
 // state/capture.html, and a picture beside it. The clipboard is offered rather
 // than taken: the notice carries a button that copies the two paths.
 
-async function capture () {
+// THE RENDERED DOM, with the stylesheets inlined so it opens on its own.
+//
+// Pulled out of `capture` because `windowShot` wants exactly the same thing:
+// markup is searchable and a picture is not, and the two answer different halves
+// of "what does the window look like" — a class matching no rule is invisible in
+// the markup and obvious in the picture, and a value drawn from the wrong field
+// is the other way round. Written twice, they would have drifted, and the one
+// that drifted would be the one nobody was reading.
+function markupNow () {
   const css = [...document.styleSheets].map(sheet => {
     try { return [...sheet.cssRules].map(r => r.cssText).join('\n') } catch { return '' }
   }).join('\n')
+  return `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>captured</title>\n<style>\n${css}\n</style>\n</head>\n${document.body.outerHTML}\n</html>\n`
+}
 
-  const html = `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>captured</title>\n<style>\n${css}\n</style>\n</head>\n${document.body.outerHTML}\n</html>\n`
+async function capture () {
+  const html = markupNow()
 
   // THE CLIPBOARD IS NOT TAKEN. It was, and it took it silently: a quarter of a
   // megabyte of markup replaced whatever was being carried between two windows,

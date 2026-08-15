@@ -69,6 +69,13 @@ module.exports = {
             delivered: art.delivered,
             artifact: art.summary,
             commits: art.commits,
+            // FILLED IN FOR TASKS WRITTEN BEFORE THE NAME WAS CARRIED, and only
+            // for those: the stored copy wins wherever there is one, so this
+            // cannot become a second answer that disagrees with it. A task whose
+            // job has since left the library keeps whatever it stored, and one
+            // written before there was anything to store falls back to the id —
+            // which is what it always showed.
+            jobName: t.jobName || (t.job ? ((jobs.get(t.job) || {}).name || null) : null),
             // What the board shows. The stored state says what a person decided;
             // this says what is true, and where they disagree the branch wins.
             // Delivered outranks done, because it is the more informative of
@@ -122,6 +129,16 @@ module.exports = {
       } else if (input.contract) {
         const at = path.resolve(String(input.contract))
         if (!fs.existsSync(at)) throw new Error(`There is no contract at ${at}. It is read from this host when the task is given out.`)
+      }
+
+      // The job's name travels with its id, like the prompt's and the
+      // contract's. Refused rather than stored blindly: a task naming a job that
+      // does not exist is a task the queue will pick up and fail on, and the
+      // moment it is written is the cheap moment to find that out.
+      if (input.job) {
+        const one = jobs.get(String(input.job))
+        if (!one) throw new Error(`There is no job called "${input.job}". Ask for "jobs" to see what there is.`)
+        input.jobName = one.name
       }
       return tasks.add(input)
     }
@@ -180,6 +197,17 @@ module.exports = {
           changes.rules = null
           changes.contractName = null
         }
+      }
+
+      // The job's name, on the same rule and with the same refusal as writing
+      // one: a task pointed at a job that does not exist fails in the queue,
+      // and here it costs a sentence.
+      if ('job' in changes) {
+        const wanted = String(changes.job || '').trim()
+        const one = wanted ? jobs.get(wanted) : null
+        if (wanted && !one) throw new Error(`There is no job called "${wanted}". Ask for "jobs" to see what there is.`)
+        changes.job = wanted || null
+        changes.jobName = one ? one.name : null
       }
 
       // The prompt's name travels with its id for the same reason: the library

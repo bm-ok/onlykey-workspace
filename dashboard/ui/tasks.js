@@ -142,7 +142,7 @@ const taskKey = t => t && [
   // The three ties and whether a worker has run. Missed here, the panel would
   // keep saying "to be done by" after one had — which is the exact failure this
   // signature exists to prevent, in the row that was just fixed for lying.
-  t.job || '', t.promptId || '', !!t.usedClaude,
+  t.job || '', t.jobName || '', t.promptId || '', !!t.usedClaude,
   // How many machines have had it. `machine` alone cannot say: it is cleared
   // when one is put away, so a finished task and an untouched one both read
   // "nobody yet".
@@ -467,7 +467,11 @@ function paintTaskDetail (task) {
         el('td', {}, task.job
           ? el('button', {
               className: 'linky',
-              textContent: task.job,
+              // THE NAME, because that is what the Jobs tab lists. The id was
+              // shown here, so the card named "api-tour" against a library whose
+              // entry reads "the whole job API, once each" — findable only by
+              // somebody who already knew they were the same thing.
+              textContent: task.jobName || task.job,
               title: 'Read the script that will run',
               onclick: () => { pickedJob = task.job; been.set('job', pickedJob); forget('jobs'); forget('jobs-detail'); showPane('jobs') }
             })

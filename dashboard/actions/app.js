@@ -172,7 +172,7 @@ module.exports = {
   // notices it on its next draw and answers. That is why it returns a path
   // rather than an image — the file appears a second or two later.
   windowShot: {
-    about: 'Ask the window to photograph itself, optionally on a given tab or tab/pane, with something picked',
+    about: 'Ask the window to photograph itself and save its markup, optionally on a given tab or tab/pane, with something picked',
     takes: ['note', 'view', 'pick', 'when'],
     run: async ({ note, view, pick, when }) => {
       const file = path.join(data.sub('window'), `window-${data.stamp()}.png`)
@@ -196,7 +196,27 @@ module.exports = {
         try {
           const shot = await win.capture({ file, view: view || null, pick: pick == null ? null : String(pick), when: when === 'loading' ? 'loading' : null })
           if (note) log.on('window').info(note)
-          return { file, ...shot, took: 'now' }
+
+          // THE MARKUP BESIDE THE PICTURE, always, because they answer
+          // different halves of one question and the cost of the second is a
+          // file write.
+          //
+          // A picture has to be looked at. Markup can be searched, diffed and
+          // read — "does this pane say the job's name or its id" is one grep
+          // and one squint, and only one of those scales to a window with forty
+          // rows on it. Same name, so the pair cannot be separated.
+          const { html, ...rest } = shot || {}
+          let markup = null
+          if (html) {
+            markup = file.replace(/\.png$/, '.html')
+            try {
+              fs.writeFileSync(markup, String(html))
+            } catch (e) {
+              markup = null
+              log.on('window').warn(`the markup could not be saved: ${e.message}`)
+            }
+          }
+          return { file, markup, ...rest, took: 'now' }
         } catch (e) {
           throw new Error(`The window could not photograph itself: ${e.message}`)
         }

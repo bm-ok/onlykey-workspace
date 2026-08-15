@@ -266,6 +266,13 @@ function add (input) {
     // the contract is a path: a task records what it was told to do, and a job
     // that is edited afterwards must not silently rewrite what this task was for.
     job: String(input.job || '').trim() || null,
+    // AND ITS NAME, for the same reason the prompt's and the contract's are
+    // carried. An id is what the library is keyed by and a name is what it is
+    // listed under, so a card showing the id names something nobody can find on
+    // the Jobs tab — "api-tour" against a list that says "the whole job API,
+    // once each". It is also the only thing that still says which job this was
+    // once the library entry is gone.
+    jobName: input.jobName ? String(input.jobName) : null,
     // Kept because a great deal reads it, and derived so the two cannot disagree.
     shell: WORKERS.includes(input.worker) ? input.worker === 'shell' : !!input.shell,
     // How long the queue waits before giving up on it, in hours. Six unless the
