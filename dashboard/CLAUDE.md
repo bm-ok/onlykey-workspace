@@ -51,6 +51,19 @@ script file to the scratchpad and run that.**
 cannot match any permission pattern, so every one of them interrupts the user.
 One command, one job.
 
+**Never chain a restart to a wait.** This one has wedged the terminal in session
+after session, and each time it was rediscovered rather than remembered:
+
+```
+npm run restart >/dev/null 2>&1; until node tools/okc.js | grep -q X; do sleep 2; done
+```
+
+The restart detaches a process, the redirect closes the stream that says the call
+ended, and the loop then blocks for ever having printed nothing — so there is no
+output to diagnose from and it has to be killed by hand. Run `npm run restart` on
+its own, in the background, and let it report that it finished. Then ask the
+dashboard with a separate plain command. Do not sleep, and do not poll.
+
 **Measure before claiming.** Check which tab is open, which workspace is served,
 which machine is claimed — do not infer state from an earlier screenshot or an
 earlier run. A wrong diagnosis costs more than no diagnosis.
@@ -79,11 +92,17 @@ powershell -c "Get-Process -Name nw | Stop-Process -Force"
 npm start
 ```
 
-Wait by asking, not by sleeping:
+Then **read the event stream** to find out what happened. Not a poll, not a
+sleep — the record is durable and survives the restart it is telling you about:
 
 ```
-until node tools/okc.js 2>/dev/null | grep -q myNewAction; do sleep 1; done
+node tools/okc.js events                      # what this app has done
+node tools/okc.js events --since <bookmark>   # only what is new since last time
 ```
+
+Every call hands back a `bookmark`. Pass it to `--since` and the next call
+returns only what has happened since — one call, no timer, and it says what went
+wrong rather than only whether something is up yet.
 
 Then **do the actual task from the command line**, not a smoke test, and
 photograph the window if it changed:

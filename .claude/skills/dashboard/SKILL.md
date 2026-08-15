@@ -73,16 +73,24 @@ Then restart, because **the window loads `server.js` at startup** and nothing yo
 changed exists until it does:
 
 ```bash
-# Windows: stop every nw process, then start again
-powershell -c "Get-Process -Name nw | Stop-Process -Force"
-npm start        # in dashboard/, backgrounded
+npm --prefix dashboard run restart      # backgrounded; quits and starts again
 ```
 
-Wait for it by asking the dashboard, not by sleeping:
+Then **read the event stream.** Never sleep, never poll, never write a wait
+loop — the record is durable and survives the restart it is reporting:
 
 ```bash
-until node tools/okc.js 2>/dev/null | grep -q myNewAction; do sleep 1; done
+node dashboard/tools/okc.js events                      # what this app has done
+node dashboard/tools/okc.js events --since <bookmark>   # only what is new
 ```
+
+Every call hands back a `bookmark` for the next `--since`, so checking again is
+one call rather than a timer. A poll only ever answers "is it up yet"; the
+stream says what happened, including the failure and why.
+
+**One command, one job.** `npm run restart >/dev/null; until … sleep …` chained
+into a single call wedges the terminal with no output to diagnose from, and has
+done so in session after session.
 
 **Never restart while a machine is installing.** The install fetches its scripts
 from this host at the very end, twenty-five minutes in, and a restart at the

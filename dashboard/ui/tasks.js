@@ -473,16 +473,39 @@ function paintTaskDetail (task) {
       // library may have moved on, and what this task went out under did not.
       el('tr', {}, el('th', { textContent: 'contract' }),
         el('td', {}, task.rules
-          ? [
-              el('span', { textContent: task.contractName || task.contractId || 'the rules it was given' }),
-              el('button', {
-                className: 'linky',
-                style: 'margin-left:8px',
-                textContent: 'read them',
-                title: 'The words this task carries, as the worker gets them',
-                onclick: () => ask({
+          // THE SAME MOVE AS JOB AND PROMPT, because it is the same question.
+          // This row opened a dialog instead, which made the one row of the
+          // three that reads like a dead end the row about the rules.
+          //
+          // The task's own copy is still what it went out under, and the
+          // library entry may have moved on since — so the dialog stays for the
+          // case where there is nowhere to go, which is a contract typed into
+          // the task with no entry behind it. Where there IS an entry, the pane
+          // is the better answer: it shows the words, its approval, and what
+          // else runs under it.
+          ? el('button', {
+              className: 'linky',
+              textContent: task.contractId ? (task.contractName || task.contractId) : 'the rules it was given — read them',
+              title: task.contractId
+                ? 'The library entry these rules came from. The task carries its own copy.'
+                : 'The words this task carries, as the worker gets them',
+              // CHECKED BEFORE SWITCHING, because the pane cannot say no.
+              //
+              // Picking a contract that is not in the library silently selects
+              // the first one instead — which is how a link to a DELETED
+              // contract shows somebody a different contract and calls it this
+              // task's rules. The task's own copy outlives the library entry, so
+              // the words are always here to fall back on.
+              onclick: async () => {
+                const gone = !task.contractId || await api('contracts')
+                  .then(({ contracts }) => !contracts.some(c => c.id === task.contractId))
+                  .catch(() => true)
+                if (!gone) return showContract(task.contractId)
+                ask({
                   title: `The rules for #${task.number}`,
-                  plain: [`Carried by this task, as it was written. Editing "${task.contractName || task.contractId}" in the library since then has not changed these.`],
+                  plain: [task.contractId
+                    ? `"${task.contractName || task.contractId}" is not in the library any more. These are the words the task carries, which is what its worker was actually held to.`
+                    : 'Written into this task rather than taken from the library, so this is the only place they are.'],
                   confirm: 'Done',
                   onYes: async () => {},
                   onOpen: () => {
@@ -490,8 +513,8 @@ function paintTaskDetail (task) {
                     if (body) body.append(markdownBlock(task.rules))
                   }
                 })
-              })
-            ]
+              }
+            })
           : task.contract
             ? el('span', { className: 'mono', style: 'user-select:text', textContent: task.contract })
             : el('span', { className: 'badge warn', textContent: 'none — the worker gets no rules' }))),
