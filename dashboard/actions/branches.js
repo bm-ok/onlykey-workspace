@@ -641,6 +641,57 @@ module.exports = {
     }
   },
 
+  // BRINGING THE ANSWER BACK, which is the half of the round trip this app never
+  // had. It pushes a line onward and opens pull requests; once those are merged
+  // and the fork is synced, every default branch HERE is behind — and a branch
+  // cut afterwards is cut from a stale point without anything saying so.
+  //
+  // One button for every repository, because it is one act: "the world moved on,
+  // catch up". Doing it per repository would mean remembering which of three had
+  // been done, which is the sort of bookkeeping that is always half finished.
+  //
+  // NOTHING IS DECIDED HERE. It fast-forwards or it reports why it did not; a
+  // repository with local commits, or a dirty tree on its default branch, is
+  // named and skipped. That is what makes it safe to press without reading
+  // anything first, which is the entire value of it.
+  repoSync: {
+    about: 'Fetch from origin and fast-forward every repository\'s default branch',
+    needs: 'workspace',
+    run: () => {
+      const rows = branches.baselines()
+      if (!rows.length) throw new Error(`There are no repositories in ${repos.DIR} to sync.`)
+
+      const done = []
+      for (const r of rows) {
+        try {
+          done.push(remotes.syncDefault(r.repo))
+        } catch (e) {
+          // ONE REPOSITORY'S FAILURE IS NOT THE OTHERS'. Three repositories
+          // where two synced is a real state and the useful one; refusing all
+          // three because one has no remote would be the app deciding that a
+          // partial answer is worse than none.
+          done.push({ repo: r.repo, moved: false, why: (e.message || String(e)).split('\n')[0] })
+        }
+      }
+
+      const moved = done.filter(d => d.moved)
+      for (const d of moved) log.on('git', d.repo).good(`${d.branch} ${d.from} → ${d.to}, ${d.commits} commit(s) from origin`)
+      for (const d of done.filter(d => !d.moved && d.why !== 'already up to date')) {
+        log.on('git', d.repo).warn(d.why)
+      }
+
+      return {
+        repos: done,
+        moved: moved.length,
+        note: moved.length
+          ? `${moved.map(d => `${d.repo} ${d.branch} +${d.commits}`).join(', ')}. Branches cut from here now start from what origin has.`
+          : done.every(d => d.why === 'already up to date')
+            ? 'Every default branch already matches origin.'
+            : 'Nothing moved. See the reasons above — this only fast-forwards.'
+      }
+    }
+  },
+
   // Make one branch the baseline everywhere it exists.
   //
   // THIS IS WHAT CHAINING LOOKS LIKE FROM THE FRONT. A branch carrying finished

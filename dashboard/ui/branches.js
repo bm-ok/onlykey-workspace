@@ -305,7 +305,45 @@ function paintBaselines () {
     // branch records what it was cut from and is measured against that.
     fill($('baselines-now'), repos.length
       ? el('div', { className: 'card' },
-          el('div', { className: 'card-title' }, el('span', { textContent: 'Default branches' })),
+          el('div', { className: 'card-title' },
+            el('span', { textContent: 'Default branches' }),
+            // THE HALF OF THE ROUND TRIP THAT WAS MISSING. This app pushes a
+            // line onward and opens the pull requests; once those are merged and
+            // the fork is synced, every default branch here is behind — and a
+            // branch cut afterwards starts from a stale point with nothing
+            // saying so.
+            //
+            // On this card because this card is what is wrong: it is the thing
+            // that says what each repository's default is, and pressing it is
+            // how that becomes true again.
+            //
+            // No confirmation. The action fast-forwards or refuses — a
+            // repository with local commits, or a dirty tree on its default
+            // branch, is named and skipped — so there is nothing to read before
+            // pressing it, which is the whole value of the button.
+            el('button', {
+              className: 'plus',
+              textContent: '↓',
+              title: 'Fetch from origin and fast-forward every default branch. Only fast-forwards: anything that has moved on here is reported and left alone.',
+              onclick: async e => {
+                const b = e.currentTarget
+                b.disabled = true
+                b.textContent = '…'
+                try {
+                  const r = await api('repoSync')
+                  say(r.note, r.moved ? 'ok' : 'warn')
+                  // The counts on every branch are measured from these, so the
+                  // whole tab is stale the moment this moves, not just this card.
+                  forget('baselines'); forget('branches'); forget('branch-detail')
+                  return draw()
+                } catch (err) {
+                  oops(err)
+                } finally {
+                  b.disabled = false
+                  b.textContent = '↓'
+                }
+              }
+            })),
           ...repos.map(r => el('div', { className: 'group-part' },
             el('span', { className: 'mono', textContent: r.repo }),
             el('span', { className: 'mono muted', textContent: r.default }))),

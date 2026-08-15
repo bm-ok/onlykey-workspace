@@ -502,4 +502,88 @@ async function gather (only = null) {
   return rows
 }
 
-module.exports = { read, check, gather, remoteOf, parse, pushBranch, openPull, updatePull, pullsOn, issuesOn }
+// ---- bringing the default branches back -------------------------------
+//
+// The other direction, and the only one this app has ever had. It pushes a line
+// onward and opens pull requests; what it could not do is take the answer back.
+// So after the pull requests are merged and the fork is synced, every default
+// branch here is behind, and stays behind — a branch cut afterwards is cut from
+// a stale point, silently, and the first sign is a diff full of somebody else's
+// commits.
+//
+// FAST-FORWARD ONLY, EVERYWHERE. Never a merge, never a reset. If a default
+// branch here has commits the remote does not, that is a real thing that
+// happened and this is not the place to decide what to do about it — it is
+// reported and skipped. The whole point of the button is that it can be pressed
+// without reading anything first.
+//
+// TWO SHAPES, because a repository here is either a working tree or bare, and
+// git treats the branch that HEAD points at differently:
+//
+//   not checked out   git fetch origin b:b   — refuses a non-fast-forward
+//                                              itself, which is what we want
+//   checked out       fetch, then merge --ff-only in the tree, because git will
+//                     not fetch into the branch you are standing on
+//
+// A dirty working tree is left alone and said out loud. Somebody's uncommitted
+// work is not something a sync button gets to have an opinion about.
+function syncDefault (repo) {
+  const at = path.join(serve.DIR, repo)
+  const helper = path.join(__dirname, '..', 'tools', 'git-credential-okc.js')
+
+  // The same credential path as pushing, and for the same reasons — see the note
+  // above pushBranch. A public repository needs none of it and is unharmed by
+  // it; a private one cannot be fetched without it.
+  let token = null
+  try { token = github.tokenForPush() } catch { /* public remotes still work */ }
+
+  const run = args => execFileSync('git', [
+    '-C', at,
+    '-c', 'credential.helper=',
+    '-c', `credential.helper=!node "${helper.split('\\').join('/')}"`,
+    ...args
+  ], {
+    encoding: 'utf8',
+    timeout: 120000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      ...(token ? { OKC_GIT_USER: 'x-access-token', OKC_GIT_TOKEN: token } : {}),
+      GIT_TERMINAL_PROMPT: '0'
+    }
+  })
+
+  const branch = branches.defaultOf(repo)
+  if (!branch) return { repo, moved: false, why: 'no default branch could be read' }
+
+  const before = String(run(['rev-parse', branch])).trim()
+  run(['fetch', '--quiet', 'origin'])
+  const onto = String(run(['rev-parse', `refs/remotes/origin/${branch}`])).trim()
+
+  if (before === onto) return { repo, branch, moved: false, why: 'already up to date' }
+
+  // Behind is fast-forwardable; anything else is a divergence and is not this
+  // button's business. `merge-base --is-ancestor` answers exactly that.
+  try {
+    run(['merge-base', '--is-ancestor', before, onto])
+  } catch {
+    return { repo, branch, moved: false, why: `"${branch}" here has commits origin does not — this only fast-forwards, so it was left alone` }
+  }
+
+  const head = String(run(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+  if (head === branch) {
+    // Standing on it. Refuse rather than stash: uncommitted work belongs to
+    // whoever left it there.
+    const dirty = String(run(['status', '--porcelain'])).trim()
+    if (dirty) return { repo, branch, moved: false, why: `"${branch}" is checked out here with uncommitted changes — left alone` }
+    run(['merge', '--ff-only', `refs/remotes/origin/${branch}`])
+  } else {
+    run(['fetch', 'origin', `${branch}:${branch}`])
+  }
+
+  const after = String(run(['rev-parse', branch])).trim()
+  const count = Number(String(run(['rev-list', '--count', `${before}..${after}`])).trim()) || 0
+  return { repo, branch, moved: after !== before, commits: count, from: before.slice(0, 7), to: after.slice(0, 7) }
+}
+
+module.exports = { read, check, gather, remoteOf, parse, pushBranch, syncDefault, openPull, updatePull, pullsOn, issuesOn }
