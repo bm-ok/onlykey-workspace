@@ -197,9 +197,15 @@ async function paintBranchesNow () {
           })))
       }
 
+      // TWO EMPTIES THAT MEAN OPPOSITE THINGS. "There are no cuts" is a state of
+      // the workspace; "the finder matched none of them" is a state of this box.
+      // Saying the first when the second is true sends somebody looking for a
+      // fault in the wrong place.
       fill($('branches'), rows.length
         ? rows.map(branchCard)
-        : el('p', { className: 'empty', textContent: mine ? 'Nothing this system made. Untick "ours" to see the rest.' : 'No branches match.' }))
+        : el('p', { className: 'empty', textContent: cuts.length
+            ? `None of the ${cuts.length} cut${cuts.length === 1 ? '' : 's'} match what you typed.`
+            : 'No branch cuts. Make one with + — a cut is where work is done, and it is cut from a line.' }))
     }
 
     const picked = board.branches.find(b => b.name === pickedBranch) || null

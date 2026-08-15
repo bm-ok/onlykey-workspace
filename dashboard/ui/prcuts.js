@@ -279,7 +279,18 @@ async function paintTemplatesNow () {
       // one that is not, because that is the pair somebody is about to cut.
       if (!usable.some(g => g.name === tmplFrom)) tmplFrom = (usable.find(g => g.marked) || usable[0] || {}).name || null
       if (!usable.some(g => g.name === tmplInto) || tmplInto === tmplFrom) {
-        tmplInto = (pickTargetFor(tmplFrom, usable) || {}).name || null
+        // A LINE THAT IS NOT THE SOURCE, and preferably one nobody has proposed.
+        // Work is proposed FROM a marked line INTO a settled one, so the default
+        // target is the first unmarked line that is not already the source; any
+        // other line will do rather than leaving this empty.
+        //
+        // This called `pickTargetFor`, which has never existed anywhere in this
+        // window. It threw every time the remembered target went stale or
+        // matched the source — inside a `.then`, so it surfaced as the Write one
+        // pane simply not painting. Found by test/declared-test.js on its first
+        // run, not by reading.
+        const other = usable.filter(g => g.name !== tmplFrom)
+        tmplInto = ((other.find(g => !g.marked) || other[0] || {}).name) || null
       }
       been.set('tmpl-from', tmplFrom)
       been.set('tmpl-into', tmplInto)

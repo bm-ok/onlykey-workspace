@@ -16,13 +16,13 @@
   "//chromium-args": "Deliberately none. The previous version passed --disable-features=nw2, which selects the older window implementation -- and under it NW.js's own nw.Window shim throws 'getRoutingID is not a function' on every page load, and native confirm() silently returns false. Nothing here needs the flag, so it is gone and both of those go with it. If something ever does need it, expect that error back.",
   "scripts": {
     "start": "node tools/nw.js",
-    "test": "node test/generic-test.js && node test/window-test.js",
+    "test": "node test/generic-test.js && node test/window-test.js && node test/declared-test.js",
     "cli": "node tools/okc.js"
   },
   "engines": {
     "node": ">=20"
   },
-  "//dependencies": "None, and that is a property worth keeping rather than an accident. What this app uses beyond NW.js is checked in under vendors/ -- currently the Ace editor -- because a dependency resolved by a package manager is whatever the registry served the day somebody last installed it, and the same window on another machine is then not the same window. See vendors/README.md.",
+  "//dependencies": "None, and that is a property worth keeping rather than an accident. What this app uses beyond NW.js is checked in under vendors/ -- the Ace editor, xterm.js, marked and nanotar -- because a dependency resolved by a package manager is whatever the registry served the day somebody last installed it, and the same window on another machine is then not the same window. See vendors/README.md.",
   "devDependencies": {
     "nw": "^0.114.1"
   }
