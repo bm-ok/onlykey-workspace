@@ -94,6 +94,15 @@ module.exports = {
           // tests: a test asks this app for something exactly the way anything
           // else does, and meets the same refusals.
           actions,
+          // AND THE SAME HANDLE A JOB IS GIVEN, by the same name. The drills
+          // that used to live in tasks/planned.js were written against `okc`,
+          // and they are worth porting back rather than rewriting — the value
+          // in them is the reasoning, and rewriting is how that gets dropped.
+          okc: (name, args = {}) => {
+            const found = actions[name]
+            if (!found) throw new Error(`No action called "${name}"`)
+            return found.run(args)
+          },
           log: line => to.info(String(line).trim()),
           testFilter: (testName, suiteName) => {
             if (want && suiteName !== want) return false

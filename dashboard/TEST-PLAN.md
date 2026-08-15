@@ -776,3 +776,16 @@ failures would teach somebody to ignore a red number within a day.
 **What belongs here: anything that passes by being REFUSED.** A capability that
 stops working is noticed within the hour. A refusal that stops refusing is
 noticed when it costs something.
+
+**The nine guards from planned.js are back**, in `guards.js`, with their
+reasoning intact — that was the part worth keeping, and rewriting them from the
+prose above would have dropped it. Read the credential one: it ARRANGES the state
+it needs and puts it back in a `finally`, because a drill that only runs when the
+world happens to suit it is a drill that never runs — and it excludes any machine
+the queue is driving, because pulling a credential out from under a live worker
+to prove a point about refusals is a drill sabotaging the thing it protects.
+
+**The two ROUND TRIPS stay prose**, above. They create a task, give it to a
+machine and wait ten minutes for a worker; that is the part that made the old
+file dangerous to have one click away, and it is the part a person should decide
+to start.
