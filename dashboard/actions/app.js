@@ -88,6 +88,13 @@ module.exports = {
         } catch { return null }
       })(),
       workspaceKnown: (() => { try { return workspaces.known().length } catch { return 0 } })(),
+      // WHETHER THE DRILLS ARE ON RIGHT NOW, and for here. On the poll because
+      // the banner is drawn from it, and because this is the one setting whose
+      // being forgotten is the whole risk: it is deliberate, it is invisible
+      // from every tab, and it stays on across restarts by design.
+      testingHere: (() => {
+        try { return settings.testsAllowed(workspaces.dir() || null).allowed } catch { return false }
+      })(),
       // A REQUEST WAITING TO BE ANSWERED, carried on the poll the window already
       // makes rather than behind a call somebody has to remember. It is a
       // question for whoever is at the keyboard, wherever they are standing —

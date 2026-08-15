@@ -187,6 +187,24 @@ h2:first-child { margin-top: 0; }
 }
 .stale-banner strong { color: var(--fail); }
 
+/* TESTING MODE, AND IT IS NOT THE SAME KIND OF THING AS THE BANNER ABOVE.
+   That one is trouble — something is wrong and somebody should look. This is a
+   state somebody ASKED FOR, deliberately, and the only risk in it is forgetting.
+   So it is amber rather than red: alarming it would train somebody to dismiss
+   the colour, and the one thing this must not become is wallpaper.
+
+   Its own element, so nothing in the shared banner can take its place. */
+.testing-banner {
+  background: linear-gradient(180deg, #3a2c08, #241b05);
+  border-bottom: 1px solid var(--warn);
+  padding: 12px 16px;
+  line-height: 1.5;
+}
+.testing-banner strong { color: var(--warn); }
+/* Readable against amber rather than the accent blue, which on this ground is
+   the one thing on the line somebody cannot read. */
+.testing-banner .linky { color: var(--warn); text-decoration: underline; }
+
 /* ---------- dialog ----------
    In-page, not native: it has to carry plain words about what an action does, what
    it costs when that cannot be undone, and sometimes fields. A native confirm()

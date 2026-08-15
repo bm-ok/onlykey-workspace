@@ -186,11 +186,40 @@ async function drawOnce () {
       ])
   ].filter(Boolean)
 
+  // THE DRILLS ARE ON. Its own banner, above the shared one and never part of
+  // it — this is deliberate, it survives restarts by design, it is invisible
+  // from every tab, and it means this app may write a task and take a credential
+  // off a machine in THIS folder. Nothing else may push it out of the way.
+  $('testing-banner').classList.toggle('hidden', !status.testingHere)
+  if (status.testingHere && changed('testing-banner', ws && ws.name)) {
+    fill($('testing-banner'),
+      el('strong', { textContent: 'Testing mode is on' }),
+      el('span', { textContent: ` for ${ws ? ws.name : 'this workspace'}. The drills drive this app for real — a task written and removed, a credential taken off a machine and put back. It stays on across restarts, and goes off when the workspace changes.` }),
+      el('button', {
+        className: 'linky',
+        style: 'margin-left:10px',
+        textContent: 'Switch it off',
+        onclick: () => showTab('settings')
+      }))
+  }
+
   $('trouble').classList.toggle('hidden', !trouble.length)
   if (changed('trouble', trouble)) {
-    fill($('trouble'), trouble.map(([bold, rest]) => el('div', {},
+    // A THIRD ELEMENT, OPTIONAL: where to go about it. Every line here describes
+    // something somebody has to do something about, and until now every one of
+    // them left them to work out where — which for a deliberate setting means
+    // reading the sentence, agreeing, and then hunting for the switch.
+    fill($('trouble'), trouble.map(([bold, rest, go]) => el('div', {},
       el('strong', { textContent: bold }),
-      el('span', { textContent: rest }))))
+      el('span', { textContent: rest }),
+      go
+        ? el('button', {
+            className: 'linky',
+            style: 'margin-left:8px',
+            textContent: go.label,
+            onclick: go.onClick
+          })
+        : null)))
   }
 
   paintWorkspace()
