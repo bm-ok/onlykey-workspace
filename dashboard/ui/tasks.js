@@ -361,8 +361,6 @@ function paintTaskDetail (task) {
   if (!changed('task-detail', task && taskKey(task))) return
   if (!task) return fill($('task-detail'), el('p', { className: 'empty', textContent: 'Select a task.' }))
 
-  const idle = latest.vms.filter(v => v.connected)
-
   fill($('task-detail'),
     el('table', { className: 'kv' },
       // "BRANCH CUT", because that is what it is. A task works in a cut, which
@@ -627,13 +625,18 @@ function paintTaskDetail (task) {
                 onclick: () => finishTaskByHand(task)
               })
             : null)
-        : el('button', {
-            className: 'btn',
-            textContent: task.machine ? 'Give it out again' : 'Give it to a machine now',
-            disabled: !idle.length || !!task.verdict,
-            title: !idle.length ? 'No machine is dialled in' : task.verdict ? 'This task has been judged' : 'Skips the queue and uses a machine that is already up',
-            onclick: () => giveTask(task, idle)
-          }),
+        // GIVING IT TO A MACHINE BY HAND IS NOT ON THE CARD ANY MORE.
+        //
+        // It skipped the queue, which is the thing that decides what runs where
+        // and puts the machine away afterwards — so it was a second path to the
+        // same act with none of the accounting, sitting next to the button that
+        // does it properly. "Queue it" is how a task goes out; a machine that is
+        // already idle is picked up within seconds.
+        //
+        // `taskGive` is untouched and is still what the queue calls. Somebody
+        // who genuinely wants to bypass the queue can still do it from the
+        // command line, where it is a deliberate act rather than a button.
+        : null,
       // Only while something is actually running, because that is the only time
       // it means anything — and it is the button somebody wants at the moment
       // they would otherwise be opening a shell on the guest.
@@ -662,13 +665,31 @@ function paintTaskDetail (task) {
           })
         : null,
 
-      el('button', {
-        className: 'btn',
-        textContent: 'Judge it',
-        disabled: !task.delivered,
-        title: task.delivered ? '' : 'Nothing has arrived on this branch yet',
-        onclick: () => judgeTask(task)
-      }),
+      // JUDGING IS NOT SOMETHING A TASK DOES TO ITSELF, so it is not on the
+      // task's own card. A verdict is somebody reading what came back and
+      // deciding about it, and the place for that is where the delivered work
+      // is — not a button beside the brief, where the thing being judged is not
+      // on the screen at all.
+      //
+      // `taskJudge` and the dialog are untouched; what is gone is this door onto
+      // them.
+
+      // A DRAFT CAN STILL BE CHANGED, and until now nothing said so. A task
+      // written with the wrong branch cut, or a brief with a mistake in it, had
+      // to be thrown away and written again — losing its number, which is the
+      // one identity anybody says out loud.
+      //
+      // Only while it is a draft. Once it is queued a machine may pick it up
+      // within seconds, and once it is out the brief is the question its work
+      // answers; the action refuses both, and this does not offer them.
+      task.state === 'draft'
+        ? el('button', {
+            className: 'btn',
+            textContent: 'Edit it',
+            title: 'Opens it in the Add task pane, where it was written',
+            onclick: () => editTask(task)
+          })
+        : null,
 
       // Sending it back is the answer to a rejection, and the rule is that the
       // answer is never "fix it yourself".
@@ -1078,47 +1099,20 @@ function queueTask (task) {
   }).catch(oops)
 }
 
-function giveTask (task, idle) {
-  ask({
-    title: `Give "${task.title}" to a machine`,
-    plain: [
-      `Sets that machine's workspace up on ${task.branch}, in every repository.`,
-      'Then dispatches the brief and lets go — the work runs unattended and this returns as soon as it has started.',
-      task.contract ? 'The contract is read from this host and carried with the run.' : 'No contract: the worker is given no rules beyond the brief.'
-    ],
-    cost: 'The machine stays on this branch until it is clean. There is no way to move it off except going back to a snapshot from before.',
-    fields: [{
-      name: 'name',
-      label: 'Which machine does it',
-      value: (idle.find(v => v.name === task.machine) || idle[0]).name,
-      options: idle.map(v => ({ value: v.name, label: `${v.name} — ${v.description || v.stage}` }))
-    }],
-    confirm: 'Give it out',
-    onYes: async ({ name }) => {
-      const r = await api('taskGive', { id: task.id, name })
-      say(`${name} is working on ${task.title} — run ${r.run}`)
-    }
-  })
-}
-
-function judgeTask (task) {
-  ask({
-    title: `Judge "${task.title}"`,
-    plain: [
-      'Records what you decided about what arrived, and who decided it.',
-      'It does NOT merge anything. Landing work is a separate act with its own rules, and a verdict that quietly merged would make reading the work and publishing it the same button.'
-    ],
-    fields: [
-      { name: 'verdict', label: 'Verdict', value: 'accept', options: [{ value: 'accept', label: 'Accept' }, { value: 'reject', label: 'Reject — send it back' }] },
-      { name: 'note', label: 'Why (required to reject)', multiline: true, rows: 4, placeholder: 'What is wrong, in the words the worker will be given.' }
-    ],
-    confirm: 'Record it',
-    onYes: async ({ verdict, note }) => {
-      await api('taskJudge', { id: task.id, verdict, note })
-      say(`Recorded: ${verdict}ed.`)
-    }
-  })
-}
+// TWO DIALOGS USED TO LIVE HERE, and both are gone with the buttons that opened
+// them. Kept as a note rather than as unreachable code, because a dialog nothing
+// calls is a dialog that stops matching the action behind it and nobody finds
+// out until they wire it back up.
+//
+// "Give it to a machine now" bypassed the queue: it set a machine up and
+// dispatched, with none of the accounting the queue does around it. `taskGive`
+// is still the action the queue itself calls, and is still on the command line
+// for anybody who genuinely means to skip the queue.
+//
+// "Judge it" recorded a verdict from the task's own card, which is the wrong
+// place for it — a verdict is somebody reading what came back, and the card
+// shows the brief. `taskJudge` is untouched and judging needs a home of its
+// own; see ROADMAP.md.
 
 // Two ways in, and they are deliberately not variations of each other.
 //
@@ -1157,14 +1151,93 @@ let addPrefill = null
 // never do. So it is built once per visit, and only the preview beside it moves.
 let addBuiltFor = null
 
+// WHAT IS IN THE FORM RIGHT NOW, kept outside the form.
+//
+// The pane rebuilds on entry so its dropdowns are what the libraries say now,
+// and rebuilding threw away everything typed -- so leaving the tab to go and
+// read the contract you were about to pick lost the brief you had written. That
+// is the same fault as rebuilding on a tick, arriving through the door that was
+// opened to avoid it.
+//
+// So the values live here and the form is a view of them. Rebuilding refreshes
+// the options and puts the words back. In localStorage rather than a variable
+// because this app is restarted for every change to it, and a half-written brief
+// should survive that as easily as it survives a tab.
+let addDraft = been.get('add-draft', null)
+// WHICH TASK IS BEING EDITED, or null for a new one. The pane is one form for
+// both: writing a task and changing a draft ask exactly the same questions, and
+// a second copy of this form would be the one that stops matching.
+let addEditing = been.get('add-editing', null)
+
+const draftFields = ['title', 'branch', 'promptId', 'brief', 'job', 'contractId', 'folder']
+const rememberDraft = d => { addDraft = d; been.set('add-draft', d) }
+const rememberEditing = id => { addEditing = id; been.set('add-editing', id) }
+// Something worth not losing, which is not the same as "not empty". Arriving
+// from "Work on it" fills the branch in, and treating that as work in progress
+// would make every prefilled visit ask before it did anything.
+const draftHasWords = () => !!(addDraft && ['title', 'brief', 'folder'].some(k => String(addDraft[k] || '').trim()))
+
+const forgetDraft = () => {
+  addPrefill = null
+  rememberDraft(null)
+  rememberEditing(null)
+  addBuiltFor = null
+}
+
 function newTask (from = null) {
   addPrefill = from
+  rememberEditing(null)
+  // The prefill IS the draft. Written through the same field so one thing fills
+  // the form, rather than a prefill path and a draft path that have to agree.
+  if (from) rememberDraft({ ...(from.branch ? { branch: from.branch } : {}), ...(from.title ? { title: from.title } : {}), ...(from.brief ? { brief: from.brief } : {}) })
+  addBuiltFor = null
   // THE TAB AS WELL AS THE PANE. This is called from Branches and from
   // Repositories too, where switching only the sub-tab moves a pane nobody is
   // looking at and leaves the caller's screen exactly as it was — which reads as
   // a button that does nothing.
   showTab('tasks')
   showPane('add')
+}
+
+// EDITING A DRAFT IS THE SAME ACT AS WRITING ONE, so it is the same pane.
+//
+// It asks before overwriting. The form is the only place a half-written task
+// exists -- nothing has been saved yet, by definition -- so loading a task over
+// it destroys the only copy, and from a button called "Edit" on a different
+// task that is not a thing anybody agreed to.
+function editTask (task) {
+  const go = () => {
+    rememberEditing(task.id)
+    addPrefill = null
+    rememberDraft({
+      title: task.title || '',
+      branch: task.branch || '',
+      promptId: task.promptId || '',
+      brief: task.brief || '',
+      job: task.job || '',
+      contractId: task.contractId || '',
+      folder: task.folder || ''
+    })
+    addBuiltFor = null
+    showTab('tasks')
+    showPane('add')
+  }
+  if (addEditing !== task.id && draftHasWords()) {
+    return ask({
+      title: 'Replace what is in the form?',
+      plain: [
+        addEditing
+          ? `The Add task pane is holding changes to another task. Loading #${task.number} replaces them.`
+          : 'The Add task pane has a task written in it that has not been saved. Loading #' + task.number + ' replaces it.',
+        'Nothing on the board changes either way — this is only about what is in the form.'
+      ],
+      cost: 'What is in the form is not written down anywhere else.',
+      confirm: `Load #${task.number}`,
+      danger: true,
+      onYes: async () => go()
+    })
+  }
+  go()
 }
 
 function paintAddTask () {
@@ -1177,7 +1250,11 @@ async function paintAddTaskNow () {
   await settle()
   if (view !== 'tasks' || taskPane !== 'add') return
 
-  const token = JSON.stringify(addPrefill)
+  // The prefill AND which task is being edited. Editing loads a different form —
+  // different heading, different button, a different thing saved — so it has to
+  // be part of what says the form is out of date. It was not, and the pane went
+  // on offering "Write it" while holding somebody's draft.
+  const token = JSON.stringify([addPrefill, addEditing])
   if (addBuiltFor === token) return
   addBuiltFor = token
   const from = addPrefill
@@ -1186,16 +1263,41 @@ async function paintAddTaskNow () {
     api('gitBranches'),
     api('prompts').catch(() => ({ prompts: [] })),
     api('jobs').catch(() => ({ jobs: [] })),
-    api('lines').catch(() => ({ groups: [] }))
-  ]).then(([{ branches: known, protected: guarded }, lib, work, lines]) => {
+    api('lines').catch(() => ({ groups: [] })),
+    // Only when one is being edited, and asked for rather than read out of the
+    // board's last paint: the pane can be arrived at directly, with the board
+    // never having been looked at, and a form built from an empty list would
+    // silently be a form for writing a new task under an "editing" heading.
+    addEditing ? api('tasks').catch(() => ({ tasks: [] })) : Promise.resolve({ tasks: [] })
+  ]).then(([{ branches: known, protected: guarded }, lib, work, lines, board]) => {
     if (view !== 'tasks' || taskPane !== 'add') return
     const taken = new Set((guarded || []).map(g => g.branch))
     contractsNow = lib.contracts || contractsNow
 
-    setText($('add-context'), from
-      ? (from.branch ? `— on ${from.branch}` : '— from what you were reading')
-      : '')
-    setText($('add-note'), 'A task is what a worker is told, and the branch it delivers on. That branch is the artifact: it is what comes back, and what gets judged. Nothing is given out yet — writing a task touches no machine.')
+    // WHAT IS BEING EDITED, IF IT IS STILL THERE AND STILL A DRAFT.
+    //
+    // Both can stop being true while the form is open — somebody queues it from
+    // the board, or throws it away — and the honest answer then is to stop
+    // claiming to edit it rather than to save over whatever it has become.
+    const editing = addEditing ? (board.tasks || []).find(t => t.id === addEditing) : null
+    if (addEditing && !editing) {
+      say('The task being edited is gone from the board. What is in the form is kept — save it as a new task, or clear it.', 'warn')
+      rememberEditing(null)
+    }
+    const locked = editing && editing.state !== 'draft' ? editing : null
+
+    setText($('add-context'), editing
+      ? `— editing #${editing.number}`
+      : from
+        ? (from.branch ? `— on ${from.branch}` : '— from what you were reading')
+        : '')
+    setText($('add-note'), editing
+      ? `Changing #${editing.number}, which is still a draft: nothing has been given out, so what it says can still change. Saving replaces what the task carries — including its rules, which are copied from the contract again rather than left as they were.`
+      : 'A task is what a worker is told, and the branch it delivers on. That branch is the artifact: it is what comes back, and what gets judged. Nothing is given out yet — writing a task touches no machine.')
+    // THE TAB SAYS WHICH IT IS. One pane doing two jobs is only confusing if the
+    // way in still calls it the other one, and this is the label somebody clicked.
+    const tab = document.querySelector('#view-tasks .subtab[data-pane="add"]')
+    if (tab) setText(tab, editing ? `Edit #${editing.number}` : 'Add task')
 
     const nameOf = b => (typeof b === 'string' ? b : b && b.name) || ''
     // BRANCH CUTS, WHICH IS NOT THE SAME AS BRANCHES.
@@ -1220,8 +1322,17 @@ async function paintAddTaskNow () {
     // the machine got there, and it is not this form's business to be the only
     // thing preventing it.
 
+    // EVERY FIELD READS FROM THE DRAFT, and nothing reads the prefill directly.
+    //
+    // Arriving from "Work on it" writes the prefill INTO the draft (see
+    // newTask), so there is one source of what is in this form rather than two
+    // that have to agree — and the rebuild on entry puts back what was typed
+    // instead of discarding it.
+    const held = addDraft || {}
+    const val = k => (held[k] == null ? '' : String(held[k]))
+
     const { rows, inputs } = buildFields([
-      { name: 'title', label: 'Title', value: (from && from.title) || '', placeholder: 'Short enough to read in a list' },
+      { name: 'title', label: 'Title', value: val('title'), placeholder: 'Short enough to read in a list' },
       // A TASK DELIVERS ON A CUT, NOT ON A LINE, and this field offered lines.
       //
       // They are different things and the form conflated them. A line is a named
@@ -1251,7 +1362,7 @@ async function paintAddTaskNow () {
         // FILLED IN WHEN THE WORK CAME FROM A CUT. Arriving here from "Work on
         // it" on the Branches tab, the cut is the one thing already decided —
         // asking for it again would be asking somebody to repeat themselves.
-        value: (from && from.branch) || '',
+        value: val('branch'),
         options: [
           { value: '', label: cuts.length ? 'pick the cut this work belongs to' : 'there are no cuts yet — make one on the Branches tab' },
           ...cuts.map(b => ({ value: b, label: b }))
@@ -1263,13 +1374,13 @@ async function paintAddTaskNow () {
       {
         name: 'promptId',
         label: 'Fill the brief from a prompt (optional)',
-        value: '',
+        value: val('promptId'),
         options: [
           { value: '', label: 'none — write it below' },
           ...(lib.prompts || []).map(x => ({ value: x.id, label: `${x.name}${x.approved ? '' : ' — not approved'}` }))
         ]
       },
-      { name: 'brief', label: 'The brief — what the worker is actually told', value: (from && from.brief) || '', multiline: true, rows: 8, placeholder: 'Write it as instructions to somebody who cannot ask you a question.' },
+      { name: 'brief', label: 'The brief — what the worker is actually told', value: val('brief'), multiline: true, rows: 8, placeholder: 'Write it as instructions to somebody who cannot ask you a question.' },
       // A JOB IS THE AUTOMATED PART OF A TASK, and choosing none is a real
       // choice rather than a default.
       //
@@ -1284,7 +1395,7 @@ async function paintAddTaskNow () {
       {
         name: 'job',
         label: 'Which job runs it (optional)',
-        value: '',
+        value: val('job'),
         options: [
           { value: '', label: 'none — set the machine up and leave it running for me' },
           ...(work.jobs || []).map(x => ({ value: x.id, label: `${x.name}${x.runnable ? '' : ` — ${x.whyNot}`}` }))
@@ -1298,18 +1409,54 @@ async function paintAddTaskNow () {
       {
         name: 'contractId',
         label: 'Under which contract (optional)',
-        value: '',
+        value: val('contractId'),
         options: [
           { value: '', label: 'none — the worker gets no rules' },
           ...contractsNow.filter(c => c.approved).map(c => ({ value: c.id, label: c.name }))
         ]
       },
-      { name: 'folder', label: 'Folder on the machine (optional)', placeholder: 'defaults to its workspace' }
+      { name: 'folder', label: 'Folder on the machine (optional)', value: val('folder'), placeholder: 'defaults to its workspace' }
     ])
 
+    // WHAT IS TYPED IS KEPT AS IT IS TYPED.
+    //
+    // Harvesting every field rather than the one that fired, because the fields
+    // fill each other in: picking a prompt writes the brief, the contract and
+    // the job, and none of those assignments raise an event. Recording only what
+    // the user touched would keep the choice and lose the three things it filled.
+    const record = () => {
+      const now = {}
+      for (const k of draftFields) if (inputs[k]) now[k] = inputs[k].value
+      rememberDraft(now)
+    }
+    for (const k of draftFields) {
+      if (!inputs[k]) continue
+      // addEventListener rather than .oninput/.onchange, which are assigned
+      // below for the prompt, the job and the contract — one of the two would
+      // silently win, and it would be whichever was written last.
+      inputs[k].addEventListener('input', record)
+      inputs[k].addEventListener('change', record)
+    }
+
+    // SAID WHEN A CHOICE DID NOT SURVIVE. A select given a value it has no
+    // option for reports '' — which reads as "none", and none is a real answer
+    // here: a task under no contract is a worker with no rules. So a contract
+    // that has been withdrawn or thrown away since this draft was written must
+    // say so rather than quietly becoming "none".
+    for (const k of ['branch', 'promptId', 'job', 'contractId']) {
+      const wanted = val(k)
+      if (wanted && inputs[k] && inputs[k].value !== wanted) {
+        say(`"${wanted}" is not on offer any more, so that field was left empty. It was in this form when you last left it.`, 'warn')
+      }
+    }
+
     const err = el('p', { className: 'dlg-err hidden' })
-    const write = el('button', { className: 'btn ok', textContent: 'Write it' })
-    const clear = el('button', { className: 'btn', textContent: 'Start over' })
+    const write = el('button', { className: 'btn ok', textContent: editing ? `Save #${editing.number}` : 'Write it' })
+    // CLEARS AND COMES BACK TO WRITING A NEW ONE, which is two things and they
+    // belong together: the way out of editing is to stop having the task in the
+    // form, and a separate "stop editing" button that left the words behind
+    // would be a form claiming to be blank while full.
+    const clear = el('button', { className: 'btn', textContent: editing ? 'Clear it and write a new one' : 'Clear' })
 
     // THE BUTTON STAYS ON THE SCREEN. The brief is a twelve-row box by
     // temperament and the pane is as tall as the window, so at full size the one
@@ -1421,16 +1568,19 @@ async function paintAddTaskNow () {
       }
 
       preview()
+      // The three fields this just wrote raise no event of their own, so the
+      // draft would keep the prompt and lose everything picking it filled in.
+      record()
     }
 
-    clear.onclick = () => { addPrefill = null; addBuiltFor = null; paintAddTask() }
+    clear.onclick = () => { forgetDraft(); paintAddTask() }
 
     write.onclick = async () => {
       write.disabled = true
       err.classList.add('hidden')
       try {
         const values = {}
-        for (const k in inputs) values[k] = inputs[k].value.trim()
+        for (const k of draftFields) if (inputs[k]) values[k] = inputs[k].value.trim()
 
         // THIS FORM DOES NOT MAKE BRANCHES. It did for one revision, and that
         // was the wrong shape: writing a task and cutting a branch are two acts
@@ -1445,19 +1595,31 @@ async function paintAddTaskNow () {
 
         // The prompt's NAME as well as its id, so a task can still say where its
         // brief came from after the library entry is gone. The same reason the
-        // contract's name is carried.
+        // contract's name is carried. `taskUpdate` looks the name up itself, so
+        // this is only for the create path.
         const cameFrom = (lib.prompts || []).find(p => p.id === values.promptId)
         if (cameFrom) values.promptName = cameFrom.name
 
-        const made = await api('taskCreate', { task: values })
+        // A DRAFT ONLY, and refused here as well as by the action. The task can
+        // be queued from the board while this form is open, and saving then
+        // would rewrite the question a machine is at that moment being set up to
+        // answer.
+        if (locked) {
+          throw new Error(`#${locked.number} is ${locked.state} now, not a draft — what it was asked cannot change while it is out. Take it out of the queue first, or clear this form and write a new task.`)
+        }
+
+        const made = editing
+          ? await api('taskUpdate', { id: editing.id, task: values })
+          : await api('taskCreate', { task: values })
         pickedTask = made.id
         been.set('task', pickedTask)
-        say(`Task "${made.title}" written, delivering on ${made.branch}. Known branches: ${(known || []).length}.`)
+        say(editing
+          ? `#${made.number} "${made.title}" saved, delivering on ${made.branch}.`
+          : `Task "${made.title}" written, delivering on ${made.branch}. Known branches: ${(known || []).length}.`)
         // ONTO THE BOARD, because the task now exists and this pane is about one
         // that does not. Leaving the filled-in form up after it was written is
         // how somebody writes the same task twice.
-        addPrefill = null
-        addBuiltFor = null
+        forgetDraft()
         showPane('board')
         return draw()
       } catch (e) {

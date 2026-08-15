@@ -147,6 +147,25 @@ destination can name somebody else's.
   task uid, so they land on disk and no pane in the window shows them
 
 
+Judging needs a home of its own
+--------------------------------------------------
+
+**A verdict is somebody reading what came back.** "Judge it" was a button on the
+task's own card, which is where the BRIEF is — so the screen that asked for a
+decision showed the question and not the answer. The button is gone; `taskJudge`
+is untouched and is still on the command line.
+
+What it wants is a screen built around the delivery: the branch's commits, the
+diff, the files handed back, the run's log, and the two buttons underneath all
+of it. That is close to what the board's third column already shows, so the open
+question is whether judging is a pane of its own or the bottom of that column
+once something has actually arrived.
+
+**Accepting must still not merge.** Landing work is a separate act with its own
+rules, and a verdict that quietly merged would make reading the work and
+publishing it the same button.
+
+
 Signing a worker in, as a job rather than as code
 --------------------------------------------------
 

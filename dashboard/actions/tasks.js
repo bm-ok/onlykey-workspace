@@ -145,6 +145,54 @@ module.exports = {
         const why = branches.nameIsOk(String(changes.branch).trim())
         if (why) throw new Error(why)
       }
+
+      // THE SAME COPY taskCreate MAKES, because this is now how a draft is
+      // edited and not only how the queue marks one.
+      //
+      // Without it, changing which contract a task runs under changed the NAME
+      // and left the WORDS — so the board said one contract and the worker was
+      // held to another, which is the exact failure the copy exists to prevent,
+      // arriving through the one door that did not make it.
+      //
+      // Only when the key is actually present. Most callers here are the queue
+      // and the panel sending a two-field patch, and treating a missing key as
+      // "set it to none" would strip the rules off every task the queue touched.
+      if ('contractId' in changes) {
+        const wanted = String(changes.contractId || '').trim()
+        if (wanted) {
+          if (changes.contract || (!('contract' in changes) && current.contract)) {
+            throw new Error('Give it either a contract from the library or a file on this host, not both — otherwise which rules a run was under depends on which line of code read it first.')
+          }
+          const one = contracts.get(wanted)
+          if (!one) throw new Error(`There is no contract called "${wanted}".`)
+          if (!one.approved) {
+            throw new Error(one.lapsed
+              ? `The contract "${one.name}" has been edited since it was approved. Read it and approve it again before putting a task under it.`
+              : `The contract "${one.name}" is not approved. What a worker may not do is read before it is sent, the same as what it is told to do.`)
+          }
+          changes.rules = one.text
+          changes.contractName = one.name
+        } else {
+          // Taken off, and taken off completely. Leaving the words behind would
+          // read as "no contract" everywhere the id is checked and "these rules"
+          // everywhere the text is, which is worse than either.
+          changes.contractId = null
+          changes.rules = null
+          changes.contractName = null
+        }
+      }
+
+      // The prompt's name travels with its id for the same reason: the library
+      // entry may be gone by the time anybody reads the task, and the task
+      // should still be able to say where its brief came from.
+      if ('promptId' in changes) {
+        const wanted = String(changes.promptId || '').trim()
+        const one = wanted ? prompts.get(wanted) : null
+        if (wanted && !one) throw new Error(`There is no prompt called "${wanted}".`)
+        changes.promptId = wanted || null
+        changes.promptName = one ? one.name : null
+      }
+
       return tasks.update(id, changes)
     }
   },
