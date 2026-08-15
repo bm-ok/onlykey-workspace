@@ -584,17 +584,28 @@ function paintTaskDetail (task) {
           })
         : task.state === 'given'
           ? null
-          : el('button', {
-              className: 'btn ok',
-              textContent: 'Queue it',
-              disabled: !!task.verdict,
-              title: task.verdict
-                ? 'This task has been judged'
-                : task.job
-                    ? 'The next free machine takes it, runs the job, and shuts down'
-                    : 'The next free machine is set up on the branch cut and left running for you',
-              onclick: () => queueTask(task)
-            }),
+          // ONLY A TASK WITH A JOB IS QUEUED, because the queue's whole purpose
+          // is to run one unattended and put the machine away afterwards.
+          //
+          // A jobless task went through the queue too and came out the other end
+          // as a machine sitting on the desktop waiting for somebody — which is
+          // a fair thing to want and is not queueing. It booted a machine, took
+          // a credential and claimed a branch on a timer, for work nobody had
+          // said they were ready to start; the two buttons below do the same
+          // setup at the moment somebody actually wants it, and say where they
+          // land. `Take it out of the queue` above stays, for anything queued
+          // before this and for a task whose job was removed afterwards.
+          : task.job
+            ? el('button', {
+                className: 'btn ok',
+                textContent: 'Queue it',
+                disabled: !!task.verdict,
+                title: task.verdict
+                  ? 'This task has been judged'
+                  : 'The next free machine takes it, runs the job, and shuts down',
+                onclick: () => queueTask(task)
+              })
+            : null,
       // THE SECOND DOOR ONTO THE SAME TASK. Same machine, same branch, same
       // credential, same finish — a terminal instead of an editor, landed in the
       // checkout, with nothing typed into it. This is what the Terminal tab's
@@ -616,15 +627,26 @@ function paintTaskDetail (task) {
       // counterpart of a worker's exit code, and without it on the task itself
       // the only way to end one was from the machine that happened to be holding
       // it — which is the machines tab deciding a task's fate again.
+      //
+      // SHOWN ALWAYS AND DISABLED UNTIL THERE IS SOMETHING TO FINISH, rather
+      // than appearing when a machine does. A button that materialises is a
+      // feature somebody has to discover twice — once to find out it exists and
+      // again to find out when — and the answer here is "not yet", which the
+      // title can say. It is the same rule `Throw it away` already follows.
       byHand(task)
-        ? (task.machine
-            ? el('button', {
-                className: 'btn',
-                textContent: 'Finish it',
-                title: 'Gives the machine back and puts the task up for a verdict',
-                onclick: () => finishTaskByHand(task)
-              })
-            : null)
+        ? el('button', {
+            className: 'btn',
+            textContent: 'Finish it',
+            disabled: !openable(task),
+            title: openable(task)
+              ? 'Gives the machine back and puts the task up for a verdict'
+              : task.verdict
+                ? 'This task has been judged'
+                : task.machine
+                  ? `It is not out on ${task.machine} any more — there is no machine to give back.`
+                  : 'Nothing is running it. Open it in VS Code or in a terminal first; finishing is how that machine is given back.',
+            onclick: () => finishTaskByHand(task)
+          })
         // GIVING IT TO A MACHINE BY HAND IS NOT ON THE CARD ANY MORE.
         //
         // It skipped the queue, which is the thing that decides what runs where
