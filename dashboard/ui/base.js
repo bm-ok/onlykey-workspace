@@ -23,9 +23,41 @@ const liveLog = app
   ? require('./core/log')
   : { on: () => ({ info () {}, warn () {}, bad () {}, good () {}, out () {} }) }
 
+// WHETHER THIS WINDOW IS BEING DRIVEN FROM OUTSIDE.
+//
+// `windowClick` and `windowFill` exist so the window can be tested from the
+// command line — it was the one half of this app with no way in, so every fault
+// in a click handler was found by a person clicking it. A driven press reaches
+// exactly the handlers a real press reaches, which is the point: a test that
+// took a different path would not be testing the button.
+//
+// And that is also the hazard. The window is where a person is assumed to be:
+// approving a job, a prompt or a contract is refused over the wire precisely
+// because a model may write one and may not ratify its own. A driven press is
+// not refused — testing the approve button means being able to press it — but it
+// must not be able to CLAIM to be a person, because "somebody read this and
+// approved it" is the whole of what that record asserts.
+//
+// So it is marked, and the mark travels with every call the press causes. See
+// `whoAsked` in actions/shared.js.
+//
+// CLEARED BY A REAL HUMAN TOUCH, not by a timer. A press sets off work that
+// finishes whenever it finishes — a dialog opened now and confirmed in a minute
+// is one act — so there is no duration that is right. What is unambiguous is
+// somebody putting their hand on the window: `isTrusted` is set by the browser
+// and cannot be forged from script, so the first genuine mousedown or keypress
+// says a person is here again. Until then it stays set, which is the safe way
+// round: the worst it does is describe a person's action as driven, and the
+// alternative is describing a model's action as a person's.
+let drivenFromTheWire = false
+const drivingNow = on => { drivenFromTheWire = !!on }
+for (const kind of ['mousedown', 'keydown', 'wheel']) {
+  document.addEventListener(kind, e => { if (e.isTrusted) drivenFromTheWire = false }, true)
+}
+
 // Through `call` rather than the table directly, so the window is refused the
 // same things the command line is refused. See server.js.
-const api = async (name, args = {}) => host.call(name, args)
+const api = async (name, args = {}) => host.call(name, drivenFromTheWire ? { ...args, _driven: true } : args)
 
 const keep = kids => kids.flat(9).filter(k => k !== null && k !== undefined && k !== false && k !== '')
 

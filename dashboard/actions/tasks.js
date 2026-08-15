@@ -970,8 +970,9 @@ module.exports = {
     about: 'Write a job, or rewrite it. Written at the window it is approved by whoever wrote it; written over the wire it waits',
     needs: 'workspace',
     takes: ['id', 'name', 'about', 'code', 'promptId', 'tags'],
-    run: ({ _overTheWire, ...fields }) => {
-      const saved = jobs.save(fields, _overTheWire ? 'the command line' : 'the window')
+    run: ({ _overTheWire, _driven, ...fields }) => {
+      const a = { _overTheWire, _driven }
+      const saved = jobs.save(fields, s.whoAsked(a))
       log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the job "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
       return { ...saved, code: undefined }
     }
@@ -1153,13 +1154,14 @@ module.exports = {
   promptSave: {
     about: 'Write a prompt, or rewrite one. The id never changes once it is made',
     takes: ['id', 'name', 'text', 'about', 'contractId'],
-    run: ({ id, name, text, about, contractId, _overTheWire }) => {
+    run: a => {
+      const { id, name, text, about, contractId } = a
       // Refused by name here rather than discovered as a dangling reference in
       // the panel three days later.
       if (contractId && !contracts.get(String(contractId))) {
         throw new Error(`There is no contract called "${contractId}". Write it first — the rules a prompt runs under are not a name typed into a box.`)
       }
-      const saved = prompts.save({ id, name, text, about, contractId }, _overTheWire ? 'the command line' : 'the window')
+      const saved = prompts.save({ id, name, text, about, contractId }, s.whoAsked(a))
       log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the prompt "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
       return saved
     }
@@ -1233,8 +1235,9 @@ module.exports = {
   contractSave: {
     about: 'Write a contract, or rewrite one. Written at the window it is approved by whoever wrote it; written over the wire it waits',
     takes: ['id', 'name', 'about', 'text'],
-    run: ({ id, name, about, text, _overTheWire }) => {
-      const saved = contracts.save({ id, name, about, text }, _overTheWire ? 'the command line' : 'the window')
+    run: a => {
+      const { id, name, about, text } = a
+      const saved = contracts.save({ id, name, about, text }, s.whoAsked(a))
       log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the contract "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
       return saved
     }

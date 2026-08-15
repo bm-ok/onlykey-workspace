@@ -284,7 +284,24 @@ function twoLines (source, target) {
 // to be the same code or they drift, and the first sign of the drift is somebody
 // trusting the dry run.
 
+// WHO ASKED, in the words that go into the record.
+//
+// This was the same ternary written out at six call sites, which is six places
+// for a third answer to be forgotten -- and there is now a third answer.
+//
+// `_driven` is a press made in the window BY the command line: `windowClick`
+// exists so the window can be tested from outside, and a click it makes reaches
+// exactly the handlers a person's click reaches. Nothing is refused because of
+// it -- testing the approve button means being able to press it -- but the
+// record must not say "the window" about something a model did, because "a
+// person read this and approved it" is the entire claim that record makes.
+const whoAsked = ({ _driven, _overTheWire } = {}) =>
+  _driven ? 'the command line, driving the window'
+    : _overTheWire ? 'the command line'
+      : 'the window'
+
 module.exports = {
+  whoAsked,
   log, events, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,

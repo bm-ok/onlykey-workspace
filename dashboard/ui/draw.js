@@ -450,6 +450,176 @@ app.onCapture(async want => {
   return { bytes: null }
 })
 
+// ---- driving the window from outside -----------------------------------
+//
+// The window was the one half of this app with no way in. Everything else is an
+// action, reachable by the command line and by a drill; the window had a camera
+// and nothing else — so a panel could be photographed and never operated, and
+// every fault in a click handler was found by a person clicking it. Two of them
+// shipped that way: a button wired to a function that did not exist, and a pane
+// that painted and then swallowed what had been typed into it.
+//
+// A driven press is a REAL press. `.click()` runs exactly the handler a person's
+// click runs, and a fill raises the same `input` and `change` events the fields
+// listen for. A test that took a private path would be testing the path, not the
+// button — which is the same reason the queue drives the actions rather than
+// having its own way to the machines.
+//
+// VISIBLE ONLY, which is what makes "what is on screen" answerable at all. Every
+// pane in this window is in the document the whole time and hidden with CSS, so
+// the buttons of four other tabs are sitting there matching by name. `offsetParent`
+// is null for anything `display:none`, and that is the whole filter.
+//
+// A DIALOG TAKES THE WHOLE SCREEN when one is open, because it is modal: nothing
+// behind it can be pressed by a person either, and offering it would be offering
+// something that does not work.
+const seen = n => !!n.offsetParent
+const words = n => (n.textContent || '').replace(/\s+/g, ' ').trim()
+
+function drivingRegion () {
+  const dlg = document.querySelector('.dlg-overlay .dlg')
+  if (dlg) return { where: 'the open dialog', node: dlg, dialog: true }
+  return { where: `${view}${taskPane && view === 'tasks' ? `/${taskPane}` : ''}`, node: document.body, dialog: false }
+}
+
+// The label a field goes by, in the words on the screen. `buildFields` puts a
+// <label> immediately before its input, and a dialog's own fields do the same,
+// so the previous sibling is the answer wherever there is one. The placeholder
+// is the fallback, because a field with no label still has to be nameable.
+function labelOf (n) {
+  const prev = n.previousElementSibling
+  if (prev && prev.tagName === 'LABEL') return words(prev)
+  return n.placeholder || ''
+}
+
+// ONE MATCH OR A REFUSAL, never the first of several.
+//
+// Picking the first would work most of the time and be wrong silently the rest,
+// which is the worst available behaviour for something whose whole job is to
+// find out whether the window does what it says. "Clear" appears on two panes
+// and "Throw it away" on four; being told so, with the list, is the useful
+// answer. `nth` is how you then say which.
+function theOne (all, text, nth, kind) {
+  const want = String(text || '').replace(/\s+/g, ' ').trim().toLowerCase()
+  if (!want) throw new Error(`Say which ${kind}, by the words on it. Ask for windowControls to see what is there.`)
+  const exact = all.filter(x => x.label.toLowerCase() === want)
+  const some = exact.length ? exact : all.filter(x => x.label.toLowerCase().includes(want))
+  if (!some.length) {
+    throw new Error(`There is no ${kind} reading "${text}" on screen. What is there: ${all.map(x => `"${x.label}"`).join(', ') || 'nothing'}.`)
+  }
+  if (some.length > 1 && nth == null) {
+    throw new Error(`"${text}" matches ${some.length} of them: ${some.map((x, i) => `${i + 1}. "${x.label}"`).join(', ')}. Say which with --nth.`)
+  }
+  const at = nth == null ? 0 : Number(nth) - 1
+  if (!some[at]) throw new Error(`There is no ${at + 1} — "${text}" matches ${some.length}.`)
+  return some[at]
+}
+
+if (app) app.onDrive(async want => {
+  // MARKED BEFORE ANYTHING IS TOUCHED, and left marked. Everything this press
+  // sets off is the command line's doing, however long it takes to finish. See
+  // drivenFromTheWire in ui/base.js for why a person's touch is what clears it.
+  drivingNow(true)
+
+  const region = drivingRegion()
+  const buttons = [...region.node.querySelectorAll('button')]
+    .filter(seen)
+    .map(n => ({ node: n, label: words(n), disabled: !!n.disabled, why: n.title || '' }))
+  const fields = [...region.node.querySelectorAll('input, select, textarea')]
+    .filter(seen)
+    .map(n => ({
+      node: n,
+      label: labelOf(n),
+      kind: n.tagName.toLowerCase(),
+      value: n.value,
+      options: n.tagName === 'SELECT' ? [...n.options].map(o => o.textContent.trim()) : null
+    }))
+
+  const strip = x => ({ ...x, node: undefined })
+
+  if (want.do === 'controls') {
+    return {
+      on: region.where,
+      dialog: region.dialog,
+      // The title too, because a dialog is a question and the question is the
+      // point. Reading back "there is a dialog with a Throw it away button" and
+      // not what it is about is how the wrong thing gets confirmed.
+      asking: region.dialog ? words(document.querySelector('.dlg-title')) : null,
+      buttons: buttons.map(strip),
+      fields: fields.map(strip)
+    }
+  }
+
+  if (want.do === 'fill') {
+    const one = theOne(fields, want.label, want.nth, 'field')
+    const before = one.node.value
+    one.node.value = want.value == null ? '' : String(want.value)
+    // A SELECT ONLY TAKES WHAT IT HAS. Assigning a value it has no option for
+    // leaves it empty, which reads as a real choice — "none" is a real answer in
+    // half the dropdowns here — so it is checked rather than reported as done.
+    if (one.kind === 'select' && one.node.value !== String(want.value == null ? '' : want.value)) {
+      one.node.value = before
+      throw new Error(`"${one.label}" has no option "${want.value}". It offers: ${one.options.map(o => `"${o}"`).join(', ')}.`)
+    }
+    // THE EVENTS A PERSON'S TYPING RAISES, because that is what the fields are
+    // listening for: the add-task pane keeps what is typed by recording on
+    // `input`, and the prompt picker fills three other fields on `change`.
+    // Setting `.value` alone raises neither, so a filled form would look right
+    // on screen and be empty everywhere it mattered.
+    one.node.dispatchEvent(new Event('input', { bubbles: true }))
+    one.node.dispatchEvent(new Event('change', { bubbles: true }))
+    return { on: region.where, filled: one.label, was: before, now: one.node.value }
+  }
+
+  if (want.do === 'click') {
+    const one = theOne(buttons, want.text, want.nth, 'button')
+    // SAYING WHICH ONE, WITHOUT PRESSING IT.
+    //
+    // Matching is by the words on the button, so the thing you have to be sure
+    // of is that your words picked the button you meant — and the only way to
+    // find out was to press it. That cost somebody's half-written task: a click
+    // meant to test the "matches several" refusal named a button that turned out
+    // to match exactly one, which was "Clear", which cleared the form.
+    //
+    // Ambiguity already refuses. This is the other half: an UNambiguous match
+    // that is unambiguously the wrong button.
+    if (want.dry) {
+      return {
+        on: region.where,
+        would: one.label,
+        disabled: one.disabled,
+        why: one.why || null,
+        note: 'Nothing was pressed. Run it again without --dry to press it.'
+      }
+    }
+    // REFUSED RATHER THAN PRESSED AND IGNORED. A disabled button does nothing
+    // when clicked, so driving one would report success and change nothing —
+    // and half the buttons here are deliberately disabled with the reason in
+    // their title, which is exactly what somebody testing wants to read.
+    if (one.disabled) {
+      throw new Error(`"${one.label}" is disabled${one.why ? `: ${one.why}` : ' and says no reason'}.`)
+    }
+    one.node.click()
+    // Long enough for what the press caused to have happened — a dialog to open,
+    // a pane to switch, a request to come back. Said as a duration for the same
+    // reason the screenshot's wait is: the work is asynchronous and there is no
+    // count of frames that means "done".
+    await new Promise(r => setTimeout(r, 600))
+    const after = drivingRegion()
+    return {
+      clicked: one.label,
+      on: region.where,
+      // WHERE IT LANDED, because that is the assertion. A click that was meant
+      // to switch panes and did not is the failure being looked for, and it is
+      // invisible in "clicked: ok".
+      now: after.where,
+      asking: after.dialog ? words(document.querySelector('.dlg-title')) : null
+    }
+  }
+
+  throw new Error(`"${want.do}" is not something that can be done to the window.`)
+})
+
 // Which row, once the right tab is open. Every tab that has a list has its own
 // idea of what picking one means, and each of them already had one -- this is
 // only the place they are reached from.

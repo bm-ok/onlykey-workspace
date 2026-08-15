@@ -247,7 +247,8 @@ module.exports = {
     about: 'Cut a branch across every repository, from a named line or from another branch',
     needs: 'workspace',
     takes: ['branch', 'reason', 'group', 'from'],
-    run: ({ branch, reason, group, from, _overTheWire }) => {
+    run: a => {
+      const { branch, reason, group, from } = a
       const cut = branches.ensure(branch, {
         reason,
         // OR FROM ANOTHER CUT. A line is where work is measured from; a cut is
@@ -264,7 +265,7 @@ module.exports = {
         group: group || null,
         // Which surface asked, since one of them is a person at this keyboard and
         // the other may be a model driving the socket.
-        by: _overTheWire ? 'the command line' : 'the window'
+        by: s.whoAsked(a)
       })
       const made = cut.filter(c => c.created)
       log.on('git').good(made.length
@@ -601,8 +602,9 @@ module.exports = {
     about: 'Propose a line for landing. It appears on the left of a comparison and stays protected',
     needs: 'workspace',
     takes: ['name', 'why'],
-    run: ({ name, why, _overTheWire }) => {
-      const g = branches.markGroup(name, { why, by: _overTheWire ? 'the command line' : 'the window' })
+    run: a => {
+      const { name, why } = a
+      const g = branches.markGroup(name, { why, by: s.whoAsked(a) })
       log.on('git').good(`"${g.name}" is proposed for landing${why ? ` — ${String(why).trim()}` : ''}`)
       return { ...g, note: `"${g.name}" is up to be landed. Compare it against the line it would go into, and unmark it to carry on working.` }
     }

@@ -657,3 +657,13 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   `$HOME/.okc-task` when its workspace is set up, loses it when it is rolled
   back, and says which task it has the moment it dials in — a fact with the same
   lifetime as the thing it describes, which no registry entry has.
+
+* **An unambiguous match can be unambiguously the wrong button.** `windowClick`
+  refuses when the words match several buttons, which felt like the whole of the
+  problem — and then a click meant to demonstrate that refusal named a button
+  that matched exactly one. It was "Clear", on a pane holding somebody's
+  half-written task, and it cleared it. The refusal that existed was for the case
+  where the tool cannot tell which; the case that cost something was the tool
+  being certain and wrong. Hence `--dry`: say which button you would press,
+  press nothing. The values were recoverable only because `windowControls` had
+  been run a moment earlier and its output was still on screen.

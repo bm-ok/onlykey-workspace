@@ -86,6 +86,23 @@ const onCapture = fn => {
 // than letting it close.
 const onQuit = fn => { shared.win.quit = typeof fn === 'function' ? fn : null }
 
+// AND HOW IT IS DRIVEN FROM OUTSIDE — read what is on screen, press a button,
+// fill a field. Registered the same way as the other two, because all three are
+// the same shape: something only the page can do, handed to the actions.
+//
+// This is for TESTING THE WINDOW, which was the one half of this app that could
+// not be exercised from the command line. Everything else has an action; the
+// window had a camera and nothing else, so a panel could be photographed and
+// never operated, and every fault in a click handler was found by a person
+// clicking it.
+//
+// WHAT IT IS NOT is a way around the approval rules. A press driven from here is
+// still a press made by whatever is on the other end of the pipe, and the window
+// says so — see `drivenFromTheWire` in ui/base.js, which puts `_overTheWire` on
+// everything a driven press causes. Without that this action would hand a model
+// the approve button, which is the one thing the wire is refused.
+const onDrive = fn => { shared.win.drive = typeof fn === 'function' ? fn : null }
+
 // ---- serving ----------------------------------------------------------
 
 // This port is for machines. Two things are on it, and both name the machine
@@ -790,7 +807,7 @@ function call (name, args = {}) {
   return found.run(args)
 }
 
-module.exports = { start, actions, call, handler, onCapture, onQuit }
+module.exports = { start, actions, call, handler, onCapture, onQuit, onDrive }
 
 if (require.main === module) {
   start()

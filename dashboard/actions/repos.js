@@ -274,7 +274,8 @@ module.exports = {
     about: 'Push a line onward and open a pull request per repository, tracked together as one landing',
     needs: 'workspace',
     takes: ['source', 'target', 'title', 'body', 'into', 'draft'],
-    run: async ({ source, target, title, body, into, draft, _overTheWire }) => {
+    run: async a => {
+      const { source, target, title, body, into, draft } = a
       const pair = twoLines(source, target)
       const carrying = []
       for (const { repo, head, base } of pair.on) {
@@ -344,7 +345,7 @@ module.exports = {
       // would offer it back as though it were newer.
       if (opened.length) drafts.forget(pair.source.name, pair.target.name)
 
-      const record = landings.record(pair.source.name, pair.target.name, done, _overTheWire ? 'the command line' : 'the window')
+      const record = landings.record(pair.source.name, pair.target.name, done, s.whoAsked(a))
       return {
         source: pair.source.name,
         target: pair.target.name,

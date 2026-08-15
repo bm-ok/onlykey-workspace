@@ -573,3 +573,44 @@ with its own rules. It is named in `TODO.md` as a joint, not scheduled here.
 **Anything from `legacy/` that belongs to one ecosystem.** The seven-step
 hardware chain, a repository list naming firmware repos, review thresholds
 counted in firmware files. `GAPS.md` sorts those out from the parts worth taking.
+
+
+The supervisor gets a machine of its own
+-----------------------------------------
+
+**A supervising model runs on the host today, and that is the wrong side of the
+line.** It reaches every action through the local pipe — the same door a person
+at a keyboard uses — so what it may do is decided by refusals written into the
+actions one at a time. That works while somebody remembers to write each one,
+and the failure mode is silent: a capability added for the window is a capability
+the supervisor gained at the same moment, and nothing says so.
+
+**So it moves into its own machine, with its own API.** The isolation stops being
+a set of refusals and becomes a boundary the supervised party cannot reach — the
+same argument as the pre-receive hook, which is the guard that works precisely
+because it runs in a directory no guest can touch. A model in a VM cannot open a
+named pipe on the host, so everything reachable only through that pipe is out of
+its reach by construction rather than by remembering.
+
+**What it gets is an allowlist, not the table.** A narrow surface built for
+supervising: the board, the queue, what machines are free, what came back.
+Explicitly not: approving anything, driving the window, the keys, or the
+workspace switcher. Adding to that surface is then a deliberate act with a
+diff, which is the property the current arrangement does not have.
+
+**This is why `windowClick` and `windowFill` are not gated.** They are a
+developer's door for testing the window from outside, on the local pipe, with
+the operator watching. The gate is that a supervisor in its own machine has no
+pipe to reach — so nothing needs to be checked at the call, and nothing can be
+forgotten. A press is still marked as driven rather than as a person's, because
+the record should say what happened; see `whoAsked` in actions/shared.js.
+
+**Still open:**
+
+* what the supervisor's API is served over. The channel machines already dial in
+  on is the obvious candidate, and it is currently for machines being supervised
+  rather than machines supervising
+* whether the supervisor machine is an ordinary machine from the pool or a
+  distinct kind. It wants a credential, and it must not be handed work
+* how the operator sees what it is doing. The event stream is the record; a
+  supervisor acting through its own API should be as legible there as the queue is

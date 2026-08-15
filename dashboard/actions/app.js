@@ -29,6 +29,16 @@ const {
 } = s
 const win = s.win
 
+// ASKED OF THE WINDOW, or refused in a sentence that says why there is nobody to
+// ask. A headless run and the tests load this file with no page at all, and a
+// window that has not finished starting has not registered yet — both read as
+// "nothing answered", and the answer to both is the same: this needs the window,
+// and there is not one.
+const drive = want => {
+  if (!win.drive) throw new Error('No window is open, so there is nothing to press. This drives the real buttons in the real window; start the dashboard and try again.')
+  return win.drive(want)
+}
+
 module.exports = {
   status: {
     about: 'Is the server up, and what does it have to work with',
@@ -225,6 +235,39 @@ module.exports = {
         note: 'The window takes it on its next draw — up to twelve seconds if nobody is looking at it. Read the file once it appears.'
       }
     }
+  },
+
+  // ---- driving the window ------------------------------------------------
+  //
+  // The window is the one half of this app that could not be exercised from
+  // outside. Everything else is an action; the window had a camera, so a panel
+  // could be photographed and never operated — and the faults that live in click
+  // handlers were all found by somebody clicking them.
+  //
+  // These press the real buttons and fill the real fields, so what they test is
+  // what a person gets. A driven press is MARKED as coming from here and the
+  // mark travels with everything it causes: nothing is refused because of it —
+  // testing the approve button means being able to press it — but the record
+  // says "the command line, driving the window" rather than claiming a person
+  // read it. See `whoAsked` in actions/shared.js.
+  //
+  // This is a developer's door and it is on the local pipe, which is a thing a
+  // supervisor running in its own machine cannot reach. See ROADMAP.md.
+  windowControls: {
+    about: 'What is on screen right now: the buttons that can be pressed and the fields that can be filled',
+    run: () => drive({ do: 'controls' })
+  },
+
+  windowClick: {
+    about: 'Press a button in the window, by the words on it. --dry says which one it would press',
+    takes: ['text', 'nth', 'dry'],
+    run: ({ text, nth, dry }) => drive({ do: 'click', text, nth: nth == null ? null : Number(nth), dry: dry === true || dry === 'true' })
+  },
+
+  windowFill: {
+    about: 'Type into a field in the window, by its label',
+    takes: ['label', 'value', 'nth'],
+    run: ({ label, value, nth }) => drive({ do: 'fill', label, value, nth: nth == null ? null : Number(nth) })
   },
 
   // Read by the window, and by nothing else. Kept in the table rather than
