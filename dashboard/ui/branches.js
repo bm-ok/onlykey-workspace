@@ -616,12 +616,22 @@ function branchActions (b) {
       // VS Code, a terminal here, or nothing yet because the task is for later.
       // A button that names one of three is a promise it keeps a third of the
       // time, and the two it breaks are the ones somebody chose deliberately.
+      // ONE PLACE WRITES A TASK, and it is not here.
+      //
+      // This opened a dialog of its own — title, brief, and a choice of
+      // borrowing a machine straight away — which was a second task form that
+      // knew nothing of prompts, jobs or contracts. Everything it could not ask
+      // for was a thing a task written from this button silently went without.
+      //
+      // So it goes to the one form there is, with the cut already chosen, and
+      // taking a machine is the separate act it always was: write the task, then
+      // take it from the board.
       !b.protected && !b.heldBy
         ? el('button', {
             className: 'btn ok',
             textContent: 'Work on it',
-            title: 'Write a task on this branch, and take a machine now or leave it for later',
-            onclick: () => workOnBranch(b)
+            title: 'Write a task in this branch cut',
+            onclick: () => newTask({ branch: b.name })
           })
         : null,
 
@@ -1091,79 +1101,17 @@ const mineFor = b => latest.vms.find(v => v.borrowed && v.branch === b.name) || 
 // One button for what was three actions in a remembered order — and the order
 // was the part that went wrong: a machine started and never used, a workspace
 // set up on a machine somebody then forgot was theirs.
-function workOnBranch (b) {
-  const free = (queueSays.size ? [...queueSays.values()] : []).filter(m => m.free)
-  ask({
-    title: `Work on "${b.name}" yourself`,
-    plain: [
-      'A free machine is borrowed, brought up at its base snapshot, and set up with every repository checked out on this branch. It then opens over ssh, with this app\'s own key — in VS Code, or as a shell on the Terminal tab, whichever you choose below.',
-      // THE POINT OF ASKING FOR A TITLE. Work done by hand used to happen off
-      // the board entirely -- a machine borrowed, an editor opened, and nothing
-      // anywhere saying it happened. A task is what makes the human path the
-      // same shape as the worker path: same branch, same artifacts, same verdict.
-      'It becomes a task, like any other work on this branch — so what you deliver is read the same way, and the board says who did it.',
-      free.length
-        ? `Free right now: ${free.map(m => m.name).join(', ')}.`
-        : 'Nothing is free at the moment, so this will refuse and say why.'
-    ],
-    fields: [
-      { name: 'title', label: 'Called', placeholder: 'what this piece of work is' },
-      // THE BRIEF IS A SEPARATE FIELD, not the title used twice. A title is what
-      // the board calls it; a brief is what the work IS -- and it is the same
-      // field a worker would be given, which is the point of the human path
-      // being a task at all. Writing it also makes you say what you are doing
-      // before you start doing it, which is most of the value of a brief.
-      { name: 'brief', label: 'What the work is', placeholder: 'the same thing you would tell a worker', multiline: true, rows: 7 },
-      // HOW IT OPENS, asked once here rather than being a property of the task.
-      // Both doors reach the same machine on the same branch, so this is a
-      // preference about how somebody works today and not a fact about the work
-      // -- which is why the task keeps offering both afterwards.
-      { name: 'start', label: 'Take a machine now', value: 'editor', options: [
-        { value: 'editor', label: 'Yes — bring one up and open VS Code' },
-        { value: 'terminal', label: 'Yes — bring one up and open a terminal here' },
-        { value: 'no', label: 'No — just write it down for later' }
-      ] }
-    ],
-    cost: 'It takes a minute or two to bring a machine up before it can open.',
-    confirm: 'Save it',
-    onYes: async f => {
-      if (!f.title || !f.title.trim()) throw new Error('Say what this is called — it is what the board will show.')
-      if (!f.brief || !f.brief.trim()) throw new Error('Say what the work is. A task with no brief is a title nobody can act on later, including you.')
+// "WORK ON IT" USED TO OPEN A DIALOG HERE, and it is gone rather than moved.
+//
+// It asked for a title and a brief and offered to borrow a machine on the spot
+// -- a second task form, which knew nothing about prompts, jobs or contracts.
+// Everything it could not ask for was something a task written from the
+// Branches tab silently went without.
+//
+// The button now goes to the one form there is, with the cut already chosen,
+// and borrowing a machine stayed the separate act it always was: takeTaskByHand
+// does it from the task, which also covers work written on Monday for Thursday.
 
-      const made = await api('taskCreate', {
-        task: { title: f.title.trim(), brief: f.brief.trim(), branch: b.name, worker: 'person' }
-      })
-      const task = made.task || made
-      forget('branches')
-      forget('tasks')
-
-      if (f.start === 'no') {
-        say(`#${task.number} "${task.title}" is on the board, on "${b.name}". Start it when you want a machine.`)
-        return draw()
-      }
-
-      // THE TASK EXISTS EITHER WAY. Starting it can fail -- nothing free, a
-      // branch missing from a repository -- and a failure there must not read as
-      // "nothing happened", because the task is written down and will be sitting
-      // on the board wondering why it was not mentioned.
-      try {
-        const r = await api('taskWorkOn', { id: task.id, open: f.start })
-
-        // Same split as the task's own button: the action does everything a
-        // terminal needs and this window is the only thing that can BE one.
-        if (f.start === 'terminal' && r.name) {
-          showTab('terminal')
-          await openShell(r.name, { what: `#${task.number}`, cwd: r.folder, task: task.id })
-            .catch(e => say(`${r.name} is yours, but the shell did not open: ${e.message}`, 'bad'))
-        }
-        say(r.note)
-      } catch (e) {
-        say(`#${task.number} is on the board, but no machine was taken: ${e.message}`, 'bad')
-      }
-      return draw()
-    }
-  })
-}
 
 // Giving it back when the work is done.
 //

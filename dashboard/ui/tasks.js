@@ -909,6 +909,11 @@ let addBuiltFor = null
 
 function newTask (from = null) {
   addPrefill = from
+  // THE TAB AS WELL AS THE PANE. This is called from Branches and from
+  // Repositories too, where switching only the sub-tab moves a pane nobody is
+  // looking at and leaves the caller's screen exactly as it was — which reads as
+  // a button that does nothing.
+  showTab('tasks')
   showPane('add')
 }
 
@@ -937,7 +942,9 @@ async function paintAddTaskNow () {
     const taken = new Set((guarded || []).map(g => g.branch))
     contractsNow = lib.contracts || contractsNow
 
-    setText($('add-context'), from ? '— from what you were reading' : '')
+    setText($('add-context'), from
+      ? (from.branch ? `— on ${from.branch}` : '— from what you were reading')
+      : '')
     setText($('add-note'), 'A task is what a worker is told, and the branch it delivers on. That branch is the artifact: it is what comes back, and what gets judged. Nothing is given out yet — writing a task touches no machine.')
 
     const nameOf = b => (typeof b === 'string' ? b : b && b.name) || ''
@@ -991,7 +998,10 @@ async function paintAddTaskNow () {
       {
         name: 'branch',
         label: 'Work in this Branch Cut',
-        value: '',
+        // FILLED IN WHEN THE WORK CAME FROM A CUT. Arriving here from "Work on
+        // it" on the Branches tab, the cut is the one thing already decided —
+        // asking for it again would be asking somebody to repeat themselves.
+        value: (from && from.branch) || '',
         options: [
           { value: '', label: cuts.length ? 'pick the cut this work belongs to' : 'there are no cuts yet — make one on the Branches tab' },
           ...cuts.map(b => ({ value: b, label: b }))
