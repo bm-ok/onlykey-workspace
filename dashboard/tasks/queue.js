@@ -244,6 +244,21 @@ async function run (actions, log, task, machine) {
         task: {
           state: 'given',
           machine,
+          // AND IT IS A PERSON'S TASK NOW, because that is what just became
+          // true: a machine is set up and waiting for somebody to work in it.
+          //
+          // Saying so is not bookkeeping — it is what makes every existing rule
+          // do the right thing. `adopt` re-queues a task sitting in `given` with
+          // no run, EXCEPT a person's, and the comment there describes this
+          // exact failure: "two machines on one branch, and the work stolen from
+          // underneath somebody with an editor open". A handed-over task has no
+          // run by design, so without this it is re-queued on every restart and
+          // handed to a second machine. That happened to #35 within a minute of
+          // this being written.
+          //
+          // The queue skips a person's task for the same reason, and the window
+          // already offers the two doors for one.
+          worker: 'person',
           attempts: [...(task.attempts || []), { machine, at: new Date().toISOString(), setUp: true }]
         }
       })

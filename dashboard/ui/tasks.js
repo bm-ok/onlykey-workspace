@@ -654,9 +654,30 @@ function paintTaskDetail (task) {
             })
           })
         : null,
+      // NOT WHILE ANYTHING IS IN FLIGHT.
+      //
+      // Throwing a task away removes the record and leaves everything it
+      // started: a machine claiming its branch, a run still going, a worker
+      // mid-sentence. Nothing then accounts for any of it — the queue is
+      // waiting on a task that no longer exists, and the machine is out of
+      // service with nothing on the board explaining why.
+      //
+      // Queued counts too. The next tick is at most fifteen seconds away, so
+      // "queued" is "about to be on a machine", and deleting it in that window
+      // is the same act with better timing.
+      //
+      // Disabled rather than hidden, with the reason in the title: a button
+      // that vanishes reads as a missing feature, and the answer here is "not
+      // yet" rather than "not available".
       el('button', {
         className: 'btn danger',
         textContent: 'Throw it away',
+        disabled: task.state === 'queued' || task.state === 'given',
+        title: task.state === 'queued'
+          ? 'It is in the queue and a machine may pick it up within seconds. Take it out of the queue first.'
+          : task.state === 'given'
+            ? `It is out on ${task.machine || 'a machine'}. Finish it, or give the machine back, and then it can be thrown away.`
+            : 'The task is removed. Its branch, its files and its logs are untouched.',
         onclick: () => ask({
           title: `Throw away "${task.title}"?`,
           plain: [
