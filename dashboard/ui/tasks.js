@@ -338,7 +338,11 @@ function paintTaskDetail (task) {
 
   fill($('task-detail'),
     el('table', { className: 'kv' },
-      el('tr', {}, el('th', { textContent: 'branch' }), el('td', { className: 'mono', style: 'user-select:text', textContent: task.branch })),
+      // "BRANCH CUT", because that is what it is. A task works in a cut, which
+      // is where the label everywhere else on this screen already agreed —
+      // this row was the last one still calling it a branch, which is the
+      // broader word and the one that stopped meaning anything.
+      el('tr', {}, el('th', { textContent: 'branch cut' }), el('td', { className: 'mono', style: 'user-select:text', textContent: task.branch })),
       el('tr', {}, el('th', { textContent: 'state' }), el('td', {}, el('span', { className: `badge ${STATE_BADGE[task.reads] || 'muted'}`, textContent: task.reads }))),
       // ONE QUESTION WITH A YES OR A NO, rather than a name for who it is for.
       //
