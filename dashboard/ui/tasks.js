@@ -941,7 +941,6 @@ async function paintAddTaskNow () {
     setText($('add-note'), 'A task is what a worker is told, and the branch it delivers on. That branch is the artifact: it is what comes back, and what gets judged. Nothing is given out yet — writing a task touches no machine.')
 
     const nameOf = b => (typeof b === 'string' ? b : b && b.name) || ''
-    const exists = b => (known || []).some(x => nameOf(x) === b)
     // THE CUTS, WHICH IS EVERY BRANCH THAT IS NOT PROTECTED. A protected branch
     // is a line -- work is merged into it and never done on it -- and offering
     // one here as somewhere to deliver would be offering the one thing that is
@@ -960,37 +959,25 @@ async function paintAddTaskNow () {
       //
       // So: pick a cut that exists, or name a new one. The two fields below are
       // the "or" -- and only one of them is read, which the preview says.
-      {
-        name: 'cut',
-        label: 'Branch it delivers on',
-        value: '',
-        options: [
-          { value: '', label: 'a new branch — named below' },
-          ...cuts.map(b => ({ value: b, label: b }))
-        ]
-      },
-      { name: 'branch', label: '…or a new branch, named here', placeholder: 'fix/the-thing' },
-      // THE TASK IS WORK IN A BRANCH CUT, and that is why this is worded the way
-      // it is rather than as "cut the new one from".
+      // ONE FIELD, BECAUSE THEY WERE ALWAYS ONE QUESTION.
       //
-      // Mechanically it does cut a branch from that one. But that is the
-      // implementation of the sentence, not the sentence: somebody writing a
-      // task is saying which line of work this belongs to, and the new branch is
-      // where their part of it lands. Labelling it by the mechanism made the
-      // form read as a branching tool that happened to write a task.
+      // This was three: a branch to deliver on, a box to name a new one, and a
+      // cut to make it from. But working in a cut and delivering to a cut are
+      // the same act — the work goes where the work is — so the form was asking
+      // one thing three ways and making the reader reconcile them.
       //
-      // A line is not offered at all. A line is protected — work is merged into
-      // one and never done on one — so offering lines here read as "start work
-      // on a line", which is the thing that must not happen, and it is what the
-      // form said for two revisions. Cutting from a line is the Branches tab's
-      // job, where naming the point is the whole act rather than a fourth
-      // dropdown on a form about something else.
+      // A line is not offered. A line is protected: work is merged into one and
+      // never done on one, so offering lines here read as "start work on a
+      // line", which is the thing that must not happen, and it is what this form
+      // said for two revisions. Cutting a branch is the Branches tab's job,
+      // where naming what it is for and what it starts from is the whole act
+      // rather than two more dropdowns on a form about something else.
       {
-        name: 'from',
+        name: 'branch',
         label: 'Work in this Branch Cut',
         value: '',
         options: [
-          { value: '', label: cuts.length ? 'pick the cut this work belongs to' : 'there are no cuts yet — make one in Branches' },
+          { value: '', label: cuts.length ? 'pick the cut this work belongs to' : 'there are no cuts yet — make one on the Branches tab' },
           ...cuts.map(b => ({ value: b, label: b }))
         ]
       },
@@ -1057,24 +1044,18 @@ async function paintAddTaskNow () {
     const preview = () => {
       const rules = contractsNow.find(c => c.id === inputs.contractId.value) || null
       const job = (work.jobs || []).find(j => j.id === inputs.job.value) || null
-      // The chosen cut wins over the typed name, because choosing one is the
-      // deliberate act and the box may still hold something abandoned.
-      const branch = inputs.cut.value || inputs.branch.value.trim()
+      const branch = inputs.branch.value
       fill($('add-preview'),
         el('div', { className: 'card-title' }, el('span', { className: 'grow', textContent: 'What this task will carry' })),
 
         el('div', { className: 'carries', style: 'margin-top:10px' },
-          // WHETHER THE BRANCH IS THERE, said while it can still be changed. The
-          // one fact this form knew and never mentioned.
+          // WORKS IN, AND DELIVERS TO. One line, because it is one fact: the
+          // work goes where the work is.
           el('div', { className: 'group-part' },
-            el('span', { textContent: 'delivers on' }),
-            el('span', {}, !branch
-              ? el('span', { className: 'muted', textContent: 'pick a branch, or name a new one' })
-              : exists(branch)
-                ? el('span', { textContent: `${branch} — an existing cut` })
-                : inputs.from.value
-                  ? el('span', { className: 'ok', textContent: `${branch} — new, cut in "${inputs.from.value}" when you write this` })
-                  : el('span', { className: 'warn', textContent: `${branch} — new, and nothing says which cut this work belongs to` }))),
+            el('span', { textContent: 'works in' }),
+            el('span', {}, branch
+              ? el('span', { textContent: branch })
+              : el('span', { className: 'muted', textContent: 'pick the cut this work belongs to' }))),
           el('div', { className: 'group-part' },
             el('span', { textContent: 'done by' }),
             el('span', {}, job
@@ -1093,11 +1074,7 @@ async function paintAddTaskNow () {
     preview()
     inputs.contractId.onchange = preview
     inputs.job.onchange = preview
-    inputs.from.onchange = preview
-    inputs.cut.onchange = preview
-    // As it is typed, so "this branch does not exist" arrives while somebody is
-    // still looking at the field rather than after they have moved on.
-    inputs.branch.oninput = preview
+    inputs.branch.onchange = preview
 
     // FILLED IN, NOT LOCKED TO. Choosing a prompt copies its words into the
     // brief and leaves them editable: a task carries what the worker was
@@ -1170,35 +1147,17 @@ async function paintAddTaskNow () {
         const values = {}
         for (const k in inputs) values[k] = inputs[k].value.trim()
 
-        // ONE BRANCH OUT OF TWO FIELDS, decided here rather than by whichever
-        // the form read last. Choosing an existing cut wins over the text box,
-        // which may still hold a name somebody typed and thought better of.
-        values.branch = values.cut || values.branch
-        delete values.cut
-        if (!values.branch) throw new Error('Pick a branch to deliver on, or name a new one.')
-        if (taken.has(values.branch)) throw new Error(`"${values.branch}" is a line, not a cut. Work is merged into a line and never done on it — pick a cut, or name a new branch to be cut from it.`)
-
-        // CUT FIRST, IF IT IS NOT THERE. The refusal that used to arrive from
-        // the queue, eighty seconds and one machine boot later, answered here
-        // instead — and answered by doing the thing rather than by explaining
-        // the command that would have.
+        // THIS FORM DOES NOT MAKE BRANCHES. It did for one revision, and that
+        // was the wrong shape: writing a task and cutting a branch are two acts
+        // with different consequences, and folding them together meant a form
+        // about work quietly created something across every repository. The cut
+        // exists first, made on the Branches tab where naming what it is for and
+        // what it starts from is the whole act.
         //
-        // The title is the reason, because branchCreate insists on one and the
-        // title is the only sentence about this branch that exists yet. A reason
-        // somebody typed twice is a reason that disagrees with itself.
-        if (values.branch && !exists(values.branch)) {
-          if (!values.from) throw new Error(`"${values.branch}" does not exist yet. Say which branch cut this work belongs to, or pick a branch that already exists — cutting from a line is done on the Branches tab.`)
-          await api('branchCreate', {
-            branch: values.branch,
-            reason: values.title || 'written from the task board',
-            from: values.from
-          })
-          say(`Cut "${values.branch}" on top of "${values.from}".`)
-        }
-        // How the branch was made, not a field of the task. Passing it on
-        // would put a value in the record that nothing reads and that goes
-        // stale the moment either branch moves.
-        delete values.from
+        // Which also means the refusal that prompted all this cannot happen: a
+        // branch that does not exist is not on the list, so it cannot be named.
+        if (!values.branch) throw new Error('Pick the branch cut this work belongs to. If there is not one yet, cut it on the Branches tab.')
+        if (taken.has(values.branch)) throw new Error(`"${values.branch}" is a line, not a cut. Work is merged into a line and never done on it.`)
 
         const made = await api('taskCreate', { task: values })
         pickedTask = made.id
