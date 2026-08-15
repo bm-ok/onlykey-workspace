@@ -970,21 +970,27 @@ async function paintAddTaskNow () {
         ]
       },
       { name: 'branch', label: '…or a new branch, named here', placeholder: 'fix/the-thing' },
-      // CUT FROM ANOTHER CUT, not from a line. A line is protected — work is
-      // merged into it and never done on it — so offering lines here read as
-      // "start work on a line", which is the thing that must not happen. A cut
-      // is work, and starting from one is what following on from another task
-      // means.
+      // THE TASK IS WORK IN A BRANCH CUT, and that is why this is worded the way
+      // it is rather than as "cut the new one from".
       //
-      // Lines are not offered at all. Cutting a branch from a line is the
-      // Branches tab's job, where naming the point is the whole act rather than
-      // a fourth dropdown on a form about something else.
+      // Mechanically it does cut a branch from that one. But that is the
+      // implementation of the sentence, not the sentence: somebody writing a
+      // task is saying which line of work this belongs to, and the new branch is
+      // where their part of it lands. Labelling it by the mechanism made the
+      // form read as a branching tool that happened to write a task.
+      //
+      // A line is not offered at all. A line is protected — work is merged into
+      // one and never done on one — so offering lines here read as "start work
+      // on a line", which is the thing that must not happen, and it is what the
+      // form said for two revisions. Cutting from a line is the Branches tab's
+      // job, where naming the point is the whole act rather than a fourth
+      // dropdown on a form about something else.
       {
         name: 'from',
-        label: 'Cut the new one from which branch cut',
+        label: 'Work in this Branch Cut',
         value: '',
         options: [
-          { value: '', label: cuts.length ? 'pick the cut it follows on from' : 'there are no cuts yet — make one in Branches' },
+          { value: '', label: cuts.length ? 'pick the cut this work belongs to' : 'there are no cuts yet — make one in Branches' },
           ...cuts.map(b => ({ value: b, label: b }))
         ]
       },
@@ -1067,8 +1073,8 @@ async function paintAddTaskNow () {
               : exists(branch)
                 ? el('span', { textContent: `${branch} — an existing cut` })
                 : inputs.from.value
-                  ? el('span', { className: 'ok', textContent: `${branch} — new, cut on top of "${inputs.from.value}" when you write this` })
-                  : el('span', { className: 'warn', textContent: `${branch} — new, and nothing says which cut it follows on from` }))),
+                  ? el('span', { className: 'ok', textContent: `${branch} — new, cut in "${inputs.from.value}" when you write this` })
+                  : el('span', { className: 'warn', textContent: `${branch} — new, and nothing says which cut this work belongs to` }))),
           el('div', { className: 'group-part' },
             el('span', { textContent: 'done by' }),
             el('span', {}, job
@@ -1181,7 +1187,7 @@ async function paintAddTaskNow () {
         // title is the only sentence about this branch that exists yet. A reason
         // somebody typed twice is a reason that disagrees with itself.
         if (values.branch && !exists(values.branch)) {
-          if (!values.from) throw new Error(`"${values.branch}" does not exist yet. Say which cut it follows on from, or pick one that already exists — cutting from a line is done on the Branches tab.`)
+          if (!values.from) throw new Error(`"${values.branch}" does not exist yet. Say which branch cut this work belongs to, or pick a branch that already exists — cutting from a line is done on the Branches tab.`)
           await api('branchCreate', {
             branch: values.branch,
             reason: values.title || 'written from the task board',
