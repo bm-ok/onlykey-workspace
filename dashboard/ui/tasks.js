@@ -363,11 +363,20 @@ function paintTaskDetail (task) {
             className: `badge ${task.usedClaude ? 'ok' : 'muted'}`,
             textContent: task.usedClaude ? 'yes' : 'no'
           }),
-          el('div', { className: 'muted', textContent: task.usedClaude
-            ? 'A worker ran on a machine for this task.'
+          // NOTHING UNDERNEATH WHILE THE ANSWER IS "NO, NOTHING HAS RUN". That
+          // sentence carried the worker plan back in through the side door —
+          // "Claude, run by the queue on a machine" — which is the prediction
+          // this row was rewritten to stop making. "No" and an empty row below
+          // it is the whole of what is true about a task nothing has touched.
+          //
+          // The other two answers earn a line, because each says something the
+          // badge cannot: that a worker ran, or that something ran and was not
+          // one.
+          task.usedClaude
+            ? el('div', { className: 'muted', textContent: 'A worker ran on a machine for this task.' })
             : (task.attempts || []).length
-                ? 'It has been on a machine and no worker ran — the work was a script or a shell, or somebody did it by hand.'
-                : `Nothing has run yet. ${workerOf(task).long}` }))),
+                ? el('div', { className: 'muted', textContent: 'It has been on a machine and no worker ran — the work was a script or a shell, or somebody did it by hand.' })
+                : null)),
       // "GIVEN TO" IS GONE. It said where the task is right now, and the queue
       // clears it the moment a machine is put away — so it read "nobody yet" for
       // a task that had been through three machines and finished, which is the
