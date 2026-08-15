@@ -20,7 +20,7 @@ const actions = require('./table')
 // block repeated nine times. See actions/shared.js.
 const s = require('./shared')
 const {
-  log, events, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
+  log, events, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
   archive, files, prompts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
@@ -254,6 +254,68 @@ module.exports = {
         pick: pick == null ? null : String(pick),
         note: 'The window takes it on its next draw — up to twelve seconds if nobody is looking at it. Read the file once it appears.'
       }
+    }
+  },
+
+  // ---- what this app is set to -------------------------------------------
+  //
+  // App settings, not workspace settings. A branch, a task and a line are
+  // statements about a folder of repositories; these are statements about this
+  // installation, so they survive switching workspace, closing one, and having
+  // none open. See core/settings.js.
+  settings: {
+    about: "What this app is set to, and why each one is where it is",
+    run: () => {
+      const now = settings.read()
+      const open = workspaces.dir() || null
+      return {
+        settings: now,
+        // The derived answer as well as the two fields it comes from, because
+        // "enabled" alone is not the question anything actually asks — enabled
+        // for somewhere else is not enabled.
+        tests: { ...settings.testsAllowed(open), enabled: now.testsEnabled, forDir: now.testsFor, openDir: open },
+        where: settings.FILE()
+      }
+    }
+  },
+
+  settingSet: {
+    about: 'Change one setting. Turning the drills on is done in the window, by a person',
+    takes: ['name', 'value'],
+    run: ({ name, value, _overTheWire, _driven }) => {
+      const key = String(name || '').trim()
+      if (!(key in settings.DEFAULTS)) {
+        throw new Error(`"${key}" is not a setting. It is one of: ${Object.keys(settings.DEFAULTS).join(', ')}.`)
+      }
+
+      // TURNING THE DRILLS ON IS NOT SOMETHING THE PIPE MAY DO.
+      //
+      // The refusal in suiteRun is worth nothing if whatever is refused can
+      // switch it off first — a guard a caller can disable is a guard that only
+      // stops callers who were not going to do it anyway. This is the same rule
+      // as approving a job: a model may ask for the drills and may not decide
+      // that somebody's repository is a fine place to run them.
+      //
+      // `_driven` counts as the pipe. A press made in the window BY the command
+      // line is still the command line, which is the whole reason that mark
+      // exists — see whoAsked in actions/shared.js.
+      if (key === 'testsEnabled' && (_overTheWire || _driven)) {
+        throw new Error('The drills are switched on in the window, by somebody who knows what folder is open. They write a task and take a credential off a machine — that is a decision about somebody\'s repository, not a flag to be set down a pipe.')
+      }
+
+      const on = value === true || value === 'true' || value === 1 || value === '1'
+      const patch = key === 'testsEnabled'
+        // Enabled is always enabled FOR the folder open right now, written in
+        // the same act. Two calls to set two fields is two chances to end up
+        // enabled for nowhere, or for whatever was open last week.
+        ? { testsEnabled: on, testsFor: on ? (workspaces.dir() || null) : null }
+        : { [key]: value }
+
+      const now = settings.write(patch)
+      log.on('app').warn(key === 'testsEnabled'
+        ? (on ? `the drills are ON for ${now.testsFor} — they write a task and take a credential off a machine` : 'the drills are off')
+        : `${key} is now ${JSON.stringify(now[key])}`)
+      return { settings: now, note: key === 'testsEnabled' && on ? `On for ${now.testsFor}. Opening a different workspace switches them off.` : 'Saved.' }
     }
   },
 

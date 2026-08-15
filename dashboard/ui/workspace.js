@@ -231,7 +231,19 @@ $('ws-add').onkeydown = e => { if (e.key === 'Enter') addWorkspace(false) }
 // silently loses half its buttons reads as a broken window rather than a state,
 // and which ones go is the clearest available description of what a workspace
 // actually is.
-const NEEDS_WORKSPACE = ['repos', 'branches', 'prcuts', 'tasks']
+// TABS THAT ARE A QUESTION ABOUT A FOLDER OF REPOSITORIES, and only those.
+//
+// `branches` and `prcuts` were here after they stopped being tabs — folded into
+// Repositories — so the gate quietly did nothing for two of its four names. A
+// list of ids that no longer exist fails silently in exactly the direction that
+// matters: everything looks gated and half of it is not.
+//
+// Settings is deliberately NOT here. It is about this installation rather than
+// about a folder, and "no workspace is open" is precisely a moment somebody
+// might want it. Test is not here either: it can be read with nothing open, and
+// running is refused with a sentence saying why — which is better than a tab
+// that will not open.
+const NEEDS_WORKSPACE = ['repos', 'tasks']
 
 function gateTabs (open) {
   if (!changed('tab-gate', open)) return

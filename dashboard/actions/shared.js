@@ -20,6 +20,7 @@ const keys = require('../core/keys')
 const ssh = require('../core/ssh')
 const data = require('../core/data')
 const secret = require('../core/secret')
+const settings = require('../core/settings')
 const github = require('../core/github')
 const remotes = require('../repos/remotes')
 const landings = require('../repos/landings')
@@ -307,7 +308,7 @@ const whoAsked = ({ _driven, _overTheWire } = {}) =>
 
 module.exports = {
   whoAsked,
-  log, events, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
+  log, events, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, judgements,
   judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
   archive, files, sessions, prompts, contracts, jobs, jobrun, harness, suites, workspaces, queue, machines, provision, reach, editor, repos,

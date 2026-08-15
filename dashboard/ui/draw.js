@@ -79,9 +79,9 @@ async function drawOnce () {
   // Everything that is a question about a folder of repositories, switched off
   // while there is none. See gateTabs.
   gateTabs(!!ws)
-  setText($('topright'), latest.vms.length
-    ? `${latest.vms.length} machine${latest.vms.length === 1 ? '' : 's'} this app made`
-    : 'no machines yet')
+  // The count of machines used to be written here. It is the Settings button
+  // now — a number the Runners tab states better was holding the one corner of
+  // the chrome with no way in to anything.
 
   const gone = latest.vms.filter(v => !v.live)
   // Only the dirty ones. A repository sitting on a review branch with nothing
@@ -199,6 +199,7 @@ async function drawOnce () {
   paintTasks(running)
   paintSessions()
   paintTests()
+  paintSettings()
   paintAddTask()
   paintJobs()
   paintPrompts()

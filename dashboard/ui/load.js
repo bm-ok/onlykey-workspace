@@ -56,6 +56,7 @@
     'machines',  // the virtual machines this app made
     'live',      // the log, and every action there is
     'tests',     // this app run against itself, for developing it
+    'settings',  // what this app is set to, as opposed to what a workspace holds
 
     // Last, because it calls into all of them.
     'draw'       // the loop, the photograph of the window, and how often

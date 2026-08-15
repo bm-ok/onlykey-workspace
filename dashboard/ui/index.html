@@ -76,7 +76,12 @@
     <button class="tab" data-view="tests">Test <span class="tab-badge hidden" id="tests-badge"></span></button>
     <button class="tab" data-view="api">API</button>
   </nav>
-  <div class="topright muted" id="topright"></div>
+  <!-- THE WAY INTO WHAT THIS APP IS SET TO. It sits outside the row of tabs for
+       the same reason the workspace chip does: it is not one more thing to look
+       at, it is a thing you go and change and come back from. The count of
+       machines used to live here, which was chrome stating a number the Runners
+       tab states better, in the one corner with no way in to anything. -->
+  <button class="tab topright" data-view="settings" id="settings-tab" title="Settings">☰</button>
 </header>
 
 <!-- The answer to a button press, in the same place as the button. Reporting a
@@ -826,6 +831,23 @@
        about this HOST -- its machines, its keys, its approvals, its log -- keeps
        working, because putting a machine away is how somebody gets to close one
        in the first place. -->
+  <!-- ---------------- Settings ----------------
+       WHAT THIS APP IS SET TO, as opposed to what a workspace contains. A
+       branch, a task and a line are statements about a folder of repositories;
+       these are statements about this installation, so they survive switching
+       workspace, closing one, and having none open.
+
+       Cards rather than a form, and no sub-tabs. Each card is one decision with
+       the reason for it beside the control, because a switch with no sentence
+       under it is a switch nobody can weigh. -->
+  <section class="view" id="view-settings">
+    <div class="sync-head">
+      <h2>Settings <span class="muted" id="settings-context"></span></h2>
+    </div>
+    <p class="note" id="settings-note"></p>
+    <div id="settings" class="stack"></div>
+  </section>
+
   <section class="view" id="view-workspace">
 
     <div class="sync-head">

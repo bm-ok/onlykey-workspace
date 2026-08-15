@@ -23,6 +23,11 @@ let pickedTest = been.get('test-name', null)
 // second run itself — this only keeps somebody from having to find that out by
 // pressing.
 let testsRunning = false
+// Whether the drills are switched on for the folder open now. The action refuses
+// on its own — this is what stops somebody pressing a button to find that out,
+// and what puts the reason on screen instead of in a notice they have to trigger.
+let testsAllowed = false
+let testsWhy = null
 
 const TEST_LOOK = {
   passed: { className: 'badge ok', textContent: 'passed' },
@@ -60,8 +65,23 @@ async function paintTestsNow () {
   api('suites').then(v => {
     if (view !== 'tests') return
     testsRunning = !!v.running
-    setText($('tests-note'), v.note)
+    testsAllowed = !!v.allowed
+    testsWhy = v.why || null
+    // The reason comes first when there is one: a tab of greyed-out buttons with
+    // the explanation underneath the results is a tab that looks broken.
+    setText($('tests-note'), testsAllowed ? v.note : v.why)
     setText($('tests-context'), v.suites.length ? `— ${v.suites.length}` : '— none')
+
+    // THE BUTTON IN THE MARKUP, which the rest of this file does not build and
+    // so did not disable. Its click handler refused, which means it looked
+    // pressable and answered by complaining — and "disable what must not be
+    // clicked, in the action AND the button" is the rule. Every other run button
+    // here is built in JS and got it for free; this one had to be told.
+    const runAll = $('tests-run-all')
+    if (runAll) {
+      runAll.disabled = testsRunning || !testsAllowed
+      runAll.title = !testsAllowed ? testsWhy : testsRunning ? 'A run is already going' : 'Run every test in every suite'
+    }
 
     const all = v.suites.flatMap(s => s.tests)
     const badge = $('tests-badge')
@@ -84,7 +104,7 @@ async function paintTestsNow () {
       been.set('test-name', pickedTest)
     }
 
-    if (changed('test-suites', [v.suites, pickedSuite, testsRunning])) {
+    if (changed('test-suites', [v.suites, pickedSuite, testsRunning, testsAllowed])) {
       fill($('test-suites'), v.suites.length
         ? v.suites.map(s => el('div', {
             className: `card pick${s.name === pickedSuite ? ' on' : ''}`,
@@ -110,14 +130,14 @@ async function paintTestsNow () {
             el('button', {
               className: 'btn small',
               textContent: 'Run it',
-              disabled: testsRunning,
-              title: testsRunning ? 'A run is already going' : `Run only "${s.name}"`,
+              disabled: testsRunning || !testsAllowed,
+              title: !testsAllowed ? testsWhy : testsRunning ? 'A run is already going' : `Run only "${s.name}"`,
               onclick: e => { e.stopPropagation(); runTests({ suite: s.name }) }
             }))))
         : el('p', { className: 'empty', textContent: 'No suites are registered. They live in test/suites — a file that calls describe/it is a suite, and adding one is all there is to it.' }))
     }
 
-    if (changed('test-list', [suite, pickedTest, testsRunning])) {
+    if (changed('test-list', [suite, pickedTest, testsRunning, testsAllowed])) {
       fill($('test-list'), suite && suite.tests.length
         ? suite.tests.map(t => el('div', {
             className: `card pick${t.name === pickedTest ? ' on' : ''}${t.state === 'failed' ? ' warn' : ''}`,
@@ -142,7 +162,7 @@ async function paintTestsNow () {
     const one = suite && suite.tests.find(t => t.name === pickedTest)
     setText($('test-suite-context'), suite ? `— ${suite.tests.length}` : '')
     setText($('test-context'), one ? `— ${one.state}` : '')
-    if (changed('test-detail', [one, testsRunning])) paintTestDetail(suite, one)
+    if (changed('test-detail', [one, testsRunning, testsAllowed])) paintTestDetail(suite, one)
   }).catch(e => { if (changed('tests-bad', String(e.message))) oops(e) })
 }
 
@@ -193,14 +213,15 @@ function paintTestDetail (suite, t) {
       el('button', {
         className: 'btn ok',
         textContent: 'Run this one',
-        disabled: testsRunning,
-        title: testsRunning ? 'A run is already going' : 'Runs only this check',
+        disabled: testsRunning || !testsAllowed,
+        title: !testsAllowed ? testsWhy : testsRunning ? 'A run is already going' : 'Runs only this check',
         onclick: () => runTests({ suite: suite.name, test: t.name })
       }),
       el('button', {
         className: 'btn',
         textContent: 'Run the suite',
-        disabled: testsRunning,
+        disabled: testsRunning || !testsAllowed,
+        title: !testsAllowed ? testsWhy : '',
         onclick: () => runTests({ suite: suite.name })
       })))
 }
@@ -222,4 +243,7 @@ function runTests (what) {
     })
 }
 
-$('tests-run-all').onclick = () => runTests({})
+$('tests-run-all').onclick = () => {
+  if (!testsAllowed) return say(testsWhy, 'warn')
+  runTests({})
+}

@@ -18,7 +18,19 @@
 
 const actions = require('./table')
 const s = require('./shared')
-const { log, harness, suites } = s
+const { log, harness, suites, settings, workspaces } = s
+
+// WHETHER THE DRILLS MAY RUN AT ALL, asked in one place.
+//
+// They drive this app for real: one writes a task and removes it again, one
+// takes a credential off a machine and puts it back. Against three scaffolding
+// repositories that is what they are for; against somebody's actual work it is a
+// stranger typing into their repository, and nothing here can tell the two
+// apart. So it is off until somebody says which folder they do not mind.
+//
+// See core/settings.js — enabled is enabled FOR a folder, so switching workspace
+// switches it off without anything having to notice.
+const mayRun = () => settings.testsAllowed(workspaces.dir() || null)
 
 // WHAT WAS FOUND LAST TIME, so the window can show a result without running
 // anything. In memory only: a test result is a statement about this process and
@@ -65,6 +77,9 @@ module.exports = {
             }
           })
         })),
+        // Said while LISTING, so the tab can explain why its buttons are off
+        // without anybody pressing one to find out.
+        ...mayRun(),
         ran: lastRun.at,
         running: lastRun.running,
         counts: was ? { passed: was.passed, failed: was.failed, unrunnable: was.unrunnable } : null,
@@ -79,6 +94,12 @@ module.exports = {
     about: 'Run every test, one suite, or one test. Reports per test as it goes',
     takes: ['suite', 'test'],
     run: async ({ suite, test }) => {
+      // REFUSED HERE, at the only door that runs a test. The window disables the
+      // buttons too, and that is a courtesy — this is the boundary, and it is
+      // the one a drill reached from the command line meets as well.
+      const may = mayRun()
+      if (!may.allowed) throw new Error(may.why)
+
       if (lastRun.running) throw new Error('A run is already going. Wait for it, or it will report two answers about the same moment.')
       ready()
 
