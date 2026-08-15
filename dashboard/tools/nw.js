@@ -50,9 +50,18 @@ try {
 // at. Started in the background, that lands in the log whatever started it is
 // writing — so `npm start` and `npm run restart` both keep it.
 //
-// NOT `--v=1`, which is the next thing anybody reaches for and is a mistake: it
-// turns on Chromium's own verbose internals and buries the one line that matters
-// under a few hundred about GPU probing and network sockets.
+// `--enable-logging` WITHOUT `=stderr` IS THE ONE THAT LOOKS RIGHT AND IS NOT.
+// It writes to a chrome_debug.log in the user data directory rather than to the
+// pipe, so the stdio inherited above stays empty and the output lands somewhere
+// nobody is reading.
+//
+// AND NOT `--v=1`, which is the next thing anybody reaches for. Measured rather
+// than assumed: a clean start goes from 5 lines to 342, of which 278 are
+// Chromium's own internals — 72 about Chromecast socket probing, 50 about the
+// segmentation platform, 44 about an identity manager this app does not use.
+// The line that matters is in there, and finding it is the problem this flag was
+// supposed to solve. Add it by hand for one run if something in the browser
+// process itself is being chased; it is not worth carrying.
 const FLAGS = ['--enable-logging=stderr']
 
 console.log(`launching ${path.relative(APP, binary)}`)
