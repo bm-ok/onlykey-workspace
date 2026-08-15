@@ -661,6 +661,18 @@ function all () {
 
         return {
           ...b,
+          // WHETHER THIS APP CUT IT, which is not the same as whether it exists.
+          //
+          // A workspace holds branches from three sources: ones cut here with a
+          // reason and a starting point, the repositories' own default branches,
+          // and whatever somebody made by hand before or since. Only the first
+          // are branch cuts. The rest are branches — real, checkoutable, and not
+          // a line of work this system knows anything about.
+          //
+          // `group` cannot answer it: the oldest cuts here recorded no group,
+          // and a null one reads identically to never having been cut at all.
+          // The note is the record of the act.
+          cut: !!noteFor(b.name),
           group: scope.group,
           // Only the repositories in scope, so a branch that also exists
           // elsewhere for unrelated reasons does not drag them into this task.

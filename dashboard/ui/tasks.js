@@ -941,7 +941,18 @@ async function paintAddTaskNow () {
     setText($('add-note'), 'A task is what a worker is told, and the branch it delivers on. That branch is the artifact: it is what comes back, and what gets judged. Nothing is given out yet — writing a task touches no machine.')
 
     const nameOf = b => (typeof b === 'string' ? b : b && b.name) || ''
-    const cuts = (known || []).map(nameOf).filter(b => b && !taken.has(b)).sort()
+    // BRANCH CUTS, WHICH IS NOT THE SAME AS BRANCHES.
+    //
+    // A workspace holds branches from three sources: ones cut here with a reason
+    // and a starting point, the repositories' own default branches, and whatever
+    // somebody made by hand. Only the first are cuts, and this list offered all
+    // three — so `master` and `version2` appeared as places to do work, which is
+    // how a form about work ends up naming the repository's trunk.
+    //
+    // `cut` is the record of the act, kept when branchCreate made it. See
+    // repos/branches.js.
+    const isCut = b => b && b.cut
+    const cuts = (known || []).filter(isCut).map(nameOf).filter(b => !taken.has(b)).sort()
     // A LINE CAN BE WORKED IN, READ-ONLY, and leaving lines off the list said
     // otherwise. A task that reads, measures or reports has to be where the work
     // it is reading actually is, and that is often a line. What it cannot do is
@@ -949,7 +960,10 @@ async function paintAddTaskNow () {
     // hook so a worker finds out where it stands rather than in a rejection an
     // hour later. It can still commit locally, hand files back, and keep its
     // session for the next run.
-    const protectedLines = (known || []).map(nameOf).filter(b => b && taken.has(b)).sort()
+    // A cut that has since been made into a line. It is still a cut — work was
+    // done on it and it is a line of work this system knows — so it belongs on
+    // the list; what it cannot be is pushed to.
+    const protectedLines = (known || []).filter(isCut).map(nameOf).filter(b => taken.has(b)).sort()
 
     const { rows, inputs } = buildFields([
       { name: 'title', label: 'Title', value: (from && from.title) || '', placeholder: 'Short enough to read in a list' },
