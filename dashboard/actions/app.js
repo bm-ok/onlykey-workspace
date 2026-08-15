@@ -39,6 +39,20 @@ const drive = want => {
   return win.drive(want)
 }
 
+// WHETHER THE WINDOW MAY BE DRIVEN AT ALL, asked in one place.
+//
+// The same switch as the drills, on purpose. A driven click is indistinguishable
+// from a person's click once it reaches the handler — that is what makes it
+// worth having and what makes it the way around every refusal written about the
+// wire. Tying it to testing mode means the door is open exactly while somebody
+// has said, at the window, which folder they do not mind being driven.
+const mayDrive = what => {
+  const may = settings.testsAllowed(workspaces.dir() || null)
+  if (!may.allowed) {
+    throw new Error(`The window is only driven while testing mode is on for this workspace. ${may.why} Until then this cannot ${what} — a driven press reaches the same handlers a person's does, so it would be a way around every refusal this app makes about the command line. Ask with testsAsk, and answer it at the window.`)
+  }
+}
+
 module.exports = {
   status: {
     about: 'Is the server up, and what does it have to work with',
@@ -420,21 +434,46 @@ module.exports = {
   //
   // This is a developer's door and it is on the local pipe, which is a thing a
   // supervisor running in its own machine cannot reach. See ROADMAP.md.
+  //
+  // AND IT IS SHUT UNLESS TESTING MODE IS ON.
+  //
+  // A driven press reaches exactly the handlers a person's press reaches, which
+  // is the whole point of it and also the whole problem: every refusal this app
+  // makes about the command line — approving a job, landing a cut — is a refusal
+  // about the WIRE, and a click is not on the wire. Without this, "a model may
+  // not approve its own job" is one `windowClick --text Approve` away from being
+  // untrue, and nothing would have been refused or recorded as strange.
+  //
+  // So the same switch that says the drills may run says the window may be
+  // driven: on for one named folder, turned on at the window and nowhere else,
+  // off again when the workspace changes, and visible in a banner the whole time
+  // it is on. Reading what is on screen stays open — a photograph and a list of
+  // buttons change nothing.
   windowControls: {
     about: 'What is on screen right now: the buttons that can be pressed and the fields that can be filled',
     run: () => drive({ do: 'controls' })
   },
 
   windowClick: {
-    about: 'Press a button in the window, by the words on it. --dry says which one it would press',
+    about: 'Press a button in the window, by the words on it. Only while testing mode is on. --dry says which one it would press',
     takes: ['text', 'nth', 'dry'],
-    run: ({ text, nth, dry }) => drive({ do: 'click', text, nth: nth == null ? null : Number(nth), dry: dry === true || dry === 'true' })
+    run: ({ text, nth, dry }) => {
+      const asking = dry === true || dry === 'true'
+      // --dry is allowed either way: it says WHICH button would be pressed and
+      // presses nothing, which is reading rather than driving — and it is what
+      // somebody uses to find out that the door is shut without opening it.
+      if (!asking) mayDrive('press a button in the window')
+      return drive({ do: 'click', text, nth: nth == null ? null : Number(nth), dry: asking })
+    }
   },
 
   windowFill: {
-    about: 'Type into a field in the window, by its label',
+    about: 'Type into a field in the window, by its label. Only while testing mode is on',
     takes: ['label', 'value', 'nth'],
-    run: ({ label, value, nth }) => drive({ do: 'fill', label, value, nth: nth == null ? null : Number(nth) })
+    run: ({ label, value, nth }) => {
+      mayDrive('type into the window')
+      return drive({ do: 'fill', label, value, nth: nth == null ? null : Number(nth) })
+    }
   },
 
   // Read by the window, and by nothing else. Kept in the table rather than

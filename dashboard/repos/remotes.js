@@ -426,6 +426,105 @@ async function updatePull (repo, number, fields) {
   return { repo, number, ok: false, why: (r.body && r.body.message) || `GitHub answered ${r.status}` }
 }
 
+// MERGING IT, which until now was the one step of the flow that had to happen in
+// a browser.
+//
+// The gap showed up the moment the order was written down as something that
+// runs: cut a branch, work on it, open a pull request — and then a person, a
+// tab, and a green button, after which this app is looking at a fork that is
+// behind and cannot say why.
+//
+// ON THE PARENT, like everything else about a pull request here. The branch is
+// on the fork; the pull request, its reviews and its merge are on the repository
+// it was opened against.
+//
+// The method is asked for rather than assumed. A squash rewrites the commits,
+// which is what makes `git cherry` the right question afterwards and what makes
+// a fork look diverged from a change it already carries — worth choosing on
+// purpose rather than discovering.
+async function mergePull (repo, number, { how = 'merge', title = null, message = null } = {}) {
+  const note = seen()[repo] || {}
+  const remote = remoteOf(repo)
+  if (!remote) throw new Error(`"${repo}" has no remote.`)
+  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
+
+  const r = await github.call('PUT', `/repos/${into[0]}/${into[1]}/pulls/${number}/merge`, {
+    merge_method: how,
+    ...(title ? { commit_title: title } : {}),
+    ...(message ? { commit_message: message } : {})
+  })
+  if (r.status === 200) {
+    return { repo, number, merged: true, sha: r.body && r.body.sha, into: into.join('/'), how }
+  }
+  // 405 is "not mergeable" — a conflict, a required check, a protected branch —
+  // and 409 is "the head moved since you looked". Both are answers about the
+  // pull request rather than failures to ask, and both are said as themselves.
+  const why = (r.body && r.body.message) || `GitHub answered ${r.status}`
+  return { repo, number, merged: false, status: r.status, why, into: into.join('/') }
+}
+
+// DELETING IT FROM THE FORK, which is the button GitHub offers the moment a
+// pull request is merged and which this app has never had.
+//
+// The branch on the fork is what the pull request was opened FROM. Once it is
+// merged the branch has done its work, and leaving it is how a fork accumulates
+// a page of branches that are all in master already — `drillSweep` reports them
+// and deliberately does not remove them, because a push is not a tidy-up.
+//
+// On the FORK, not the parent: that is where the branch is.
+async function deleteBranch (repo, branch) {
+  const remote = remoteOf(repo)
+  if (!remote || remote.kind !== 'github') throw new Error(`"${repo}" has no GitHub remote.`)
+  const r = await github.call('DELETE', `/repos/${remote.owner}/${remote.repo}/git/refs/heads/${branch}`)
+  // 204 is gone, 422 is "it was not there" — which is the same state and not a
+  // failure to report as one.
+  if (r.status === 204) return { repo, branch, gone: true, on: `${remote.owner}/${remote.repo}` }
+  if (r.status === 422 || r.status === 404) return { repo, branch, gone: false, already: true, on: `${remote.owner}/${remote.repo}` }
+  throw new Error(`Could not delete "${branch}" on ${remote.owner}/${remote.repo}: ${(r.body && r.body.message) || `GitHub answered ${r.status}`}`)
+}
+
+// SYNC FORK, the button on the fork's front page.
+//
+// The other half of the same gap. After a pull request is merged the parent has
+// moved and the fork has not, so every branch cut here starts from something out
+// of date and every comparison reads as diverged — which is exactly the state
+// somebody described as "a PR does something weird that I do not understand".
+//
+// GitHub calls it merge-upstream: it pulls the parent's branch into the fork's
+// branch of the same name, on GitHub, without a clone. The local repository is a
+// separate matter — `syncDefault` fetches and fast-forwards this host afterwards.
+//
+// Only the fork can do this, so it goes to the ORIGIN rather than to the parent.
+async function syncFork (repo, branch = null) {
+  const remote = remoteOf(repo)
+  if (!remote || remote.kind !== 'github') throw new Error(`"${repo}" has no GitHub remote to sync.`)
+  const note = seen()[repo] || {}
+  if (!note.parent) throw new Error(`"${repo}" is not a fork of anything this app knows about, so there is nothing upstream to pull from.`)
+
+  const want = branch || note.default || branches.defaultOf(repo)
+  if (!want) throw new Error(`Nothing says which branch of "${repo}" to sync.`)
+
+  const r = await github.call('POST', `/repos/${remote.owner}/${remote.repo}/merge-upstream`, { branch: want })
+  if (r.status === 200) {
+    return {
+      repo,
+      branch: want,
+      from: note.parent,
+      // GitHub says which of three happened: fast-forward, merge, or none.
+      // "none" is not a failure — it is a fork that was already up to date, and
+      // reporting it as an error would make the ordinary case look wrong.
+      how: (r.body && r.body.merge_type) || 'none',
+      already: !!(r.body && r.body.merge_type === 'none'),
+      said: (r.body && r.body.message) || null
+    }
+  }
+  // 409 is a conflict the fork cannot resolve on its own, and 422 is a branch
+  // GitHub will not merge into. Said as itself, because both need a person and
+  // neither is this app being wrong.
+  const why = (r.body && r.body.message) || `GitHub answered ${r.status}`
+  throw new Error(`Could not sync "${repo}" from ${note.parent}: ${why}`)
+}
+
 // Everything open on a repository right now, so a landing can be re-read rather
 // than remembered. What GitHub says about a pull request outranks what was
 // written down here when it was opened.
@@ -597,4 +696,4 @@ const syncDefault = repo => {
   return syncBranch(repo, branch)
 }
 
-module.exports = { read, check, gather, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, pullsOn, issuesOn }
+module.exports = { read, check, gather, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, mergePull, syncFork, deleteBranch, pullsOn, issuesOn }

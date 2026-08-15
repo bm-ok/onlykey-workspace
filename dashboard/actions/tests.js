@@ -18,7 +18,7 @@
 
 const actions = require('./table')
 const s = require('./shared')
-const { log, harness, suites, settings, workspaces, repos } = s
+const { log, harness, suites, settings, workspaces, repos, branches } = s
 
 // WHETHER THE DRILLS MAY RUN AT ALL, asked in one place.
 //
@@ -203,6 +203,73 @@ module.exports = {
           ? `${gone.tasks.length} task(s) and ${gone.branches.length} branch(es) removed here. ${remote.length} branch(es) are also on origin and are NOT touched — deleting those is a push, and any pull request open from one is on somebody else's repository.`
           : `${gone.tasks.length} task(s) and ${gone.branches.length} branch(es) removed.`
       }
+    }
+  },
+
+  // A CHANGE TO SEND OUT, because the last stage of the order needs one.
+  //
+  // Cut a branch, do the work, open a pull request: the middle step is a worker
+  // on a machine, and that is ten minutes and a runner switched on. A drill that
+  // needs one is a drill nobody runs — which is how tasks/planned.js ended up
+  // being deleted rather than fixed. So the drills make their own commit, and
+  // what they prove is the half either side of the worker: that a branch with
+  // something on it pushes, opens, lands and comes back.
+  //
+  // FENCED THREE WAYS, because this writes a commit into somebody's repository.
+  //
+  //   - testing has to be on FOR THIS WORKSPACE, the same gate as running a
+  //     drill at all;
+  //   - the branch must be a `drill/` one, which nothing else in this app ever
+  //     creates and `drillSweep` already knows how to remove;
+  //   - the file must be a `drill-` one, so even on the right branch it cannot
+  //     land on top of somebody's work.
+  //
+  // None of that is a promise about how the drills are written. It is what the
+  // action refuses, which is the only kind of rule that holds when the fiftieth
+  // suite is written six weeks from now.
+  drillCommit: {
+    about: 'Put a commit on a drill branch, so a drill has a change to send out. Refused off a drill branch',
+    needs: 'workspace',
+    takes: ['branch', 'repo', 'file', 'text', 'message'],
+    run: ({ branch, repo, file, text, message }) => {
+      const may = mayRun()
+      if (!may.allowed) throw new Error(may.why)
+
+      const on = String(branch || '').trim()
+      if (!on.startsWith('drill/')) {
+        throw new Error(`"${on}" is not a drill branch. This only ever commits on drill/ branches — a drill that could commit anywhere is a drill that can write into somebody's work.`)
+      }
+      const name = String(file || 'drill-note.md').trim()
+      if (!/^drill-/.test(name)) {
+        throw new Error(`"${name}" is not a drill file. The name has to start with "drill-" so it cannot land on top of something somebody wrote.`)
+      }
+
+      const here = repos.list().map(r => r.name)
+      const want = repo ? [String(repo)] : here
+      for (const r of want) {
+        if (!here.includes(r)) throw new Error(`There is no repository called "${r}" here. There is: ${here.join(', ')}.`)
+      }
+
+      // Where the branch actually is. A cut spans every repository, but a change
+      // usually does not, and a drill naming one repository is making a point
+      // about a change that spans one.
+      const cut = (branches.all().branches || []).find(b => b.name === on)
+      if (!cut) throw new Error(`There is no branch called "${on}" here. Cut it first.`)
+
+      const done = []
+      for (const r of want) {
+        if (!cut.in.includes(r)) continue
+        done.push(branches.commitOn(r, {
+          branch: on,
+          file: name,
+          text: String(text == null ? `Written by a drill at ${new Date().toISOString()}.\n` : text),
+          message: String(message || 'drill: a change to send out')
+        }))
+      }
+      if (!done.length) throw new Error(`No repository here has a branch called "${on}". Cut it first.`)
+
+      log.on('test').info(`committed ${name} on ${on} in ${done.map(d => d.repo).join(', ')}`)
+      return { branch: on, commits: done, note: `${done.length} commit(s) on ${on}: ${done.map(d => `${d.repo} ${d.commit.slice(0, 7)}`).join(', ')}.` }
     }
   },
 

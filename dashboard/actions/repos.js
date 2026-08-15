@@ -16,7 +16,7 @@ const actions = require('./table')
 // block repeated nine times. See actions/shared.js.
 const s = require('./shared')
 const {
-  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
+  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements, settings,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
   archive, files, prompts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
@@ -354,6 +354,185 @@ module.exports = {
         note: opened.length === done.length
           ? `${opened.length} pull request(s) opened: ${opened.map(o => `${o.repo} #${o.number}`).join(', ')}. It has landed when all of them have.`
           : `${opened.length} of ${done.length} opened. ${done.filter(d => !d.opened).map(d => `${d.repo}: ${d.why}`).join('; ')}`
+      }
+    }
+  },
+
+  // LANDING IT, which is the step this app used to hand back to a browser.
+  //
+  // A cut is one act with a pull request per repository, and merging them one at
+  // a time in three tabs is how two get merged and the third sits open until
+  // somebody finds it a month later. The same argument as opening them together
+  // and as `prCutUpdate` changing all their descriptions at once.
+  //
+  // ASKED FOR BY NAME, not by "the latest". A merge is not undoable from here,
+  // and an action that guesses which change it is landing is one misread line
+  // away from landing a different one.
+  //
+  // IN THE WINDOW, ALWAYS. FROM OUTSIDE IT, ONLY WHILE TESTING IS ON.
+  //
+  // Merging is the one act here that reaches somebody else's repository and
+  // cannot be taken back from this app: it is a commit on a real default branch,
+  // and a fork sync away from being everywhere. A person pressing the button in
+  // the window is that person landing their own change, which needs no gate at
+  // all. The command line is a model, and a model landing pull requests whenever
+  // it likes is the thing the approvals exist to prevent.
+  //
+  // TESTING MODE IS THE GATE, chosen because it already means exactly this: it
+  // is off until somebody names a folder they do not mind a drill driving, it is
+  // switched on at the window and nowhere else, it switches itself off when the
+  // workspace changes, and while it is on the window carries a banner no other
+  // banner may take over. One switch, visible, revocable in a click — rather
+  // than a permission file that grants it silently and for ever.
+  //
+  // The drills need it because the last stage of the order IS landing: a change
+  // that is opened and never merged proves the half of the flow that is easy.
+  prCutLand: {
+    about: 'Merge every pull request in a cut, so the change lands as one thing',
+    needs: 'workspace',
+    takes: ['source', 'target', 'how'],
+    run: async ({ source, target, how, _overTheWire, _driven }) => {
+      if (_overTheWire || _driven) {
+        const may = settings.testsAllowed(workspaces.dir() || null)
+        if (!may.allowed) {
+          throw new Error(`Landing a cut from outside the window is only done while testing mode is on for this workspace. ${may.why} A person pressing the button in the window is that person landing their own change; this is a model merging into somebody's repository, and that needs to have been said out loud first.`)
+        }
+      }
+      const at = await landings.state(source, target)
+      if (!at) throw new Error(`Nothing has been cut from "${source}" into "${target}" from here.`)
+
+      const open = at.pulls.filter(p => p.number && !p.merged && p.state !== 'closed')
+      const already = at.pulls.filter(p => p.merged)
+      if (!open.length) {
+        return {
+          source: at.source,
+          target: at.target,
+          merged: [],
+          note: already.length
+            ? `Already landed: all ${already.length} pull request(s) are merged.`
+            : 'There is nothing open to merge in this cut.'
+        }
+      }
+
+      const done = []
+      for (const p of open) {
+        const r = await remotes.mergePull(p.repo, p.number, { how: String(how || 'merge') })
+        if (r.merged) log.on('git', p.repo).good(`merged #${p.number} into ${r.into}`)
+        // A pull request that will not merge stops itself and not the others.
+        // Three repositories where one has a conflict is a real state, and the
+        // two that can land are better landed than held back by it.
+        else log.on('git', p.repo).bad(`#${p.number} did not merge: ${r.why}`)
+        done.push(r)
+      }
+
+      const won = done.filter(d => d.merged)
+      return {
+        source: at.source,
+        target: at.target,
+        merged: done,
+        // Said rather than done. The fork is now behind the parent it just took a
+        // change from, and pulling it up is the next act — see repoForkSync.
+        note: won.length === done.length
+          ? `${won.length} pull request(s) merged. The forks are now behind their parents — sync them next.`
+          : `${won.length} of ${done.length} merged. ${done.filter(d => !d.merged).map(d => `${d.repo} #${d.number}: ${d.why}`).join('; ')}`
+      }
+    }
+  },
+
+  // THE BRANCH ON THE FORK, once it has done its work.
+  //
+  // `branchDelete` removes a branch from every repository HERE, which is half of
+  // what somebody means after a change has landed: the other half is on the
+  // fork, and GitHub offers it as a button on the merged pull request.
+  //
+  // Same gate as landing, for the same reason: from the window this is a person
+  // tidying their own fork, and from the command line it is a model deleting a
+  // branch on a live account. It is also the step that keeps the drills from
+  // filling a fork with branches nobody can tell from real ones.
+  branchDeleteRemote: {
+    about: "Delete a branch from the fork on GitHub, the way the button on a merged pull request does",
+    needs: 'workspace',
+    takes: ['branch', 'repo'],
+    run: async ({ branch, repo, _overTheWire, _driven }) => {
+      const on = String(branch || '').trim()
+      if (!on) throw new Error('Say which branch.')
+      if (_overTheWire || _driven) {
+        const may = settings.testsAllowed(workspaces.dir() || null)
+        if (!may.allowed) {
+          throw new Error(`Deleting a branch on the fork from outside the window is only done while testing mode is on for this workspace. ${may.why}`)
+        }
+      }
+
+      const here = repos.list().map(r => r.name)
+      const want = repo ? [String(repo)] : here
+      for (const name of want) {
+        if (!here.includes(name)) throw new Error(`There is no repository called "${name}" here. There is: ${here.join(', ')}.`)
+      }
+
+      const done = []
+      for (const name of want) {
+        try {
+          const r = await remotes.deleteBranch(name, on)
+          if (r.gone) log.on('git', name).good(`deleted ${on} on ${r.on}`)
+          done.push(r)
+        } catch (e) {
+          log.on('git', name).warn(e.message)
+          done.push({ repo: name, branch: on, gone: false, why: e.message })
+        }
+      }
+      const gone = done.filter(d => d.gone)
+      return {
+        branch: on,
+        repos: done,
+        note: gone.length
+          ? `"${on}" deleted on ${gone.map(d => d.repo).join(', ')}. It is untouched here — branchDelete removes it from this host.`
+          : `Nothing to delete: no fork had "${on}".`
+      }
+    }
+  },
+
+  // SYNC FORK, the button on the fork's front page, for every repository at once.
+  //
+  // "A PR does something weird that I do not understand — it turns the PR into a
+  // commit or something, and I sync my fork, but then my branch and master are
+  // off." That is this step missing: the parent moved when the change landed,
+  // the fork did not, and everything cut from the fork afterwards starts from
+  // something out of date.
+  //
+  // THE FORK ON GITHUB, AND THEN THIS HOST. They are two different places and
+  // this app has been able to do only the second one — `repoSync` fetches origin
+  // and fast-forwards here, which cannot help while origin itself is behind.
+  repoForkSync: {
+    about: "Pull each fork's default branch up from its parent on GitHub, the way the Sync fork button does",
+    needs: 'workspace',
+    takes: ['repo', 'branch'],
+    run: async ({ repo, branch }) => {
+      const here = repos.list().map(r => r.name)
+      const want = repo ? [String(repo)] : here
+      for (const name of want) {
+        if (!here.includes(name)) throw new Error(`There is no repository called "${name}" here. There is: ${here.join(', ')}.`)
+      }
+
+      const done = []
+      for (const name of want) {
+        try {
+          const r = await remotes.syncFork(name, branch || null)
+          log.on('git', name)[r.already ? 'info' : 'good'](r.already ? 'already up to date with its parent' : `pulled ${r.branch} up from ${r.from} (${r.how})`)
+          done.push(r)
+        } catch (e) {
+          // A repository that is not a fork, or a conflict GitHub will not
+          // resolve, is reported and does not stop the others.
+          log.on('git', name).warn(e.message)
+          done.push({ repo: name, moved: false, why: e.message })
+        }
+      }
+
+      const moved = done.filter(d => d.how && d.how !== 'none')
+      return {
+        repos: done,
+        note: moved.length
+          ? `${moved.length} fork(s) pulled up from their parents. Run repoSync to bring this host up to them.`
+          : 'Every fork was already up to date with its parent.'
       }
     }
   },

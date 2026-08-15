@@ -114,8 +114,31 @@ function paintCutDetail (c) {
         : null))),
 
     el('div', { className: 'row', style: 'margin-top:12px' },
-      el('button', {
+      // LANDING IT, which used to mean three browser tabs and a green button in
+      // each. Merged together for the same reason they were opened together: a
+      // change half-merged is the state nobody notices until the repository that
+      // was left behind stops building.
+      //
+      // Gone once it has landed rather than disabled, because a landed cut has
+      // nothing left to do and a permanently greyed button is furniture.
+      c.landed ? null : el('button', {
         className: 'btn ok',
+        textContent: c.pulls.filter(p => p.number && !p.merged && p.state === 'open').length > 1 ? 'Merge all of them' : 'Merge it',
+        title: 'Merges every pull request in this cut on GitHub',
+        disabled: !c.pulls.some(p => p.number && !p.merged && p.state === 'open'),
+        onclick: () => landCut(c)
+      }),
+      // AND THE STEP AFTER IT, next to it rather than on another tab. The parent
+      // has moved and the fork has not, which is the state that reads as "my
+      // branch and master are off" a day later when somebody cuts from it.
+      c.landed ? el('button', {
+        className: 'btn ok',
+        textContent: 'Sync the forks',
+        title: "Pulls each fork's default branch up from its parent, then fetches here",
+        onclick: () => syncForks()
+      }) : null,
+      el('button', {
+        className: 'btn',
         textContent: 'Edit all of them',
         title: 'Opens it in Write one, where the whole description can be seen while it is written',
         onclick: () => editCut(c)
@@ -177,6 +200,44 @@ function editCut (c) {
   forget('prwrite-fields')
   forget('prtemplate')
   showPane('templates', 'repos')
+}
+
+// MERGING THEM, asked for once and confirmed once.
+//
+// The confirmation is not ceremony: this is the one act in this window that
+// reaches somebody else's repository and cannot be undone from here. It says
+// which pull requests, into what, and what happens to the forks afterwards —
+// because "what do I do now" is the question this app kept leaving people with
+// at exactly this point.
+function landCut (c) {
+  const open = c.pulls.filter(p => p.number && !p.merged && p.state === 'open')
+  ask({
+    title: open.length > 1 ? `Merge all ${open.length} pull requests in this cut?` : 'Merge this pull request?',
+    plain: [
+      `${open.map(p => `${p.repo} #${p.number}`).join(', ')} — merged into ${c.target}, on GitHub, now.`,
+      'This is the one thing here that cannot be undone from this window: it is a commit on a real default branch. Reverting it afterwards is a change of its own.',
+      'Afterwards each fork is behind its parent. Sync the forks, then this host, before cutting anything new from them.'
+    ],
+    confirm: open.length > 1 ? 'Merge all of them' : 'Merge it',
+    onYes: async () => {
+      const r = await api('prCutLand', { source: c.source, target: c.target })
+      say(r.note, r.merged.some(m => !m.merged) ? 'bad' : 'ok')
+      return refreshCuts()
+    }
+  })
+}
+
+// The two syncs that follow a landing, in the order they have to happen: the
+// fork on GitHub cannot be pulled up by fetching here, and fetching here before
+// the fork has moved brings back exactly what was already there.
+async function syncForks () {
+  try {
+    const up = await api('repoForkSync', {})
+    say(up.note, 'ok')
+    const here = await api('repoSync', {})
+    say(here.note, 'ok')
+    return refreshCuts()
+  } catch (e) { oops(e) }
 }
 
 function setCutState (c, state) {

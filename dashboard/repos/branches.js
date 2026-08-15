@@ -1034,6 +1034,66 @@ function scopeOf (branch) {
   }
 }
 
+// PUTTING A COMMIT ON A BRANCH WITHOUT TOUCHING A WORKING TREE.
+//
+// Nothing else in this app commits: work is committed by a worker, on a machine,
+// in a clone. This exists for the drills, which have to produce a change to send
+// out and must never be able to disturb what somebody has open — every
+// repository here has a working tree, and a drill that checked something out
+// would be reaching into a folder a person is using.
+//
+// So it is done in plumbing, with a temporary index: the blob is written, a tree
+// is built from the branch's own tree plus that one file, a commit is made
+// pointing at the branch's tip, and the ref is moved. The working tree, the real
+// index and HEAD are never read or written. The same reason `wouldConflict` uses
+// `merge-tree --write-tree` rather than a checkout.
+//
+// The ref move is COMPARE-AND-SET — `update-ref <ref> <new> <old>` — so if
+// anything else moved the branch between reading the tip and writing it, this
+// fails rather than discarding what the other writer did.
+function commitOn (repo, { branch, file, text, message, who = 'okc drill' }) {
+  const dir = serve.gitDirOf(repo)
+  if (!dir) throw new Error(`There is no repository called "${repo}" here.`)
+  if (!/^[\w./-]+$/.test(String(file || ''))) throw new Error('A file to commit needs a plain relative path.')
+
+  const tip = git(dir, ['rev-parse', '--verify', `refs/heads/${branch}`])
+  const blob = execFileSync('git', ['--git-dir', dir, 'hash-object', '-w', '--stdin'], {
+    input: String(text), encoding: 'utf8', timeout: 30000, windowsHide: true
+  }).trim()
+
+  // Its own index file, thrown away afterwards. The repository's real index
+  // belongs to whoever has the folder open.
+  const index = path.join(require('node:os').tmpdir(), `okc-drill-${process.pid}-${branch.replace(/[^\w]/g, '')}.idx`)
+  const inIndex = args => execFileSync('git', ['--git-dir', dir, ...args], {
+    encoding: 'utf8', timeout: 30000, windowsHide: true, env: { ...process.env, GIT_INDEX_FILE: index }
+  }).trim()
+
+  try {
+    inIndex(['read-tree', tip])
+    inIndex(['update-index', '--add', '--cacheinfo', `100644,${blob},${file}`])
+    const tree = inIndex(['write-tree'])
+    // An identity of its own, so a drill's commits are legible as a drill's in
+    // any log that shows them, and so this does not depend on git being
+    // configured on the host.
+    const commit = execFileSync('git', ['--git-dir', dir, 'commit-tree', tree, '-p', tip, '-m', String(message)], {
+      encoding: 'utf8',
+      timeout: 30000,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: who,
+        GIT_AUTHOR_EMAIL: 'drill@okc.invalid',
+        GIT_COMMITTER_NAME: who,
+        GIT_COMMITTER_EMAIL: 'drill@okc.invalid'
+      }
+    }).trim()
+    git(dir, ['update-ref', `refs/heads/${branch}`, commit, tip])
+    return { repo, branch, file, commit, was: tip }
+  } finally {
+    try { fs.unlinkSync(index) } catch { /* it was never written */ }
+  }
+}
+
 // A branch name git will actually accept, checked before anything is created.
 //
 // Asked of git rather than matched against a pattern here: git's rules are more
@@ -1308,7 +1368,7 @@ function remove (branch, { force = false } = {}) {
 }
 
 module.exports = {
-  all, ensure, remove, nameIsOk, branchesIn, headsIn, trackedIn, unlandedIn, countBetween, wouldConflict, headOf, defaultHeads, noteFor, notes, scopeOf,
+  all, ensure, remove, nameIsOk, commitOn, branchesIn, headsIn, trackedIn, unlandedIn, countBetween, wouldConflict, headOf, defaultHeads, noteFor, notes, scopeOf,
   defaultOf, baseFor, baselines, groups, saveGroup, deleteGroup, inAnyGroup,
   markGroup, unmarkGroup, groupFromBranch,
   protectedBranches, isProtected, whyProtected,
