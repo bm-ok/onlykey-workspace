@@ -322,7 +322,15 @@ function paintBaselines () {
             // branch, is named and skipped — so there is nothing to read before
             // pressing it, which is the whole value of the button.
             el('button', {
-              className: 'plus',
+              // The worst of the defaults, since this button stands for all of
+              // them. Same three colours and the same meanings as the per-branch
+              // ones on the Repositories tab — one act at two scopes, so a
+              // colour must not mean two things.
+              className: `plus${
+                repos.some(x => x.state === 'diverged') ? ' sync-bad'
+                  : repos.some(x => x.state === 'behind' || x.state === 'different' || x.state === 'ahead') ? ' sync-off'
+                    : repos.some(x => x.state === 'same') ? ' sync-ok'
+                      : ''}`,
               textContent: '⟳',
               title: 'Fetch from origin and fast-forward every default branch. Only fast-forwards: anything that has moved on here is reported and left alone.',
               onclick: async e => {

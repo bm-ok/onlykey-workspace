@@ -356,6 +356,31 @@ const syncState = {
 // `diverged` is a decision this app does not make.
 const canCatchUp = b => b.state === 'behind' || b.state === 'different'
 
+// THE COLOUR OF THE BUTTON, from the state it is about.
+//
+//   green   the same commit as origin — nothing to do
+//   amber   the button will move it
+//   red     both sides moved, so a fast-forward cannot help and somebody has to
+//           decide rather than compute. That is the shape a conflict arrives in
+//
+// A branch that exists on only one side gets no colour at all: it is neither in
+// step nor out of step with anything, and painting it green would say "done"
+// about work that has never been pushed.
+const syncTint = state =>
+  state === 'same' ? ' sync-ok'
+    : state === 'diverged' ? ' sync-bad'
+      : state === 'behind' || state === 'different' || state === 'ahead' ? ' sync-off'
+        : ''
+
+// The worst of them, for a button that stands for all of them. Red beats amber
+// beats green, because the point of an aggregate is to be honest about the worst
+// case rather than average it away.
+const worstTint = rows =>
+  rows.some(b => b.state === 'diverged') ? ' sync-bad'
+    : rows.some(b => canCatchUp(b)) ? ' sync-off'
+      : rows.some(b => b.local && b.remote) ? ' sync-ok'
+        : ''
+
 // WHAT THIS BRANCH IS, AND WHAT TO DO ABOUT IT — in words, not in git's.
 //
 // Written for somebody who does not want to think about patch ids. The three
@@ -433,7 +458,7 @@ function paintRepoBranches (r) {
         el('span', { className: outOfStep ? 'badge warn' : 'badge ok', textContent: outOfStep ? `${outOfStep} out of step` : 'in step with origin' }),
         onlyHere ? el('span', { className: 'badge muted', textContent: `${onlyHere} only here` }) : null,
         el('button', {
-          className: 'plus',
+          className: `plus${worstTint(branches)}`,
           textContent: '⟳',
           title: 'Fetch from origin and fast-forward every branch here that has one. Only fast-forwards.',
           onclick: e => sync(null, e.currentTarget)
@@ -457,7 +482,7 @@ function paintRepoBranches (r) {
                 : null,
               syncState[b.state] ? el('span', syncState[b.state]) : null,
               el('button', {
-                className: 'btn small',
+                className: `btn small${syncTint(b.state)}`,
                 textContent: '⟳',
                 disabled: !canCatchUp(b),
                 // The reason a row cannot be caught up is the useful part, and

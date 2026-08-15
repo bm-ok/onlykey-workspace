@@ -159,12 +159,32 @@ const trackedIn = dir => remember1s(`tracked ${dir}`, () => {
     const behind = /behind (\d+)/.exec(r.track)
     r.ahead = ahead ? Number(ahead[1]) : null
     r.behind = behind ? Number(behind[1]) : null
+
+    // COUNTED FROM THE COMMITS WHEN GIT HAS NOTHING TO SAY.
+    //
+    // `%(upstream:track)` is empty for a branch with no upstream configured,
+    // which is EVERY branch this app makes — so a genuinely diverged branch fell
+    // through to "different", the panel painted it amber, and amber means "the
+    // button will move it". The button would then refuse, correctly and after
+    // the fact, on a promise the colour had already made.
+    //
+    // Two counts, only for branches that actually differ, each cached on its
+    // pair of commits — so this costs nothing in the steady state and nothing at
+    // all for a branch that is level.
+    if (r.local && r.remote && r.local !== r.remote && r.ahead === null && r.behind === null) {
+      r.ahead = countBetween(dir, `refs/remotes/origin/${r.branch}`, r.branch)
+      r.behind = countBetween(dir, r.branch, `refs/remotes/origin/${r.branch}`)
+    }
+
     r.state = !r.remote ? 'only here'
       : !r.local ? 'only on origin'
         : r.local === r.remote ? 'same'
           : r.ahead && r.behind ? 'diverged'
             : r.ahead ? 'ahead'
               : r.behind ? 'behind'
+                // Neither side has a commit the other lacks and yet the shas
+                // differ — which should not happen, and is reported rather than
+                // rounded to one of the answers above.
                 : 'different'
   }
   return rows
@@ -591,11 +611,27 @@ function inAnyGroup () {
 // The "and whether that was chosen" half is gone with the setting it described.
 // What a branch is measured against is a fact about the branch now, not about
 // the repository — see baseFor.
-const baselines = () => serve.list().map(({ name }) => ({
-  repo: name,
-  default: defaultOf(name),
-  branches: (() => { try { return branchesIn(serve.gitDirOf(name)) } catch { return [] } })()
-}))
+const baselines = () => serve.list().map(({ name }) => {
+  const def = defaultOf(name)
+  // WHERE THE DEFAULT BRANCH STANDS AGAINST ORIGIN, from the read that is
+  // already happening. `trackedIn` is one process for the whole repository and
+  // memoised for a second, so the panel that lists the defaults can colour its
+  // sync button without adding a single call — it is the same answer the
+  // repository's own branch list is built from.
+  let at = null
+  try {
+    const rows = trackedIn(serve.gitDirOf(name))
+    at = def && rows[def] ? rows[def] : null
+  } catch { at = null }
+  return {
+    repo: name,
+    default: def,
+    local: at ? at.local : null,
+    remote: at ? at.remote : null,
+    state: at ? at.state : null,
+    branches: (() => { try { return branchesIn(serve.gitDirOf(name)) } catch { return [] } })()
+  }
+})
 
 // Only the default branch is protected, and it always is.
 //
