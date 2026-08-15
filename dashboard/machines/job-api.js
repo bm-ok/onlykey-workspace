@@ -45,6 +45,55 @@ const CA = process.env.OKC_CA || '/etc/okc/ca.pem'
 // pushing did not already have, and one fewer way to leak it.
 const [VM, TOKEN] = read('auth').trim().split(':')
 
+// ---- what a worker remembers, carried both ways ------------------------
+//
+// THROUGH CURL, AND SYNCHRONOUSLY, because `claude()` is synchronous and these
+// have to happen either side of it. Node's https is callback-only, so a promise
+// here would mean the archive going up while the next line of the job is already
+// running -- which for the backup means racing the end of the run. curl is
+// already how a guest reaches this host: dispatch.js writes `okc-artifact` as a
+// curl call with the same authority and the same credential.
+const HOME = process.env.HOME || '/root'
+const curlAuth = () => ['--cacert', CA, '-u', VM + ':' + TOKEN, '-sS', '--max-time', '180']
+
+// Everything Claude keeps, EXCEPT the credential.
+//
+// `~/.claude` holds `.credentials.json`, this machine's worker token. The host
+// already has a copy, sealed; letting it ride along here would write an unsealed
+// one into every task's archive, in a folder whose whole purpose is to be kept
+// for a long time. A machine is handed a credential on the way up and it is
+// taken back on the way down, and that path is the only one it should have.
+const NOT_THESE = ['--exclude=.credentials.json', '--exclude=*.lock', '--exclude=shell-snapshots']
+
+function rememberedByThisTask () {
+  if (!BASE || !VM || !TOKEN) return null
+  const tgz = path.join(here, 'claude-restore.tgz')
+  const head = path.join(here, 'claude-restore.head')
+  cp.execFileSync('curl', [...curlAuth(), '-D', head, '-o', tgz, `${BASE}/session?vm=${encodeURIComponent(VM)}`], { stdio: 'ignore' })
+
+  const headers = fs.readFileSync(head, 'utf8')
+  // 204 is the ordinary answer on a task's first run, not a failure.
+  if (/^HTTP\/[\d.]+ 204/mi.test(headers)) return null
+  if (!/^HTTP\/[\d.]+ 200/mi.test(headers)) {
+    throw new Error('the dashboard answered ' + (headers.split('\n')[0] || '').trim())
+  }
+  const said = headers.match(/^x-okc-session:\s*(.+)$/mi)
+  return { file: tgz, session: said ? said[1].trim() : '' }
+}
+
+function rememberThis (id) {
+  if (!BASE || !VM || !TOKEN) return
+  const tgz = path.join(here, 'claude-keep.tgz')
+  // Relative to $HOME so it unpacks as `.claude` wherever it lands, rather than
+  // carrying an absolute path that only makes sense on the machine that made it.
+  cp.execFileSync('tar', ['-czf', tgz, '-C', HOME, ...NOT_THESE, '.claude'], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const where = `${BASE}/session?vm=${encodeURIComponent(VM)}&id=${encodeURIComponent(id || '')}&folder=${encodeURIComponent(process.cwd())}`
+  cp.execFileSync('curl', [...curlAuth(), '-X', 'POST', '--data-binary', '@' + tgz, '-H', 'content-type: application/gzip', where], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const size = fs.statSync(tgz).size
+  try { fs.unlinkSync(tgz) } catch { /* it served its purpose */ }
+  return size
+}
+
 function call (method, where, body, { timeout = 20000 } = {}) {
   return new Promise((resolve, reject) => {
     if (!BASE) return reject(new Error('this run was not told where the dashboard is, so it cannot hand anything back'))
@@ -191,7 +240,14 @@ module.exports = {
   // minutes, and nothing else in the job runs while it does -- no log line, no
   // progress. So `report()` before it and after it, rather than during.
   claude (text, opts = {}) {
-    const { resume = null, timeout = 30 * 60 * 1000, cwd = null } = opts
+    const { timeout = 30 * 60 * 1000, cwd = null } = opts
+    // REFUSED RATHER THAN IGNORED. This used to take one, and a job written
+    // against the old API would otherwise keep passing it and quietly get
+    // different behaviour than the line says -- which is worse than an error,
+    // because the line still reads as though it worked.
+    if ('resume' in opts) {
+      throw new Error('a job does not choose which conversation to continue — the task does, and it is restored automatically. Remove `resume`.')
+    }
     // Defaulting to the prompt is the ordinary case, not a shortcut: a job whose
     // work IS the prompt should not have to name it.
     const brief = String(text == null ? (PROMPT ? PROMPT.text : '') : text).trim()
@@ -232,6 +288,39 @@ module.exports = {
       if (!own) fs.writeFileSync(rulesFile, String(contract))
     }
 
+    // WHAT IT ALREADY REMEMBERS, PUT BACK BEFORE IT STARTS.
+    //
+    // The machine is rolled back between tasks, so without this every run is a
+    // worker meeting the work for the first time -- and a task given out twice
+    // is two strangers rather than a second attempt. The archive is the whole of
+    // `~/.claude` as it was when this task last stopped, so it lands back where
+    // Claude looks for it without this side having to work out where that is.
+    //
+    // A JOB DOES NOT CHOOSE WHICH CONVERSATION. It is told, by the host, from
+    // the task. `--resume` is not an option this API offers, because "which
+    // conversation is this" is a question about the task and a run cannot know
+    // the answer -- and a run that could name any id could read the transcript
+    // of work it has nothing to do with.
+    let resume = null
+    try {
+      const carried = rememberedByThisTask()
+      if (carried) {
+        // Into $HOME, because that is where the archive was made from. Nothing
+        // is deleted first: the credential this machine was handed on its way up
+        // lives in the same folder and is deliberately NOT in the archive, so a
+        // clean-then-extract would take it away seconds before it is needed.
+        cp.execFileSync('tar', ['-xzf', carried.file, '-C', HOME], { stdio: ['ignore', 'ignore', 'pipe'] })
+        try { fs.unlinkSync(carried.file) } catch { /* it served its purpose */ }
+        resume = carried.session || null
+        process.stdout.write(`okc: carried on from what this task remembers${resume ? ` (${resume.slice(0, 8)})` : ''}\n`)
+      }
+    } catch (e) {
+      // NOT FATAL. A worker that starts fresh does the work; a worker that
+      // refuses to start because it could not remember does not. Said out loud,
+      // because "it forgot" and "it was never told" look identical afterwards.
+      process.stdout.write('okc: could not restore what this task remembers, starting fresh — ' + e.message + '\n')
+    }
+
     const args = ['-p', brief, '--dangerously-skip-permissions', '--output-format', 'json']
     if (rulesFile) args.push('--append-system-prompt-file', rulesFile)
     if (resume) args.push('--resume', String(resume))
@@ -267,6 +356,25 @@ module.exports = {
 
     let said = null
     try { said = JSON.parse(out) } catch { /* it said something else, handled below */ }
+
+    // KEPT NOW, BEFORE ANY OF THE REFUSALS BELOW.
+    //
+    // Every branch after this point throws, and a run that ended badly is the
+    // one whose transcript is worth most -- it is the only record of what the
+    // worker was doing when it went wrong. Putting this after the checks would
+    // keep a transcript exactly when nobody needs one.
+    //
+    // The machine is rolled back minutes from now, so this is the last chance
+    // rather than an optimisation.
+    try {
+      const size = rememberThis(said && said.session_id)
+      if (size) process.stdout.write(`okc: kept what this task remembers (${Math.round(size / 1024)} KB)\n`)
+    } catch (e) {
+      // Said, never thrown. Failing the work because its transcript could not be
+      // filed would be the tail wagging the dog -- and the work itself may have
+      // succeeded, which is the thing somebody actually asked for.
+      process.stdout.write('okc: could not keep what this task remembers — ' + e.message + '\n')
+    }
 
     // ITS OWN ANSWER FIRST. A worker that ran and refused is not a worker that
     // did the work, and the difference is inside this JSON rather than in the
