@@ -26,7 +26,7 @@ const q = s => `'${String(s).replace(/'/g, `'\\''`)}'`
 // machine's business and not this app's.
 const FOLDER = '$HOME/workspace'
 
-function script ({ repos, branch, folder = FOLDER, origin, machine, token, ca, caFile = '/etc/okc/ca.pem', readOnly = false }) {
+function script ({ repos, branch, folder = FOLDER, origin, machine, token, ca, caFile = '/etc/okc/ca.pem', readOnly = false, task = null }) {
   const dir = folder || FOLDER
 
   // A real loop over the names, rather than the same block written out once per
@@ -125,6 +125,24 @@ rm -f /tmp/okc-ca.pem` : '# no authority was supplied; whatever is already on th
 
 mkdir -p "$WS"
 cd "$WS" || { echo "could not use $WS"; exit 1; }
+
+# WHICH TASK THIS MACHINE IS SET UP FOR, written where the machine keeps it.
+#
+# The dashboard is restarted for every change to it, and a task that was out on
+# a machine at that moment goes back in the queue -- correctly, because a fresh
+# process knows nothing about what was in flight. Without this, that is the end
+# of it: the machine sits set up on a branch nobody is claiming, and the queue
+# offers the same work to a second machine.
+#
+# So the machine carries the answer. It survives the dashboard restarting, it
+# survives the agent reconnecting, and it cannot go stale the way a registry
+# entry can -- a machine reverted by hand loses the file along with everything
+# else, which is exactly right, because it has also lost the workspace.
+#
+# Read back when it dials in. See the hello handler in server.js.
+${task ? `cat > "$HOME/.okc-task" <<'OKC_TASK_NOTE'
+${JSON.stringify(task)}
+OKC_TASK_NOTE` : 'rm -f "$HOME/.okc-task"'}
 
 # Written before anything reaches the network, so the first clone already has
 # what it needs and git never stops to ask a question nobody is there to answer.

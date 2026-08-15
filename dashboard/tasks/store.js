@@ -331,4 +331,22 @@ function remove (ref) {
   }
 }
 
-module.exports = { read, write, get, add, update, remove, newId, highest, FILE, COUNTER, STORED, WORKERS }
+// WHAT A MACHINE IS TOLD IT IS FOR, and it is a note, not the task.
+//
+// Written to `$HOME/.okc-task` when a machine's workspace is set up, and read
+// back when it dials in — see the hello handler in server.js. Restarting this
+// app puts an unstarted task back in the queue, which is right, because a fresh
+// process knows nothing about what was in flight; the machine is what brings it
+// back, by saying which task it still has.
+//
+// FOUR FIELDS AND NO MORE. The temptation is to write the task down there so
+// nothing has to be looked up, and that is how a guest ends up holding the
+// brief, the contract text and whatever else a task grew — on the machine the
+// contract is meant to bind. Identity is enough; the task itself is read here.
+//
+// The branch rides along so the note can be checked rather than believed: a
+// machine reverted and set up on something else has a note that no longer
+// matches what it is on, and that mismatch is the whole safety of trusting it.
+const noteFor = task => ({ id: task.id, number: task.number, uid: task.uid, branch: task.branch })
+
+module.exports = { read, write, get, add, update, remove, newId, highest, noteFor, FILE, COUNTER, STORED, WORKERS }

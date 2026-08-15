@@ -327,7 +327,7 @@ module.exports = {
       if (!name) throw new Error('Say which machine is to do it.')
       if (task.verdict) throw new Error(`"${id}" has already been judged. Write a new task rather than reopening a decided one.`)
 
-      await actions.vmWorkspace.run({ name, branch: task.branch, folder: task.folder || undefined })
+      await actions.vmWorkspace.run({ name, branch: task.branch, folder: task.folder || undefined, task: tasks.noteFor(task) })
 
       // WHOSE MACHINE THIS IS, RECORDED BEFORE THE WORK STARTS.
       //
@@ -444,6 +444,11 @@ module.exports = {
       // looking at the task -- and a run nobody has looked at since it ended is
       // exactly the one whose machine has not been touched yet.
       for (const a of withState) {
+        // NOTHING TO KEEP FOR AN ATTEMPT THAT NEVER RAN. A hand-over and a
+        // failed setup both have no run id, so this asked the machine for the
+        // output of `undefined` and warned that it could not keep it — three
+        // times a draw, for ever, about a log that never existed.
+        if (!a.run) continue
         if (a.state === 'running' || a.state === 'gone') continue
         if (archive.has(task.uid, a.run)) continue
         try {

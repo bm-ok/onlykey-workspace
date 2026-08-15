@@ -704,3 +704,32 @@ running. Prove the lookup is the only path: while machine A is running task 1,
 ask for a session as machine A and confirm what comes back is task 1's, and that
 there is no parameter that would name task 2's. Then ask from a machine running
 nothing — **a pass is 204, not somebody else's transcript.**
+
+### 22. A machine takes its task back when the dashboard restarts — RUN, PASSES
+
+The dashboard is restarted for every change to it, and the machines are not. A
+task out on one at that moment must not be offered to a second machine.
+
+    okc.js vmWorkspace --name runner2 --branch <b> --task '{...}'
+    okc.js vmRun --name runner2 --command 'cat "$HOME/.okc-task"'
+    okc.js taskUpdate --id <task> --task '{"state":"queued","machine":null}'
+    npm run restart
+
+**A pass is one line in the log**, from the queue, naming the machine and the
+task: `it dialled back in still holding #35 on inspection/check1 — put back on
+it`, and the board showing it `given` to that machine again.
+
+Then the refusals, which are the point of the note being a claim rather than an
+instruction. Each must leave the task alone and say why:
+
+* give the task to another machine first -> `it says it has #35, but that has
+  since been given to runner1 — left alone`. **Run, passes.**
+* edit the task onto a different branch -> `that task is about … now`. Not yet
+  run; `taskUpdate` refuses to move the branch of a task already given out, so
+  this needs a task that was queued rather than held.
+* roll the machine back, start it, let it dial in -> no note, nothing happens.
+  Not yet run.
+
+**Half the value is the first one.** A note is written by a guest, and a guest
+that keeps a stale note must not be able to take work off the machine actually
+doing it.

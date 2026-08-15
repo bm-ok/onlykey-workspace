@@ -671,6 +671,19 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
                 ...(seen.address ? { lastAddress: seen.address, lastUser: seen.user || null, lastSeenAt: new Date().toISOString() } : {})
               })
             } catch { /* it may already be gone */ }
+
+            // AND IT IS ASKED WHAT IT IS STILL WORKING ON.
+            //
+            // Restarting this app re-queues anything that was being set up, which
+            // is the honest thing for a process that has just lost its memory to
+            // do. This is what gives it back: a machine that is still up, still on
+            // its branch, still holding a task, says so the moment it reconnects.
+            //
+            // Not awaited. Hello is how a machine becomes reachable at all, and a
+            // slow or unanswered question here would hold that up for every other
+            // reason anything wants to talk to it.
+            queue.redial(actions, log, name)
+              .catch(e => log.on('queue', name).warn(`could not ask it what it is working on: ${e.message}`))
           }
         })
         net.channelPort = c.port

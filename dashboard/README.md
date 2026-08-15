@@ -1380,6 +1380,22 @@ it waits on the run if it is still alive, keeps the log, and puts the machine
 away either way. It does not try to resume the worker — it is either still going
 or already gone, and neither can be re-entered from here.
 
+A task that was being **set up** and never started goes back in the queue. That
+is the honest answer from a process that has just lost its memory, and it is not
+the end of it: **the machine says what it still has.** When a machine's workspace
+is set up it is told which task it is for, in `$HOME/.okc-task`, and when it
+dials in it is asked. A machine that is still up, still on that branch, and still
+holding a queued task is put back on it; anything else — a task since given to
+somebody else, a branch that has moved, a machine that was rolled back — is left
+alone and said out loud.
+
+The note is a **claim, not an instruction**. It carries four fields, all
+identity, and it is checked against the board before anything moves: the worst a
+lying guest achieves is being handed work that was already going to a machine.
+It also has the right lifetime for free — rolling a machine back to its snapshot
+destroys the workspace and the note together, which is exactly when the claim
+stops being true.
+
 ### Pre-defined work, and who is allowed to approve it
 
 The other half of the write-a-task dialog. **Writing** a task is authoring work;

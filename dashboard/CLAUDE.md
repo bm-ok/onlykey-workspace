@@ -131,3 +131,7 @@ the whole thing away.
 Stop calling it. Say it looks environmental and let the operator restart the
 service — two things starting VirtualBox at once is how it stays wedged. Carry on
 with the parts of the task that need no machine, which is most of them.
+
+## App Process
+You own the dashboard process, keep it running and restart it when code changes are made. The dashboard process is the only one that can start and stop virtual machines. 
+The dashboard can be restarted at any time, a virtual machine will keep running without dashboard.

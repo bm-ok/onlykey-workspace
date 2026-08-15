@@ -633,8 +633,8 @@ module.exports = {
   vmWorkspace: {
     about: "Set up a machine's workspace: every repository, on one branch, pointed back here",
     needs: 'workspace',
-    takes: ['name', 'branch', 'folder'],
-    run: async ({ name, branch, folder }) => {
+    takes: ['name', 'branch', 'folder', 'task'],
+    run: async ({ name, branch, folder, task }) => {
       const vm = vms.get(name)
 
       // WHAT IS KNOWABLE WITHOUT A MACHINE IS CHECKED WITHOUT ONE.
@@ -761,7 +761,12 @@ module.exports = {
         // push back. The host's hook is what actually stops that — this puts a
         // pre-push hook in the guest so a worker finds out where it is working
         // rather than in a rejection an hour later.
-        readOnly: branches.isProtected(on)
+        readOnly: branches.isProtected(on),
+        // WHAT THIS MACHINE IS FOR, left on the machine. Every path that puts a
+        // task on a machine comes through here — the queue, a hand-over, taking
+        // one by hand — so this is the one place that knows, and the one place
+        // it has to be written.
+        task: task || null
       })
 
       const r = await channel.run(name, script, { what: `setting up the workspace on ${on}`, timeout: 10 * 60 * 1000 })

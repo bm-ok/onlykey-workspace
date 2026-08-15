@@ -637,3 +637,23 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   expired credential still kept its transcript, and a run that ended badly is the
   one whose transcript is worth most. Filing it after the checks would keep a
   record exactly when nobody needs one.
+
+* **A guest's reply is not just what you asked for.** The re-dial check reads a
+  one-line JSON note off a machine, and the first version parsed the whole
+  reply — which arrives with the channel's own `$ <what>` echo on the front, so
+  `JSON.parse` failed on every machine. It failed *quietly*, because it was
+  wrapped in a `catch` that returned "no note": exactly the same answer a
+  machine holding nothing gives. The fix is two things and both matter — read
+  the last line rather than all of it, and never let "unreadable" and "absent"
+  come out as the same answer.
+
+* **Re-queueing on restart is honest; guessing is not.** A restart puts an
+  unstarted task back in the queue, which is right — a process that has just
+  started knows nothing about what was in flight. The first attempt at the other
+  half inferred what was still held from the registry: a machine marked
+  borrowed, a branch claim that looked right. That is a guess, made by the one
+  party that cannot check it, about a machine somebody may have reverted by hand
+  while the dashboard was not running. The machine is asked instead. It writes
+  `$HOME/.okc-task` when its workspace is set up, loses it when it is rolled
+  back, and says which task it has the moment it dials in — a fact with the same
+  lifetime as the thing it describes, which no registry entry has.
