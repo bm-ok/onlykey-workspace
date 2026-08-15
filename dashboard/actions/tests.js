@@ -228,7 +228,12 @@ module.exports = {
                 throw new Error(`"${args.repo}" is not a repository in the open workspace. The drills reach ${here.join(', ')} and nothing else — a drill that names another repository is writing to somebody's work on a live account.`)
               }
             }
-            return found.run(args)
+            // ALWAYS A PROMISE. Half these actions are sync and half are not,
+            // and a handle that returns a bare value for some of them means
+            // `okc(...).catch(...)` — the ordinary way to write a cleanup that
+            // must not itself fail — throws a TypeError naming the wrong thing.
+            // A suite author should not have to know which half they are on.
+            return Promise.resolve(found.run(args))
           },
           log: line => to.info(String(line).trim()),
           testFilter: (testName, suiteName) => {
