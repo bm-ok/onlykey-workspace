@@ -17,6 +17,10 @@
   "scripts": {
     "start": "node tools/nw.js",
     "test": "node test/generic-test.js && node test/window-test.js && node test/declared-test.js",
+    "//quit": "Asks the running dashboard to close itself, rather than killing the process. The window loads server.js at startup, so a code change means a restart -- this is the half of that which was reaching for a process list.",
+    "quit": "node tools/okc.js appQuit",
+    "//restart": "Quit, wait until it is actually gone, and start again. The waiting is why this is a script and not `quit && start`: appQuit answers before it closes, so the old app still holds the port at the moment the reply arrives. See tools/restart.js.",
+    "restart": "node tools/restart.js",
     "cli": "node tools/okc.js"
   },
   "engines": {

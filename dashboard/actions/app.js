@@ -212,6 +212,42 @@ module.exports = {
     run: () => win.wantedShot || { file: null }
   },
 
+  // CLOSING IT, THE WAY CLOSING IT IS MEANT TO HAPPEN.
+  //
+  // The window loads server.js at startup, so every code change needs a restart
+  // — and the only way to do that from outside was to kill the process, which
+  // takes the window down mid-anything rather than letting it close. It also
+  // meant reaching for a process list to do something the app knows how to do.
+  //
+  // `nw.App.quit()` lives in the page and nowhere else, so the window hands it
+  // back the same way it hands back its own screenshot. See server.js `onQuit`.
+  //
+  // ANSWERED BEFORE IT GOES. The reply is written first and the quit is left to
+  // the next tick, because a process that exits inside the call is a caller
+  // holding a socket that closed with no answer — which reads as a crash rather
+  // than as the thing it asked for.
+  //
+  // Headless has no window and exits itself. A machine that is running stays
+  // running: it is a virtual machine, not a child process.
+  appQuit: {
+    about: 'Close the dashboard. Machines that are running keep running',
+    run: () => {
+      const how = win.quit ? 'the window' : 'the process'
+      setTimeout(() => {
+        try {
+          if (win.quit) win.quit()
+          else process.exit(0)
+        } catch { process.exit(0) }
+      }, 50)
+      return {
+        closing: how,
+        note: how === 'the window'
+          ? 'It is closing itself. Anything on a machine keeps running — the dashboard is not what holds it up.'
+          : 'No window is attached, so the process exits. Anything on a machine keeps running.'
+      }
+    }
+  },
+
   windowShotDone: {
     about: 'The window reporting that it took the picture',
     takes: ['file', 'bytes', 'error'],

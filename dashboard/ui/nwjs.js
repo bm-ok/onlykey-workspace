@@ -78,6 +78,14 @@ const host = {
   // Reported rather than swallowed: a button that quietly does nothing is the
   // failure this window is written against, and on a desktop with no file
   // manager registered these do quietly do nothing.
+  // CLOSING THE APP, which only the page can do. `nw.App.quit()` ends every
+  // window and the node context with them, which is what "quit" means here --
+  // `nw.Window.get().close()` closes one window and leaves the app running with
+  // nothing on screen, which is worse than not closing at all.
+  quit () {
+    try { nw.App.quit() } catch { process.exit(0) }
+  },
+
   showInFolder (file) {
     try { nw.Shell.showItemInFolder(file); return true } catch { return false }
   },

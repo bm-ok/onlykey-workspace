@@ -405,6 +405,15 @@ function shotIfAsked () {
 // to has not drawn yet, and an empty panel in a photograph reads as a rendering
 // fault rather than as a timing one. It did, once, which is why the waiting was
 // there at all.
+// HOW THE APP CLOSES ITSELF, handed over the same way the screenshot is and for
+// the same reason: `nw.App.quit()` exists in the page and nowhere else. Without
+// it the only way to restart after a code change is killing the process, which
+// takes the window down mid-write instead of letting it close.
+//
+// Registered only where there is an app to register with — a browser has none,
+// and `host.quit` says so by answering false rather than closing the tab.
+if (app) app.onQuit(() => host.quit())
+
 app.onCapture(async want => {
   const [wantView, wantPane] = String(want.view || '').split('/')
 

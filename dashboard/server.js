@@ -73,6 +73,12 @@ const net = shared.net
 // door it is registered through, because server.js is what a window requires.
 const onCapture = fn => { shared.win.capture = typeof fn === 'function' ? fn : null }
 
+// And how it closes itself. Registered the same way and for the same reason:
+// `nw.App.quit()` exists in the page and nowhere else, and the alternative from
+// outside is killing the process — which takes the window down mid-write rather
+// than letting it close.
+const onQuit = fn => { shared.win.quit = typeof fn === 'function' ? fn : null }
+
 // ---- serving ----------------------------------------------------------
 
 // This port is for machines. Two things are on it, and both name the machine
@@ -753,7 +759,7 @@ function call (name, args = {}) {
   return found.run(args)
 }
 
-module.exports = { start, actions, call, handler, onCapture }
+module.exports = { start, actions, call, handler, onCapture, onQuit }
 
 if (require.main === module) {
   start()

@@ -54,6 +54,11 @@ const host = {
   showInFolder () { return false },
   openItem () { return false },
 
+  // A tab cannot close the app it is looking at, and `window.close()` would shut
+  // the TAB while leaving the dashboard running — the opposite of what was
+  // asked, done silently. The action falls back to exiting the process itself.
+  quit () { return false },
+
   // A browser will happily show a folder chooser and then hand back the names of
   // the files inside it, relative, with the real location removed on purpose.
   // That is not a path and cannot be turned into one, so a workspace cannot be

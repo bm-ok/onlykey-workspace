@@ -107,7 +107,7 @@ const started = new Date().toISOString()
 // the ones that write them are looking at the same thing across files: the
 // pending photograph, how long a loading state is held, and the function the
 // window hands back so it can photograph itself on demand.
-const win = { wantedShot: null, slowMs: 0, capture: null }
+const win = { wantedShot: null, slowMs: 0, capture: null, quit: null }
 
 async function refuseIfThatTitleIsTaken (name, title) {
   const wanted = String(title || '').trim().toLowerCase()
