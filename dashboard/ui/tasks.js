@@ -331,27 +331,42 @@ function paintTaskDetail (task) {
     el('table', { className: 'kv' },
       el('tr', {}, el('th', { textContent: 'branch' }), el('td', { className: 'mono', style: 'user-select:text', textContent: task.branch })),
       el('tr', {}, el('th', { textContent: 'state' }), el('td', {}, el('span', { className: `badge ${STATE_BADGE[task.reads] || 'muted'}`, textContent: task.reads }))),
-      // TO BE DONE BY, UNTIL SOMETHING HAS DONE IT.
+      // ONE QUESTION WITH A YES OR A NO, rather than a name for who it is for.
       //
-      // This said "worked by Claude" about a draft nobody had touched, which is
-      // a prediction written in the past tense. `worker` is the PLAN — set when
-      // the task is written, before a machine exists — and the board was reading
-      // it as a record.
+      // This row named the worker — "worked by Claude" — which was wrong twice
+      // over. It was a prediction in the past tense on a draft nobody had
+      // touched; and naming a worker is the wrong question anyway, because a
+      // task can be done by a person, and a person's task may or may not have
+      // had Claude anywhere near it. What somebody wants to know afterwards is
+      // whether it did.
       //
-      // So it says which it is. `usedClaude` is set when a worker actually runs:
-      // by the queue on the plain path, where dispatch writes `claude -p`, and
-      // by the /session handler on the job path, where a transcript arriving is
-      // the only proof a job started one.
-      el('tr', {}, el('th', { textContent: task.usedClaude ? 'worked by' : 'to be done by' }),
+      // `usedClaude` is set when a worker actually runs, from the two ends that
+      // can know: the queue on the plain path, where dispatch writes `claude -p`
+      // into the run script, and the /session handler on the job path, where a
+      // transcript arriving is the only proof a job started one.
+      //
+      // The three answers are different states, not two. "No, and nothing has
+      // run" and "no, and something ran without one" are opposite facts about a
+      // finished task.
+      el('tr', {}, el('th', { textContent: 'used Claude' }),
         el('td', {},
-          el('span', { className: `badge ${workerOf(task).cls}`, textContent: workerOf(task).label }),
-          task.usedClaude
-            ? el('span', { className: 'badge ok', style: 'margin-left:6px', textContent: 'a worker ran' })
-            : null,
+          el('span', {
+            className: `badge ${task.usedClaude ? 'ok' : 'muted'}`,
+            textContent: task.usedClaude ? 'yes' : 'no'
+          }),
           el('div', { className: 'muted', textContent: task.usedClaude
-            ? workerOf(task).long
-            : `${workerOf(task).long} Nothing has run yet, so nothing has used it.` }))),
-      el('tr', {}, el('th', { textContent: 'given to' }), el('td', { className: 'mono', textContent: task.machine || 'nobody yet' })),
+            ? 'A worker ran on a machine for this task.'
+            : (task.attempts || []).length
+                ? 'It has been on a machine and no worker ran — the work was a script or a shell, or somebody did it by hand.'
+                : `Nothing has run yet. ${workerOf(task).long}` }))),
+      // "GIVEN TO" IS GONE. It said where the task is right now, and the queue
+      // clears it the moment a machine is put away — so it read "nobody yet" for
+      // a task that had been through three machines and finished, which is the
+      // same words a task that has never left this host gets. A field that is
+      // right for the ninety seconds a machine is working and misleading either
+      // side of that is not worth a row. Which machines have had it is the row
+      // below; which one is working on it right now is on the machines tab, and
+      // in the banner while it matters.
       el('tr', {}, el('th', { textContent: 'run' }), el('td', { className: 'mono', textContent: task.run || '—' })),
 
       // HAS IT BEEN ON A MACHINE, which the panel could not answer.
