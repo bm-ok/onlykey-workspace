@@ -603,7 +603,10 @@ function currentStateNode (v, s) {
 const goToBranch = branch => {
   $('branch-find').value = branch
   forget('branches')
-  showTab('branches')
+  // The tab AND the pane: branch cuts live under Repositories now, and
+  // switching only the view lands on whichever of its eleven panes was last
+  // open — which is not the one holding the branch just asked for.
+  showPane('branchcuts', 'repos')
   paintBranches()
 }
 const goToTask = id => { pickedTask = id; been.set('task', id); showTab('tasks') }
@@ -780,8 +783,7 @@ $('prcuts-refresh').onclick = () => refreshCuts()
 // and a description, next to a pane built for writing exactly those, would be
 // the second editor again.
 $('add-prcut-open').onclick = () => {
-  const tab = document.querySelector('#view-prcuts .subtab[data-pane="templates"]')
-  if (tab) tab.click()
+  showPane('templates', 'repos')
 }
 $('repos-check').onclick = () => api('repositoriesCheck')
   .then(r => { forget('repos'); say(r.note, r.repos.some(x => x.reachable !== true || x.why) ? 'bad' : undefined); return draw() })

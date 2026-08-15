@@ -37,10 +37,8 @@
 // gone is the same stranded panel as never having chosen.
 let pickedBranch = been.get('branch', null)
 
-// Which question is being asked about branches. Remembered like the main tabs,
-// and for the same reason: coming back to a window should find it where it was
-// left rather than at the beginning.
-let branchPane = been.get('branch-pane', 'overview')
+// Which pane is open is the Repositories tab's business now — these four moved
+// into it. See paneSwitcher and `repoPane` in ui/repos.js.
 
 // Which two lines are being compared, what is being read about them, and which
 // file. Remembered, because reading a change is not something anybody finishes
@@ -60,32 +58,15 @@ let changeAnswer = null
 // Which group the Baselines pane is describing.
 let pickedGroup = been.get('group', null)
 
-// SCOPED TO THE ONES THAT NAME A PANE. `.subtab` is a look, and the Merge pane
-// has two of its own inside it for commits and files — caught by a document-wide
-// selector, those would set `branchPane` to undefined and blank the tab. The
-// styling is shared on purpose; what distinguishes them is what they carry.
-document.querySelectorAll('#view-branches .subtab[data-pane]').forEach(b => {
-  b.onclick = () => {
-    branchPane = b.dataset.pane
-    been.set('branch-pane', branchPane)
-    document.querySelectorAll('#view-branches .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === b))
-    document.querySelectorAll('#view-branches .pane').forEach(p => p.classList.toggle('active', p.id === `pane-${branchPane}`))
-    // Painted at once rather than on the next tick, or switching to a pane that
-    // has never been drawn shows an empty one for up to three seconds.
-    paintBranches()
-  }
-})
-
-// Applied before anything is drawn, so the remembered pane and the markup agree.
-;(() => {
-  const tab = document.querySelector(`#view-branches .subtab[data-pane="${branchPane}"]`)
-  if (!tab) { branchPane = 'overview'; return }
-  document.querySelectorAll('#view-branches .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === tab))
-  document.querySelectorAll('#view-branches .pane').forEach(p => p.classList.toggle('active', p.id === `pane-${branchPane}`))
-})()
+// A SWITCHER LIVED HERE, scoped to `#view-branches .subtab[data-pane]` and
+// careful to say so — the Changes pane has two sub-tabs of its own for commits
+// and files, and a document-wide selector would have caught those and blanked
+// the tab. That care is still needed and is now in one place: `paneSwitcher`,
+// which takes the view id for exactly that reason. These four panes moved into
+// Repositories; see `repoPane` in ui/repos.js.
 
 function paintBranches () {
-  if (view !== 'branches') return
+  if (view !== 'repos') return
   // Said before the asking, not after: the gap this fills is the time the answer
   // takes to arrive.
   waiting('branches', { cards: 4 })
@@ -103,7 +84,7 @@ async function paintBranchesNow () {
   // Asked again after the wait: two frames is long enough to click another tab,
   // and answering into a panel nobody is looking at is how a stale board gets
   // painted over a fresh one.
-  if (view !== 'branches') return
+  if (view !== 'repos') return
   api('branchBoard').then(board => {
     const find = $('branch-find').value.trim().toLowerCase()
 
@@ -214,9 +195,9 @@ async function paintBranchesNow () {
 
     // Only the pane on screen. The other two read git and would be paying for
     // answers nobody is looking at, three seconds at a time.
-    if (branchPane === 'baselines') paintBaselines()
-    if (branchPane === 'changes') paintChanges()
-    if (branchPane === 'protected') paintProtected(board)
+    if (repoPane === 'baselines') paintBaselines()
+    if (repoPane === 'changes') paintChanges()
+    if (repoPane === 'protected') paintProtected(board)
   }).catch(oops)
 }
 
@@ -1037,11 +1018,10 @@ async function newBranch () {
         'Name one on the Lines tab — one branch per repository, given a name. Then work can be cut from it, and every branch can say what it started against.'
       ],
       confirm: 'Go to the lines',
-      onYes: () => {
-        showTab('branches')
-        const pane = document.querySelector('.subtab[data-pane="baselines"]')
-        if (pane) pane.click()
-      }
+      // A document-wide `.subtab[data-pane="baselines"]` lookup stood here, which
+      // is the selector every switcher in this window is careful NOT to use —
+      // it would find the first match in any view. showPane names the view.
+      onYes: () => showPane('baselines', 'repos')
     })
   }
 

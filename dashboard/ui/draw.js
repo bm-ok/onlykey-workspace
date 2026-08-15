@@ -312,11 +312,9 @@ function shotIfAsked () {
       }
     }
 
-    // The PR cuts tab: which of its two readings is open.
-    if (want.pick && view === 'prcuts' && ['cuts', 'templates'].includes(want.pick) && cutPane !== want.pick) {
-      const t = document.querySelector(`#view-prcuts .subtab[data-pane="${want.pick}"]`)
-      if (t) { t.click(); shotSettle = 3; return }
-    }
+    // A PR-cuts-specific pane switch stood here. The generic one further up
+    // does it for every view, so this was a second answer to a question already
+    // answered — and it named a tab that no longer exists.
 
     // The Repositories tab has two selections: which sub-tab, and which
     // repository. `todo` / `repos` / `issues` / `pulls` picks the reading;
@@ -340,7 +338,7 @@ function shotIfAsked () {
 
     // The Merge pane has a selection of its own: which of its two readings is
     // open, and which file. `commits` / `files`, or `repo:path` to open a file.
-    if (want.pick && view === 'branches' && branchPane === 'changes') {
+    if (want.pick && view === 'repos' && repoPane === 'changes') {
       if (want.pick === 'commits' || want.pick === 'files') {
         if (changeLook !== want.pick) {
           changeLook = want.pick
@@ -373,7 +371,7 @@ function shotIfAsked () {
     // set as the selection, reset by the next paint because no such branch
     // exists, and set again — a photograph that never arrived and a window that
     // never settled, which looked like the pane being broken.
-    if (want.pick && view === 'branches' && branchPane !== 'change' && pickedBranch !== want.pick) {
+    if (want.pick && view === 'repos' && repoPane === 'branchcuts' && pickedBranch !== want.pick) {
       pickedBranch = want.pick
       been.set('branch', pickedBranch)
       // The finder is cleared, or a branch that does not match whatever was last
@@ -666,14 +664,7 @@ async function pickFor (v, pick) {
     }
     return
   }
-  if (v === 'prcuts' && ['cuts', 'templates'].includes(pick)) {
-    const t = document.querySelector(`#view-prcuts .subtab[data-pane="${pick}"]`)
-    if (t) t.click()
-    return
-  }
-  if (v === 'branches') {
-    const t = document.querySelector(`#view-branches .subtab[data-pane="${pick}"]`)
-    if (t) return t.click()
+  if (v === 'repos') {
     if (pickedBranch !== pick) {
       pickedBranch = pick
       been.set('branch', pickedBranch)

@@ -159,9 +159,7 @@ function todoCard (x) {
               pickedCut = x.id
               been.set('prcut', pickedCut)
               forget('prcuts'); forget('prcut-detail')
-              const t = document.querySelector('#view-prcuts .subtab[data-pane="cuts"]')
-              if (t) t.click()
-              showTab('prcuts')
+              showPane('cuts', 'repos')
             }
           })
         : null))
@@ -185,28 +183,37 @@ function todoCard (x) {
 let pickedRepo = been.get('repo', null)
 let repoPane = been.get('repo-pane', 'repos')
 
-document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(t => {
-  t.onclick = () => {
-    repoPane = t.dataset.pane
-    been.set('repo-pane', repoPane)
-    document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
-    document.querySelectorAll('#view-repos .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${repoPane}`))
-    forget('repo-detail')
-    // Two panes are about the whole workspace rather than about one repository,
-    // so the picker is out of the way for both.
-    $('repos-cols').classList.toggle('hidden', repoPane === 'todo' || repoPane === 'conflicts')
-    paintRepos()
-    paintTodo()
-    paintConflicts()
-  }
+// ELEVEN PANES, ONE BAR, ONE VARIABLE.
+//
+// The repositories, the branches cut across them, and what leaves them. Those
+// were three tabs, which put "the repositories" and "the branches in the
+// repositories" in different parts of the window — and a branch cut is a
+// statement about these repositories, not a subject of its own.
+//
+// Three files paint into this one bar now, so the paints are listed here rather
+// than each file wiring its own switcher into the same markup. Every one of them
+// guards on `repoPane` itself, so calling all of them costs nothing but the
+// call: the one whose pane is open does the work.
+//
+// THE PICKER IS ONLY FOR THE PANES THAT PICK A REPOSITORY. It is a narrow column
+// shared by Repos, Issues and Pull requests; over a branch pane it would be a
+// list of repositories beside something that is not about one.
+const REPO_PICKING = new Set(['repos', 'issues', 'pulls'])
+
+paneSwitcher('view-repos', () => repoPane, p => { repoPane = p; been.set('repo-pane', p) }, () => {
+  forget('repo-detail')
+  $('repos-cols').classList.toggle('hidden', !REPO_PICKING.has(repoPane))
+  $('repos-head').classList.toggle('hidden', !REPO_PICKING.has(repoPane) && repoPane !== 'todo')
+  paintRepos()
+  paintTodo()
+  paintConflicts()
+  paintBranches()
+  paintCuts()
+  paintTemplates()
 })
-;(() => {
-  const t = document.querySelector(`#view-repos .subtab[data-pane="${repoPane}"]`)
-  if (!t) { repoPane = 'repos'; return }
-  document.querySelectorAll('#view-repos .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
-  document.querySelectorAll('#view-repos .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${repoPane}`))
-  $('repos-cols').classList.toggle('hidden', repoPane === 'todo' || repoPane === 'conflicts')
-})()
+// The same two, applied before the first draw rather than only on a click.
+$('repos-cols').classList.toggle('hidden', !REPO_PICKING.has(repoPane))
+$('repos-head').classList.toggle('hidden', !REPO_PICKING.has(repoPane) && repoPane !== 'todo')
 
 function paintRepos () {
   if (view !== 'repos') return
@@ -430,7 +437,7 @@ async function paintConflictsNow () {
                 pickedBranch = c.branch
                 been.set('branch', pickedBranch)
                 forget('branches'); forget('branch-detail')
-                showTab('branches')
+                showPane('branchcuts', 'repos')
               }
             }))))
       : el('p', { className: 'empty', textContent: 'Nothing is stuck. Everything that is behind origin can be caught up with a sync — the ⟳ buttons on Repos and on Branches.' }))

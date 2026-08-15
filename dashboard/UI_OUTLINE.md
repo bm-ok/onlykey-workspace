@@ -86,7 +86,7 @@ MAKE A MACHINE
 CUT A BRANCH TO WORK IN
 ------------------------
 
-1. Open the Branches tab, sub-tab Cuts.
+1. Open the Repositories tab, sub-tab Branches Cut.
 2. Know the difference before pressing anything. A cut is a branch this app made,
    across every repository a line touches. A line is the same thing PROTECTED:
    work is merged into a line and never done on one. That is the whole
@@ -179,8 +179,8 @@ FINISH IT
 MAKE THE BRANCH A LINE
 -----------------------
 
-1. Open the Branches tab, sub-tab Cuts, and pick the branch that carries the
-   finished work.
+1. Open Repositories, sub-tab Branches Cut, and pick the branch that carries
+   the finished work.
 2. Press Make it a line. `okc.js branchAsLine --branch <branch>`
 3. Understand what changed: it was a cut, somewhere to work. It is now a line —
    protected, merged into, never worked on.
@@ -192,7 +192,7 @@ MAKE THE BRANCH A LINE
 PROPOSE IT AND READ WHAT IT LANDS
 -----------------------------------
 
-1. Open the Branches tab, sub-tab Lines.
+1. Open Repositories, sub-tab Branches Lines.
 2. Press Propose it for landing. `okc.js linePropose --name <line> --why "..."`
 3. Know that this changes nothing. It says somebody thinks it is done, and it is
    what puts the line on the left of the next sub-tab.
@@ -207,17 +207,17 @@ PROPOSE IT AND READ WHAT IT LANDS
 CUT THE PULL REQUESTS
 ----------------------
 
-1. Open the PR cuts tab.
+1. Open Repositories, sub-tab PR cuts.
 2. Know what a cut is here: ONE act across every repository the line touches.
    This is the part GitHub cannot do — each repository sees its own pull request,
    each is approved on its own, and "is it in" cannot be answered by looking at
    any single one.
-3. Open the sub-tab Write one first, if the description matters. The preview is
+3. Open the sub-tab New PR Cut first, if the description matters. The preview is
    the editor, and it is composed from real facts about the two lines chosen —
    including the links between the pull requests in this cut, which nothing else
    can write, because the numbers do not exist until all of them are open.
    `okc.js prTemplateSet --title "..." --body "..."`
-4. Go back to Overview and press +. Pick source and target.
+4. Go back to PR cuts and press +. Pick source and target.
 5. Press Push and open them. The work is pushed onward and a pull request is
    opened in every repository that carries it.
    `okc.js prCutMake --source <line> --target <line>`
@@ -248,12 +248,12 @@ STOP
 A SECOND PASS
 --------------
 
-1. Cut a branch, with a reason. Branches → Cuts → +
+1. Cut a branch, with a reason. Repositories → Branches Cut → +
 2. Write what is to be done. Tasks → Add task
 3. Start it. Tasks → Board → Queue it, or Work on it in VS Code
 4. Read what came back. Tasks → Board
-5. Make it a line. Branches → Cuts → Make it a line
-6. Propose it. Branches → Lines → Propose it for landing
-7. Read the diff. Branches → Changes
-8. Push and open them. PR cuts → +
+5. Make it a line. Repositories → Branches Cut → Make it a line
+6. Propose it. Repositories → Branches Lines → Propose it for landing
+7. Read the diff. Repositories → Changes
+8. Push and open them. Repositories → PR cuts → +
 9. Everything in between is the app's problem.

@@ -14,7 +14,7 @@
 // somebody finishes in one sitting and coming back to a blank pane is how a
 // review gets started again from the top.
 // The `let`s these use are declared beside the other remembered pane state,
-// further down, next to `branchPane` — they read from `been`, and `been` is
+// further down, next to `repoPane` — they read from `been`, and `been` is
 // defined after this point in the file. The functions here are declarations and
 // hoist; a `const` does not, and putting them here threw
 // "Cannot access 'been' before initialization" on the first line of the page.

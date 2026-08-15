@@ -44,12 +44,7 @@
          checks them out. They had no surface at all while they were local
          folders, which stopped being tolerable the moment they had somewhere
          to go and a token that may or may not reach it. -->
-    <button class="tab" data-view="repos">Repositories</button>
-    <button class="tab active" data-view="branches">Branches</button>
-    <!-- The outgoing counterpart of a branch cut: one act, one pull request per
-         repository, edited as one thing. Three descriptions of one change drift
-         apart the moment anybody edits one of them by hand. -->
-    <button class="tab" data-view="prcuts">PR cuts</button>
+    <button class="tab active" data-view="repos">Repositories</button>
     <button class="tab" data-view="tasks">Tasks <span class="tab-badge hidden" id="tasks-badge"></span></button>
     <!-- WHAT IS DEFINED, beside what is happening. A contract, a prompt and a
          job are written once, approved once and run whenever — a task is one
@@ -113,15 +108,28 @@
            you happened to have selected — and from here it becomes a task, run
            by a worker or by a person, like any other work. -->
       <button class="subtab" data-pane="conflicts">Conflicts <span class="tab-badge hidden" id="conflicts-badge"></span></button>
+      <!-- THE BRANCHES CUT ACROSS THESE REPOSITORIES, and what leaves them.
+           They were two tabs of their own, which put "the repositories" and
+           "the branches in the repositories" in different parts of the window.
+           In the order the work goes: cut a branch, promote it to a line, read
+           what it lands, then cut the pull requests. -->
+      <button class="subtab" data-pane="branchcuts">Branches Cut</button>
+      <button class="subtab" data-pane="baselines">Branches Lines</button>
+      <button class="subtab" data-pane="changes">Changes</button>
+      <button class="subtab" data-pane="protected">Protected</button>
+      <button class="subtab" data-pane="cuts">PR cuts</button>
+      <button class="subtab" data-pane="templates">New PR Cut</button>
     </div>
 
-    <div class="sync-head">
-      <h2 id="repos-title">Repositories <span class="muted" id="repos-context"></span></h2>
-      <div class="sync-controls">
-        <button class="btn" id="repos-check">Ask GitHub</button>
+    <div id="repos-head">
+      <div class="sync-head">
+        <h2 id="repos-title">Repositories <span class="muted" id="repos-context"></span></h2>
+        <div class="sync-controls">
+          <button class="btn" id="repos-check">Ask GitHub</button>
+        </div>
       </div>
+      <p class="note" id="repos-note"></p>
     </div>
-    <p class="note" id="repos-note"></p>
 
     <!-- EVERYTHING WAITING, ACROSS ALL OF THEM. The one pane here that is not
          about a repository you picked, so it is full width and the picker is
@@ -177,29 +185,158 @@
       </div>
     </div>
 
-  </section>
 
-  <!-- ---------------- PR cuts ----------------
-       A change, once it has left. One cut is one act -- a line proposed here,
-       pushed onward, and opened as a pull request in every repository that
-       carries work -- and it is edited as one thing from here afterwards.
 
-       This is the part GitHub cannot do. It has no idea the three are one
-       change: each repository sees its own, each is approved on its own, and
-       "is it in" cannot be answered by looking at any single one. -->
-  <section class="view" id="view-prcuts">
+    <div class="pane" id="pane-branchcuts">
+      <div class="cols">
 
-    <div class="subtabs">
-      <button class="subtab active" data-pane="cuts">Overview</button>
-      <button class="subtab" data-pane="templates">Write one</button>
+        <div class="col narrow">
+          <!-- CUTS, AND ONLY CUTS. A cut is a branch this app made, with a
+               reason and a starting point, for work to be done on. A line is the
+               same thing protected — what work is measured against, and what a
+               PR cut is proposed into, which is why nothing may be built
+               directly on one.
+
+               This column used to show both under this heading, which is where
+               the word stopped meaning anything. The lines are next door under
+               Lines and the protected ones under Protected. -->
+          <h2 class="titlerow">
+            Branch cuts
+            <span class="grow"></span>
+            <!-- Making one is a deliberate act with a reason now. It used to
+                 happen as a side effect of setting a machine up, from whatever
+                 string a task carried — so a typo made a branch, not an error. -->
+            <button class="plus" id="add-branch-open" title="Cut a branch, with a reason">+</button>
+          </h2>
+          <input id="branch-find" class="finder" placeholder="find a branch">
+          <div id="branch-counts" class="chips"></div>
+          <div id="branches" class="stack"></div>
+        </div>
+
+        <div class="col">
+          <!-- What can be done to the selected branch, and what has been done ON
+               it. The same split as the machines tab: acts on the left column's
+               selection, so one set of buttons serves every branch. -->
+          <h2>Actions <span class="muted" id="branch-context">— nothing selected</span></h2>
+          <div id="branch-actions" class="panel"></div>
+
+          <h2>Tasks <span class="muted" id="branch-tasks-context"></span></h2>
+          <div id="branch-tasks" class="stack"></div>
+        </div>
+
+        <div class="col wide">
+          <!-- Everything the branch carries, of every kind. A branch used to mean
+               commits and nothing else; a run can now hand over a file a branch
+               cannot hold, and the session that produced the work is the third
+               thing worth keeping with it. -->
+          <h2>What it carries <span class="muted" id="branch-carries"></span></h2>
+          <div id="branch-artifacts" class="panel"></div>
+        </div>
+
+      </div>
     </div>
 
-    <!-- EACH COLUMN CARRIES ITS OWN HEADING, and each pane its own controls.
-         A shared header above both panes put "Read them from GitHub" over the
-         Templates pane, which reads nothing from GitHub — and it sat a heading
-         for the left column in a row with a button for the right one, so
-         neither said what it was over. -->
-    <div class="pane active" id="pane-cuts">
+    <!-- ---------------- Baselines ----------------
+         What everything is counted from, and cut from. A GROUP names one branch
+         per repository and is the unit a task is based on — because a change
+         spans repositories, and "which version line is this work against" is one
+         question with one answer, not one answer per repository.
+
+         Being in a group PROTECTS every branch in it, and that is what makes
+         chaining safe: work is cut from a link, merges back into it, and the
+         link itself is never built on directly. -->
+    <div class="pane" id="pane-baselines">
+      <div class="cols">
+        <div class="col narrow">
+          <h2 class="titlerow">
+            Lines
+            <span class="grow"></span>
+            <button class="plus" id="add-group-open" title="Name a line: one branch per repository">+</button>
+          </h2>
+          <!-- What each repository counts from right now: the thing every
+               "commits ahead" figure on the board is measured against, said once
+               and not editable here. -->
+          <div id="baselines-now"></div>
+          <div id="groups" class="stack"></div>
+        </div>
+
+        <!-- A "Per repository" column stood here, one card per repository with
+             its baseline, each one clickable to change that repository on its
+             own. It said the same thing the groups say and it was the last place
+             three independent settings could be created — the exact state the
+             group requirement exists to end, since what a branch is cut from
+             would then depend on all three being right at once.
+
+             Choosing a branch per repository now happens where it is one
+             decision: naming the line. What each repository counts from RIGHT
+             NOW is still worth seeing, so it is said once, above the groups,
+             as a fact rather than as a row of controls. -->
+        <div class="col wide">
+          <h2>What a line is <span class="muted" id="group-context"></span></h2>
+          <div id="group-detail" class="panel"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- Changes ----------------
+         What landing a line would do, read before it is done.
+
+         TWO LINES, NOT TWO BRANCHES. A change spans repositories, so "should
+         this go in" is one question with one answer -- asking it a repository at
+         a time is how half a change lands. The left is a line somebody has
+         marked as a proposal; the right is the line it would go into.
+
+         Laid out as one row of two choices and then everything else, rather than
+         as three columns: the comparison is the thing being read, and it wants
+         the whole width. Reading a change in a 300px column is why the last
+         version of this was a modal. -->
+    <div class="pane" id="pane-changes">
+      <div class="change-pick">
+        <select id="change-from"></select>
+        <span class="change-into">into</span>
+        <select id="change-into"></select>
+        <span class="grow"></span>
+        <span id="change-state" class="muted"></span>
+      </div>
+      <div id="change-actions" class="row" style="margin-bottom:12px"></div>
+      <div id="change-summary"></div>
+
+      <!-- Commits and file changes, which are the two questions worth asking of
+           a change and the only two worth a tab each. -->
+      <div class="subtabs" id="change-tabs">
+        <button class="subtab active" data-look="commits">Commits</button>
+        <button class="subtab" data-look="files">File changes</button>
+      </div>
+      <div id="change-commits"></div>
+      <div id="change-files" class="hidden">
+        <div class="change-files">
+          <div class="change-list" id="change-filelist"></div>
+          <div class="change-view">
+            <div class="change-viewhead">
+              <span id="change-filename" class="mono"></span>
+              <span class="grow"></span>
+              <button class="btn small" id="change-mode">Side by side</button>
+            </div>
+            <div id="change-diff"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- Protected ----------------
+         The branches nothing may be built on, and WHY each one is one. Two
+         different reasons that were being collapsed into a single word: a
+         repository's own default is a fact about git, and a baseline is a
+         decision that can be unmade. -->
+    <div class="pane" id="pane-protected">
+      <p class="note">
+        Nothing is built on these and nothing pushes to them. Work is cut onto its
+        own branch and merged in afterwards — the rule the rest of this rests on.
+      </p>
+      <div id="protected" class="stack"></div>
+    </div>
+
+    <div class="pane" id="pane-cuts">
       <div class="cols">
         <div class="col narrow">
           <h2 class="titlerow">
@@ -262,6 +399,7 @@
     </div>
 
   </section>
+
 
   <!-- ---------------- Virtual machines ---------------- -->
   <section class="view" id="view-runners">
@@ -414,183 +552,6 @@
 
   </section>
 
-  <!-- ---------------- Branches ----------------
-       A branch is the unit of work here: it is what a task delivers, what a
-       machine is set up on, and what a verdict is about. Three different places
-       knew that and none of them met, so a branch belonging to a task that was
-       thrown away looked exactly like one somebody made by hand — and the
-       difference is whether deleting it loses anything. -->
-  <section class="view active" id="view-branches">
-
-    <!-- THREE QUESTIONS, NOT ONE SCREEN. What is on this branch, what is
-         everything counted from, and what may nothing be built on — they were
-         stacked into one column until the first of them had to share a scroll
-         with the other two. They are also asked at different times: the first
-         constantly, the second when work changes direction, the third almost
-         never but with the most consequence. -->
-    <div class="subtabs">
-      <!-- CUTS AND LINES ARE THE SAME THING, EXCEPT LINES ARE PROTECTED, and
-           this pane was called "Overview" while showing both — which is what
-           taught everyone reading it that "branch cut" meant "any branch". A
-           cut is where work is done; a line is what work is measured against
-           and what a PR cut is made from, which is why it is protected: it must
-           not be tainted by the work being proposed into it. -->
-      <button class="subtab active" data-pane="overview">Cuts</button>
-      <button class="subtab" data-pane="baselines">Lines</button>
-      <button class="subtab" data-pane="changes">Changes</button>
-      <button class="subtab" data-pane="protected">Protected</button>
-    </div>
-
-    <div class="pane active" id="pane-overview">
-      <div class="cols">
-
-        <div class="col narrow">
-          <!-- CUTS, AND ONLY CUTS. A cut is a branch this app made, with a
-               reason and a starting point, for work to be done on. A line is the
-               same thing protected — what work is measured against, and what a
-               PR cut is proposed into, which is why nothing may be built
-               directly on one.
-
-               This column used to show both under this heading, which is where
-               the word stopped meaning anything. The lines are next door under
-               Lines and the protected ones under Protected. -->
-          <h2 class="titlerow">
-            Branch cuts
-            <span class="grow"></span>
-            <!-- Making one is a deliberate act with a reason now. It used to
-                 happen as a side effect of setting a machine up, from whatever
-                 string a task carried — so a typo made a branch, not an error. -->
-            <button class="plus" id="add-branch-open" title="Cut a branch, with a reason">+</button>
-          </h2>
-          <input id="branch-find" class="finder" placeholder="find a branch">
-          <div id="branch-counts" class="chips"></div>
-          <div id="branches" class="stack"></div>
-        </div>
-
-        <div class="col">
-          <!-- What can be done to the selected branch, and what has been done ON
-               it. The same split as the machines tab: acts on the left column's
-               selection, so one set of buttons serves every branch. -->
-          <h2>Actions <span class="muted" id="branch-context">— nothing selected</span></h2>
-          <div id="branch-actions" class="panel"></div>
-
-          <h2>Tasks <span class="muted" id="branch-tasks-context"></span></h2>
-          <div id="branch-tasks" class="stack"></div>
-        </div>
-
-        <div class="col wide">
-          <!-- Everything the branch carries, of every kind. A branch used to mean
-               commits and nothing else; a run can now hand over a file a branch
-               cannot hold, and the session that produced the work is the third
-               thing worth keeping with it. -->
-          <h2>What it carries <span class="muted" id="branch-carries"></span></h2>
-          <div id="branch-artifacts" class="panel"></div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- ---------------- Baselines ----------------
-         What everything is counted from, and cut from. A GROUP names one branch
-         per repository and is the unit a task is based on — because a change
-         spans repositories, and "which version line is this work against" is one
-         question with one answer, not one answer per repository.
-
-         Being in a group PROTECTS every branch in it, and that is what makes
-         chaining safe: work is cut from a link, merges back into it, and the
-         link itself is never built on directly. -->
-    <div class="pane" id="pane-baselines">
-      <div class="cols">
-        <div class="col narrow">
-          <h2 class="titlerow">
-            Lines
-            <span class="grow"></span>
-            <button class="plus" id="add-group-open" title="Name a line: one branch per repository">+</button>
-          </h2>
-          <!-- What each repository counts from right now: the thing every
-               "commits ahead" figure on the board is measured against, said once
-               and not editable here. -->
-          <div id="baselines-now"></div>
-          <div id="groups" class="stack"></div>
-        </div>
-
-        <!-- A "Per repository" column stood here, one card per repository with
-             its baseline, each one clickable to change that repository on its
-             own. It said the same thing the groups say and it was the last place
-             three independent settings could be created — the exact state the
-             group requirement exists to end, since what a branch is cut from
-             would then depend on all three being right at once.
-
-             Choosing a branch per repository now happens where it is one
-             decision: naming the line. What each repository counts from RIGHT
-             NOW is still worth seeing, so it is said once, above the groups,
-             as a fact rather than as a row of controls. -->
-        <div class="col wide">
-          <h2>What a line is <span class="muted" id="group-context"></span></h2>
-          <div id="group-detail" class="panel"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ---------------- Changes ----------------
-         What landing a line would do, read before it is done.
-
-         TWO LINES, NOT TWO BRANCHES. A change spans repositories, so "should
-         this go in" is one question with one answer -- asking it a repository at
-         a time is how half a change lands. The left is a line somebody has
-         marked as a proposal; the right is the line it would go into.
-
-         Laid out as one row of two choices and then everything else, rather than
-         as three columns: the comparison is the thing being read, and it wants
-         the whole width. Reading a change in a 300px column is why the last
-         version of this was a modal. -->
-    <div class="pane" id="pane-changes">
-      <div class="change-pick">
-        <select id="change-from"></select>
-        <span class="change-into">into</span>
-        <select id="change-into"></select>
-        <span class="grow"></span>
-        <span id="change-state" class="muted"></span>
-      </div>
-      <div id="change-actions" class="row" style="margin-bottom:12px"></div>
-      <div id="change-summary"></div>
-
-      <!-- Commits and file changes, which are the two questions worth asking of
-           a change and the only two worth a tab each. -->
-      <div class="subtabs" id="change-tabs">
-        <button class="subtab active" data-look="commits">Commits</button>
-        <button class="subtab" data-look="files">File changes</button>
-      </div>
-      <div id="change-commits"></div>
-      <div id="change-files" class="hidden">
-        <div class="change-files">
-          <div class="change-list" id="change-filelist"></div>
-          <div class="change-view">
-            <div class="change-viewhead">
-              <span id="change-filename" class="mono"></span>
-              <span class="grow"></span>
-              <button class="btn small" id="change-mode">Side by side</button>
-            </div>
-            <div id="change-diff"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ---------------- Protected ----------------
-         The branches nothing may be built on, and WHY each one is one. Two
-         different reasons that were being collapsed into a single word: a
-         repository's own default is a fact about git, and a baseline is a
-         decision that can be unmade. -->
-    <div class="pane" id="pane-protected">
-      <p class="note">
-        Nothing is built on these and nothing pushes to them. Work is cut onto its
-        own branch and merged in afterwards — the rule the rest of this rests on.
-      </p>
-      <div id="protected" class="stack"></div>
-    </div>
-
-  </section>
 
   <!-- ---------------- Live ----------------
        Never torn down and never stops appending. Its whole value is that it is

@@ -26,7 +26,7 @@ let cutsSeen = null
 let cutsAsking = false
 
 function paintCuts () {
-  if (view !== 'prcuts') return
+  if (view !== 'repos') return
   // READ ONCE WHEN THE TAB IS OPENED, and not again until asked. Never on the
   // draw: every line here is a network call to somebody else's service, and the
   // window redraws every three seconds.
@@ -35,14 +35,14 @@ function paintCuts () {
   // looks broken — so the first look pays for itself, and every look after that
   // is a button. The same trade as the Repositories tab, made once here rather
   // than left to the person to notice.
-  if (view === 'prcuts' && cutsSeen === null && !cutsAsking) {
+  if (view === 'repos' && cutsSeen === null && !cutsAsking) {
     cutsAsking = true
     refreshCuts().finally(() => { cutsAsking = false })
     return
   }
 
   const rows = cutsSeen ? cutsSeen.cuts : null
-  if (cutPane !== 'cuts') return paintTemplates()
+  if (repoPane !== 'cuts') return paintTemplates()
   setText($('prcuts-context'), rows ? `— ${rows.length}` : '')
   setText($('prcuts-note'), rows ? cutsSeen.note : 'Not read yet. "Read them from GitHub" asks what became of each one.')
 
@@ -168,8 +168,7 @@ function editCut (c) {
   tmplSeen = null
   forget('prwrite-fields')
   forget('prtemplate')
-  const tab = document.querySelector('#view-prcuts .subtab[data-pane="templates"]')
-  if (tab) tab.click()
+  showPane('templates', 'repos')
 }
 
 function setCutState (c, state) {
@@ -219,7 +218,6 @@ function refreshCuts () {
 // whether they are worth saying — which is the only question a template raises.
 // The one thing it cannot know is the pull request numbers, because those do not
 // exist until the cut is made, so it shows them as ? and says so.
-let cutPane = been.get('prcut-pane', 'cuts')
 let tmplFrom = been.get('tmpl-from', null)
 let tmplInto = been.get('tmpl-into', null)
 let tmplAs = null
@@ -228,32 +226,16 @@ let tmplSeen = null
 // The pending write of what is being typed. See paintTemplates.
 let draftTimer = null
 
-document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(t => {
-  t.onclick = () => {
-    cutPane = t.dataset.pane
-    been.set('prcut-pane', cutPane)
-    document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
-    document.querySelectorAll('#view-prcuts .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${cutPane}`))
-    forget('prtemplate')
-    paintTemplates()
-  }
-})
-;(() => {
-  const t = document.querySelector(`#view-prcuts .subtab[data-pane="${cutPane}"]`)
-  if (!t) { cutPane = 'cuts'; return }
-  document.querySelectorAll('#view-prcuts .subtab[data-pane]').forEach(x => x.classList.toggle('active', x === t))
-  document.querySelectorAll('#view-prcuts .pane').forEach(x => x.classList.toggle('active', x.id === `pane-${cutPane}`))
-})()
 
 function paintTemplates () {
-  if (view !== 'prcuts' || cutPane !== 'templates') return
+  if (view !== 'repos' || repoPane !== 'templates') return
   waiting('prtemplate', { lines: 6 })
   paintTemplatesNow()
 }
 
 async function paintTemplatesNow () {
   await settle()
-  if (view !== 'prcuts' || cutPane !== 'templates') return
+  if (view !== 'repos' || repoPane !== 'templates') return
   Promise.all([api('prTemplate'), api('lines').catch(() => ({ groups: [] }))]).then(([t, { groups }]) => {
     const usable = (groups || []).filter(g => !g.broken.length)
 
