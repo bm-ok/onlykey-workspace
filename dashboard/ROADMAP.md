@@ -122,6 +122,17 @@ this host, from before the library existed, and a task written from a prompt
 should simply take that prompt's contract. It is a small change to what a stored
 task MEANS, which is why it is not folded in with the rest.
 
+**And a worker's memory belongs to the task — BUILT.** A machine is rolled back
+when its work ends, so a session died with it and a task given out twice was two
+strangers. `~/.claude` is now archived when a run ends and unpacked before the
+next one starts, keyed by task uid, one per task, credential excluded. Proved
+across machines: a conversation started on runner1 was carried on by runner2.
+
+The guest never chooses which conversation — `resume` is refused, and the host
+looks it up from the task the machine is running. That is the same rule an
+artifact follows, and for the same reason: a machine that can name its
+destination can name somebody else's.
+
 **Still open:**
 
 * whether a job names a branch or a branch PATTERN. A reading job wants a fresh

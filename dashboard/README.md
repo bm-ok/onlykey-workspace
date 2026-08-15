@@ -3,9 +3,10 @@ dashboard
 
 Make a virtual machine, install an operating system on it, snapshot it, throw it
 away. An NW.js app with no build step, no framework, and nothing fetched at run
-time — what it uses beyond NW.js is checked in under `vendors/`, currently the
-Ace editor and nothing else. See `vendors/README.md` for why that is a
-directory rather than a dependency.
+time — what it uses beyond NW.js is checked in under `vendors/`: the Ace editor,
+xterm.js, marked, and nanotar. Four files, no package manager. See
+`vendors/README.md` for why that is a directory rather than a dependency, and
+for what each one is doing here.
 
     npm install             once, for NW.js (the SDK build, so devtools exist)
     npm start               the app window
@@ -367,6 +368,78 @@ afterwards it was a race the run usually won, and an artifact pushed two seconds
 in was refused with "this machine is not running a task" by a host that was about
 to record that it was. The queue always had this right; giving a task straight to
 a named machine did not.
+
+What a task is made of
+-----------------------
+
+A task used to be a title, a brief and a branch. It is now the last link of a
+chain, and each link is a thing with a name, a hash and an approval:
+
+    branch <- task <- job <- prompt <- contract
+
+Read right to left. A **contract** is the rules — what a worker may not do. A
+**prompt** is the words it is told, and it names the contract those words have to
+hold to. A **job** is a Node script that gives the prompt to a worker and checks
+what came back. A **task** is one occasion of that, and the branch is what
+arrives.
+
+**Every arrow carries a copy, never a name.** A task written from a prompt stores
+that prompt's words in its brief and its contract's words in its rules; a run
+carries those down as `contract.md` beside its own script. Read six weeks later,
+a reference proves nothing about what a worker was actually held to, and the
+library it named has moved on since. Editing a contract lapses its own approval
+and changes nothing about a task already written under it — which was proved by
+doing it.
+
+**Three approvals, and the ladder composes.** A job is runnable when its script is
+approved and its prompt is usable, where usable means the prompt is approved and
+its contract is ready. The job asks the prompt rather than reaching past it to
+the contract, so the chain only runs one way, and the refusal names the rung that
+is missing rather than reporting "not approved" about something that plainly is.
+Approving any of the three is refused over the wire, and it is sharpest for the
+contract: that is the text saying what a worker may not do, and a model ratifying
+its own limits is the review that reviews nothing.
+
+A job runs on a machine and cannot reach this app's actions. It is handed one
+object: the prompt, the contract, a shell, a way to hand files back, assertions,
+and `claude()` — which is the same command a task's dispatch writes into a run
+script, so a worker a job starts and a worker the queue starts are the same
+worker.
+
+
+What a worker remembers
+------------------------
+
+A machine is rolled back when its work ends, so a worker's memory used to go with
+it. A task given out twice was two strangers rather than one worker having a
+second go, and the only record of WHY it did what it did — the transcript — lasted
+until somebody tidied up.
+
+So `~/.claude` is archived when a run ends and unpacked before the next one
+starts, keyed by task uid, one per task. The whole folder rather than the
+transcript file: Claude files a session under a slug made from the working
+directory, and putting a `.jsonl` back in the wrong place restores a transcript
+nothing will ever find. An archive puts itself back.
+
+Proved across machines, which is the point: a conversation started on runner1 was
+carried on by runner2, same session id, and the second worker knew which file it
+had already written.
+
+**Except the credential, and that exclusion is load-bearing.** `~/.claude` also
+holds `.credentials.json`. This host already keeps one copy, sealed; letting it
+ride along would write an unsealed one per task into a folder whose whole purpose
+is to be kept for a long time.
+
+**The guest does not choose which conversation.** `resume` is refused rather than
+ignored — which conversation a run continues is a question about the task, and a
+run that could name any id could read the transcript of work it has nothing to do
+with. The host looks it up from the task the machine is running, exactly like an
+artifact.
+
+The archive is read once, when it arrives, and what the Sessions tab shows is
+that summary: how many turns, which model, which tools, which files were touched,
+how many tokens. A run's log says what a worker printed; this says what it did.
+
 
 Encrypted, and how a bare machine comes to trust it
 ---------------------------------------------------
@@ -1557,7 +1630,19 @@ ordinary user. What follows is what is still not proven.
   deleted within an hour. Nothing here has been left running for days, and the
   reconnect logic has only been exercised by restarting the app and rebooting a
   machine, not by a network that goes away for a long time.
-* **No dispatched worker has pushed anything.** The whole workspace half — the
-  branch claim, the hook, the refusal to touch the default branch — is proven
-  from this host. A task that produces a commit and pushes it back, which is
-  what all of it is for, has not been run.
+* **A worker has never been left to work for an hour.** Dispatched workers HAVE
+  pushed — #1 and #10 delivered commits from runner2 and runner1 — but every run
+  that has produced anything took minutes. Nothing here has been tested against a
+  worker that thinks for a long time, fills a transcript, and has to be watched
+  while it does.
+* **Nothing has been judged by anything but a person.** `taskJudge` records a
+  verdict and the Judge tab in `ROADMAP.md` is not built. Every accept and reject
+  on the board was typed by hand.
+* **A job's artifacts are only findable through a task.** A job run on its own is
+  filed under its run id, and no pane shows those — only `taskFiles` reads them,
+  and only for a task.
+* **The credential's clock has been wrong once, in the direction that matters.**
+  `credentialsHeld` said the refresh token was valid until September and the
+  worker answered "OAuth session expired and could not be refreshed". Nothing
+  marks a held credential as suspect after a run fails that way, so the Keys tab
+  goes on saying it is good until somebody reads a log.

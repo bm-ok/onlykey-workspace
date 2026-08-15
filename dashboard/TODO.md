@@ -47,12 +47,17 @@ not fixed, and the state of the machines.
 Outstanding
 -----------
 
-* **The one-click credential flow is built and has never been run.** `Keys → Get
-  Claude Code credentials` now borrows a free machine, brings it up clean, signs
-  in, keeps the credential here and puts the machine away with nothing on it —
-  `credentialsBegin` and `credentialsFinish`. Every part of it is proven
-  separately and the whole has not been, because the middle is a person visiting
-  a sign-in page. The next time a credential is actually needed is the test.
+* **Nothing marks a held credential as suspect when a worker is refused.**
+  `credentialsHeld` reported the refresh token good until September while the
+  worker answered "OAuth session expired and could not be refreshed" — and the
+  Keys tab went on saying it was fine. `credentialLife` already documents why a
+  clock cannot prove life; what is missing is anywhere to record that the last
+  attempt to USE it failed. The signal exists: `claude()` gets that sentence back
+  and throws it away.
+
+  The flow around it is now exercised, which it had never been: a credential was
+  signed in on a machine and kept here at 00:06:56 from runner2, and the very
+  next run authenticated with it.
 
 * **`runner1` is running an agent two fixes behind.** It never got the read
   timeout or the unit change, and it has not got the TLS locking either — so it
@@ -121,11 +126,34 @@ Outstanding
   that nothing loads, and deleting it needs a hand that is not this one —
   `legacy/` is untracked.
 
-* **The task contract is runtime state, and it should not be.** It sits in the
-  per-user data directory with the registries, having moved out of the repository
-  along with them — right for a registry, wrong for this. It is project
-  *configuration*: the rules a worker is given are worth a history, and it is now
-  further from version control than it was.
+* **Contracts are runtime state, and the history question is still open.** They
+  are a library now — written, approved, edited, thrown away, and copied into
+  every task that goes out under them — which answers most of what this entry
+  used to be about: a task carries the words it was held to, so what governed a
+  finished run cannot drift. What is still true is that `contracts.json` lives in
+  the per-user data directory, so the rules themselves have no history. The copy
+  in each task is the record; the library is not versioned.
+
+* **Nothing counts a handed-back file as delivering.** The board reads
+  "done, nothing delivered" for a task whose run produced an artifact, because
+  `reads` only looks at the branch. #31 and #32 both say it while their files sit
+  in the panel beside them. Either the summary should count files, or it should
+  say "nothing on the branch" and mean it.
+
+* **A job's artifacts are only reachable through a task.** Run one on its own and
+  the file is filed under the run id — `taskFiles` cannot see it, and no pane
+  shows it. It is on disk and findable only by opening the folder.
+
+* **The Jobs pane's Run it button asks for no machine.** `jobRun` refuses without
+  one, correctly, so the button lands on "Say which machine" every time. It needs
+  the picker the run dialog already has for prompts.
+
+* **The undeclared-name checker is not in `npm test`.** It is what caught `port`
+  after `files` had already been caught by hand — strip comments and strings,
+  collect every binding form, report names used as `x.y` or `x(` that nothing
+  declares. It runs clean apart from one known false positive (a destructured
+  parameter with a call in its default). Two regressions of this exact shape have
+  now shipped, and `node --check` passes on both.
 
 
 The next joints

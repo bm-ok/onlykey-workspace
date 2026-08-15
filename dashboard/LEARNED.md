@@ -597,3 +597,43 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   Proved by lifting `changed` and `forget` straight out of `ui/base.js` and
   running the delete sequence against both idioms: the old one still shows the
   deleted prompt, the new one shows the empty state.
+
+* **Splitting a file leaves bare names behind, and `node --check` passes on
+  every one of them.** The one-file server became `actions/*.js`, and each new
+  file's require block was rebuilt from what its actions APPEARED to need.
+  Anything reached by a bare identifier that had simply been in scope before fell
+  out silently. `files` did, and the artifact endpoint hung with no response --
+  a ReferenceError inside a request handler leaves the socket open. `port` did,
+  four times in `actions/machines.js` and once in `actions/runs.js`.
+
+  The `port` one is worth the detail, because of WHERE it hid. In machines.js it
+  was inside `vmWorkspace`, which only reaches that line once the branch exists
+  -- so every task with a valid branch failed with "port is not defined", and
+  every task with a typo failed earlier with a better message and masked it. In
+  runs.js it was inside a `try/catch` that swallowed it, leaving `base` null: the
+  guest was then never told where to hand an artifact back, which is why
+  `okc-artifact` had never once worked. A syntax check passes on all of this. A
+  bare identifier is valid syntax; it fails when its line is evaluated, which
+  here was inside an action, in a queue, on a machine that had already booted.
+
+  Found by writing a checker rather than by reading: strip comments, strings and
+  template text (keeping `${...}`, which is where both bugs were), collect every
+  binding form, and report names used as `x.y` or `x(` that nothing declares. It
+  took three attempts to stop reading English prose as identifiers -- the first
+  reported two thousand.
+
+* **A credential's clock proves death, never life.** `credentialsHeld` said the
+  refresh token was good until September; the worker answered "OAuth session
+  expired and could not be refreshed" and the run failed. `credentialLife`
+  already says this in as many words -- expired means definitely dead, unexpired
+  means nothing -- and it is still the thing that gets assumed, because a green
+  tick beside a date reads as an answer. The only test is a worker actually
+  authenticating, and nothing marks a held credential as suspect after a run
+  fails that way.
+
+* **Back up before the checks that throw.** The session archive is taken
+  immediately after `claude` returns and before a single one of the refusals that
+  read its answer. That ordering is the whole value: the run that failed with the
+  expired credential still kept its transcript, and a run that ended badly is the
+  one whose transcript is worth most. Filing it after the checks would keep a
+  record exactly when nobody needs one.

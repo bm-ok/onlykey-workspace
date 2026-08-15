@@ -58,7 +58,13 @@ earlier run. A wrong diagnosis costs more than no diagnosis.
 ## Proving a change
 
 `node --check` is not enough — it passes on a file whose exports name functions
-that no longer exist, which is a startup crash.
+that no longer exist, which is a startup crash, and it passes on **every bare
+identifier that nothing declares**. Splitting a file is how those get made: the
+new require block is written from what the code appears to need, and anything
+that was simply in scope before falls out silently. `files` did this and hung the
+artifact endpoint; `port` did it and broke every task whose branch existed. Both
+fail only when their line is reached, which is inside an action, in a queue, on a
+machine that has already booted.
 
 ```
 npm test                       # generic, and only machines/ drives VBoxManage
@@ -92,9 +98,24 @@ the whole thing away.
 
 ## The shape of it
 
+* **The chain, and every arrow carries a copy.**
+
+      branch <- task <- job <- prompt <- contract
+
+  A contract is the rules, a prompt is the words that must hold to them, a job is
+  the script that gives them to a worker, a task is one occasion. A task stores
+  the prompt's TEXT and the contract's TEXT, never their names — read six weeks
+  later a reference proves nothing about what a worker was held to. All three of
+  job, prompt and contract are hashed and approved, and approving any of them is
+  refused over the wire.
 * **One surface.** Every capability is an action in the table in `server.js`,
   reached by the window, the CLI and the drills through `call()`. If the CLI
   cannot do something, add an action — do not reach around it.
+* **A worker's memory is the task's, not the machine's.** `~/.claude` is archived
+  when a run ends and unpacked before the next one starts, keyed by task uid. The
+  guest never names a session; the host looks it up from the task that machine is
+  running, exactly like an artifact. The credential is excluded from the archive
+  on purpose.
 * **`needs: 'workspace'`** on an action that is a question about a folder of
   repositories. `call()` refuses it by name when none is open.
 * **Only `machines/` drives VBoxManage**, and every call goes through

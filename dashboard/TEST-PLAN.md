@@ -62,7 +62,31 @@ The three below are what is left of the failure set that drill 12 came from.
 Two of them are **shell** runs and cost nothing; only the credential one needs a
 worker, because what a worker does when its token disappears is the question.
 
-### 13. The credential goes away mid-run
+### 13. The credential goes away mid-run — RAN 2026-08-15, BY ACCIDENT, PASSED
+
+It was not taken off a machine; it expired on its own, which is the case this
+drill exists to simulate. `credentialsHeld` said the refresh token was valid
+until September and the worker answered:
+
+    the worker stopped: Failed to authenticate: OAuth session expired and
+    could not be refreshed
+
+**It read honestly, which is the whole pass condition.** The sentence reached the
+run log intact, was recorded on the task's attempt, and named the cause rather
+than surfacing as an api error in a json blob. That is what this drill was
+written to catch, and it caught it without being run on purpose.
+
+Two things it also showed, neither of them the point:
+
+* the session archive was taken BEFORE the refusal was raised, so the failed
+  run's transcript survives — which is the ordering `claude()` was written for
+* nothing marked the held credential as suspect afterwards, so the Keys tab went
+  on saying it was fine. That is in `TODO.md`.
+
+Still worth running deliberately with `vmCredentialsForget`, because a token
+taken away mid-thought and one that fails to refresh are different moments.
+
+### 13b. The original: taking it off mid-run
 
 **Proves the token-refresh case without waiting for a token to expire.** Take the
 credential off a machine while its worker is thinking. Claude Code has already
@@ -603,3 +627,80 @@ somewhere nobody understands.
 * **Snapshots taken by a drill** are deleted with `vmSnapshotDelete`. One taken
   while a machine held a credential is not debris, it is a copy of that
   credential, and it outlives the task, the machine and any decision to revoke.
+
+
+Drills for the chain
+--------------------
+
+`branch <- task <- job <- prompt <- contract`, and what a worker remembers. These
+are new and three of them have run.
+
+### 17. A task that names a job runs that job — RAN 2026-08-15, PASSED
+
+**It did not, and nothing said so.** The job was stored on the task, shown on the
+board and filled in from the prompt, and the queue dispatched `claude -p` with
+the brief anyway. The run looked completely normal; the only sign was the
+artifact that never arrived.
+
+Write a task with a job, queue it, and read the run id. **A pass** is a run id
+beginning `job-`, and the job's own output in the log. `job-api-tour-…` and
+`api-tour.md` filed under the task's uid, found with `taskFiles`.
+
+### 18. A task carries the words, not the name — RAN 2026-08-15, PASSED
+
+Write a task under a contract, then edit that contract in the library.
+
+    the library now says     * THIS LINE WAS ADDED AFTER THE TASK WAS WRITTEN.
+    the task still says      * Do not touch any repository you were not asked about.
+    the library approval is  LAPSED — it must be read again
+
+**A pass is all three.** The library moved, its own approval lapsed, and the task
+still says what it went out under. The same test applies to a prompt's text: a
+task copies the brief and editing the prompt afterwards must not rewrite the
+question a piece of work is the answer to.
+
+### 19. A worker carries on across machines — RAN 2026-08-15, PASSED
+
+**The one that needed a machine to be believed.** Run a job that calls `claude()`
+twice, on a task, and let the queue pick the machine.
+
+    okc: carried on from what this task remembers (08a6a1ec)
+    okc: kept what this task remembers (15 KB)
+    the worker finished in 50s — 8 turn(s), 0.2890 USD
+    okc: carried on from what this task remembers (08a6a1ec)
+    the last line is now: Written on runner2 during run job-ask-a-worker-…
+
+**A pass is the machine name changing while the session id does not.** This
+conversation started on runner1 and finished on runner2, and the second worker
+knew which file it had already written. `sessions` reported `runs 3`, one id.
+
+**Half of it is unproven on purpose.** Every run so far has been minutes. A
+worker left to think for an hour, filling a transcript, has never been tried —
+see the honest gaps in `README.md`.
+
+### 20. The approval ladder refuses at each rung — NOT YET RUN
+
+Three things are approved and the refusal must name the one that is missing,
+rather than reporting "not approved" about something that plainly is. Take each
+away in turn and try to run the job:
+
+    jobWithdraw       -> "not approved"
+    promptWithdraw    -> its prompt "…" is not approved
+    contractWithdraw  -> its prompt "…" runs under a contract that is not ready
+
+**A pass is the third sentence specifically.** The first two are easy and the
+third is the one that was got wrong once already: the job card said "not
+approved" about an approved job because the ladder collapsed every reason into
+one word.
+
+Then check the other direction: `promptApprove` and `contractApprove` over the
+socket must both refuse, because a model may write either and may not ratify its
+own.
+
+### 21. A machine cannot reach another task's transcript — NOT YET RUN
+
+`/session` never asks which session; it looks up the task the asking machine is
+running. Prove the lookup is the only path: while machine A is running task 1,
+ask for a session as machine A and confirm what comes back is task 1's, and that
+there is no parameter that would name task 2's. Then ask from a machine running
+nothing — **a pass is 204, not somebody else's transcript.**
