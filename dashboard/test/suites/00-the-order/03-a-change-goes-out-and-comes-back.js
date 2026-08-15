@@ -55,13 +55,23 @@ it('a cut is made, and a change is committed on it', async ({ okc, assert, state
   state.commit = made.commits[0].commit
 })
 
-it('what it carries can be read before it is sent', async ({ okc, assert, state }) => {
-  // THE STEP A PERSON DOES NOT SKIP: the Changes tab, before the cut. A pull
-  // request opened without reading what is in it is the one nobody reviews.
-  const change = await okc('changeRead', { source: state.branch, target: state.line })
-  const carrying = (change.repos || []).filter(r => r.ahead > 0)
-  assert.equal(carrying.length, 1, 'The change should be one commit in one repository, and is not')
-  assert.equal(carrying[0].repo, ONE, `The change is in ${carrying[0].repo}, which is not where it was made`)
+it('what the cut carries can be read, on the cut', async ({ okc, assert, state }) => {
+  // THE STEP A PERSON DOES NOT SKIP: reading what is actually on the branch
+  // before sending it anywhere. A pull request opened without that is the one
+  // nobody reviews.
+  //
+  // ASKED OF THE BRANCH, and this test was written the other way round first —
+  // `changeRead`, which is the Changes tab — and it FAILED, saying "there is no
+  // line called drill/sent-out". That is the order being enforced rather than
+  // described: a comparison is between two LINES, and a cut is not one yet. The
+  // reading that exists at this point is the artifact on the branch, which is
+  // the Branches Cut tab. The failure was the useful part.
+  const art = await okc('branchArtifact', { branch: state.branch, repo: ONE })
+  const one = (art.repos || []).find(r => r.repo === ONE)
+  assert.ok(one, `Nothing was reported about ${ONE} at all`)
+  assert.equal(one.ahead, 1, `The cut should carry exactly the one commit that was made on it, and carries ${one.ahead}`)
+  assert.ok((one.files || []).some(f => (f.path || f.file || f) === 'drill-order.md' || String(f.path || f.file || f).endsWith('drill-order.md')),
+    'The file that was committed is not among the files the cut carries')
 })
 
 it('a cut becomes a line before it leaves', async ({ okc, assert, state }) => {
@@ -72,6 +82,16 @@ it('a cut becomes a line before it leaves', async ({ okc, assert, state }) => {
   state.promoted = true
   const after = (await okc('gitBranches')).branches.find(b => b.name === state.branch)
   assert.ok(after.protected, 'A line is protected, and this one is not')
+})
+
+it('and now it can be compared with the line it was cut from', async ({ okc, assert, state }) => {
+  // The Changes tab, which is a comparison between lines and so only becomes
+  // possible at this point in the order. The same fact from the other side: what
+  // the branch carries, said as what one line has that another does not.
+  const change = await okc('changeRead', { source: state.branch, target: state.line })
+  const carrying = (change.repos || []).filter(r => r.ahead > 0)
+  assert.equal(carrying.length, 1, `The change should be one commit in one repository, and ${carrying.length} repositories carry something`)
+  assert.equal(carrying[0].repo, ONE, `The change is in ${carrying[0].repo}, which is not where it was made`)
 })
 
 it('and it leaves as one pull request, from the repository that carries something', async ({ okc, assert, state }) => {

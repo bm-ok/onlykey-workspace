@@ -478,7 +478,20 @@ async function deleteBranch (repo, branch) {
   const r = await github.call('DELETE', `/repos/${remote.owner}/${remote.repo}/git/refs/heads/${branch}`)
   // 204 is gone, 422 is "it was not there" — which is the same state and not a
   // failure to report as one.
-  if (r.status === 204) return { repo, branch, gone: true, on: `${remote.owner}/${remote.repo}` }
+  if (r.status === 204) {
+    // AND THE MIRROR OF IT HERE, in the same act.
+    //
+    // `refs/remotes/origin/<branch>` is this host's copy of what the fork has.
+    // Deleting the branch there and leaving the copy is a second opinion about
+    // the same fact, and every panel that reads "where origin has it" believes
+    // the copy — which is how a drill that had cleaned up after itself was
+    // reported as having left something behind.
+    try {
+      const dir = serve.gitDirOf(repo)
+      if (dir) git(dir, ['update-ref', '-d', `refs/remotes/origin/${branch}`])
+    } catch { /* there was no mirror of it here, which is the state wanted */ }
+    return { repo, branch, gone: true, on: `${remote.owner}/${remote.repo}` }
+  }
   if (r.status === 422 || r.status === 404) return { repo, branch, gone: false, already: true, on: `${remote.owner}/${remote.repo}` }
   throw new Error(`Could not delete "${branch}" on ${remote.owner}/${remote.repo}: ${(r.body && r.body.message) || `GitHub answered ${r.status}`}`)
 }
