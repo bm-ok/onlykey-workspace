@@ -209,6 +209,25 @@ function paintTestDetail (suite, t) {
     el('div', { className: 'dlg-heading', style: 'margin-top:12px', textContent: 'What it does' }),
     codeBlock(String(t.source || ''), 'javascript'),
 
+    // AND WHAT IT SAID WHILE IT RAN.
+    //
+    // The live log is the whole run interleaved, which is right while it is
+    // happening and useless afterwards for one check. Half these drills log what
+    // they ARRANGED — "taking runner1's credential for the duration, and putting
+    // it back afterwards" — and that is most of what a result means: the same
+    // green tick is worth different things depending on what the drill had to
+    // set up to earn it.
+    //
+    // From the last run only, and absent rather than empty when there has not
+    // been one. An empty box under a heading reads as "it said nothing", which
+    // is a different claim from "it has not run".
+    (t.log || []).length
+      ? [
+          el('div', { className: 'dlg-heading', style: 'margin-top:12px', textContent: 'The log' }),
+          codeBlock((t.log || []).join('\n'), 'text')
+        ]
+      : null,
+
     el('div', { className: 'row', style: 'margin-top:10px' },
       el('button', {
         className: 'btn ok',

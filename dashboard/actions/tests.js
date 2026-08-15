@@ -73,7 +73,8 @@ module.exports = {
               // same way is the fastest route to a red number nobody reads.
               state: !r ? 'not run' : r.ok === true ? 'passed' : r.ok === null ? 'unrunnable' : 'failed',
               ms: r ? r.ms : null,
-              why: r ? (r.unrunnable || r.error || null) : null
+              why: r ? (r.unrunnable || r.error || null) : null,
+              log: (r && r.log) || []
             }
           })
         })),
@@ -194,6 +195,21 @@ module.exports = {
       const one = String(test || '').trim()
       lastRun.running = true
       const to = log.on('test')
+
+      // WHAT EACH TEST SAID, kept per test rather than only in the live log.
+      //
+      // The live log is the whole run interleaved, which is right while it is
+      // happening and useless afterwards for one check — half these drills log
+      // what they ARRANGED ("taking runner1's credential for the duration"), and
+      // that is most of what a result means. The window shows it beside the
+      // source of the check it belongs to.
+      //
+      // Routed by whichever test is running when the line arrives. The harness
+      // hands every test the same log function, so this is the only way to know
+      // which one is talking.
+      const said = new Map()
+      const key = (a, b) => `${a} ${b}`
+      let current = null
       to.info(want || one ? `running ${one || want}` : 'running every suite')
 
       try {
@@ -235,7 +251,19 @@ module.exports = {
             // A suite author should not have to know which half they are on.
             return Promise.resolve(found.run(args))
           },
-          log: line => to.info(String(line).trim()),
+          log: line => {
+            const text = String(line).trim()
+            to.info(text)
+            if (current && said.has(current)) said.get(current).push(text)
+          },
+          onTestStart: ({ suiteName, testName }) => {
+            current = key(suiteName, testName)
+            said.set(current, [])
+          },
+          // Cleared AFTER the harness has written its own PASS/SKIP/FAIL line,
+          // so that line lands with the test it is about rather than with
+          // whatever runs next.
+          onTestEnd: () => { current = null },
           testFilter: (testName, suiteName) => {
             if (want && suiteName !== want) return false
             if (one && testName !== one) return false
@@ -254,6 +282,11 @@ module.exports = {
           }
         })
 
+        // Folded onto each result, so what a test SAID travels with how it went
+        // rather than being a second thing to look up by name.
+        for (const su of results.suites || []) {
+          for (const t of su.tests || []) t.log = said.get(key(su.name, t.name)) || []
+        }
         lastRun = { at: new Date().toISOString(), results, running: false }
         const note = `${results.passed} passed, ${results.failed} failed, ${results.unrunnable} could not be tried.`
         if (results.failed) to.bad(note)
