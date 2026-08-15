@@ -108,6 +108,33 @@ const WORKERS = {
 }
 const workerOf = t => WORKERS[t && t.worker] || WORKERS.claude
 
+// WHO IS EXPECTED TO DO IT, from the job slot rather than the worker slot.
+//
+// A job is the automated part of a task. Without one, nothing runs and the
+// machine is set up and handed over — so a jobless task is a task somebody does,
+// by construction. `worker: 'person'` still counts, for tasks written before the
+// form existed and for anything set from the command line.
+//
+// This was `worker === 'person'` alone, and the form that writes tasks cannot set
+// `worker` — so every task was 'claude' and the two doors appeared on none of
+// them.
+const byHand = t => !!t && (t.worker === 'person' || (!t.job && !t.shell))
+
+// Whether there is already a machine up for it, waiting. The queue leaves a
+// jobless task's machine running and claimed; reaching for `taskWorkOn` then
+// would take ANOTHER one and leave the first set up and abandoned.
+const openable = t => !!t && !!t.machine && t.state === 'given'
+
+// A shell on the machine already holding this task. The action answers where the
+// machine is; the terminal is opened here, because there is no terminal on the
+// far side of an action — the same split `takeTaskByHand` makes.
+function openTerminalOn (task) {
+  showTab('terminal')
+  return openShell(task.machine, { what: `#${task.number}`, cwd: task.folder || undefined, task: task.id })
+    .then(() => say(`A shell is open on ${task.machine}.`))
+    .catch(e => say(`${task.machine} is up, but the shell did not open: ${e.message}`, 'bad'))
+}
+
 const taskKey = t => t && [
   t.number,
   t.id, t.title, t.branch, t.state, t.reads, t.machine || '', t.run || '', t.worker || '',
@@ -427,7 +454,7 @@ function paintTaskDetail (task) {
               title: 'Read the script that will run',
               onclick: () => { pickedJob = task.job; been.set('job', pickedJob); forget('jobs'); forget('jobs-detail'); showPane('jobs') }
             })
-          : el('span', { className: 'muted', textContent: 'none — the queue dispatches a worker with the brief' }))),
+          : el('span', { className: 'muted', textContent: 'none — the machine is set up on the branch cut and left running for you' }))),
       el('tr', {}, el('th', { textContent: 'prompt' }),
         el('td', {}, task.promptId
           ? el('button', {
@@ -492,13 +519,32 @@ function paintTaskDetail (task) {
       // Same shape as the buttons taken off the machines tab, arrived at from
       // inside a task: the tool could do the thing, so the window offered it,
       // without asking whether it was the thing this task said.
-      task.worker === 'person'
+      // A TASK WITH NO JOB IS A TASK SOMEBODY DOES, so it gets the two doors.
+      //
+      // This was gated on `worker === 'person'`, and the form that writes tasks
+      // cannot set `worker` — so every task was `claude` and these buttons
+      // appeared on none of them. The job slot is the honest test now: a job is
+      // the automated part of a task, and a task without one is waiting for a
+      // person by construction.
+      //
+      // WHEN A MACHINE IS ALREADY UP FOR IT, THIS OPENS THAT ONE. The queue
+      // leaves a jobless task's machine running and claimed; `taskWorkOn` takes
+      // ANOTHER machine, which would leave the first sitting there set up and
+      // abandoned. So the button reaches straight for the one already waiting.
+      byHand(task)
         ? el('button', {
             className: 'btn ok',
-            textContent: task.machine ? 'Open VS Code again' : 'Work on it in VS Code',
+            textContent: openable(task) ? `Open ${task.machine} in VS Code` : 'Work on it in VS Code',
             disabled: !!task.verdict,
-            title: task.verdict ? 'This task has been judged' : 'A machine is brought up on its branch with VS Code open in it',
-            onclick: () => takeTaskByHand(task, 'editor')
+            title: task.verdict
+              ? 'This task has been judged'
+              : openable(task)
+                  ? `${task.machine} is already set up on ${task.branch}`
+                  : 'A machine is brought up on its branch with VS Code open in it',
+            onclick: () => openable(task)
+              ? api('vmEditor', { name: task.machine, folder: task.folder || undefined })
+                  .then(r => say(r.note || `VS Code is opening on ${task.machine}.`)).catch(oops)
+              : takeTaskByHand(task, 'editor')
           })
         : task.state === 'queued'
         ? el('button', {
@@ -520,13 +566,13 @@ function paintTaskDetail (task) {
       // task: booting a machine and typing `claude` in its shell was the way
       // this was done by hand before any of it existed, and it is a way of
       // working, not a way of starting work.
-      task.worker === 'person'
+      byHand(task)
         ? el('button', {
             className: 'btn',
-            textContent: task.machine ? 'Open a terminal again' : 'Work on it in a terminal',
+            textContent: openable(task) ? `Open a terminal on ${task.machine}` : 'Work on it in a terminal',
             disabled: !!task.verdict,
-            title: task.verdict ? 'This task has been judged' : 'A machine is brought up on its branch and a shell opens here, in the checkout',
-            onclick: () => takeTaskByHand(task, 'terminal')
+            title: task.verdict ? 'This task has been judged' : 'A shell opens here, in the checkout on the machine',
+            onclick: () => openable(task) ? openTerminalOn(task) : takeTaskByHand(task, 'terminal')
           })
         : null,
 
@@ -534,7 +580,7 @@ function paintTaskDetail (task) {
       // counterpart of a worker's exit code, and without it on the task itself
       // the only way to end one was from the machine that happened to be holding
       // it — which is the machines tab deciding a task's fate again.
-      task.worker === 'person'
+      byHand(task)
         ? (task.machine
             ? el('button', {
                 className: 'btn',
@@ -1129,15 +1175,23 @@ async function paintAddTaskNow () {
         ]
       },
       { name: 'brief', label: 'The brief — what the worker is actually told', value: (from && from.brief) || '', multiline: true, rows: 8, placeholder: 'Write it as instructions to somebody who cannot ask you a question.' },
-      // A JOB IS HOW IT GETS DONE, and it is optional because most tasks do not
-      // need one: the queue dispatches a worker with the brief, and that is the
-      // ordinary path. A job is for when the doing is itself a script.
+      // A JOB IS THE AUTOMATED PART OF A TASK, and choosing none is a real
+      // choice rather than a default.
+      //
+      // "None" used to mean "the queue dispatches a worker with the brief",
+      // which made running Claude the consequence of not deciding anything —
+      // somebody queued a task and got a machine booted, a credential placed, a
+      // worker run over their branch and the machine rolled back, having asked
+      // for none of it.
+      //
+      // Now: a job runs, and without one the machine is brought up, set up on
+      // the branch cut, and left running for whoever wrote the task.
       {
         name: 'job',
-        label: 'Run it with a job (optional)',
+        label: 'Which job runs it (optional)',
         value: '',
         options: [
-          { value: '', label: 'none — the queue dispatches a worker' },
+          { value: '', label: 'none — set the machine up and leave it running for me' },
           ...(work.jobs || []).map(x => ({ value: x.id, label: `${x.name}${x.runnable ? '' : ` — ${x.whyNot}`}` }))
         ]
       },
@@ -1196,7 +1250,7 @@ async function paintAddTaskNow () {
             el('span', { textContent: 'done by' }),
             el('span', {}, job
               ? el('span', { className: job.runnable ? '' : 'warn', textContent: `${job.name}${job.runnable ? '' : ` — ${job.whyNot}`}` })
-              : el('span', { className: 'muted', textContent: 'the queue, dispatching a worker with the brief' }))),
+              : el('span', { className: 'muted', textContent: 'nothing — the machine is set up and left running for you' }))),
           el('div', { className: 'group-part' },
             el('span', { textContent: 'held to' }),
             el('span', {}, rules

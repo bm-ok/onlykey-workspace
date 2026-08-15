@@ -38,6 +38,10 @@ const TICK = 15000
 const busyWith = new Map()
 
 const workspaces = require('../core/workspaces')
+// The registry, for the one thing here that is a claim rather than an act: a
+// machine handed over to a person has to be marked borrowed, and `vmBorrow`
+// cannot do it because it brings the machine up as part of borrowing it.
+const vms = require('../machines/vms')
 
 let running = false
 let timer = null
@@ -163,6 +167,11 @@ async function run (actions, log, task, machine) {
   const to = log.on('queue', machine)
   const id = task.id
 
+  // Whether this ended by handing the machine over rather than by finishing
+  // work on it. Declared here because the `finally` at the bottom reads it, and
+  // it is the one thing that stops that putting the machine away. See below.
+  let handedOver = false
+
   // How long each part took, kept with the attempt.
   //
   // A total is nearly useless for finding a fault: "the task took nine minutes"
@@ -205,6 +214,44 @@ async function run (actions, log, task, machine) {
     // script must be approved, the machine must be dialled in, and the workspace
     // gate still applies. A second path for the scheduler is always the one that
     // turns out to be wrong.
+    // NO JOB MEANS NOBODY IS SENT. The machine is brought up, set up on the
+    // branch cut, and LEFT RUNNING at its desktop for whoever wrote the task.
+    //
+    // It used to run `claude -p` with the brief, on the reasoning that a task
+    // with no job is "the ordinary path" — and that made a worker the default
+    // consequence of not choosing anything. Somebody who wrote a task and
+    // queued it got a machine booted, a credential placed, Claude run over
+    // their branch, and the machine rolled back, having chosen none of it. The
+    // board then said "used Claude: yes" about work they never asked a worker
+    // to do, which is true and is not the point.
+    //
+    // A job is what runs. Without one there is nothing to run, and the useful
+    // thing to do with a prepared machine is hand it over rather than fill it.
+    //
+    // NOT PUT AWAY EITHER, which is the other half. Everything below this
+    // shuts the machine down and rolls it back when the work ends; there is no
+    // work here to end. So it stops at the setup, marks the machine borrowed so
+    // the queue does not take it back, and returns.
+    if (!task.job && !task.shell) {
+      // Claimed with a registry write rather than through `vmBorrow`, which is
+      // the action for this and cannot be used here: it brings the machine up
+      // itself, and doing that now would roll back the workspace that was set
+      // up four lines ago. What is left to do is only the claim.
+      handedOver = true
+      vms.update(machine, { borrowed: { why: `#${task.number} — set up and waiting for you`, at: new Date().toISOString() } })
+      await actions.taskUpdate.run({
+        id,
+        task: {
+          state: 'given',
+          machine,
+          attempts: [...(task.attempts || []), { machine, at: new Date().toISOString(), setUp: true }]
+        }
+      })
+      to.good(`#${task.number} — ${machine} is up on ${task.branch} and waiting. Nothing was run: this task names no job.`)
+      to.info(`open it from the task, or give it back with vmReturn --name ${machine}`)
+      return
+    }
+
     const started = task.job
       ? await actions.jobRun.run({
           id: task.job,
@@ -230,16 +277,16 @@ async function run (actions, log, task, machine) {
       id,
       task: {
         run: started.run,
-        // A WORKER ACTUALLY RAN, recorded rather than assumed. `worker` says
-        // what this task was written to be done by and is set before anything
-        // happens; the board was reading it as a statement of fact, so a draft
-        // nobody had touched said "worked by Claude".
+        // NOTHING SETS `usedClaude` HERE ANY MORE, and that is the point of the
+        // early return above. Only two kinds of task reach this line now: one
+        // with a job, and a shell run. A shell run has no worker in it, and a
+        // job's worker announces itself from the other end — the /session
+        // handler sets the flag when a transcript arrives, which is the only
+        // proof a job started one rather than only moving files around.
         //
-        // This is the plain path: no job and not a shell means dispatch wrote
-        // `claude -p` into the run script, so a worker started. A job sets the
-        // same flag from the other end -- see the /session handler, which knows
-        // because the worker handed its memory back.
-        ...(task.job || task.shell ? {} : { usedClaude: true }),
+        // A job is the only way this dashboard runs Claude. So "did this task
+        // use Claude" has exactly one source, and it is evidence rather than
+        // inference.
         attempts: [...(now.attempts || []), { run: started.run, machine, at: new Date().toISOString() }]
       }
     })
@@ -280,7 +327,14 @@ async function run (actions, log, task, machine) {
     // ALWAYS, and in this order. A machine left on, holding a credential, is
     // the failure that costs something: the credential outlives the task in a
     // snapshot, and the machine is out of service until a person notices.
-    await putAway(actions, log, machine)
+    //
+    // EXCEPT WHEN IT WAS HANDED OVER ON PURPOSE. A task with no job leaves the
+    // machine up, set up and claimed, for whoever wrote it — putting it away
+    // here would roll back the workspace it was just given and shut it down a
+    // second after saying it was ready. It is not "left on" in the sense above:
+    // it is borrowed, which the queue already understands and will not touch,
+    // and giving it back is `vmReturn`, which takes the credential with it.
+    if (!handedOver) await putAway(actions, log, machine)
     busyWith.delete(machine)
   }
 }
