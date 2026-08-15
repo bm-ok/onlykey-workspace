@@ -38,6 +38,11 @@ const jobs = require('../tasks/jobs')
 const contracts = require('../tasks/contracts')
 const sessions = require('../tasks/sessions')
 const jobrun = require('../tasks/jobrun')
+// The test harness, and the suites written against it. Registration is a side
+// effect of requiring a suite file, so the loader is separate from the harness
+// and is called only when something actually asks — see actions/tests.js.
+const harness = require('../tasks/harness')
+const suites = require('../test/suites')
 const archive = require('../tasks/archive')
 const files = require('../tasks/files')
 const workspaces = require('../core/workspaces')
@@ -305,7 +310,7 @@ module.exports = {
   log, events, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
-  archive, files, sessions, prompts, contracts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
+  archive, files, sessions, prompts, contracts, jobs, jobrun, harness, suites, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace,
   fs, path, https,
   started, net, win,

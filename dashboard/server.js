@@ -61,7 +61,10 @@ Object.assign(actions,
   require('./actions/credentials'),
   require('./actions/branches'),
   require('./actions/tasks'),
-  require('./actions/repos')
+  require('./actions/repos'),
+  // This app run against itself. Last, because every drill in it drives the
+  // table above and there has to be a table first.
+  require('./actions/tests')
 )
 
 // The ports this server actually ended up on, shared with the actions so a guest

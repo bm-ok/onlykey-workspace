@@ -55,6 +55,7 @@
     'sessions',  // what workers remember, kept across the machines they pass through
     'machines',  // the virtual machines this app made
     'live',      // the log, and every action there is
+    'tests',     // this app run against itself, for developing it
 
     // Last, because it calls into all of them.
     'draw'       // the loop, the photograph of the window, and how often

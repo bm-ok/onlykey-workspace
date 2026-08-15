@@ -68,6 +68,12 @@
          It was called "All actions" and that name went to the wrong tab: the
          three things you actually run — a job, a prompt, a contract — are next
          door under Actions, and this is the surface they reach through. -->
+    <!-- THIS APP RUN AGAINST ITSELF, and the one tab that is about developing it
+         rather than about using it. Half of what this project needs to prove
+         passes by being REFUSED, and a refusal that stops refusing is noticed
+         when it costs something — which is exactly what a machine should be
+         checking instead of a person reading prose in TEST-PLAN.md. -->
+    <button class="tab" data-view="tests">Test <span class="tab-badge hidden" id="tests-badge"></span></button>
     <button class="tab" data-view="api">API</button>
   </nav>
   <div class="topright muted" id="topright"></div>
@@ -763,6 +769,42 @@
   </section>
 
   <!-- ---------------- All actions ---------------- -->
+  <!-- ---------------- Test ----------------
+       THREE COLUMNS, AND THE THIRD IS THE POINT. Suites, then what each one
+       asserts, then the SOURCE of the check you picked beside what it said when
+       it ran.
+
+       A green tick means nothing on its own — it means whatever the check
+       actually does, and the only way to know that is to read it. The harness
+       already carries each test's source for exactly this reason, the same way a
+       job shows its script before anybody approves it. So the widest column is
+       not output: it is the code, with the result under it. -->
+  <section class="view" id="view-tests">
+    <p class="note" id="tests-note"></p>
+    <div class="cols">
+
+      <div class="col narrow">
+        <h2 class="titlerow">
+          Suites <span class="muted" id="tests-context"></span>
+          <span class="grow"></span>
+          <button class="btn small ok" id="tests-run-all" title="Run every test in every suite">Run all</button>
+        </h2>
+        <div id="test-suites" class="stack"></div>
+      </div>
+
+      <div class="col narrow">
+        <h2 class="titlerow">What it asserts <span class="muted" id="test-suite-context"></span></h2>
+        <div id="test-list" class="stack"></div>
+      </div>
+
+      <div class="col wide">
+        <h2 class="titlerow">The check <span class="muted" id="test-context"></span></h2>
+        <div id="test-detail" class="panel"></div>
+      </div>
+
+    </div>
+  </section>
+
   <section class="view" id="view-api">
     <p class="note">
       Every capability this server has, generated from <code>/api/actions</code>.

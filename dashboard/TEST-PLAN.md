@@ -733,3 +733,46 @@ instruction. Each must leave the task alone and say why:
 **Half the value is the first one.** A note is written by a guest, and a guest
 that keeps a stale note must not be able to take work off the machine actually
 doing it.
+
+
+Drills that run themselves, and why this is not planned.js again
+-----------------------------------------------------------------
+
+**Ten of these were executable once and were taken back out**, for reasons set
+out at the top of this file: they created tasks, cut branches and borrowed
+machines; they were approved and one click from running against whatever
+workspace happened to be open; and nobody had run them in weeks. A drill that is
+never run is not a safety net, it is a loaded thing in a drawer.
+
+Both halves of that are addressed rather than forgotten.
+
+**They cannot do anything.** `test/suites/refusals.js` asks this app to do things
+it should refuse, and a refusal that works leaves no trace by definition. There
+is nothing to clean up afterwards and nothing to be careful about — it is safe to
+run on a live workspace while somebody is working, which is the opposite of what
+planned.js was. Anything that MUTATES does not belong here; it belongs in the
+prose above, where a person decides to run it.
+
+**And they are not in a drawer.** The Test tab lists every suite, what each one
+asserts, and how it went — so an unrun suite is visible as unrun rather than
+forgotten, which is the failure mode that killed the last attempt.
+
+    okc.js suites                          what is registered, and how it went
+    okc.js suiteRun                        all of it
+    okc.js suiteRun --suite "..."          one suite
+    okc.js suiteRun --suite "..." --test "..."
+
+**Every test drives the actions table**, which is what makes these drills rather
+than unit tests: a test asks this app for something exactly the way a person or
+the command line does, and meets the same refusals. A test reaching past the
+table into the modules underneath would prove something about code nobody calls.
+
+**Three outcomes, not two.** `assert.needs(cond, why)` stops a test that cannot be
+tried — no machine is on, no credential is held, nothing is claiming a branch —
+and that is counted and coloured apart from a failure. The resting state of this
+system is machines off and holding nothing, so a suite reporting those as
+failures would teach somebody to ignore a red number within a day.
+
+**What belongs here: anything that passes by being REFUSED.** A capability that
+stops working is noticed within the hour. A refusal that stops refusing is
+noticed when it costs something.
