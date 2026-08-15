@@ -941,7 +941,7 @@ async function newBranch () {
       'It starts at the line you choose, in every repository at once, and that line is recorded as what the branch is measured against ever after.'
     ],
     fields: [
-      { name: 'branch', label: 'Name', placeholder: 'task/what-it-is-for' },
+      { name: 'branch', label: 'Name', placeholder: 'feature/fix-name' },
       { name: 'reason', label: 'What is it for', placeholder: 'why this exists, for whoever finds it later' },
       // No blank option, because there is no blank answer. A select that opens
       // on a real choice is also the one that cannot be skipped past.
