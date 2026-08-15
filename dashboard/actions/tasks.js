@@ -411,7 +411,26 @@ module.exports = {
 
       const runs = await actions.vmRuns.run({ name: task.machine })
       const known = new Map((runs.runs || []).map(r => [r.id, r]))
-      const withState = attempts.map(a => ({ ...a, ...(known.get(a.run) || { state: 'gone' }) }))
+      // AN ATTEMPT WITH NO RUN NEVER HAD ONE, which is not the same as its run
+      // being gone.
+      //
+      // This looked every attempt up by `a.run` and called anything it could not
+      // find "gone" — reported as "the machine no longer has it". Two kinds of
+      // attempt have no run at all and both were being libelled by it:
+      //
+      //   handed over   a task with no job. The queue sets the machine up and
+      //                 leaves it running, so there is nothing to look up and
+      //                 the machine emphatically DOES still have it — it is
+      //                 sitting there waiting, which the panel said the opposite
+      //                 of, next to a button offering to open it
+      //   failed        the setup threw before anything was dispatched. The
+      //                 reason is already on the attempt; "the machine no longer
+      //                 has it" replaces a real explanation with a wrong one
+      const withState = attempts.map(a => {
+        if (a.failed) return { ...a, state: 'lost' }
+        if (!a.run) return { ...a, state: a.setUp ? 'setUp' : 'never started' }
+        return { ...a, ...(known.get(a.run) || { state: 'gone' }) }
+      })
 
       // Pulled across the moment it is over, and never again.
       //

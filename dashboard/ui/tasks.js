@@ -546,19 +546,34 @@ function paintTaskDetail (task) {
                   .then(r => say(r.note || `VS Code is opening on ${task.machine}.`)).catch(oops)
               : takeTaskByHand(task, 'editor')
           })
-        : task.state === 'queued'
+        : null,
+
+      // QUEUEING IS ITS OWN QUESTION, not the other half of "do it by hand".
+      //
+      // These were the else-branches of the button above, so widening that to
+      // every jobless task took them away — and #35 sat queued, unable to be
+      // picked up because both machines were borrowed, with nothing on screen
+      // offering to take it back out. A task can be queued AND workable by hand;
+      // they are different acts and the panel should carry both.
+      task.state === 'queued'
         ? el('button', {
             className: 'btn',
             textContent: 'Take it out of the queue',
             onclick: async () => { await api('taskUnqueue', { id: task.id }); say(`#${task.number} is back to a draft.`); draw() }
           })
-        : el('button', {
-            className: 'btn ok',
-            textContent: 'Queue it',
-            disabled: !!task.verdict,
-            title: task.verdict ? 'This task has been judged' : 'The next free machine takes it, runs it, and shuts down',
-            onclick: () => queueTask(task)
-          }),
+        : task.state === 'given'
+          ? null
+          : el('button', {
+              className: 'btn ok',
+              textContent: 'Queue it',
+              disabled: !!task.verdict,
+              title: task.verdict
+                ? 'This task has been judged'
+                : task.job
+                    ? 'The next free machine takes it, runs the job, and shuts down'
+                    : 'The next free machine is set up on the branch cut and left running for you',
+              onclick: () => queueTask(task)
+            }),
       // THE SECOND DOOR ONTO THE SAME TASK. Same machine, same branch, same
       // credential, same finish — a terminal instead of an editor, landed in the
       // checkout, with nothing typed into it. This is what the Terminal tab's
@@ -719,16 +734,36 @@ function paintHistory (task) {
     // not the same as it having failed. Reading it as a failure would paint most
     // finished tasks red, because the queue shuts a machine down the moment its
     // work ends.
-    const badge = a => a.state === 'running' ? 'run'
+    const badge = a => a.state === 'running' || a.state === 'setUp' ? 'run'
       : a.state === 'lost' ? 'bad'
-        : a.state === 'ended' ? 'muted'
+        : a.state === 'ended' || a.state === 'never started' ? 'muted'
           : a.exit === 0 ? 'ok' : 'bad'
-    const said = a => a.state === 'gone' ? 'the machine no longer has it'
-      : a.state === 'ended' ? 'ended — its machine has been put away'
-        : a.state || 'unknown'
+    // SET UP IS A LIVE STATE, and it read as the deadest one there is. A task
+    // with no job leaves its machine running and waiting; the attempt has no run
+    // because nothing was run, and "the machine no longer has it" appeared
+    // directly above a button offering to open that machine.
+    const said = a => a.state === 'setUp' ? 'set up and waiting for you'
+      : a.state === 'never started' ? 'never started — nothing was dispatched'
+        : a.state === 'gone' ? 'the machine no longer has it'
+          : a.state === 'ended' ? 'ended — its machine has been put away'
+            : a.state || 'unknown'
+    // AN ATTEMPT IS A RUN, and a task with no job has none.
+    //
+    // This listed every attempt as a card with a run id, a log button and a
+    // verdict — a shape that only means anything when something was dispatched.
+    // For a jobless task the "attempts" are hand-overs: a machine was set up and
+    // given to somebody. Drawing those as failed runs with no logs was the panel
+    // describing one thing in another thing's vocabulary, and it read as three
+    // broken runs when nothing had gone wrong at all.
+    //
+    // Which machines have had it is the "been in a VM" row on the panel beside
+    // this, and that is the honest home for it.
+    const ran = p.attempts.filter(a => a.run)
+    const handed = p.attempts.filter(a => !a.run)
+
     fill(box2,
-      p.attempts.length
-        ? p.attempts.map((a, i) => el('div', { className: 'card' },
+      ran.length
+        ? ran.map((a, i) => el('div', { className: 'card' },
             el('div', { className: 'card-title' },
               el('span', { textContent: `attempt ${i + 1} — ${a.machine || 'unknown'}` }),
               el('span', { className: `badge ${badge(a)}`, textContent: said(a) })),
@@ -748,8 +783,24 @@ function paintHistory (task) {
             // nothing is worse than no button.
             a.kept
               ? el('button', { className: 'btn', style: 'margin-top:6px', textContent: 'Read its log', onclick: () => showLog(task, a.run) })
-              : el('div', { className: 'card-sub muted', textContent: a.state === 'running' ? 'still going; the log is kept when it ends' : 'no log was kept for this attempt' })))
-        : el('p', { className: 'empty', textContent: p.why || 'never given out' }),
+              // "No log was kept" reads as something lost. For an attempt that
+              // never ran there was never one to keep, which is a different
+              // sentence and not a fault.
+              : el('div', { className: 'card-sub muted', textContent: a.state === 'running'
+                  ? 'still going; the log is kept when it ends'
+                  : a.state === 'setUp'
+                      ? 'nothing ran, so there is no log — the machine is yours'
+                      : a.state === 'lost' || a.state === 'never started'
+                          ? 'nothing ran, so there is no log'
+                          : 'no log was kept for this attempt' })))
+        // No runs. Say which it is: set up and waiting, set up and since given
+        // back, or never given out at all. Three different facts that all used
+        // to arrive as "never given out".
+        : el('p', { className: 'empty', textContent: handed.length
+            ? (handed.some(a => a.state === 'setUp')
+                ? `Nothing has run — this task has no job. A machine was set up for you ${handed.length === 1 ? 'once' : `${handed.length} times`}; the buttons below open it.`
+                : `Nothing has run. A machine was set up for it ${handed.length === 1 ? 'once' : `${handed.length} times`} and has since been given back.`)
+            : (p.why || 'never given out') }),
 
       // What it is doing NOW, which is the question a running task provokes and
       // which nothing on this screen answered before.
