@@ -249,6 +249,41 @@ stays either way — it costs nothing and it catches the next line nobody though
 about — but it stops being the only thing standing between an authorize URL and
 a file.
 
+**A credential per machine, not one shared out.** This host holds ONE credential
+and hands it to whichever machine is next, which has a failure nobody had
+noticed: a worker refreshes while it runs, and if Anthropic rotates refresh
+tokens on use, the machine now holds a newer credential than the host does — and
+the old one is dead. The machine is then rolled back and the new one goes with
+it, so the host keeps handing out a token that stopped working the first time it
+was used.
+
+That may be exactly what was seen on 2026-08-15: `credentialsHeld` reported the
+refresh token good until September while the worker answered "OAuth session
+expired and could not be refreshed". A clock-valid token the server rejects is
+what a rotated-away token looks like. **Worth settling rather than assuming** —
+run one task, `vmCredentialsGrab` from that machine before it is put away, and
+compare the refresh token to this host's copy. Same string means no rotation and
+the failure was something else; different means this is the highest-value item
+here rather than a hardening exercise.
+
+So: a credential is **assigned to a machine**, and there are as many as there are
+machines that need one. Each is its own sign-in, so each has its own refresh
+chain and no two can rotate each other away. The Keys tab becomes a list with
+assignments rather than a single held credential, `vmCredentialsPut` hands a
+machine ITS one, and a machine with none is refused with the reason rather than
+handed somebody else's.
+
+**And the refreshed credential comes home.** It rides the session round trip the
+job API already does — down before a run, back up after — through the tunnel
+above, sealed by `core/secret.js` and NOT inside the tar. The archive exclusion
+stays: an archive is kept for a long time and read by anything that can open a
+gzip, which is the opposite of what a credential wants. What changes is that the
+refresh a worker performs is no longer thrown away with the machine.
+
+Then this needs an answer: a machine that is deleted leaves a credential assigned
+to nothing, and that is a live token with no owner. It should be forgettable from
+the Keys tab, and probably revoked rather than merely deleted.
+
 **Note what it does not fix.** Once written, the credential is a file on a
 machine that can be snapshotted — which is why snapshotting a machine holding one
 is already refused, and why the session archive excludes it. A key exchange
