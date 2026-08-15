@@ -735,3 +735,29 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   `for (const line of rows)` and produced six new false alarms. The shape that
   works is the LEADING identifier of each comma-separated part. Confirmed both
   ways afterwards: a deliberately undeclared name is still caught.
+
+* **A deny list checked after an allowlist never fires.** `core/events.js` names
+  six tags that are deliberately NOT kept — window, capture, ipc, channel,
+  provision, editor — and the comment reads as a rule in force. It was never
+  implemented: `worthKeeping` asked only whether any tag was in KEEP, and every
+  one of those entries also carries a tag that IS kept, because a channel line is
+  tagged `['vm', <name>, 'channel']`.
+
+  The cost was the whole point of the record. `taskProgress` polls a machine for
+  its runs every thirteen seconds while somebody watches a task, and 89 of the
+  last 400 kept entries were that one poll — so "what happened to runner1 while I
+  was away" had already scrolled out of a two-thousand-line file by the time
+  anybody asked. A record that keeps the heartbeat and drops the acts is worse
+  than no record, because it is believed. Now refused BEFORE the allowlist, and
+  `test/events-test.js` asserts it both ways.
+
+* **Two claims on a machine, and only one was released.** `vmSnapshotRestore`
+  clears the branch claim when a disk goes back, with a long comment about how a
+  standing permission to push work that is no longer on the disk is "the quiet
+  kind of wrong". It did not clear the BORROW, which is the same kind of claim
+  with the same lifetime. runner1 sat `poweroff`, `claims a branch: nothing`,
+  "not on a branch and not running anything" — and beside all of that,
+  `borrowed — working on inspection/check1 in a terminal`, which is the one thing
+  keeping it out of the pool, naming work that had moved to another machine days
+  earlier. When a field is added that means "not available", every place that
+  releases availability has to learn about it.

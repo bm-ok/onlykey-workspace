@@ -58,9 +58,23 @@ const KEEP = new Set([
 //   window     which tab somebody is looking at. Not an act.
 //   capture    a screenshot was taken. Noise, and it is usually me taking it.
 //   ipc        a client connected. Says nothing about what it then did.
-//   channel    a machine's socket coming and going, which is weather.
+//   channel    a machine's socket coming and going, and every command sent down
+//              it. Weather, and it is the transcript rather than the act.
 //   provision  the long install, which is `out` from a guest anyway.
 //   editor     opening VS Code, which changes nothing.
+//
+// THIS LIST WAS WRITTEN AND NEVER ENFORCED, which is worse than not having
+// written it: it reads as a rule that is being applied. `worthKeeping` asked
+// only whether any tag was in KEEP, and a channel entry is tagged
+// `['vm', <name>, 'channel']` — so `vm` let every one of them through.
+//
+// The cost was the whole point of the record. `taskProgress` polls a machine for
+// its runs every thirteen seconds while somebody watches a task, at three lines
+// each, and those are `vm`-tagged. 89 of the last 400 entries were one poll
+// saying "reading its runs" — so the answer to "what happened to runner1 while I
+// was away" had already scrolled out of a two-thousand-line file. A record that
+// keeps a heartbeat and drops the acts is worse than none, because it is trusted.
+const NEVER = new Set(['window', 'capture', 'ipc', 'channel', 'provision', 'editor'])
 
 // Enough to answer "what happened while I was away" without becoming an archive
 // nobody reads. At roughly 150 bytes a line this is a few hundred kilobytes.
@@ -97,6 +111,10 @@ function worthKeeping (entry) {
   if (!entry || entry.level === 'out') return false
   const tags = entry.tags || []
   if (tags.includes('guest')) return false
+  // REFUSED BEFORE THE ALLOWLIST IS ASKED. Every one of these entries also
+  // carries a tag that IS kept — a channel line is tagged `vm` — so checking
+  // KEEP first means the deny list can never fire.
+  if (tags.some(t => NEVER.has(t))) return false
   return tags.some(t => KEEP.has(t))
 }
 

@@ -62,6 +62,26 @@ check('a task line is untouched',
   events.scrub('#34 "code checking time" written, delivering on inspection/check1'),
   '#34 "code checking time" written, delivering on inspection/check1')
 
+// THE DENY LIST FIRES, which it did not for as long as it had been written down.
+//
+// Every one of these also carries a tag that IS kept — a channel line is tagged
+// `vm` — so an allowlist checked first let all of them through, and the record
+// filled with a poll: 89 of 400 entries were one machine being asked for its runs
+// every thirteen seconds. A record that keeps the heartbeat and loses the acts is
+// worse than no record, because it is believed.
+check('a command sent down the channel is not an act',
+  events.worthKeeping({ level: 'info', tags: ['vm', 'runner2', 'channel'], text: 'running on runner2: reading its runs' }), false)
+check('a socket coming and going is not an act',
+  events.worthKeeping({ level: 'info', tags: ['vm', 'runner2', 'channel'], text: 'runner2 dialled in from 192.168.51.60' }), false)
+check('which tab somebody is on is not an act',
+  events.worthKeeping({ level: 'good', tags: ['window'], text: 'window opened — nw.js' }), false)
+
+// And the acts those tags travel beside are still kept, or this is a mute button.
+check('a machine being made is an act',
+  events.worthKeeping({ level: 'good', tags: ['vm', 'runner1'], text: 'runner1 created' }), true)
+check('the queue putting a task back is an act',
+  events.worthKeeping({ level: 'good', tags: ['queue', 'runner2'], text: 'it dialled back in still holding #35' }), true)
+
 if (bad) {
   console.log(`\nFAIL — ${bad} thing(s) the kept record gets wrong. It is written to disk, so this matters.`)
   process.exit(1)

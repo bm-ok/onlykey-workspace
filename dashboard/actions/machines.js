@@ -407,9 +407,26 @@ module.exports = {
       // a restore, after which the old dial-in is still later than the snapshot
       // was TAKEN and the machine reads as changed for ever. It is not: this
       // just put the disk back, and this is the one place that knows.
-      vms.update(name, { branch, holdsCredential: false, cleanSince: new Date().toISOString() })
+      // AND THE BORROW GOES BACK WITH THE DISK, for exactly the reason written
+      // above about the branch.
+      //
+      // A borrow says "this one is mine, do not queue it". After a rollback the
+      // machine is on no branch, holds no credential and holds no work — every
+      // other field says it is free — and the borrow alone kept it out of the
+      // pool, naming work that is not there. runner1 sat like that: `poweroff`,
+      // `claims a branch: nothing`, "not on a branch and not running anything",
+      // and beside it `borrowed — working on inspection/check1 in a terminal`.
+      //
+      // Somebody who wants it after rolling it back borrows it again, which is
+      // one click. The other way round is a machine nobody can use and nothing
+      // explains — and `vmReturn --keep` already exists for releasing a borrow
+      // without touching the disk, which is the case this must not be confused
+      // with.
+      const gaveBack = vm.borrowed || null
+      vms.update(name, { branch, borrowed: null, holdsCredential: false, cleanSince: new Date().toISOString() })
 
       const to = log.on('vm', name)
+      if (gaveBack) to.info(`no longer borrowed — it was "${gaveBack.why || 'taken by somebody'}", and the disk it was taken for has gone back`)
       if (branch !== was) {
         to.warn(branch
           ? `${name} is back at "${title}" and may now push ${branch}, not ${was || 'nothing'}`
