@@ -48,6 +48,33 @@ same path at the new version, change the number above, and check the two places
 that call `codeBlock()` still render.
 
 
+nanotar/ — nanotar 0.3.0
+-------------------------
+
+Reads a tar. Used on one thing: the `~/.claude` archive a worker hands back when
+a run ends, so the dashboard can say what that worker actually did — how many
+turns, which tools, which files it touched — instead of only how big the file is.
+
+MIT licensed; `nanotar/LICENSE` is the copy that came with it.
+
+    nanotar.js   the CommonJS build, from https://unpkg.com/nanotar@0.3.0/dist/index.cjs
+
+**Only tar, because gzip was already free.** Node ships `zlib`, so
+`zlib.gunzipSync` needs nothing vendored; tar is the half node has no opinion
+about. That is also why the archive stays compressed: 16 KB on disk against 92 KB
+unpacked, for one call.
+
+Chosen for what it does NOT bring. `tar-stream` is the obvious package and pulls
+in `b4a`, `bare-fs`, `streamx` and `fast-fifo`; `it-tar` pulls in seven. This has
+none, and is 9.5 KB.
+
+It is only ever pointed at an archive this app made from a machine it built. It
+is still treated as untrusted input — see `look()` in `tasks/sessions.js`, which
+reads every field defensively and answers with "could not be read" rather than
+throwing, because losing a transcript because its SUMMARY failed would be the
+tail wagging the dog.
+
+
 marked/ — marked 18.0.9
 ------------------------
 

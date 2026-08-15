@@ -41,7 +41,9 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const zlib = require('node:zlib')
 const data = require('../core/data')
+const { parseTar } = require('../vendors/nanotar/nanotar.js')
 
 const ROOT = () => data.sub('sessions')
 
@@ -62,6 +64,96 @@ const MOST = 256 * 1024 * 1024
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/
 const okId = id => !id || ID.test(String(id))
 
+// ---- what is inside one, worked out once -------------------------------
+//
+// READ ON THE WAY IN, NOT ON THE WAY OUT. The archive is the thing that has to
+// survive; a summary of it is what anybody actually looks at, and computing that
+// on every paint would mean gunzipping ninety kilobytes and parsing fifty turns
+// of JSON on a three-second draw loop. So it is done once, when the bytes
+// arrive, and what the panel reads afterwards is a small object.
+//
+// It also means the expensive half only happens when something changed, which
+// is the same reason the window keys its panels on a signature.
+//
+// NOTHING HERE IS TRUSTED. This came off a machine running a script somebody
+// wrote. Every field is read defensively and a transcript that does not parse
+// produces a summary saying so, rather than a throw that would refuse the
+// archive -- losing the transcript because its SUMMARY failed would be the tail
+// wagging the dog.
+function look (bytes) {
+  const out = { turns: 0, tools: [], touched: [], model: null, tokens: null, from: null, to: null, files: 0 }
+  let entries = []
+  try {
+    entries = parseTar(zlib.gunzipSync(bytes))
+  } catch (e) {
+    return { ...out, unreadable: e.message }
+  }
+  out.files = entries.filter(e => e.type === 'file').length
+
+  // The biggest transcript in it. A run resumed into an existing project folder
+  // can leave more than one, and the one being carried on is the one with
+  // something in it.
+  const jsonl = entries
+    .filter(e => /projects\/.*\.jsonl$/.test(e.name || ''))
+    .sort((a, b) => (b.size || 0) - (a.size || 0))[0]
+  if (!jsonl) return { ...out, unreadable: 'there is no transcript in it' }
+
+  out.transcript = jsonl.name
+  let text = ''
+  try { text = new TextDecoder().decode(jsonl.data) } catch { return { ...out, unreadable: 'the transcript is not text' } }
+
+  const tools = new Map()
+  const touched = new Set()
+  const models = new Set()
+  let inTok = 0
+  let outTok = 0
+  let cache = 0
+  let errors = 0
+
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue
+    let t = null
+    // A `.jsonl` whose last line is half-written is an ordinary state: a run
+    // that was killed mid-write leaves one, and everything before it still
+    // counts.
+    try { t = JSON.parse(line) } catch { continue }
+    out.turns++
+    if (t.timestamp) {
+      if (!out.from) out.from = t.timestamp
+      out.to = t.timestamp
+    }
+    if (t.isApiErrorMessage) errors++
+    const m = t.message || {}
+    // `<synthetic>` is what Claude writes for a turn it made up rather than one
+    // a model produced, and reporting it as the model somebody used is a small
+    // lie in the one field people read first.
+    if (m.model && m.model !== '<synthetic>') models.add(m.model)
+    if (m.usage) {
+      inTok += m.usage.input_tokens || 0
+      outTok += m.usage.output_tokens || 0
+      cache += m.usage.cache_read_input_tokens || 0
+    }
+    if (!Array.isArray(m.content)) continue
+    for (const c of m.content) {
+      if (!c || c.type !== 'tool_use') continue
+      tools.set(c.name, (tools.get(c.name) || 0) + 1)
+      const where = c.input && (c.input.file_path || c.input.path || c.input.notebook_path)
+      if (where) touched.add(String(where))
+    }
+  }
+
+  out.model = [...models].join(', ') || null
+  out.tools = [...tools].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n)
+  // Bounded, because this is written into a record that is read on every draw
+  // and a worker that touched four hundred files would otherwise put all four
+  // hundred in it.
+  out.touched = [...touched].slice(0, 40)
+  out.moreTouched = Math.max(0, touched.size - 40)
+  out.tokens = { in: inTok, out: outTok, cache }
+  out.errors = errors
+  return out
+}
+
 // REPLACED, not added to, which is the opposite of how the artifacts beside
 // these behave and is right for the same underlying reason. An artifact is a
 // delivery: two runs producing `firmware.bin` are two results and losing either
@@ -81,6 +173,8 @@ function keep (uid, bytes, { id = null, run = null, machine = null, taskId = nul
   // which machine -- the three things somebody asks when they come back to it.
   const was = get(uid)
   fs.writeFileSync(aboutFor(uid), JSON.stringify({
+    // What is in it, read here once. See `look`.
+    inside: look(bytes),
     task: uid,
     taskId: taskId || (was && was.taskId) || null,
     number: number || (was && was.number) || null,

@@ -100,11 +100,45 @@ function paintSession (s) {
       el('tr', {}, el('th', { textContent: 'kept at' }),
         el('td', { className: 'mono', style: 'user-select:text', textContent: s.path }))),
 
-    // WHAT IS IN IT, said rather than shown. It is a gzip of a folder, and this
-    // window has no tar in it -- unpacking one here would mean vendoring an
-    // archiver to render something nobody reads turn by turn from a panel.
-    // What it IS, and how to look inside, is more useful than a wall of JSON.
-    el('p', { className: 'note', textContent: 'The whole of the worker\'s ~/.claude, as a gzip — the transcript, which project folder it belongs to, and its todos. It is unpacked onto whichever machine picks this task up next, so the worker carries on instead of meeting the work again.' }),
+    // WHAT THE WORKER ACTUALLY DID, which is the question a run's log cannot
+    // answer. Read out of the archive once, when it arrived -- see `look` in
+    // tasks/sessions.js -- so this panel is reading a small object rather than
+    // gunzipping ninety kilobytes on a three-second draw loop.
+    s.inside
+      ? el('div', {},
+          el('h2', { textContent: 'What it did' }),
+          s.inside.unreadable
+            ? el('p', { className: 'note warn', textContent: `The archive is kept, and could not be read to summarise: ${s.inside.unreadable}` })
+            : el('table', { className: 'kv' },
+              el('tr', {}, el('th', { textContent: 'turns' }),
+                el('td', { textContent: `${s.inside.turns}${s.inside.errors ? ` — ${s.inside.errors} of them an API error` : ''}` })),
+              el('tr', {}, el('th', { textContent: 'model' }),
+                el('td', { className: 'mono', textContent: s.inside.model || 'not recorded' })),
+              el('tr', {}, el('th', { textContent: 'tools' }),
+                el('td', { textContent: (s.inside.tools || []).length
+                  ? s.inside.tools.map(t => `${t.name} ×${t.n}`).join(', ')
+                  : 'it ran nothing' })),
+              el('tr', {}, el('th', { textContent: 'files touched' }),
+                el('td', { className: 'mono', style: 'user-select:text', textContent: (s.inside.touched || []).length
+                  ? s.inside.touched.join(', ') + (s.inside.moreTouched ? ` and ${s.inside.moreTouched} more` : '')
+                  : 'none' })),
+              // Cache reads dwarf the rest by two orders of magnitude and that
+              // is the ordinary shape of a resumed conversation -- said plainly
+              // so it does not read as a fault.
+              el('tr', {}, el('th', { textContent: 'tokens' }),
+                el('td', { textContent: s.inside.tokens
+                  ? `${s.inside.tokens.in} in, ${s.inside.tokens.out} out, ${s.inside.tokens.cache.toLocaleString()} read from cache`
+                  : 'not recorded' })),
+              el('tr', {}, el('th', { textContent: 'talked for' }),
+                el('td', { textContent: s.inside.from && s.inside.to
+                  ? `${Math.max(1, Math.round((Date.parse(s.inside.to) - Date.parse(s.inside.from)) / 1000))}s, ending ${ago(s.inside.to)}`
+                  : 'not recorded' })),
+              el('tr', {}, el('th', { textContent: 'transcript' }),
+                el('td', { className: 'mono', style: 'user-select:text', textContent: s.inside.transcript || '—' }))))
+      : null,
+
+    el('h2', { textContent: 'The archive' }),
+    el('p', { className: 'note', textContent: 'The whole of the worker\'s ~/.claude, as a gzip — the transcript, which project folder it belongs to, and its settings. It is unpacked onto whichever machine picks this task up next, so the worker carries on instead of meeting the work again.' }),
     el('p', { className: 'note', textContent: 'The credential is deliberately not in it. A machine is handed one on its way up and it is taken back on the way down; a copy riding along in here would be an unsealed one per task.' }),
 
     el('div', { className: 'row', style: 'margin-top:10px' },
