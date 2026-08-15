@@ -639,6 +639,24 @@ and a verdict. Either worker can take it, which is the point of the spine: a
 person in VS Code and a worker given the conflict are the same task with one step
 different.
 
+**And the intent is that a JOB does it, with Claude.** Which is the strongest
+argument for the shape, because the whole approval ladder already applies with
+nothing added: the script is approved, the prompt it runs is approved, the
+contract those hold to is approved, and none of the three can be ratified over
+the wire by the thing that wrote them. A conflict resolved by a model is exactly
+the case where "who reviewed what was going to run" needs an answer, and here it
+has one already.
+
+**The line the job may not cross is what makes it safe.** Most conflicts are
+mechanical — both sides added an import, both touched adjacent lines — and those
+are worth automating and dull to do by hand. The dangerous ones are two people
+having meant different things, and there the right output is not a resolution:
+it is a refusal that says what the disagreement is. So the contract's job is to
+separate them, and the failure to design for is a model that produces a clean
+diff by quietly picking a side, because nothing downstream can tell that apart
+from a correct merge. `assert` in the job API is the place to make that a
+mechanical check rather than a hope.
+
 **What it wants that does not exist yet:**
 
 * the resolution has to happen ON A MACHINE. The host's repositories are served
