@@ -16,7 +16,7 @@
   "//chromium-args": "Deliberately none. The previous version passed --disable-features=nw2, which selects the older window implementation -- and under it NW.js's own nw.Window shim throws 'getRoutingID is not a function' on every page load, and native confirm() silently returns false. Nothing here needs the flag, so it is gone and both of those go with it. If something ever does need it, expect that error back.",
   "scripts": {
     "start": "node tools/nw.js",
-    "test": "node test/generic-test.js && node test/window-test.js && node test/declared-test.js",
+    "test": "node test/generic-test.js && node test/window-test.js && node test/declared-test.js && node test/events-test.js",
     "//quit": "Asks the running dashboard to close itself, rather than killing the process. The window loads server.js at startup, so a code change means a restart -- this is the half of that which was reaching for a process list.",
     "quit": "node tools/okc.js appQuit",
     "//restart": "Quit, wait until it is actually gone, and start again. The waiting is why this is a script and not `quit && start`: appQuit answers before it closes, so the old app still holds the port at the moment the reply arrives. See tools/restart.js.",

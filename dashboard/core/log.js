@@ -25,6 +25,18 @@
 //
 // If a durable record is ever wanted, it needs redaction at the boundary and a
 // decision about where it lives — not an append call added here.
+//
+// THAT RECORD NOW EXISTS, AND THIS IS STILL TRUE OF THIS FILE. `core/events.js`
+// keeps the app's own sentences about its own acts — a task written, a branch
+// cut, the dashboard closing — on a named allowlist of tags, and never `out` and
+// never anything a guest said. The boundary is one line below, so the rule lives
+// in one place and adding a logger somewhere new does not quietly start writing
+// to disk.
+//
+// Everything above still holds: this stream is what is happening NOW, it holds
+// what a machine printed, and it does not go to a file.
+
+const events = require('./events')
 
 const MAX = 2000
 const entries = []
@@ -41,6 +53,11 @@ function add (tags, text, level = 'info') {
   }
   entries.push(entry)
   if (entries.length > MAX) entries.splice(0, entries.length - MAX)
+
+  // THE ONE PLACE ANYTHING REACHES DISK. See core/events.js: it takes the app's
+  // own acts and refuses everything else, so this call cannot become a leak by
+  // somebody adding a logger elsewhere.
+  try { events.keep(entry) } catch { /* the line is still live; only the note is lost */ }
   for (const fn of listeners) {
     try { fn(entry) } catch { listeners.delete(fn) }
   }

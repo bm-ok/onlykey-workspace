@@ -15,6 +15,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const log = require('../core/log')
+const events = require('../core/events')
 const keys = require('../core/keys')
 const ssh = require('../core/ssh')
 const data = require('../core/data')
@@ -284,7 +285,7 @@ function twoLines (source, target) {
 // trusting the dry run.
 
 module.exports = {
-  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
+  log, events, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
   archive, files, sessions, prompts, contracts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,

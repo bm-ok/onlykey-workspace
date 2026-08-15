@@ -47,6 +47,26 @@ not fixed, and the state of the machines.
 Outstanding
 -----------
 
+* **The credential travels as cleartext inside a shell command.**
+  `vmCredentialsPut` sends `printf '%s' '<the credential>' | base64 -d > ...`
+  down the channel. TLS covers the network and `core/secret.js` covers the file
+  at rest; what neither covers is the middle — a string in this host's memory, a
+  shell argument visible in `ps` on the guest, and a line in its history. An
+  ECDH tunnel keyed to the machine would carry the whole auth exchange, the
+  authorize URL up as well as the credential down, and the dashboard would hold
+  a blob it cannot read. See `ROADMAP.md`, "A key exchange between host and
+  guest, for the credential".
+
+* **The Claude sign-in flow is hard-coded, and jobs exist now.** Every step of
+  `credentialsBegin` / `credentialsFinish` is a sequence of guest commands
+  written into the dashboard, from before there was another way to run one. A
+  job is exactly that — a script that runs on a machine, read and approved
+  before it does — so the flow could be one, editable without a release and
+  keeping the sign-in URL on the machine rather than logging it here. The
+  sticking point is that a credential is not an artifact and must not be handed
+  back like one. See `ROADMAP.md`, "Signing a worker in, as a job rather than as
+  code".
+
 * **Nothing marks a held credential as suspect when a worker is refused.**
   `credentialsHeld` reported the refresh token good until September while the
   worker answered "OAuth session expired and could not be refreshed" — and the

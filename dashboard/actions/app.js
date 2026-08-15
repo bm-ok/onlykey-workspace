@@ -20,7 +20,7 @@ const actions = require('./table')
 // block repeated nine times. See actions/shared.js.
 const s = require('./shared')
 const {
-  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
+  log, events, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
   archive, files, prompts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
@@ -35,6 +35,28 @@ module.exports = {
     run: async () => ({
       ok: true,
       started,
+      // WHAT HAPPENED TO THE LAST ONE, carried across the restart.
+      //
+      // From outside, every way a dashboard goes away looks identical: a
+      // launcher exits, a socket stops answering, a background command reports
+      // that it finished. Whoever reads that fills the gap with whatever they
+      // were already expecting — which is how a restart from the keyboard got
+      // reported here as a process detaching.
+      //
+      // So the previous instance leaves a note and this one reads it. `asked`
+      // says which door it came through; nothing can say who typed it, and a
+      // field claiming to would be the same guess with better handwriting.
+      //
+      // No note means it was not asked — it died, or it is the first run since
+      // the file was cleared. Both are worth knowing and neither is a fault.
+      lastClose: (() => {
+        try {
+          const was = JSON.parse(fs.readFileSync(path.join(data.state(), 'last-close.json'), 'utf8'))
+          // Only if it happened BEFORE this one started. A note newer than this
+          // process belongs to an instance that is still going somewhere else.
+          return was.at && was.at < started ? was : null
+        } catch { return null }
+      })(),
       port: net.port,
       virtualbox: vbox.available() ? vbox.exe() : null,
       // WHICH REPOSITORIES THIS IS ABOUT, carried on the poll the window already
@@ -212,6 +234,37 @@ module.exports = {
     run: () => win.wantedShot || { file: null }
   },
 
+  // WHAT HAPPENED WHILE NOBODY WAS WATCHING.
+  //
+  // The live log is what is happening now and dies with the process — which is
+  // every few minutes while this app is being worked on. So a restart and the
+  // task somebody wrote after it left no trace of either, and whoever read the
+  // gap afterwards filled it with what they expected.
+  //
+  // This is the kept half: the app's own acts, across restarts. See
+  // core/events.js for what is kept and, more importantly, what is not — no
+  // command output and nothing a guest said, because that is where credentials
+  // and sign-in URLs live.
+  events: {
+    about: 'What this app has done, kept across restarts — tasks, branches, the queue, and its own starts and stops',
+    takes: ['since', 'limit'],
+    run: ({ since, limit } = {}) => {
+      const rows = events.all({ since: since || null, limit: Number(limit) || 200 })
+      return {
+        events: rows,
+        // The newest timestamp, to pass back as `since` next time. A bookmark,
+        // like vmSessionTail's — reading the whole record every time is how a
+        // watcher spends its attention re-reading what it already knows.
+        bookmark: rows.length ? rows[rows.length - 1].at : (since || null),
+        where: events.FILE(),
+        kept: events.KEEP ? [...events.KEEP].join(', ') : '',
+        note: rows.length
+          ? 'The app\'s own acts. Command output and anything a guest said are deliberately not here — see the live log for those, while it lasts.'
+          : 'Nothing kept yet.'
+      }
+    }
+  },
+
   // CLOSING IT, THE WAY CLOSING IT IS MEANT TO HAPPEN.
   //
   // The window loads server.js at startup, so every code change needs a restart
@@ -231,8 +284,36 @@ module.exports = {
   // running: it is a virtual machine, not a child process.
   appQuit: {
     about: 'Close the dashboard. Machines that are running keep running',
-    run: () => {
+    run: ({ _overTheWire } = {}) => {
       const how = win.quit ? 'the window' : 'the process'
+
+      // SAID IN THE LOG, BECAUSE A CLOSE LEAVES NO OTHER TRACE.
+      //
+      // Everything downstream of a dashboard going away looks the same from
+      // outside: a launcher exits, a socket stops answering, a background
+      // command reports that it finished. Without a line here, "it was asked to
+      // close" and "it died" are indistinguishable afterwards — and the guess
+      // that gets made is whichever one the reader was already expecting. That
+      // happened: a restart from the keyboard was read as a process detaching.
+      //
+      // WHICH SURFACE, NOT WHO. `_overTheWire` separates the window from the
+      // command line and nothing separates one command line from another, so
+      // this says the door it came through and stops. A line claiming to know
+      // who typed it would be the same guess with better handwriting.
+      const asked = _overTheWire ? 'from the command line' : 'in the window'
+      log.on('app').warn(`closing ${how} — asked ${asked}`)
+
+      // AND WRITTEN DOWN, BECAUSE THE LOG DIES WITH THE PROCESS. The live log is
+      // memory only, so a line saying "this was asked to close" is gone by the
+      // moment anybody could read it — which is after the restart. This survives,
+      // and `status` reports it, so the next instance can say what happened to
+      // the last one instead of leaving it to be guessed.
+      try {
+        fs.mkdirSync(data.state(), { recursive: true })
+        fs.writeFileSync(path.join(data.state(), 'last-close.json'), JSON.stringify({
+          at: new Date().toISOString(), closed: how, asked
+        }, null, 2))
+      } catch { /* it is a note, not the act */ }
       setTimeout(() => {
         try {
           if (win.quit) win.quit()

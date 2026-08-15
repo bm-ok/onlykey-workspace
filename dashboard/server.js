@@ -71,7 +71,14 @@ const net = shared.net
 // What the window hands back so it can be photographed on demand rather than
 // polled at. The action that uses it lives in actions/app.js; this is only the
 // door it is registered through, because server.js is what a window requires.
-const onCapture = fn => { shared.win.capture = typeof fn === 'function' ? fn : null }
+const onCapture = fn => {
+  shared.win.capture = typeof fn === 'function' ? fn : null
+  // The moment a window exists, said once. `start` cannot report this -- the
+  // window requires this file and gets here afterwards -- and "was anybody
+  // looking at it" is the difference between a headless run and somebody
+  // working, which is worth knowing when reading back what happened.
+  if (shared.win.capture) log.on('app').good('a window attached')
+}
 
 // And how it closes itself. Registered the same way and for the same reason:
 // `nw.App.quit()` exists in the page and nowhere else, and the alternative from
@@ -702,6 +709,17 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
         log.on('server').warn(`${carried.left.join(', ')} could not be moved out of ${carried.from} — there is already a file of that name in ${carried.to}, and the one already there is the live one`)
       }
 
+      // BOTH ENDS OF A RESTART, in the kept record. Without a start line, the
+      // events file shows a close and then whatever happened next with no seam
+      // — and the seam is the thing somebody is trying to see when they ask
+      // what happened while they were away. See core/events.js.
+      // NOT "with a window" or "headless", because at this moment it cannot
+      // know: the window requires this file and registers itself AFTER start()
+      // has run, so asking here answers "headless" every time — including for a
+      // window that is a tenth of a second from attaching. A record built to
+      // stop things being guessed should not open with one. `onCapture` says so
+      // when it actually happens.
+      log.on('app').good('started')
       log.on('server').good(`Listening on port ${net.port} over TLS — scripts and repositories for machines being provisioned`)
       log.on('server').info(`The authority is published unencrypted on port ${net.caPort}, and is the only thing there`)
 

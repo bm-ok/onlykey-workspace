@@ -147,6 +147,118 @@ destination can name somebody else's.
   task uid, so they land on disk and no pane in the window shows them
 
 
+Signing a worker in, as a job rather than as code
+--------------------------------------------------
+
+**The flow is hard-coded, and it no longer has to be.** `credentialsBegin`
+borrows a clean machine, starts a sign-in on it and hands back a URL;
+`credentialsFinish` takes the code and keeps the credential here. Every step of
+that lives in `actions/credentials.js` and `machines/auth.js` — a sequence of
+guest commands written into the dashboard, which is where it had to live before
+there was any other way to run a sequence of guest commands.
+
+There is one now. A job is a Node script that runs ON a machine, with an API for
+the things it needs: a shell, a way to hand files back, a way to say what is
+happening, and a worker. That is the same shape as the sign-in dance, and it
+would be a better home for it than the app:
+
+* **It becomes readable and approvable.** The flow is a script somebody reads
+  before it runs, hashed and approved like every other job, instead of behaviour
+  compiled into the tool.
+* **It becomes editable without a release.** The sign-in that Anthropic serves
+  will change; today that means changing the dashboard and restarting it, which
+  is the same cost as changing anything else in the app.
+* **The URL stays where the sign-in is.** Right now the dashboard receives it and
+  logs it:
+
+      log.on('vm', name).good(`${name} is waiting to be signed in — open ${out.url}`)
+
+  which is why `core/events.js` redacts URLs before anything reaches disk — an
+  authorize link is a credential in transit. A job could keep the whole exchange
+  on the machine and hand back only the finished credential.
+* **It stops being a special case.** Borrowing a machine, bringing it up clean,
+  doing something on it and putting it away IS the queue's job, and this is the
+  one flow that reimplements it.
+
+**What has to be settled first.** A job hands files back through `okc-artifact`,
+and a credential is not an artifact — it is the one thing that must not be filed
+next to build outputs. Either the job gets a way to hand back a secret that goes
+through `core/secret.js`, or the credential keeps its own door and only the
+*steps* become a job. The second is smaller and probably right.
+
+Also: this is the one job that would run on a machine with no credential, to get
+one — so it cannot use `claude()`, and the approval rule that protects everything
+else ("nothing unapproved runs") has to be true of it before it is trusted with
+the thing every other run depends on.
+
+
+A key exchange between host and guest, for the credential
+----------------------------------------------------------
+
+**The credential travels as cleartext inside a shell command.** `vmCredentialsPut`
+opens the sealed file on this host, base64s it, and sends this down the channel:
+
+    printf '%s' '<the whole credential>' | base64 -d > "$HOME/.claude/.credentials.json"
+
+Base64 is not encryption. The channel is TLS and the file at rest is sealed by
+`core/secret.js`, so the two ends are covered — what is not covered is the middle,
+which is a command line:
+
+* it exists in this host's process memory as a plain string, in a variable
+  nothing treats as a secret
+* it is a shell argument on the guest, so it is visible in `ps` for as long as
+  the command runs, to anything else on that machine
+* it lands in the guest's shell history and in whatever the channel agent does
+  with the scripts it is handed
+
+None of that is exposure to the network; TLS handles the network. It is exposure
+to everything ON the two machines, which is the part a transport cannot fix.
+
+**What ECDH gives.** The guest generates an ephemeral key pair, hands the public
+half up, and the host encrypts the credential to it. The plaintext then exists
+only inside the guest process that will write the file — never as a shell
+argument, never in a command string, never in a variable on this host after the
+seal is opened. `sealed for one machine, for one delivery` is a stronger claim
+than `sent over a good pipe`, and it is the one worth making about a credential.
+
+**What ECDSA gives.** The channel already proves which machine is talking, by
+token. Signing adds the other direction and makes it durable: a machine can
+verify that a credential came from THIS host rather than from whatever answered,
+and the host can verify a request to be signed in came from the machine it
+believes it is talking to. It also gives the delivery a receipt — something the
+guest can hold that says what it was given and by whom, which is the thing that
+would let a machine refuse a second, different credential arriving later.
+
+**And it is a tunnel, not a one-way delivery.** The credential going down is the
+obvious half; the sign-in going up is the half that is loose today. The whole
+exchange belongs inside it:
+
+    guest -> host   the authorize URL, and later the code
+    host  -> guest  the credential, once it exists
+
+That URL is the reason `core/events.js` redacts links before anything reaches
+disk — an authorize link is a credential in transit, and right now it arrives
+here in the clear and gets logged:
+
+    log.on('vm', name).good(`${name} is waiting to be signed in — open ${out.url}`)
+
+Inside a tunnel keyed to that one machine it never needs to be in a log line, a
+command, or a variable on this host at all: it goes from the guest to whoever is
+signing in, and the dashboard carries a sealed blob it cannot read. The redaction
+stays either way — it costs nothing and it catches the next line nobody thought
+about — but it stops being the only thing standing between an authorize URL and
+a file.
+
+**Note what it does not fix.** Once written, the credential is a file on a
+machine that can be snapshotted — which is why snapshotting a machine holding one
+is already refused, and why the session archive excludes it. A key exchange
+protects the delivery, not the destination.
+
+Same shape as the sign-in rework above, and probably the same piece of work:
+both are about the credential path being the one thing that still goes through
+a shell.
+
+
 Judging, as its own kind of run
 --------------------------------
 
