@@ -10,14 +10,37 @@
 // ---- the notice bar ---------------------------------------------------
 
 let noticeTimer
-function say (text, kind = 'ok') {
+// A THIRD ARGUMENT FOR THE TWO THINGS SIX SECONDS OF TEXT CANNOT DO.
+//
+// `does` puts buttons in the bar. Some results are not only news — a capture
+// writes two files whose paths are the useful part, and the answer to "here are
+// two paths" is a button, not a sentence somebody has to select out of a strip
+// that is about to disappear.
+//
+// `lasts` is how long. Six seconds is right for "queued" and wrong for anything
+// carrying a control: a button that vanishes while being reached for is worse
+// than no button. Milliseconds, or 0 to stay until it is dismissed.
+//
+// Both optional, and the default is exactly what it was.
+function say (text, kind = 'ok', { does = [], lasts = null } = {}) {
   const bar = $('notice')
   bar.className = `notice ${kind}`
   fill(bar,
     el('span', { textContent: text }),
+    ...does.map(d => el('button', {
+      className: 'btn small',
+      style: 'margin-left:8px',
+      textContent: d.label,
+      title: d.title || '',
+      // The bar is not closed for them. A button here reports back — "copied" —
+      // and taking the bar away at that moment removes the only place that could
+      // be said, so pressing it would read as nothing having happened.
+      onclick: () => d.onClick(bar)
+    })),
     el('button', { className: 'notice-x', textContent: '×', onclick: () => bar.classList.add('hidden') }))
   clearTimeout(noticeTimer)
-  if (kind === 'ok') noticeTimer = setTimeout(() => bar.classList.add('hidden'), 6000)
+  const hold = lasts == null ? (kind === 'ok' ? 6000 : 0) : lasts
+  if (hold) noticeTimer = setTimeout(() => bar.classList.add('hidden'), hold)
 }
 const oops = e => say(e.message, 'bad')
 

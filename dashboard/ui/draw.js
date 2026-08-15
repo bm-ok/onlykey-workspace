@@ -703,8 +703,9 @@ let shotSettle = 0
 
 // ---- capture ----------------------------------------------------------
 //
-// Ctrl+Shift+D copies what is on screen -- the rendered DOM, not the source -- to
-// the clipboard, and saves the same thing to state/capture.html.
+// Ctrl+Shift+D saves what is on screen -- the rendered DOM, not the source -- to
+// state/capture.html, and a picture beside it. The clipboard is offered rather
+// than taken: the notice carries a button that copies the two paths.
 
 async function capture () {
   const css = [...document.styleSheets].map(sheet => {
@@ -713,7 +714,12 @@ async function capture () {
 
   const html = `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>captured</title>\n<style>\n${css}\n</style>\n</head>\n${document.body.outerHTML}\n</html>\n`
 
-  try { await navigator.clipboard.writeText(html) } catch { /* the file still gets written */ }
+  // THE CLIPBOARD IS NOT TAKEN. It was, and it took it silently: a quarter of a
+  // megabyte of markup replaced whatever was being carried between two windows,
+  // for a capture that had already been written to disk and did not need it.
+  // Anything that overwrites something a person is holding has to be asked for,
+  // and the thing actually worth copying is the two paths, which is a button in
+  // the notice below.
 
   // A picture as well as the markup, because they answer different questions.
   //
@@ -729,9 +735,34 @@ async function capture () {
 
   try {
     const { file, bytes, image } = await api('capture', { html, png })
-    say(image
-      ? `Copied to the clipboard. ${bytes} bytes to ${file}, and a picture beside it.`
-      : `Copied to the clipboard, and saved ${bytes} bytes to ${file}`)
+    const paths = [file, image].filter(Boolean)
+    say(
+      image
+        ? `Captured ${view} — ${bytes} bytes of markup, and a picture beside it.`
+        : `Captured ${view} — ${bytes} bytes of markup.`,
+      'ok',
+      {
+        // Long enough to read two paths and decide, rather than long enough to
+        // notice something happened. The button is the point of the notice now,
+        // and six seconds is not enough time to reach one.
+        lasts: 25000,
+        does: [{
+          label: paths.length > 1 ? 'Copy both paths' : 'Copy the path',
+          title: paths.join('\n'),
+          onClick: async bar => {
+            try {
+              await navigator.clipboard.writeText(paths.join('\n'))
+              // Said in the bar that was pressed, not in a new one. A confirmation
+              // that replaces the thing it is confirming leaves nothing on screen
+              // to have been confirmed.
+              const was = bar.querySelector('span')
+              if (was) was.textContent = `Copied ${paths.length === 1 ? 'the path' : 'both paths'} to the clipboard.`
+            } catch (e) {
+              oops(new Error(`the clipboard would not take it: ${e.message}`))
+            }
+          }
+        }]
+      })
   } catch (err) {
     oops(err)
   }

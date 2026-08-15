@@ -414,7 +414,26 @@ function paintTaskDetail (task) {
       // side of that is not worth a row. Which machines have had it is the row
       // below; which one is working on it right now is on the machines tab, and
       // in the banner while it matters.
-      el('tr', {}, el('th', { textContent: 'run' }), el('td', { className: 'mono', textContent: task.run || '—' })),
+      // WHAT A RUN IS, AND WHY THERE IS NOT ONE.
+      //
+      // A run is a process dispatched onto a machine — the job, or a worker
+      // given the brief. It is what the kept log, "Stop it" and each attempt
+      // hang off, so it is worth a row.
+      //
+      // But it was a bare "—" whenever there was not one, and that is most of
+      // the time: every draft has no run, and a JOBLESS task never has one at
+      // all, because the hand-over stops after the workspace and dispatches
+      // nothing. So the row said the same nothing about "has not started yet",
+      // "will never have one" and "something went wrong" — three different
+      // answers, one dash. Which of them it is, is the useful part.
+      el('tr', {}, el('th', { textContent: 'run' }),
+        el('td', {}, task.run
+          ? el('span', { className: 'mono', style: 'user-select:text', textContent: task.run })
+          : el('span', { className: 'muted', textContent: byHand(task)
+              ? 'never — nothing is dispatched for a task with no job. You open it, and it runs in front of you.'
+              : (task.attempts || []).length
+                  ? 'none — a machine was set up for it, and nothing was dispatched'
+                  : 'nothing yet — a run starts when the queue gives it to a machine' }))),
 
       // HAS IT BEEN ON A MACHINE, which the panel could not answer.
       //
