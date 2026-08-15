@@ -115,7 +115,11 @@ const taskKey = t => t && [
   // The three ties and whether a worker has run. Missed here, the panel would
   // keep saying "to be done by" after one had — which is the exact failure this
   // signature exists to prevent, in the row that was just fixed for lying.
-  t.job || '', t.promptId || '', !!t.usedClaude
+  t.job || '', t.promptId || '', !!t.usedClaude,
+  // How many machines have had it. `machine` alone cannot say: it is cleared
+  // when one is put away, so a finished task and an untouched one both read
+  // "nobody yet".
+  (t.attempts || []).length
 ]
 
 const STATE_BADGE = {
@@ -349,6 +353,30 @@ function paintTaskDetail (task) {
             : `${workerOf(task).long} Nothing has run yet, so nothing has used it.` }))),
       el('tr', {}, el('th', { textContent: 'given to' }), el('td', { className: 'mono', textContent: task.machine || 'nobody yet' })),
       el('tr', {}, el('th', { textContent: 'run' }), el('td', { className: 'mono', textContent: task.run || '—' })),
+
+      // HAS IT BEEN ON A MACHINE, which the panel could not answer.
+      //
+      // "given to" is where it is NOW and is cleared when a machine is put away,
+      // so a task that has been through three machines and finished reads
+      // "nobody yet" — identical to one that has never left this host. That is
+      // the difference between a first attempt and a fourth, and it changes what
+      // the next run means: a task that has been in a VM has a session to carry
+      // on from and a branch that may already have commits on it.
+      //
+      // Read off the attempts rather than stored, because the attempts are the
+      // record and a second copy of a fact is a second copy to disagree.
+      (() => {
+        const been = task.attempts || []
+        const machines = [...new Set(been.map(a => a.machine).filter(Boolean))]
+        const failed = been.filter(a => a.failed).length
+        return el('tr', {}, el('th', { textContent: 'been in a VM' }),
+          el('td', {}, been.length
+            ? el('span', {},
+                el('span', { className: 'badge ok', textContent: `${been.length} time${been.length === 1 ? '' : 's'}` }),
+                el('div', { className: 'muted', textContent:
+                  `${machines.length ? machines.join(', ') : 'a machine'}${failed ? ` · ${failed} of them failed before the work started` : ''}` }))
+            : el('span', { className: 'muted', textContent: 'never — it has not been on a machine' })))
+      })(),
 
       // THE THREE THINGS TIED TO IT, which the panel never said. A task carries
       // a job, a prompt and a contract, and the only one of them on screen was
