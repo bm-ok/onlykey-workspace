@@ -970,16 +970,23 @@ async function paintAddTaskNow () {
         ]
       },
       { name: 'branch', label: '…or a new branch, named here', placeholder: 'fix/the-thing' },
-      // WHICH LINE A NEW ONE IS CUT FROM. Required by branchCreate and refused
-      // without one: a branch nobody can name the start of is a branch whose
-      // "three commits ahead" means nothing in particular. This is the only
-      // place a line belongs on this form -- as the point a new cut starts from,
-      // never as somewhere work is delivered.
+      // CUT FROM ANOTHER CUT, not from a line. A line is protected — work is
+      // merged into it and never done on it — so offering lines here read as
+      // "start work on a line", which is the thing that must not happen. A cut
+      // is work, and starting from one is what following on from another task
+      // means.
+      //
+      // Lines are not offered at all. Cutting a branch from a line is the
+      // Branches tab's job, where naming the point is the whole act rather than
+      // a fourth dropdown on a form about something else.
       {
-        name: 'group',
-        label: 'Cut the new one from which line',
-        value: 'default',
-        options: (lines.groups || []).map(g => ({ value: g.name, label: g.name }))
+        name: 'from',
+        label: 'Cut the new one from which branch cut',
+        value: '',
+        options: [
+          { value: '', label: cuts.length ? 'pick the cut it follows on from' : 'there are no cuts yet — make one in Branches' },
+          ...cuts.map(b => ({ value: b, label: b }))
+        ]
       },
       // THE BRIEF IS THE PROMPT. Writing a task is writing one, which is the
       // whole reason the library exists: pick a kept one and it is filled in
@@ -1059,7 +1066,9 @@ async function paintAddTaskNow () {
               ? el('span', { className: 'muted', textContent: 'pick a branch, or name a new one' })
               : exists(branch)
                 ? el('span', { textContent: `${branch} — an existing cut` })
-                : el('span', { className: 'ok', textContent: `${branch} — new, cut from the "${inputs.group.value}" line when you write this` }))),
+                : inputs.from.value
+                  ? el('span', { className: 'ok', textContent: `${branch} — new, cut on top of "${inputs.from.value}" when you write this` })
+                  : el('span', { className: 'warn', textContent: `${branch} — new, and nothing says which cut it follows on from` }))),
           el('div', { className: 'group-part' },
             el('span', { textContent: 'done by' }),
             el('span', {}, job
@@ -1078,7 +1087,7 @@ async function paintAddTaskNow () {
     preview()
     inputs.contractId.onchange = preview
     inputs.job.onchange = preview
-    inputs.group.onchange = preview
+    inputs.from.onchange = preview
     inputs.cut.onchange = preview
     // As it is typed, so "this branch does not exist" arrives while somebody is
     // still looking at the field rather than after they have moved on.
@@ -1172,17 +1181,18 @@ async function paintAddTaskNow () {
         // title is the only sentence about this branch that exists yet. A reason
         // somebody typed twice is a reason that disagrees with itself.
         if (values.branch && !exists(values.branch)) {
+          if (!values.from) throw new Error(`"${values.branch}" does not exist yet. Say which cut it follows on from, or pick one that already exists — cutting from a line is done on the Branches tab.`)
           await api('branchCreate', {
             branch: values.branch,
             reason: values.title || 'written from the task board',
-            group: values.group || undefined
+            from: values.from
           })
-          say(`Cut "${values.branch}" from the "${values.group}" line.`)
+          say(`Cut "${values.branch}" on top of "${values.from}".`)
         }
-        // The line is how the branch was made, not a field of the task. Passing
-        // it on would put a value in the record that nothing reads and that goes
-        // stale the moment the line moves.
-        delete values.group
+        // How the branch was made, not a field of the task. Passing it on
+        // would put a value in the record that nothing reads and that goes
+        // stale the moment either branch moves.
+        delete values.from
 
         const made = await api('taskCreate', { task: values })
         pickedTask = made.id

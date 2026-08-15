@@ -244,12 +244,18 @@ module.exports = {
   },
 
   branchCreate: {
-    about: 'Cut a branch across every repository, from a named line',
+    about: 'Cut a branch across every repository, from a named line or from another branch',
     needs: 'workspace',
-    takes: ['branch', 'reason', 'group'],
-    run: ({ branch, reason, group, _overTheWire }) => {
+    takes: ['branch', 'reason', 'group', 'from'],
+    run: ({ branch, reason, group, from, _overTheWire }) => {
       const cut = branches.ensure(branch, {
         reason,
+        // OR FROM ANOTHER CUT. A line is where work is measured from; a cut is
+        // work. Starting from a cut is what somebody is doing when one task
+        // follows another, and it was only reachable by turning that branch
+        // into a line first -- which says something much bigger, since a line
+        // is protected and is what other work gets measured against.
+        from: from || null,
         // WHICH POINT IN THE WORK IT STARTS FROM, and it is required. The old
         // behaviour — each repository from its own baseline — is right when they
         // are all on the same line and quietly wrong when they are not, and it
@@ -262,7 +268,7 @@ module.exports = {
       })
       const made = cut.filter(c => c.created)
       log.on('git').good(made.length
-        ? `cut "${branch}" in ${made.map(c => `${c.repo} from ${c.from}`).join(', ')}${group ? ` — the "${group}" line` : ''} — ${String(reason).trim()}`
+        ? `cut "${branch}" in ${made.map(c => `${c.repo} from ${c.from}`).join(', ')}${group ? ` — the "${group}" line` : from ? ` — on top of "${from}"` : ''} — ${String(reason).trim()}`
         : `"${branch}" already existed everywhere; its reason is unchanged`)
       return {
         branch: branch.trim(),

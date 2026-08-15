@@ -791,7 +791,7 @@ const forget = branch => {
 // happened to carry -- so a typo did not fail, it made a branch, and the
 // workspace was then built on a name nobody meant. Every branch on the board
 // arrived that way, which is why none of them could say what they were for.
-function ensure (branch, { reason = null, by = null, group = null } = {}) {
+function ensure (branch, { reason = null, by = null, group = null, from = null } = {}) {
   const why = nameIsOk(branch)
   if (why) throw new Error(why)
   const name = branch.trim()
@@ -828,10 +828,60 @@ function ensure (branch, { reason = null, by = null, group = null } = {}) {
   // statement about ONE branch, and a workspace where every such request also
   // re-aimed everything else would make the safe act and the sweeping one the
   // same click. Moving the baselines is `useGroup`, which says so.
+  // OR FROM ANOTHER CUT, which is the same shape and a different meaning.
+  //
+  // A line is a named point one branch per repository; a cut is a branch across
+  // the repositories to do work on. Both answer "which branch does this start
+  // from" the same way, so the machinery below does not care which it was given
+  // -- what differs is what it MEANS. Cutting from a line starts work against a
+  // known point; cutting from a cut starts work on top of work, which is what
+  // somebody is doing when a task follows another task.
+  //
+  // The scope follows the same rule either way: the repositories that actually
+  // have the starting branch, and no others. A cut that reached two of three
+  // repositories is a line of work that never reached the third, and inventing
+  // a branch there would hand a reviewer a repository the change has nothing to
+  // do with.
+  //
+  // Either, never both. Two starting points is not a request anybody can mean.
+  if (group && from) {
+    throw new Error(`Say either which line "${name}" is cut from or which branch, not both — they are two different starting points and only one of them can be true.`)
+  }
+
+  if (from) {
+    const start = String(from).trim()
+    if (start === name) throw new Error(`"${name}" cannot be cut from itself.`)
+    const where = serve.list()
+      .map(({ name: repo }) => ({ repo, dir: serve.gitDirOf(repo) }))
+      .filter(({ dir }) => branchesIn(dir).includes(start))
+    if (!where.length) {
+      throw new Error(`There is no branch called "${start}" in any repository here, so there is nowhere to cut "${name}" from.`)
+    }
+    const cut = where.map(({ repo, dir }) => {
+      const had = branchesIn(dir).includes(name)
+      if (!had) git(dir, ['branch', name, start])
+      return { repo, branch: name, created: !had, from: had ? null : start }
+    })
+    if (!noteFor(name)) {
+      note(name, {
+        reason: String(reason).trim(),
+        by: by || null,
+        made: new Date().toISOString(),
+        cutIn: cut.filter(c => c.created).map(c => c.repo),
+        // The branch it was started on, kept for the same reason the group name
+        // is: git stops being able to say once both have moved on.
+        cutFrom: start,
+        group: null,
+        from: Object.fromEntries(cut.filter(c => c.created).map(c => [c.repo, c.from]))
+      })
+    }
+    return cut
+  }
+
   const known = groups()
   if (!group || !String(group).trim()) {
     throw new Error(known.length
-      ? `Say what "${name}" is cut from. It is one of: ${known.map(g => g.name).join(', ')}. Every branch starts somewhere, and a branch nobody can name the start of cannot be measured against anything later.`
+      ? `Say what "${name}" is cut from — a line, or another branch. The lines are: ${known.map(g => g.name).join(', ')}. Every branch starts somewhere, and a branch nobody can name the start of cannot be measured against anything later.`
       : `There are no baseline groups yet, so there is nowhere to cut "${name}" from. Name one on the Baselines tab first — it is one branch per repository, saying what this workspace's work is against.`)
   }
   const found = known.find(g => g.name === String(group).trim())
