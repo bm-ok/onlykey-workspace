@@ -123,7 +123,19 @@ const showTab = name => document.querySelector(`.tab[data-view="${name}"]`).clic
 // arriving while the window was closed as though it had been read.
 ;(() => {
   const tab = document.querySelector(`.tab[data-view="${view}"]`)
-  if (!tab) { view = 'ops'; return }
+  // A REMEMBERED VIEW THAT NO LONGER EXISTS, which happens whenever a tab is
+  // renamed or folded into another — `ops` and `sessions` both did. Falling back
+  // to a name written here has the same fault one level down, so it falls back
+  // to whatever the first tab actually is.
+  if (!tab) {
+    const first = document.querySelector('.tabs .tab[data-view]')
+    view = first ? first.dataset.view : 'repos'
+    been.set('view', view)
+    const now = document.querySelector(`.tab[data-view="${view}"]`)
+    document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === now))
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${view}`))
+    return
+  }
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === tab))
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${view}`))
 })()

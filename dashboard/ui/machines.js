@@ -733,7 +733,16 @@ const link = (text, onclick) => el('button', { className: 'linky mono', textCont
 // the thing queueState exists to avoid.
 const taskById = id => (taskList || []).find(t => t.id === id) || null
 
+// WHICH HALF OF RUNNERS IS OPEN. The machines themselves, or what a worker on
+// one remembered. See paneSwitcher in ui/tasks.js.
+let runnerPane = been.get('runner-pane', 'machines')
+paneSwitcher('view-runners', () => runnerPane, p => { runnerPane = p; been.set('runner-pane', p) }, () => {
+  paintVms()
+  paintSessions()
+})
+
 function paintVms () {
+  if (view !== 'runners' || runnerPane !== 'machines') return
   // `picked` is in the signature because it decides which card is highlighted.
   // The queue's verdict is part of the signature, or a machine that became
   // unavailable would keep the card it was drawn with.

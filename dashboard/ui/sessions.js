@@ -12,14 +12,19 @@
 // this is where you can see that happening, and stop it when a conversation has
 // gone somewhere you do not want it carrying on from.
 //
-// One sub-tab today. It is a sub-tab rather than a bare pane because there is
-// more than one kind of memory in this system already -- a machine's own state,
-// a workspace's -- and the one being shown should say which it is rather than
-// being "sessions, obviously".
+// A sub-tab of Runners rather than a tab of its own, because what a worker
+// remembered is a fact about a RUNNER. As two tabs, "the machines" and "what
+// happened on a machine" sat in different parts of the window and nothing said
+// they were about the same things.
+//
+// It stays a named sub-tab rather than becoming a bare pane: there is more than
+// one kind of memory here already -- a machine's own state, a workspace's -- and
+// the one being shown should say which it is rather than being "sessions,
+// obviously".
 let pickedSession = been.get('session', null)
 
 function paintSessions () {
-  if (view !== 'sessions') return
+  if (view !== 'runners' || runnerPane !== 'guest') return
   waiting('sessions-list', { cards: 3 })
   waiting('session-detail', { lines: 6 })
   paintSessionsNow()
@@ -27,7 +32,7 @@ function paintSessions () {
 
 async function paintSessionsNow () {
   await settle()
-  if (view !== 'sessions') return
+  if (view !== 'runners' || runnerPane !== 'guest') return
 
   api('sessions').then(({ sessions, bytes, note }) => {
     if (!sessions.some(s => s.uid === pickedSession)) {

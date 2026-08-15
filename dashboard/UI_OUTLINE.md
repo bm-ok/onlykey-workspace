@@ -64,7 +64,8 @@ GIVE IT THE CREDENTIALS IT CANNOT INVENT
 MAKE A MACHINE
 ---------------
 
-1. Open the Virtual machines tab. This is the slow step and it is done once.
+1. Open the Runners tab, sub-tab Virtual machines. This is the slow step and it
+   is done once.
 2. Press +. Give it a name, memory, processors, disk, network, and the user to
    create. `okc.js vmCreate --vm '{"name":"runner1", ...}'`
 3. Press Install it. Twenty-five minutes, unattended.
@@ -147,7 +148,7 @@ WATCH IT
 1. Tasks → Board, on the card: the Attempts section, and what the worker is doing
    right now. `okc.js taskProgress --id <task>`
 2. Live: the log as it happens. `okc.js logSince`
-3. Sessions: what the worker remembered. `~/.claude` is archived when a run ends
+3. Runners, sub-tab Claude guest: what the worker remembered. `~/.claude` is archived when a run ends
    and unpacked before the next starts, keyed by the task — so a task given out
    twice is one conversation across two machines. `okc.js sessions`
 4. Terminal: a shell on the machine, if you want to look yourself.
@@ -229,7 +230,7 @@ CUT THE PULL REQUESTS
 STOP
 -----
 
-1. Open the Virtual machines tab. Anything still running goes back.
+1. Open the Runners tab. Anything still running goes back.
 2. Press Power off. `okc.js vmStop --name runner1`
 3. Press Revert to, on the base snapshot.
    `okc.js vmSnapshotRestore --name runner1 --to base`

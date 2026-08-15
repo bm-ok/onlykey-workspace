@@ -59,8 +59,13 @@
     <!-- The badge is what makes a tab you cannot see safe to have: output
          arriving behind it is announced, and a failure differently from
          ordinary chatter. -->
-    <button class="tab" data-view="sessions">Sessions</button>
-    <button class="tab" data-view="ops">Virtual machines</button>
+    <!-- RUNNERS, not "virtual machines", because that is what they are FOR. A
+         virtual machine is how one is built; a runner is the thing a task
+         borrows, and the tab is named for the role rather than the mechanism.
+         What they ARE is the first sub-tab, still called Virtual machines.
+         Sessions was a tab of its own and is the second: what a worker
+         remembered is a fact about a runner and belongs beside it. -->
+    <button class="tab" data-view="runners">Runners</button>
     <button class="tab" data-view="live">Live <span class="tab-badge hidden" id="live-badge"></span></button>
     <button class="tab" data-view="terminal">Terminal</button>
     <button class="tab" data-view="keys">Keys</button>
@@ -259,35 +264,60 @@
   </section>
 
   <!-- ---------------- Virtual machines ---------------- -->
-  <section class="view" id="view-ops">
-    <div class="cols">
+  <section class="view" id="view-runners">
 
-      <div class="col narrow">
-        <!-- The + belongs beside the thing it adds to, not below the list where
-             it competes with the list's own controls. -->
-        <h2 class="titlerow">
-          Machines
-          <button class="plus" id="add-vm-open" title="Make a virtual machine">+</button>
-        </h2>
-        <div id="vms" class="stack"></div>
-      </div>
-
-      <div class="col">
-        <!-- Actions act on the SELECTED machine, so one set of buttons serves
-             every one of them instead of each card carrying its own copy. -->
-        <h2>Actions <span class="muted" id="actions-context">— nothing selected</span></h2>
-        <div id="machine-actions" class="panel"></div>
-
-        <h2>Snapshots <span class="muted" id="snap-context"></span></h2>
-        <div id="snapshots" class="stack"></div>
-      </div>
-
-      <div class="col wide">
-        <h2>Details</h2>
-        <div id="details" class="panel"></div>
-      </div>
-
+    <!-- TWO THINGS ABOUT THE SAME MACHINES. What they ARE — made, installed,
+         snapshotted, claimed — and what a worker on one REMEMBERED. The second
+         was a tab of its own, which put "the machines" and "what happened on a
+         machine" in different parts of the window; a session is a fact about a
+         runner and belongs beside it. -->
+    <div class="subtabs">
+      <button class="subtab active" data-pane="machines">Virtual machines</button>
+      <button class="subtab" data-pane="guest">Claude guest</button>
     </div>
+
+    <div class="pane active" id="pane-machines">
+      <div class="cols">
+
+        <div class="col narrow">
+          <!-- The + belongs beside the thing it adds to, not below the list where
+               it competes with the list's own controls. -->
+          <h2 class="titlerow">
+            Machines
+            <button class="plus" id="add-vm-open" title="Make a virtual machine">+</button>
+          </h2>
+          <div id="vms" class="stack"></div>
+        </div>
+
+        <div class="col">
+          <!-- Actions act on the SELECTED machine, so one set of buttons serves
+               every one of them instead of each card carrying its own copy. -->
+          <h2>Actions <span class="muted" id="actions-context">— nothing selected</span></h2>
+          <div id="machine-actions" class="panel"></div>
+
+          <h2>Snapshots <span class="muted" id="snap-context"></span></h2>
+          <div id="snapshots" class="stack"></div>
+        </div>
+
+        <div class="col wide">
+          <h2>Details</h2>
+          <div id="details" class="panel"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="pane" id="pane-guest">
+      <p class="note" id="sessions-note"></p>
+      <div class="cols">
+        <div class="col narrow">
+          <h2 class="titlerow">Remembered <span class="muted" id="sessions-context"></span></h2>
+          <div id="sessions-list" class="stack"></div>
+        </div>
+        <div class="col wide">
+          <div id="session-detail" class="panel"></div>
+        </div>
+      </div>
   </section>
 
   <!-- ---------------- Tasks ----------------
@@ -597,24 +627,6 @@
        used to take with it. See tasks/sessions.js: it comes here when a run
        ends and goes back down before the next one starts, so a task keeps one
        conversation however many machines it passes through. -->
-  <section class="view" id="view-sessions">
-    <div class="subtabs">
-      <button class="subtab active" data-pane="guest">Claude guest</button>
-    </div>
-
-    <div class="pane active" id="pane-guest">
-      <p class="note" id="sessions-note"></p>
-      <div class="cols">
-        <div class="col narrow">
-          <h2 class="titlerow">Remembered <span class="muted" id="sessions-context"></span></h2>
-          <div id="sessions-list" class="stack"></div>
-        </div>
-        <div class="col wide">
-          <div id="session-detail" class="panel"></div>
-        </div>
-      </div>
-    </div>
-  </section>
   <section class="view" id="view-terminal">
     <div class="sync-head">
       <h2>Terminal <span class="muted" id="term-context"></span></h2>

@@ -1070,14 +1070,18 @@ function paintArtifact (task) {
         el('div', { className: 'row', style: 'margin-top:8px' },
           el('button', {
             className: 'btn small',
-            textContent: 'Open in Sessions',
-            // By uid, which is what the Sessions tab keys on, and set before the
-            // switch so that pane paints with it already picked.
+            textContent: 'Open it under Runners',
+            // By uid, which is what that pane keys on, and set before the switch
+            // so it paints with this already picked.
+            //
+            // Through showPane, which switches the TAB as well — sessions moved
+            // into Runners, and switching only a pane in a view nobody is
+            // looking at is a button that does nothing.
             onclick: () => {
               pickedSession = memory.uid || null
               been.set('session', pickedSession)
               forget('sessions'); forget('session-detail')
-              showTab('sessions')
+              showPane('guest', 'runners')
               return draw()
             }
           }))))

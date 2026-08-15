@@ -436,7 +436,7 @@ run that could name any id could read the transcript of work it has nothing to d
 with. The host looks it up from the task the machine is running, exactly like an
 artifact.
 
-The archive is read once, when it arrives, and what the Sessions tab shows is
+The archive is read once, when it arrives, and what Runners -> Claude guest shows is
 that summary: how many turns, which model, which tools, which files were touched,
 how many tokens. A run's log says what a worker printed; this says what it did.
 
