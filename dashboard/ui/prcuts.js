@@ -26,7 +26,12 @@ let cutsSeen = null
 let cutsAsking = false
 
 function paintCuts () {
-  if (view !== 'repos') return
+  // THE PANE, NOT THE VIEW. This guarded on the view when PR cuts was a tab of
+  // its own, where the two were the same question. It is one of eleven panes
+  // now, so `view === 'repos'` is true on Branches Lines, on Conflicts, on
+  // Repos — and the first look below is a network call to GitHub. Opening the
+  // Repositories tab at all was firing it.
+  if (view !== 'repos' || repoPane !== 'cuts') return
   // READ ONCE WHEN THE TAB IS OPENED, and not again until asked. Never on the
   // draw: every line here is a network call to somebody else's service, and the
   // window redraws every three seconds.
@@ -35,14 +40,17 @@ function paintCuts () {
   // looks broken — so the first look pays for itself, and every look after that
   // is a button. The same trade as the Repositories tab, made once here rather
   // than left to the person to notice.
-  if (view === 'repos' && cutsSeen === null && !cutsAsking) {
+  if (cutsSeen === null && !cutsAsking) {
     cutsAsking = true
     refreshCuts().finally(() => { cutsAsking = false })
     return
   }
 
+  // `if (repoPane !== 'cuts') return paintTemplates()` stood here, and was right
+  // while this tab had exactly two panes: not-cuts meant templates. With eleven
+  // it meant "paint the template editor whenever you are anywhere else", and the
+  // switcher and the draw loop both call paintTemplates on their own anyway.
   const rows = cutsSeen ? cutsSeen.cuts : null
-  if (repoPane !== 'cuts') return paintTemplates()
   setText($('prcuts-context'), rows ? `— ${rows.length}` : '')
   setText($('prcuts-note'), rows ? cutsSeen.note : 'Not read yet. "Read them from GitHub" asks what became of each one.')
 
