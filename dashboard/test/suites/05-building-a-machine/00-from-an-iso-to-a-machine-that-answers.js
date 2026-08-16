@@ -78,7 +78,23 @@ it('a machine is defined, and it is only defined', async ({ okc, assert, state, 
   log(`defined: 4096 MB, 3 cpus, a 40 GB disk — stage "${mine.stage}", no base snapshot, nothing installed`)
 })
 
-it('the install runs unattended, and the machine dials in', async ({ okc, assert, state, log }) => {
+it('its console is captured before anything boots', async ({ okc, assert, state, log }) => {
+  // TURNED ON WHILE IT IS STILL OFF, which is the only time VirtualBox allows a
+  // serial port to be added — and the reason this is a step of its own rather
+  // than a line inside the one above. A machine that is already installing
+  // cannot be given a console, so the one boot worth watching is the one it is
+  // too late to watch.
+  //
+  // This is what makes the rest of this file possible. Until the agent dials in
+  // there is no channel, no network and nothing to ask: the console is the only
+  // thing the machine says for the first twenty-five minutes of its life.
+  const on = await okc('vmSerial', { name: NAME, on: true })
+  assert.ok(on.on, `The console of "${NAME}" is not being captured, so the install would happen unwatched`)
+  state.console = on.file
+  log(`its console will be written to ${on.file}`)
+})
+
+it('the installer boots and says so on the console', async ({ okc, assert, state, log }) => {
   // THE WHOLE POINT, and everything that can be wrong is wrong here: the ISO,
   // the answer file VirtualBox generates for it, where the post-install command
   // runs, whether the guest can reach this host, whether it trusts this host's
@@ -87,11 +103,56 @@ it('the install runs unattended, and the machine dials in', async ({ okc, assert
   // Nothing else may come up while this runs — the gate refuses it by name —
   // and the dashboard must not be restarted, because the machine fetches its
   // setup from here at the very end.
+  //
+  // `vmInstall` STARTS the installer and returns; the twenty-five minutes happen
+  // inside the machine. It returns when this machine's console has said
+  // something, which is the host being told the expensive minute is over — so
+  // by the time it comes back there is already a kernel talking.
   await okc('vmInstall', { name: NAME })
 
+  const spoke = await okc('vmAwait', { name: NAME, for: 'console', find: 'Linux version', seconds: 600 })
+  state.installerAt = Date.now()
+  log(`the installer's kernel is up after ${Math.round((Date.now() - state.began) / 1000)}s: ${spoke.line.slice(0, 110)}`)
+}, { minutes: 12 })
+
+it('and it gets far enough to hand over to what it installed', async ({ okc, assert, state, log }) => {
+  // THE STEP THIS FILE EXISTS FOR, and the one nothing could see before.
+  //
+  // Between the two kernels is the whole install: partitioning, unpacking, the
+  // packages, and the post-install command that puts the bootstrap inside the
+  // installed system rather than in the installer's own filesystem. None of it
+  // can be asked about — there is no agent and no network — and until the
+  // console was captured the only way to know it had happened was that a machine
+  // either did or did not dial in half an hour later.
+  //
+  // `root=UUID=` is what says which kernel is talking. The installer boots from
+  // the ISO, so its command line is a casper one; the installed system boots
+  // from the disk that was just written, and names the filesystem by uuid. So
+  // this line arriving IS the handover, stated by the machine rather than
+  // inferred from a clock.
+  const booted = await okc('vmAwait', { name: NAME, for: 'console', find: 'root=UUID=', seconds: 2400 })
+  state.installedAt = Date.now()
+  log(`it installed and rebooted into what it installed, ${Math.round((state.installedAt - state.installerAt) / 60000)} minutes after the installer started`)
+  log(`the installed kernel's command line: ${booted.line.replace(/^.*Command line: /, '').slice(0, 130)}`)
+}, { minutes: 45 })
+
+it('and the first boot starts the agent that dials home', async ({ okc, assert, state, log }) => {
+  // The last thing provisioning does, seen from outside the machine. first-boot
+  // writes a unit and enables it; this is systemd starting it, on the console,
+  // before anything has reached this host.
+  //
+  // Worth its own step because "it never dialled in" has two completely
+  // different causes — the agent never started, or it started and could not
+  // reach here — and they are hours apart to diagnose. This line tells them
+  // apart in one look.
+  const unit = await okc('vmAwait', { name: NAME, for: 'console', find: 'okc-agent', seconds: 1200 })
+  log(`the agent unit is on the console after the first boot: ${unit.line.slice(0, 110)}`)
+}, { minutes: 25 })
+
+it('and it dials in', async ({ okc, assert, state, log }) => {
   // Not "started". Dialled in: booted, provisioned, and holding a channel back
   // to this host, which is the only definition anything else in this app uses.
-  await okc('vmAwait', { name: NAME, for: 'connected', seconds: 2400 })
+  await okc('vmAwait', { name: NAME, for: 'connected', seconds: 1200 })
 
   const { agents } = await okc('vmAgents')
   const said = agents.find(a => a.vm === NAME)
@@ -99,7 +160,41 @@ it('the install runs unattended, and the machine dials in', async ({ okc, assert
   assert.ok(said.facts && said.facts.system, 'It dialled in without saying what it is')
   log(`installed unattended and dialled in ${Math.round((Date.now() - state.began) / 60000)} minutes after it was asked for`)
   log(`it says it is: ${String(said.facts.system).split('\n')[0]}`)
-}, { minutes: 45 })
+}, { minutes: 25 })
+
+it('and the install is on the record afterwards', async ({ okc, assert, state, log }) => {
+  // WHAT THE CONSOLE IS FOR WHEN NOTHING IS WATCHING IT. The checks above waited
+  // for each line as it arrived, which only helps somebody sitting here while it
+  // happens. This is the same evidence read back cold, which is the ordinary
+  // case: a machine was built overnight and the question in the morning is what
+  // it did.
+  //
+  // BOTH FILES, because it depends on how the installer handed over. A guest
+  // reboot keeps the same VirtualBox session and the console file simply carries
+  // on; a power cycle starts a new one and truncates it — and this app keeps one
+  // generation aside for exactly that, so the installer's own boot is either
+  // still at the top of this file or is the whole of the previous one.
+  const both = []
+  for (const which of ['serial', 'serial.previous']) {
+    try {
+      const got = await okc('vmLog', { name: NAME, which, lines: 5000 })
+      both.push({ which, lines: got.lines, of: got.of })
+    } catch { /* there may be no previous boot, which is one of the two shapes */ }
+  }
+  assert.ok(both.length, 'The console of the install was not written down anywhere')
+
+  const anywhere = pattern => both.find(f => f.lines.some(l => new RegExp(pattern, 'i').test(l)))
+  const installer = anywhere('casper|/install/vmlinuz|initrd')
+  const installed = anywhere('root=UUID=')
+  const agent = anywhere('okc-agent')
+
+  assert.ok(installer, 'Nothing in the console says an installer ever booted, so what is on that disk is unaccounted for')
+  assert.ok(installed, 'The console never shows a kernel booting from the installed disk')
+  assert.ok(agent, 'The console never shows the agent unit starting, so provisioning left nothing to dial home')
+
+  log(`kept: ${both.map(f => `${f.which} (${f.of} lines)`).join(', ')}`)
+  log(`the installer booted (in ${installer.which}), the installed system booted (in ${installed.which}), and the agent started (in ${agent.which})`)
+}, { minutes: 5 })
 
 it('and it is a machine this app can use', async ({ okc, assert, state, log }) => {
   // Installed is not usable. The queue needs a machine that answers commands and

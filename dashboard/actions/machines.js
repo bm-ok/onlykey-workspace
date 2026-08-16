@@ -522,7 +522,7 @@ module.exports = {
   },
 
   vmLog: {
-    about: 'Read a machine\'s VirtualBox log, its console, or the service log, for why it will not boot',
+    about: 'Read a machine\'s VirtualBox log, its console, the console before this boot, or the service log, for why it will not boot',
     takes: ['name', 'which', 'lines', 'find'],
     run: async ({ name, which, lines, find }) => {
       // The service log is about VirtualBox rather than about a machine, so it
@@ -532,10 +532,20 @@ module.exports = {
       // The console is a file this app chose the name of, so it is read here
       // rather than in the machine layer — which only knows about VirtualBox's
       // own logs.
-      if (/^serial$|^console$/i.test(String(which || ''))) {
-        const file = path.join(data.sub('serial'), `${name}.log`)
+      // THE BOOT BEFORE THIS ONE, which is usually the one worth reading.
+      //
+      // Starting a machine truncates its console file, so the record of a boot
+      // that went wrong is destroyed by the obvious response to it. One
+      // generation is kept aside when a machine starts — see keepThePreviousBoot
+      // in machines/vbox.js — and this is how it is read.
+      const back = /^(serial|console)[-.]?(previous|last|before)$/i.test(String(which || ''))
+      if (back || /^serial$|^console$/i.test(String(which || ''))) {
+        const file = path.join(data.sub('serial'), `${name}${back ? '.previous' : ''}.log`)
         let text = null
         try { text = fs.readFileSync(file, 'utf8') } catch {
+          if (back) {
+            throw new Error(`There is no earlier console for "${name}" at ${file}. One is kept aside each time a machine starts, so there is none until it has been started twice with its console being captured.`)
+          }
           throw new Error(`Nothing has been written to ${file}. Either the console is not being captured — vmSerial --name ${name} turns it on, with the machine off — or the guest has not been told to use ttyS0, which is a kernel command line and needs provisioning.`)
         }
         const all = text.split(/\r?\n/)
@@ -543,12 +553,13 @@ module.exports = {
         const want = Math.max(1, Math.min(Number(lines) || 200, 5000))
         return {
           file,
+          which: back ? 'the boot before this one' : 'this boot',
           lines: rows.slice(-want),
           of: all.length,
           matched: find ? rows.length : null,
           note: all.length <= 1
             ? `${file} exists and is empty. The port is there and the guest is not talking through it — its kernel command line needs console=ttyS0,115200n8.`
-            : `The last ${Math.min(want, rows.length)} of ${all.length} lines the guest wrote to its console.`
+            : `The last ${Math.min(want, rows.length)} of ${all.length} lines the guest wrote to its console${back ? ' the time before this one' : ''}.`
         }
       }
 
@@ -1144,13 +1155,61 @@ module.exports = {
   // "not yet after 180s" and "never" are different problems, and the first one
   // is usually a machine that needs another minute.
   vmAwait: {
-    about: 'Wait until a machine speaks on its console, has dialled in, or is off. With tries, a silent machine is restarted',
-    takes: ['name', 'for', 'seconds', 'tries'],
-    run: async ({ name, for: want, seconds, tries }) => {
+    about: 'Wait until a machine speaks on its console, says something in particular, has dialled in, or is off',
+    takes: ['name', 'for', 'seconds', 'tries', 'find'],
+    run: async ({ name, for: want, seconds, tries, find }) => {
       const machine = vms.get(name)
       const wants = String(want || 'connected')
       const limit = Math.max(5, Math.min(Number(seconds) || 300, 3600)) * 1000
       const began = Date.now()
+
+      // WAITING FOR THE CONSOLE TO SAY SOMETHING IN PARTICULAR.
+      //
+      // "It spoke" answers one question — is the kernel alive — and there is a
+      // whole install after that where the only thing that knows what is
+      // happening is the console. An unattended install is twenty-five minutes
+      // of a machine nothing here can talk to: no agent, no network, no channel.
+      // The steps of it are readable, one line at a time, and until this there
+      // was no way to say "wait until it gets to that step".
+      //
+      // A pattern rather than a stage list, because the stages belong to the
+      // installer and the distribution rather than to this app — a list here
+      // would be a copy of somebody else's boot sequence, out of date the moment
+      // it is written.
+      //
+      // The file is read rather than watched. It is written by the VirtualBox
+      // process a line at a time and there is no event to subscribe to; a read
+      // of a local file every second and a half costs nothing next to the thing
+      // being waited for.
+      if ((wants === 'console' || wants === 'speaking') && String(find || '').trim()) {
+        const pattern = new RegExp(String(find), 'i')
+        const file = path.join(data.sub('serial'), `${machine.name}.log`)
+        for (;;) {
+          let hit = null
+          try {
+            const text = fs.readFileSync(file, 'utf8')
+            hit = text.split(/\r?\n/).find(l => pattern.test(l))
+          } catch { /* not written yet, which is one of the things being waited for */ }
+          if (hit) {
+            const took = Math.round((Date.now() - began) / 1000)
+            return {
+              name: machine.name,
+              was: 'said',
+              took,
+              // The line itself, stripped of the colour a boot is full of, so
+              // whatever is waiting can report WHAT it saw rather than that it
+              // saw something.
+              line: hit.replace(/\[[0-9;?]*[a-zA-Z]/g, '').trim(),
+              note: `"${machine.name}" said something matching /${find}/ on its console after ${took}s.`
+            }
+          }
+          if (Date.now() - began >= limit) {
+            const took = Math.round((Date.now() - began) / 1000)
+            throw new Error(`"${machine.name}" did not say anything matching /${find}/ on its console within ${took}s. vmLog --name ${machine.name} --which serial is what it did say.`)
+          }
+          await new Promise(r => setTimeout(r, 1500))
+        }
+      }
 
       // THE EARLIEST THING A MACHINE CAN SAY, and the most useful one for
       // anything deciding whether the host is free again. "connected" means it

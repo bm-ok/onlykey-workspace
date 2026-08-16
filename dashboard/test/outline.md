@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 7 suites, 17 tests, 69 checks -->
+<!-- 7 suites, 17 tests, 74 checks -->
 
 # 00 — the order
 
@@ -118,9 +118,14 @@
 
   1. there is an ISO to install from, and this was asked for
   2. a machine is defined, and it is only defined
-  3. the install runs unattended, and the machine dials in
-  4. and it is a machine this app can use
-  5. and it can be thrown away completely
+  3. its console is captured before anything boots
+  4. the installer boots and says so on the console
+  5. and it gets far enough to hand over to what it installed
+  6. and the first boot starts the agent that dials home
+  7. and it dials in
+  8. and the install is on the record afterwards
+  9. and it is a machine this app can use
+  10. and it can be thrown away completely
 
 # 06 — a task on a machine
 

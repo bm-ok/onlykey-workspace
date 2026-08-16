@@ -345,9 +345,57 @@ async function hostAddress () {
 // SessionState is not enough on its own: it has read Unlocked 100ms before a
 // start was refused for being locked. So both, which is the same conclusion this
 // file already reached once for snapshots.
-const start = (name, type = 'gui') =>
-  retrying(() => run(['startvm', name, '--type', type], { tags: [name] }),
+// KEEPING THE BOOT THAT IS ABOUT TO BE THROWN AWAY.
+//
+// VirtualBox opens the console file fresh every time a machine starts, so
+// starting one DESTROYS the record of the boot before it. That is the wrong way
+// round: the boot worth reading is almost always the one that just went wrong,
+// and the first thing anybody does about a machine that went wrong is start it
+// again.
+//
+// It cost the whole record of an install to notice. An unattended install writes
+// the installer's console to that file, the machine reboots into what it
+// installed, and every later start truncates it — so twenty-five minutes of "did
+// it partition, did the post-install command run, did it reach the network" is
+// gone by the time anybody asks, and a machine that has been started once since
+// can never answer.
+//
+// So the file is rolled aside first, and one generation is kept: `<name>.log` is
+// this boot, `<name>.previous.log` is the one before it. One rather than many
+// because two is the question people actually have — this boot and the last one
+// — and an unbounded pile of console logs is a disk filling up quietly.
+//
+// Asked of VirtualBox rather than assumed: the path lives in the machine's own
+// configuration, so nothing here has to be told where it is or kept in step with
+// whoever set it.
+async function keepThePreviousBoot (name) {
+  try {
+    const uart = (await info(name)).uartmode1 || ''
+    // "file,<path>" when it is being captured; "disconnected" or a pipe/socket
+    // otherwise, and none of those is a file to roll.
+    const at = /^file,(.+)$/i.exec(uart)
+    if (!at) return null
+    const file = at[1].trim()
+    // An empty file is not a boot, and rolling one would push a real record out
+    // of the only slot there is.
+    if (!fs.existsSync(file) || fs.statSync(file).size === 0) return null
+    const previous = file.replace(/\.log$/i, '') + '.previous.log'
+    fs.rmSync(previous, { force: true })
+    fs.renameSync(file, previous)
+    return previous
+  } catch {
+    // NEVER STOPS A START. This is a convenience for reading afterwards, and a
+    // machine that will not boot because a log could not be renamed would be a
+    // debugging aid causing the fault it exists to explain.
+    return null
+  }
+}
+
+const start = async (name, type = 'gui') => {
+  await keepThePreviousBoot(name)
+  return retrying(() => run(['startvm', name, '--type', type], { tags: [name] }),
     { what: 'starting the machine', tags: [name] })
+}
 
 // Pull the machine's network cable, or plug it back in.
 //
