@@ -1,8 +1,20 @@
+#cloud-config
+#
+# THAT FIRST LINE HAS TO BE THE FIRST LINE. cloud-init identifies this file by
+# it, and anything above it means the file is not recognised at all — which does
+# not fail loudly: it leaves the installer sitting at a language menu with nobody
+# watching. This notice sits below it for that reason.
+#
 # WATCHING AN INSTALL, WHICH THIS APP COULD NOT DO.
 #
 # THIS FILE IS VIRTUALBOX'S OWN autoinstall template with one block added, and
 # that is the whole difference. It is passed back with --script-template, so
-# VirtualBox still fills in every @@VBOX_...@@ value exactly as it would have.
+# VirtualBox still fills in every one of its own values exactly as it would have.
+#
+# NOTHING MAY NAME A PLACEHOLDER IN PROSE. VirtualBox parses the whole file,
+# comments included, and answers a malformed one with "Malformed or too long
+# template placeholder" and nothing else — which is how this file failed the
+# first time it was used, on a sentence explaining what placeholders are.
 #
 # WHY IT IS COPIED AT ALL: between "the install started" and "it dialled in"
 # there was no evidence of any kind. No agent yet, so no log line; the
@@ -19,9 +31,8 @@
 # check, and the reason this notice is at the top rather than in a commit
 # message nobody will find.
 #
-# @@OKC_SSH_KEY@@ is OUR placeholder, filled in before VirtualBox ever sees the
-# file. Everything spelled @@VBOX_...@@ is theirs.
-#cloud-config
+# One placeholder here is OURS — the ssh key below — and it is filled in before
+# VirtualBox ever sees the file. Every other one is theirs.
 autoinstall:
   # version is an Autoinstall required field.
   version: 1
