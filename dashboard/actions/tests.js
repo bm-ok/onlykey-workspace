@@ -131,10 +131,10 @@ module.exports = {
             // since, and `interrupted` is a check that was running when the
             // dashboard went away.
             state: r
-              ? (r.ok === true ? 'passed' : r.ok === null ? 'unrunnable' : 'failed')
+              ? (r.ok === true ? 'passed' : r.ok === null ? (r.asksYou ? 'asks you' : 'unrunnable') : 'failed')
               : kept ? kept.state : 'not run',
             ms: r ? r.ms : (kept ? kept.ms : null),
-            why: r ? (r.unrunnable || r.error || null) : (kept ? kept.why : null),
+            why: r ? (r.asksYou || r.unrunnable || r.error || null) : (kept ? kept.why : null),
             log: (r && r.log) || (kept && kept.log) || [],
             // WHEN, which only matters once results outlive the window. A pass
             // from four days ago and one from four minutes ago are both green.
@@ -667,6 +667,16 @@ module.exports = {
             // cannot put its machine back has contradicted "a machine goes away
             // clean", which is another suite's claim — so that suite is marked
             // dirty here, from underneath, by the run that found it out.
+            // A CHECK THAT WORKED AND UNDID SOMETHING. Teardown is the case:
+            // the machines really are gone, so the suite that established them
+            // is owed a run before anybody believes it again. Not a
+            // contradiction — nothing was shown to be false — so it is marked
+            // dirty rather than disproved.
+            for (const other of (result.invalidates || [])) {
+              remembered.dirty(remembered.wholeOf(other))
+              to.info(`"${testName}" undid what "${other}" established — that suite is marked dirty and wants running again`)
+            }
+
             for (const other of (result.dirties || [])) {
               remembered.disprove(remembered.wholeOf(other), {
                 suite: groupName,
@@ -678,9 +688,17 @@ module.exports = {
             }
 
             remembered.remember(groupName, suiteName, testName, {
-              state: result.ok === true ? 'passed' : result.ok === null ? 'unrunnable' : 'failed',
+              // "asks you" is kept apart from "could not be tried". One is a
+              // fact about this moment that may be different in five minutes;
+              // the other is a job for somebody, and will read the same on every
+              // run until they do it.
+              state: result.ok === true
+                ? 'passed'
+                : result.ok === null
+                  ? (result.asksYou ? 'asks you' : 'unrunnable')
+                  : 'failed',
               ms: result.ms,
-              why: result.unrunnable || (result.error ? String(result.error).split('\n')[0] : null),
+              why: result.asksYou || result.unrunnable || (result.error ? String(result.error).split('\n')[0] : null),
               log: said.get(key(groupName, suiteName, testName)) || [],
               fingerprint: prints.get(key(groupName, suiteName, testName)) || null
             })

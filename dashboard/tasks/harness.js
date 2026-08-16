@@ -121,13 +121,20 @@ function describe (name, fn) {
 // nothing about machines — a task written on the wrong branch is nobody else's
 // business — and only the steps that actually exercise somebody else's ground
 // get to say anything about it.
-function it (name, fn, { minutes = 0, gate = false, dirties = null } = {}) {
+// `invalidates` IS THE SAME IDEA ON THE OTHER OUTCOME. `dirties` fires when a
+// check FAILS, because the failure is evidence against another suite. This fires
+// when a check PASSES, because the success undid what another suite established:
+// a teardown that works has taken the machines away, so "the machines are built
+// and ready" is no longer true — not disproved, just no longer the case.
+function it (name, fn, { minutes = 0, gate = false, dirties = null, invalidates = null } = {}) {
   if (!currentSuite) throw new Error('it() must be called inside describe()')
+  const list = v => v ? (Array.isArray(v) ? v.map(String) : [String(v)]) : null
   currentSuite.tests.push({
     name,
     fn,
     gate,
-    dirties: dirties ? (Array.isArray(dirties) ? dirties.map(String) : [String(dirties)]) : null,
+    dirties: list(dirties),
+    invalidates: list(invalidates),
     timeoutMs: minutes > 0 ? Math.round(minutes * 60000) : 0
   })
 }
@@ -227,7 +234,28 @@ function needs (cond, why) {
   if (!cond) throw new Error(UNMET + why)
 }
 
-const assert = { ok, equal, notEqual, refuses, needs }
+// AND THE ONE THING NO RUN CAN FIX BY WAITING: something a PERSON has to do.
+//
+// A third answer, and it is not the same as either of the two above it. A
+// missing GitHub key is not a failure — nothing is wrong with the code — and it
+// is not "no machine happened to be free", which is a fact about the moment that
+// will be different in five minutes. It is a job for somebody, and every run
+// from now until they do it will say exactly this.
+//
+// It exists because the suites are becoming the way this app is SET UP, not only
+// the way it is checked. A fresh host cannot make its own credentials: it can
+// only stop at the right place and say what to do and where. Reported red it
+// would make every new host look broken; reported amber alongside the ordinary
+// preconditions it would be lost among things that fix themselves.
+//
+// So it says what is missing and what to do about it, in that order, and the
+// board keeps it until it is done.
+const ASKS = 'okc-needs-a-person: '
+function asksYou (cond, whatToDo) {
+  if (!cond) throw new Error(ASKS + whatToDo)
+}
+
+const assert = { ok, equal, notEqual, refuses, needs, asksYou }
 
 async function run (context = {}) {
   const results = { suites: [], passed: 0, failed: 0, unrunnable: 0 }
@@ -363,10 +391,35 @@ async function run (context = {}) {
         try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'passed' }) } catch { /* as above */ }
         testRes.ok = true
         testRes.ms = Date.now() - started
+        // WHAT THIS SUCCESS UNDOES, which is the opposite trigger to `dirties`.
+        //
+        // A teardown check that PASSES has taken the machines away — so "two
+        // machines are built and ready" has stopped being true, by this check
+        // having worked rather than by anything going wrong. Same machinery as a
+        // contradiction, fired on the other outcome.
+        if (t.invalidates) testRes.invalidates = t.invalidates
         results.passed++
         log(`  PASS ${t.name} (${Math.round(testRes.ms / 1000)}s)`)
       } catch (e) {
         const why = (e && e.message) || String(e)
+
+        // SOMETHING A PERSON HAS TO DO. Not a failure, not a fact about the
+        // moment: a job for somebody, which every run will report until it is
+        // done. It closes the rest of the series when the check is a gate, for
+        // the same reason an unmet gate does — everything below it was going to
+        // ask for the same missing thing.
+        if (why.startsWith(ASKS)) {
+          testRes.ok = null
+          testRes.asksYou = why.slice(ASKS.length)
+          testRes.ms = Date.now() - started
+          results.asking = (results.asking || 0) + 1
+          if (t.gate) stoppedBy = `${t.name} — ${testRes.asksYou}`
+          try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'asks', error: testRes.asksYou }) } catch {}
+          log(`  YOU  ${t.name} -> ${testRes.asksYou}`)
+          try { if (onTestEnd) onTestEnd({ groupName: suite.group, suiteName: suite.name, testName: t.name, result: testRes }) } catch { /* a reporter must not fail a test */ }
+          suiteRes.tests.push(testRes)
+          continue
+        }
         // A precondition that was not met stops the test and is NOT a failure.
         // Counted apart, reported apart, and said in the words the drill used.
         if (why.startsWith(UNMET)) {

@@ -56,6 +56,10 @@ const TEST_LOOK = {
   //   changed      it passed once, and the check has been EDITED since, so what
   //                it did then says nothing about what it does now
   //   interrupted  it was running when the dashboard went away
+  // NOT AMBER LIKE "not tried", and not red. Something a person has to do, which
+  // no amount of running will change — so it is worded as a job rather than as a
+  // state of the system, and it stays until somebody does it.
+  'asks you': { className: 'badge warn', textContent: 'needs you' },
   carried: { className: 'badge muted', textContent: 'carried' },
   changed: { className: 'badge warn', textContent: 'check changed' },
   interrupted: { className: 'badge warn', textContent: 'interrupted' },
@@ -65,15 +69,20 @@ const TEST_LOOK = {
 // The worst thing in a list, for the badge on a card. Failed beats not-tried
 // beats passed: an aggregate that averages away one failure is an aggregate that
 // hides the only line worth reading.
+// "Needs you" outranks "not tried" and is outranked by a failure. A suite
+// waiting on a person is not the same as one that happened to find no free
+// machine, and burying it under an amber count is how a fresh host looks merely
+// untidy instead of looking like it is waiting for somebody.
 const worstOf = states =>
   states.some(s => s === 'failed') ? 'failed'
-    : states.some(s => s === 'unrunnable') ? 'unrunnable'
-      : states.length && states.every(s => s === 'passed') ? 'passed'
-        : 'not run'
+    : states.some(s => s === 'asks you') ? 'asks you'
+      : states.some(s => s === 'unrunnable') ? 'unrunnable'
+        : states.length && states.every(s => s === 'passed') ? 'passed'
+          : 'not run'
 
 // Only the counts that are not zero. A row of three zeroes is three things to
 // read past on every suite that is simply fine.
-const countBadges = states => ['passed', 'failed', 'unrunnable'].map(k => {
+const countBadges = states => ['passed', 'failed', 'asks you', 'unrunnable'].map(k => {
   const n = states.filter(s => s === k).length
   return n ? el('span', { ...TEST_LOOK[k], textContent: `${n} ${TEST_LOOK[k].textContent}` }) : null
 })
