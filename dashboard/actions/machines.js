@@ -600,25 +600,47 @@ module.exports = {
         // 3. The scripts again. first-boot.sh restarts the agent, which ends the
         //    channel this was sent over — so it reports failure having usually
         //    succeeded, and the honest test is whether the machine comes back.
+        // HOW MANY TIMES IT HAS FINISHED BEFORE, asked before it is asked to
+        // finish again. The marker "first boot finished" is already in the log
+        // from the original install, so waiting for it to APPEAR waits for
+        // something that is there — which is why the first version of this
+        // returned instantly and, on a bad day, hung instead.
+        const marker = 'first boot finished'
+        const finishes = async () => {
+          const r = await actions.vmRun.run({
+            name,
+            command: `grep -c "${marker}" /var/log/okc-provision.log 2>/dev/null || echo 0`,
+            what: 'asking whether the scripts have finished'
+          })
+          return Number(String(r.output || '').trim().split('\n').pop()) || 0
+        }
+        const before = await finishes().catch(() => 0)
+
         step('setup', `running ${stage} again, detached so it survives the agent restarting`)
         await actions.vmSetupAgain.run({ name, stage, detach: true })
         await actions.vmAwait.run({ name, for: 'connected', seconds: 420 })
 
-        // AND WAITING FOR THE SCRIPT, NOT FOR THE CHANNEL. The agent comes back
-        // a few seconds after it restarts, which is nowhere near the end of the
-        // script — snapshotting there would capture a machine part-way through
-        // being set up and call it the clean starting point.
+        // AND WAITING FOR THE SCRIPT, IN SHORT QUESTIONS RATHER THAN ONE LONG
+        // ONE.
         //
-        // The wait happens IN THE GUEST, as one bounded command: it is the guest
-        // that knows, and asking it repeatedly from here is the polling this
-        // project keeps writing rules against.
-        const finished = await actions.vmRun.run({
-          name,
-          command: 'for i in $(seq 1 180); do grep -q "first boot finished" /var/log/okc-provision.log && exit 0; sleep 5; done; exit 1',
-          what: 'waiting for the setup scripts to finish'
-        }).catch(e => ({ code: 1, output: e.message }))
-        if (finished.code !== 0) {
-          throw new Error(`The setup scripts did not report finishing within fifteen minutes. Nothing has been snapshotted, so the machine is unchanged from its old base. Its own log is /var/log/okc-provision.log.`)
+        // The first version asked the guest to wait, in a single command that
+        // returned when the log said so. That command travels over the channel
+        // the script itself RESTARTS — so the session it was sent on dies, the
+        // answer never comes, and the whole update sits there for the channel's
+        // half-hour timeout holding the machine borrowed. Which is exactly what
+        // it did, in front of somebody who had asked why it was taking so long.
+        //
+        // Each question is its own job now. A dropped session costs one question
+        // rather than the entire wait, and the answer is a COUNT compared with
+        // what it was before, so a marker left by an earlier install cannot be
+        // mistaken for this run finishing.
+        let done = false
+        for (let i = 0; i < 240 && !done; i++) {
+          await new Promise(r => setTimeout(r, 5000))
+          try { done = (await finishes()) > before } catch { /* the agent is restarting; ask again */ }
+        }
+        if (!done) {
+          throw new Error(`The setup scripts did not report finishing within twenty minutes. Nothing has been snapshotted, so the machine is unchanged from its old base. Its own log is /var/log/okc-provision.log.`)
         }
         step('back', 'the scripts finished and it is dialled in')
 

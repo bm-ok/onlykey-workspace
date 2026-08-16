@@ -95,36 +95,6 @@ systemctl enable lightdm 2>/dev/null || true
 systemctl set-default graphical.target >/dev/null 2>&1 || true
 say "lightdm will log $OKC_USER straight in, into openbox, from the next boot"
 
-# --- something on the background ---------------------------------------------
-#
-# openbox draws nothing, so the session is a black rectangle — which is
-# indistinguishable from a machine that has not started X, from a machine that
-# has crashed, and from a screenshot taken too early. Every one of those has been
-# mistaken for the others in this project already, including by the tool.
-#
-# SO THE BACKGROUND SAYS WHICH MACHINE IT IS. A wallpaper here is not decoration:
-# a screenshot of a runner is the instrument used when nothing else can answer,
-# and one that names itself answers "which machine am I looking at" without
-# anybody having to know.
-#
-# MADE ON THE MACHINE, not fetched. Nothing in this project downloads assets at
-# run time, and a wallpaper that has to be served is a wallpaper that is missing
-# on the day the dashboard is not answering.
-if command -v convert >/dev/null 2>&1 || apt-get -o DPkg::Lock::Timeout=600 install -y imagemagick feh >/dev/null 2>&1; then
-  install -d -m 0755 /usr/share/backgrounds
-  # The dashboard's own colours, so a runner's screen and the window that
-  # manages it look like one thing. The name is large enough to read in a
-  # screenshot that has been scaled down, which is how they are usually read.
-  convert -size 1920x1080 \
-    -define gradient:angle=150 gradient:'#0a0d12'-'#16202c' \
-    -gravity center \
-    -font DejaVu-Sans -pointsize 140 -fill '#58a6ff' -annotate +0-40 "$OKC_VM" \
-    -font DejaVu-Sans -pointsize 44 -fill '#5b6672' -annotate +0+70 'a dashboard runner' \
-    /usr/share/backgrounds/okc.png 2>/dev/null \
-    || convert -size 1920x1080 xc:'#0a0d12' /usr/share/backgrounds/okc.png 2>/dev/null \
-    || true
-fi
-
 # --- and it never blanks or locks --------------------------------------------
 #
 # A blanked screen is indistinguishable from a machine that has stopped

@@ -434,6 +434,7 @@ stage toolchain.sh;      report_stage 'the toolchain' $?
 # may want a DISPLAY to exist.
 if [ "${OKC_DESKTOP:-yes}" = yes ]; then
   stage desktop.sh;      report_stage 'the desktop' $?
+  stage wallpaper.sh;    report_stage 'the wallpaper' $?
 else
   say 'this machine was built with no display, so no desktop is being installed'
 fi

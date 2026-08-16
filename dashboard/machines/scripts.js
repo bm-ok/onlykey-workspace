@@ -55,6 +55,9 @@ const STAGES = {
   // stack is most of what they would otherwise spend their boot and their
   // memory on.
   desktop: 'desktop.sh',
+  // The picture on that desktop, which is the one part of it that is taste
+  // rather than plumbing — see provision/wallpaper.sh.
+  wallpaper: 'wallpaper.sh',
   // The project's additions, run after the app's. Usually only a project has these,
   // and a machine works perfectly well without either.
   extra: 'extra.sh',
