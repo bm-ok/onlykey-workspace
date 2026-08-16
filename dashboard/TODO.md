@@ -101,25 +101,6 @@ Outstanding
   back like one. See `ROADMAP.md`, "Signing a worker in, as a job rather than as
   code".
 
-* **Find out whether the refresh token rotates, because it changes everything
-  above.** One task, then `vmCredentialsGrab` from that machine before it is put
-  away, and compare the refresh token to this host's copy. If it differs, a
-  worker refreshing invalidates the copy this host keeps handing out — which
-  fits what happened on 2026-08-15 exactly, and makes "a credential per machine"
-  urgent rather than tidy. Cheap to run and it settles an argument.
-
-* **Nothing marks a held credential as suspect when a worker is refused.**
-  `credentialsHeld` reported the refresh token good until September while the
-  worker answered "OAuth session expired and could not be refreshed" — and the
-  Keys tab went on saying it was fine. `credentialLife` already documents why a
-  clock cannot prove life; what is missing is anywhere to record that the last
-  attempt to USE it failed. The signal exists: `claude()` gets that sentence back
-  and throws it away.
-
-  The flow around it is now exercised, which it had never been: a credential was
-  signed in on a machine and kept here at 00:06:56 from runner2, and the very
-  next run authenticated with it.
-
 * **`runner1` is running an agent two fixes behind.** It never got the read
   timeout or the unit change, and it has not got the TLS locking either — so it
   is the only machine left that still drops its channel whenever a command

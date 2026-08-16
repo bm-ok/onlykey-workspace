@@ -111,3 +111,44 @@ draft('and signing a worker in is a job, not a sequence written into this app',
   'WHAT IT WOULD BUY: the flow becomes editable without a release, and the sign-in URL stays on the machine rather than being logged here. ' +
   'THE STICKING POINT, which is why this is a draft and not a task: a credential is NOT an artifact and must not be handed back like one. A job hands files back; this one would have to hand back something the host stores sealed and never shows, which is a hole in the job API rather than a thing to write around. ' +
   'THE CHECK: the sign-in runs as an approved job, the credential arrives sealed on this host, and no URL or token appears in the log.')
+
+// ---- the credential a worker hands back ------------------------------------
+//
+// THE TOKEN THIS HOST HOLDS IS PROBABLY ALREADY INVALID, and the reason is in
+// the code rather than in the account: the Claude CLI refreshes the credential
+// on the machine as it works, and `vmCredentialsForget` ends a run with
+//
+//     rm -f "$HOME/.claude/.credentials.json"
+//
+// so the refreshed one is deleted and this host goes on handing out the original.
+// That is exactly the shape of the failure already on record — credentialsHeld
+// reporting the refresh token good until September while the worker answered
+// "OAuth session expired and could not be refreshed".
+//
+// Which is why one credential per machine is not tidiness. A credential that
+// rotates has to be kept per machine, taken back rather than thrown away, and
+// survive the rollback that wipes the disk between tasks.
+
+draft('and what is taken back is what the worker refreshed',
+  'IT IS DELETED TODAY. vmCredentialsForget removes ~/.claude/.credentials.json from the machine and this host keeps its original copy — so every refresh the CLI does during a run is thrown away at the end of it, and the next machine is handed a token that is one or more rotations behind. ' +
+  'vmCredentialsGrab already does the taking-back half; nothing calls it when work ends. ' +
+  'THE CHECK: run a task, and afterwards the credential this host holds is the one the machine finished with. Compared by a FINGERPRINT of it rather than by reading it — the rule is that this app may know something changed in the Keys tab without knowing what. ' +
+  'AND IT SETTLES A QUESTION ON ITS OWN: if the fingerprint moves, the refresh token rotates, and one credential shared between machines is not a tidiness problem but a broken design. If it never moves, sharing is survivable and multi-credential is about throughput instead.')
+
+draft('and each machine keeps its own credential across a rollback',
+  'A MACHINE IS ROLLED BACK TO BASE WHEN ITS WORK ENDS, which wipes the disk — so a credential on a machine cannot survive by staying there, and the base snapshot must never contain one (a snapshot of a machine holding one keeps a copy for as long as the snapshot exists, which is why vmBaseSnapshot refuses it). ' +
+  'So per-machine means kept HERE, sealed, one per machine: handed over when it starts work, taken back — refreshed — when the work ends, and handed to the same machine next time. ' +
+  'THE CHECK: give a machine work twice with a stop in between, and both runs use that machine\'s own credential, with no machine ever holding another\'s. ' +
+  'TO SETTLE: what happens when there are more machines than credentials — a machine waits, or work waits. Waiting for a credential is the same shape as waiting for a machine, which the queue already knows how to do.')
+
+draft('and the .claude folder can be thrown away without losing the token',
+  'THE GAP TO BRIDGE, and half of it is already built. `machines/job-api.js` archives ~/.claude per task and excludes .credentials.json on purpose — that folder is the worker\'s MEMORY and is kept for a long time, so an unsealed token riding along would be filed for ever. ' +
+  'The consequence is that memory and credential are two different things with two different lifetimes, and only one of them has somewhere to live. ' +
+  'WHAT IT WOULD MEAN: the token is set up and kept through the same path the memory uses — captured when the run ends, sealed here, per machine — so ~/.claude on the guest becomes disposable. Trash it, restore the memory, hand back the token, and the machine is where it was. ' +
+  'THE CHECK: delete ~/.claude on a machine entirely, start its next task, and it both remembers what it was doing and authenticates.')
+
+draft('and the Keys tab lists every Claude credential, by machine',
+  'ONE TODAY, AND THE TAB IS BUILT FOR ONE. credentialsHeld answers about a single file: held, from where, taken when, and the two clocks. With one per machine that becomes a list — a row per credential, which machine holds it now, when it was last refreshed, and whether the last attempt to USE it worked. ' +
+  'NEVER A VALUE. The rule for this tab is that a model may know something was done in there and not what: a count, a holder, a date, a fingerprint. ' +
+  'THE CHECK: with two credentials held, the tab lists two rows naming their machines, and nothing in the answer contains a token. ' +
+  'AND THE COLUMN NOTHING HAS TODAY: whether the last USE failed. credentialsHeld reported a refresh token good until September while a worker was being refused with it — the sentence came back from claude() and was thrown away.')
