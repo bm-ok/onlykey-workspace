@@ -11,6 +11,7 @@
 // one cost a failed 25-minute install to find.
 
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const log = require('../core/log')
 const vbox = require('./vbox')
@@ -379,8 +380,36 @@ async function install (name, { port, caPort }) {
     'bash /root/okc-bootstrap.sh'
   ].join(' ')
 
+  // OUR AUTOINSTALL TEMPLATE, WHICH IS VIRTUALBOX'S PLUS ONE BLOCK.
+  //
+  // What it adds is a way to watch: the installer's own journal streamed to the
+  // serial port, and ssh into the installer environment with the same key the
+  // finished machine gets. Between "installing" and "it dialled in" this app had
+  // no evidence of any kind, and a machine that hangs in that window looks
+  // exactly like one that is working.
+  //
+  // Written out with OUR placeholder filled in first — VirtualBox reads the file
+  // afterwards and fills in every @@VBOX_...@@ of its own, which is why this can
+  // be a copy of theirs rather than a reimplementation of it.
+  //
+  // If the template is missing or cannot be written, the install goes ahead
+  // WITHOUT it: being unable to watch is worse than not installing, but only
+  // slightly, and a machine that will not build because of a logging convenience
+  // is the wrong trade.
+  let template = null
+  try {
+    const from = path.join(__dirname, '..', 'provision', 'autoinstall-user-data')
+    const text = fs.readFileSync(from, 'utf8').split('@@OKC_SSH_KEY@@').join(String(spec.sshKey || '').trim())
+    template = path.join(os.tmpdir(), `okc-autoinstall-${name}.yaml`)
+    fs.writeFileSync(template, text)
+  } catch (e) {
+    template = null
+    to.warn(`installing without the dashboard's autoinstall additions (${e.message}) — the install will not be watchable over the serial port or ssh`)
+  }
+
   const args = ['unattended', 'install', name,
     '--iso', iso,
+    ...(template ? ['--script-template', template] : []),
     '--user', spec.user,
     '--password', spec.password || 'okc',
     '--full-user-name', spec.fullName,
@@ -435,29 +464,39 @@ function report (name, stage) {
     installing: stage === 'online' ? null : vm.installing
   })
 
-  // AND THE CLEAN STARTING POINT IT HAS JUST BECOME.
-  //
-  // A machine with no base snapshot cannot be put away clean, so the queue
-  // correctly never picks it up — and "the queue is ignoring my new machine" is
-  // indistinguishable from "the queue has nothing to do". Every machine built
-  // here needed somebody to remember this step, twenty-five minutes after they
-  // started the thing that needed it.
-  //
-  // THIS IS THE MOMENT and there is no better one: the operating system is
-  // installed, the scripts have run, nothing has been asked of it yet. Later
-  // means a base snapshot with somebody's half-finished work inside it.
-  //
-  // Detached on purpose. This is answering the guest's own HTTP report, and
-  // snapshotting shuts the machine down and starts it again — which the guest
-  // cannot very well wait for the reply of. Failures are said and change
-  // nothing: the machine is still installed, and vmBaseSnapshot is still there
-  // to be pressed.
-  if (stage === 'online' && !vm.baseSnapshot) {
-    setTimeout(() => {
-      base(name).catch(e => log.on('vm', name).warn(`could not take its first snapshot: ${e.message}. Take one with vmBaseSnapshot — until it has one, the queue cannot use it.`))
-    }, 1000)
-  }
   return now
+}
+
+// THE FIRST CLEAN STARTING POINT, taken when the machine first dials in.
+//
+// A machine with no base snapshot cannot be put away clean, so the queue
+// correctly never picks it up — and "the queue is ignoring my new machine" is
+// indistinguishable from "the queue has nothing to do". Every machine built here
+// needed somebody to remember this step, long after they started the thing that
+// needed it. runner3 was built, used, and refused by vmProvisionUpdate before
+// anybody noticed it had none.
+//
+// NOT WHEN THE GUEST SAYS "ONLINE", which was the first attempt and was wrong in
+// a way worth writing down: first-boot.sh runs in the INSTALLER's post-install
+// stage — its own comments say so — so "online" arrives while the machine is
+// still the installer, before the installed system has ever booted. Hooking it
+// there pressed the power button in the middle of an install and then raced the
+// installer's own reboot. It survived; it should not have been asked to.
+//
+// Dialling in is the honest signal: the installed system booted, its agent
+// started, and it reached this host. Nothing has been asked of it yet.
+//
+// Detached, because snapshotting shuts the machine down and starts it again, and
+// this is running inside the handler that makes a machine reachable. A failure
+// is said and changes nothing — the machine is installed either way, and
+// vmBaseSnapshot is still there to be pressed.
+function firstSnapshotIfItNeedsOne (name) {
+  const vm = vms.read().find(v => v.name === name)
+  if (!vm || vm.baseSnapshot) return
+  if (vm.installing) return   // still being built; it will dial in again after
+  setTimeout(() => {
+    base(name).catch(e => log.on('vm', name).warn(`could not take its first snapshot: ${e.message}. Take one with vmBaseSnapshot — until it has one, the queue cannot use it.`))
+  }, 5000)
 }
 
 // The first snapshot, taken once and never again by this path. Written here
@@ -482,4 +521,4 @@ async function base (name, title = 'base') {
   return { name, baseSnapshot: title }
 }
 
-module.exports = { fill, create, install, report, resolveISO, pickBridge }
+module.exports = { fill, create, install, report, base, firstSnapshotIfItNeedsOne, resolveISO, pickBridge }

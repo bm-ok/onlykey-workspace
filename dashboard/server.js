@@ -703,6 +703,18 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
             // slow or unanswered question here would hold that up for every other
             // reason anything wants to talk to it.
             queue.redial(actions, log, name)
+
+            // AND A BRAND NEW MACHINE GETS ITS CLEAN STARTING POINT.
+            //
+            // Dialling in is the first moment a freshly built machine is really
+            // finished: the installed system booted, its agent started, and it
+            // reached here. Nothing has been asked of it yet, which is exactly
+            // what a base snapshot should contain.
+            //
+            // It cannot be done when the guest reports "online" — that comes
+            // from the installer's post-install stage, before the installed
+            // system has ever booted. See provisioner.firstSnapshotIfItNeedsOne.
+            provisioner.firstSnapshotIfItNeedsOne(name)
               .catch(e => log.on('queue', name).warn(`could not ask it what it is working on: ${e.message}`))
           }
         })
