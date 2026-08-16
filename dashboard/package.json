@@ -19,7 +19,7 @@
   "//logging": "tools/nw.js passes --enable-logging=stderr, which is what makes the RENDERER audible -- the node context was always heard, the window never was. The bare --enable-logging writes the same lines to User Data/chrome_debug.log instead, and --v=1 adds three hundred lines of Chromium talking about itself. Measured; see the comment there.",
   "scripts": {
     "start": "node tools/nw.js",
-    "test": "node test/generic-test.js && node test/window-test.js && node test/declared-test.js && node test/events-test.js",
+    "test": "node test/generic-test.js && node test/window-test.js && node test/declared-test.js && node test/events-test.js && node test/outline.js --check",
     "//quit": "Asks the running dashboard to close itself, rather than killing the process. The window loads server.js at startup, so a code change means a restart -- this is the half of that which was reaching for a process list.",
     "quit": "node tools/okc.js appQuit",
     "//restart": "Quit, wait until it is actually gone, and start again. The waiting is why this is a script and not `quit && start`: appQuit answers before it closes, so the old app still holds the port at the moment the reply arrives. See tools/restart.js.",
