@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 11 suites, 21 tests, 101 checks, 18 of them drafts -->
+<!-- 11 suites, 22 tests, 105 checks, 18 of them drafts -->
 
 ## 18 drafts, not written yet
 
@@ -230,6 +230,13 @@ The point of the whole tool, and the last part of it that nothing checked.
   7. and the machine was put away clean
   8. and judging it is refused, because this worker pushed nothing
   9. **DRAFT** — and a task that pushed something can be accepted
+
+## 01 — what survives the machine
+
+  1. a machine, a cut, and a task in flight on it
+  2. a file the machine hands over is kept here
+  3. and the memory a worker keeps goes back and comes forward again
+  4. and the token that went up comes back the same
 
 # 09 — judging
 
