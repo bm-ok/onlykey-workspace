@@ -24,6 +24,14 @@ const {
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
 } = s
 
+// WHICH MACHINE IS BEING RE-PROVISIONED, IF ANY, across the whole host.
+//
+// One at a time is a refusal rather than a queue — see vmReprovision. In this
+// process only, deliberately: it guards concurrent calls, and a restart mid-way
+// leaves a machine borrowed and off the pool, which is visible on the Runners
+// tab and is the state somebody should be looking at anyway.
+let reprovisioning = null
+
 module.exports = {
   // Only ever the machines this app made. Everything here refuses a machine that
   // is not in its own registry, because these actions can destroy one.
@@ -31,7 +39,22 @@ module.exports = {
 
   vmCreate: { about: 'Make a virtual machine and its disk', takes: ['vm'], run: ({ vm }) => provisioner.create(vm || {}) },
 
-  vmInstall: { about: 'Install an operating system, unattended, and run its provisioning scripts', takes: ['name'], run: ({ name }) => busy.during(name, 'being installed', () => provisioner.install(name, { port: net.port, caPort: net.caPort })) },
+  // AND IT HOLDS THE HOST WHILE IT DOES, because an install is the one thing
+  // here that cannot be told apart from a wedge while it is happening.
+  //
+  // It takes about twenty-five minutes and it does NOT dial in until its first
+  // boot, so for most of that time there is no agent, no channel and nothing to
+  // ask. Another machine starting into that is the case that wedges this host —
+  // and unlike two boots, there is no minute-long wait that fixes it. So
+  // everything else that would come up is refused by name while this runs. See
+  // machines/busy.js.
+  vmInstall: {
+    about: 'Install an operating system, unattended, and run its provisioning scripts. Nothing else comes up while it does',
+    takes: ['name'],
+    run: ({ name }) => busy.during(name, 'being installed', () => busy.comingUp(name,
+      () => provisioner.install(name, { port: net.port, caPort: net.caPort }),
+      { kind: 'install' }))
+  },
 
   vmRemove: {
     about: 'Delete a virtual machine and its disks, and forget it',
@@ -149,7 +172,31 @@ module.exports = {
     }
   },
 
-  vmStart: { about: 'Start a virtual machine', takes: ['name', 'type'], run: ({ name, type }) => { vms.get(name); return busy.during(name, 'being started', () => vbox.start(name, type === 'headless' ? 'headless' : 'gui')) } },
+  // AND IT WAITS ITS TURN. Starting is the expensive minute on this host — a
+  // cold boot pulling on disk, memory and every core — and two at once do not
+  // take twice as long, they wedge: one machine sat on its splash for eleven
+  // minutes and had to have its power pulled, with nothing wrong with it.
+  //
+  // The queue has always started the next machine only after the last dialled
+  // in. This is that rule applied to the button, which is the path that bypasses
+  // the queue: somebody pressing Start on two machines, or a drill borrowing one
+  // while another is coming up. See machines/busy.js — it waits rather than
+  // refusing, because the answer is a minute away.
+  //
+  // The wait ends when the machine is STARTED rather than when it has dialled
+  // in: this action starts a machine and does not follow it. `vmAwait` is how
+  // anything waits for the rest, and queue.bringUp holds the gate for the whole
+  // boot because it is the one that cares.
+  vmStart: {
+    about: 'Start a virtual machine, waiting its turn if another is coming up',
+    takes: ['name', 'type'],
+    run: ({ name, type }) => {
+      vms.get(name)
+      return busy.during(name, 'being started', () => busy.comingUp(name,
+        () => vbox.start(name, type === 'headless' ? 'headless' : 'gui'),
+        { onWait: other => log.on('vm', name).info(`waiting for "${other}" to come up first — one machine at a time on this host`) }))
+    }
+  },
 
   // The session is dropped here, not left to time out.
   //
@@ -434,6 +481,114 @@ module.exports = {
   // one needs the machine off -- so this shuts it down, snapshots, and starts it
   // again. Doing it while running would store the memory too and make a much
   // larger snapshot of a machine mid-thought.
+  // RE-PROVISIONING, AS ONE ACT.
+  //
+  // A provisioning script is fetched, so editing one here is how a machine
+  // changes — but a change applied to a running machine is discarded by the next
+  // rollback, which is the machine working exactly as designed. Making it stick
+  // means running the scripts again AND taking a new base snapshot, and doing
+  // that by hand is six commands in an order that matters, with a wait after
+  // each. Skip the snapshot and the change quietly vanishes the next time the
+  // machine is put away; skip the reboot and a kernel command line never takes
+  // effect.
+  //
+  // It is not an install. A rebuild is twenty-five minutes and starts from the
+  // installer image; this is minutes and starts from the machine as it is, which
+  // is what makes iterating on a provisioning script possible at all.
+  //
+  // ONE AT A TIME, ACROSS THE WHOLE HOST. Not a queue: a refusal. Two of these
+  // at once means two machines booting, two snapshot operations and two sets of
+  // VirtualBox locks, and the failure mode is a machine left half-provisioned
+  // with no base snapshot to come back to. `busy.during` guards one machine at a
+  // time and cannot see the other, so the guard lives here.
+  vmReprovision: {
+    about: 'Run the setup scripts again and make the result the new clean starting point. One machine at a time',
+    takes: ['name', 'stage'],
+    run: async ({ name, stage = 'firstBoot' }) => {
+      const vm = vms.get(name)
+      if (reprovisioning && reprovisioning !== name) {
+        throw new Error(`"${reprovisioning}" is being re-provisioned. One at a time — two machines booting and snapshotting at once is how one ends up half-set-up with no base to come back to. Wait for it, or watch it on the Runners tab.`)
+      }
+      if (reprovisioning === name) throw new Error(`"${name}" is already being re-provisioned.`)
+      // The refusals that matter BEFORE anything is touched, because this ends
+      // in a rollback: a machine holding work would lose it.
+      if (vm.branch) throw new Error(`"${name}" claims ${vm.branch}. This ends by putting the machine back to a clean state, which would discard whatever it is working on — let it off its branch first.`)
+      if (vm.borrowed) throw new Error(`"${name}" is borrowed — ${vm.borrowed.why || 'somebody is using it'}. Give it back first.`)
+      refuseIfItHoldsACredential(name)
+
+      const to = log.on('vm', name)
+      reprovisioning = name
+      const began = Date.now()
+      const steps = []
+      const step = (what, note) => { steps.push({ what, note }); to.info(note) }
+
+      try {
+        // 1. THE CONSOLE FIRST, while it is off — VirtualBox will not add a
+        //    serial port to a running machine, and the boot this is about to
+        //    cause is exactly the one worth being able to read afterwards.
+        if (!await vbox.isOff(name)) {
+          step('stop', 'shutting it down so its console can be captured')
+          await actions.vmStop.run({ name })
+        }
+        if (!vm.serial) {
+          await actions.vmSerial.run({ name, on: true })
+          step('serial', 'its console will be written to this host from now on')
+        }
+
+        // 2. Claimed and brought up the same way a person does it, so the queue
+        //    cannot take it mid-way.
+        step('borrow', 'bringing it up clean')
+        await actions.vmBorrow.run({ name, why: 'being re-provisioned' })
+
+        // 3. The scripts again. first-boot.sh restarts the agent, which ends the
+        //    channel this was sent over — so it reports failure having usually
+        //    succeeded, and the honest test is whether the machine comes back.
+        step('setup', `running ${stage} again`)
+        await actions.vmSetupAgain.run({ name, stage }).catch(e => {
+          to.info(`the setup run ended the channel (${String(e.message).split('\n')[0]}) — waiting for it to dial back in`)
+        })
+        await actions.vmAwait.run({ name, for: 'connected', seconds: 420 })
+        step('back', 'it dialled back in after the scripts ran')
+
+        // 4. And the new starting point. Without this the whole thing is undone
+        //    by the next rollback.
+        step('base', 'taking a new base snapshot, so the change survives a rollback')
+        await actions.vmBaseSnapshot.run({ name })
+        await actions.vmAwait.run({ name, for: 'connected', seconds: 420 })
+        step('boot', 'it booted from the new base and dialled in')
+
+        // 5. Did the console actually come through? Said rather than asserted:
+        //    a machine can be perfectly re-provisioned and still not have a
+        //    serial console, if the guest half was never part of these scripts.
+        let console_ = null
+        try {
+          const read = await actions.vmLog.run({ name, which: 'serial', lines: 3 })
+          console_ = read.of > 1 ? `${read.of} lines` : 'nothing yet'
+        } catch (e) { console_ = `not readable — ${e.message.split('.')[0]}` }
+
+        await actions.vmReturn.run({ name })
+        step('away', 'put away clean, at the new base')
+
+        const took = Math.round((Date.now() - began) / 1000)
+        return {
+          name,
+          steps,
+          took,
+          console: console_,
+          note: `"${name}" was re-provisioned in ${took}s and is off at its new base snapshot. Its console says: ${console_}.`
+        }
+      } catch (e) {
+        // Handed back rather than left claimed. A machine stuck as "borrowed"
+        // after a failure is out of the pool with nobody using it.
+        to.bad(`re-provisioning stopped: ${e.message}`)
+        await actions.vmReturn.run({ name, keep: true }).catch(() => {})
+        throw new Error(`"${name}" was not re-provisioned: ${e.message} It is left as it is, out of the pool — look at it on the Runners tab before giving it back.`)
+      } finally {
+        reprovisioning = null
+      }
+    }
+  },
+
   vmBaseSnapshot: {
     about: 'Shut a machine down, snapshot it as a clean starting point, and start it again',
     takes: ['name', 'title'],

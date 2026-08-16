@@ -44,6 +44,8 @@ const workspaces = require('../core/workspaces')
 const vms = require('../machines/vms')
 const store = require('./store')
 const channel = require('../machines/channel')
+// One machine coming up at a time, across the whole host — see bringUp below.
+const busy = require('../machines/busy')
 
 let running = false
 let timer = null
@@ -365,7 +367,26 @@ async function run (actions, log, task, machine) {
 }
 
 // Off, clean, on, and dialled in.
+// ONE MACHINE COMES UP AT A TIME, and this is the only place that is true by
+// construction rather than by luck.
+//
+// The queue has always behaved this way — it starts the next machine after the
+// last one has dialled in — but that was a property of running one task at a
+// time, not a rule anything enforced. Everything else that brings a machine up
+// goes through here too (borrowing, re-provisioning), so the gate belongs at the
+// top of it: two machines booting at once do not take twice as long, they wedge
+// the host, and the machine that loses sits on its splash screen ignoring its
+// own power button.
+//
+// See machines/busy.js. It waits rather than refusing, because "another machine
+// is booting" stops being true in about a minute.
 async function bringUp (actions, to, machine) {
+  return busy.comingUp(machine, () => bringItUp(actions, to, machine), {
+    onWait: other => to.info(`waiting for "${other}" to finish coming up — one machine at a time on this host`)
+  })
+}
+
+async function bringItUp (actions, to, machine) {
   const before = (await actions.vmList.run({})).vms.find(v => v.name === machine)
   if (!before) throw new Error(`"${machine}" is gone`)
 
