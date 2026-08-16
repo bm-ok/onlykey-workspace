@@ -20,6 +20,17 @@
 // built to is that a model may know something was done in the Keys tab without
 // knowing what was done — so the list is safe to draw, log and photograph.
 //
+// TWO ROLES, ONE LIST. A "guest" is lent out to a machine; a "supervisor" is a
+// sign-in this host uses itself, for the model that decides what work to give
+// rather than the one doing it. They are the same object — a name and a sealed
+// token — and the difference is entirely who spends it, so they are one store
+// with a `role` on each record and two panes that filter on it.
+//
+// A SECOND STORE WOULD BE THE FAULT THIS FILE EXISTS TO FIX. One credential in
+// the Keys tab and another somewhere else is how one of them goes stale
+// unnoticed; making a separate file for supervisors would recreate that on the
+// day it was fixed.
+//
 // A FINGERPRINT RATHER THAN A LENGTH OR A PREFIX. Sixteen hex characters of
 // sha256, which is enough to say "this is the same token as before" and useless
 // for anything else. That is the comparison the drills make when they check a
@@ -68,6 +79,10 @@ const fingerprint = text => crypto.createHash('sha256').update(String(text)).dig
 function all () {
   return read().map(g => ({
     name: g.name,
+    // Anything written before roles existed was lent to machines, which is what
+    // a guest is. Defaulted here rather than migrated, so an old record needs no
+    // rewriting to be read correctly.
+    role: g.role === 'supervisor' ? 'supervisor' : 'guest',
     added: g.added,
     from: g.from || null,
     // Read from the file rather than trusted from the record, so a guest whose
@@ -85,7 +100,7 @@ const get = name => all().find(g => g.name === name) || null
 
 // ---- adding and removing --------------------------------------------------
 
-function add ({ name, token, from = null, note = null }) {
+function add ({ name, token, from = null, note = null, role = 'guest' }) {
   if (!okName(name)) {
     throw new Error(`"${name}" is not a name for a guest. Letters, digits, dash, dot and underscore, up to 64 — it is a filename and a label in a list, so it is refused rather than changed into something you would not recognise.`)
   }
@@ -98,6 +113,10 @@ function add ({ name, token, from = null, note = null }) {
 
   const record = {
     name,
+    // One namespace across both roles, because both are filenames in one folder
+    // and a supervisor called the same thing as a guest would be one file. See
+    // the header: they are the same object, spent by different hands.
+    role: role === 'supervisor' ? 'supervisor' : 'guest',
     added: new Date().toISOString(),
     from,
     note,
@@ -132,6 +151,13 @@ function lentTo (name, machine) {
   const all = read()
   const i = all.findIndex(g => g.name === name)
   if (i < 0) throw new Error(`There is no guest called "${name}".`)
+  // A SUPERVISOR IS NOT LENT OUT. It is the sign-in this host decides work with,
+  // and a machine running as it would be a worker able to spend the identity that
+  // supervises workers. Refused at the one point that records a machine holding
+  // something, rather than at each of the several places that hand one over.
+  if (all[i].role === 'supervisor') {
+    throw new Error(`"${name}" is a supervisor, not a guest. It is the sign-in this host works with; lending it to a machine would let a worker spend the identity that decides what workers do. Add a guest for the machine instead.`)
+  }
   all[i] = { ...all[i], holder: machine, lastGiven: new Date().toISOString(), lastGivenTo: machine }
   write(all)
   return get(name)

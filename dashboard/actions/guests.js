@@ -19,28 +19,38 @@ const { log, vms, channel } = s
 module.exports = {
   guests: {
     about: 'The Claude identities this host holds — one per name, each with a sealed token',
-    run: () => {
-      const all = guests.all()
+    // Both roles by default, because "what sign-ins does this host have" is one
+    // question and answering half of it silently is how a duplicate gets added.
+    // The two panes ask for one role each. See core/guests.js.
+    takes: ['role'],
+    run: ({ role = null } = {}) => {
+      const all = role ? guests.all().filter(g => g.role === role) : guests.all()
+      const sups = all.filter(g => g.role === 'supervisor').length
       return {
         guests: all,
         held: all.filter(g => g.has).length,
         lent: all.filter(g => g.holder).length,
+        supervisors: sups,
         where: guests.ROOT(),
-        note: all.length
-          ? `${all.length} guest${all.length === 1 ? '' : 's'}. A guest is lent to a machine while it works and taken back after, so two machines never share one sign-in.`
-          : 'None yet. A guest is a Claude sign-in kept here under a name — add one with its token, and a machine can be lent it.'
+        note: !all.length
+          ? (role === 'supervisor'
+              ? 'No supervisor sign-in yet. A supervisor is the identity this host works with itself, rather than one lent to a machine.'
+              : 'None yet. A guest is a Claude sign-in kept here under a name — add one with its token, and a machine can be lent it.')
+          : role === 'supervisor'
+            ? `${all.length} supervisor sign-in${all.length === 1 ? '' : 's'}. A supervisor is spent by this host and never lent to a machine.`
+            : `${all.length} guest${all.length === 1 ? '' : 's'}. A guest is lent to a machine while it works and taken back after, so two machines never share one sign-in.`
       }
     }
   },
 
   guestAdd: {
     about: 'Keep a Claude token here under a name. It is sealed to this account and never shown again',
-    takes: ['name', 'token', 'note'],
-    run: ({ name, token, note }) => {
-      const made = guests.add({ name, token, note: note || null, from: 'typed in' })
+    takes: ['name', 'token', 'note', 'role'],
+    run: ({ name, token, note, role }) => {
+      const made = guests.add({ name, token, note: note || null, from: 'typed in', role: role || 'guest' })
       // The name and the fingerprint, never the token. This line is kept in the
       // durable record, so it has to be safe to read six weeks later.
-      log.on('keys').good(`a Claude guest called "${made.name}" was added — ${made.fingerprint}`)
+      log.on('keys').good(`a Claude ${made.role} called "${made.name}" was added — ${made.fingerprint}`)
       return {
         ...made,
         note: `"${made.name}" is kept, sealed to this Windows account. Nothing shows it again — what is reported from here is a name, a date and a fingerprint.`
@@ -70,6 +80,19 @@ module.exports = {
     run: async ({ name, machine }) => {
       const guest = guests.get(name)
       if (!guest) throw new Error(`There is no guest called "${name}".`)
+
+      // BEFORE THE MACHINE IS EVEN LOOKED AT, and the order is the point.
+      //
+      // core/guests.js refuses a supervisor as well, but it refuses at
+      // `lentTo` — which runs AFTER the credential has been written onto the
+      // machine. So the throw would arrive with the token already on a disk and
+      // nothing on this host recording that it is there: refused, and handed
+      // over anyway. A drill found this by asking for a machine that does not
+      // exist and being refused for that instead.
+      if (guest.role === 'supervisor') {
+        throw new Error(`"${name}" is a supervisor, not a guest. It is the sign-in this host works with; lending it to a machine would let a worker spend the identity that decides what workers do. Add a guest for the machine instead.`)
+      }
+
       if (!guest.has) throw new Error(`"${name}" has no token file any more. It was removed by hand, or sealed by another account.`)
       vms.get(machine)
       if (!channel.connected(machine)) throw new Error(`"${machine}" is not dialled in. Start it and wait for it to connect.`)

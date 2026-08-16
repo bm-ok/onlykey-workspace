@@ -69,6 +69,18 @@ for (const m of js.matchAll(/classList\.(?:add|remove|toggle)\(\s*(['"`])([^'"`]
 }
 
 const ids = set(js, /\$\(\s*'([^']+)'\s*\)/g)
+
+// AND THE IDS HELD IN A TABLE, which `$('literal')` above cannot see.
+//
+// A panel written once and told which pane it is drawing looks its elements up
+// as `$(pane.ids.list)` — the literal lives in a descriptor, not at the call. So
+// an `ids: { ... }` block is read as element names, and those are exactly the
+// ones most worth checking: a shared painter gets an id right for one pane and
+// wrong for the other, which renders as one column that is simply empty and one
+// that works.
+for (const m of js.matchAll(/\bids:\s*\{([^{}]*)\}/g)) {
+  for (const v of m[1].matchAll(/:\s*'([^']+)'/g)) ids.add(v[1])
+}
 const varsUsed = set(js + css, /var\((--[a-zA-Z0-9-]+)\)/g)
 
 // ---- the three questions ----------------------------------------------

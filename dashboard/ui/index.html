@@ -446,6 +446,10 @@
            list you pick from, what is known about the one picked, and what it
            has been part of. -->
       <button class="subtab" data-pane="guests">Claude guest</button>
+      <!-- The other end of the same list: the sign-in this host spends itself,
+           rather than one lent to a machine. Same template, same store, one
+           field apart — see core/guests.js. -->
+      <button class="subtab" data-pane="supervisors">Claude supervisor</button>
       <!-- What the sessions pane was called. Kept under its own name rather than
            removed, because it is where the remembered transcripts still live and
            taking it away would lose them from the window before the new pane
@@ -478,6 +482,36 @@
         <div class="col">
           <h2>Sessions <span class="muted" id="guest-sessions-context"></span></h2>
           <div id="guest-sessions" class="stack"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ---------------- Claude supervisors ----------------
+         The identity this host works with: the model that decides what to give
+         machines, rather than one doing the work on a machine. Never lent out —
+         a worker holding it could spend the sign-in that supervises workers, so
+         core/guests.js refuses it and this pane has no button for it. -->
+    <div class="pane" id="pane-supervisors">
+      <p class="note" id="sups-note"></p>
+      <div class="cols">
+
+        <div class="col narrow">
+          <h2 class="titlerow">
+            Supervisors <span class="muted" id="sups-context"></span>
+            <button class="plus" id="add-sup-open" title="Keep a Claude token here as a supervisor">+</button>
+          </h2>
+          <div id="sups-list" class="stack"></div>
+        </div>
+
+        <div class="col">
+          <h2>Credential <span class="muted" id="sup-context">— nothing selected</span></h2>
+          <div id="sup-detail" class="panel"></div>
+        </div>
+
+        <div class="col">
+          <h2>Sessions <span class="muted" id="sup-sessions-context"></span></h2>
+          <div id="sup-sessions" class="stack"></div>
         </div>
 
       </div>

@@ -1,7 +1,7 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 11 suites, 22 tests, 105 checks, 18 of them drafts -->
+<!-- 11 suites, 23 tests, 112 checks, 21 of them drafts -->
 
-## 18 drafts, not written yet
+## 21 drafts, not written yet
 
 - **a worker credential / a worker can sign in** — and no two machines hold the same credential at once
   THE LOCK, and it can be written today. There is one credentials/claude.json, lent to whoever is working. vmCredentialsPut checks the machine is dialled in and that the credential is not dead, and says nothing about who else is holding it — so two machines working at once would run as the same worker against the same session. The check is "at most one machine reports holdsCredential", asked while work is in flight. It would fail right now if two tasks were dispatched at once, which is the honest way to start: a guard that would catch the thing nobody has hit yet. The queue serialises most work, which is why it has not bitten.
@@ -19,6 +19,12 @@
   THE GAP TO BRIDGE, and half of it is already built. `machines/job-api.js` archives ~/.claude per task and excludes .credentials.json on purpose — that folder is the worker's MEMORY and is kept for a long time, so an unsealed token riding along would be filed for ever. The consequence is that memory and credential are two different things with two different lifetimes, and only one of them has somewhere to live. WHAT IT WOULD MEAN: the token is set up and kept through the same path the memory uses — captured when the run ends, sealed here, per machine — so ~/.claude on the guest becomes disposable. Trash it, restore the memory, hand back the token, and the machine is where it was. THE CHECK: delete ~/.claude on a machine entirely, start its next task, and it both remembers what it was doing and authenticates.
 - **a worker credential / a worker can sign in** — and the Keys tab lists every Claude credential, by machine
   ONE TODAY, AND THE TAB IS BUILT FOR ONE. credentialsHeld answers about a single file: held, from where, taken when, and the two clocks. With one per machine that becomes a list — a row per credential, which machine holds it now, when it was last refreshed, and whether the last attempt to USE it worked. NEVER A VALUE. The rule for this tab is that a model may know something was done in there and not what: a count, a holder, a date, a fingerprint. THE CHECK: with two credentials held, the tab lists two rows naming their machines, and nothing in the answer contains a token. AND THE COLUMN NOTHING HAS TODAY: whether the last USE failed. credentialsHeld reported a refresh token good until September while a worker was being refused with it — the sentence came back from claude() and was thrown away.
+- **a worker credential / more than one sign in** — and what comes back off a machine is what the worker refreshed
+  HALF BUILT, AND THE HALF THAT IS MISSING IS THE PROOF. vmCredentialsForget and guestBack now READ the credential off the machine before clearing it, and core/guests.js keeps it when the fingerprint differs — so a rotation during a run is no longer deleted. What has not happened is a run that demonstrates it. THE CHECK: lend a guest to a machine, give that machine real work that uses Claude, take the guest back, and the fingerprint this host holds is the one the machine finished with. Compared by fingerprint and never by value. AND IT SETTLES A QUESTION ON ITS OWN: if the fingerprint moves, the refresh rotates and one sign-in shared between machines is a broken design rather than an untidy one. If it never moves, sharing is survivable and one-per-machine is about throughput instead. IT COSTS A WORKER RUN, which is why it is here rather than in the checks above — those need no machine at all.
+- **a worker credential / more than one sign in** — and two machines work at once, each as its own identity
+  THE FEATURE THE LIST WAS FOR, and it is now reachable: guests are named, one is chosen per machine, a machine records which it holds, and a second machine asking while every guest is out is REFUSED rather than handed somebody else's. What is untested is the whole of it running at once. THE CHECK: with two guests held, dispatch two tasks at the same time, both run, and the two machines report different sign-ins — then both come back and neither guest is left marked as out. WHAT IT WILL PROBABLY FIND FIRST: the queue serialises most work, so getting two runs genuinely overlapping is the harder half of writing this.
+- **a worker credential / more than one sign in** — and a machine that can be given no identity waits rather than borrowing one
+  THE REFUSAL EXISTS AND NOTHING ACTS ON IT. vmCredentialsPut throws when every guest is out, naming who holds what — which is right, and turns into a failed dispatch rather than a task that waits. Waiting for a credential is the same shape as waiting for a machine, and tasks/queue.js already knows how to do that: a task asking for a tag waits for a machine with that tag rather than taking any machine. THE CHECK: with one guest and two machines, dispatch two tasks — the second waits, and runs when the first gives its guest back, rather than failing. TO SETTLE FIRST: whether a guest is PINNED to a machine or drawn from a pool per job. Pinned wastes one per idle machine; pooled is the shape the machines themselves already have.
 - **a task on a machine / a task goes out and comes back** — and a task that pushed something can be accepted
   THE ACCEPT PATH, and no job here can reach it. api-tour hands back a FILE and never commits, so the branch is exactly as it was cut and taskJudge refuses — correctly. ask-a-worker would push, and needs a Claude credential, which makes it a different and slower drill. WHAT IT NEEDS: a job that makes a small change and pushes it, written and approved at the window, because approving a job over the wire is refused on purpose. THE CHECK: queue a task under that job, let the queue run it, and accept the delivery — the verdict is recorded, the task reads accepted, and the artifact it was judged on is named in the verdict. AND ACCEPTING MUST NOT MERGE. Landing work is a separate act with its own rules; a verdict that quietly merged would make reading the work and publishing it the same button.
 - **judging / a judgement is work of its own** — a judgement is a task whose subject is a PR cut
@@ -147,6 +153,16 @@ The second door a person has to open, and it is deliberately not beside the
   9. **DRAFT** — and each machine keeps its own credential across a rollback
   10. **DRAFT** — and the .claude folder can be thrown away without losing the token
   11. **DRAFT** — and the Keys tab lists every Claude credential, by machine
+
+## 01 — more than one sign in
+
+  1. the sign-ins are a list, and every one of them has a name
+  2. and nothing that reports one hands back its token
+  3. and a supervisor is refused when a machine asks for it
+  4. and one that is out on a machine cannot be thrown away
+  5. **DRAFT** — and what comes back off a machine is what the worker refreshed
+  6. **DRAFT** — and two machines work at once, each as its own identity
+  7. **DRAFT** — and a machine that can be given no identity waits rather than borrowing one
 
 # 05 — the machines
 

@@ -1,0 +1,159 @@
+'use strict'
+
+// more than one sign-in — a list rather than a file, and who may spend which
+//
+// The check beside this one asks whether A credential works. This one asks about
+// the SHAPE the credentials are kept in, which is what changed: there was one
+// file at credentials/claude.json, lent to whoever was working, and there is a
+// list of named identities now — see core/guests.js.
+//
+// WHY THAT IS A CHECK AND NOT A TIDY-UP. The Claude CLI refreshes the token as a
+// worker runs, so two machines holding one sign-in are two workers rotating the
+// same credential underneath each other. One per machine is the only shape where
+// what comes back off a machine can be kept, and keeping it is what was broken:
+// the run ended with `rm -f` and this host went on handing out a token a refresh
+// behind. That is the failure on record — a refresh half reported good until
+// September while the worker answered "OAuth session expired".
+//
+// NEEDS NO MACHINE. Every check here is about this host's own list, so it costs
+// seconds and can be run while machines are busy. The half that needs a real
+// worker is a draft at the bottom, because it needs a run to prove.
+
+const { it, draft, cleanup, requires } = require('../../../tasks/harness')
+
+// The list is this host's own, but the suite it belongs to hands credentials to
+// machines, so it inherits that standing rather than claiming a lighter one.
+requires('the machines are built')
+
+// Somewhere to put a supervisor that only exists for the length of a check. The
+// token is nonsense on purpose: nothing here signs in with it, and a check that
+// needed a real one could not run on a host that has none.
+const A_SUPERVISOR = 'okc-test-supervisor'
+
+it('the sign-ins are a list, and every one of them has a name', async ({ okc, assert, log }) => {
+  const held = await okc('guests')
+  const all = held.guests || []
+  assert.ok(Array.isArray(all), 'the list of Claude identities is not a list')
+  assert.asksYou(all.length > 0,
+    'this host holds no Claude identity at all. Add one on Virtual machines -> Claude guest — a name and the token it signs in with — and run this again.')
+
+  for (const g of all) {
+    assert.ok(g.name, 'an identity in the list has no name, which is also its filename')
+    assert.ok(g.role === 'guest' || g.role === 'supervisor', `"${g.name}" has a role of "${g.role}", and the only two are guest and supervisor`)
+  }
+  log(`${all.length} identity(ies): ${all.map(g => `${g.name} (${g.role})`).join(', ')}`)
+})
+
+it('and nothing that reports one hands back its token', async ({ okc, assert, log }) => {
+  // THE RULE THIS WHOLE SURFACE IS BUILT TO: a model may know something was done
+  // in the Keys tab without knowing what. So this reads the answers the way
+  // anything else would — as JSON — and looks for the shape of a credential in
+  // them rather than trusting that no field is named like one.
+  //
+  // Asked of BOTH answers, because two things report on credentials and only one
+  // of them was written with this rule in mind at the time.
+  const said = JSON.stringify([await okc('guests'), await okc('credentialsHeld')])
+
+  // What is actually in a Claude credential file. Names, not values: matching
+  // these means a value came through, and this test file is itself read by
+  // test/claims.js, so the patterns stay short of quoting a real token.
+  for (const tell of ['access_token', 'refreshToken', 'refresh_token', 'sk-ant', 'oauth_token']) {
+    assert.ok(!said.includes(tell),
+      `an answer about credentials contains "${tell}", which means a token came back with it. Nothing that reports on a credential may return its value — a window that can show one is a window that ends up in a screenshot.`)
+  }
+
+  // And the thing it hands back INSTEAD, which is what makes the rule liveable:
+  // sixteen hex characters of sha256 say "the same one as before" and nothing
+  // else, which is the comparison a round trip needs.
+  const all = (await okc('guests')).guests || []
+  for (const g of all.filter(x => x.has)) {
+    assert.ok(/^[0-9a-f]{16}$/.test(String(g.fingerprint || '')),
+      `"${g.name}" has a token file but no fingerprint, so nothing can tell whether it changed while it was out`)
+  }
+  log('the answers carry names, dates, holders and fingerprints, and no values')
+})
+
+it('and a supervisor is refused when a machine asks for it', async ({ okc, assert, log }) => {
+  // THE ONE SEPARATION THAT MATTERS IN THE LIST. A guest is lent to a machine; a
+  // supervisor is the sign-in this host decides work with. Lending a supervisor
+  // would put the identity that supervises workers inside a worker — which is
+  // not a tidiness question, and is refused in core/guests.js at the single point
+  // that records a machine holding something.
+  //
+  // Made here rather than assumed, so this check does not need the host to
+  // already have a supervisor and does not care which one it is.
+  // try/catch and not `.catch()`: an action whose run() is synchronous throws
+  // before there is a promise to attach a handler to, so the tidy-up would take
+  // the run down with it on a host where there is nothing to tidy.
+  try { await okc('guestForget', { name: A_SUPERVISOR }) } catch { /* left over from a run that was stopped */ }
+  await okc('guestAdd', { name: A_SUPERVISOR, token: 'not-a-real-token-for-a-check', role: 'supervisor', note: 'made by a drill; thrown away at the end of it' })
+
+  const mine = ((await okc('guests', { role: 'supervisor' })).guests || []).find(g => g.name === A_SUPERVISOR)
+  assert.ok(mine, 'a supervisor was added and the list does not have it')
+  assert.ok(mine.role === 'supervisor', 'it was added as a supervisor and came back as something else')
+
+  // ASKED ON THE MACHINE PATH, not on the core function. This is the refusal a
+  // person or the queue would run into, and a check that called the module
+  // directly would pass while the action around it did something else.
+  //
+  // AND ASKED WITH A MACHINE THAT DOES NOT EXIST, deliberately. It has to be
+  // refused for being a supervisor rather than for anything about the machine —
+  // which is what this found the first time it ran: the role was checked in
+  // core/guests.js at the point that RECORDS the lending, which happens after the
+  // credential has already been written onto the machine. Refused, and handed
+  // over anyway. The action refuses first now, and this is the check that says so.
+  await assert.refuses(
+    () => okc('guestLend', { name: A_SUPERVISOR, machine: 'okc-no-such-machine' }),
+    'supervisor, not a guest',
+    'a supervisor was lent to a machine, which puts the sign-in that decides what workers do inside a worker')
+
+  log('a supervisor cannot be lent to a machine, and the refusal says why')
+})
+
+it('and one that is out on a machine cannot be thrown away', async ({ okc, assert, log }) => {
+  // THE OTHER HALF OF THE SAME RECORD. "Which sign-in is on that machine" has to
+  // be answerable while the machine is switched off, because a machine that is
+  // off still has a credential on its disk. So the holder is written down here
+  // rather than worked out from the machines — and removing a held identity
+  // would leave a credential on a machine with nothing on this host knowing it
+  // is there.
+  const all = (await okc('guests')).guests || []
+  const out = all.find(g => g.holder)
+  if (!out) {
+    log('nothing is lent out at the moment, so there is no held identity to try to remove')
+    return
+  }
+  await assert.refuses(
+    () => okc('guestForget', { name: out.name }),
+    'Take it back first',
+    `"${out.name}" is on ${out.holder} and was thrown away anyway, which leaves a credential on a machine that nothing here knows about`)
+  log(`"${out.name}" is on ${out.holder}, and removing it is refused until it is taken back`)
+})
+
+cleanup(async ({ okc }) => {
+  // WHAT THE CLEANUP LEAVES IS WHAT THE NEXT RUN FINDS. A supervisor made by a
+  // drill must not survive it: the next run would refuse to add it, and a person
+  // reading the pane would find an identity nobody put there.
+  try { await okc('guestForget', { name: A_SUPERVISOR }) } catch { /* the check may not have got that far */ }
+})
+
+// ---- what still needs a real worker to prove -------------------------------
+
+draft('and what comes back off a machine is what the worker refreshed',
+  'HALF BUILT, AND THE HALF THAT IS MISSING IS THE PROOF. vmCredentialsForget and guestBack now READ the credential off the machine before clearing it, and core/guests.js keeps it when the fingerprint differs — so a rotation during a run is no longer deleted. ' +
+  'What has not happened is a run that demonstrates it. ' +
+  'THE CHECK: lend a guest to a machine, give that machine real work that uses Claude, take the guest back, and the fingerprint this host holds is the one the machine finished with. Compared by fingerprint and never by value. ' +
+  'AND IT SETTLES A QUESTION ON ITS OWN: if the fingerprint moves, the refresh rotates and one sign-in shared between machines is a broken design rather than an untidy one. If it never moves, sharing is survivable and one-per-machine is about throughput instead. ' +
+  'IT COSTS A WORKER RUN, which is why it is here rather than in the checks above — those need no machine at all.')
+
+draft('and two machines work at once, each as its own identity',
+  'THE FEATURE THE LIST WAS FOR, and it is now reachable: guests are named, one is chosen per machine, a machine records which it holds, and a second machine asking while every guest is out is REFUSED rather than handed somebody else\'s. ' +
+  'What is untested is the whole of it running at once. ' +
+  'THE CHECK: with two guests held, dispatch two tasks at the same time, both run, and the two machines report different sign-ins — then both come back and neither guest is left marked as out. ' +
+  'WHAT IT WILL PROBABLY FIND FIRST: the queue serialises most work, so getting two runs genuinely overlapping is the harder half of writing this.')
+
+draft('and a machine that can be given no identity waits rather than borrowing one',
+  'THE REFUSAL EXISTS AND NOTHING ACTS ON IT. vmCredentialsPut throws when every guest is out, naming who holds what — which is right, and turns into a failed dispatch rather than a task that waits. ' +
+  'Waiting for a credential is the same shape as waiting for a machine, and tasks/queue.js already knows how to do that: a task asking for a tag waits for a machine with that tag rather than taking any machine. ' +
+  'THE CHECK: with one guest and two machines, dispatch two tasks — the second waits, and runs when the first gives its guest back, rather than failing. ' +
+  'TO SETTLE FIRST: whether a guest is PINNED to a machine or drawn from a pool per job. Pinned wastes one per idle machine; pooled is the shape the machines themselves already have.')

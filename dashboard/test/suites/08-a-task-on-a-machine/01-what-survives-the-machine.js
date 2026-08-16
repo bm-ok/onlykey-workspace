@@ -162,6 +162,12 @@ it('and the token that went up comes back the same', async ({ okc, assert, state
   // Taken back to this host, then lent again. If what came back is what went up,
   // the second fingerprint matches — and if the take-back path loses anything,
   // this is where it shows.
+  //
+  // AND IT NOW GOES THROUGH THE GUEST LIST, which is where sign-ins live: the
+  // grab writes into the identity this machine holds rather than over a single
+  // file, and the put hands that same identity back. The comparison is unchanged
+  // and so is what it proves — what changed underneath is which of them can be
+  // true at once, since two machines no longer share one record.
   await okc('vmCredentialsGrab', { name: state.machine })
   await okc('vmCredentialsPut', { name: state.machine })
   const again = await okc('vmRun', { name: state.machine, command: sum(), what: 'a drill fingerprinting it after a round trip' })

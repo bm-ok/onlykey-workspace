@@ -252,6 +252,7 @@ async function drawOnce () {
   // nothing at all — an empty column that looks exactly like having no guests.
   // Its own view guard is what keeps it from asking anything behind a tab.
   paintGuests()
+  paintSupervisors()
   paintTests()
   paintSettings()
   paintAddTask()

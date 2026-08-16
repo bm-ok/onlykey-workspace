@@ -199,7 +199,9 @@ module.exports = {
       //
       // A clock per guest, read from the credential itself, because "this host
       // holds four and one of them is dead" is not answerable from a total.
-      const held = guests.all()
+      // Guests only. This answers "is there anything to hand a machine", and a
+      // supervisor is never handed to one.
+      const held = guests.all().filter(g => g.role !== 'supervisor')
       if (held.length) {
         return {
           held: held.some(g => g.has),
@@ -337,7 +339,7 @@ module.exports = {
       // that has not been moved over. vmCredentialsPut picks between them, so
       // this only has to know whether there is anything to pick.
       const file = path.join(data.sub('credentials'), 'claude.json')
-      if (!guests.all().some(g => g.has) && !fs.existsSync(file)) {
+      if (!guests.all().some(g => g.has && g.role !== 'supervisor') && !fs.existsSync(file)) {
         throw new Error('This host holds no worker credential, so there is nothing to test. Add a Claude guest on the Virtual machines tab, or sign a machine in and take it with vmCredentialsGrab.')
       }
 
@@ -384,7 +386,10 @@ module.exports = {
       // The old single file is still the answer on a host that has not been
       // moved over yet, and `guests.adoptTheOldOne` moves it on the next start.
       const mine = vms.read().find(v => v.name === name) || {}
-      const held = guests.all()
+      // Supervisors are not in the running: one is the sign-in this host decides
+      // work with, and a machine holding it would be a worker able to spend the
+      // identity that supervises workers. core/guests.js refuses it too.
+      const held = guests.all().filter(g => g.role !== 'supervisor')
       const wanted = mine.guest
         ? held.find(g => g.name === mine.guest)
         : held.find(g => g.has && (!g.holder || g.holder === name))
