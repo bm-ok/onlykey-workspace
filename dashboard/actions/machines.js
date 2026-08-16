@@ -67,6 +67,22 @@ async function untilItSpeaks (name, { capMs = 60000, tries = 1 } = {}) {
     return { spoke: false, why: 'no console' }
   }
 
+  // AND THE PORT HAS TO EXIST, not just the file.
+  //
+  // The register saying "this machine's console is captured" is a statement
+  // about a file on this host. Whether anything is WRITING to it is a fact about
+  // the VirtualBox machine — and a rebuild makes a new machine with no serial
+  // port, leaving a file that will never grow again.
+  //
+  // Without this check, silence from a machine with no port reads as "the kernel
+  // never came up", and a perfectly healthy install gets its power pulled three
+  // times. That happened, mid-install, and it was this app doing it.
+  const conf = await vbox.info(name).catch(() => ({}))
+  if (!conf.uart1 || conf.uart1 === 'off') {
+    to.info('this machine has no serial port, so its silence says nothing — not treating that as a failed start')
+    return { spoke: false, why: 'no port' }
+  }
+
   const size = () => { try { return fs.statSync(file).size } catch { return 0 } }
   const listen = async () => {
     const began = Date.now()

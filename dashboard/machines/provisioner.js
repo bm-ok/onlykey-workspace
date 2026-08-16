@@ -141,20 +141,16 @@ async function pickBridge (preferred) {
   return up[0].name
 }
 
-// ---- making the machine ----------------------------------------------
-
-async function create (input) {
-  if (!vbox.available()) throw new Error('VirtualBox is not installed, or not where this expected to find it.')
-  const spec = fill(input)
-  const to = log.on('vm', spec.name)
-
-  // Checked against all of VirtualBox, not just against ours: the collision that
-  // matters is with any machine on the host, including ones this app must not
-  // touch.
-  if (await vbox.exists(spec.name)) {
-    throw new Error(`VirtualBox already has a machine called "${spec.name}". Pick another name — this app will not touch a machine it did not make.`)
-  }
-
+// BUILDING THE THING IN VIRTUALBOX, which is not the same as making a machine.
+//
+// A machine here is a SPEC — a name, a size, a key, a token, a place in the
+// register. What VirtualBox holds is a build of that spec, and a build is cheap
+// and replaceable. Separating them is what lets an install throw the build away
+// and make it again rather than reusing whatever the last one left behind.
+//
+// Returns what the build decided, because two of those are facts the register
+// keeps: which ISO was resolved and which adapter it was bridged onto.
+async function buildInVbox (spec, to) {
   const iso = spec.iso ? await resolveISO(spec.iso) : ''
   const bridge = spec.network === 'bridged' ? await pickBridge(spec.bridgeAdapter) : ''
 
@@ -242,6 +238,25 @@ async function create (input) {
     { tags: [spec.name] })
   }
 
+  return { iso, bridge, disk }
+}
+
+// ---- making the machine ----------------------------------------------
+
+async function create (input) {
+  if (!vbox.available()) throw new Error('VirtualBox is not installed, or not where this expected to find it.')
+  const spec = fill(input)
+  const to = log.on('vm', spec.name)
+
+  // Checked against all of VirtualBox, not just against ours: the collision that
+  // matters is with any machine on the host, including ones this app must not
+  // touch.
+  if (await vbox.exists(spec.name)) {
+    throw new Error(`VirtualBox already has a machine called "${spec.name}". Pick another name — this app will not touch a machine it did not make.`)
+  }
+
+  const { iso, bridge, disk } = await buildInVbox(spec, to)
+
   const vm = vms.add({ ...spec, iso, bridge, disk })
   to.good(`${spec.name} created. It has no operating system yet — install one next.`)
   return vm
@@ -255,6 +270,33 @@ async function create (input) {
 // is attached to a machine, and will not attach one that does not exist. The
 // order is forced by that, not chosen.
 async function blankTheDisk (name, spec, to) {
+  // THE SNAPSHOTS GO FIRST, AND THIS IS NOT TIDINESS.
+  //
+  // A snapshot is a point on a DISK. Blanking the disk under it leaves a machine
+  // that still lists "base" — taken an hour ago, from an operating system that
+  // no longer exists — and the registry still pointing at it. The queue then
+  // sees a machine with a clean point to come back to, takes it, and finds out
+  // otherwise at the moment it tries to put it away.
+  //
+  // Found by somebody reading a card and saying "base says over an hour ago",
+  // about a machine that had been reinstalled ten minutes earlier. Nothing
+  // failed; it was simply a lie that had not been called yet.
+  //
+  // Cleared in the registry as well as in VirtualBox, because the next dial-in
+  // takes a fresh base only if this app believes there is none — see
+  // firstSnapshotIfItNeedsOne.
+  try {
+    const had = await vbox.snapshots(name)
+    // Deepest first: a parent cannot go while a child stands on it.
+    for (const s of [...(had.snapshots || [])].sort((a, b) => b.depth - a.depth)) {
+      to.info(`removing "${s.name}" — it is a point on a disk that is about to be thrown away`)
+      await vbox.deleteSnapshot(name, s.name).catch(e => to.warn(`could not remove "${s.name}": ${e.message}`))
+    }
+  } catch (e) {
+    to.warn(`could not read its snapshots before blanking the disk: ${e.message}`)
+  }
+  vms.update(name, { baseSnapshot: null, snapshots: {} })
+
   const info = await vbox.info(name)
   const disk = info['SATA-0-0'] || spec.disk
   if (!disk || disk === 'none') {
@@ -284,6 +326,50 @@ async function install (name, { port, caPort }) {
   const iso = await resolveISO(spec.iso)
   if (!await vbox.isOff(name)) throw new Error(`"${name}" is running. Shut it down before installing.`)
 
+  // A MACHINE IS BUILT FROM NOTHING, NEVER REUSED.
+  //
+  // Installing used to keep the machine and replace only its disk. Everything
+  // else came along: the snapshots, which are points on a disk that no longer
+  // existed; the MAC addresses; whatever `modifyvm` had been told at some point
+  // by a version of this app that has since changed its mind.
+  //
+  // That produced a machine with a fresh operating system and a base snapshot
+  // from an hour earlier, pointing at a disk that had been deleted underneath
+  // it. Nothing failed. The queue would have taken that machine, worked on it,
+  // and found out at the moment it tried to put it away.
+  //
+  // So the VirtualBox machine is DESTROYED and made again from the spec this app
+  // holds. The spec is the machine's definition; the thing in VirtualBox is a
+  // build of it, and a build is cheap. What survives is what should: its name,
+  // its size, its key, its token, and its place in this app's register.
+  //
+  // The cost is honest and worth stating: new MAC addresses, so a new host-only
+  // lease and a new address on the network, and any snapshot anybody was keeping
+  // is gone. That is what "install" has always meant here.
+  const rebuilt = await vbox.exists(name)
+  if (rebuilt) {
+    to.info('removing the existing machine, so this install starts from nothing rather than from whatever it was carrying')
+    channel.drop(name, 'is being rebuilt')
+    await vbox.destroy(name)
+    vms.update(name, { baseSnapshot: null, snapshots: {}, branch: null, borrowed: null })
+    await buildInVbox(spec, to)
+
+    // AND THE CONSOLE COMES BACK WITH IT.
+    //
+    // The serial port is configuration on the VirtualBox machine, so destroying
+    // the build destroys it — and this app's own record still said the console
+    // was being captured. The result is the worst kind of instrument: a terminal
+    // tab open on a file that will never grow again, saying nothing, while the
+    // install it was opened to watch runs invisibly.
+    //
+    // Reported as it happened: "the serial never reconnected on the new machine".
+    if (vm.serial) {
+      await vbox.setSerial(name, vm.serial).catch(e => to.warn(`could not capture its console again: ${e.message}`))
+      to.info('its console is being captured again, on the new build')
+    }
+    to.good(`${name} is a new machine again — installing onto it`)
+  }
+
   // A BLANK DISK, every time, and this is not tidiness.
   //
   // The boot order is disk before dvd, so a machine whose disk already boots
@@ -301,7 +387,11 @@ async function install (name, { port, caPort }) {
   // the dvd is reached without touching the order, and the installer meets the
   // same blank disk it met when the machine was new -- no leftover partitions
   // for it to have an opinion about.
-  await blankTheDisk(name, spec, to)
+  // Only when the machine was NOT just rebuilt. A rebuild has already made a
+  // disk that has never held anything; blanking it again would delete and
+  // recreate a file that is one minute old, which is a minute of somebody's disk
+  // spent proving something already true.
+  if (!rebuilt) await blankTheDisk(name, spec, to)
 
   const host = await vbox.hostAddress()
 
