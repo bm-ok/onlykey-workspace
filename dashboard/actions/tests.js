@@ -291,6 +291,23 @@ module.exports = {
     takes: ['remove'],
     run: async ({ remove }) => {
       const doIt = remove === true || remove === 'true'
+
+      // LISTING IS FREE; REMOVING IS GATED, and it was not.
+      //
+      // Everything that RUNS a drill refuses unless testing mode is on for the
+      // open folder — suiteRun and drillCommit both. This deletes branches,
+      // tasks and machines, and asked nobody. The reserved names make it safe in
+      // the sense that it can only touch things a drill made, and that is not
+      // the same as safe: a folder somebody has just opened, with debris from a
+      // session they were not part of, is exactly where "it only deletes drill
+      // things" is a sentence said afterwards.
+      //
+      // Reading what is there stays open, because seeing what a drill left is
+      // how somebody decides whether to turn testing mode on at all.
+      if (doIt) {
+        const may = mayRun()
+        if (!may.allowed) throw new Error(`${may.why} Reading what the drills left is always allowed — it is removing that is not.`)
+      }
       const here = repos.list().map(r => r.name)
 
       const branches = (await actions.gitBranches.run({})).branches
