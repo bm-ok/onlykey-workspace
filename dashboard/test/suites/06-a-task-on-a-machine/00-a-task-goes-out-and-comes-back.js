@@ -213,7 +213,7 @@ cleanup(async ({ okc, state }) => {
   }
 })
 
-// WHAT IT SAW — 16 August 2026, 14:10, all eight passed
+// WHAT IT SAW — 16 August 2026, 14:47, all eight passed
 //
 //   there is a machine free, a job to run, and this was asked for
 //     free and at rest: runner4 (poweroff, on "base"), runner3 (poweroff, on "base")
@@ -221,37 +221,38 @@ cleanup(async ({ okc, state }) => {
 //     handed, on a real machine, and hands the record back
 //
 //   a cut is made, and a task is written on it
-//     cut "drill/round-trip-141015" from line "default"
-//     task #98 "drill: a task on a machine" written as a draft, under "how work
+//     cut "drill/round-trip-144659" from line "default"
+//     task #104 "drill: a task on a machine" written as a draft, under "how work
 //     is delivered"
 //
 //   and queued — after which nothing here touches it
-//     #98 is "queued" and names no machine — from here nothing in this drill
+//     #104 is "queued" and names no machine — from here nothing in this drill
 //     touches it until it is done
 //
 //   the queue gives it to a machine, on its own
 //     the queue chose runner4 without being asked, and it claims
-//     "drill/round-trip-141015" — 54s after the task was written
+//     "drill/round-trip-144659" — 51s after the task was written
 //
 //   the work runs there and the task ends
-//     #98 ended "done" on runner4, 77s after it was written
+//     #104 ended "done" on runner4, 73s after it was written
 //
 //   and what it did came back here
-//     0 commit(s) on the branch, and handed over: api-tour.md
+//     0 commit(s) on the branch, and handed over: api-tour.md (1579 bytes)
 //
 //   and the machine was put away clean
 //     runner4: poweroff, on "base", claiming nothing, holding nothing
 //
 //   and judging it is refused, because this worker pushed nothing
 //     refused, and this is what it said:
-//     Nothing has arrived on "drill/round-trip-141015", so there is nothing to
+//     Nothing has arrived on "drill/round-trip-144659", so there is nothing to
 //     judge. A worker that finished without pushing has delivered nothing.
-//     #98 ends as "done", carrying no verdict
+//     #104 ends as "done", carrying no verdict
 //
-// SEVENTY-SEVEN SECONDS from writing a task to it being done, on a machine that
-// was powered off when it started. The queue's own breakdown that run was
-// bringUp 33s, credential 4s, workspace 5s, work 17s — so two thirds of it is a
-// machine booting, and the part this app does is the small half.
+// SEVENTY-THREE SECONDS from writing a task to it being done, on a machine that
+// was powered off when it started — and 77 on the run before this one, which is
+// the useful thing about having the number twice. Most of it is the boot: the
+// queue's own breakdown was bringUp 33s, credential 4s, workspace 5s, work 17s,
+// so the part this app does is the small half.
 //
 // THE ZERO IS THE INTERESTING NUMBER. Nothing was committed and a file came
 // back, which is `api-tour` doing exactly what it says, and it is why the last
