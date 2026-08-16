@@ -1592,9 +1592,16 @@ The shape
       queue.js      work waits for a machine; a machine does not wait for work
       artifact.js   what came back: a branch, read the way a PR is read
       archive.js    a run's log, kept here, where the machine cannot take it
-      harness.js    describe/it, ported from test-moniker
-      planned.js    the drills, declared rather than written out in prose
+      harness.js    describe/it, ported from test-moniker, and what a suite
+                    keeps: state across a restart, what a check disproves
       approval.js   a model writes a definition; a person approves it
+    test/
+      suites/       the kit: a folder is a suite, a numbered file in it is a
+                    test, an it() is a check. Numbered in the order a person
+                    sets this app up -- warm the host, do the work, cool it
+      outline.js    every suite, test and check, printed. npm test fails when
+                    outline.md no longer matches what registers
+      unused.js     what nothing appears to use. Suspects, not verdicts
     tools/okc.js    the command line, generated from the actions table
     vendors/ace/    the editor, checked in. Code that is READ needs to look
                     like code, or it gets approved without being read

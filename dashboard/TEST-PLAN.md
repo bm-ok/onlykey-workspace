@@ -1,6 +1,19 @@
 Drills
 ======
 
+> **This file is history now.** What it argues below — that the drills were
+> better as prose than as code — was true of the drills it is describing, and
+> stopped being true on 16 August 2026. There is a working kit in
+> `test/suites/`: ten suites, twenty tests, eighty-odd checks, numbered in the
+> order a person sets this app up, with a ledger that survives restarts and a
+> transcript of a real run in every file. `test/outline.md` is the list.
+>
+> The reasoning below is why it took a second attempt, and it is kept for that.
+> The thing it warned about — executable drills nobody runs, one click from
+> touching a live workspace — is answered now by testing mode, by `asksYou`
+> doors, and by the fact that the suites are run rather than admired. Read it as
+> the argument that shaped the kit, not as a description of what is here.
+
 **These are prose again, and that is deliberate.** Ten of them were declared in
 code as drills, in `tasks/planned.js`, and have been taken back out.
 
