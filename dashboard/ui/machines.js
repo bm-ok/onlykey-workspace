@@ -58,15 +58,34 @@ const configVm = v => ask({
   title: `Configure ${v.name}`,
   plain: [
     'The note is yours: it appears beside this machine in the list and changes nothing about the machine.',
+    'Tags say what KIND of machine this is, so work can ask for a kind rather than a name — a task tagged "test" goes to a machine tagged "test" and waits rather than taking another. A task with no tag still takes this machine: a tag adds a way to be asked for, it does not hold a machine back.',
     'Everything else about a machine is settled when it is made.'
   ],
-  fields: [{ name: 'description', label: 'Note', value: v.description || '', placeholder: 'what this one is for' }],
+  fields: [
+    { name: 'description', label: 'Note', value: v.description || '', placeholder: 'what this one is for' },
+    // COMMA SEPARATED, AND FREE TEXT. The tags that exist are the tags on the
+    // machines — there is no list to pick from and nothing to keep in step, and
+    // a tag stops existing when the last machine carrying it does. The action
+    // lower-cases and de-duplicates, so "Test, test" is one tag.
+    {
+      name: 'tags',
+      label: 'Tags (optional, comma separated)',
+      value: (v.tags || []).join(', '),
+      placeholder: 'test, gpu, on-the-bench',
+      hint: 'Work can ask for one of these. Leave it empty and this machine takes any work that asks for no particular kind.'
+    }
+  ],
   confirm: 'Save',
   // Deleting is the other reason to open this, and it is deliberately not the
   // confirm: it asks again on its own screen, where it can state what it costs.
   extra: { label: 'Delete it', danger: true, onClick: () => deleteVm(v) },
-  onYes: f => api('vmDescribe', { name: v.name, description: f.description })
-    .then(() => say(f.description ? `Note saved for ${v.name}` : `Note cleared for ${v.name}`))
+  onYes: async f => {
+    await api('vmDescribe', { name: v.name, description: f.description })
+    const now = await api('vmTags', { name: v.name, tags: f.tags || '' })
+    say((now.tags || []).length
+      ? `${v.name} saved — tagged ${now.tags.join(', ')}`
+      : `${v.name} saved, carrying no tags`)
+  }
 })
 
 // The card carries identity, its note, state, and the way in to both settling that
@@ -103,6 +122,16 @@ const vmCard = v => el('div', {
     // A badge on every machine saying it is available would be noise on the
     // normal case and would make the exception harder to see, not easier.
     v.forTasks === false ? el('span', { className: 'badge warn', textContent: 'not for tasks' }) : null,
+
+    // WHAT KIND OF MACHINE IT IS, when somebody has said. Shown on the card
+    // rather than only in its dialog: a tag is the reason work goes to this
+    // machine and not another one, so "why did that run here" has to be
+    // answerable from the list rather than by opening four dialogs.
+    //
+    // Muted, because a tag is not a state — nothing is wrong or right about
+    // carrying one, and it must not compete with the badges that say whether
+    // this machine can be used at all.
+    ...(v.tags || []).map(t => el('span', { className: 'badge muted', textContent: t, title: `Work asking for "${t}" can be given to this machine` })),
 
     // WHY THE QUEUE WILL NOT TAKE IT, in the queue's own words.
     //
@@ -711,6 +740,19 @@ function paintDetails () {
       : 'none, which is the resting state'],
 
     ['resets to', v.baseSnapshot || 'no base snapshot yet — it cannot be made clean'],
+
+    // WHAT KIND OF MACHINE THIS IS, and it belongs among the facts that decide
+    // whether work comes here rather than among the ones about how it was built.
+    // A tag is the reason a task landed on this machine and not another, so
+    // "why did that run here" has to be answerable from this panel.
+    //
+    // Said either way. An empty row is not noise here: "no tags" is the state
+    // that means this machine takes any untagged work, which is a fact somebody
+    // is checking when they wonder why it keeps being chosen.
+    ['tags', (v.tags || []).length
+      ? `${v.tags.join(', ')} — work asking for ${v.tags.length === 1 ? 'that' : 'one of those'} can be given to it, and untagged work still can`
+      : 'none — it takes work that asks for no particular kind of machine'],
+
     ['last heard from', v.reported ? new Date(v.reported).toLocaleString() : 'never'],
     v.connected ? ['it says it is', facts.hostname ? `${facts.hostname} — ${facts.system || ''}` : 'unknown'] : null,
     v.connected ? ['its addresses', (facts.addresses || []).join(', ') || 'unknown'] : null
@@ -895,6 +937,19 @@ $('add-vm-open').onclick = () => Promise.all([api('vmIsos'), api('hostKeys')]).t
       type: 'checkbox',
       value: false,
       hint: 'Off is a terminal-only runner: no display manager, no session, a fraction of the memory. On installs a small desktop that logs itself in, for a machine somebody is going to sit at. This cannot be changed later.'
+    },
+    // ASKED AT CREATION, unlike the desktop above, and for the opposite reason:
+    // this one can be changed whenever you like, from the gear on the card. It
+    // is here because the moment somebody is making a second machine is the
+    // moment they know what it is FOR — "this one is for the tests", "this one
+    // has the hardware" — and a field asked six weeks later is one nobody goes
+    // back to fill in.
+    {
+      name: 'tags',
+      label: 'Tags (optional, comma separated)',
+      value: '',
+      placeholder: 'test, gpu, on-the-bench',
+      hint: 'What kind of machine this is, so work can ask for a kind rather than a name. A task tagged "test" goes to a machine tagged "test"; a task with no tag takes any free machine, including this one. Changeable later from the gear on its card.'
     },
     { name: 'user', label: 'User to create', value: 'okc' },
     { name: 'password', label: 'Its password', value: 'okc' },

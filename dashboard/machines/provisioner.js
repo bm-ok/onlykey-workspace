@@ -60,6 +60,19 @@ function fill (input = {}) {
     // machine was built to be is a fact about that build, and flipping the flag
     // later would say "desktop" about a machine that has no X on it at all.
     desktop: input.desktop === true || input.desktop === 'true',
+    // WHAT KIND OF MACHINE THIS IS, and unlike `desktop` above it can be
+    // changed whenever you like — see vmTags. It is asked for here because the
+    // moment somebody is making a machine is the moment they know what it is
+    // for, and a field asked six weeks later is one nobody goes back to fill in.
+    //
+    // Accepted as a list or as one comma-separated string, because the window
+    // sends a typed line and a script sends an array, and neither should have to
+    // know what the other does.
+    tags: [...new Set(
+      (Array.isArray(input.tags) ? input.tags : String(input.tags || '').split(','))
+        .map(t => String(t).trim().toLowerCase())
+        .filter(Boolean)
+    )],
     // Bridged, because a guest has to be able to reach this app to fetch its
     // setup, and on NAT it cannot see the host at all without more plumbing.
     network: input.network === 'nat' ? 'nat' : 'bridged',

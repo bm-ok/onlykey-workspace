@@ -39,6 +39,10 @@ requires('the machines', 'the order')
 
 const JOB = 'api-tour'
 
+// The tag the kit puts on the machines it builds. A task asking for it is asking
+// for one of those rather than for whichever machine happens to be free.
+const KIND = 'test'
+
 it('there is a machine free, a job to run, and this was asked for', async ({ okc, assert, slow, state, log }) => {
   assert.needs(slow, 'this gives a task to a real machine and waits for it — minutes, and it holds a runner. Ask for it with: suiteRun --suite "a task on a machine" --slow true')
 
@@ -51,7 +55,24 @@ it('there is a machine free, a job to run, and this was asked for', async ({ okc
   assert.needs(free.length, 'no machine is free, ready and holding nothing — the queue would have nothing to give this to')
   state.machines = free.map(v => v.name)
   state.began = Date.now()
-  log(`free and at rest: ${free.map(v => `${v.name} (${v.state}, on "${v.baseSnapshot}")`).join(', ')}`)
+
+  // IT ASKS FOR THE KIT'S MACHINES WHEN THERE ARE ANY, and for nothing in
+  // particular when there are not.
+  //
+  // This drill listed four free machines and the queue took one of the
+  // operator's, because the queue had no way to know two of them were built by
+  // the kit for exactly this. A tag is that way. The drill still works on a host
+  // where nothing is tagged — an empty tag means any free machine, which is what
+  // every task did before tags existed — so this does not become a suite that
+  // only runs on a host set up the way this one is.
+  const tagged = free.filter(v => (v.tags || []).includes(KIND))
+  state.tag = tagged.length ? KIND : null
+  assert.needs(!state.tag || tagged.length, `no machine is tagged "${KIND}" and free`)
+
+  log(`free and at rest: ${free.map(v => `${v.name} (${v.state}, on "${v.baseSnapshot}"${(v.tags || []).length ? `, tagged ${v.tags.join('/')}` : ''})`).join(', ')}`)
+  log(state.tag
+    ? `it will ask for a machine tagged "${KIND}" — ${tagged.map(v => v.name).join(' or ')}`
+    : 'no machine is tagged, so it will take any free one')
   log(`the job is "${job.name}" — ${job.about}`)
 }, { gate: true })
 
@@ -70,7 +91,9 @@ it('a cut is made, and a task is written on it', async ({ okc, assert, state, lo
       brief: 'Run the job. This is a drill — the work itself is the job, and the point is that it arrives, runs and comes back.',
       branch: state.branch,
       job: JOB,
-      contractId: contract.id
+      contractId: contract.id,
+      // Null on a host with nothing tagged, which the store reads as any machine.
+      tag: state.tag
     }
   })
   assert.equal(state.task.state, 'draft', 'A task starts as a draft, and this one did not')
@@ -101,6 +124,18 @@ it('the queue gives it to a machine, on its own', async ({ okc, assert, state, l
     await new Promise(r => setTimeout(r, 5000))
   }
   assert.ok(state.machine, 'No machine took this task within five minutes — the queue never picked it up')
+
+  // AND IT WENT WHERE IT ASKED TO GO. Without this the drill passes whichever
+  // machine the queue happened to pick, which is exactly the result that made
+  // tags worth building: four machines free, two of them the kit's, and the work
+  // sent to one of the operator's.
+  if (state.tag) {
+    const { vms } = await okc('vmList')
+    const took = vms.find(v => v.name === state.machine)
+    assert.ok((took.tags || []).includes(state.tag),
+      `it asked for a machine tagged "${state.tag}" and the queue gave it ${state.machine}, which carries ${JSON.stringify(took.tags || [])} — a tag that is not honoured is worse than no tag, because somebody is relying on it`)
+    log(`it asked for "${state.tag}" and got ${state.machine}, which carries ${took.tags.join(', ')}`)
+  }
 
   // AND THEN IT WAITS FOR THE CLAIM, rather than demanding it in the same
   // breath. Being given a task and claiming its branch are minutes apart: in
