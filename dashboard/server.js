@@ -26,6 +26,9 @@ const scripts = require('./machines/scripts')
 const repos = require('./repos/serve')
 const branches = require('./repos/branches')
 const workspaces = require('./core/workspaces')
+// Read by `call` below, for the actions that only exist while the drills are
+// switched on. See `needs: 'testing'`.
+const settings = require('./core/settings')
 const tasks = require('./tasks/store')
 const queue = require('./tasks/queue')
 // Only the HTTP handler below uses this — a guest handing a file over. It went
@@ -812,10 +815,50 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
 // same split core/workspaces.js draws, and a machine must stay reachable
 // precisely when there is no workspace, because putting one away is how you get
 // to close one.
+// AND AN ACTION THAT ONLY EXISTS WHILE THE DRILLS ARE SWITCHED ON.
+//
+// `needs: 'testing'` is the same device one line down, for a different question.
+// The test surface drives this app for real — it writes tasks, cuts branches,
+// borrows machines, opens pull requests and deletes what it made — and every one
+// of those is a decision about somebody's repository rather than a flag to be
+// set down a pipe.
+//
+// So with testing mode off for the open folder, these are not listed and not
+// callable: `actions` leaves them out, and this turns them down. The whole
+// surface appears when a person switches it on in the window and disappears
+// again when they switch it off.
+//
+// IT REFUSES RATHER THAN PRETENDING THEY ARE NOT THERE. "No action called
+// suiteRun" would be a lie with a plausible face — somebody would go looking for
+// a typo, or for the version of this app that has it. A sentence saying it is
+// switched off, and where the switch is, costs the same line and misleads
+// nobody. Hidden from the list, honest when asked: those are different
+// questions.
+const testingAllows = () => {
+  try { return settings.testsAllowed(workspaces.dir() || null) } catch { return { allowed: false, why: 'the drills are not allowed here.' } }
+}
+
+// AN ACTION MAY NEED MORE THAN ONE THING, and reading `needs` as a single value
+// is how the second one silently did nothing.
+//
+// `drillSweep` and `drillCommit` already said `needs: 'workspace'`. Adding
+// `needs: 'testing'` to the same object literal is a DUPLICATE KEY — the later
+// one wins, no error, no warning — so both kept the workspace gate and lost the
+// testing one, and drillSweep went on being callable with the drills switched
+// off. Caught by a check that asked, not by reading the diff.
+const wants = found => (Array.isArray(found.needs) ? found.needs : [found.needs]).filter(Boolean)
+
 function call (name, args = {}) {
   const found = actions[name]
   if (!found) throw new Error(`No action called "${name}"`)
-  if (found.needs === 'workspace' && !workspaces.open()) {
+  const needs = wants(found)
+  if (needs.includes('testing')) {
+    const may = testingAllows()
+    if (!may.allowed) {
+      throw new Error(`${may.why} "${name}" is part of the test surface, which is switched on for one folder at a time by a person at the window — the menu at the top right. Until then it is not listed and not callable.`)
+    }
+  }
+  if (needs.includes('workspace') && !workspaces.open()) {
     throw new Error(`No workspace is open, and "${name}" is a question about one. Open a folder of repositories first — the Workspaces tab, beside the title.`)
   }
   if (!found.run) throw new Error(`"${name}" is watched rather than asked — it answers on a stream.`)

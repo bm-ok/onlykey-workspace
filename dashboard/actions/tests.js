@@ -287,7 +287,7 @@ module.exports = {
   // what it is about to do first.
   drillSweep: {
     about: 'What the drills left behind — drill/ branches and drill: tasks. Pass remove to take them away',
-    needs: 'workspace',
+    needs: ['testing', 'workspace'],
     takes: ['remove'],
     run: async ({ remove }) => {
       const doIt = remove === true || remove === 'true'
@@ -417,7 +417,7 @@ module.exports = {
   // suite is written six weeks from now.
   drillCommit: {
     about: 'Put a commit on a drill branch, so a drill has a change to send out. Refused off a drill branch',
-    needs: 'workspace',
+    needs: ['testing', 'workspace'],
     takes: ['branch', 'repo', 'file', 'text', 'message'],
     run: ({ branch, repo, file, text, message }) => {
       const may = mayRun()
@@ -478,6 +478,7 @@ module.exports = {
   // something.
   testsForget: {
     about: 'Forget remembered test results — everything, or one suite, test or check',
+    needs: 'testing',
     takes: ['suite', 'test', 'check'],
     run: ({ suite, test, check }) => {
       const group = String(suite || '').trim() || null
@@ -542,6 +543,7 @@ module.exports = {
   // world underneath them is gone would be the most confident kind of wrong.
   suiteStop: {
     about: 'Stop the run that is going. The step in flight finishes; the ones after it are not tried',
+    needs: 'testing',
     run: () => {
       if (!lastRun.running) {
         return { stopping: false, note: 'Nothing is running, so there is nothing to stop.' }
@@ -557,6 +559,7 @@ module.exports = {
 
   suiteRun: {
     about: 'Run everything, one suite, one test in it, or one check of that test. Pass slow for the drills that build a machine, or continue to carry what has already passed',
+    needs: 'testing',
     takes: ['suite', 'test', 'check', 'slow', 'continue', 'teardown'],
     run: async ({ suite, test, check, slow, continue: carryOn, teardown }) => {
       // REFUSED HERE, at the only door that runs a test. The window disables the

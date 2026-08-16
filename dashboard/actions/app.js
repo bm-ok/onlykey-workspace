@@ -143,9 +143,29 @@ module.exports = {
 
   actions: {
     about: 'Every action this server has, with what each is for',
-    run: async () => ({
-      actions: Object.entries(actions).map(([name, a]) => ({ name, about: a.about, takes: a.takes || [] }))
-    })
+    // WHAT IS THERE RIGHT NOW, which is not always the same list.
+    //
+    // The test surface exists only while the drills are switched on for the open
+    // folder: it writes tasks, cuts branches, borrows machines and opens pull
+    // requests, and that is a decision about somebody's repository rather than
+    // something to be discovered in a list and tried. With testing mode off it
+    // is not listed here, and `call` in server.js turns it down — hidden from
+    // the list, honest when asked.
+    //
+    // The command line builds its whole help from this, so switching testing
+    // mode on is what makes those commands appear.
+    run: async () => {
+      let testing = false
+      try { testing = settings.testsAllowed(workspaces.dir() || null).allowed } catch { testing = false }
+      return {
+        actions: Object.entries(actions)
+          // `needs` may be one thing or several — see `wants` in server.js, and
+          // the duplicate-key bug that made reading it as a single value hide a
+          // gate rather than apply it.
+          .filter(([, a]) => testing || !(Array.isArray(a.needs) ? a.needs : [a.needs]).includes('testing'))
+          .map(([name, a]) => ({ name, about: a.about, takes: a.takes || [] }))
+      }
+    }
   },
 
   // The one way out of a certificate that no longer works -- expired, or no
