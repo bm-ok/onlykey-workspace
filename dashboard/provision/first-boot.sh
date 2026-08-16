@@ -422,6 +422,22 @@ fi
 # pair, which ADDS to it rather than replacing it.
 
 stage toolchain.sh;      report_stage 'the toolchain' $?
+
+# A SCREEN, ONLY IF THIS MACHINE WAS BUILT TO HAVE ONE.
+#
+# Every machine is installed from the server image, so a desktop is something
+# ADDED here rather than something stripped out later. Most runners never show
+# anybody anything, and the display stack is most of what they would otherwise
+# spend their boot and their memory on.
+#
+# Before the user's half, because the user's shell files and anything per-user
+# may want a DISPLAY to exist.
+if [ "${OKC_DESKTOP:-yes}" = yes ]; then
+  stage desktop.sh;      report_stage 'the desktop' $?
+else
+  say 'this machine was built with no display, so no desktop is being installed'
+fi
+
 stage_user toolchain-user.sh; report_stage "the user's toolchain" $?
 
 stage extra.sh;          report_stage "this project's extra setup" $?

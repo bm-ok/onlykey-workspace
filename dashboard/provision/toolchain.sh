@@ -62,7 +62,13 @@ say "$OKC_USER is in docker, plugdev and dialout from their next login"
 #   - the session is X11, so DISPLAY=:0 means something   (Wayland off)
 #   - it never blanks, locks or idles away                (dconf system db)
 
-if [ -f /etc/gdm3/custom.conf ]; then
+if [ "${OKC_DESKTOP:-yes}" != yes ]; then
+  # SAID, NOT SKIPPED SILENTLY. "No desktop was set up" is a fact about what this
+  # machine was built to be — declared when it was made, and read here from the
+  # header — and it is the first thing somebody wonders about when nothing
+  # appears on its screen.
+  say 'this machine was built with no display, so there is no desktop to set up'
+elif [ -f /etc/gdm3/custom.conf ]; then
   say 'setting up autologin on X11'
   # A config parser rather than sed: the file has sections, and appending a key to
   # the wrong one silently does nothing.
@@ -85,7 +91,11 @@ with open(path, 'w') as fh:
 print('gdm3 set to log in', user, 'automatically, on X11')
 PYCONF
 else
-  say 'no /etc/gdm3/custom.conf, so no autologin to configure — not a desktop image?'
+  # This machine WAS meant to have a screen and has no display manager. Not the
+  # same as the case above and it must not read the same: this is a desktop
+  # machine that did not get a desktop, which is a fault, and the machine will
+  # come up with nothing on it.
+  say 'WARNING: this machine was built to have a display and there is no /etc/gdm3/custom.conf — it will boot to nothing. Was it installed from a server image?'
 fi
 
 # --- no welcome wizard, no tour ----------------------------------------------

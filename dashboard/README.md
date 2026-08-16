@@ -70,7 +70,27 @@ live log, from inside the machine, while it happens.
 
     make  ->  install  ->  first-boot.sh  ->  ssh, your key, the agent
                                           ->  toolchain.sh
+                                          ->  desktop.sh, only if it was ticked
                                           ->  installs normal-boot.sh for later
+
+**The image is Ubuntu server**, and there is one:
+
+    https://releases.ubuntu.com/releases/24.04.4/ubuntu-24.04.4-live-server-amd64.iso
+
+Downloaded once and kept wherever VirtualBox can see it. It installs in about
+twelve minutes against twenty-five for a desktop image, and a machine built from
+it idles on a few hundred megabytes instead of one and a half gigabytes.
+
+**A desktop is added, not stripped out.** The checkbox on the dialog decides, and
+only when the machine is made: ticked, `desktop.sh` puts Xorg, openbox and a
+display manager that logs itself in on top of the server base — a few hundred
+megabytes, and enough that anything needing a screen works. Unticked, the machine
+never has an X server at all, which is what a runner that only ever holds a
+terminal wants.
+
+That choice cannot be changed afterwards and the machine card says which it was
+built as. Flipping a flag later would say "desktop" about a machine with no X on
+it, and finding that out costs an install.
 
 That is two actions, not one — make, then install — because they fail differently
 and the second is the one that takes half an hour. If the install will not start,

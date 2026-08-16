@@ -46,6 +46,15 @@ const STAGES = {
   toolchain: 'toolchain.sh',
   toolchainUser: 'toolchain-user.sh',
   normalBoot: 'normal-boot.sh',
+  // A SCREEN, ONLY IF THE MACHINE WAS BUILT TO HAVE ONE.
+  //
+  // Every machine is installed from the same server image, which has no desktop
+  // at all — so a desktop is something ADDED, by this, rather than something a
+  // machine is born with and a runner has to have stripped out. That way round
+  // because most machines here never show anybody anything, and the display
+  // stack is most of what they would otherwise spend their boot and their
+  // memory on.
+  desktop: 'desktop.sh',
   // The project's additions, run after the app's. Usually only a project has these,
   // and a machine works perfectly well without either.
   extra: 'extra.sh',
@@ -114,6 +123,16 @@ OKC_BASE=${q(`https://${hostAddress}:${port}`)}
 OKC_USER=${q(spec.user || 'okc')}
 OKC_SSH_KEY=${q(spec.sshKey || '')}
 OKC_REPROVISION_ON_BOOT=${q(spec.reprovisionOnBoot ? 'yes' : 'no')}
+# WHETHER THIS MACHINE IS MEANT TO HAVE A SCREEN, decided when it was made and
+# never afterwards. A machine with no desktop boots in a fraction of the time and
+# idles on a fraction of the memory -- no display manager, no session, no
+# compositor -- which is what a runner that only ever holds a terminal wants. A
+# machine somebody is going to sit at wants the opposite.
+#
+# The scripts ask this rather than guessing from what is installed: "there is no
+# gdm here" is also true of a desktop machine whose install went wrong, and those
+# two need opposite responses.
+OKC_DESKTOP=${q(spec.desktop === false ? 'no' : 'yes')}
 # This machine's own secret, and the port it dials in on. It can only ever connect
 # as itself, because the dashboard checks this against the machine it claims to be.
 #
@@ -137,7 +156,7 @@ OKC_CA=/etc/okc/ca.pem
 OKC_CA_URL=${q(`http://${hostAddress}:${caPort}/ca.pem`)}
 OKC_CA_FINGERPRINT=${q(caFingerprint || '')}
 
-export OKC_VM OKC_HOST OKC_PORT OKC_BASE OKC_USER OKC_SSH_KEY OKC_REPROVISION_ON_BOOT
+export OKC_VM OKC_HOST OKC_PORT OKC_BASE OKC_USER OKC_SSH_KEY OKC_REPROVISION_ON_BOOT OKC_DESKTOP
 export OKC_TOKEN OKC_CHANNEL_PORT OKC_CA OKC_CA_URL OKC_CA_FINGERPRINT
 
 # Fetches the authority if it is not here, and refuses it unless it is the one

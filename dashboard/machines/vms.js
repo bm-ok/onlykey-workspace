@@ -121,6 +121,14 @@ async function all () {
       // a display, an editor or a browser sign-in, arrives too early and fails
       // for a reason that points nowhere near the cause.
       desktop: !!((channel.list().find(a => a.vm === vm.name) || {}).facts || {}).desktop,
+      // AND WHETHER IT WAS EVER MEANT TO HAVE ONE, which is a fact about how it
+      // was built and is answerable with the machine switched off. Decided at
+      // creation and never after — see provisioner.fill.
+      //
+      // Missing means yes, deliberately: every machine made before this existed
+      // was installed from a desktop image and has one. A machine built since
+      // says so either way.
+      desktopWanted: (vm.spec || {}).desktop !== false,
       agent: channel.list().find(a => a.vm === vm.name) || null
     })
   }

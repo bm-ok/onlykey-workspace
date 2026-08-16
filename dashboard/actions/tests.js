@@ -162,8 +162,23 @@ module.exports = {
         } catch { /* a repository that cannot be read is reported by its own panel */ }
       }
 
-      const found = { branches: branches.map(b => b.name), tasks: tasks.map(t => `#${t.number} ${t.title}`), remote }
-      const total = branches.length + tasks.length + remote.length
+      // AND MACHINES, which are the expensive ones. A drill that dies half-way
+      // through an install leaves a virtual machine and a forty-gigabyte disk
+      // image, and nothing else in this app will ever tidy that up — the queue
+      // only knows about machines it is meant to use.
+      //
+      // `drill-` on a machine, the same idea as `drill/` on a branch: a name
+      // nothing else here ever writes, so removing one needs no judgement call.
+      const madeUp = (await actions.vmList.run({})).vms
+        .filter(v => /^drill-/.test(String(v.name || '')))
+
+      const found = {
+        branches: branches.map(b => b.name),
+        tasks: tasks.map(t => `#${t.number} ${t.title}`),
+        remote,
+        machines: madeUp.map(v => `${v.name} (${v.state}${v.stage ? ', ' + v.stage : ''})`)
+      }
+      const total = branches.length + tasks.length + remote.length + madeUp.length
 
       if (!doIt) {
         return {
@@ -176,7 +191,15 @@ module.exports = {
         }
       }
 
-      const gone = { tasks: [], branches: [], failed: [] }
+      const gone = { tasks: [], branches: [], machines: [], failed: [] }
+
+      // Machines first, and on their own. Removing one deletes its disks, which
+      // is the slowest and least reversible thing here — and a machine that is
+      // still running is stopped by vmRemove itself, so nothing else needs to
+      // know about that.
+      for (const v of madeUp) {
+        try { await actions.vmRemove.run({ name: v.name }); gone.machines.push(v.name) } catch (e) { gone.failed.push(`${v.name}: ${e.message}`) }
+      }
       // Tasks first: a task naming a branch is the thing that makes the branch
       // look claimed, and deleting the branch under it would leave a task
       // pointing at nothing.
@@ -191,7 +214,7 @@ module.exports = {
         try { await actions.branchDelete.run({ branch: b.name, force: true }); gone.branches.push(b.name) } catch (e) { gone.failed.push(`${b.name}: ${e.message}`) }
       }
 
-      log.on('test').warn(`swept ${gone.tasks.length} task(s) and ${gone.branches.length} branch(es) left by drills`)
+      log.on('test').warn(`swept ${gone.tasks.length} task(s), ${gone.branches.length} branch(es) and ${gone.machines.length} machine(s) left by drills`)
       return {
         ...found,
         removed: true,
@@ -200,8 +223,8 @@ module.exports = {
         // pull request open against it is somebody else's repository — neither
         // is something a tidy-up button should decide.
         note: remote.length
-          ? `${gone.tasks.length} task(s) and ${gone.branches.length} branch(es) removed here. ${remote.length} branch(es) are also on origin and are NOT touched — deleting those is a push, and any pull request open from one is on somebody else's repository.`
-          : `${gone.tasks.length} task(s) and ${gone.branches.length} branch(es) removed.`
+          ? `${gone.tasks.length} task(s), ${gone.branches.length} branch(es) and ${gone.machines.length} machine(s) removed here. ${remote.length} branch(es) are also on origin and are NOT touched — deleting those is a push, and any pull request open from one is on somebody else's repository.`
+          : `${gone.tasks.length} task(s), ${gone.branches.length} branch(es) and ${gone.machines.length} machine(s) removed.`
       }
     }
   },
@@ -274,9 +297,9 @@ module.exports = {
   },
 
   suiteRun: {
-    about: 'Run everything, one suite, one test in it, or one check of that test. Reports as it goes',
-    takes: ['suite', 'test', 'check'],
-    run: async ({ suite, test, check }) => {
+    about: 'Run everything, one suite, one test in it, or one check of that test. Pass slow for the drills that build a machine',
+    takes: ['suite', 'test', 'check', 'slow'],
+    run: async ({ suite, test, check, slow }) => {
       // REFUSED HERE, at the only door that runs a test. The window disables the
       // buttons too, and that is a courtesy — this is the boundary, and it is
       // the one a drill reached from the command line meets as well.
@@ -317,6 +340,13 @@ module.exports = {
           // tests: a test asks this app for something exactly the way anything
           // else does, and meets the same refusals.
           actions,
+          // WHETHER THE HALF-HOUR ONES MAY RUN, and it is off unless somebody
+          // says so. Building a machine from nothing is twenty-five minutes and
+          // holds the whole host while it happens — a thing to decide to do, not
+          // something "Run all" does to you because you wanted to see the tests
+          // go green. A drill that needs it asks with assert.needs, so it
+          // reports "could not be tried" and says how to try it.
+          slow: slow === true || slow === 'true',
           // AND THE SAME HANDLE A JOB IS GIVEN, by the same name. The drills
           // that used to live in tasks/planned.js were written against `okc`,
           // and they are worth porting back rather than rewriting — the value

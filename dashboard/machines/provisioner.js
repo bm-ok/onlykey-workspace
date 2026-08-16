@@ -38,6 +38,27 @@ function fill (input = {}) {
     vramMB: Number(input.vramMB) || 128,
     diskMB: Number(input.diskMB) || 61440,
     iso: input.iso || '',
+    // WHETHER THIS ONE IS MEANT TO HAVE A SCREEN, and it is decided here or
+    // never. A desktop is not decoration: a task with no job leaves its machine
+    // running at a desktop for whoever wrote it, and the Runners tab says
+    // "anything needing a screen will work" — so this cannot simply be dropped.
+    //
+    // But a runner that only ever holds a terminal pays for a display manager,
+    // a session and a compositor it never shows anybody: a gigabyte of memory
+    // and most of the boot. Two machines coming up at once is what wedges this
+    // host, and most of what they are competing over is a desktop nobody is
+    // looking at.
+    //
+    // OFF UNLESS ASKED FOR, because every machine is installed from the SERVER
+    // image and a desktop is something ADDED — see provision/desktop.sh. That is
+    // the way round it has to be: a machine born with a desktop has to have it
+    // stripped out to be lean, and stripping is never as complete as never
+    // installing.
+    //
+    // READ ONLY AFTERWARDS. Nothing on the action surface changes it: what a
+    // machine was built to be is a fact about that build, and flipping the flag
+    // later would say "desktop" about a machine that has no X on it at all.
+    desktop: input.desktop === true || input.desktop === 'true',
     // Bridged, because a guest has to be able to reach this app to fetch its
     // setup, and on NAT it cannot see the host at all without more plumbing.
     network: input.network === 'nat' ? 'nat' : 'bridged',

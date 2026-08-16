@@ -648,7 +648,19 @@ function paintDetails () {
     // Booted is not usable, and the agent reports the difference on every beat.
     // It decided whether a sign-in or an editor would work at all, and until now
     // it was collected and never shown.
-    v.connected ? ['desktop', v.desktop ? 'up — anything needing a screen will work' : 'not up yet'] : null,
+    // WHAT IT WAS BUILT AS, which is not the same question and is answerable
+    // with the machine switched off. Decided when it was made and never after —
+    // there is no button for it here on purpose, because a machine installed
+    // without a desktop has no X on it at all, and a flag saying otherwise would
+    // be a lie that took twenty-five minutes to find out about.
+    ['built with', v.desktopWanted ? 'a desktop' : 'no display — a terminal-only runner'],
+
+    // And whether that desktop is actually up, which the agent reports on every
+    // beat. Booted is not usable: this is what decides whether a sign-in or an
+    // editor would work at all. Not asked of a machine that never had one.
+    v.connected && v.desktopWanted
+      ? ['desktop', v.desktop ? 'up — anything needing a screen will work' : 'not up yet']
+      : null,
 
     ['doing', doing
       ? link(claimed ? `#${claimed.number} ${claimed.title}` : doing, () => goToTask(doing))
@@ -811,12 +823,17 @@ $('add-vm-open').onclick = () => Promise.all([api('vmIsos'), api('hostKeys')]).t
   ],
   fields: [
     { name: 'name', label: 'Name', placeholder: 'dev1' },
+    // THE SERVER IMAGE IS THE ONE TO USE, and the address is here because this
+    // is where somebody is standing when they need it. A desktop image is not
+    // wrong, it is redundant: the box below installs a small desktop on a server
+    // machine, and a desktop image arrives with a large one already on it.
     {
       name: 'iso',
       label: isos.length ? 'Installer image' : 'Installer image — VirtualBox knows of none, so type a path',
       value: isos.length ? isos[0].location : '',
       options: isos.length ? [{ value: '', label: 'none for now' }, ...isos.map(i => ({ value: i.location, label: i.name }))] : undefined,
-      placeholder: 'C:\\path\\to\\ubuntu.iso'
+      placeholder: 'C:\\path\\to\\ubuntu-24.04.4-live-server-amd64.iso',
+      hint: 'Ubuntu server, downloaded once and kept: https://releases.ubuntu.com/releases/24.04.4/ubuntu-24.04.4-live-server-amd64.iso — it installs in about twelve minutes, against twenty-five for a desktop image.'
     },
     { name: 'memoryMB', label: 'Memory, in MB', value: '8192', type: 'number' },
     { name: 'cpus', label: 'Processors', value: '4', type: 'number' },
@@ -829,6 +846,24 @@ $('add-vm-open').onclick = () => Promise.all([api('vmIsos'), api('hostKeys')]).t
         { value: 'bridged', label: 'bridged — it can reach this app' },
         { value: 'nat', label: 'nat — private, with a forwarded ssh port' }
       ]
+    },
+    // DECIDED HERE OR NEVER, which is why it is on this form and nowhere else.
+    //
+    // The machine is installed from the server image either way; ticking this
+    // adds Xorg, a window manager and a display manager that logs itself in. A
+    // machine with no desktop boots in a fraction of the time and idles on a
+    // fraction of the memory, which is what a runner holding a terminal wants —
+    // and two machines coming up at once is what wedges this host.
+    //
+    // It cannot be changed afterwards. What a machine was built to be is a fact
+    // about that build: flipping a flag later would say "desktop" about a
+    // machine with no X on it at all. The card shows what it was made as.
+    {
+      name: 'desktop',
+      label: 'Give it a desktop',
+      type: 'checkbox',
+      value: false,
+      hint: 'Off is a terminal-only runner: no display manager, no session, a fraction of the memory. On installs a small desktop that logs itself in, for a machine somebody is going to sit at. This cannot be changed later.'
     },
     { name: 'user', label: 'User to create', value: 'okc' },
     { name: 'password', label: 'Its password', value: 'okc' },

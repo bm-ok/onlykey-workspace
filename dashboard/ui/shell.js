@@ -241,6 +241,19 @@ function buildFields (fields = []) {
   const inputs = {}
   const rows = []
   for (const f of fields) {
+    // A FOURTH KIND: a yes or no, which is a tick rather than the word "true"
+    // typed into a box. Its label goes BESIDE it rather than above it, because a
+    // checkbox under its own heading reads as an unlabelled square.
+    if (f.type === 'checkbox') {
+      const box = el('input', { type: 'checkbox', checked: f.value === true || f.value === 'true' })
+      inputs[f.name] = box
+      rows.push(el('div', {},
+        el('label', { className: 'inline', style: 'gap:8px' }, box, el('span', { textContent: f.label })),
+        // What ticking it actually does. A checkbox with consequences somebody
+        // cannot see is the one they tick wrongly and find out about later.
+        f.hint ? el('p', { className: 'note muted', textContent: f.hint }) : null))
+      continue
+    }
     const input = f.options
       ? el('select', {}, ...f.options.map(o =>
           el('option', { value: o.value, textContent: o.label, selected: o.value === f.value })))
@@ -248,7 +261,13 @@ function buildFields (fields = []) {
         ? el('textarea', { placeholder: f.placeholder || '', value: f.value || '', rows: f.rows || 8 })
         : el('input', { placeholder: f.placeholder || '', value: f.value || '', type: f.type || 'text' })
     inputs[f.name] = input
-    rows.push(el('div', {}, el('label', { textContent: f.label }), input))
+    // A hint under any field, not only a checkbox: where a value comes from is
+    // the thing somebody is missing at the moment they are asked for it, and a
+    // form that assumes they already know is a form they leave to go looking.
+    rows.push(el('div', {},
+      el('label', { textContent: f.label }),
+      input,
+      f.hint ? el('p', { className: 'note muted', textContent: f.hint }) : null))
   }
   return { rows, inputs }
 }
@@ -338,7 +357,12 @@ function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, o
     yes.disabled = true
     try {
       const values = {}
-      for (const k in inputs) values[k] = inputs[k].value.trim()
+      // A checkbox answers with `checked`; its `value` is the string "on"
+      // whether it is ticked or not, which is the quietest way to build a form
+      // where every box reads as yes.
+      for (const k in inputs) {
+        values[k] = inputs[k].type === 'checkbox' ? inputs[k].checked : inputs[k].value.trim()
+      }
       await onYes(values)
       close()
       await draw()
