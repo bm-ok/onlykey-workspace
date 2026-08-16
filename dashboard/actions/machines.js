@@ -24,13 +24,18 @@ const {
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
 } = s
 
-// WHICH MACHINE IS BEING RE-PROVISIONED, IF ANY, across the whole host.
+// WHICH MACHINE IS HAVING ITS PROVISIONING UPDATED, IF ANY, across the host.
 //
-// One at a time is a refusal rather than a queue — see vmReprovision. In this
-// process only, deliberately: it guards concurrent calls, and a restart mid-way
-// leaves a machine borrowed and off the pool, which is visible on the Runners
-// tab and is the state somebody should be looking at anyway.
-let reprovisioning = null
+// One at a time is a refusal rather than a queue — see vmProvisionUpdate. In
+// this process only, deliberately: it guards concurrent calls, and a restart
+// mid-way leaves a machine borrowed and off the pool, which is visible on the
+// Runners tab and is the state somebody should be looking at anyway.
+//
+// UPDATING IS NOT INSTALLING, and the two are deliberately separate words here.
+// This re-runs the scripts on the machine as it is and re-bases it — minutes.
+// A real re-provision wipes the disk and drives the installer — twenty-five,
+// and it is `vmInstall`. Both need testing and only one of them is written.
+let updating = null
 
 module.exports = {
   // Only ever the machines this app made. Everything here refuses a machine that
@@ -501,15 +506,15 @@ module.exports = {
   // VirtualBox locks, and the failure mode is a machine left half-provisioned
   // with no base snapshot to come back to. `busy.during` guards one machine at a
   // time and cannot see the other, so the guard lives here.
-  vmReprovision: {
-    about: 'Run the setup scripts again and make the result the new clean starting point. One machine at a time',
+  vmProvisionUpdate: {
+    about: 'Run the setup scripts again on a machine as it is, and make the result its new clean starting point. Not an install. One machine at a time',
     takes: ['name', 'stage'],
     run: async ({ name, stage = 'firstBoot' }) => {
       const vm = vms.get(name)
-      if (reprovisioning && reprovisioning !== name) {
-        throw new Error(`"${reprovisioning}" is being re-provisioned. One at a time — two machines booting and snapshotting at once is how one ends up half-set-up with no base to come back to. Wait for it, or watch it on the Runners tab.`)
+      if (updating && updating !== name) {
+        throw new Error(`"${updating}" is having its provisioning updated. One at a time — two machines booting and snapshotting at once is how one ends up half-set-up with no base to come back to. Wait for it, or watch it on the Runners tab.`)
       }
-      if (reprovisioning === name) throw new Error(`"${name}" is already being re-provisioned.`)
+      if (updating === name) throw new Error(`"${name}" is already having its provisioning updated.`)
       // The refusals that matter BEFORE anything is touched, because this ends
       // in a rollback: a machine holding work would lose it.
       if (vm.branch) throw new Error(`"${name}" claims ${vm.branch}. This ends by putting the machine back to a clean state, which would discard whatever it is working on — let it off its branch first.`)
@@ -517,7 +522,7 @@ module.exports = {
       refuseIfItHoldsACredential(name)
 
       const to = log.on('vm', name)
-      reprovisioning = name
+      updating = name
       const began = Date.now()
       const steps = []
       const step = (what, note) => { steps.push({ what, note }); to.info(note) }
@@ -543,17 +548,45 @@ module.exports = {
         // 3. The scripts again. first-boot.sh restarts the agent, which ends the
         //    channel this was sent over — so it reports failure having usually
         //    succeeded, and the honest test is whether the machine comes back.
-        step('setup', `running ${stage} again`)
-        await actions.vmSetupAgain.run({ name, stage }).catch(e => {
-          to.info(`the setup run ended the channel (${String(e.message).split('\n')[0]}) — waiting for it to dial back in`)
-        })
+        step('setup', `running ${stage} again, detached so it survives the agent restarting`)
+        await actions.vmSetupAgain.run({ name, stage, detach: true })
         await actions.vmAwait.run({ name, for: 'connected', seconds: 420 })
-        step('back', 'it dialled back in after the scripts ran')
+
+        // AND WAITING FOR THE SCRIPT, NOT FOR THE CHANNEL. The agent comes back
+        // a few seconds after it restarts, which is nowhere near the end of the
+        // script — snapshotting there would capture a machine part-way through
+        // being set up and call it the clean starting point.
+        //
+        // The wait happens IN THE GUEST, as one bounded command: it is the guest
+        // that knows, and asking it repeatedly from here is the polling this
+        // project keeps writing rules against.
+        const finished = await actions.vmRun.run({
+          name,
+          command: 'for i in $(seq 1 180); do grep -q "first boot finished" /var/log/okc-provision.log && exit 0; sleep 5; done; exit 1',
+          what: 'waiting for the setup scripts to finish'
+        }).catch(e => ({ code: 1, output: e.message }))
+        if (finished.code !== 0) {
+          throw new Error(`The setup scripts did not report finishing within fifteen minutes. Nothing has been snapshotted, so the machine is unchanged from its old base. Its own log is /var/log/okc-provision.log.`)
+        }
+        step('back', 'the scripts finished and it is dialled in')
 
         // 4. And the new starting point. Without this the whole thing is undone
         //    by the next rollback.
-        step('base', 'taking a new base snapshot, so the change survives a rollback')
-        await actions.vmBaseSnapshot.run({ name })
+        //
+        //    UNDER A NEW NAME, because the old one is still there and this is a
+        //    replacement rather than an addition. Two snapshots called "base"
+        //    make restoring by that name a coin toss between them, which is what
+        //    vmBaseSnapshot refuses — and it refused this on its first run.
+        //
+        //    The new one is taken BEFORE the old one is thrown away, so there is
+        //    never a moment when the machine has no clean point to come back to.
+        //    A re-provision that died in between would otherwise leave a machine
+        //    that cannot be put away at all.
+        const was = vm.baseSnapshot || 'base'
+        const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(2, 12)
+        const title = `base-${stamp}`
+        step('base', `taking "${title}" as the new clean starting point`)
+        await actions.vmBaseSnapshot.run({ name, title })
         await actions.vmAwait.run({ name, for: 'connected', seconds: 420 })
         step('boot', 'it booted from the new base and dialled in')
 
@@ -569,13 +602,32 @@ module.exports = {
         await actions.vmReturn.run({ name })
         step('away', 'put away clean, at the new base')
 
+        // 6. And the one it replaced, now that the machine is off and sitting on
+        //    the new one. Last on purpose: deleting a snapshot merges its disk
+        //    back, which is the slowest and least reversible step here, and it
+        //    is the only one that can be skipped without leaving the machine in
+        //    a state nobody wants. A failure is said and not thrown.
+        let old = null
+        if (was && was !== title) {
+          try {
+            await actions.vmSnapshotDelete.run({ name, title: was })
+            old = `"${was}" was merged back`
+            step('tidy', `threw away the old "${was}"`)
+          } catch (e) {
+            old = `"${was}" is still there — ${e.message.split('.')[0]}`
+            to.warn(`the old base could not be removed: ${e.message}`)
+          }
+        }
+
         const took = Math.round((Date.now() - began) / 1000)
         return {
           name,
           steps,
           took,
+          base: title,
+          old,
           console: console_,
-          note: `"${name}" was re-provisioned in ${took}s and is off at its new base snapshot. Its console says: ${console_}.`
+          note: `"${name}" was re-provisioned in ${took}s and is off at "${title}". ${old ? old + '. ' : ''}Its console says: ${console_}.`
         }
       } catch (e) {
         // Handed back rather than left claimed. A machine stuck as "borrowed"
@@ -584,7 +636,7 @@ module.exports = {
         await actions.vmReturn.run({ name, keep: true }).catch(() => {})
         throw new Error(`"${name}" was not re-provisioned: ${e.message} It is left as it is, out of the pool — look at it on the Runners tab before giving it back.`)
       } finally {
-        reprovisioning = null
+        updating = null
       }
     }
   },
@@ -946,9 +998,9 @@ module.exports = {
   },
 
   vmSetupAgain: {
-    about: 'Run the setup scripts again on a machine that is already up',
-    takes: ['name', 'stage'],
-    run: async ({ name, stage = 'toolchain' }) => {
+    about: 'Run the setup scripts again on a machine that is already up. Pass detach for first-boot, which restarts the agent',
+    takes: ['name', 'stage', 'detach'],
+    run: async ({ name, stage = 'toolchain', detach }) => {
       const vm = vms.get(name)
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in. Start it and wait for it to connect.`)
       const file = path.basename(scripts.fileFor(vm, stage))
@@ -961,9 +1013,27 @@ module.exports = {
       // saying it needs a password instead of waiting for one nobody will type.
       // Under /tmp because the user cannot write /root.
       const needsRoot = !file.endsWith('-user.sh')
+      // DETACHED, FOR THE ONE SCRIPT THAT KILLS ITS OWN CALLER.
+      //
+      // first-boot.sh restarts the agent. The command it is running under is a
+      // CHILD of that agent, so the restart takes the script down with it —
+      // part-way through, silently, reporting only that the channel ended. The
+      // result was a machine that looked re-provisioned and had none of the
+      // changes after the line where the agent restarts: found by asking the
+      // guest for a file the script writes, and it was not there.
+      //
+      // `setsid` puts it in its own session so it survives, with its output
+      // appended to the provisioning log the scripts already share — because
+      // detaching means nobody is listening to stdout any more, and a run
+      // nothing recorded is a run nobody can diagnose.
+      const away = detach === true || detach === 'true'
       const run = needsRoot
-        ? `sudo -n env OKC_QUIET_SAY=yes bash /tmp/okc-again.sh`
-        : `OKC_QUIET_SAY=yes bash /tmp/okc-again.sh`
+        ? (away
+            ? `sudo -n setsid env OKC_QUIET_SAY=yes bash /tmp/okc-again.sh </dev/null >>/var/log/okc-provision.log 2>&1 & echo detached`
+            : `sudo -n env OKC_QUIET_SAY=yes bash /tmp/okc-again.sh`)
+        : (away
+            ? `setsid env OKC_QUIET_SAY=yes bash /tmp/okc-again.sh </dev/null >>/var/log/okc-provision.log 2>&1 & echo detached`
+            : `OKC_QUIET_SAY=yes bash /tmp/okc-again.sh`)
 
       // OKC_QUIET_SAY: the agent already streams stdout, so the script should not
       // also post each line over HTTP or every one arrives twice.

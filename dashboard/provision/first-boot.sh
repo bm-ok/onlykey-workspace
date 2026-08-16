@@ -26,6 +26,48 @@ touch /var/log/okc-provision.log 2>/dev/null || true
 chown "$OKC_USER:$OKC_USER" /var/log/okc-provision.log 2>/dev/null || true
 chmod 0644 /var/log/okc-provision.log 2>/dev/null || true
 
+# --- so a boot can be watched from outside ------------------------------------
+#
+# THE ONE THING NOTHING HERE COULD SEE. Between the power going on and the agent
+# dialling in, this machine is silent: no log line, no channel, nothing to ask.
+# A machine that hangs in that window is a spinning splash screen in a screenshot
+# and no other evidence at all, which is exactly what happened -- eleven minutes
+# on the Ubuntu logo, and VirtualBox's own log had nothing to say because from
+# outside a guest that boots and then sits there looks perfectly healthy.
+#
+# The kernel writes to ttyS0 from its very first line, before the network and
+# before systemd. VirtualBox copies that to a file on the host -- see vmSerial --
+# so the whole boot can be read afterwards without anything running in here.
+#
+# tty0 IS KEPT FIRST so the machine's screen still shows the boot, which is what
+# vmScreenshot photographs. Losing `quiet splash` is deliberate too: a splash
+# screen is a picture of nothing, and the messages it hides are the ones somebody
+# is looking for by the time they are taking a screenshot at all.
+#
+# A DROP-IN RATHER THAN AN EDIT. Ubuntu's grub-mkconfig reads /etc/default/grub
+# and then everything in /etc/default/grub.d, so this adds a file instead of
+# rewriting one the distribution owns -- which makes it idempotent, obvious to
+# anybody looking, and removable in one line.
+#
+# Allowed to fail. A machine with no serial console is a machine that is harder
+# to debug; a machine with a broken grub is not a machine.
+if [ -d /etc/default/grub.d ] || mkdir -p /etc/default/grub.d 2>/dev/null; then
+  cat > /etc/default/grub.d/99-okc-console.cfg <<'GRUBCFG'
+# Written by the dashboard. The guest's console goes to the screen AND to the
+# first serial port, which VirtualBox writes to a file on the host.
+GRUB_CMDLINE_LINUX_DEFAULT="console=tty0 console=ttyS0,115200n8"
+GRUB_TERMINAL="console serial"
+GRUB_SERIAL_COMMAND="serial --unit=0 --speed=115200"
+GRUBCFG
+  if update-grub >/dev/null 2>&1 || grub-mkconfig -o /boot/grub/grub.cfg >/dev/null 2>&1; then
+    say 'the console will be readable from the host, from the next boot'
+  else
+    rm -f /etc/default/grub.d/99-okc-console.cfg
+    say 'WARNING: could not rebuild grub, so the console stays inside the machine'
+  fi
+fi
+
+
 export DEBIAN_FRONTEND=noninteractive
 
 # --- fetching a stage --------------------------------------------------------
@@ -363,47 +405,6 @@ UNIT
   systemctl daemon-reload 2>/dev/null || true
   systemctl enable okc-boot.service 2>/dev/null || true
   say 'every boot will now check in with the dashboard'
-fi
-
-# --- so a boot can be watched from outside ------------------------------------
-#
-# THE ONE THING NOTHING HERE COULD SEE. Between the power going on and the agent
-# dialling in, this machine is silent: no log line, no channel, nothing to ask.
-# A machine that hangs in that window is a spinning splash screen in a screenshot
-# and no other evidence at all, which is exactly what happened -- eleven minutes
-# on the Ubuntu logo, and VirtualBox's own log had nothing to say because from
-# outside a guest that boots and then sits there looks perfectly healthy.
-#
-# The kernel writes to ttyS0 from its very first line, before the network and
-# before systemd. VirtualBox copies that to a file on the host -- see vmSerial --
-# so the whole boot can be read afterwards without anything running in here.
-#
-# tty0 IS KEPT FIRST so the machine's screen still shows the boot, which is what
-# vmScreenshot photographs. Losing `quiet splash` is deliberate too: a splash
-# screen is a picture of nothing, and the messages it hides are the ones somebody
-# is looking for by the time they are taking a screenshot at all.
-#
-# A DROP-IN RATHER THAN AN EDIT. Ubuntu's grub-mkconfig reads /etc/default/grub
-# and then everything in /etc/default/grub.d, so this adds a file instead of
-# rewriting one the distribution owns -- which makes it idempotent, obvious to
-# anybody looking, and removable in one line.
-#
-# Allowed to fail. A machine with no serial console is a machine that is harder
-# to debug; a machine with a broken grub is not a machine.
-if [ -d /etc/default/grub.d ] || mkdir -p /etc/default/grub.d 2>/dev/null; then
-  cat > /etc/default/grub.d/99-okc-console.cfg <<'GRUBCFG'
-# Written by the dashboard. The guest's console goes to the screen AND to the
-# first serial port, which VirtualBox writes to a file on the host.
-GRUB_CMDLINE_LINUX_DEFAULT="console=tty0 console=ttyS0,115200n8"
-GRUB_TERMINAL="console serial"
-GRUB_SERIAL_COMMAND="serial --unit=0 --speed=115200"
-GRUBCFG
-  if update-grub >/dev/null 2>&1 || grub-mkconfig -o /boot/grub/grub.cfg >/dev/null 2>&1; then
-    say 'the console will be readable from the host, from the next boot'
-  else
-    rm -f /etc/default/grub.d/99-okc-console.cfg
-    say 'WARNING: could not rebuild grub, so the console stays inside the machine'
-  fi
 fi
 
 # --- what this machine is for ------------------------------------------------
