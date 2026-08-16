@@ -49,6 +49,13 @@ task — a cut is opened when work is proposed for landing, which is the moment 
 change stops being one machine's business and becomes something to be read. So an
 open cut is a thing *waiting*, and this app should say so without being asked.
 
+**It asks; it does not start.** The judgement is begun by a button on the cut's
+own card. Nothing runs because a cut exists — an automatic queue of judgements
+would be work running unattended against somebody's repository and reporting to
+GitHub, with nobody having chosen this cut or this chain, which is the same thing
+this app already refuses about approving a job down a pipe. Asking is free;
+acting is a decision.
+
 That is also why the subject is the cut and not the task: a cut may carry work
 from more than one task, and a task may deliver nothing worth landing. Judging
 follows the change, not the occasion that produced it.

@@ -27,7 +27,9 @@ draft('and an open cut is what asks for one',
   'THE TRIGGER, and it is not somebody deciding to judge a task. A cut is opened when work is proposed for landing — that is the moment the change stops being one machine\'s business and becomes something to be read — so an open cut is a thing WAITING to be judged, and the app should say so without being asked. ' +
   'WHICH IS WHY IT IS THE CUT AND NOT THE TASK: a cut may carry work from more than one task, and a task may deliver nothing worth landing. Judging follows the change, not the occasion that produced it. ' +
   'THE CHECK: open a cut, and it appears as awaiting a judgement — before anybody has typed anything. Land or close it, and it stops asking. ' +
-  'TO SETTLE: whether a judging task is created automatically when a cut opens, or the cut simply reads as unjudged until somebody starts one. The first makes a queue of judgements that run unattended; the second keeps judging a decision. Both are defensible and they are different products.')
+  'NOT AUTOMATIC, AND THAT IS DECIDED. An open cut ASKS; it does not start anything. The judgement is begun by a button on the cut\'s own card, so the cut reads as unjudged until a person presses it. ' +
+  'Automatic would make a queue of judgements running unattended against somebody\'s repository, reporting to GitHub, with nobody having chosen this cut or this chain — which is the same thing this app already refuses about approving a job down a pipe. Asking is free; acting is a decision. ' +
+  'THE OTHER HALF OF THE CHECK: an open cut with nobody pressing anything stays unjudged for ever, and nothing runs.')
 
 draft('and the judge tab shows what is waiting, what is being judged, and what was decided',
   'THE HOME IT NEEDS. "Judge it" used to be a button on the task\'s own card — the screen that asked for a decision showed the QUESTION and not the answer — and it was removed rather than moved, so there is nowhere to do this today. ' +
