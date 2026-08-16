@@ -3,6 +3,8 @@
 
 # 00 — what this host has
 
+The first thing, and the only suite whose job is to **stop**.
+
 ## 00 — before anything else
 
   1. a folder of repositories is open
@@ -10,6 +12,8 @@
   3. and a GitHub token that still works
 
 # 01 — the order
+
+The order every piece of work goes through here, stated as a series and checked in that order.
 
 ## 00 — a cut comes first
 
@@ -45,6 +49,8 @@
 
 # 02 — the refusals
 
+What this app will not do, proved by asking it to do each thing and reading what it says back.
+
 ## 00 — approving is refused over the wire
 
   1. a job cannot be approved down the pipe
@@ -70,6 +76,8 @@
 
 # 03 — the machines are built
 
+The warming stage, and the beginning of everything else: two machines defined,
+
 ## 00 — two machines built from nothing
 
   1. there are two machines to work with, or an ISO and permission to build them
@@ -83,6 +91,8 @@
 
 # 04 — a worker credential
 
+The second door a person has to open, and it is deliberately not beside the
+
 *stands on the machines are built*
 
 ## 00 — a worker can sign in
@@ -92,6 +102,8 @@
   3. and a machine can really sign in with it
 
 # 05 — the machines
+
+The half of this app the other suites can only describe. Everything before this
 
 *stands on the machines are built*
 
@@ -114,6 +126,8 @@
 
 # 06 — provisioning
 
+What a machine is handed, and how a change to it reaches one.
+
 *stands on the machines*
 
 ## 00 — a change reaches a machine
@@ -124,6 +138,8 @@
   4. and a live machine fetching it gets the same thing
 
 # 07 — the guards
+
+The rules that stop work being lost — a task written wrong, a verdict about nothing, a machine asked to give up what it is holding.
 
 *stands on the order and the machines and the machines are built and a worker credential*
 
@@ -152,6 +168,8 @@
 
 # 08 — a task on a machine
 
+The point of the whole tool, and the last part of it that nothing checked.
+
 *stands on the machines and the order*
 
 ## 00 — a task goes out and comes back
@@ -166,6 +184,8 @@
   8. and judging it is refused, because this worker pushed nothing
 
 # 09 — cooling the host
+
+The last suite, and the only one that takes things away.
 
 *stands on the machines are built*
 

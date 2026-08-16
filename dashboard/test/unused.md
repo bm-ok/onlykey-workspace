@@ -8,7 +8,7 @@ not, and a name appearing in a comment looks used when a comment cannot call
 anything. Every line here is something to look at, and some of it is meant to be
 here.
 
-185 actions, 108 files searched.
+187 actions, 110 files searched.
 
 ## Named only in comments
 
@@ -52,6 +52,7 @@ and that is what they are for; the rest is surface nothing asks for.
 - `prDraftForget` — actions/repos.js
 - `vmShellRun` — actions/runs.js
 - `taskLogs` — actions/tasks.js
+- `suiteStop` — actions/tests.js
 - `workspaceData` — actions/workspaces.js
 
 ## No window button and no drill

@@ -1,5 +1,7 @@
 # The order the work goes
 
+The order every piece of work goes through here, stated as a series and checked in that order.
+
 `UI_OUTLINE.md` is the same thing in prose, and prose is where this drifts: that
 file was written by reading the markup and the action table, so it says what the
 app **does** rather than what it was meant to do — and the two are only the same

@@ -141,6 +141,11 @@ async function paintTestsNow () {
       runAll.disabled = testsRunning || !testsAllowed
       runAll.title = !testsAllowed ? testsWhy : testsRunning ? 'A run is already going' : 'Run every check in every suite'
     }
+    // Shown only while there is something to stop. A permanent Stop button on a
+    // quiet tab is a button that does nothing, which teaches people that buttons
+    // here do nothing.
+    const stop = $('tests-stop')
+    if (stop) stop.classList.toggle('hidden', !testsRunning)
 
     const everyCheck = v.suites.flatMap(s => s.tests.flatMap(t => t.checks))
     const badge = $('tests-badge')
@@ -441,4 +446,18 @@ function runTests (what) {
 $('tests-run-all').onclick = () => {
   if (!testsAllowed) return say(testsWhy, 'warn')
   runTests({})
+}
+
+// CALLING IT OFF, which had an action and no way to reach it.
+//
+// suiteStop was written while watching a run that could not be stopped, and then
+// given no button — so the only way out of a half-hour drill was still the
+// command line, or killing the app and losing the record with it. A report of
+// what nothing calls is what noticed.
+//
+// It says what it can do rather than implying more: the step in flight finishes
+// on its own clock, because that wait is inside somebody else's promise.
+$('tests-stop').onclick = async () => {
+  const said = await api('suiteStop')
+  say(said.note, said.stopping ? 'warn' : 'muted')
 }

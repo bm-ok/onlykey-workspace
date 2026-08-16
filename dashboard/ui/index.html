@@ -808,6 +808,10 @@
           Suites <span class="muted" id="tests-context"></span>
           <span class="grow"></span>
           <button class="btn small ok" id="tests-run-all" title="Run every test in every suite">Run all</button>
+          <!-- Only while something is going. A run that cannot be called off is
+               one somebody kills the app to escape, which throws away the record
+               of what it had already found. -->
+          <button class="btn small warn hidden" id="tests-stop" title="Stop the run after the step it is on">Stop it</button>
         </h2>
         <div id="test-suites" class="stack"></div>
       </div>

@@ -71,6 +71,21 @@ for (const suite of suites) {
 // file's checks, so it is checked rather than trusted — a wrong number is worse
 // than none, being wrong in a way that looks authoritative.
 const SUITES_AT = path.join(__dirname, 'suites')
+
+// The first line of a suite's README, which by convention says what the suite
+// is. Absent rather than invented when there is no README: a made-up summary of
+// somebody else's suite is worse than none, because it reads as theirs.
+function purposeOf (folder) {
+  try {
+    const lines = fs.readFileSync(path.join(SUITES_AT, folder, 'README.md'), 'utf8').split(/\r?\n/)
+    // Past the `# heading` and the blank line under it.
+    for (const line of lines.slice(1)) {
+      const said = line.trim()
+      if (said) return said
+    }
+  } catch { /* a suite without a README says nothing here */ }
+  return null
+}
 const numberOf = name => (name.match(/^([0-9]+)/) || [])[1] || ''
 const sorted = names => names.slice().sort()
 
@@ -100,6 +115,16 @@ folders.forEach((folder, i) => {
   // the file — which renders as a suite subordinate to the tests inside it, and
   // an indented `#` is barely a header at all.
   out.push(`# ${numberOf(folder)} — ${group}`, '')
+
+  // WHAT THE SUITE IS, in its own words.
+  //
+  // The titles below are the claims; this is the context they are claims about,
+  // and without it the file reads as a list of assertions rather than as the app
+  // describing itself in the order somebody uses it. Taken from the first line
+  // of the suite's README, which is a convention worth keeping: a README here
+  // opens by saying what the suite is, and three that did not were changed to.
+  const said = purposeOf(folder)
+  if (said) out.push(said, '')
 
   // WHAT IT STANDS ON, if anything. Here as well as in the window because a
   // requires() lives in one file of a suite and could be lost in a rename

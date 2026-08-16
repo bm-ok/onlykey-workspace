@@ -1,5 +1,7 @@
 # The guards, brought back from `tasks/planned.js`
 
+The rules that stop work being lost — a task written wrong, a verdict about nothing, a machine asked to give up what it is holding.
+
 They were deleted on 14 August 2026 with the rest of that file, and the reasons
 were good: ten drills sat in one list beside jobs somebody had written, all
 approved and one click from running against whatever workspace was open — and two
