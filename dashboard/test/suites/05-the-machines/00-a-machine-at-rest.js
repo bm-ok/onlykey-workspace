@@ -21,7 +21,7 @@ const { it, requires } = require('../../../tasks/harness')
 //
 // It requires nothing else. This suite is what the others stand on, not the
 // other way round.
-requires('building a machine')
+requires('the machines are built')
 
 // WHAT IT SAW LAST TIME is recorded at the bottom of this file. It is the state
 // of this host at that moment rather than a rule, which is exactly what makes it

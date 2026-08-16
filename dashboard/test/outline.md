@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 10 suites, 20 tests, 82 checks -->
+<!-- 10 suites, 20 tests, 83 checks -->
 
 # 00 — what this host has
 
@@ -93,7 +93,7 @@
 
 # 05 — the machines
 
-*stands on building a machine*
+*stands on the machines are built*
 
 ## 00 — a machine at rest
 
@@ -125,7 +125,7 @@
 
 # 07 — the guards
 
-*stands on the order and the machines*
+*stands on the order and the machines and the machines are built and a worker credential*
 
 ## 00 — a task cannot be written wrong
 
@@ -141,8 +141,9 @@
 
 ## 02 — a machine is not asked to lose work
 
-  1. a machine holding a credential cannot be snapshotted
-  2. a signed-out machine is not given work
+  1. a machine of our own, up and holding a credential
+  2. a machine holding a credential cannot be snapshotted
+  3. and once it is signed out, it is not given work
 
 ## 03 — one machine per branch
 

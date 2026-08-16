@@ -7,14 +7,46 @@
 // mean, and tasks/harness.js for state, cleanup and what a failed check does
 // to the ones after it.
 
-const { it } = require('../../../tasks/harness')
+const { it, cleanup, requires } = require('../../../tasks/harness')
+
+// It borrows a machine and hands it a credential to ask its questions, so it
+// stands on machines existing and on a credential being here.
+requires('the machines are built', 'a worker credential')
 
 // WHAT IT SAW LAST TIME is recorded at the bottom of this file.
 
-it('a machine holding a credential cannot be snapshotted', async ({ okc, assert, log }) => {
+it('a machine of our own, up and holding a credential', async ({ okc, assert, state, log }) => {
+  // ARRANGED, NOT WAITED FOR — which is the change that made this file mean
+  // anything.
+  //
+  // Both checks below need a machine holding a worker credential, and this app
+  // is built to make that state RARE: the queue hands one out for the length of
+  // a job and takes it straight back. So for the whole life of this file the
+  // answer was "no machine is holding a credential", it reported "could not be
+  // tried" every time, and the two rules under it had never once been asked.
+  //
+  // Safe to arrange, and only because of what this app already refuses. The
+  // credential is kept sealed on this host, so lending it to a machine loses
+  // nothing and taking it back is one call — and the cleanup below does exactly
+  // that whatever happens here.
   const { vms } = await okc('vmList')
-  const holding = vms.find(v => v.holdsCredential)
-  assert.needs(holding, 'no machine is holding a credential — the queue takes them back when work ends')
+  const free = vms.find(v => v.baseSnapshot && !v.branch && !v.borrowed && v.forTasks !== false)
+  assert.needs(free, 'no machine is free to borrow — the machines the kit builds are what this uses, and none of them is idle')
+
+  const got = await okc('vmBorrow', { name: free.name, why: 'a drill asking what a machine holding a credential refuses' })
+  state.machine = got.name
+  await okc('vmAwait', { name: state.machine, for: 'connected', seconds: 600 })
+
+  const put = await okc('vmCredentialsPut', { name: state.machine })
+  state.lent = true
+  assert.ok(put, `${state.machine} was not given the credential, so the checks below have nothing to ask about`)
+  log(`borrowed ${state.machine}, brought it up and lent it the worker credential — it goes back in the cleanup`)
+}, { minutes: 12, gate: true })
+
+it('a machine holding a credential cannot be snapshotted', async ({ okc, assert, state, log }) => {
+  const { vms } = await okc('vmList')
+  const holding = vms.find(v => v.name === state.machine)
+  assert.ok(holding && holding.holdsCredential, `${state.machine} was lent the credential and does not report holding one`)
   const refusal = await assert.refuses(
     () => okc('vmBaseSnapshot', { name: holding.name, title: 'drill-should-refuse' }),
     'holding a worker credential',
@@ -22,49 +54,36 @@ it('a machine holding a credential cannot be snapshotted', async ({ okc, assert,
   log(`asked of ${holding.name}, which is holding one — refused, and this is what it said:\n${refusal.message}`)
 })
 
-it('a signed-out machine is not given work', async ({ okc, assert, log }) => {
-  const { vms } = await okc('vmList')
+it('and once it is signed out, it is not given work', async ({ okc, assert, state, log }) => {
+  // THE SAME MACHINE, SIGNED OUT, which is the other half of the pair and the
+  // reason the arranging above is worth doing once rather than twice.
+  //
+  // NEVER a machine the queue is driving. The only OTHER time there is a
+  // connected machine to try this on is while one is working, so the obvious
+  // choice would be the worst one: pulling a credential out from under a live
+  // worker to prove a point about refusals is a drill sabotaging the thing it
+  // exists to protect, and the failure would surface minutes later as the
+  // worker's rather than as this one's. This machine is borrowed, so the queue
+  // will not touch it.
+  await okc('vmCredentialsForget', { name: state.machine })
+  state.lent = false
+  log(`took ${state.machine}'s credential back — it is signed out now`)
 
-  // ARRANGED RATHER THAN WAITED FOR.
-  //
-  // The first version required a connected machine that happened to be signed
-  // out, and on a working host there is never one — so the drill reported
-  // "there was nothing to try it on", which is not evidence and sat in the
-  // results looking like a fault. A drill that only runs when the world
-  // happens to suit it is a drill that never runs.
-  //
-  // Safe to arrange: the credential is kept on this host, sealed, so taking it
-  // off a machine loses nothing and putting it back is one call. The finally
-  // is not optional — leaving a machine signed out would break the next thing
-  // to use it, and blame something else.
-  //
-  // NEVER a machine the queue is driving. The only time there is a connected
-  // machine to try this on is while one is WORKING, so the obvious choice is
-  // the worst one: pulling a credential out from under a live worker to prove
-  // a point about refusals is a drill sabotaging the thing it exists to
-  // protect, and the failure would surface minutes later as the worker's
-  // rather than as this one's.
-  const { inFlight = [] } = await okc('queueState')
-  const busy = new Set(inFlight.map(f => f.machine))
-  const idle = vms.filter(v => v.connected && !busy.has(v.name))
-  const target = idle.find(v => v.holdsCredential) || idle[0]
-  assert.needs(target, busy.size
-    ? 'every connected machine is busy with queued work, and this must not take a credential from one that is working'
-    : 'no machine is dialled in — a runner rests off')
+  const refusal = await assert.refuses(
+    () => okc('vmDispatch', { name: state.machine, task: 'anything at all' }),
+    'signed out',
+    'Otherwise it fails as an api error minutes later, after a workspace has been laid out')
+  log(`refused, and this is what it said:\n${refusal.message}`)
+})
 
-  const held = !!(target.holdsCredential)
-  if (held) {
-    log(`taking ${target.name}'s credential for the duration, and putting it back afterwards`)
-    await okc('vmCredentialsForget', { name: target.name })
-  }
-  try {
-    const refusal = await assert.refuses(
-      () => okc('vmDispatch', { name: target.name, task: 'anything at all' }),
-      'signed out',
-      'Otherwise it fails as an api error minutes later, after a workspace has been laid out')
-    log(`refused, and this is what it said:\n${refusal.message}`)
-  } finally {
-    if (held) await okc('vmCredentialsPut', { name: target.name })
+cleanup(async ({ okc, state }) => {
+  // THE CREDENTIAL GOES BACK BEFORE THE MACHINE DOES, and neither is optional.
+  // A machine left signed out breaks the next thing to use it and blames
+  // something else; a machine left borrowed is out of the pool with nobody using
+  // it, which is the exact state this app exists to prevent.
+  if (state.machine) {
+    if (state.lent) await okc('vmCredentialsForget', { name: state.machine }).catch(() => {})
+    await okc('vmReturn', { name: state.machine }).catch(() => {})
   }
 })
 

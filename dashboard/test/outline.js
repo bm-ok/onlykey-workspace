@@ -143,6 +143,22 @@ const text = [
   ''
 ].join('\n')
 
+// A REQUIREMENT THAT NAMES NOTHING IS A BROKEN EDGE, and it breaks silently.
+//
+// requires() is matched by name against the other suites. Rename a folder and
+// every requires() pointing at the old name simply stops finding anything — no
+// error, no warning, and dirt quietly stops spreading to the suites that were
+// relying on it. Which happened within an hour of the mechanism existing:
+// "building a machine" became "the machines are built" and the suite standing on
+// it kept naming the old one.
+//
+// Checked here because this is the file that already knows both halves.
+const known = new Set(byGroup.keys())
+const broken = []
+for (const [group, needs] of Object.entries(declared)) {
+  for (const name of needs) if (!known.has(name)) broken.push(`${group} requires "${name}", and there is no such suite`)
+}
+
 const at = path.join(__dirname, 'outline.md')
 
 // AND `--check`, WHICH IS HOW IT STAYS TRUE.
@@ -156,6 +172,13 @@ const at = path.join(__dirname, 'outline.md')
 // on Windows and the file is written with LF — a CRLF checkout must not read as
 // a stale outline, which would be a failing test that no edit can fix.
 const flat = s => String(s).replace(/\r\n/g, '\n').trim()
+
+if (broken.length && !process.argv.includes('--write')) {
+  console.log('\nFAIL — a suite stands on something that does not exist:')
+  for (const b of broken) console.log(`       ${b}`)
+  console.log('       Nothing enforces these names, so a renamed folder leaves the edge pointing at nothing.')
+  process.exit(1)
+}
 
 if (process.argv.includes('--check')) {
   const there = fs.existsSync(at) ? fs.readFileSync(at, 'utf8') : ''
