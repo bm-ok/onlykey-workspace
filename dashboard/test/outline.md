@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 10 suites, 20 tests, 83 checks -->
+<!-- 10 suites, 20 tests, 84 checks -->
 
 # 00 — what this host has
 
@@ -100,6 +100,7 @@ The second door a person has to open, and it is deliberately not beside the
   1. this host holds a worker credential
   2. and it has not expired past refreshing
   3. and a machine can really sign in with it
+  4. and no two machines hold one at the same time — **draft, not written yet**
 
 # 05 — the machines
 

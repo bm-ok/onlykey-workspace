@@ -148,7 +148,11 @@ folders.forEach((folder, i) => {
       // Indented by two, which shows the nesting and is still a list. FOUR would
       // be a code block: markdown allows a block up to three spaces of
       // indentation, and the fourth is what starts code.
-      out.push(`  ${k + 1}. ${check.name}`)
+      // A DRAFT MUST NOT READ AS A CHECK. This file is the closest thing to a
+      // specification here, and a line that has never been written looking
+      // exactly like one that runs is how a spec starts lying — somebody reads
+      // the list, counts it as covered, and moves on.
+      out.push(`  ${k + 1}. ${check.name}${check.draft ? ' — **draft, not written yet**' : ''}`)
     })
     out.push('')
   })

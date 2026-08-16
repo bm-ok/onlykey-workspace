@@ -148,10 +148,10 @@ module.exports = {
             // since, and `interrupted` is a check that was running when the
             // dashboard went away.
             state: r
-              ? (r.ok === true ? 'passed' : r.ok === null ? (r.asksYou ? 'asks you' : 'unrunnable') : 'failed')
+              ? (r.ok === true ? 'passed' : r.ok === null ? (r.draft ? 'draft' : r.asksYou ? 'asks you' : 'unrunnable') : 'failed')
               : kept ? kept.state : 'not run',
             ms: r ? r.ms : (kept ? kept.ms : null),
-            why: r ? (r.asksYou || r.unrunnable || r.error || null) : (kept ? kept.why : null),
+            why: r ? (r.draft || r.asksYou || r.unrunnable || r.error || null) : (kept ? kept.why : null),
             log: (r && r.log) || (kept && kept.log) || [],
             // WHEN, which only matters once results outlive the window. A pass
             // from four days ago and one from four minutes ago are both green.
@@ -742,10 +742,10 @@ module.exports = {
               state: result.ok === true
                 ? 'passed'
                 : result.ok === null
-                  ? (result.asksYou ? 'asks you' : 'unrunnable')
+                  ? (result.draft ? 'draft' : result.asksYou ? 'asks you' : 'unrunnable')
                   : 'failed',
               ms: result.ms,
-              why: result.asksYou || result.unrunnable || (result.error ? String(result.error).split('\n')[0] : null),
+              why: result.draft || result.asksYou || result.unrunnable || (result.error ? String(result.error).split('\n')[0] : null),
               log: said.get(key(groupName, suiteName, testName)) || [],
               fingerprint: prints.get(key(groupName, suiteName, testName)) || null
             })

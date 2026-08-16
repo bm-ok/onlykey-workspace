@@ -70,6 +70,10 @@ const TEST_LOOK = {
   // no amount of running will change — so it is worded as a job rather than as a
   // state of the system, and it stays until somebody does it.
   'asks you': { className: 'badge warn', textContent: 'needs you' },
+  // Not written yet, and it must never look like an outcome. Muted, worded as
+  // what it is, and counted apart -- a suite with three drafts in it has three
+  // things somebody meant to check, which is a to-do list rather than a fault.
+  draft: { className: 'badge muted', textContent: 'draft' },
   carried: { className: 'badge muted', textContent: 'carried' },
   // Blue, and it is the app's existing blue: `run` is what the Runners tab, the
   // PR cuts and the repositories all use for "in flight". A colour invented here
@@ -101,7 +105,7 @@ const worstOf = states =>
 
 // Only the counts that are not zero. A row of three zeroes is three things to
 // read past on every suite that is simply fine.
-const countBadges = states => ['passed', 'failed', 'asks you', 'unrunnable'].map(k => {
+const countBadges = states => ['passed', 'failed', 'asks you', 'unrunnable', 'draft'].map(k => {
   const n = states.filter(s => s === k).length
   return n ? el('span', { ...TEST_LOOK[k], textContent: `${n} ${TEST_LOOK[k].textContent}` }) : null
 })

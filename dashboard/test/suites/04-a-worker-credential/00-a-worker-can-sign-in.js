@@ -5,7 +5,7 @@
 // See the README beside this file for why this is here rather than beside the
 // GitHub token, and why it never reads a value.
 
-const { it, requires } = require('../../../tasks/harness')
+const { it, draft, requires } = require('../../../tasks/harness')
 const { aMachine } = require('../../helpers')
 
 // It hands the credential to a machine to find out whether it works, so it
@@ -66,3 +66,10 @@ it('and a machine can really sign in with it', async ({ okc, assert, state, log 
   log(`${tried.on} was handed the credential and the worker authenticated`)
   log('and it was taken back — a machine is never left holding one')
 }, { minutes: 12 })
+
+draft('and no two machines hold one at the same time',
+  'There is one credentials/claude.json and it is lent to whoever is working. ' +
+  'vmCredentialsPut checks the machine is dialled in and that the credential is not dead, and says nothing about who else is holding it — so two machines working at once would run as the same worker against the same session. ' +
+  'The queue serialises most work, which is why it has not bitten, and the whole point of kit-1 and kit-2 is two machines at the same time. ' +
+  'The check is "at most one machine reports holdsCredential" today, and "no credential is held by two machines" once there is a set of them. ' +
+  'It would fail right now if two tasks were dispatched at once, which is the honest way to start. See TODO.md, "More than one worker credential".')

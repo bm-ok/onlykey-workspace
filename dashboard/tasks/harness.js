@@ -139,6 +139,27 @@ function it (name, fn, { minutes = 0, gate = false, dirties = null, invalidates 
   })
 }
 
+// A CHECK THAT HAS NOT BEEN WRITTEN YET, and is worth saying out loud anyway.
+//
+// The idea arrives while doing something else: "nothing stops two machines
+// holding the same credential". Investigating it there and then costs the thing
+// in hand; writing it down somewhere else means it is somewhere else. So it is
+// declared HERE, in the suite it belongs to, with a note about what it should
+// prove and why — and the board carries it until somebody writes it.
+//
+// It never runs, and it is not a failure, an unmet precondition, or a job for a
+// person: those are all statements about a check that exists. This is a check
+// that does not, which is why it gets its own word — and it is the word this app
+// already uses for something written down and not yet out: a draft.
+//
+// NO FUNCTION AT ALL, deliberately. A stub that returns true is a check that
+// passes, and a suite full of those is a green board about nothing. The absence
+// is the point: it cannot accidentally be counted as evidence.
+function draft (name, note) {
+  if (!currentSuite) throw new Error('draft() must be called inside describe()')
+  currentSuite.tests.push({ name, draft: true, note: String(note || '').trim() || null, gate: false, timeoutMs: 0 })
+}
+
 // WHAT TO UNDO WHEN THE SERIES IS OVER, however it ends.
 //
 // A step that arranges something — a cut made, a credential taken — used to put
@@ -331,6 +352,21 @@ async function run (context = {}) {
 
       const testRes = { name: t.name, ok: false, error: null }
       const started = Date.now()
+
+      // NOT WRITTEN YET. Reported as what it is and nothing else happens: it
+      // does not run, it does not stop the series, and it is never counted as
+      // passed. See draft() above.
+      if (t.draft) {
+        testRes.ok = null
+        testRes.draft = t.note || 'no note was left about what this should prove'
+        testRes.ms = 0
+        results.drafts = (results.drafts || 0) + 1
+        log(`  TODO ${t.name} -> ${testRes.draft}`)
+        try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'draft', error: testRes.draft }) } catch {}
+        try { if (onTestEnd) onTestEnd({ groupName: suite.group, suiteName: suite.name, testName: t.name, result: testRes }) } catch {}
+        suiteRes.tests.push(testRes)
+        continue
+      }
 
       // ALREADY DONE, BEFORE THE THING THAT STOPPED IT. Reported and not run.
       // Said out loud in the log every time, because a step that did not happen
@@ -527,10 +563,19 @@ function getRegisteredSuites () {
     group: s.group,
     tests: s.tests.map(t => ({
       name: t.name,
-      fingerprint: fingerprint(t.fn),
-      source: String(t.fn)
+      // A DRAFT HAS NO SOURCE, which is the whole of what it is. Fingerprinting
+      // `undefined` would give every draft the same number and call it a check
+      // whose code has not changed — so it says what it is instead, and the note
+      // stands where the source would be, since the note IS what has been
+      // written down so far.
+      draft: !!t.draft,
+      note: t.note || null,
+      fingerprint: t.draft ? null : fingerprint(t.fn),
+      source: t.draft
+        ? `// Not written yet.\n//\n// ${t.note || 'No note was left about what this should prove.'}`
+        : String(t.fn)
     }))
   }))
 }
 
-module.exports = { group, describe, it, cleanup, keep, requires, requirements, run, assert, getRegisteredSuites, fingerprint }
+module.exports = { group, describe, it, draft, cleanup, keep, requires, requirements, run, assert, getRegisteredSuites, fingerprint }
