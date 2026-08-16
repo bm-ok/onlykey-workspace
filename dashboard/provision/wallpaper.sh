@@ -67,38 +67,58 @@ esac
 
 # THE CAT, as a paper model is actually folded: one square, a few creases, and
 # every face the same sheet at a different angle to the light. That is why each
-# triangle below is the SAME colour at a different opacity rather than a
-# different colour — it is one piece of paper, not a mosaic.
+# triangle is the SAME colour at a different opacity rather than a different
+# colour — it is one piece of paper, not a mosaic.
 #
-# The shape is the traditional cat face: fold the square corner to corner, fold
-# the two side corners up into ears, fold the bottom point back for the chin.
-# Head from y=330 to y=660, ears above it, centred on x=960 of a 1920x1080
-# screen. Written out rather than computed because a wallpaper that fails to draw
-# is worse than one that is off-centre on an unusual resolution — feh scales it.
-FOLD="fill-opacity 0.95 polygon 700,330 780,150 880,330
-      fill-opacity 0.70 polygon 1220,330 1140,150 1040,330
-      fill-opacity 0.85 polygon 700,330 960,330 960,660
-      fill-opacity 0.55 polygon 960,330 1220,330 960,660
-      fill-opacity 0.32 polygon 880,540 1040,540 960,640"
+# IT WAS A FOX FIRST, and the difference is worth writing down because it is
+# entirely in the proportions. A long triangular head that narrows to a point,
+# with tall ears at the outside corners, is a fox every time. A cat is BROAD
+# ACROSS THE CHEEKS, has a short blunt chin rather than a muzzle, and its ears
+# sit inboard of the corners and are shorter than the face is wide.
+#
+# So the head is a hexagon: wide at the temples, wider at the cheeks, and cut off
+# flat at the chin. Head 740..1180 across, 330..620 down, centred on 960 of a
+# 1920x1080 screen. Written out rather than computed, because a wallpaper that
+# fails to draw is worse than one that is off-centre on an unusual screen — feh
+# scales it.
+FOLD="fill-opacity 0.95 polygon 755,335 830,185 925,335
+      fill-opacity 0.70 polygon 1165,335 1090,185 995,335
+      fill-opacity 0.55 polygon 790,330 833,235 890,330
+      fill-opacity 0.40 polygon 1130,330 1087,235 1030,330
+      fill-opacity 0.88 polygon 740,330 960,330 960,620 905,618 795,515
+      fill-opacity 0.62 polygon 1180,330 960,330 960,620 1015,618 1125,515
+      fill-opacity 0.30 polygon 890,505 1030,505 960,585"
 
-# The creases: down the nose, and the two that make the ears stand away from the
-# head. A shade lighter than the paper, which is what stops the whole thing
-# reading as a flat silhouette.
-CREASE="stroke-width 2 stroke #e6edf3 stroke-opacity 0.30 line 960,330 960,660
-        stroke-width 2 stroke #e6edf3 stroke-opacity 0.20 line 780,150 880,330
-        stroke-width 2 stroke #e6edf3 stroke-opacity 0.20 line 1140,150 1040,330"
+# The creases: down the nose, and the two that stand the ears away from the head.
+# A shade lighter than the paper, which is what stops the whole thing reading as
+# a flat silhouette.
+CREASE="stroke-width 2 stroke #e6edf3 stroke-opacity 0.28 line 960,330 960,620
+        stroke-width 2 stroke #e6edf3 stroke-opacity 0.18 line 830,185 925,335
+        stroke-width 2 stroke #e6edf3 stroke-opacity 0.18 line 1090,185 995,335"
 
 # The eyes are CUT OUT rather than drawn on: the background colour, in the shape
-# a fold would leave. Two slits at an angle, which is the whole difference
-# between a cat and a fox.
+# a fold would leave. Slanted, and set wide — the slant is most of what says cat
+# rather than kitten, and the width is most of what says cat rather than fox.
 EYES="fill #05080c fill-opacity 1
-      polygon 845,425 915,410 880,470
-      polygon 1075,425 1005,410 1040,470"
+      polygon 838,412 908,402 898,448 846,452
+      polygon 1082,412 1012,402 1022,448 1074,452
+      polygon 935,508 985,508 960,540"
+
+# WHISKERS, asked for and worth having: they are the one part nobody mistakes.
+# Drawn rather than folded, which is honest — a paper cat has them inked on too.
+WHISKERS="stroke #e6edf3 stroke-opacity 0.45 stroke-width 3 fill none
+          line 900,520 700,494
+          line 900,534 688,540
+          line 900,548 706,588
+          line 1020,520 1220,494
+          line 1020,534 1232,540
+          line 1020,548 1214,588"
 
 convert -size 1920x1080 radial-gradient:'#131c26'-'#05080c' \
   -fill "$ACCENT" -stroke none -draw "$FOLD" \
   -stroke none -draw "$EYES" \
   -fill none -draw "$CREASE" \
+  -fill none -draw "$WHISKERS" \
   -gravity center \
   -font DejaVu-Sans-Mono -pointsize 88 -fill '#e6edf3' -annotate +0+330 "$OKC_VM" \
   -font DejaVu-Sans -pointsize 30 -fill '#5b6672' -annotate +0+400 'gitogomi' \
@@ -106,6 +126,7 @@ convert -size 1920x1080 radial-gradient:'#131c26'-'#05080c' \
 || convert -size 1920x1080 radial-gradient:'#131c26'-'#05080c' \
      -fill "$ACCENT" -stroke none -draw "$FOLD" \
      -stroke none -draw "$EYES" \
+     -fill none -draw "$WHISKERS" \
      "$OUT" 2>/dev/null \
 || convert -size 1920x1080 xc:'#05080c' "$OUT" 2>/dev/null \
 || true
