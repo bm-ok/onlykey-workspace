@@ -257,13 +257,77 @@ module.exports = {
     }
   },
 
+  // THE WIRE OUT OF THE GUEST, for a boot nothing inside is alive to report.
+  //
+  // A serial port in raw-file mode needs nothing running in the guest: the
+  // kernel writes to ttyS0 from its first line, before the network, before
+  // systemd, before there is any agent to dial home — and VirtualBox copies
+  // every byte to a file here. It is the only way to watch a boot that never
+  // finishes, which is the failure that prompted it.
+  //
+  // TWO HALVES AND THIS IS ONE. Turning the port on gives an empty file until
+  // the guest is told to use it, which is a kernel command line and therefore
+  // provisioning — see provision/first-boot.sh. A machine installed before that
+  // existed has the port and says nothing through it, so this says so rather
+  // than leaving somebody watching an empty file.
+  //
+  // Off, on purpose, unless asked for. It is a file the host writes for the
+  // whole life of a machine, and a default that quietly logs everything for ever
+  // is a default nobody chose.
+  vmSerial: {
+    about: "Send a machine's console to a file on this host, so its boot can be read. The machine must be off",
+    takes: ['name', 'on'],
+    run: async ({ name, on }) => {
+      const vm = vms.get(name)
+      const want = on === undefined ? true : !(on === false || on === 'false' || on === 'no' || on === '0')
+      if (!(await vbox.isOff(name))) {
+        throw new Error(`"${name}" is running. VirtualBox will not add or remove a serial port on a running machine — stop it first, which is worth knowing before a boot you wanted to watch.`)
+      }
+
+      const file = path.join(data.sub('serial'), `${name}.log`)
+      const out = await vbox.setSerial(name, want ? file : null)
+      vms.update(name, { serial: want ? file : null })
+      log.on('vm', name)[want ? 'good' : 'info'](want ? `console is being written to ${file}` : 'console is no longer being written')
+      return {
+        ...out,
+        note: want
+          ? `"${name}" writes its console to ${file} from the next time it starts. Read it with vmLog --which serial. It stays empty unless the guest was provisioned to use ttyS0 — machines built before that need their kernel command line changed and a new base snapshot.`
+          : `"${name}" no longer writes its console anywhere. ${file} is left as it is.`
+      }
+    }
+  },
+
   vmLog: {
-    about: 'Read a machine\'s VirtualBox log, or the service log, for why it will not boot',
+    about: 'Read a machine\'s VirtualBox log, its console, or the service log, for why it will not boot',
     takes: ['name', 'which', 'lines', 'find'],
     run: async ({ name, which, lines, find }) => {
       // The service log is about VirtualBox rather than about a machine, so it
       // is readable without naming one this app made.
       if (!/^service$|VBoxSVC/i.test(String(which || ''))) vms.get(name)
+
+      // The console is a file this app chose the name of, so it is read here
+      // rather than in the machine layer — which only knows about VirtualBox's
+      // own logs.
+      if (/^serial$|^console$/i.test(String(which || ''))) {
+        const file = path.join(data.sub('serial'), `${name}.log`)
+        let text = null
+        try { text = fs.readFileSync(file, 'utf8') } catch {
+          throw new Error(`Nothing has been written to ${file}. Either the console is not being captured — vmSerial --name ${name} turns it on, with the machine off — or the guest has not been told to use ttyS0, which is a kernel command line and needs provisioning.`)
+        }
+        const all = text.split(/\r?\n/)
+        const rows = find ? all.filter(l => new RegExp(find, 'i').test(l)) : all
+        const want = Math.max(1, Math.min(Number(lines) || 200, 5000))
+        return {
+          file,
+          lines: rows.slice(-want),
+          of: all.length,
+          matched: find ? rows.length : null,
+          note: all.length <= 1
+            ? `${file} exists and is empty. The port is there and the guest is not talking through it — its kernel command line needs console=ttyS0,115200n8.`
+            : `The last ${Math.min(want, rows.length)} of ${all.length} lines the guest wrote to its console.`
+        }
+      }
+
       const out = await vbox.logRead(name, { which, lines, find })
       return {
         ...out,

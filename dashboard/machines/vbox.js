@@ -504,6 +504,38 @@ const machineFolder = async name => {
   try { return path.dirname((await info(name)).CfgFile || '') || null } catch { return null }
 }
 
+// ---- the guest's own account of its boot ---------------------------------
+//
+// THE OTHER HALF OF THE BLIND SPOT. VBox.log is the hypervisor's story: devices,
+// disks, what the host did. It has nothing to say about a guest that boots and
+// then sits there, because from outside that is a machine running perfectly.
+//
+// A serial port in raw-file mode is a wire out of the guest that needs nothing
+// running inside it. The kernel writes to ttyS0 from its first line — long
+// before the network, before systemd, before anything this app could talk to —
+// and VirtualBox copies every byte into a file on this host. That is the boot
+// this app has never been able to see.
+//
+// TWO HALVES, AND THIS IS ONLY ONE. The port has to exist (here) and the guest
+// has to be told to use it (a kernel command line, in provisioning). Either
+// alone gives an empty file, which is why the action that turns this on says so.
+//
+// Only while the machine is off: VirtualBox will not add a port to a running
+// machine, and a machine that has to be stopped to be debugged is worth knowing
+// about before rather than after.
+async function setSerial (name, file) {
+  if (!file) {
+    await run(['modifyvm', name, '--uart1', 'off'], { tags: [name] })
+    return { name, on: false, file: null }
+  }
+  try { fs.mkdirSync(path.dirname(file), { recursive: true }) } catch { /* it exists */ }
+  // 0x3f8/IRQ4 is COM1, which is what `console=ttyS0` means in the guest. Raw
+  // file rather than a pipe or a socket: a file survives the machine going away,
+  // and the whole point is reading it after a boot that never finished.
+  await run(['modifyvm', name, '--uart1', '0x3F8', '4', '--uartmode1', 'file', file], { tags: [name] })
+  return { name, on: true, file }
+}
+
 // ---- what VirtualBox itself wrote down -----------------------------------
 //
 // THE ONE ACCOUNT OF A BOOT THAT NOBODY HERE WAS WATCHING.
@@ -631,6 +663,6 @@ module.exports = {
   waitForState, waitUntilOff, waitUntilUnlocked,
   isos, bridges, hostAddress,
   start, stop, setLink, screenshot, snapshots, takeSnapshot, restoreSnapshot, deleteSnapshot, destroy,
-  logs, logRead, logFolder,
+  logs, logRead, logFolder, setSerial,
   OFF_STATES
 }
