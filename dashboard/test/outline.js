@@ -101,14 +101,21 @@ folders.forEach((folder, i) => {
   out.push(`# ${numberOf(folder)} — ${group}`, '')
   files.forEach((file, j) => {
     tests++
-    out.push(`## ${numberOf(folder)}.${numberOf(onDisk[j])} — ${file.name}`, '')
+    // ITS OWN NUMBER, NOT THE PATH TO IT. This was `00.02`, which repeats the
+    // suite number sitting three lines above and reads as a version. The file is
+    // `02` inside `00`, and the header it is under already says which 00.
+    out.push(`## ${numberOf(onDisk[j])} — ${file.name}`, '')
     file.tests.forEach((check, k) => {
       checks++
       // AN ORDERED LIST, so the numbers are markdown's rather than painted on.
       // A check has no name on disk — its number is its position in the file,
       // which is also the order it runs in, and that is exactly what an ordered
       // list means.
-      out.push(`${k + 1}. ${check.name}`)
+      //
+      // Indented by two, which shows the nesting and is still a list. FOUR would
+      // be a code block: markdown allows a block up to three spaces of
+      // indentation, and the fourth is what starts code.
+      out.push(`  ${k + 1}. ${check.name}`)
     })
     out.push('')
   })
