@@ -204,6 +204,26 @@ async function run (context = {}) {
     // storage belongs to the app.
     const keeping = !!(suite.keeps && context.stateLoad && context.stateSave)
     const state = keeping ? (context.stateLoad(suite.group, suite.name) || {}) : {}
+
+    // PICKING UP WHERE IT STOPPED, which is the point of keeping state at all.
+    //
+    // A drill that restarts the dashboard is killed by the thing it is testing.
+    // Run it again and, without this, it starts from step one — cutting a second
+    // branch, building a second machine, and proving nothing about the restart
+    // it exists to survive.
+    //
+    // So for a file that keeps state, a check that ALREADY PASSED during the run
+    // that was interrupted is carried over rather than repeated, and the series
+    // resumes at the first step that had not finished.
+    //
+    // THREE CONDITIONS, none of them optional. The file must have asked to keep
+    // state; the previous run must have been INTERRUPTED rather than merely
+    // finished, or every ordinary re-run would skip everything; and the check
+    // must be the same check, which is what the fingerprint answers. Skipping a
+    // test is the most dangerous thing a harness can do quietly, so it is
+    // reported as carried rather than as passed, and `testsForget` throws the
+    // whole lot away for anyone who wants it run from the top.
+    const carriedFrom = keeping && context.doneBefore ? context.doneBefore(suite.group, suite.name) : null
     const putItDown = () => {
       if (!keeping) return
       try { context.stateSave(suite.group, suite.name, state) } catch { /* never fails a test */ }
@@ -231,6 +251,24 @@ async function run (context = {}) {
 
       const testRes = { name: t.name, ok: false, error: null }
       const started = Date.now()
+
+      // ALREADY DONE, BEFORE THE THING THAT STOPPED IT. Reported and not run.
+      // Said out loud in the log every time, because a step that did not happen
+      // this run must never be mistaken for one that did.
+      const before = carriedFrom ? carriedFrom(t.name, fingerprint(t.fn)) : null
+      if (before && !stoppedBy) {
+        testRes.ok = true
+        testRes.carried = true
+        testRes.ms = before.ms || 0
+        testRes.at = before.at
+        results.passed++
+        results.carried = (results.carried || 0) + 1
+        log(`  KEPT ${t.name} -> passed at ${before.at}, before the run was interrupted`)
+        try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'carried' }) } catch {}
+        try { if (onTestEnd) onTestEnd({ groupName: suite.group, suiteName: suite.name, testName: t.name, result: testRes }) } catch {}
+        suiteRes.tests.push(testRes)
+        continue
+      }
 
       try { if (onTestStart) onTestStart({ groupName: suite.group, suiteName: suite.name, testName: t.name }) } catch { /* a reporter must not fail a test */ }
 
@@ -376,4 +414,4 @@ function getRegisteredSuites () {
   }))
 }
 
-module.exports = { group, describe, it, cleanup, run, assert, getRegisteredSuites, fingerprint }
+module.exports = { group, describe, it, cleanup, keep, run, assert, getRegisteredSuites, fingerprint }

@@ -49,6 +49,18 @@ const mayRun = () => settings.testsAllowed(workspaces.dir() || null)
 // folder are not shown as though they were about this one.
 const remembered = require('../core/testruns')
 
+// A RUN THAT WAS STILL GOING WHEN THIS PROCESS STARTED belonged to a process
+// that is gone — the app was restarted or killed mid-drill. Said once, here,
+// because until somebody says it the stored run claims to be running for ever
+// and nothing could tell that apart from a drill that is genuinely in flight.
+//
+// It is also what makes resuming possible: a drill that keeps its state picks up
+// where it stopped only after a run that was INTERRUPTED, never after one that
+// finished.
+if (remembered.tookOver()) {
+  log.on('test').warn('a test run was in flight when the dashboard was last stopped — it is recorded as interrupted, and a drill that keeps its state will carry on from where it stopped')
+}
+
 // Still here, and still the truth about THIS process: what is running right now
 // can only be known by the process running it. Everything durable is in the
 // store; this is the live half.
@@ -458,6 +470,12 @@ module.exports = {
       // and the one in flight is marked running: restart in the middle of a
       // half-hour drill and the board still says which step it had reached.
       remembered.claim(workspaces.dir() || null)
+
+      // ASKED BEFORE THIS RUN IS WRITTEN DOWN. `began` replaces the stored run
+      // with this one, so anything wanting to know how the LAST one ended has to
+      // ask first — otherwise the answer is always "this one, and it is fine".
+      const afterAnInterruption = !!(remembered.lastRun() || {}).interrupted
+
       remembered.began({ suite: want || null, test: one || null, check: step || null, slow: slow === true || slow === 'true' })
 
       try {
@@ -506,6 +524,30 @@ module.exports = {
             // A suite author should not have to know which half they are on.
             return Promise.resolve(found.run(args))
           },
+          // WHERE A KEEPING DRILL KEEPS ITS NOTE. Only files that called keep()
+          // are ever asked for, so nothing else pays for this.
+          stateLoad: (group, test) => remembered.loadState(group, test),
+          stateSave: (group, test, value) => remembered.saveState(group, test, value),
+
+          // AND WHAT IT HAD ALREADY DONE when it was interrupted.
+          //
+          // Handed back as a function per file, or null — null being the
+          // ordinary case, which is every run that follows a run that FINISHED.
+          // Resuming is for the drill that was killed by the restart it was
+          // testing; a re-run of a completed drill must start at the top, or a
+          // suite would go green for ever having run once.
+          doneBefore: (group, test) => {
+            if (!afterAnInterruption) return null
+            return (checkName, print) => {
+              const kept = remembered.recall(group, test, checkName, print)
+              // `changed` comes back when the fingerprint moved: the check has
+              // been edited since, so what it did then says nothing about what
+              // it would do now, and it is run again.
+              if (!kept || kept.state !== 'passed') return null
+              return kept
+            }
+          },
+
           log: line => {
             const text = String(line).trim()
             to.info(text)
