@@ -37,16 +37,38 @@ autoinstall:
   # version is an Autoinstall required field.
   version: 1
   # ---- added by the dashboard ----------------------------------------------
+  #
+  # EVERY COMMAND HERE IS A QUOTED YAML STRING, and that is not tidiness.
+  #
+  # A plain YAML scalar containing a colon followed by a space is parsed as a
+  # MAPPING, not a string. So
+  #
+  #     - echo 'okc: hello' > /dev/ttyS0
+  #
+  # is read as the key "echo 'okc" with the value "hello' > /dev/ttyS0", and
+  # early-commands becomes a list of dictionaries. subiquity says only
+  # "Malformed autoinstall in 'early-commands' section" and stops — which on
+  # screen looks like an installer sitting at a language menu, and cost three
+  # installs to find. The very first version of this block worked purely
+  # because nothing in it had a colon-space in it.
   early-commands:
-    # EVERYTHING THE INSTALLER SAYS, OUT THROUGH THE SERIAL PORT, so the host can
-    # read the whole install as a file while it happens — no network, no
-    # credentials, nothing to connect to. See vmSerial and "vmLog --which serial".
-    - sh -c 'nohup journalctl -f -o cat > /dev/ttyS0 2>&1 & true'
-    # AND SSH INTO THE INSTALLER ITSELF, for looking around rather than reading.
-    # The installer environment runs as "installer"; this authorises the same key
-    # the finished machine gets, so it is the key already at hand.
-    - sh -c 'mkdir -p /home/installer/.ssh && echo "@@OKC_SSH_KEY@@" > /home/installer/.ssh/authorized_keys && chmod 700 /home/installer/.ssh && chmod 600 /home/installer/.ssh/authorized_keys && chown -R installer:installer /home/installer/.ssh || true'
-    - sh -c 'systemctl start ssh || true'
+    # The installer says everything it does, out through the serial port, so
+    # the host can read the whole install as a file — no network, no
+    # credentials, nothing to connect to. See vmSerial and vmLog --which serial.
+    #
+    # systemd-run, not nohup and not setsid: nohup redirects to nohup.out when
+    # stdout is a tty (a serial port is one), and a backgrounded command hangs
+    # the installer, because subiquity waits for each early-command to finish.
+    # systemd-run hands it to systemd and returns.
+    - "echo 'okc: the installer journal follows, over this serial port' > /dev/ttyS0 || true"
+    - "systemd-run --unit=okc-serial --collect sh -c 'journalctl -f -o cat > /dev/ttyS0 2>&1' || true"
+    # And where to ssh to, which nothing else can say: VirtualBox only knows a
+    # guest address if the additions report one, and an installer has none.
+    - "{ echo 'okc: this installer is reachable at:'; ip -4 -o addr show scope global | awk '{print \"okc:   ssh installer@\" $4}' | cut -d/ -f1; } > /dev/ttyS0 2>&1 || true"
+    # The installer environment runs as "installer"; this authorises the same
+    # key the finished machine gets, so it is the key already at hand.
+    - "mkdir -p /home/installer/.ssh && echo '@@OKC_SSH_KEY@@' > /home/installer/.ssh/authorized_keys && chmod 700 /home/installer/.ssh && chmod 600 /home/installer/.ssh/authorized_keys && chown -R installer:installer /home/installer/.ssh || true"
+    - "systemctl start ssh || true"
   # ---- end of what the dashboard added --------------------------------------
 
   apt:

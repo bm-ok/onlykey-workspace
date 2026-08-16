@@ -116,6 +116,19 @@ async function resolveISO (wanted) {
   throw new Error(`No installer image matching "${wanted}". VirtualBox knows about: ${known.map(i => i.name).join(', ') || 'none'}`)
 }
 
+// The host-only network every machine gets a second foot in, made if there is
+// not one. VirtualBox serves DHCP on it, which is the whole point: a lease it
+// hands out is a lease it can be asked about.
+//
+// Not a preference and not per machine. One network, every machine on it, so
+// "which one is runner4 on" is never a question.
+async function hostOnlyAdapter () {
+  const have = await vbox.hostOnlyIfs()
+  if (have.length) return have[0].name
+  const made = await vbox.makeHostOnlyIf()
+  return made
+}
+
 async function pickBridge (preferred) {
   const list = await vbox.bridges()
   if (preferred) {
@@ -148,9 +161,36 @@ async function create (input) {
   to.info(`creating ${spec.name}: ${spec.cpus} cpu, ${spec.memoryMB} MB, ${Math.round(spec.diskMB / 1024)} GB disk`)
   await vbox.run(['createvm', '--name', spec.name, '--ostype', spec.ostype, '--register'], { tags: [spec.name] })
 
+  // A SECOND ADAPTER, ON A NETWORK VIRTUALBOX ITSELF SERVES, AND IT STAYS.
+  //
+  // The first one is how the machine reaches the world and this host. This one
+  // is how this host reaches the MACHINE when the first one cannot help — and
+  // the case that matters is a machine that never dials in.
+  //
+  // "What is this machine's address" has no answer today. VirtualBox keeps one,
+  // but it is REPORTED BY THE GUEST ADDITIONS, which an installer does not have
+  // and a terminal-only runner does not install. `dhcpserver findlease` knows
+  // only about networks VirtualBox serves, and a bridged machine gets its lease
+  // from the router. So a machine that will not come up is a machine with no
+  // address, which is exactly when somebody needs one.
+  //
+  // On a host-only network VirtualBox IS the DHCP server, so the lease is a fact
+  // it can be asked for, by MAC, with the machine off if need be. See vmAddress.
+  //
+  // KEPT FOR THE LIFE OF THE MACHINE rather than removed after the install: the
+  // day it is wanted is a day something has gone wrong, and a diagnostic that
+  // has to be added first is not there when it is needed. It also leaves a way
+  // in that does not touch the network the machine works on, which is worth
+  // having later for isolation.
+  const hostOnly = await hostOnlyAdapter().catch(e => {
+    to.warn(`no host-only network, so this machine will have no second way in: ${e.message}`)
+    return null
+  })
+
   const net = spec.network === 'bridged'
     ? ['--nic1', 'bridged', '--bridgeadapter1', bridge, '--nictype1', 'virtio']
     : ['--nic1', 'nat', '--nictype1', 'virtio']
+  if (hostOnly) net.push('--nic2', 'hostonly', '--hostonlyadapter2', hostOnly, '--nictype2', 'virtio')
 
   await vbox.run(['modifyvm', spec.name,
     '--memory', String(spec.memoryMB),

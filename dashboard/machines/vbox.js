@@ -263,6 +263,65 @@ async function bridges () {
   return found
 }
 
+// ---- the host-only network, and the leases on it -------------------------
+//
+// The one network VirtualBox itself serves DHCP on, which makes it the only one
+// it can be asked questions about. Everything else here is bridged: those leases
+// come from the router and VirtualBox never sees them.
+
+async function hostOnlyIfs () {
+  if (!available()) return []
+  const out = await run(['list', 'hostonlyifs'], { quiet: true })
+  const found = []
+  let current = null
+  for (const raw of out.split('\n')) {
+    const m = /^([A-Za-z]+):\s*(.*)$/.exec(raw.trim())
+    if (!m) continue
+    if (m[1] === 'Name') {
+      if (current) found.push(current)
+      current = { name: m[2].trim() }
+    } else if (current) {
+      if (m[1] === 'IPAddress') current.ip = m[2].trim()
+      if (m[1] === 'Status') current.status = m[2].trim()
+    }
+  }
+  if (current) found.push(current)
+  return found
+}
+
+// Making one, for a host that has never had a machine on it. On Windows this
+// installs a virtual adapter, which is the one operation here that can ask for
+// elevation — so the failure is passed back plainly rather than swallowed.
+async function makeHostOnlyIf () {
+  const out = await run(['hostonlyif', 'create'])
+  const named = /Interface '([^']+)' was successfully created/.exec(out)
+  if (!named) throw new Error(`VirtualBox did not say which host-only adapter it made: ${out.trim().split('\n').pop()}`)
+  const name = named[1]
+  // An address on the host's side, and a DHCP server, or a machine attached to
+  // it gets nothing and the whole point is lost.
+  await run(['hostonlyif', 'ipconfig', name, '--ip', '192.168.56.1', '--netmask', '255.255.255.0']).catch(() => {})
+  await run(['dhcpserver', 'add', '--interface', name,
+    '--server-ip', '192.168.56.100', '--netmask', '255.255.255.0',
+    '--lower-ip', '192.168.56.101', '--upper-ip', '192.168.56.254', '--enable']).catch(() => {})
+  return name
+}
+
+// WHAT ADDRESS A MACHINE HAS, asked of the DHCP server rather than of the guest.
+//
+// This works with the machine mid-install, wedged, or with no guest additions —
+// which is exactly when nothing else can answer. The lease is looked up by the
+// MAC of the machine's second adapter, which is on the host-only network.
+async function leaseFor (name, mac) {
+  const nets = await run(['list', 'dhcpservers'], { quiet: true })
+  const network = (/NetworkName:\s*(HostInterfaceNetworking-.*)/.exec(nets) || [])[1]
+  if (!network) return null
+  // VBoxManage wants the MAC as it prints it in showvminfo: 12 hex digits.
+  const out = await run(['dhcpserver', 'findlease', '--network', network.trim(), '--mac-address', mac], { quiet: true })
+    .catch(() => '')
+  const ip = (/IP Address:\s*([0-9.]+)/i.exec(out) || [])[1]
+  return ip || null
+}
+
 // The address a guest must use to reach this dashboard.
 async function hostAddress () {
   const up = (await bridges()).filter(b => b.status === 'Up' && b.ip && !b.ip.startsWith('169.254'))
@@ -661,7 +720,7 @@ module.exports = {
   available, exe, run, retrying,
   listAll, runningAll, info, exists, state, isOff,
   waitForState, waitUntilOff, waitUntilUnlocked,
-  isos, bridges, hostAddress,
+  isos, bridges, hostOnlyIfs, makeHostOnlyIf, leaseFor, hostAddress,
   start, stop, setLink, screenshot, snapshots, takeSnapshot, restoreSnapshot, deleteSnapshot, destroy,
   logs, logRead, logFolder, setSerial,
   OFF_STATES

@@ -277,6 +277,58 @@ module.exports = {
     }
   },
 
+  // WHERE A MACHINE IS, WHEN IT CANNOT SAY SO ITSELF.
+  //
+  // Three answers, in order of how much they can be trusted, and the point is
+  // that the last one works when the first two are impossible:
+  //
+  //   dialled in    the machine told us, over its own channel. Best, and gone
+  //                 the moment anything is wrong.
+  //   last seen     what it said the last time it dialled in. A memory, and it
+  //                 may be somebody else's address by now.
+  //   its lease     VirtualBox's own DHCP server, on the host-only network every
+  //                 machine has a second foot in. Answerable while the machine
+  //                 is INSTALLING, wedged, or has no guest additions — which is
+  //                 exactly when the other two have nothing.
+  //
+  // The guest additions' own answer is deliberately not used: it needs the
+  // additions, and a terminal-only runner does not have them.
+  vmAddress: {
+    about: "Where a machine is: what it says, what it last said, and the lease VirtualBox gave it",
+    takes: ['name'],
+    run: async ({ name }) => {
+      const vm = vms.get(name)
+      const live = channel.list().find(a => a.vm === name)
+      const said = live && live.from ? String(live.from).split(':')[0] : null
+
+      // The second adapter's MAC, which is the one on the host-only network.
+      let lease = null
+      let mac = null
+      try {
+        const info = await vbox.info(name)
+        mac = info.macaddress2 || null
+        if (mac) lease = await vbox.leaseFor(name, mac)
+      } catch { /* said below */ }
+
+      const reachable = said || lease || vm.lastAddress || null
+      return {
+        name,
+        dialledIn: said,
+        lease,
+        lastSeen: vm.lastAddress || null,
+        mac,
+        reachable,
+        note: said
+          ? `"${name}" is dialled in from ${said}. Its host-only lease is ${lease || 'not held'}.`
+          : lease
+            ? `"${name}" is not dialled in, but VirtualBox has given it ${lease} on the host-only network — ssh ${vm.spec && vm.spec.user ? vm.spec.user : 'okc'}@${lease}, or installer@${lease} while it is installing.`
+            : vm.lastAddress
+              ? `"${name}" is not dialled in and holds no lease. The last address it had was ${vm.lastAddress}, which may be somebody else's by now.`
+              : `Nothing knows where "${name}" is. It has never dialled in and holds no host-only lease — if it is running, it has not got as far as a network.`
+      }
+    }
+  },
+
   // WHAT VIRTUALBOX ITSELF RECORDED, for a machine that will not come up.
   //
   // Between "start it" and "it dialled in" this app has been blind: no agent
