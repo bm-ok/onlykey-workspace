@@ -1,7 +1,15 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 7 suites, 17 tests, 76 checks -->
+<!-- 8 suites, 18 tests, 79 checks -->
 
-# 00 — the order
+# 00 — what this host has
+
+## 00 — before anything else
+
+  1. a folder of repositories is open
+  2. and drills are allowed to run here
+  3. and a GitHub token that still works
+
+# 01 — the order
 
 ## 00 — a cut comes first
 
@@ -35,32 +43,6 @@
   9. and the branch it came from is taken off the fork
   10. and nothing is left behind here
 
-# 01 — the guards
-
-*stands on the order and the machines*
-
-## 00 — a task cannot be written wrong
-
-  1. a task with nowhere to deliver is refused
-  2. a cut to write the rest of these against
-  3. a contract that is not there is refused
-
-## 01 — a verdict is about something
-
-  1. an empty cut, and a task delivering on it
-  2. a verdict on a branch with nothing on it is refused
-  3. a rejection with no reason is refused
-
-## 02 — a machine is not asked to lose work
-
-  1. a machine holding a credential cannot be snapshotted
-  2. a signed-out machine is not given work
-
-## 03 — one machine per branch
-
-  1. a machine is not moved off the branch it is on
-  2. a branch already claimed is not handed to a second machine
-
 # 02 — the refusals
 
 ## 00 — approving is refused over the wire
@@ -86,7 +68,24 @@
   1. a machine that is not dialled in cannot be given a workspace
   2. a branch nobody has is not a branch to sync
 
-# 03 — the machines
+# 03 — building a machine
+
+## 00 — from an iso to a machine that answers
+
+  1. there is an ISO to install from, and this was asked for
+  2. a machine is defined, and it is only defined
+  3. its console is captured before anything boots
+  4. the installer boots and says so on the console
+  5. and it writes a system onto the disk
+  6. and it gets far enough to hand over to what it installed
+  7. and provisioning runs on that first boot
+  8. and the first boot starts the agent that dials home
+  9. and it dials in
+  10. and the install is on the record afterwards
+  11. and it is a machine this app can use
+  12. and it can be thrown away completely
+
+# 05 — the machines
 
 *stands on building a machine*
 
@@ -107,7 +106,7 @@
   6. and a second machine, dialled in, is not handed the same branch
   7. and it goes away clean
 
-# 04 — provisioning
+# 06 — provisioning
 
 *stands on the machines*
 
@@ -118,24 +117,33 @@
   3. and the change made to it is in there
   4. and a live machine fetching it gets the same thing
 
-# 05 — building a machine
+# 07 — the guards
 
-## 00 — from an iso to a machine that answers
+*stands on the order and the machines*
 
-  1. there is an ISO to install from, and this was asked for
-  2. a machine is defined, and it is only defined
-  3. its console is captured before anything boots
-  4. the installer boots and says so on the console
-  5. and it writes a system onto the disk
-  6. and it gets far enough to hand over to what it installed
-  7. and provisioning runs on that first boot
-  8. and the first boot starts the agent that dials home
-  9. and it dials in
-  10. and the install is on the record afterwards
-  11. and it is a machine this app can use
-  12. and it can be thrown away completely
+## 00 — a task cannot be written wrong
 
-# 06 — a task on a machine
+  1. a task with nowhere to deliver is refused
+  2. a cut to write the rest of these against
+  3. a contract that is not there is refused
+
+## 01 — a verdict is about something
+
+  1. an empty cut, and a task delivering on it
+  2. a verdict on a branch with nothing on it is refused
+  3. a rejection with no reason is refused
+
+## 02 — a machine is not asked to lose work
+
+  1. a machine holding a credential cannot be snapshotted
+  2. a signed-out machine is not given work
+
+## 03 — one machine per branch
+
+  1. a machine is not moved off the branch it is on
+  2. a branch already claimed is not handed to a second machine
+
+# 08 — a task on a machine
 
 *stands on the machines and the order*
 
