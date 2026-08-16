@@ -655,16 +655,27 @@ module.exports = {
           if (!groups.has(file.group)) groups.set(file.group, [])
           groups.get(file.group).push(file)
         }
+        // A CARRIED STEP DID NOT RUN, and counting it as one would make this
+        // whole mechanism lie in the most convenient direction.
+        //
+        // A run that continued from a failure has, by definition, not run the
+        // series: some of it is being taken on trust from an earlier run, in an
+        // order nobody chose, possibly against a fix that changed what the
+        // earlier steps would now do. The results are worth keeping and the
+        // WHOLE is not established — which is exactly what dirty means, and
+        // exactly the state that says "run it properly before you believe it".
         for (const [group, files] of groups) {
           let everyFileWhole = true
           for (const file of files) {
             const ran = (results.suites || []).find(s => s.group === group && s.name === file.name)
             const attempted = ran ? ran.tests.length : 0
-            if (attempted === file.tests.length) {
+            const carried = ran ? ran.tests.filter(t => t.carried).length : 0
+            const wholeAndFresh = attempted === file.tests.length && carried === 0
+            if (wholeAndFresh) {
               remembered.ranWhole(remembered.wholeOf(group, file.name))
             } else {
               everyFileWhole = false
-              // Only if something in it ran. A file nobody asked for is
+              // Only if something in it happened. A file nobody asked for is
               // untouched, not disturbed.
               if (attempted) remembered.dirty(remembered.wholeOf(group, file.name))
             }

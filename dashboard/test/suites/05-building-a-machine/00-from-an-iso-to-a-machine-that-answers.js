@@ -365,3 +365,71 @@ cleanup(async ({ okc, state }) => {
   // this never ran, and the machine is still sitting there installing.
   for (const k of Object.keys(state)) delete state[k]
 })
+
+// WHAT IT SAW — 16 August 2026, 15:34, all twelve passed
+//
+//   there is an ISO to install from, and this was asked for
+//     installing "drill-vm-153413" from
+//     C:\Users\bmatu\Downloads\ubuntu-24.04.4-live-server-amd64.iso
+//
+//   a machine is defined, and it is only defined
+//     defined: 4096 MB, 3 cpus, a 40 GB disk — stage "created", no base
+//     snapshot, nothing installed
+//
+//   its console is captured before anything boots
+//     its console will be written to ...\okc-dashboard\serial\drill-vm-153413.log
+//
+//   the installer boots and says so on the console
+//     the installer is talking after 42s: okc: the installer journal follows,
+//     over this serial port
+//
+//   and it writes a system onto the disk
+//     curtin is running 0 minutes in: Started run-u20.service -
+//     /snap/subiquity/7020/usr/bin/python3.10 -m curtin --showtrace -vvv ...
+//
+//   and it gets far enough to hand over to what it installed
+//     it installed and rebooted into what it installed, 4 minutes after the
+//     installer started
+//     BOOT_IMAGE=/boot/vmlinuz-6.8.0-100-generic root=UUID=f7ff4a71-...
+//     ro console=tty0 console=ttyS0,115200n8
+//
+//   and provisioning runs on that first boot
+//     okc: running toolchain.sh as root
+//
+//   and the first boot starts the agent that dials home
+//     [  OK  ] Started okc-agent.service - Dial the dashboard and stay connected.
+//
+//   and it dials in
+//     installed unattended and dialled in 5 minutes after it was asked for
+//     it says it is: Linux 6.8.0-100-generic
+//
+//   and the install is on the record afterwards
+//     kept: serial (4675 lines)
+//      639 line(s) — the installer ran
+//      259 line(s) — it wrote the system to disk
+//        2 line(s) — it booted what it installed
+//        8 line(s) — provisioning ran
+//        1 line(s) — the agent started
+//
+//   and it is a machine this app can use
+//     it answers commands, is stage "ready", and has a base snapshot ("base")
+//
+//   and it can be thrown away completely
+//     "drill-vm-153413" is gone, disks and all
+//
+// FIVE MINUTES, not the half hour this file warns about. That warning was
+// written from the desktop image, where the install really did take twenty-five;
+// the server image with no desktop is a different thing entirely, and the number
+// in a transcript is how that gets noticed rather than repeated for another year.
+//
+// THE COUNTS AT THE END ARE THE POINT OF THE WHOLE FILE. 639 lines of installer,
+// 259 of curtin writing the disk, 8 of this project's own provisioning and 1
+// starting the agent — kept on this host after the machine that wrote them has
+// been deleted. Before the console was captured, an install was twenty-five
+// minutes of silence ending in a machine that either did or did not dial in, and
+// every question about what happened in between was unanswerable.
+//
+// The kernel is 6.8.0-100 here and was 6.8.0-137 on the run before it: the ISO
+// installs what it shipped with and the older machines have since been updated.
+// Worth knowing before somebody assumes a fresh machine matches the running
+// ones.

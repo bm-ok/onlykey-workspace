@@ -161,11 +161,16 @@ function ranWhole (what) {
 function dirty (what) {
   const held = read()
   const was = held.wholes[what]
-  // Only a whole that HAS run can be dirtied. Marking one that has never run
-  // would turn "never tried" into "tried and then disturbed", which is a
-  // stronger claim than anything that happened.
-  if (!was) return
-  held.wholes[what] = { ...was, dirty: true }
+  // `at` is WHEN IT LAST RAN WHOLE, and null means never. Dirty is recorded
+  // either way: something under this has been run on its own, which is worth
+  // saying whether or not the whole was ever established.
+  //
+  // It was written the other way at first — refusing to dirty something that had
+  // never run whole, so that "never tried" could not be dressed up as "tried and
+  // then disturbed". That is right for a suite nobody has touched, and wrong the
+  // moment a run CARRIES steps: such a run has partly run, has not established
+  // the whole, and leaving no record at all would report it as untouched.
+  held.wholes[what] = { at: was ? was.at : null, dirty: true }
   write()
 }
 
