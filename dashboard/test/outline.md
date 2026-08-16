@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 8 suites, 18 tests, 75 checks -->
+<!-- 10 suites, 20 tests, 82 checks -->
 
 # 00 — what this host has
 
@@ -81,6 +81,16 @@
   7. and both answer, with somewhere to be put back to
   8. and the install of each is on the record
 
+# 04 — a worker credential
+
+*stands on the machines are built*
+
+## 00 — a worker can sign in
+
+  1. this host holds a worker credential
+  2. and it has not expired past refreshing
+  3. and a machine can really sign in with it
+
 # 05 — the machines
 
 *stands on building a machine*
@@ -153,3 +163,14 @@
   6. and what it did came back here
   7. and the machine was put away clean
   8. and judging it is refused, because this worker pushed nothing
+
+# 09 — cooling the host
+
+*stands on the machines are built*
+
+## 00 — the host is left as it was found
+
+  1. this was asked for
+  2. nothing of the kit's is still holding anything
+  3. and the kit's machines are removed, disks and all
+  4. and nothing the drills made is left on this host

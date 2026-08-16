@@ -508,8 +508,8 @@ module.exports = {
   // world underneath them is gone would be the most confident kind of wrong.
   suiteRun: {
     about: 'Run everything, one suite, one test in it, or one check of that test. Pass slow for the drills that build a machine, or continue to carry what has already passed',
-    takes: ['suite', 'test', 'check', 'slow', 'continue'],
-    run: async ({ suite, test, check, slow, continue: carryOn }) => {
+    takes: ['suite', 'test', 'check', 'slow', 'continue', 'teardown'],
+    run: async ({ suite, test, check, slow, continue: carryOn, teardown }) => {
       // REFUSED HERE, at the only door that runs a test. The window disables the
       // buttons too, and that is a courtesy — this is the boundary, and it is
       // the one a drill reached from the command line meets as well.
@@ -584,6 +584,14 @@ module.exports = {
           // go green. A drill that needs it asks with assert.needs, so it
           // reports "could not be tried" and says how to try it.
           slow: slow === true || slow === 'true',
+          // WHETHER TO COOL THE HOST DOWN, and it is off unless asked for.
+          //
+          // Separate from `slow` because they are opposite kinds of expensive.
+          // Slow is "this takes twenty minutes"; teardown is "this UNDOES the
+          // twenty minutes somebody already spent". While anybody is working on
+          // this app the machines want to stay standing, and the run that takes
+          // them away should be one somebody chose.
+          teardown: teardown === true || teardown === 'true',
           // AND THE SAME HANDLE A JOB IS GIVEN, by the same name. The drills
           // that used to live in tasks/planned.js were written against `okc`,
           // and they are worth porting back rather than rewriting — the value
