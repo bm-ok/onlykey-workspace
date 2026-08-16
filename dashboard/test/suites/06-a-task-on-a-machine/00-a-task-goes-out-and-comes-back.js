@@ -20,8 +20,22 @@
 // a credential, and prove less — whether a worker writes good code is not a
 // question this suite can answer.
 
-const { it, cleanup } = require('../../../tasks/harness')
+const { it, cleanup, requires } = require('../../../tasks/harness')
 const { scratch, aLine } = require('../../helpers')
+
+// WHAT THIS SUITE STANDS ON, and it stands on two separate things at once.
+//
+// The machines, obviously: a task that goes out to a machine means nothing if
+// machines do not come up, claim a branch and go away clean. And the order,
+// which is the half people forget — before any machine is involved this cuts a
+// branch and writes a task on it, and if THAT is in doubt then a green result
+// here is measuring something nobody has established.
+//
+// Neither of them needs this one. Machines come up whether or not anything gives
+// them work; the order of the work holds whether or not a machine ever runs it.
+// So disturbing either of those marks this dirty, and disturbing this marks
+// neither of them.
+requires('the machines', 'the order')
 
 const JOB = 'api-tour'
 
@@ -153,7 +167,18 @@ it('and the machine was put away clean', async ({ okc, assert, state, log }) => 
   assert.ok(state.put, `${state.machine} still claims a branch or is still running, five minutes after the work ended`)
   assert.ok(!state.put.borrowed, `${state.machine} was left borrowed`)
   log(`${state.machine}: ${state.put.state}, on "${state.put.baseSnapshot}", claiming nothing, holding nothing`)
-}, { minutes: 10 })
+  // AND IF THIS FAILS, IT IS NOT ONLY THIS SUITE'S PROBLEM.
+  //
+  // Putting a machine back to base is the machines' own claim — "a machine at
+  // rest is at rest", "and it goes away clean" — and this is the only place it
+  // is watched happening at the END OF REAL WORK rather than after a drill that
+  // borrowed a machine and did nothing with it. A failure here does not make the
+  // machines suite stale, it contradicts it, so it is marked dirty from here.
+  //
+  // The other direction is declared at the top of this file: this suite REQUIRES
+  // the machines, so machine dirt makes these results stale in turn. Same edge,
+  // read from both ends, and both are true.
+}, { minutes: 10, dirties: 'the machines' })
 
 it('and judging it is refused, because this worker pushed nothing', async ({ okc, assert, state, log }) => {
   // NOT THE CHECK THIS WAS WRITTEN AS, and the change is the app being right.

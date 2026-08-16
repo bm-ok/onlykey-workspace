@@ -42,6 +42,7 @@ const harness = require('../tasks/harness')
 load()
 
 const suites = harness.getRegisteredSuites()
+const declared = harness.requirements()
 
 // A folder is a suite, a file is a test, an it() is a check — and the harness
 // speaks in its ported words, where `group` is the folder and `name` is the
@@ -99,6 +100,13 @@ folders.forEach((folder, i) => {
   // the file — which renders as a suite subordinate to the tests inside it, and
   // an indented `#` is barely a header at all.
   out.push(`# ${numberOf(folder)} — ${group}`, '')
+
+  // WHAT IT STANDS ON, if anything. Here as well as in the window because a
+  // requires() lives in one file of a suite and could be lost in a rename
+  // without anything complaining — and a dependency that quietly disappears
+  // stops dirt spreading to the suites that were relying on it, silently.
+  const standsOn = declared[group] || []
+  if (standsOn.length) out.push(`*stands on ${standsOn.join(' and ')}*`, '')
   files.forEach((file, j) => {
     tests++
     // ITS OWN NUMBER, NOT THE PATH TO IT. This was `00.02`, which repeats the

@@ -12,7 +12,16 @@
 // is never picked up again — and a queue that has stopped handing work out looks
 // exactly like a queue with nothing to do. That failure has happened here twice.
 
-const { it } = require('../../../tasks/harness')
+const { it, requires } = require('../../../tasks/harness')
+
+// THE GROUND FLOOR OF THE MACHINE HALF, and it rests on one thing: that a
+// machine can be built at all. Every check in this suite uses a machine that
+// exists, is installed, and has a base snapshot — which is what "building a
+// machine" is about, and nothing here would mean anything if that were in doubt.
+//
+// It requires nothing else. This suite is what the others stand on, not the
+// other way round.
+requires('building a machine')
 
 // WHAT IT SAW LAST TIME is recorded at the bottom of this file. It is the state
 // of this host at that moment rather than a rule, which is exactly what makes it

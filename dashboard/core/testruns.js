@@ -154,7 +154,37 @@ function recall (group, test, check, fingerprint) {
 
 function ranWhole (what) {
   const held = read()
+  // A CLEAN WHOLE RUN IS THE ONLY THING THAT CLEARS EITHER MARK. Dirty says the
+  // claim is stale; disproved says it was contradicted. Running the suite is
+  // what settles both, and nothing else is allowed to.
   held.wholes[what] = { at: new Date().toISOString(), dirty: false }
+  write()
+}
+
+// CONTRADICTED FROM OUTSIDE, which is stronger than stale.
+//
+// Some checks carry evidence about somebody else's suite. A task drill that
+// cannot put its machine back to base has not made "a machine goes away clean"
+// out of date — it has shown it to be false, at the end of real work, which is
+// harder evidence than the machines suite gathers about itself.
+//
+// So the suite reads as FAILED rather than merely wanting a re-run, and it says
+// which check did it. A red mark that cannot name its cause is one somebody
+// clears out of irritation.
+function disprove (what, by) {
+  const held = read()
+  const was = held.wholes[what]
+  held.wholes[what] = {
+    at: was ? was.at : null,
+    dirty: true,
+    disprovedBy: {
+      at: new Date().toISOString(),
+      suite: (by && by.suite) || null,
+      test: (by && by.test) || null,
+      check: (by && by.check) || null,
+      why: (by && by.why) || null
+    }
+  }
   write()
 }
 
@@ -170,7 +200,12 @@ function dirty (what) {
   // then disturbed". That is right for a suite nobody has touched, and wrong the
   // moment a run CARRIES steps: such a run has partly run, has not established
   // the whole, and leaving no record at all would report it as untouched.
-  held.wholes[what] = { at: was ? was.at : null, dirty: true }
+  //
+  // AND IT KEEPS A CONTRADICTION. This wrote a fresh record at first, which
+  // dropped `disprovedBy` — so a suite that had been shown to be false went
+  // quietly back to merely stale the next time anything dirtied it, which on a
+  // busy board is minutes. Only a clean whole run withdraws a contradiction.
+  held.wholes[what] = { at: was ? was.at : null, dirty: true, ...(was && was.disprovedBy ? { disprovedBy: was.disprovedBy } : {}) }
   write()
 }
 
@@ -277,6 +312,6 @@ function forget ({ group, test, check } = {}) {
 module.exports = {
   FILE, keyOf, wholeOf, tookOver, forWorkspace, claim,
   remember, recall, ranWhole, dirty, wholeState,
-  saveState, loadState, forgetState,
+  saveState, loadState, forgetState, disprove,
   began, ended, lastRun, forget
 }

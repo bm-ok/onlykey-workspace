@@ -6,8 +6,14 @@
 // what one arranges the next one uses. See test/suites/index.js for what the
 // folder, the file and the checks each mean.
 
-const { it, cleanup } = require('../../../tasks/harness')
+const { it, cleanup, requires } = require('../../../tasks/harness')
 const { scratch, aLine } = require('../../helpers')
+
+// The guards are refusals about tasks written on cuts, and half of them need a
+// machine that is working. Both of those are somebody else's ground: the order
+// establishes that a task is written on a cut at all, and the machines establish
+// that one can be at work to be refused.
+requires('the order', 'the machines')
 
 // WHAT IT SAW LAST TIME is recorded at the bottom of this file. See
 // 00-the-order/00-a-cut-comes-first.js for why the transcript is kept at all —

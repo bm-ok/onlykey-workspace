@@ -37,6 +37,8 @@
 
 # 01 — the guards
 
+*stands on the order and the machines*
+
 ## 00 — a task cannot be written wrong
 
   1. a task with nowhere to deliver is refused
@@ -86,6 +88,8 @@
 
 # 03 — the machines
 
+*stands on building a machine*
+
 ## 00 — a machine at rest
 
   1. every machine this app made is known to it
@@ -104,6 +108,8 @@
   7. and it goes away clean
 
 # 04 — provisioning
+
+*stands on the machines*
 
 ## 00 — a change reaches a machine
 
@@ -130,6 +136,8 @@
   12. and it can be thrown away completely
 
 # 06 — a task on a machine
+
+*stands on the machines and the order*
 
 ## 00 — a task goes out and comes back
 

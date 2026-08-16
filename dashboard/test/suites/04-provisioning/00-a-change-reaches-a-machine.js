@@ -17,9 +17,15 @@
 // credentials, which is the only way to prove the endpoint works for the caller
 // that matters — this host asking itself proves nothing about a guest's token.
 
-const { it, cleanup } = require('../../../tasks/harness')
+const { it, cleanup, requires } = require('../../../tasks/harness')
 const fs = require('node:fs')
 const path = require('node:path')
+
+// It borrows a machine and asks it to fetch a script with its own credentials,
+// so the last and only conclusive check here rests on machines coming up and
+// going away cleanly. The first three do not — they are this host reading its
+// own files — but a suite is dirty as a whole or not at all.
+requires('the machines')
 
 // Read from the repository rather than from the app, because the whole claim is
 // that these two agree.

@@ -35,6 +35,36 @@ const suites = []
 let currentSuite = null
 let currentGroup = null
 
+// WHAT A SUITE'S CLAIMS REST ON.
+//
+// The suites are not independent. "A task goes out to a machine and comes back"
+// is only meaningful if machines come up and go away cleanly; if that has been
+// disturbed, the task result is standing on something nobody has re-established.
+// The other direction is not true — machines work whether or not anything ever
+// gives them a task — so this is a one-way relationship and has to be declared
+// rather than guessed.
+//
+// Declared BY the suite that depends, naming what it depends on, because that is
+// the direction somebody writing a drill knows: they can see what their own test
+// needs, and they cannot see who will come to need them.
+// Not `needs`, which is already the assertion a check uses to say a precondition
+// was not met. Two different ideas one word apart: `needs` is about this moment,
+// `standsOn` is about the suites.
+const standsOn = new Map()
+
+function requires (...names) {
+  if (!currentGroup) throw new Error('requires() must be called inside a suite')
+  const has = standsOn.get(currentGroup) || new Set()
+  for (const n of names) has.add(String(n))
+  standsOn.set(currentGroup, has)
+}
+
+const requirements = () => {
+  const out = {}
+  for (const [group, has] of standsOn) out[group] = [...has]
+  return out
+}
+
 // The folder, wrapped around the requires of everything in it. Exactly the same
 // device as describe/it one level up: set, run, unset in a finally.
 function group (name, fn) {
@@ -75,9 +105,31 @@ function describe (name, fn) {
 // all. "Building a machine" asks for `slow` and the checks after it build one —
 // so with the gate unmet they carried on, made a machine with no installer
 // image, and reported a FAILURE about a drill nobody had asked to run.
-function it (name, fn, { minutes = 0, gate = false } = {}) {
+// `dirties` IS THE OTHER DIRECTION, and it is a different claim from requires().
+//
+// requires() says what a suite STANDS ON: disturb the machines and every suite
+// resting on them is stale, because their results were established on top of
+// something nobody has re-established.
+//
+// This says what a check DISPROVES when it fails. A task returns its machine to
+// base when it is done — so the check that watches a machine be put away clean
+// is, incidentally, the strongest evidence anybody has that machines go away
+// clean at all. If that fails, "the machines" has not gone stale; it has been
+// contradicted, by a suite that stands on it.
+//
+// Which is why it is per CHECK and not per suite. Most of a task drill says
+// nothing about machines — a task written on the wrong branch is nobody else's
+// business — and only the steps that actually exercise somebody else's ground
+// get to say anything about it.
+function it (name, fn, { minutes = 0, gate = false, dirties = null } = {}) {
   if (!currentSuite) throw new Error('it() must be called inside describe()')
-  currentSuite.tests.push({ name, fn, gate, timeoutMs: minutes > 0 ? Math.round(minutes * 60000) : 0 })
+  currentSuite.tests.push({
+    name,
+    fn,
+    gate,
+    dirties: dirties ? (Array.isArray(dirties) ? dirties.map(String) : [String(dirties)]) : null,
+    timeoutMs: minutes > 0 ? Math.round(minutes * 60000) : 0
+  })
 }
 
 // WHAT TO UNDO WHEN THE SERIES IS OVER, however it ends.
@@ -335,6 +387,9 @@ async function run (context = {}) {
         testRes.ok = false
         testRes.ms = Date.now() - started
         testRes.error = e && (e.stack || e.message || String(e))
+        // WHAT THIS FAILURE CONTRADICTS, carried on the result so whatever is
+        // keeping score can act on it. See `dirties` on it().
+        if (t.dirties) testRes.dirties = t.dirties
         try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'failed', error: testRes.error }) } catch { /* as above */ }
         results.failed++
         stoppedBy = t.name
@@ -414,4 +469,4 @@ function getRegisteredSuites () {
   }))
 }
 
-module.exports = { group, describe, it, cleanup, keep, run, assert, getRegisteredSuites, fingerprint }
+module.exports = { group, describe, it, cleanup, keep, requires, requirements, run, assert, getRegisteredSuites, fingerprint }

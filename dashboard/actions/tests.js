@@ -168,6 +168,57 @@ module.exports = {
         group.ranWhole = whole ? whole.at : null
         group.dirty = !!(whole && whole.dirty) || group.tests.some(t => t.dirty)
         group.state = worst(group.tests.flatMap(t => t.checks))
+
+        // CONTRADICTED BY SOMEBODY ELSE'S CHECK, and it reads as failed.
+        //
+        // Not amber. A machine that was not put back to base at the end of real
+        // work is evidence AGAINST "a machine goes away clean" — harder evidence
+        // than this suite gathers about itself, because it was collected doing
+        // the thing rather than rehearsing it. Reporting that as "wants running
+        // again" would be the politest possible way to bury it.
+        //
+        // It survives a restart and is cleared only by running the suite and
+        // passing, which is the whole point: the claim was contradicted, so the
+        // claim has to be made again.
+        if (whole && whole.disprovedBy) {
+          group.state = 'failed'
+          group.disprovedBy = whole.disprovedBy
+        }
+      }
+
+      // AND DIRT SPREADS TO WHATEVER STANDS ON IT.
+      //
+      // The suites are not independent claims. "A task goes out to a machine and
+      // comes back" rests on machines coming up and going away cleanly; disturb
+      // that and the task result is standing on something nobody has
+      // re-established. Not the other way round — machines work whether or not
+      // anything gives them a task — so this walks one way only, along what each
+      // suite has declared it requires.
+      //
+      // It says WHICH suite did it rather than only that something did. "Dirty"
+      // on its own is a colour; "dirty because the machines are" is the sentence
+      // that tells somebody what to run.
+      //
+      // Transitive, and the loop is bounded by the number of suites rather than
+      // trusting the graph to be acyclic — a requires() written in a circle would
+      // otherwise hang the tab that is only trying to draw a list.
+      const declared = harness.requirements()
+      for (const group of byGroup) group.requires = declared[group.name] || []
+      for (let pass = 0; pass < byGroup.length; pass++) {
+        let moved = false
+        for (const group of byGroup) {
+          if (group.dirty) continue
+          const under = group.requires
+            .map(name => byGroup.find(g => g.name === name))
+            .filter(Boolean)
+            .filter(g => g.dirty)
+          if (under.length) {
+            group.dirty = true
+            group.dirtyBecause = under.map(g => g.name)
+            moved = true
+          }
+        }
+        if (!moved) break
       }
 
       return {
@@ -598,6 +649,20 @@ module.exports = {
           // so that line lands with the test it is about rather than with
           // whatever runs next.
           onTestEnd: ({ groupName, suiteName, testName, result }) => {
+            // A CHECK THAT FAILED AND SAID WHAT IT DISPROVES. A task drill that
+            // cannot put its machine back has contradicted "a machine goes away
+            // clean", which is another suite's claim — so that suite is marked
+            // dirty here, from underneath, by the run that found it out.
+            for (const other of (result.dirties || [])) {
+              remembered.disprove(remembered.wholeOf(other), {
+                suite: groupName,
+                test: suiteName,
+                check: testName,
+                why: result.error ? String(result.error).split('\n')[0] : null
+              })
+              to.bad(`"${testName}" failed, which contradicts "${other}" — that suite now reads as failed until it is run again and passes`)
+            }
+
             remembered.remember(groupName, suiteName, testName, {
               state: result.ok === true ? 'passed' : result.ok === null ? 'unrunnable' : 'failed',
               ms: result.ms,
