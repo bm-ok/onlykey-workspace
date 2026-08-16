@@ -416,10 +416,35 @@ module.exports = {
     }
   },
 
+  // FIXING ONE STEP AND CARRYING ON FROM IT.
+  //
+  // The way a long series is actually worked on. Step seven of ten fails; the
+  // fault is understood and fixed; and the last thing anybody wants is to build
+  // the machine again to find out whether step eight works. So:
+  //
+  //     suiteRun --suite X --test Y --check "the step that failed"
+  //     ... it passes, and somebody decides they believe it ...
+  //     suiteRun --suite X --test Y --continue true
+  //
+  // The second call carries every step that has passed — including the one just
+  // fixed — and runs from the first that has not. The state the earlier steps
+  // built is loaded from disk, so the step it resumes at still sees the branch
+  // that was cut and the machine that was borrowed.
+  //
+  // ASKED FOR, NOT AUTOMATIC, and that is the whole difference between this and
+  // resuming after an interruption. A restart is not a decision anybody made, so
+  // a keeping drill picks itself up. A FAILURE is a judgement call — the run
+  // that comes after it should start from the top unless a person says
+  // otherwise, or "it passes now" quietly comes to mean "it passed once, in
+  // pieces, in an order nobody chose".
+  //
+  // It needs the file to have called keep(). Without stored state there is
+  // nothing for a later step to resume INTO, and carrying results while the
+  // world underneath them is gone would be the most confident kind of wrong.
   suiteRun: {
-    about: 'Run everything, one suite, one test in it, or one check of that test. Pass slow for the drills that build a machine',
-    takes: ['suite', 'test', 'check', 'slow'],
-    run: async ({ suite, test, check, slow }) => {
+    about: 'Run everything, one suite, one test in it, or one check of that test. Pass slow for the drills that build a machine, or continue to carry what has already passed',
+    takes: ['suite', 'test', 'check', 'slow', 'continue'],
+    run: async ({ suite, test, check, slow, continue: carryOn }) => {
       // REFUSED HERE, at the only door that runs a test. The window disables the
       // buttons too, and that is a courtesy — this is the boundary, and it is
       // the one a drill reached from the command line meets as well.
@@ -475,6 +500,9 @@ module.exports = {
       // with this one, so anything wanting to know how the LAST one ended has to
       // ask first — otherwise the answer is always "this one, and it is fine".
       const afterAnInterruption = !!(remembered.lastRun() || {}).interrupted
+      // Asked for by a person who has looked at the last run and decided they
+      // believe it. See the note above this action.
+      const asked = carryOn === true || carryOn === 'true'
 
       remembered.began({ suite: want || null, test: one || null, check: step || null, slow: slow === true || slow === 'true' })
 
@@ -537,7 +565,7 @@ module.exports = {
           // testing; a re-run of a completed drill must start at the top, or a
           // suite would go green for ever having run once.
           doneBefore: (group, test) => {
-            if (!afterAnInterruption) return null
+            if (!afterAnInterruption && !asked) return null
             return (checkName, print) => {
               const kept = remembered.recall(group, test, checkName, print)
               // `changed` comes back when the fingerprint moved: the check has
@@ -646,7 +674,14 @@ module.exports = {
         }
         remembered.ended({ passed: results.passed, failed: results.failed, unrunnable: results.unrunnable })
 
-        const note = `${results.passed} passed, ${results.failed} failed, ${results.unrunnable} could not be tried.`
+        // SAID EVERY TIME SOMETHING WAS CARRIED. A run that skipped steps must
+        // never read like a run that did them, and the count is the one number
+        // that says so.
+        const carried = results.carried || 0
+        const note = `${results.passed} passed${carried ? ` (${carried} carried from before, not run again)` : ''}, ${results.failed} failed, ${results.unrunnable} could not be tried.`
+        if (asked && !carried) {
+          to.warn('continue was asked for and nothing was carried — either nothing had passed yet, or these files do not keep their state (see keep() in tasks/harness.js)')
+        }
         if (results.failed) to.bad(note)
         else to.good(note)
         return { ...results, note }

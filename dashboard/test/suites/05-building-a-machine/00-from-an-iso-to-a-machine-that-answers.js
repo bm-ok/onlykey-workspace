@@ -20,10 +20,29 @@
 // own filesystem. That is the kind of thing that works or does not, twenty-five
 // minutes in, and is the reason this exists.
 
-const { it, cleanup } = require('../../../tasks/harness')
+const { it, cleanup, keep } = require('../../../tasks/harness')
+
+// THIS ONE KEEPS ITS STATE, and it is the file that most needs to.
+//
+// Ten minutes of installing sits in the middle of this series. If the dashboard
+// is restarted while that is happening — which is the ordinary hazard, since
+// this app is restarted whenever a line of it changes — the run dies with it and
+// the machine carries on installing perfectly well. Without a note, running it
+// again builds a SECOND machine and waits another ten minutes to learn what the
+// first one already knew.
+//
+// With one, the checks that had passed are carried and the series picks up at
+// the step it had reached, against the machine that is already there. See keep()
+// in tasks/harness.js for the three conditions, and the cleanup at the bottom
+// for why the note goes when the machine does.
+keep()
 
 // Named so it can be found and removed by anybody reading the machine list, and
 // so `drillSweep` knows it is not somebody's real runner.
+//
+// The name is put in the STATE by the first check rather than used from here,
+// because it carries the minute it was made — so a resumed run computes a
+// different one and would go looking for a machine nobody built.
 const NAME = `drill-vm-${new Date().toISOString().replace(/[^0-9]/g, '').slice(8, 14)}`
 
 // WHAT IT SAW LAST TIME is recorded at the bottom of this file, and it is the
@@ -58,9 +77,16 @@ it('there is an ISO to install from, and this was asked for', async ({ okc, asse
   state.iso = found.location
 
   const { vms } = await okc('vmList')
-  assert.ok(!vms.some(v => v.name === NAME), `"${NAME}" already exists, which should be impossible — it is named after the minute it was made`)
-  state.began = Date.now()
-  log(`installing "${NAME}" from ${state.iso}`)
+  // THE NAME IS DECIDED ONCE AND REMEMBERED. On a resumed run this is already
+  // set, and keeping it is the whole point: the machine being carried on with is
+  // the one the earlier steps built.
+  state.name = state.name || NAME
+  assert.ok(state.name === NAME ? !vms.some(v => v.name === state.name) : true,
+    `"${state.name}" already exists, which should be impossible — it is named after the minute it was made`)
+  state.began = state.began || Date.now()
+  log(state.name === NAME
+    ? `installing "${state.name}" from ${state.iso}`
+    : `carrying on with "${state.name}", which an earlier run had already started`)
   // A GATE, not a step. Without this the checks below carried on when nobody
   // had asked for a slow run: they made a machine with no installer image and
   // reported it as a FAILURE, which is a red line about a drill that was never
@@ -74,7 +100,7 @@ it('a machine is defined, and it is only defined', async ({ okc, assert, state, 
   // the check that says so.
   const made = await okc('vmCreate', {
     vm: {
-      name: NAME,
+      name: state.name,
       iso: state.iso,
       // Smaller than a runner. This one is built to be proved and thrown away,
       // and every megabyte is a megabyte of somebody's host.
@@ -93,11 +119,11 @@ it('a machine is defined, and it is only defined', async ({ okc, assert, state, 
     }
   })
   state.made = true
-  assert.equal(made.name, NAME, 'The machine was made under a different name')
+  assert.equal(made.name, state.name, 'The machine was made under a different name')
   assert.ok(!made.baseSnapshot, 'A machine that has never been installed cannot have a clean point to come back to')
 
   const { vms } = await okc('vmList')
-  const mine = vms.find(v => v.name === NAME)
+  const mine = vms.find(v => v.name === state.name)
   assert.ok(mine, 'It was made and is not in the list')
   assert.notEqual(mine.stage, 'ready', 'A machine that has not been installed is not ready')
   log(`defined: 4096 MB, 3 cpus, a 40 GB disk — stage "${mine.stage}", no base snapshot, nothing installed`)
@@ -113,8 +139,8 @@ it('its console is captured before anything boots', async ({ okc, assert, state,
   // This is what makes the rest of this file possible. Until the agent dials in
   // there is no channel, no network and nothing to ask: the console is the only
   // thing the machine says for the first twenty-five minutes of its life.
-  const on = await okc('vmSerial', { name: NAME, on: true })
-  assert.ok(on.on, `The console of "${NAME}" is not being captured, so the install would happen unwatched`)
+  const on = await okc('vmSerial', { name: state.name, on: true })
+  assert.ok(on.on, `The console of "${state.name}" is not being captured, so the install would happen unwatched`)
   state.console = on.file
   log(`its console will be written to ${on.file}`)
 })
@@ -133,7 +159,7 @@ it('the installer boots and says so on the console', async ({ okc, assert, state
   // inside the machine. It returns when this machine's console has said
   // something, which is the host being told the expensive minute is over — so
   // by the time it comes back there is already a kernel talking.
-  await okc('vmInstall', { name: NAME })
+  await okc('vmInstall', { name: state.name })
 
   // THE INSTALLER'S OWN VOICE, and it is there because this project put it
   // there: the first thing in the autoinstall file's early commands writes a
@@ -146,7 +172,7 @@ it('the installer boots and says so on the console', async ({ okc, assert, state
   // later. Waiting for it here passed — while measuring the wrong thing, and
   // leaving the next check to match the same line and report the handover as
   // having taken no time at all.
-  const spoke = await okc('vmAwait', { name: NAME, for: 'console', find: 'installer journal follows|subiquity', seconds: 600 })
+  const spoke = await okc('vmAwait', { name: state.name, for: 'console', find: 'installer journal follows|subiquity', seconds: 600 })
   state.installerAt = Date.now()
   log(`the installer is talking after ${Math.round((Date.now() - state.began) / 1000)}s: ${spoke.line.slice(0, 110)}`)
 }, { minutes: 12 })
@@ -158,7 +184,7 @@ it('and it writes a system onto the disk', async ({ okc, assert, state, log }) =
   // system rather than in the installer's own filesystem, which is the one
   // difference between a desktop and a server install that this project had to
   // learn the hard way.
-  const writing = await okc('vmAwait', { name: NAME, for: 'console', find: 'curtin', seconds: 1800 })
+  const writing = await okc('vmAwait', { name: state.name, for: 'console', find: 'curtin', seconds: 1800 })
   log(`curtin is running ${Math.round((Date.now() - state.installerAt) / 60000)} minutes in: ${writing.line.slice(0, 110)}`)
 }, { minutes: 35 })
 
@@ -177,7 +203,7 @@ it('and it gets far enough to hand over to what it installed', async ({ okc, ass
   // from the disk that was just written, and names the filesystem by uuid. So
   // this line arriving IS the handover, stated by the machine rather than
   // inferred from a clock.
-  const booted = await okc('vmAwait', { name: NAME, for: 'console', find: 'root=UUID=', seconds: 2400 })
+  const booted = await okc('vmAwait', { name: state.name, for: 'console', find: 'root=UUID=', seconds: 2400 })
   state.installedAt = Date.now()
   log(`it installed and rebooted into what it installed, ${Math.round((state.installedAt - state.installerAt) / 60000)} minutes after the installer started`)
   log(`the installed kernel's command line: ${booted.line.replace(/^.*Command line: /, '').slice(0, 130)}`)
@@ -192,7 +218,7 @@ it('and provisioning runs on that first boot', async ({ okc, assert, state, log 
   // login prompt and never dialled in could have failed here — a certificate it
   // would not trust, a script that would not run — and nothing could tell that
   // apart from a machine that never booted at all.
-  const doing = await okc('vmAwait', { name: NAME, for: 'console', find: 'toolchain', seconds: 1800 })
+  const doing = await okc('vmAwait', { name: state.name, for: 'console', find: 'toolchain', seconds: 1800 })
   log(`the provisioning scripts are running on the machine: ${doing.line.slice(0, 110)}`)
 }, { minutes: 35 })
 
@@ -205,18 +231,18 @@ it('and the first boot starts the agent that dials home', async ({ okc, assert, 
   // different causes — the agent never started, or it started and could not
   // reach here — and they are hours apart to diagnose. This line tells them
   // apart in one look.
-  const unit = await okc('vmAwait', { name: NAME, for: 'console', find: 'okc-agent', seconds: 1200 })
+  const unit = await okc('vmAwait', { name: state.name, for: 'console', find: 'okc-agent', seconds: 1200 })
   log(`the agent unit is on the console after the first boot: ${unit.line.slice(0, 110)}`)
 }, { minutes: 25 })
 
 it('and it dials in', async ({ okc, assert, state, log }) => {
   // Not "started". Dialled in: booted, provisioned, and holding a channel back
   // to this host, which is the only definition anything else in this app uses.
-  await okc('vmAwait', { name: NAME, for: 'connected', seconds: 1200 })
+  await okc('vmAwait', { name: state.name, for: 'connected', seconds: 1200 })
 
   const { agents } = await okc('vmAgents')
-  const said = agents.find(a => a.vm === NAME)
-  assert.ok(said, `"${NAME}" installed and never dialled in`)
+  const said = agents.find(a => a.vm === state.name)
+  assert.ok(said, `"${state.name}" installed and never dialled in`)
   assert.ok(said.facts && said.facts.system, 'It dialled in without saying what it is')
   log(`installed unattended and dialled in ${Math.round((Date.now() - state.began) / 60000)} minutes after it was asked for`)
   log(`it says it is: ${String(said.facts.system).split('\n')[0]}`)
@@ -237,7 +263,7 @@ it('and the install is on the record afterwards', async ({ okc, assert, state, l
   const both = []
   for (const which of ['serial', 'serial.previous']) {
     try {
-      const got = await okc('vmLog', { name: NAME, which, lines: 5000 })
+      const got = await okc('vmLog', { name: state.name, which, lines: 5000 })
       both.push({ which, lines: got.lines, of: got.of })
     } catch { /* there may be no previous boot, which is one of the two shapes */ }
   }
@@ -269,7 +295,7 @@ it('and it is a machine this app can use', async ({ okc, assert, state, log }) =
   // Installed is not usable. The queue needs a machine that answers commands and
   // has a clean point to be returned to; without the second one it is correctly
   // never picked up, which looks exactly like a queue that has gone quiet.
-  const said = await okc('vmRun', { name: NAME, command: 'echo okc-built-and-answering', what: 'a drill asking a new machine for a reply' })
+  const said = await okc('vmRun', { name: state.name, command: 'echo okc-built-and-answering', what: 'a drill asking a new machine for a reply' })
   assert.equal(said.code, 0, `The new machine could not run a command: ${JSON.stringify(said).slice(0, 200)}`)
   assert.ok(String(said.output || '').includes('okc-built-and-answering'), 'It ran the command and said something else')
 
@@ -280,42 +306,62 @@ it('and it is a machine this app can use', async ({ okc, assert, state, log }) =
   let mine = null
   for (let i = 0; i < 60; i++) {
     const { vms } = await okc('vmList')
-    mine = vms.find(v => v.name === NAME)
+    mine = vms.find(v => v.name === state.name)
     if (mine && mine.baseSnapshot) break
     await new Promise(r => setTimeout(r, 5000))
   }
   assert.ok(mine && mine.baseSnapshot, 'It has no base snapshot five minutes after dialling in, so nothing could ever put it away clean and the queue would pass over it for ever')
 
-  // NOT "ready", WHICH IS WHAT THIS ASKED FOR AND IS WRONG ABOUT THIS APP.
+  // EITHER OF TWO STAGES IS CORRECT HERE, and insisting on one failed this drill
+  // twice in a row for two opposite reasons.
   //
   // The stages are a ladder — defined, created, installing, online, ready,
-  // connected — and the highest true one is reported. A machine that is dialled
-  // in says "connected" and will never say "ready" while it is; "ready" is what
-  // it says once it is off with a snapshot to come back to. So the first version
-  // failed a perfectly good machine with `It finished installing and reports
-  // "connected"`, which is the drill misreading the app rather than a fault.
-  assert.equal(mine.stage, 'connected', `It is dialled in and reports "${mine.stage}"`)
+  // connected — and the highest true one is reported. It asked for "ready" and
+  // was told "connected", because a dialled-in machine reports connected and
+  // never ready. It was corrected to "connected" and was then told "ready" —
+  // because taking the base snapshot POWERS THE MACHINE OFF, and by the time
+  // this looked, the snapshot it had just waited for had cost the connection it
+  // was asserting.
+  //
+  // So the honest assertion is the one that was meant all along: it answers, and
+  // it has somewhere to be put back to. Which of the two stages it happens to be
+  // in depends on whether the snapshot has been taken yet, and this drill does
+  // not get to decide that.
+  assert.ok(['connected', 'ready'].includes(mine.stage),
+    `It is installed, answering and snapshotted, and reports "${mine.stage}" — expected connected (still up) or ready (put away for its snapshot)`)
   log(`it answers commands, is stage "${mine.stage}", and has a base snapshot ("${mine.baseSnapshot}") to be put away to`)
 }, { minutes: 10 })
 
-it('and it can be thrown away completely', async ({ okc, assert, log }) => {
+it('and it can be thrown away completely', async ({ okc, assert, state, log }) => {
   // The other half of building one. A machine this app made is a machine it can
   // destroy — disks and all — and a drill that leaves a 40 GB disk image behind
   // is the most expensive debris in this project.
-  const gone = await okc('vmRemove', { name: NAME })
+  const gone = await okc('vmRemove', { name: state.name })
   assert.ok(gone, 'Nothing was reported about removing it')
 
   const { vms } = await okc('vmList')
-  assert.ok(!vms.some(v => v.name === NAME), 'It was removed and is still in the list')
-  log(`"${NAME}" is gone, disks and all`)
+  assert.ok(!vms.some(v => v.name === state.name), 'It was removed and is still in the list')
+  log(`"${state.name}" is gone, disks and all`)
 }, { minutes: 10 })
 
 cleanup(async ({ okc, state }) => {
   // Only if the series did not get as far as removing it itself. A half-finished
   // install leaves a machine that never dialled in, which nothing else here will
   // ever tidy up.
-  if (!state.made) return
-  const { vms } = await okc('vmList').catch(() => ({ vms: [] }))
-  if (!vms.some(v => v.name === NAME)) return
-  await okc('vmRemove', { name: NAME }).catch(() => {})
+  if (state.made) {
+    const { vms } = await okc('vmList').catch(() => ({ vms: [] }))
+    if (vms.some(v => v.name === state.name)) await okc('vmRemove', { name: state.name }).catch(() => {})
+  }
+
+  // AND THE NOTE GOES WITH THE MACHINE.
+  //
+  // This file keeps its state, so what is left here is what the next run finds.
+  // A name pointing at a machine that has just been deleted is the worst thing
+  // to leave: the next run would carry on with something that is not there.
+  //
+  // Which is also why continuing after a FAILURE does not apply to this drill —
+  // cleanup has already taken the machine away, and there is nothing to continue
+  // with. What it is for is an INTERRUPTION: the dashboard restarted mid-install,
+  // this never ran, and the machine is still sitting there installing.
+  for (const k of Object.keys(state)) delete state[k]
 })
