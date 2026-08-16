@@ -70,7 +70,25 @@ function fill (input = {}) {
     hostname: input.hostname || `${name.replace(/[^a-z0-9-]/gi, '-')}.local`,
     locale: input.locale || 'en_US',
     timeZone: input.timeZone || 'UTC',
-    installAdditions: input.installAdditions !== false,
+    // THE GUEST ADDITIONS FOLLOW THE DESKTOP, because that is what they are for.
+    //
+    // The kernel half is already there: Ubuntu ships vboxguest and vboxsf in its
+    // own kernel, so a machine without additions still gets its display modes —
+    // runner3 came up at 1280x800 with twenty-two modes offered and no additions
+    // installed at all. What is missing without them is the USER-SPACE half:
+    // VBoxClient, which is clipboard sharing, resizing with the window,
+    // drag-and-drop and time sync.
+    //
+    // Every one of those is about somebody sitting in front of the machine. A
+    // runner holding a terminal uses none of them, and pays for them in install
+    // time and in kernel modules rebuilt on every kernel update.
+    //
+    // FORCED ON BY SHARED FOLDERS, whatever else was said: a share needs the
+    // mount helper, and a machine that declared shares and cannot mount them is
+    // a machine whose whole reason for existing quietly did not happen.
+    installAdditions: typeof input.installAdditions === 'boolean'
+      ? input.installAdditions
+      : (input.desktop === true || input.desktop === 'true' || (Array.isArray(input.shares) && input.shares.length > 0)),
     baseSnapshot: input.baseSnapshot || 'base',
     sshKey: input.sshKey || '',
     // Its own secret, per machine, so a machine can only ever dial in as itself.
