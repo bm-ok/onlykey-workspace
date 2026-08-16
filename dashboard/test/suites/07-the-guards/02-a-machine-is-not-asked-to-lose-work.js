@@ -8,6 +8,7 @@
 // to the ones after it.
 
 const { it, cleanup, requires } = require('../../../tasks/harness')
+const { aMachine } = require('../../helpers')
 
 // It borrows a machine and hands it a credential to ask its questions, so it
 // stands on machines existing and on a credential being here.
@@ -29,9 +30,7 @@ it('a machine of our own, up and holding a credential', async ({ okc, assert, st
   // credential is kept sealed on this host, so lending it to a machine loses
   // nothing and taking it back is one call — and the cleanup below does exactly
   // that whatever happens here.
-  const { vms } = await okc('vmList')
-  const free = vms.find(v => v.baseSnapshot && !v.branch && !v.borrowed && v.forTasks !== false)
-  assert.needs(free, 'no machine is free to borrow — the machines the kit builds are what this uses, and none of them is idle')
+  const free = await aMachine(okc, assert, 'no machine is free to borrow — this needs one of the kit\'s, or any idle machine, to lend a credential to')
 
   const got = await okc('vmBorrow', { name: free.name, why: 'a drill asking what a machine holding a credential refuses' })
   state.machine = got.name

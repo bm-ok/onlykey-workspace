@@ -6,6 +6,7 @@
 // GitHub token, and why it never reads a value.
 
 const { it, requires } = require('../../../tasks/harness')
+const { aMachine } = require('../../helpers')
 
 // It hands the credential to a machine to find out whether it works, so it
 // stands on machines existing and coming up. That is the whole reason it sits
@@ -57,9 +58,7 @@ it('and a machine can really sign in with it', async ({ okc, assert, state, log 
   // back and puts the machine away. It is the machine half of this app doing
   // exactly what it does for a real task, which is why this suite waited for
   // machines to exist.
-  const { vms } = await okc('vmList')
-  const free = vms.find(v => v.baseSnapshot && !v.branch && !v.borrowed && v.forTasks !== false)
-  assert.needs(free, 'no machine is free to try it on — this hands the credential to a real machine, because holding a file proves nothing about whether a worker is accepted')
+  const free = await aMachine(okc, assert, 'no machine is free to try it on — this hands the credential to a real machine, because holding a file proves nothing about whether a worker is accepted')
 
   const tried = await okc('credentialsTest', { name: free.name })
   assert.ok(tried.ready === true,
