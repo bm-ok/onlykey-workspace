@@ -36,6 +36,13 @@ draft('and the judge tab shows what is waiting, what is being judged, and what w
   'THE CHECK: with one cut open and one judged, the tab lists both under the right heading, and the judged one names its verdict and the run behind it. ' +
   'TO SETTLE: whether this is a tab of its own or the bottom of the board\'s third column once something has arrived. A tab is findable; the column is where somebody already is.')
 
+draft('and a sub-tab lists the judgements that can be run, as whole chains',
+  'THE COMBINATIONS, which the library tab cannot show. Jobs, prompts and contracts are listed there one substance at a time, because that is how they are written and approved — but a JUDGEMENT you can run is a whole chain: this job, giving these words, under these rules. Picking one from three separate lists is asking somebody to recombine in their head what the app already knows. ' +
+  'WHAT IT LISTS: every job whose prompt and contract are approved, shown as the chain it is — job <- prompt <- contract — with the ones that cannot run saying which rung is missing. ' +
+  'THE DATA IS ALREADY THERE: `jobs` reports `runnable` and `whyNot`, and whyNot names the one rung rather than saying "not approved" about the thing that plainly is. Nothing shows it combined. ' +
+  'THE CHECK: with one judging job approved end to end and one whose contract is not, the sub-tab lists both, the first as runnable and the second naming the contract. ' +
+  'TO SETTLE: whether a judgement is chosen per cut, or a cut has a default chain it is judged by — a repository where every cut is judged the same way should not ask the same question every time.')
+
 draft('and it is done by either kind of supervisor',
   'A person reading a diff and a worker running checks are the same act with a different body — which is what the spine already says about who supervises, and the reason judging should not be a special case bolted to a task. ' +
   'A judging job might run the tests, read the diff against the contract, or do nothing but wait for a person. ' +

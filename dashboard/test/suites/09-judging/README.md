@@ -59,6 +59,14 @@ verdict was. The same shape as the task board, one level up — and it is what
 turns judging into something you can be *behind on* rather than something you
 remember to do.
 
+**And a sub-tab for the chains that can be run.** The library lists jobs,
+prompts and contracts one substance at a time, because that is how each is
+written and approved. A judgement you can *run* is the whole chain — this job,
+giving these words, under these rules — and picking one from three separate
+lists asks somebody to recombine in their head what the app already knows.
+`jobs` already reports `runnable` and `whyNot`, and `whyNot` names the one rung
+that is missing; nothing shows it combined.
+
 **And it reports outward.** A verdict is not only a note on a board: it belongs
 on the PR cut the work is landing through, and on GitHub beside the pull request
 — the place anybody looking at the change would expect to find out whether it was

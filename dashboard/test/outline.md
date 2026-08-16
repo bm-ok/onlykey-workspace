@@ -1,7 +1,7 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 11 suites, 21 tests, 96 checks, 13 of them drafts -->
+<!-- 11 suites, 21 tests, 97 checks, 14 of them drafts -->
 
-## 13 drafts, not written yet
+## 14 drafts, not written yet
 
 - **a worker credential / a worker can sign in** — and no two machines hold the same credential at once
   THE LOCK, and it can be written today. There is one credentials/claude.json, lent to whoever is working. vmCredentialsPut checks the machine is dialled in and that the credential is not dead, and says nothing about who else is holding it — so two machines working at once would run as the same worker against the same session. The check is "at most one machine reports holdsCredential", asked while work is in flight. It would fail right now if two tasks were dispatched at once, which is the honest way to start: a guard that would catch the thing nobody has hit yet. The queue serialises most work, which is why it has not bitten.
@@ -19,6 +19,8 @@
   THE TRIGGER, and it is not somebody deciding to judge a task. A cut is opened when work is proposed for landing — that is the moment the change stops being one machine's business and becomes something to be read — so an open cut is a thing WAITING to be judged, and the app should say so without being asked. WHICH IS WHY IT IS THE CUT AND NOT THE TASK: a cut may carry work from more than one task, and a task may deliver nothing worth landing. Judging follows the change, not the occasion that produced it. THE CHECK: open a cut, and it appears as awaiting a judgement — before anybody has typed anything. Land or close it, and it stops asking. TO SETTLE: whether a judging task is created automatically when a cut opens, or the cut simply reads as unjudged until somebody starts one. The first makes a queue of judgements that run unattended; the second keeps judging a decision. Both are defensible and they are different products.
 - **judging / a judgement is work of its own** — and the judge tab shows what is waiting, what is being judged, and what was decided
   THE HOME IT NEEDS. "Judge it" used to be a button on the task's own card — the screen that asked for a decision showed the QUESTION and not the answer — and it was removed rather than moved, so there is nowhere to do this today. WHAT THE SCREEN IS BUILT AROUND: the delivery. The cut's commits, the diff, the files handed back, the run's log, and the two buttons under all of it. THE LIST is the part this draft adds: every open cut, which are waiting, which have a judgement in flight, and which were decided — with the verdict and what it was judged on. That is the same shape as the task board, one level up, and it is what makes judging something you can be BEHIND on rather than something you remember to do. THE CHECK: with one cut open and one judged, the tab lists both under the right heading, and the judged one names its verdict and the run behind it. TO SETTLE: whether this is a tab of its own or the bottom of the board's third column once something has arrived. A tab is findable; the column is where somebody already is.
+- **judging / a judgement is work of its own** — and a sub-tab lists the judgements that can be run, as whole chains
+  THE COMBINATIONS, which the library tab cannot show. Jobs, prompts and contracts are listed there one substance at a time, because that is how they are written and approved — but a JUDGEMENT you can run is a whole chain: this job, giving these words, under these rules. Picking one from three separate lists is asking somebody to recombine in their head what the app already knows. WHAT IT LISTS: every job whose prompt and contract are approved, shown as the chain it is — job <- prompt <- contract — with the ones that cannot run saying which rung is missing. THE DATA IS ALREADY THERE: `jobs` reports `runnable` and `whyNot`, and whyNot names the one rung rather than saying "not approved" about the thing that plainly is. Nothing shows it combined. THE CHECK: with one judging job approved end to end and one whose contract is not, the sub-tab lists both, the first as runnable and the second naming the contract. TO SETTLE: whether a judgement is chosen per cut, or a cut has a default chain it is judged by — a repository where every cut is judged the same way should not ask the same question every time.
 - **judging / a judgement is work of its own** — and it is done by either kind of supervisor
   A person reading a diff and a worker running checks are the same act with a different body — which is what the spine already says about who supervises, and the reason judging should not be a special case bolted to a task. A judging job might run the tests, read the diff against the contract, or do nothing but wait for a person. THE CHECK: the same judgement, given to a worker and given to a person, produces the same kind of record — a verdict, a note, and what it was judged on. TO SETTLE: whether a person's judgement is a run at all, or a task that is completed without one. Every other kind of work here has a run behind it.
 - **judging / a judgement is work of its own** — and the verdict reaches the PR cut it is landing through
@@ -228,11 +230,12 @@ Reading what came back and saying yes or no — and it is **work**, not a field.
   1. **DRAFT** — a judgement is a task whose subject is a PR cut
   2. **DRAFT** — and an open cut is what asks for one
   3. **DRAFT** — and the judge tab shows what is waiting, what is being judged, and what was decided
-  4. **DRAFT** — and it is done by either kind of supervisor
-  5. **DRAFT** — and the verdict reaches the PR cut it is landing through
-  6. **DRAFT** — and GitHub is told, beside the pull request
-  7. **DRAFT** — and a rejection says what happens to the work
-  8. **DRAFT** — and taskJudge is replaced rather than removed
+  4. **DRAFT** — and a sub-tab lists the judgements that can be run, as whole chains
+  5. **DRAFT** — and it is done by either kind of supervisor
+  6. **DRAFT** — and the verdict reaches the PR cut it is landing through
+  7. **DRAFT** — and GitHub is told, beside the pull request
+  8. **DRAFT** — and a rejection says what happens to the work
+  9. **DRAFT** — and taskJudge is replaced rather than removed
 
 # 10 — cooling the host
 
