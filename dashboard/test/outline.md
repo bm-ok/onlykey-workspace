@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 8 suites, 18 tests, 79 checks -->
+<!-- 8 suites, 18 tests, 75 checks -->
 
 # 00 — what this host has
 
@@ -68,22 +68,18 @@
   1. a machine that is not dialled in cannot be given a workspace
   2. a branch nobody has is not a branch to sync
 
-# 03 — building a machine
+# 03 — the machines are built
 
-## 00 — from an iso to a machine that answers
+## 00 — two machines built from nothing
 
-  1. there is an ISO to install from, and this was asked for
-  2. a machine is defined, and it is only defined
-  3. its console is captured before anything boots
-  4. the installer boots and says so on the console
-  5. and it writes a system onto the disk
-  6. and it gets far enough to hand over to what it installed
-  7. and provisioning runs on that first boot
-  8. and the first boot starts the agent that dials home
-  9. and it dials in
-  10. and the install is on the record afterwards
-  11. and it is a machine this app can use
-  12. and it can be thrown away completely
+  1. there are two machines to work with, or an ISO and permission to build them
+  2. they are defined, with their consoles captured before anything boots
+  3. and both installers run at the same time
+  4. and both write a system to disk and boot it
+  5. and provisioning runs on both, from the scripts this host serves
+  6. and both dial in
+  7. and both answer, with somewhere to be put back to
+  8. and the install of each is on the record
 
 # 05 — the machines
 
