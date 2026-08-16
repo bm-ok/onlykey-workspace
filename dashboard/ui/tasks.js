@@ -713,9 +713,18 @@ function paintTaskDetail (task) {
         // does it properly. "Queue it" is how a task goes out; a machine that is
         // already idle is picked up within seconds.
         //
-        // `taskGive` is untouched and is still what the queue calls. Somebody
-        // who genuinely wants to bypass the queue can still do it from the
-        // command line, where it is a deliberate act rather than a button.
+        // `taskGive` is untouched and can still be called from the command line,
+        // where bypassing the queue is a deliberate act rather than a button.
+        //
+        // IT IS NOT WHAT THE QUEUE CALLS, which is what this comment said until
+        // a report of unused code was pointed at it. The queue dispatches with
+        // `vmDispatch` and `jobRun`, and does the accounting around them itself
+        // — vmCredentialsPut, taskUpdate, taskArtifact, vmSnapshotRestore. Asked
+        // of the history, `taskGive` has never appeared in tasks/queue.js at
+        // all, so the sentence was wrong on the day it was written.
+        //
+        // Which leaves a real question for somebody, recorded in test/unused.md:
+        // an action nothing calls, with a comment that claimed a caller.
         : null,
       // Only while something is actually running, because that is the only time
       // it means anything — and it is the button somebody wants at the moment

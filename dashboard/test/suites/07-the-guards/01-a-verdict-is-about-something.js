@@ -33,19 +33,41 @@ it('a verdict on a branch with nothing on it is refused', async ({ okc, assert, 
   log(`refused, and this is what it said:\n${refusal.message}`)
 })
 
-it('a rejection with no reason is refused', async ({ okc, assert, log }) => {
-  // Asked of a DELIVERED task rather than the one above, because the
+it('a rejection with no reason is refused', async ({ okc, assert, state, log }) => {
+  // Asked of a DELIVERED task rather than the empty one above, because the
   // empty-branch refusal would otherwise be the thing that fires and this would
   // pass for the wrong reason. Two rules can refuse the same call and only one
   // of them is being tested.
+  //
+  // IT MAKES ITS OWN DELIVERY NOW. It used to go looking for a task that had
+  // already delivered something — `assert.needs(delivered, 'run the round trip
+  // first')` — and on a tidy host there is never one, so this check had never
+  // run in its life. A drill that only works when the world happens to suit it
+  // is a drill that never works.
+  //
+  // A commit put straight on the branch is enough, and is honest about what it
+  // is: the rule under test is about the VERDICT, not about who did the work, so
+  // sending a machine off for ten minutes to produce a commit would be paying
+  // for realism the check cannot use. `drillCommit` refuses to write anywhere
+  // but a drill branch, which is what makes doing it safe.
+  await okc('drillCommit', {
+    branch: state.branch,
+    repo: (await okc('repositories')).repos[0].repo,
+    file: 'drill-delivered.md',
+    text: 'Put here by a drill, so a task has something on its branch to be judged.\n',
+    message: 'drill: something to judge'
+  })
+
   const { tasks } = await okc('tasks')
-  const delivered = tasks.find(t => t.delivered)
-  assert.needs(delivered, 'no task has anything on its branch — run the round trip first')
+  const mine = tasks.find(t => t.id === state.task.id)
+  assert.ok(mine, 'the task written above is gone')
+
   const refusal = await assert.refuses(
-    () => okc('taskJudge', { id: delivered.id, verdict: 'reject', note: '' }),
+    () => okc('taskJudge', { id: state.task.id, verdict: 'reject', note: '' }),
     'why',
     'A rejection with no reason is sent to a worker that cannot ask what was wrong')
-  log(`asked of #${delivered.number}, which has something on its branch — refused, and this is what it said:\n${refusal.message}`)
+  log(`#${mine.number} now has a commit on "${state.branch}", so the empty-branch rule is out of the way`)
+  log(`refused, and this is what it said:\n${refusal.message}`)
 })
 
 cleanup(async ({ okc, state }) => {
