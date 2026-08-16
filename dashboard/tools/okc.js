@@ -96,6 +96,59 @@ function show (result, asJson) {
   console.log(JSON.stringify(result, null, 2))
 }
 
+// A LONG CALL SAYS WHAT IT IS DOING, because otherwise it says nothing at all.
+//
+// `vmProvisionUpdate` takes minutes. `vmInstall` takes ten. Neither printed a
+// character until it finished, so "working" and "wedged" looked exactly the
+// same from here — and the honest response to that is the one that happened:
+// somebody killed it, reasonably, on the evidence available.
+//
+// The dashboard knew the whole time. It writes every step to its own record, and
+// this reads that record back while it waits: nothing new is invented, and the
+// lines printed are the same ones the window shows.
+//
+// AFTER A PAUSE, NOT IMMEDIATELY. A call that answers in 200ms should print its
+// answer and nothing else, and most of them do. Progress is for the ones that
+// have gone quiet long enough to be worrying.
+//
+// Never for --json: that is a script reading the answer, and prose on stdout
+// would be a surprise in the middle of it. It goes to stderr in any case, so a
+// pipe stays clean either way.
+const QUIET_FOR = 3000
+
+async function withProgress (action, args, asJson) {
+  const call = ipc.call(action, args)
+  if (asJson) return call
+
+  let done = false
+  call.then(() => { done = true }, () => { done = true })
+
+  // Where the record is up to now, so only what THIS call causes is printed.
+  let since = null
+  try { since = (await ipc.call('events', { limit: 1 })).bookmark } catch { /* no record, no progress */ }
+  if (since == null) return call
+
+  const waited = setTimeout(async function tick () {
+    if (done) return
+    try {
+      const { events, bookmark } = await ipc.call('events', { since })
+      since = bookmark
+      for (const e of events || []) {
+        const tags = (e.tags || []).join('/')
+        console.error(`  ${tags ? tags + ': ' : ''}${e.text}`)
+      }
+    } catch { /* the answer, or the failure, is what matters */ }
+    if (!done) setTimeout(tick, 1500)
+  }, QUIET_FOR)
+
+  try {
+    return await call
+  } finally {
+    clearTimeout(waited)
+    done = true
+  }
+}
+
 async function main () {
   const argv = process.argv.slice(2)
   const action = argv.find(a => !a.startsWith('--'))
@@ -204,7 +257,7 @@ async function main () {
       return ssh.status === null ? 1 : ssh.status
     }
 
-    show(await ipc.call(action, args), asJson)
+    show(await withProgress(action, args, asJson), asJson)
     return 0
   } catch (e) {
     console.error(e.message)
