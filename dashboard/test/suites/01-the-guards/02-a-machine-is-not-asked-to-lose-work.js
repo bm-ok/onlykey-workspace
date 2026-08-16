@@ -9,14 +9,17 @@
 
 const { it } = require('../../../tasks/harness')
 
-it('a machine holding a credential cannot be snapshotted', async ({ okc, assert }) => {
+// WHAT IT SAW LAST TIME is recorded at the bottom of this file.
+
+it('a machine holding a credential cannot be snapshotted', async ({ okc, assert, log }) => {
   const { vms } = await okc('vmList')
   const holding = vms.find(v => v.holdsCredential)
   assert.needs(holding, 'no machine is holding a credential — the queue takes them back when work ends')
-  await assert.refuses(
+  const refusal = await assert.refuses(
     () => okc('vmBaseSnapshot', { name: holding.name, title: 'drill-should-refuse' }),
     'holding a worker credential',
     'A snapshot keeps a copy of the token for as long as the snapshot exists')
+  log(`asked of ${holding.name}, which is holding one — refused, and this is what it said:\n${refusal.message}`)
 })
 
 it('a signed-out machine is not given work', async ({ okc, assert, log }) => {
@@ -55,10 +58,11 @@ it('a signed-out machine is not given work', async ({ okc, assert, log }) => {
     await okc('vmCredentialsForget', { name: target.name })
   }
   try {
-    await assert.refuses(
+    const refusal = await assert.refuses(
       () => okc('vmDispatch', { name: target.name, task: 'anything at all' }),
       'signed out',
       'Otherwise it fails as an api error minutes later, after a workspace has been laid out')
+    log(`refused, and this is what it said:\n${refusal.message}`)
   } finally {
     if (held) await okc('vmCredentialsPut', { name: target.name })
   }

@@ -9,14 +9,20 @@
 const { it, cleanup } = require('../../../tasks/harness')
 const { scratch, aLine } = require('../../helpers')
 
-it('a task with nowhere to deliver is refused', async ({ okc, assert }) => {
-  await assert.refuses(
+// WHAT IT SAW LAST TIME is recorded at the bottom of this file. See
+// 00-the-order/00-a-cut-comes-first.js for why the transcript is kept at all —
+// and it matters most in a file like this one, where the product IS the sentence
+// somebody gets back.
+
+it('a task with nowhere to deliver is refused', async ({ okc, assert, log }) => {
+  const refusal = await assert.refuses(
     () => okc('taskCreate', { task: { title: 'no branch', brief: 'anything' } }),
     'branch',
     'A task with no branch has no artifact and could never be judged')
+  log(`refused, and this is what it said:\n${refusal.message}`)
 })
 
-it('a cut to write the rest of these against', async ({ okc, assert, state }) => {
+it('a cut to write the rest of these against', async ({ okc, assert, state, log }) => {
   // TWO RULES CAN REFUSE THE SAME CALL, and only one of them is being tested.
   //
   // The check below asks for a task with a contract that is not on disk, and
@@ -31,14 +37,16 @@ it('a cut to write the rest of these against', async ({ okc, assert, state }) =>
   const line = await aLine(okc, assert)
   state.branch = scratch('written-wrong')
   await okc('branchCreate', { branch: state.branch, reason: 'a drill needing a real cut to write bad tasks against', group: line })
+  log(`cut "${state.branch}" from line "${line}" — so the check below meets the contract rule and not the branch rule`)
 })
 
-it('a contract that is not there is refused', async ({ okc, assert, state }) => {
-  await assert.refuses(
+it('a contract that is not there is refused', async ({ okc, assert, state, log }) => {
+  const refusal = await assert.refuses(
     () => okc('taskCreate', { task: { title: 'bad contract', brief: 'anything', branch: state.branch, contract: 'C:/nothing/here.md' } })
       .then(t => { state.stray = t; return t }),
     'no contract at',
     'A contract that silently fails to load leaves a worker with no rules while everything reports success')
+  log(`refused, and this is what it said:\n${refusal.message}`)
 })
 
 cleanup(async ({ okc, state }) => {

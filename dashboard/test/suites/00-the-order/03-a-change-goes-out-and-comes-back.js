@@ -39,7 +39,13 @@ const { scratch, aLine } = require('../../helpers')
 // carried and what did not sharper.
 const ONE = 'local-repo-a'
 
-it('a cut is made, and a change is committed on it', async ({ okc, assert, state }) => {
+// WHAT IT SAW LAST TIME is recorded at the bottom of this file, and it matters
+// more here than anywhere else in this folder: these nine steps talk to GitHub,
+// so the transcript is the only place the real answers — a pull request number,
+// how the fork was brought up, what came back — are written down where they can
+// be read without opening another one.
+
+it('a cut is made, and a change is committed on it', async ({ okc, assert, state, log }) => {
   state.line = await aLine(okc, assert)
   state.branch = scratch('sent-out')
   await okc('branchCreate', { branch: state.branch, reason: 'a drill proving a change can be sent out and land', group: state.line })
@@ -53,9 +59,10 @@ it('a cut is made, and a change is committed on it', async ({ okc, assert, state
   })
   assert.equal(made.commits.length, 1, 'The commit did not land in exactly the repository it was asked for')
   state.commit = made.commits[0].commit
+  log(`cut "${state.branch}" from line "${state.line}", and committed ${String(state.commit).slice(0, 8)} in ${ONE}`)
 })
 
-it('what the cut carries can be read, on the cut', async ({ okc, assert, state }) => {
+it('what the cut carries can be read, on the cut', async ({ okc, assert, state, log }) => {
   // THE STEP A PERSON DOES NOT SKIP: reading what is actually on the branch
   // before sending it anywhere. A pull request opened without that is the one
   // nobody reviews.
@@ -72,9 +79,10 @@ it('what the cut carries can be read, on the cut', async ({ okc, assert, state }
   assert.equal(one.ahead, 1, `The cut should carry exactly the one commit that was made on it, and carries ${one.ahead}`)
   assert.ok((one.files || []).some(f => (f.path || f.file || f) === 'drill-order.md' || String(f.path || f.file || f).endsWith('drill-order.md')),
     'The file that was committed is not among the files the cut carries')
+  log(`${ONE} is ${one.ahead} ahead, carrying ${(one.files || []).map(f => f.path || f.file || f).join(', ')}`)
 })
 
-it('a cut becomes a line before it leaves', async ({ okc, assert, state }) => {
+it('a cut becomes a line before it leaves', async ({ okc, assert, state, log }) => {
   // A pull request is cut between two LINES, so the branch has to become one
   // first. That is the order this app enforces, and the reason `prCutMake` asks
   // for lines rather than for branches.
@@ -82,9 +90,10 @@ it('a cut becomes a line before it leaves', async ({ okc, assert, state }) => {
   state.promoted = true
   const after = (await okc('gitBranches')).branches.find(b => b.name === state.branch)
   assert.ok(after.protected, 'A line is protected, and this one is not')
+  log(`"${state.branch}" is a line now, protected: ${!!after.protected}`)
 })
 
-it('and now it can be compared with the line it was cut from', async ({ okc, assert, state }) => {
+it('and now it can be compared with the line it was cut from', async ({ okc, assert, state, log }) => {
   // The Changes tab, which is a comparison between lines and so only becomes
   // possible at this point in the order. The same fact from the other side: what
   // the branch carries, said as what one line has that another does not.
@@ -92,9 +101,10 @@ it('and now it can be compared with the line it was cut from', async ({ okc, ass
   const carrying = (change.repos || []).filter(r => r.ahead > 0)
   assert.equal(carrying.length, 1, `The change should be one commit in one repository, and ${carrying.length} repositories carry something`)
   assert.equal(carrying[0].repo, ONE, `The change is in ${carrying[0].repo}, which is not where it was made`)
+  log(`comparing "${state.branch}" with "${state.line}": ${carrying.map(r => `${r.repo} +${r.ahead}`).join(', ')} — the other repositories carry nothing`)
 })
 
-it('and it leaves as one pull request, from the repository that carries something', async ({ okc, assert, state }) => {
+it('and it leaves as one pull request, from the repository that carries something', async ({ okc, assert, state, log }) => {
   const cut = await okc('prCutMake', {
     source: state.branch,
     target: state.line,
@@ -109,9 +119,11 @@ it('and it leaves as one pull request, from the repository that carries somethin
   assert.equal(opened.length, 1, `Expected one pull request, got ${opened.length}: ${(cut.pulls || []).map(p => p.why || 'opened').join('; ')}`)
   assert.ok(opened[0].number, 'A pull request was reported as opened without a number')
   state.pull = opened[0]
+  log(`opened #${opened[0].number} on ${opened[0].repo || ONE}: ${opened[0].url || '(no url reported)'}`)
+  for (const p of (cut.pulls || []).filter(p => !p.opened)) log(`${p.repo}: none opened — ${p.why}`)
 })
 
-it('the pull requests are merged as one act', async ({ okc, assert, state }) => {
+it('the pull requests are merged as one act', async ({ okc, assert, state, log }) => {
   // WHERE THE HUMAN GATE IS, if there is one. This is refused outright from the
   // command line unless testing mode is on — see prCutLand — so a run that gets
   // here has already been permitted by somebody at the window.
@@ -122,9 +134,10 @@ it('the pull requests are merged as one act', async ({ okc, assert, state }) => 
 
   const at = await okc('prCutState', { source: state.branch, target: state.line })
   assert.ok(at.landed, 'GitHub does not agree that every pull request in the cut is merged')
+  log(`merged ${merged.map(m => `#${m.number} in ${m.repo}`).join(', ')}, and GitHub agrees the cut has landed`)
 })
 
-it('the fork is behind its parent, and syncing pulls it up', async ({ okc, assert, state }) => {
+it('the fork is behind its parent, and syncing pulls it up', async ({ okc, assert, state, log }) => {
   // The answer to "I merged the PR and now my branch and master are off". The
   // parent moved when the change landed and the fork did not, so everything cut
   // from the fork afterwards would start from something out of date.
@@ -133,9 +146,10 @@ it('the fork is behind its parent, and syncing pulls it up', async ({ okc, asser
   assert.ok(one, 'Nothing was reported about the fork at all')
   assert.notEqual(one.how, 'none', 'The fork was already level with its parent, which cannot be true just after a merge — the sync did nothing')
   state.synced = true
+  log(`${one.repo || ONE}: the fork was brought up to its parent by "${one.how}"${one.note ? ` — ${one.note}` : ''}`)
 })
 
-it('and this host follows, with the change on its default branch', async ({ okc, assert, state }) => {
+it('and this host follows, with the change on its default branch', async ({ okc, assert, state, log }) => {
   await okc('repoSync', {})
   // Read from the repositories rather than from what the sync REPORTED. "It said
   // it moved" and "the change is here" are different claims, and only the second
@@ -150,18 +164,20 @@ it('and this host follows, with the change on its default branch', async ({ okc,
   const still = (back.repos || []).filter(r => r.ahead > 0)
   assert.equal(still.length, 0,
     `The change did not come back: ${still.map(r => `${r.repo} is still ${r.ahead} ahead`).join(', ')}`)
+  log(`pulled, and "${state.branch}" now carries nothing that "${state.line}" does not already have — the change is home`)
 })
 
-it('and the branch it came from is taken off the fork', async ({ okc, assert, state }) => {
+it('and the branch it came from is taken off the fork', async ({ okc, assert, state, log }) => {
   // The button GitHub offers on a merged pull request. A fork that keeps every
   // branch it has ever merged is a list nobody can read, and the branches that
   // matter are lost among the ones that are already in master.
   const gone = await okc('branchDeleteRemote', { branch: state.branch, repo: ONE })
   assert.ok((gone.repos || []).some(r => r.gone), `The branch is still on the fork: ${gone.note}`)
   state.droppedRemote = true
+  log(`taken off the fork: ${(gone.repos || []).filter(r => r.gone).map(r => r.repo).join(', ')}`)
 })
 
-it('and nothing is left behind here', async ({ okc, assert, state }) => {
+it('and nothing is left behind here', async ({ okc, assert, state, log }) => {
   // The last step of the order is the tidying, and it is a check rather than
   // only a cleanup: a flow that cannot be run twice is a flow that works once.
   await okc('lineForget', { name: state.branch })
@@ -171,6 +187,7 @@ it('and nothing is left behind here', async ({ okc, assert, state }) => {
 
   const left = await okc('drillSweep', {})
   assert.equal(left.total, 0, `The order ran and left something behind: ${JSON.stringify(left.branches)} ${JSON.stringify(left.remote)}`)
+  log(`the line was forgotten, the branch deleted, and a sweep found ${left.total} things left by drills`)
 })
 
 cleanup(async ({ okc, state }) => {

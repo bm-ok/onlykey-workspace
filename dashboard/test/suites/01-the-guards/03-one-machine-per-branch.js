@@ -10,17 +10,22 @@
 const { it } = require('../../../tasks/harness')
 const { scratch } = require('../../helpers')
 
-it('a machine is not moved off the branch it is on', async ({ okc, assert }) => {
+// WHAT IT SAW LAST TIME is recorded at the bottom of this file. Both checks here
+// need a machine that is WORKING, so the transcript is from a run made while the
+// round trip was in flight — which is the only time this file can say anything.
+
+it('a machine is not moved off the branch it is on', async ({ okc, assert, log }) => {
   const { vms } = await okc('vmList')
   const on = vms.find(v => v.connected && v.branch)
   assert.needs(on, 'no connected machine is on a branch — one is only on a branch while it is working')
-  await assert.refuses(
+  const refusal = await assert.refuses(
     () => okc('vmWorkspace', { name: on.name, branch: scratch('elsewhere') }),
     'stays there until it is clean',
     'Switching is how half-finished work stops being anywhere')
+  log(`asked of ${on.name}, which is on "${on.branch}" — refused, and this is what it said:\n${refusal.message}`)
 })
 
-it('a branch already claimed is not handed to a second machine', async ({ okc, assert }) => {
+it('a branch already claimed is not handed to a second machine', async ({ okc, assert, log }) => {
   const { vms } = await okc('vmList')
   const claimed = vms.find(v => v.branch)
 
@@ -41,8 +46,9 @@ it('a branch already claimed is not handed to a second machine', async ({ okc, a
   assert.needs(claimed, 'no machine claims a branch — a machine is rolled back when its work ends')
   assert.needs(free, 'no second machine is connected and free of a branch. This will not make one: the only way off a branch is a rollback, and that discards whatever is on it')
 
-  await assert.refuses(
+  const refusal = await assert.refuses(
     () => okc('vmWorkspace', { name: free.name, branch: claimed.branch }),
     'already being worked on',
     'Two machines on one branch race for the same ref and the loser\'s commits strand')
+  log(`${claimed.name} claims "${claimed.branch}"; offering it to ${free.name} was refused, and this is what it said:\n${refusal.message}`)
 })

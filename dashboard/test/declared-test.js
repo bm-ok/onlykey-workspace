@@ -239,6 +239,34 @@ for (const dir of ['actions', 'tasks', 'machines', 'repos', 'core']) {
   }
 }
 
+// THE DRILLS, which were outside this until a drill crashed on one.
+//
+// They are the files where an undeclared name costs the most. Everything above
+// fails in an action somebody is watching; a drill fails minutes in, having
+// already cut a branch, written a task and started a machine — and the whole
+// point of the run was to find out something else.
+//
+// It happened exactly this way: a check was given a `log(...)` line without
+// `log` being added to what it destructures from its context. node --check
+// passed, npm test passed, the suite registered, and it died with "log is not
+// defined" as the first thing the run did.
+//
+// Nested one deeper than the rest — a folder per suite, files inside it — so
+// this walks rather than reading one directory.
+{
+  const at = path.join(ROOT, 'test', 'suites')
+  const folders = fs.existsSync(at)
+    ? fs.readdirSync(at, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)
+    : []
+  for (const folder of folders) {
+    for (const file of jsIn(path.join('test', 'suites', folder))) {
+      const src = read(file)
+      const used = usedIn(src, declaredIn(src))
+      if (used.size) say(path.relative(ROOT, file), used)
+    }
+  }
+}
+
 if (bad) {
   console.log(`\nFAIL — ${bad} name(s) used but never declared. Each throws the moment its line runs,\nand node --check passes on every one of them.`)
   process.exit(1)
