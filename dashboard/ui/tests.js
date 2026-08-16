@@ -42,7 +42,24 @@ const TEST_LOOK = {
   // Amber rather than red, and worded as a fact about the moment rather than
   // about the code. See `needs` in tasks/harness.js.
   unrunnable: { className: 'badge warn', textContent: 'not tried' },
-  'not run': { className: 'badge muted', textContent: 'not run' }
+  'not run': { className: 'badge muted', textContent: 'not run' },
+
+  // THE THREE THAT ONLY EXIST BECAUSE RESULTS OUTLIVE THE WINDOW.
+  //
+  // Before core/testruns.js a result was this process's, so a check was passed,
+  // failed, not tried or not run and there was nothing else it could be. Kept
+  // across restarts, three more states are true and all of them are honest
+  // answers rather than verdicts — which is why none of them is green.
+  //
+  //   carried      it was not run this time: it passed in the run that was
+  //                interrupted, and was taken on trust so the series could go on
+  //   changed      it passed once, and the check has been EDITED since, so what
+  //                it did then says nothing about what it does now
+  //   interrupted  it was running when the dashboard went away
+  carried: { className: 'badge muted', textContent: 'carried' },
+  changed: { className: 'badge warn', textContent: 'check changed' },
+  interrupted: { className: 'badge warn', textContent: 'interrupted' },
+  running: { className: 'badge', textContent: 'running' }
 }
 
 // The worst thing in a list, for the badge on a card. Failed beats not-tried
@@ -135,10 +152,38 @@ async function paintTestsNow () {
             },
             el('div', { className: 'card-title' },
               el('span', { className: 'grow', textContent: s.name }),
-              el('span', TEST_LOOK[worstOf(states)])),
+              // THE SUITE'S OWN STATE, which is not always the worst of its
+              // checks. A suite contradicted by somebody else's check reads as
+              // failed while every check in it still says passed — that is the
+              // point of it, and computing the badge here from the checks alone
+              // would hide exactly the case it was added for.
+              el('span', TEST_LOOK[s.state || worstOf(states)])),
             el('div', { className: 'badges' },
               el('span', { className: 'muted', textContent: `${s.tests.length} test${s.tests.length === 1 ? '' : 's'}, ${checks} check${checks === 1 ? '' : 's'}` }),
               ...countBadges(states),
+              // WHAT IS OWED ON IT, and why. Dirty is a debt rather than a
+              // colour: the results inside are current and the claim about the
+              // whole suite is not, and the only thing that settles it is
+              // running the suite. Contradicted is stronger and says who did it.
+              s.disprovedBy
+                ? el('span', {
+                    className: 'badge bad',
+                    textContent: 'contradicted',
+                    title: `"${s.disprovedBy.check}" in ${s.disprovedBy.suite} failed, which is evidence against this suite. ${s.disprovedBy.why || ''} Run this suite again to settle it.`
+                  })
+                : null,
+              s.dirty && !s.disprovedBy
+                ? el('span', {
+                    className: 'badge warn',
+                    textContent: 'owes a run',
+                    title: s.dirtyBecause
+                      ? `Something it stands on was disturbed: ${s.dirtyBecause.join(', ')}. These results were established on top of it.`
+                      : 'Part of this suite was run on its own, so the results are current and the claim about the whole suite is not.'
+                  })
+                : null,
+              s.requires && s.requires.length
+                ? el('span', { className: 'muted', textContent: `stands on ${s.requires.join(' + ')}` })
+                : null,
               el('button', {
                 className: 'btn small',
                 textContent: 'Run it',
@@ -170,7 +215,16 @@ async function paintTestsNow () {
           el('div', { className: 'badges' },
             el('span', { className: 'muted', textContent: `${t.checks.length} check${t.checks.length === 1 ? '' : 's'}` }),
             ...countBadges(t.checks.map(c => c.state)),
-            t.ms != null ? el('span', { className: 'muted', textContent: `${t.ms}ms` }) : null)))
+            t.ms != null ? el('span', { className: 'muted', textContent: `${t.ms}ms` }) : null,
+            // WHEN, WHICH ONLY MATTERS ONCE RESULTS OUTLIVE THE WINDOW. A pass
+            // from four days ago and one from four minutes ago are both green,
+            // and the difference is most of what somebody wants to know.
+            t.ranWhole
+              ? el('span', { className: 'muted', textContent: `whole ${ago(t.ranWhole)}` })
+              : null,
+            t.dirty
+              ? el('span', { className: 'badge warn', textContent: 'owes a run', title: 'Part of this was run on its own, or a step was carried rather than run. The results are current; the claim about the whole series is not.' })
+              : null)))
         : el('p', { className: 'empty', textContent: 'Pick a suite on the left.' }))
     }
 

@@ -88,6 +88,9 @@ module.exports = {
       // Results made against another folder are kept — they are still true about
       // that folder — and simply not read here.
       const mine = remembered.forWorkspace(where)
+      // The run the STORE knows about, which is the last one that happened
+      // rather than the last one this window saw.
+      const kept = mine ? remembered.lastRun() : null
 
       // THE HARNESS SAYS SUITE AND TEST; THIS SAYS SUITE, TEST AND CHECK.
       //
@@ -226,12 +229,23 @@ module.exports = {
         // Said while LISTING, so the tab can explain why its buttons are off
         // without anybody pressing one to find out.
         ...mayRun(),
-        ran: lastRun.at,
+        ran: lastRun.at || (kept && kept.at) || null,
         running: lastRun.running,
-        counts: was ? { passed: was.passed, failed: was.failed, unrunnable: was.unrunnable } : null,
+        counts: was
+          ? { passed: was.passed, failed: was.failed, unrunnable: was.unrunnable }
+          : (kept && kept.counts) || null,
+        // WHAT IT SAYS WHEN THIS WINDOW HAS RUN NOTHING, which is every window
+        // after a restart. It used to say "nothing has been run in this window
+        // yet" over a board full of results, which was true about the window and
+        // read as a flat contradiction of everything under it — the exact
+        // confusion keeping results across restarts was meant to end.
         note: was
           ? `${was.passed} passed, ${was.failed} failed, ${was.unrunnable} could not be tried — as of ${lastRun.at}.`
-          : 'Nothing has been run in this window yet. Listing a suite runs none of it.'
+          : kept && kept.counts
+            ? `${kept.counts.passed} passed, ${kept.counts.failed} failed, ${kept.counts.unrunnable} could not be tried — from the last run, before this window was opened.`
+            : kept && kept.interrupted
+              ? 'The last run was interrupted — the dashboard was restarted while it was going. A drill that keeps its state will carry on from where it stopped.'
+              : 'Nothing has been run here yet. Listing a suite runs none of it.'
       }
     }
   },
