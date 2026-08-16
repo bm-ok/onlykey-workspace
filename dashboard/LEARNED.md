@@ -761,3 +761,54 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   keeping it out of the pool, naming work that had moved to another machine days
   earlier. When a field is added that means "not available", every place that
   releases availability has to learn about it.
+
+* **A note about the world goes stale exactly when the world changes.** The
+  warming suite worked out which machines were missing in its first check and
+  kept the answer in `state`. Resuming an interrupted run CARRIES the checks that
+  already passed — which means the code inside them does not run — so the series
+  picked up holding "both machines are missing" about two machines that were by
+  then built and correctly powered off, and sat waiting for them to dial in.
+  Twice. The rule that came out of it: state may keep what the world cannot say
+  (which machines this run built, when it started) and must never keep an answer
+  the world can be asked for. `whatIsMissing()` asks, every time, wherever it
+  matters.
+
+* **A comment named a caller that never existed.** `ui/tasks.js` said "`taskGive`
+  is untouched and is still what the queue calls". `git log -S taskGive --
+  tasks/queue.js` returns nothing at all: that string has never been in the
+  queue, so the sentence was wrong the day it was written, not stale. The queue
+  dispatches with `vmDispatch` and `jobRun` and does its own accounting around
+  them. Two techniques came out of it — `git log -S <name>` says when a name
+  stopped being used, and the same with `-- <file>` says whether it was ever
+  there — and one tool, `test/unused.js`, which lists what nothing calls and what
+  is named only in prose. A comment cannot call anything.
+
+* **The kernel is silent on the boot you are watching.** A drill waited for
+  `root=UUID=` on the serial console to know a machine had rebooted into what it
+  installed. That line reaches the wire because first-boot writes a grub drop-in
+  — and the drop-in applies from the NEXT boot, which `first-boot.sh` says in as
+  many words at the point it writes it. Two machines got most of the way through
+  provisioning, 4325 lines of console each, with zero matches for the thing being
+  waited on, under a fifty-minute timeout that would eventually have called a
+  good install a failure. The marker that works is what the installed system
+  actually says first: `okc: first boot: making the machine reachable`.
+
+* **Starting a machine ended its turn about a second in.** "One machine comes up
+  at a time" was enforced by `busy.comingUp`, and the queue and the installer
+  both waited for the console before handing the host on. `vmStart` — the one a
+  person presses — ended its turn when `VBoxManage` returned, which is before the
+  machine has done anything. The turn now ends when the kernel speaks, and there
+  is a five-second settle before the next machine starts: the seconds straight
+  after the first byte are the heaviest of the boot, so ending the turn there
+  hands the host over at the worst possible moment.
+
+* **The shape of an answer is not a name, so nothing static can catch it.** Three
+  drills were written against interfaces that do not exist: `{ isos }`
+  destructured from an action returning a bare array, so a gate reported "no
+  Ubuntu ISO" on a host with four and had never once opened; `githubHeld.works`,
+  a field that is not there, so a dead token would have passed; and `stage:
+  'ready'` asserted of a machine that reports `connected` while it is dialled in
+  and can never say both. `node --check` passes on all three, `npm test` cannot
+  see them, and a drill that refuses to run looks exactly like a drill being
+  careful. Only running them found it — which is the argument for the kit, and
+  the reason to read an action's answer before writing against it.

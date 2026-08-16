@@ -1663,9 +1663,15 @@ over TLS: pinned the authority against a fingerprint, fetched everything
 encrypted, ran all four provisioning scripts, rebooted and dialled in as the
 ordinary user. What follows is what is still not proven.
 
-* **Only Ubuntu desktop images have been used.** `VBoxManage unattended install`
-  drives the installer, and an image it does not understand will not install
-  unattended however correct everything here is. A server image has never been tried.
+* **Ubuntu server and desktop images both install unattended.** This said a
+  server image had never been tried; it is now the only one this project
+  installs. `ubuntu-24.04.4-live-server-amd64.iso` built four machines on 16
+  August 2026 — one drill machine twice, then `kit-1` and `kit-2` with both
+  installers running at once — in about ten minutes each against twenty-five for
+  a desktop image. Subiquity rather than preseed, `curtin in-target` for the
+  post-install command, and a desktop only if the machine was made with one
+  asked for. The console of each is on this host afterwards: 5453 and 5447
+  lines, several hundred of installer and of curtin.
 * **The source-build fallback in a project script has never run.** Where a tool came
   from the distribution on both images, the path that builds one from source was
   never taken, so it is untested.

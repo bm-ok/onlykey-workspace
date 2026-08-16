@@ -7,9 +7,40 @@ there and should leave this file. Anything left in here long enough to go stale
 was probably never going to be done.
 
 Something that needs *exercising* rather than building belongs in
-`TEST-PLAN.md`, which is where the four unrun drills went. It is a different
-list: not what is missing, but what is unproven. Something that is not built yet
-because it is not its turn belongs in `ROADMAP.md`.
+`test/suites/` — a folder is a suite, a numbered file in it is a test, an it()
+is a check, and `test/outline.md` is the whole list in order. `TEST-PLAN.md` is
+the prose that came before it and is kept as history. Something that is not
+built yet because it is not its turn belongs in `ROADMAP.md`.
+
+
+What the test kit is owed
+-------------------------
+
+The suites run green — 76 passed, 0 failed, 7 could not be tried, in nine
+minutes — and the seven say what they needed rather than what went wrong. What
+is outstanding is not failures; it is these:
+
+* **Judging is not described.** A verdict is recorded and nothing says what a
+  rejection MEANS: whether it goes back out as work, or is a fact about work
+  that is finished. The accept path cannot even be reached by a drill, because
+  no job here pushes a commit — `api-tour` hands back a file, so the round trip
+  ends on "nothing has arrived on this branch, so there is nothing to judge".
+  Proving it needs a job that makes a change and pushes it, which a person has
+  to write and approve at the window.
+
+* **`requires()` marks dirty and does not refuse.** The order is declared and
+  has consequences; it does not yet stop a suite being run before the ground it
+  stands on has passed. That is the difference between describing the order and
+  enforcing it.
+
+* **`test/unused.md` is the hardening queue.** 8 actions named only in comments,
+  24 with no caller, 12 with neither a button nor a drill, 52 exports nothing
+  outside their file uses. Some are legitimately command-line tools; the list
+  stops crying wolf once an action can say it is one on purpose.
+
+* **Three checks can only run in flight**, and one wants a contract nobody has
+  approved. They report what they needed, which is honest, but they are the
+  coverage that a single sequential run does not reach.
 
 
 How the window gets checked
@@ -290,7 +321,22 @@ Volatile, and the first thing to check rather than trust:
 
     okc.js vmList --json
 
-Last checked, **both runners were off**, each on a single snapshot called
+**There are four now, and two of them belong to the test kit.**
+
+    runner3, runner4   yours. Untagged, so they take any work that asks for
+                       no particular kind of machine
+    kit-1, kit-2       built by `03 the machines are built` on 16 August 2026,
+                       from the server ISO, both installers at once. Tagged
+                       `test`, so a task tagged `test` goes to one of them and
+                       waits rather than taking one of yours
+
+The kit's two are removed by `09 cooling the host`, which is off unless asked
+for with `--teardown true` — so they stay standing between runs, which is why
+that suite passes in a second on a warm host instead of building for ten
+minutes. Taking them away marks the build stage dirty, and the next run makes
+them again.
+
+Last checked, **all four were off**, each on a single snapshot called
 `base` that predates any branch, claiming nothing, holding no credential,
 borrowed by nobody, and free to the queue. That is the resting state the whole
 design is arranged around, and the state to put them back into.

@@ -9,6 +9,17 @@ it refuses; this says what order the parts are touched in — the thing a new
 person cannot get from a list of features, and the thing an end-to-end drill
 needs in order to be end-to-end.
 
+> **There is an executable version of this now**, and where the two disagree it
+> is right and this is wrong. `test/outline.md` is the same journey as suites
+> numbered in the order they are done — a host with keys, machines built, a
+> credential, the work, and cooling down afterwards — and it is generated from
+> what actually registers, so it cannot drift. This file is the reasoning; that
+> file is the sequence.
+>
+> Written before the Test tab, machine tags and the kit's own machines existed,
+> so steps below may name a screen that has moved. Read it for WHY the order is
+> this order, and check the order itself against the outline.
+
 Steps 1–4 are set-up and happen once ever. 5–9 are a piece of work. 10–13 are
 landing it and stopping. Somebody returning tomorrow starts at OPEN A FOLDER OF
 REPOSITORIES only if they closed it, and otherwise at CUT A BRANCH TO WORK IN.
