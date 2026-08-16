@@ -23,6 +23,19 @@ draft('a judgement is a task whose subject is a PR cut',
   'AND job <- prompt <- contract IS ALREADY BUILT, with a tab of its own and an approval per substance — so a judging job is a job, its prompt is a prompt, its contract is a contract, and nothing new appears in the library. The only new thing is the left-hand end. ' +
   'THE CHECK: judge an open cut, and a task exists whose subject is that cut, with its own job and its own run, holding no branch.')
 
+draft('and an open cut is what asks for one',
+  'THE TRIGGER, and it is not somebody deciding to judge a task. A cut is opened when work is proposed for landing — that is the moment the change stops being one machine\'s business and becomes something to be read — so an open cut is a thing WAITING to be judged, and the app should say so without being asked. ' +
+  'WHICH IS WHY IT IS THE CUT AND NOT THE TASK: a cut may carry work from more than one task, and a task may deliver nothing worth landing. Judging follows the change, not the occasion that produced it. ' +
+  'THE CHECK: open a cut, and it appears as awaiting a judgement — before anybody has typed anything. Land or close it, and it stops asking. ' +
+  'TO SETTLE: whether a judging task is created automatically when a cut opens, or the cut simply reads as unjudged until somebody starts one. The first makes a queue of judgements that run unattended; the second keeps judging a decision. Both are defensible and they are different products.')
+
+draft('and the judge tab shows what is waiting, what is being judged, and what was decided',
+  'THE HOME IT NEEDS. "Judge it" used to be a button on the task\'s own card — the screen that asked for a decision showed the QUESTION and not the answer — and it was removed rather than moved, so there is nowhere to do this today. ' +
+  'WHAT THE SCREEN IS BUILT AROUND: the delivery. The cut\'s commits, the diff, the files handed back, the run\'s log, and the two buttons under all of it. ' +
+  'THE LIST is the part this draft adds: every open cut, which are waiting, which have a judgement in flight, and which were decided — with the verdict and what it was judged on. That is the same shape as the task board, one level up, and it is what makes judging something you can be BEHIND on rather than something you remember to do. ' +
+  'THE CHECK: with one cut open and one judged, the tab lists both under the right heading, and the judged one names its verdict and the run behind it. ' +
+  'TO SETTLE: whether this is a tab of its own or the bottom of the board\'s third column once something has arrived. A tab is findable; the column is where somebody already is.')
+
 draft('and it is done by either kind of supervisor',
   'A person reading a diff and a worker running checks are the same act with a different body — which is what the spine already says about who supervises, and the reason judging should not be a special case bolted to a task. ' +
   'A judging job might run the tests, read the diff against the contract, or do nothing but wait for a person. ' +

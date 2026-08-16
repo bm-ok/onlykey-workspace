@@ -44,6 +44,21 @@ worker running checks are the same act with a different body — which is exactl
 what the spine already says about who supervises, and the reason judging should
 not be a special case bolted to the side of a task.
 
+**An open cut is what asks for a judgement.** Not somebody deciding to judge a
+task — a cut is opened when work is proposed for landing, which is the moment the
+change stops being one machine's business and becomes something to be read. So an
+open cut is a thing *waiting*, and this app should say so without being asked.
+
+That is also why the subject is the cut and not the task: a cut may carry work
+from more than one task, and a task may deliver nothing worth landing. Judging
+follows the change, not the occasion that produced it.
+
+**Which makes it a list, and lists want a tab.** Every open cut: which are
+waiting, which have a judgement in flight, which were decided and what the
+verdict was. The same shape as the task board, one level up — and it is what
+turns judging into something you can be *behind on* rather than something you
+remember to do.
+
 **And it reports outward.** A verdict is not only a note on a board: it belongs
 on the PR cut the work is landing through, and on GitHub beside the pull request
 — the place anybody looking at the change would expect to find out whether it was
