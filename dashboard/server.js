@@ -781,6 +781,44 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
         else log.on('server').info(`The certificate covers ${where} and is good for ${s.daysLeft} days`)
       } catch { /* no address to check against yet; status reports it either way */ }
 
+      // THE OUTLINE, REWRITTEN IF THE SUITES HAVE MOVED — and only while the
+      // drills are switched on for the open folder.
+      //
+      // `test/outline.md` is the closest thing this project has to a
+      // specification: every suite, test and check, in the order a person uses
+      // the app. It is generated, and a generated file is only worth reading if
+      // it is current — during a session where somebody is adding checks it goes
+      // stale within minutes, and the person reading it has no reason to doubt
+      // it.
+      //
+      // GATED, because writing it means LOADING every suite, which this app
+      // otherwise does on demand: a headless run that never opens the Test tab
+      // should not pay for registering eighty checks. Testing mode is exactly
+      // the signal that somebody is working on them.
+      //
+      // Written only when it would change, so an ordinary restart leaves the
+      // file — and the working tree — alone. Never fatal: a specification that
+      // could not be written is a line in the log, not a dashboard that will not
+      // start.
+      try {
+        if (settings.testsAllowed(workspaces.dir() || null).allowed) {
+          const outline = require('./test/outline')
+          const made = outline.write()
+          // UNDER `app`, NOT `test`, and that is not a detail. The durable
+          // record keeps an allowlist of tags — anything that makes, destroys,
+          // starts or stops something — and `test` is deliberately not on it,
+          // because a run logs a line per check and would drown the record.
+          // Writing a file at startup IS one of those acts, and logged under
+          // `test` it went to the live log and nowhere else: the first version
+          // of this rewrote the file silently, which is exactly the shape of
+          // thing this app is meant not to do.
+          if (made.wrote) log.on('app').info(`test/outline.md rewritten — ${made.suites} suites, ${made.tests} tests, ${made.checks} checks`)
+          for (const b of made.broken) log.on('app').warn(`${b} — the outline says so, and nothing else will`)
+        }
+      } catch (e) {
+        log.on('test').warn(`could not write test/outline.md — ${e.message}`)
+      }
+
       resolve({
         server,
         port: net.port,
