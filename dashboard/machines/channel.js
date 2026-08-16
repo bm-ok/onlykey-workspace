@@ -243,6 +243,19 @@ function handle (vm, msg) {
       agent.facts.desktop = msg.desktop
       to.info(msg.desktop ? 'its desktop session is up' : 'its desktop session has gone')
     }
+    // AND HOW MUCH OF ITSELF IT IS USING, which VirtualBox cannot answer.
+    //
+    // Its memory metrics come FROM the guest additions, so a machine built
+    // without them — which is now every runner with no desktop — reports
+    // nothing on the host side at all. The machine knows, and it is already
+    // talking to us every twenty seconds.
+    //
+    // Kept quietly: this changes constantly and a log line per beat would bury
+    // everything else. It is a fact to look at, not an event.
+    if (agent && agent.facts && typeof msg.memoryUsedMB === 'number') {
+      agent.facts.memoryUsedMB = msg.memoryUsedMB
+      if (typeof msg.memoryTotalMB === 'number') agent.facts.memoryTotalMB = msg.memoryTotalMB
+    }
     // ANSWERED, because a one-way heartbeat proves nothing.
     //
     // The machine cannot tell a working connection from a severed one by

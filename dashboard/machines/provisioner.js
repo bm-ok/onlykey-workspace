@@ -429,11 +429,57 @@ function report (name, stage) {
   const vm = vms.read().find(v => v.name === name)
   if (!vm) return { ignored: true }
   log.on('vm', name, 'guest').good(`${name}: ${stage}`)
-  return vms.update(name, {
+  const now = vms.update(name, {
     reported: new Date().toISOString(),
     stage,
     installing: stage === 'online' ? null : vm.installing
   })
+
+  // AND THE CLEAN STARTING POINT IT HAS JUST BECOME.
+  //
+  // A machine with no base snapshot cannot be put away clean, so the queue
+  // correctly never picks it up — and "the queue is ignoring my new machine" is
+  // indistinguishable from "the queue has nothing to do". Every machine built
+  // here needed somebody to remember this step, twenty-five minutes after they
+  // started the thing that needed it.
+  //
+  // THIS IS THE MOMENT and there is no better one: the operating system is
+  // installed, the scripts have run, nothing has been asked of it yet. Later
+  // means a base snapshot with somebody's half-finished work inside it.
+  //
+  // Detached on purpose. This is answering the guest's own HTTP report, and
+  // snapshotting shuts the machine down and starts it again — which the guest
+  // cannot very well wait for the reply of. Failures are said and change
+  // nothing: the machine is still installed, and vmBaseSnapshot is still there
+  // to be pressed.
+  if (stage === 'online' && !vm.baseSnapshot) {
+    setTimeout(() => {
+      base(name).catch(e => log.on('vm', name).warn(`could not take its first snapshot: ${e.message}. Take one with vmBaseSnapshot — until it has one, the queue cannot use it.`))
+    }, 1000)
+  }
+  return now
+}
+
+// The first snapshot, taken once and never again by this path. Written here
+// rather than called through the actions table because provisioner is under
+// machines/ and this is a machine operation: the action does the same thing for
+// a person pressing a button.
+async function base (name, title = 'base') {
+  const to = log.on('vm', name)
+  to.info('taking its first clean snapshot, so it can be put away and reused')
+  if (!await vbox.isOff(name)) {
+    await vbox.stop(name, false)
+    if (!await vbox.waitUntilOff(name, { timeout: 180000 })) {
+      to.warn('it did not shut down when asked; pulling the power to snapshot it')
+      await vbox.stop(name, true).catch(() => {})
+      await vbox.waitUntilOff(name, { timeout: 60000 })
+    }
+    await vbox.waitUntilUnlocked(name)
+  }
+  await vbox.takeSnapshot(name, title, 'the machine as it was built, before anything was asked of it')
+  vms.update(name, { baseSnapshot: title, snapshots: { [title]: null } })
+  to.good(`"${title}" is the point this machine will be returned to after every task`)
+  return { name, baseSnapshot: title }
 }
 
 module.exports = { fill, create, install, report, resolveISO, pickBridge }

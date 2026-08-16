@@ -30,6 +30,29 @@ apt-get -o DPkg::Lock::Timeout=600 install -y \
   x11-utils x11-xserver-utils dconf-cli \
   || say 'some packages did not install; carrying on'
 
+# --- the clock ---------------------------------------------------------------
+#
+# THE ONE THING THE GUEST ADDITIONS DO THAT A HEADLESS RUNNER ACTUALLY NEEDS.
+#
+# Everything else they offer is about somebody sitting in front of the machine:
+# the mouse not being trapped, the clipboard, dragging files in, resizing the
+# window. A runner holding a terminal uses none of it. Time is different — a
+# machine whose clock is wrong cannot verify this host's certificate, argues with
+# apt, and writes commits and logs that cannot be lined up with anything.
+#
+# And the virtual clock DOES drift: measured here at six and a half minutes
+# behind after one boot. What keeps the system clock right is NTP, which is
+# Ubuntu's default and is made explicit here because a default is a thing that
+# changes in the next release, and this one fails quietly and expensively.
+say 'making sure the clock keeps itself right'
+timedatectl set-ntp true 2>/dev/null || true
+systemctl enable --now systemd-timesyncd 2>/dev/null || true
+if timedatectl 2>/dev/null | grep -q 'synchronized: yes'; then
+  say 'the clock is synchronised'
+else
+  say 'WARNING: the clock is not synchronised — TLS to the dashboard and apt will both eventually complain'
+fi
+
 # --- docker ------------------------------------------------------------------
 
 say 'installing docker'

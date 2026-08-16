@@ -102,7 +102,44 @@ def facts():
         # Who this is running as, which should not be root.
         "user": os.environ.get("USER") or subprocess.run(["id", "-un"], capture_output=True, text=True).stdout.strip(),
         "desktop": desktop_ready(),
+        **memory(),
     }
+
+
+def memory():
+    """How much of itself this machine is using, asked of the machine.
+
+    VIRTUALBOX CANNOT ANSWER THIS WITHOUT THE GUEST ADDITIONS. Its memory
+    metrics come FROM the additions -- so a machine built without them, which is
+    now every runner that has no desktop, reports nothing at all on the host
+    side. The host can see how much memory the VM process has taken from
+    Windows, which is not the same number and is not the one anybody wants.
+
+    This machine knows perfectly well, and there is already a channel for it to
+    say so. Read from /proc/meminfo rather than by running `free`, because it is
+    a file read rather than a process, and this happens on every beat.
+
+    Returns nothing at all rather than zeroes if it cannot be read: a missing
+    fact is honest, and "0 MB used" would be a lie that looks like a reading.
+    """
+    try:
+        seen = {}
+        with open("/proc/meminfo", "r") as fh:
+            for line in fh:
+                key, _, rest = line.partition(":")
+                if key in ("MemTotal", "MemAvailable"):
+                    seen[key] = int(rest.strip().split()[0]) // 1024
+        if "MemTotal" not in seen or "MemAvailable" not in seen:
+            return {}
+        # AVAILABLE, not free. Linux uses everything spare for cache, so "free"
+        # on a healthy machine is near zero and means nothing; available is what
+        # could actually be given to something new.
+        return {
+            "memoryTotalMB": seen["MemTotal"],
+            "memoryUsedMB": seen["MemTotal"] - seen["MemAvailable"],
+        }
+    except Exception:
+        return {}
 
 
 class Link:
@@ -242,7 +279,9 @@ def beat(link, stop, sock, heard):
 
     while not stop.wait(20):
         try:
-            link.send({"type": "beat", "desktop": desktop_ready()})
+            # Memory rides on the beat rather than being asked for, because it
+            # is only interesting while it changes and a beat is already going.
+            link.send({"type": "beat", "desktop": desktop_ready(), **memory()})
         except Exception as err:
             print(f"okc-agent: beat failed ({err}); dropping the session", flush=True)
             heard["give_up"] = "a beat could not be sent"

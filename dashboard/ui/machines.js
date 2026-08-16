@@ -655,6 +655,14 @@ function paintDetails () {
     // be a lie that took twenty-five minutes to find out about.
     ['built with', v.desktopWanted ? 'a desktop' : 'no display — a terminal-only runner'],
 
+    // WHAT VIRTUALBOX CANNOT SAY WITHOUT THE GUEST ADDITIONS. Its memory metrics
+    // come from the additions, so the graph is empty for every machine built
+    // without them — which is now every runner with no desktop. The machine
+    // knows, and it says so on every beat.
+    v.connected && v.agent && v.agent.facts && v.agent.facts.memoryUsedMB != null
+      ? ['memory', `${v.agent.facts.memoryUsedMB} MB used${v.agent.facts.memoryTotalMB ? ` of ${v.agent.facts.memoryTotalMB}` : ''}`]
+      : null,
+
     // And whether that desktop is actually up, which the agent reports on every
     // beat. Booted is not usable: this is what decides whether a sign-in or an
     // editor would work at all. Not asked of a machine that never had one.
