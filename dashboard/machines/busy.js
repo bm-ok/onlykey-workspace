@@ -118,6 +118,21 @@ function takeTurn (name, kind, waitMs, onWait) {
   })
 }
 
+// A BREATH BETWEEN MACHINES, AFTER THE KERNEL IS UP AND BEFORE THE NEXT STARTS.
+//
+// The turn ends when a machine's console speaks, which is the kernel alive and
+// running code — but "alive" is not "settled". The seconds straight after are
+// the heaviest of the whole boot: the initrd is handing over, the disk is being
+// read hardest, and udev is bringing devices up. Starting the next machine into
+// exactly that is what the turn-taking exists to avoid, and ending the turn on
+// the first byte hands it over at the worst possible moment.
+//
+// Five seconds, and it is a settle rather than a guess about how long a boot
+// takes — the waiting was already done by listening to the console. Cheap
+// against the minutes a boot costs, and the difference between staggering
+// machines and merely offsetting them.
+const SETTLE_MS = 5000
+
 function giveUpTurn () {
   // An inner turn ending is not the turn ending. Only the outermost one hands
   // the host to the next machine.
@@ -126,8 +141,12 @@ function giveUpTurn () {
   const next = waiting.shift()
   if (!next) return
   clearTimeout(next.timer)
+
+  // Held by the machine that is about to start, not left ownerless, or anything
+  // arriving during the pause would see a free host and start immediately —
+  // which is the race this pause exists to close.
   holder = { name: next.name, kind: next.kind, depth: 1 }
-  next.resolve()
+  setTimeout(() => next.resolve(), SETTLE_MS)
 }
 
 async function comingUp (name, fn, { kind = 'boot', waitMs = 12 * 60000, onWait = null } = {}) {

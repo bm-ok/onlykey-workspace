@@ -317,9 +317,26 @@ module.exports = {
     takes: ['name', 'type'],
     run: ({ name, type }) => {
       vms.get(name)
+      // THE TURN ENDS WHEN THE KERNEL IS UP, not when VBoxManage returns.
+      //
+      // Starting a machine is instant to ask for and expensive to do: the reply
+      // comes back in a moment and the machine then pulls on the disk and every
+      // core for the next minute. This used to end its turn on that reply, so
+      // "one machine at a time" held for about a second — the queue and the
+      // installer both listen to the console before handing the host on, and
+      // this, the one a person presses, did not.
+      //
+      // Its own failure to speak is not this action's failure. A machine with no
+      // console capture cannot say anything, which untilItSpeaks reports and
+      // does not treat as an error; what matters here is that the host is not
+      // handed to the next machine while this one is at its heaviest.
       return busy.during(name, 'being started', () => busy.comingUp(name,
-        () => vbox.start(name, type === 'headless' ? 'headless' : 'gui'),
-        { onWait: other => log.on('vm', name).info(`waiting for "${other}" to come up first — one machine at a time on this host`) }))
+        async () => {
+          const started = await vbox.start(name, type === 'headless' ? 'headless' : 'gui')
+          await untilItSpeaks(name).catch(() => ({ spoke: false }))
+          return started
+        },
+        { onWait: other => log.on('vm', name).info(`waiting for "${other}" to get its kernel up — one machine starts at a time on this host`) }))
     }
   },
 

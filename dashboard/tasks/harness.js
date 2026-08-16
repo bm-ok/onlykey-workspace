@@ -352,6 +352,17 @@ async function run (context = {}) {
 
       try { if (onTestStart) onTestStart({ groupName: suite.group, suiteName: suite.name, testName: t.name }) } catch { /* a reporter must not fail a test */ }
 
+      // CALLED OFF. Asked between checks, because a check already waiting on a
+      // machine is inside a promise nothing here can reach into — see suiteStop
+      // in actions/tests.js, which says so rather than implying otherwise.
+      //
+      // Reported as not tried, and the reason says who stopped it. A step that
+      // did not run must never be mistaken for one that passed, and "the run was
+      // stopped" is a different thing from "an earlier step failed".
+      if (!stoppedBy && typeof context.shouldStop === 'function' && context.shouldStop()) {
+        stoppedBy = `the run was stopped — "${t.name}" and the steps after it were not tried`
+      }
+
       // A step after one that failed. Not tried, and said as what it is — the
       // step above is the thing to read, and this one has nothing to add.
       if (stoppedBy) {

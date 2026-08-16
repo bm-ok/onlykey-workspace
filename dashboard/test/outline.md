@@ -77,7 +77,7 @@
   3. and both installers run at the same time
   4. and both write a system to disk and boot it
   5. and provisioning runs on both, from the scripts this host serves
-  6. and both dial in
+  6. and both dial in, if they were just built
   7. and both answer, with somewhere to be put back to
   8. and the install of each is on the record
 

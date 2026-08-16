@@ -66,6 +66,23 @@ if (remembered.tookOver()) {
 // store; this is the live half.
 let lastRun = { at: null, results: null, running: false }
 
+// ASKED TO STOP, which until now was not a thing that could be asked.
+//
+// A run could be started and not called off. A suite that waits half an hour on
+// a machine — and one of them does — held this app with no way out but killing
+// the process, which also throws away the record of what it had found. Every
+// time that happened the answer was "restart the dashboard", which is a large
+// hammer for "I have changed my mind".
+//
+// WHAT IT CAN AND CANNOT DO, said plainly because the difference matters. It
+// stops the run BEFORE THE NEXT CHECK. A check already waiting on a machine
+// keeps waiting until its own limit, because the wait is inside somebody else's
+// promise and there is nothing here that can reach into it. So this ends a run
+// promptly when the checks are short and at the end of the current step when one
+// is long — and the remaining steps are reported as not tried, saying they were
+// stopped rather than pretending they passed.
+let stopping = false
+
 // Registration is a side effect of requiring a suite file, so this is the one
 // place that loads them and it does so on demand. Loading at startup would mean
 // every headless run and every test of this file pays for it.
@@ -506,6 +523,21 @@ module.exports = {
   // It needs the file to have called keep(). Without stored state there is
   // nothing for a later step to resume INTO, and carrying results while the
   // world underneath them is gone would be the most confident kind of wrong.
+  suiteStop: {
+    about: 'Stop the run that is going. The step in flight finishes; the ones after it are not tried',
+    run: () => {
+      if (!lastRun.running) {
+        return { stopping: false, note: 'Nothing is running, so there is nothing to stop.' }
+      }
+      stopping = true
+      log.on('test').warn('asked to stop — the step in flight will finish, and the ones after it will not be tried')
+      return {
+        stopping: true,
+        note: 'The run will stop before its next check. A check already waiting on a machine keeps waiting until its own limit, because that wait cannot be reached into from here.'
+      }
+    }
+  },
+
   suiteRun: {
     about: 'Run everything, one suite, one test in it, or one check of that test. Pass slow for the drills that build a machine, or continue to carry what has already passed',
     takes: ['suite', 'test', 'check', 'slow', 'continue', 'teardown'],
@@ -516,8 +548,11 @@ module.exports = {
       const may = mayRun()
       if (!may.allowed) throw new Error(may.why)
 
-      if (lastRun.running) throw new Error('A run is already going. Wait for it, or it will report two answers about the same moment.')
+      if (lastRun.running) throw new Error('A run is already going. Wait for it, stop it with suiteStop, or it will report two answers about the same moment.')
       ready()
+      // Cleared here rather than when the last run ended, so a stop asked for
+      // while nothing was running cannot silently disarm the next one.
+      stopping = false
 
       const want = String(suite || '').trim()
       const one = String(test || '').trim()
@@ -625,6 +660,10 @@ module.exports = {
             // A suite author should not have to know which half they are on.
             return Promise.resolve(found.run(args))
           },
+          // Asked between checks, so a run can be called off without killing
+          // the app. See `stopping` above for what it can and cannot interrupt.
+          shouldStop: () => stopping,
+
           // WHERE A KEEPING DRILL KEEPS ITS NOTE. Only files that called keep()
           // are ever asked for, so nothing else pays for this.
           stateLoad: (group, test) => remembered.loadState(group, test),
