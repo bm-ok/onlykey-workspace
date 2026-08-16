@@ -93,6 +93,31 @@ function cleanup (fn) {
   currentSuite.cleanups.push(fn)
 }
 
+// STATE THAT SURVIVES A RESTART, for the few files that need it.
+//
+// `state` is ordinarily this run's: the checks of one file hand things along
+// through it, and when the file is done it is finished with. That is right for
+// almost everything here, and keeping it would only mean the next run starting
+// from the last run's leftovers.
+//
+// It is wrong for a drill that restarts something. A test proving the queue
+// picks work up again after the dashboard is restarted cannot span that restart
+// inside one run — this harness runs INSIDE the dashboard, so the run dies with
+// it. The only way such a test can exist is to leave itself a note, be run
+// again, and find out from the note where it had got to. The same is true of a
+// runner restarted underneath a task.
+//
+// A file says so by calling keep() at the top level. Then its `state` is loaded
+// before the first check and written after every one — including after cleanup,
+// so what the cleanup left is what the next run finds.
+//
+// Nothing else pays for it: a file that has not asked gets a fresh {} exactly as
+// before, which is what almost every file here wants.
+function keep () {
+  if (!currentSuite) throw new Error('keep() must be called inside describe()')
+  currentSuite.keeps = true
+}
+
 // The assertions, deliberately three. A rich assertion library is a language to
 // learn before a drill can be read; these three say the whole of what a drill
 // needs and the message carries the rest.
@@ -171,7 +196,18 @@ async function run (context = {}) {
     // What the steps of this one file hand to each other. A series that cannot
     // pass anything along is a series in name only: the cut made in the first
     // step is the cut the second step writes a task on.
-    const state = {}
+    //
+    // Loaded from before only if the file asked with keep(), and only if
+    // whatever is running this offered somewhere to keep it. The harness stays
+    // ignorant of where that is: it is handed two functions, exactly as it is
+    // handed `log` and `actions`, so this file remains the ported shape and the
+    // storage belongs to the app.
+    const keeping = !!(suite.keeps && context.stateLoad && context.stateSave)
+    const state = keeping ? (context.stateLoad(suite.group, suite.name) || {}) : {}
+    const putItDown = () => {
+      if (!keeping) return
+      try { context.stateSave(suite.group, suite.name, state) } catch { /* never fails a test */ }
+    }
     // AND WHAT A FAILED STEP DOES TO THE ONES AFTER IT. It stops them, because
     // a step that failed leaves the world in a state nobody described, and a
     // check run against that state is not evidence of anything.
@@ -267,6 +303,12 @@ async function run (context = {}) {
         log(`  FAIL ${t.name} -> ${e && (e.message || e)}`)
       }
 
+      // AFTER EVERY CHECK, not at the end of the file. A drill that keeps its
+      // state is a drill expecting something to be restarted underneath it, and
+      // a note written only when the series finishes is exactly the note that is
+      // missing when it does not.
+      putItDown()
+
       try { if (onTestEnd) onTestEnd({ groupName: suite.group, suiteName: suite.name, testName: t.name, result: testRes }) } catch { /* as above */ }
 
       suiteRes.tests.push(testRes)
@@ -284,6 +326,10 @@ async function run (context = {}) {
           log(`  cleanup after ${suite.name} did not finish -> ${e && (e.message || e)}`)
         }
       }
+      // What the cleanup LEFT is what the next run should find. A drill that
+      // finished tidying up says so by emptying its own state here, and one that
+      // deliberately left something standing keeps the note about it.
+      putItDown()
     }
 
     // Only suites that actually ran something. A run of one drill should report

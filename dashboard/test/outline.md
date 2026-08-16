@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 7 suites, 17 tests, 74 checks -->
+<!-- 7 suites, 17 tests, 76 checks -->
 
 # 00 — the order
 
@@ -120,12 +120,14 @@
   2. a machine is defined, and it is only defined
   3. its console is captured before anything boots
   4. the installer boots and says so on the console
-  5. and it gets far enough to hand over to what it installed
-  6. and the first boot starts the agent that dials home
-  7. and it dials in
-  8. and the install is on the record afterwards
-  9. and it is a machine this app can use
-  10. and it can be thrown away completely
+  5. and it writes a system onto the disk
+  6. and it gets far enough to hand over to what it installed
+  7. and provisioning runs on that first boot
+  8. and the first boot starts the agent that dials home
+  9. and it dials in
+  10. and the install is on the record afterwards
+  11. and it is a machine this app can use
+  12. and it can be thrown away completely
 
 # 06 — a task on a machine
 

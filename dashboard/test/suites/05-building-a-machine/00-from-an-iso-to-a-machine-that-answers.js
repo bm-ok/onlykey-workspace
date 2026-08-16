@@ -33,9 +33,28 @@ const NAME = `drill-vm-${new Date().toISOString().replace(/[^0-9]/g, '').slice(8
 it('there is an ISO to install from, and this was asked for', async ({ okc, assert, slow, state, log }) => {
   assert.needs(slow, 'this builds a machine from nothing — about half an hour, and nothing else on this host may come up while it runs. Ask for it with: suiteRun --suite "building a machine" --slow true')
 
-  const { isos } = await okc('vmIsos')
-  const found = (isos || []).find(i => /ubuntu.*(server|desktop).*\.iso$/i.test(i.location || i.name || ''))
-  assert.needs(found, 'VirtualBox knows about no Ubuntu ISO, so there is nothing to install from')
+  // A BARE ARRAY, and this drill spent its whole life not knowing that.
+  //
+  // It asked for `{ isos }`, got undefined, and reported "VirtualBox knows about
+  // no Ubuntu ISO" on a host with four of them — so the gate never opened and
+  // the nine checks below it had never once been attempted. Nothing catches
+  // this: the shape of an answer is not a name, so `npm test` cannot see it, and
+  // a drill that refuses to run looks exactly like a drill that is being
+  // careful.
+  //
+  // Tolerant of both shapes on purpose. This is a drill about the machinery, not
+  // about the envelope an action returns things in, and it should keep working
+  // if that is tidied up later.
+  const answer = await okc('vmIsos')
+  const isos = Array.isArray(answer) ? answer : (answer.isos || [])
+
+  // THE SERVER IMAGE, WHICH IS THE ONLY ONE THIS PROJECT INSTALLS. A desktop
+  // image is a different install — preseed rather than subiquity, a different
+  // post-install path, gigabytes more, and a desktop nobody asked for. This host
+  // has both, and matching either would have quietly built the wrong thing and
+  // proved it worked.
+  const found = isos.find(i => /ubuntu.*live-server.*\.iso$/i.test(i.location || i.name || ''))
+  assert.needs(found, `no Ubuntu live-server ISO is known to VirtualBox, and a desktop image is a different install: ${isos.map(i => i.name).join(', ') || 'nothing at all'}`)
   state.iso = found.location
 
   const { vms } = await okc('vmList')
@@ -64,6 +83,12 @@ it('a machine is defined, and it is only defined', async ({ okc, assert, state, 
       diskMB: 40960,
       vramMB: 16,
       installAdditions: false,
+      // NO DESKTOP, which is the default and is said here anyway. A server image
+      // installs one only if asked — see provision/desktop.sh — and this machine
+      // exists to prove the install works, not to be sat in front of. Saying it
+      // also makes the drill state which of the two shapes it is building, since
+      // that is the checkbox somebody has to decide when they make a real one.
+      desktop: false,
       description: 'made by a drill, and removed by it'
     }
   })
@@ -110,10 +135,32 @@ it('the installer boots and says so on the console', async ({ okc, assert, state
   // by the time it comes back there is already a kernel talking.
   await okc('vmInstall', { name: NAME })
 
-  const spoke = await okc('vmAwait', { name: NAME, for: 'console', find: 'Linux version', seconds: 600 })
+  // THE INSTALLER'S OWN VOICE, and it is there because this project put it
+  // there: the first thing in the autoinstall file's early commands writes a
+  // line to /dev/ttyS0 and points the installer's journal at it. So the console
+  // carries subiquity's running commentary rather than only the kernel.
+  //
+  // NOT "Linux version", WHICH WAS THE FIRST GUESS AND WAS WRONG. The installer
+  // boots from the ISO with its kernel log going somewhere else, so the only
+  // "Linux version" in a whole install is the INSTALLED system's, ten minutes
+  // later. Waiting for it here passed — while measuring the wrong thing, and
+  // leaving the next check to match the same line and report the handover as
+  // having taken no time at all.
+  const spoke = await okc('vmAwait', { name: NAME, for: 'console', find: 'installer journal follows|subiquity', seconds: 600 })
   state.installerAt = Date.now()
-  log(`the installer's kernel is up after ${Math.round((Date.now() - state.began) / 1000)}s: ${spoke.line.slice(0, 110)}`)
+  log(`the installer is talking after ${Math.round((Date.now() - state.began) / 1000)}s: ${spoke.line.slice(0, 110)}`)
 }, { minutes: 12 })
+
+it('and it writes a system onto the disk', async ({ okc, assert, state, log }) => {
+  // curtin is what actually installs: it partitions, unpacks the image and
+  // configures the target. It is also where the post-install command runs — `in
+  // target` for a server image, so the bootstrap lands inside the installed
+  // system rather than in the installer's own filesystem, which is the one
+  // difference between a desktop and a server install that this project had to
+  // learn the hard way.
+  const writing = await okc('vmAwait', { name: NAME, for: 'console', find: 'curtin', seconds: 1800 })
+  log(`curtin is running ${Math.round((Date.now() - state.installerAt) / 60000)} minutes in: ${writing.line.slice(0, 110)}`)
+}, { minutes: 35 })
 
 it('and it gets far enough to hand over to what it installed', async ({ okc, assert, state, log }) => {
   // THE STEP THIS FILE EXISTS FOR, and the one nothing could see before.
@@ -135,6 +182,19 @@ it('and it gets far enough to hand over to what it installed', async ({ okc, ass
   log(`it installed and rebooted into what it installed, ${Math.round((state.installedAt - state.installerAt) / 60000)} minutes after the installer started`)
   log(`the installed kernel's command line: ${booted.line.replace(/^.*Command line: /, '').slice(0, 130)}`)
 }, { minutes: 45 })
+
+it('and provisioning runs on that first boot', async ({ okc, assert, state, log }) => {
+  // THE SCRIPTS THIS HOST SERVES, running inside the machine, seen from outside
+  // it. first-boot fetches them over TLS with the machine's own token and runs
+  // them; toolchain is the biggest of them and says what it is doing.
+  //
+  // This is the step that used to be invisible. An install that reached the
+  // login prompt and never dialled in could have failed here — a certificate it
+  // would not trust, a script that would not run — and nothing could tell that
+  // apart from a machine that never booted at all.
+  const doing = await okc('vmAwait', { name: NAME, for: 'console', find: 'toolchain', seconds: 1800 })
+  log(`the provisioning scripts are running on the machine: ${doing.line.slice(0, 110)}`)
+}, { minutes: 35 })
 
 it('and the first boot starts the agent that dials home', async ({ okc, assert, state, log }) => {
   // The last thing provisioning does, seen from outside the machine. first-boot
@@ -183,17 +243,26 @@ it('and the install is on the record afterwards', async ({ okc, assert, state, l
   }
   assert.ok(both.length, 'The console of the install was not written down anywhere')
 
-  const anywhere = pattern => both.find(f => f.lines.some(l => new RegExp(pattern, 'i').test(l)))
-  const installer = anywhere('casper|/install/vmlinuz|initrd')
-  const installed = anywhere('root=UUID=')
-  const agent = anywhere('okc-agent')
+  const count = pattern => both.reduce((n, f) => n + f.lines.filter(l => new RegExp(pattern, 'i').test(l)).length, 0)
 
-  assert.ok(installer, 'Nothing in the console says an installer ever booted, so what is on that disk is unaccounted for')
-  assert.ok(installed, 'The console never shows a kernel booting from the installed disk')
-  assert.ok(agent, 'The console never shows the agent unit starting, so provisioning left nothing to dial home')
+  // WORDS THAT ONLY AN INSTALL SAYS. The first version of this accepted `initrd`
+  // as evidence that an installer had run — and every ordinary boot mentions an
+  // initrd, so it would have passed on a machine that was merely switched on.
+  // The bar for "this is evidence" is a word that cannot appear unless the thing
+  // being claimed actually happened.
+  const seen = {
+    'the installer ran': count('subiquity|casper'),
+    'it wrote the system to disk': count('curtin'),
+    'it booted what it installed': count('root=UUID='),
+    'provisioning ran': count('toolchain'),
+    'the agent started': count('okc-agent')
+  }
+  for (const [what, n] of Object.entries(seen)) {
+    assert.ok(n > 0, `The console holds no evidence that ${what} — so that step is unaccounted for, and this is the only account there is`)
+  }
 
   log(`kept: ${both.map(f => `${f.which} (${f.of} lines)`).join(', ')}`)
-  log(`the installer booted (in ${installer.which}), the installed system booted (in ${installed.which}), and the agent started (in ${agent.which})`)
+  for (const [what, n] of Object.entries(seen)) log(`  ${String(n).padStart(4)} line(s) — ${what}`)
 }, { minutes: 5 })
 
 it('and it is a machine this app can use', async ({ okc, assert, state, log }) => {
@@ -204,10 +273,28 @@ it('and it is a machine this app can use', async ({ okc, assert, state, log }) =
   assert.equal(said.code, 0, `The new machine could not run a command: ${JSON.stringify(said).slice(0, 200)}`)
   assert.ok(String(said.output || '').includes('okc-built-and-answering'), 'It ran the command and said something else')
 
-  const { vms } = await okc('vmList')
-  const mine = vms.find(v => v.name === NAME)
-  assert.equal(mine.stage, 'ready', `It finished installing and reports "${mine.stage}"`)
-  assert.ok(mine.baseSnapshot, 'It has no base snapshot, so nothing could ever put it away clean')
+  // THE SNAPSHOT IS TAKEN WHEN IT FIRST DIALS IN, not when the install ends, so
+  // there is a window where a machine is answering and has nothing to be put
+  // back to. Waited for rather than demanded in the same breath — the same
+  // mistake the task round trip made about a machine claiming its branch.
+  let mine = null
+  for (let i = 0; i < 60; i++) {
+    const { vms } = await okc('vmList')
+    mine = vms.find(v => v.name === NAME)
+    if (mine && mine.baseSnapshot) break
+    await new Promise(r => setTimeout(r, 5000))
+  }
+  assert.ok(mine && mine.baseSnapshot, 'It has no base snapshot five minutes after dialling in, so nothing could ever put it away clean and the queue would pass over it for ever')
+
+  // NOT "ready", WHICH IS WHAT THIS ASKED FOR AND IS WRONG ABOUT THIS APP.
+  //
+  // The stages are a ladder — defined, created, installing, online, ready,
+  // connected — and the highest true one is reported. A machine that is dialled
+  // in says "connected" and will never say "ready" while it is; "ready" is what
+  // it says once it is off with a snapshot to come back to. So the first version
+  // failed a perfectly good machine with `It finished installing and reports
+  // "connected"`, which is the drill misreading the app rather than a fault.
+  assert.equal(mine.stage, 'connected', `It is dialled in and reports "${mine.stage}"`)
   log(`it answers commands, is stage "${mine.stage}", and has a base snapshot ("${mine.baseSnapshot}") to be put away to`)
 }, { minutes: 10 })
 

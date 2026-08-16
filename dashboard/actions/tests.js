@@ -33,9 +33,25 @@ const { log, harness, suites, settings, workspaces, repos, branches } = s
 const mayRun = () => settings.testsAllowed(workspaces.dir() || null)
 
 // WHAT WAS FOUND LAST TIME, so the window can show a result without running
-// anything. In memory only: a test result is a statement about this process and
-// this workspace at one moment, and one kept across a restart would be a claim
-// about code that has since changed.
+// anything.
+//
+// THIS USED TO BE IN MEMORY ONLY, and the reasoning was sound: a result kept
+// across a restart would be "a claim about code that has since changed". What
+// was wrong with it was the remedy — throwing every result away on every
+// restart, in an app that is restarted every time a line of it changes, so the
+// board spent most of its life saying "not run" about suites that had just been
+// run. A half-hour drill's evidence lived in one process's memory.
+//
+// core/testruns.js keeps it instead, and answers the objection directly: each
+// result is stored with a FINGERPRINT of the check that produced it, so one
+// whose check has since been edited reports as changed rather than as a verdict.
+// The result also belongs to a workspace, and results made against another
+// folder are not shown as though they were about this one.
+const remembered = require('../core/testruns')
+
+// Still here, and still the truth about THIS process: what is running right now
+// can only be known by the process running it. Everything durable is in the
+// store; this is the live half.
 let lastRun = { at: null, results: null, running: false }
 
 // Registration is a side effect of requiring a suite file, so this is the one
@@ -56,6 +72,10 @@ module.exports = {
     run: () => {
       const registered = ready()
       const was = lastRun.results
+      const where = workspaces.dir() || null
+      // Results made against another folder are kept — they are still true about
+      // that folder — and simply not read here.
+      const mine = remembered.forWorkspace(where)
 
       // THE HARNESS SAYS SUITE AND TEST; THIS SAYS SUITE, TEST AND CHECK.
       //
@@ -80,19 +100,36 @@ module.exports = {
       for (const file of registered) {
         const checks = file.tests.map(t => {
           const r = found(file.group, file.name, t.name)
+          // THIS PROCESS FIRST, THEN WHAT WAS REMEMBERED. A result from the run
+          // that just happened is the live one; anything older comes from the
+          // store, carrying the date it was made and checked against the source
+          // of the check as it is now.
+          const kept = (!r && mine) ? remembered.recall(file.group, file.name, t.name, t.fingerprint) : null
           return {
             ...t,
             // Three outcomes, not two. A precondition that was not met is not
             // a failure — see `needs` in the harness — and reporting them the
             // same way is the fastest route to a red number nobody reads.
-            state: !r ? 'not run' : r.ok === true ? 'passed' : r.ok === null ? 'unrunnable' : 'failed',
-            ms: r ? r.ms : null,
-            why: r ? (r.unrunnable || r.error || null) : null,
-            log: (r && r.log) || []
+            //
+            // Two more arrive from the store, and both are honest answers rather
+            // than verdicts: `changed` is a result whose check has been edited
+            // since, and `interrupted` is a check that was running when the
+            // dashboard went away.
+            state: r
+              ? (r.ok === true ? 'passed' : r.ok === null ? 'unrunnable' : 'failed')
+              : kept ? kept.state : 'not run',
+            ms: r ? r.ms : (kept ? kept.ms : null),
+            why: r ? (r.unrunnable || r.error || null) : (kept ? kept.why : null),
+            log: (r && r.log) || (kept && kept.log) || [],
+            // WHEN, which only matters once results outlive the window. A pass
+            // from four days ago and one from four minutes ago are both green.
+            at: r ? lastRun.at : (kept ? kept.at : null),
+            fromBefore: !r && !!kept
           }
         })
         let group = byGroup.find(g => g.name === file.group)
         if (!group) byGroup.push(group = { name: file.group, tests: [] })
+        const whole = mine ? remembered.wholeState(remembered.wholeOf(file.group, file.name)) : null
         group.tests.push({
           name: file.name,
           checks,
@@ -100,8 +137,25 @@ module.exports = {
           // failed step is a failed test, and an average would hide the only
           // line worth reading.
           state: worst(checks),
-          ms: checks.some(c => c.ms != null) ? checks.reduce((n, c) => n + (c.ms || 0), 0) : null
+          ms: checks.some(c => c.ms != null) ? checks.reduce((n, c) => n + (c.ms || 0), 0) : null,
+          // WHEN IT LAST RAN AS A WHOLE, and whether something has been run
+          // inside it since. See below: a test is a SERIES, and one check of it
+          // run on its own does not re-establish the series.
+          ranWhole: whole ? whole.at : null,
+          dirty: !!(whole && whole.dirty)
         })
+      }
+
+      // A SUITE'S VERDICT IS ABOUT THE SUITE, and can only be made by running
+      // it. Running one test inside it leaves that test current and the suite
+      // not — the rest has not been tried since — and that is exactly the moment
+      // somebody is most likely to believe the green: they just watched the part
+      // they were working on pass.
+      for (const group of byGroup) {
+        const whole = mine ? remembered.wholeState(remembered.wholeOf(group.name)) : null
+        group.ranWhole = whole ? whole.at : null
+        group.dirty = !!(whole && whole.dirty) || group.tests.some(t => t.dirty)
+        group.state = worst(group.tests.flatMap(t => t.checks))
       }
 
       return {
@@ -296,6 +350,60 @@ module.exports = {
     }
   },
 
+  // THROWING AWAY WHAT IS REMEMBERED, all of it or one part.
+  //
+  // Needed the moment results outlive the window. A remembered verdict can be
+  // wrong in ways nothing detects: a machine was in a state it will never be in
+  // again, a check passed against a workspace that has since been rearranged,
+  // or somebody simply wants a board that says only what happened today.
+  //
+  // A check whose SOURCE changed already reports itself as changed rather than
+  // as a verdict — that is handled where results are read, and needs no help
+  // from here. This is for the rest.
+  //
+  // IT ALSO FORGETS WHAT A DRILL WAS IN THE MIDDLE OF. Clearing a suite's
+  // results and leaving its kept state behind would be the worst of both: a
+  // clean board and a drill that still believes it is half way through
+  // something.
+  testsForget: {
+    about: 'Forget remembered test results — everything, or one suite, test or check',
+    takes: ['suite', 'test', 'check'],
+    run: ({ suite, test, check }) => {
+      const group = String(suite || '').trim() || null
+      const file = String(test || '').trim() || null
+      const step = String(check || '').trim() || null
+      const gone = remembered.forget({ group, test: file, check: step })
+
+      // AND THE RUN THIS PROCESS IS STILL HOLDING, or the clear does nothing
+      // visible. The board reads the live run first and the store second, so
+      // forgetting only the stored half left the result on screen until the next
+      // restart — a clear that appears not to work, which is worse than no clear
+      // at all. Found by using it.
+      if (lastRun.results) {
+        if (!group && !file && !step) {
+          lastRun = { at: null, results: null, running: lastRun.running }
+        } else {
+          for (const su of lastRun.results.suites || []) {
+            if (group && su.group !== group) continue
+            if (file && su.name !== file) continue
+            su.tests = (su.tests || []).filter(t => step ? t.name !== step : false)
+          }
+          lastRun.results.suites = (lastRun.results.suites || []).filter(su => (su.tests || []).length)
+        }
+      }
+
+      const what = step || file || group
+      log.on('test')[gone ? 'info' : 'warn'](what ? `forgot what was remembered about "${what}"` : 'forgot every remembered test result')
+      return {
+        forgot: gone,
+        of: what || 'everything',
+        note: gone
+          ? `${gone} remembered result(s) thrown away${what ? ` for "${what}"` : ''}. Nothing was run, and nothing about the checks themselves changed.`
+          : `Nothing was remembered${what ? ` about "${what}"` : ''}, so nothing was thrown away.`
+      }
+    }
+  },
+
   suiteRun: {
     about: 'Run everything, one suite, one test in it, or one check of that test. Pass slow for the drills that build a machine',
     takes: ['suite', 'test', 'check', 'slow'],
@@ -333,6 +441,24 @@ module.exports = {
       const key = (g, a, b) => [g, a, b].join(' / ')
       let current = null
       to.info(want || one ? `running ${one || want}` : 'running every suite')
+
+      // WHAT A CHECK IS, as a number, so a remembered result cannot outlive the
+      // code it is about. Built before the run from what registered, because the
+      // callbacks below are handed names and nothing else.
+      const prints = new Map()
+      for (const file of harness.getRegisteredSuites()) {
+        for (const t of file.tests) prints.set(key(file.group, file.name, t.name), t.fingerprint)
+      }
+
+      // WRITTEN DOWN AS IT HAPPENS, not at the end.
+      //
+      // The point of keeping any of this is somebody watching a long run across a
+      // restart — and a record written only when the run finishes is exactly the
+      // record that is missing when it does not. So each check lands as it ends,
+      // and the one in flight is marked running: restart in the middle of a
+      // half-hour drill and the board still says which step it had reached.
+      remembered.claim(workspaces.dir() || null)
+      remembered.began({ suite: want || null, test: one || null, check: step || null, slow: slow === true || slow === 'true' })
 
       try {
         const results = await harness.run({
@@ -388,11 +514,29 @@ module.exports = {
           onTestStart: ({ groupName, suiteName, testName }) => {
             current = key(groupName, suiteName, testName)
             said.set(current, [])
+            // The step it is ON, written down before it is known how it goes. If
+            // the app goes away here, this is what says where it had reached.
+            remembered.remember(groupName, suiteName, testName, {
+              state: 'running',
+              ms: null,
+              why: null,
+              log: [],
+              fingerprint: prints.get(current) || null
+            })
           },
           // Cleared AFTER the harness has written its own PASS/SKIP/FAIL line,
           // so that line lands with the test it is about rather than with
           // whatever runs next.
-          onTestEnd: () => { current = null },
+          onTestEnd: ({ groupName, suiteName, testName, result }) => {
+            remembered.remember(groupName, suiteName, testName, {
+              state: result.ok === true ? 'passed' : result.ok === null ? 'unrunnable' : 'failed',
+              ms: result.ms,
+              why: result.unrunnable || (result.error ? String(result.error).split('\n')[0] : null),
+              log: said.get(key(groupName, suiteName, testName)) || [],
+              fingerprint: prints.get(key(groupName, suiteName, testName)) || null
+            })
+            current = null
+          },
           // Suite, then test, then check — the three columns in the window, and
           // the three things the command line can be given. Each narrows the one
           // above it, and none of them is a pattern: a filter that half-matches
@@ -422,12 +566,51 @@ module.exports = {
           for (const t of su.tests || []) t.log = said.get(key(su.group, su.name, t.name)) || []
         }
         lastRun = { at: new Date().toISOString(), results, running: false }
+
+        // WHAT RAN AS A WHOLE, AND WHAT WAS ONLY DISTURBED.
+        //
+        // Worked out from what actually ran rather than from what was asked for,
+        // because those are not the same thing — a filter can name a suite whose
+        // checks are half unrunnable, and "ran the whole suite" has to mean every
+        // check in it was attempted.
+        //
+        // A test is a SERIES, so one check of it run alone does not re-establish
+        // the series: the steps around it did not happen, and the state they hand
+        // each other was never built. The same one level up. So a partial run
+        // marks its parents DIRTY — the results inside are current, the claim
+        // about the whole is not.
+        const registered = harness.getRegisteredSuites()
+        const groups = new Map()
+        for (const file of registered) {
+          if (!groups.has(file.group)) groups.set(file.group, [])
+          groups.get(file.group).push(file)
+        }
+        for (const [group, files] of groups) {
+          let everyFileWhole = true
+          for (const file of files) {
+            const ran = (results.suites || []).find(s => s.group === group && s.name === file.name)
+            const attempted = ran ? ran.tests.length : 0
+            if (attempted === file.tests.length) {
+              remembered.ranWhole(remembered.wholeOf(group, file.name))
+            } else {
+              everyFileWhole = false
+              // Only if something in it ran. A file nobody asked for is
+              // untouched, not disturbed.
+              if (attempted) remembered.dirty(remembered.wholeOf(group, file.name))
+            }
+          }
+          if (everyFileWhole) remembered.ranWhole(remembered.wholeOf(group))
+          else if ((results.suites || []).some(s => s.group === group)) remembered.dirty(remembered.wholeOf(group))
+        }
+        remembered.ended({ passed: results.passed, failed: results.failed, unrunnable: results.unrunnable })
+
         const note = `${results.passed} passed, ${results.failed} failed, ${results.unrunnable} could not be tried.`
         if (results.failed) to.bad(note)
         else to.good(note)
         return { ...results, note }
       } finally {
         lastRun.running = false
+        if (remembered.lastRun() && remembered.lastRun().running) remembered.ended(null)
       }
     }
   }
