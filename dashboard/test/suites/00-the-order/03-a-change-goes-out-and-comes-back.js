@@ -204,3 +204,57 @@ cleanup(async ({ okc, state }) => {
     if (!state.droppedRemote) await okc('branchDeleteRemote', { branch: state.branch, repo: ONE }).catch(() => {})
   }
 })
+
+// WHAT IT SAW — 16 August 2026, 14:21, all ten passed
+//
+//   a cut is made, and a change is committed on it
+//     cut "drill/sent-out-142125" from line "default", and committed 90a88abc in
+//     local-repo-a
+//
+//   what the cut carries can be read, on the cut
+//     local-repo-a is 1 ahead, carrying drill-order.md
+//
+//   a cut becomes a line before it leaves
+//     "drill/sent-out-142125" is a line now, protected: true
+//
+//   and now it can be compared with the line it was cut from
+//     comparing "drill/sent-out-142125" with "default": local-repo-a +1 — the
+//     other repositories carry nothing
+//
+//   and it leaves as one pull request, from the repository that carries something
+//     opened #8 on local-repo-a: https://github.com/bmatusiak/local-repo-a/pull/8
+//
+//   the pull requests are merged as one act
+//     merged #8 in local-repo-a, and GitHub agrees the cut has landed
+//
+//   the fork is behind its parent, and syncing pulls it up
+//     local-repo-a: the fork was brought up to its parent by "fast-forward"
+//
+//   and this host follows, with the change on its default branch
+//     pulled, and "drill/sent-out-142125" now carries nothing that "default" does
+//     not already have — the change is home
+//
+//   and the branch it came from is taken off the fork
+//     taken off the fork: local-repo-a
+//
+//   and nothing is left behind here
+//     the line was forgotten, the branch deleted, and a sweep found 0 things left
+//     by drills
+//
+// A REAL PULL REQUEST NUMBER AND A REAL URL, which is the whole difference
+// between this drill and a description of it. #8 was opened and merged on
+// github.com/bmatusiak/local-repo-a in the seconds that transcript was written,
+// and anybody can go and look at it — that is what "nothing here is mocked"
+// means, said as evidence rather than as a claim in a comment.
+//
+// "FAST-FORWARD" IS THE ANSWER TO A QUESTION PEOPLE ASK. Syncing a fork is not a
+// merge commit and not a force push when the fork has nothing of its own: the
+// parent moved, the fork catches up, and the word for that is the one GitHub's
+// own Sync fork button uses. A run that ever reports something else here is a
+// fork that has diverged, which is worth knowing about before the next cut is
+// made from it.
+//
+// ONE COUNT WORTH KEEPING AN EYE ON: three repositories were cut and exactly one
+// pull request opened, because only one carried anything. A run that reports two
+// or three has started opening pull requests on repositories with nothing in
+// them, which is noise a reviewer has to dismiss one at a time.
