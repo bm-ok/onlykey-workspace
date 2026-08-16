@@ -130,9 +130,22 @@ it('and both write a system to disk and boot it', async ({ okc, assert, state, l
     await okc('vmAwait', { name, for: 'console', find: 'curtin', seconds: 2400 })
     log(`${name}: curtin is writing the system to disk`)
   }
+  // THE FIRST THING THE INSTALLED SYSTEM SAYS, which is this project's own
+  // first-boot script and not the kernel.
+  //
+  // `root=UUID=` was the obvious marker and it is WRONG HERE, which only running
+  // it showed. The kernel's command line reaches the serial port because
+  // first-boot writes a grub drop-in — and that drop-in applies from the NEXT
+  // boot, which first-boot.sh says in as many words where it writes it. So on
+  // the boot being waited for, the kernel is silent on this wire and the only
+  // thing talking is the script. Waiting for the kernel line here waits for a
+  // reboot that has not been asked for.
+  //
+  // Two machines were most of the way through provisioning, with 4325 lines of
+  // console each and zero matches, before that was obvious.
   for (const name of state.missing) {
-    const booted = await okc('vmAwait', { name, for: 'console', find: 'root=UUID=', seconds: 2400 })
-    log(`${name}: booted what it installed — ${booted.line.replace(/^.*Command line: /, '').slice(0, 80)}`)
+    const booted = await okc('vmAwait', { name, for: 'console', find: 'first boot: making the machine reachable', seconds: 2400 })
+    log(`${name}: booted what it installed — ${booted.line.slice(0, 90)}`)
   }
 }, { minutes: 50 })
 
@@ -208,7 +221,7 @@ it('and the install of each is on the record', async ({ okc, assert, state, log 
     const seen = {
       'the installer ran': count('subiquity|casper'),
       'it wrote the system to disk': count('curtin'),
-      'it booted what it installed': count('root=UUID='),
+      'it booted what it installed': count('first boot: making the machine reachable'),
       'provisioning ran': count('toolchain')
     }
     log(`${name}: ${files.map(f => `${f.which} ${f.of} lines`).join(', ')} — ${Object.entries(seen).map(([k, n]) => `${n} ${k}`).join(', ')}`)
