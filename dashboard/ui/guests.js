@@ -167,22 +167,51 @@ async function paintGuestsNow () {
       fill($('guest-detail'), guestPanel(one, machines.vms || []))
     }
 
-    // THE THIRD COLUMN IS WHAT A GUEST HAS BEEN PART OF. Sessions are kept per
-    // TASK rather than per guest — a worker's memory belongs to the task, not to
-    // the identity that ran it — so this is the whole list for now, and the
-    // heading says so rather than implying a filter that is not there.
-    setText($('guest-sessions-context'), (kept.sessions || []).length ? `— ${kept.sessions.length}` : '— none')
-    if (changed('guest-sessions', kept.sessions || [])) {
-      fill($('guest-sessions'), (kept.sessions || []).length
-        ? (kept.sessions || []).map(s => el('div', { className: 'card' },
+    // THE THIRD COLUMN IS WHAT THIS GUEST HAS BEEN PART OF, and it is filtered
+    // to the one picked on the left.
+    //
+    // Sessions are kept per TASK — a worker's memory belongs to the task, not to
+    // the identity that ran it — and this column showed all of them because
+    // nothing recorded which sign-in spent a run. It does now: every archive
+    // names the guest that was on the machine, and the set of every guest that
+    // has carried the conversation. See tasks/sessions.js.
+    //
+    // Matched on the SET, not on the latest. A task resumed three times may have
+    // been signed by three identities, and a credential that paid for two of
+    // those runs has been part of that conversation whether or not it was the
+    // last one to touch it.
+    const mine = one
+      ? (kept.sessions || []).filter(s => (s.guests || []).includes(one.name) || s.guest === one.name)
+      : []
+    // Anything from before this was recorded, said out loud rather than left to
+    // look like a guest that has never worked.
+    const older = (kept.sessions || []).filter(s => !(s.guests || []).length && !s.guest).length
+
+    setText($('guest-sessions-context'), one ? (mine.length ? `— ${mine.length}` : '— none') : '')
+    if (changed('guest-sessions', [one && one.name, mine, older])) {
+      fill($('guest-sessions'), mine.length
+        ? mine.map(s => el('div', { className: 'card' },
             el('div', { className: 'card-title' },
               el('span', { className: 'grow', textContent: s.title || (s.number ? `#${s.number}` : s.uid.slice(0, 8)) }),
               el('span', { className: 'muted', textContent: `${Math.round((s.bytes || 0) / 1024)} KB` })),
             el('div', { className: 'badges' },
               s.number ? el('span', { className: 'muted', textContent: `#${s.number}` }) : null,
+              // Which end of the conversation this credential is on, since the
+              // set says it was part of it and not that it was the last.
+              s.guest === one.name
+                ? el('span', { className: 'badge ok', textContent: 'signed the last run' })
+                : el('span', { className: 'badge muted', textContent: 'signed an earlier run' }),
+              (s.guests || []).length > 1 ? el('span', { className: 'muted', textContent: `${s.guests.length} sign-ins` }) : null,
+              s.machine ? el('span', { className: 'muted', textContent: `on ${s.machine}` }) : null,
               s.orphaned ? el('span', { className: 'badge muted', textContent: 'task is gone' }) : null,
-              s.at ? el('span', { className: 'muted', textContent: ago(s.at) }) : null)))
-        : el('p', { className: 'empty', textContent: 'Nothing remembered yet. A worker hands its memory back when it finishes, and gets it again next time that task runs.' }))
+              s.kept ? el('span', { className: 'muted', textContent: ago(s.kept) }) : null)))
+        : el('div', {},
+            el('p', { className: 'empty', textContent: one
+              ? `Nothing yet under "${one.name}". A worker hands its memory back when it finishes, and the sign-in that was on the machine is written down with it.`
+              : 'Pick a guest on the left.' }),
+            older
+              ? el('p', { className: 'muted', textContent: `${older} session${older === 1 ? ' was' : 's were'} kept before this was written down, so ${older === 1 ? 'it names' : 'they name'} no sign-in at all. They are on the Sessions tab.` })
+              : null))
     }
   }).catch(e => { if (changed('guests-bad', String(e.message))) oops(e) })
 }

@@ -38,6 +38,22 @@
 // attempt rather than a stranger starting fresh. "Which conversation is this" is
 // a question about the task, not about the run that happens to be executing it,
 // so the guest is never asked and cannot answer.
+//
+// AND YET IT IS SIGNED BY ONE, which is a different question and had no answer.
+// A transcript is what a Claude sign-in did: the turns in it were spent by a
+// credential this host lent out, and were billed to whoever that identity
+// belongs to. That was not written down anywhere -- the record held the machine
+// and the run, and the machine is a box that was rolled back afterwards.
+//
+// So each keep() records WHICH GUEST WAS ON THE MACHINE at the time, and the set
+// of every guest that has ever carried this conversation. Two fields rather than
+// one because both questions get asked: "who spent this run" is the latest, and
+// "which conversations has this credential been part of" needs all of them, since
+// one task resumed across three runs may have been signed by three identities.
+//
+// STILL NOT THE TOKEN, and not a path to it. A name, which is what the guest
+// list already shows -- see core/guests.js. The credential itself is excluded
+// from the archive, as above, and pairing the two by name does not put it back.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -159,7 +175,7 @@ function look (bytes) {
 // delivery: two runs producing `firmware.bin` are two results and losing either
 // loses work. A session is a conversation, and the newer copy is the older one
 // plus what happened since.
-function keep (uid, bytes, { id = null, run = null, machine = null, taskId = null, number = null, folder = null } = {}) {
+function keep (uid, bytes, { id = null, run = null, machine = null, taskId = null, number = null, folder = null, guest = null } = {}) {
   if (!okId(id)) throw new Error('that is not a session id')
   if (!bytes || !bytes.length) throw new Error('there was nothing in it')
   if (bytes.length > MOST) throw new Error(`that is ${Math.round(bytes.length / 1048576)} MB, and the most this takes is ${MOST / 1048576} MB`)
@@ -172,6 +188,13 @@ function keep (uid, bytes, { id = null, run = null, machine = null, taskId = nul
   // find out. What is worth keeping is which conversation, from which run, on
   // which machine -- the three things somebody asks when they come back to it.
   const was = get(uid)
+
+  // WHO SIGNED IT, kept as the latest and as the whole set. See the header. The
+  // set is built from what is already on disk rather than recomputed, so a guest
+  // thrown away afterwards is still named by the conversations it paid for --
+  // which is the point of writing it here instead of asking the guest list.
+  const signed = new Set([...((was && was.guests) || []), ...(guest ? [guest] : [])])
+
   fs.writeFileSync(aboutFor(uid), JSON.stringify({
     // What is in it, read here once. See `look`.
     inside: look(bytes),
@@ -181,6 +204,11 @@ function keep (uid, bytes, { id = null, run = null, machine = null, taskId = nul
     id: id || (was && was.id) || null,
     run: run || null,
     machine: machine || null,
+    // The one on the machine for THIS run, kept even when it is null: a run with
+    // no guest named is a run signed by the single credential this host used to
+    // keep, and blanking it is more honest than inheriting the previous name.
+    guest: guest || null,
+    guests: [...signed],
     folder: folder || null,
     bytes: bytes.length,
     kept: new Date().toISOString(),

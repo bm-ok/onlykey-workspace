@@ -455,12 +455,19 @@ function handler (req, res) {
     req.on('end', () => {
       if (refused) return
       try {
+        // WHICH SIGN-IN SPENT THIS, taken from the machine rather than asked of
+        // the guest. The machine is told which credential it holds when one is
+        // put on it — see actions/credentials.js — and a worker naming its own
+        // identity would be a worker choosing which one to bill.
+        const on = vms.read().find(v => v.name === name) || {}
+
         const kept = sessions.keep(task.uid, Buffer.concat(chunks), {
           id: id || null,
           run: task.run || null,
           machine: name,
           taskId: task.id,
           number: task.number,
+          guest: on.guest || null,
           folder: url.searchParams.get('folder') || null
         })
         // A TRANSCRIPT ARRIVING IS PROOF A WORKER RAN. It is the only proof a
@@ -782,6 +789,23 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
         if (!s.ok || s.expiringSoon) log.on('server').warn(s.why)
         else log.on('server').info(`The certificate covers ${where} and is good for ${s.daysLeft} days`)
       } catch { /* no address to check against yet; status reports it either way */ }
+
+      // THE ONE CREDENTIAL BECOMES THE FIRST GUEST.
+      //
+      // This host kept a single worker credential at `credentials/claude.json`,
+      // on the Keys tab, lent to whoever was working. Identities live in a list
+      // now — see core/guests.js — and two places holding credentials is how one
+      // of them goes stale without anybody noticing.
+      //
+      // Idempotent and quiet: it adopts only when the list is empty, so a host
+      // that has already moved does not gain a copy on every restart.
+      try {
+        const guests = require('./core/guests')
+        const moved = guests.adoptTheOldOne(path.join(data.sub('credentials'), 'claude.json'))
+        if (moved) log.on('keys').good(`the worker credential this host kept is now the Claude guest "${moved.name}" — ${moved.fingerprint}`)
+      } catch (e) {
+        log.on('keys').warn(`the old worker credential could not be moved into the guest list — ${e.message}`)
+      }
 
       // THE OUTLINE, REWRITTEN IF THE SUITES HAVE MOVED — and only while the
       // drills are switched on for the open folder.

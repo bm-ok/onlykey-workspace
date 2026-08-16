@@ -12,6 +12,11 @@
 // yet, and by the time anything runs they all do.
 const actions = require('./table')
 
+// THE CLAUDE IDENTITIES THIS HOST HOLDS, which used to be one file on the Keys
+// tab. Required directly rather than through shared: this is the only file that
+// reads a credential, and a second door onto them is the thing being closed.
+const guests = require('../core/guests')
+
 // Everything the table is built out of, in one place rather than a require
 // block repeated nine times. See actions/shared.js.
 const s = require('./shared')
@@ -183,7 +188,33 @@ module.exports = {
     run: () => {
       const dir = data.sub('credentials')
       const file = path.join(dir, 'claude.json')
-      if (!fs.existsSync(file)) return { held: false, dir }
+
+      // THE LIST FIRST, because that is where sign-ins live now.
+      //
+      // This answered about one file, which is the shape the Keys tab was built
+      // to and the shape that broke: one credential handed to every machine is
+      // several workers rotating one token. Callers ask this on the draw loop for
+      // "is there anything to hand out at all" — see ui/terminal.js — so the
+      // answer keeps that field and gains a row per guest.
+      //
+      // A clock per guest, read from the credential itself, because "this host
+      // holds four and one of them is dead" is not answerable from a total.
+      const held = guests.all()
+      if (held.length) {
+        return {
+          held: held.some(g => g.has),
+          dir: guests.ROOT(),
+          // What each one is, and never what it says. Names, dates, fingerprints,
+          // holders and clocks — the rule this whole surface is built to.
+          guests: held.map(g => ({
+            ...g,
+            life: g.has ? credentialLife(guests.fileFor(g.name)) : { usable: null, why: 'there is no token file for it' }
+          })),
+          note: `${held.length} Claude sign-in${held.length === 1 ? '' : 's'} kept here. One is lent per machine — see the Claude guest pane.`
+        }
+      }
+
+      if (!fs.existsSync(file)) return { held: false, dir, guests: [] }
       let meta = {}
       try { meta = JSON.parse(fs.readFileSync(path.join(dir, 'about.json'), 'utf8')) } catch { /* older ones have none */ }
       const stat = fs.statSync(file)
@@ -217,11 +248,25 @@ module.exports = {
   },
 
   vmCredentialsGrab: {
-    about: 'Take the signed-in credential from a machine and keep it on this host',
-    takes: ['name'],
-    run: async ({ name }) => {
-      vms.get(name)
+    about: 'Take the signed-in credential from a machine and keep it here as a Claude guest',
+    takes: ['name', 'guest'],
+    run: async ({ name, guest = null }) => {
+      const mine = vms.get(name)
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
+
+      // WHICH IDENTITY THIS IS, decided before the machine is asked for it.
+      //
+      // A machine that already holds a guest is handing back THAT one — signed in
+      // again by hand, or refreshed by the CLI — so it updates the guest rather
+      // than making a second record of the same account. Anything else is a new
+      // sign-in, named after the machine unless a name was given, because a list
+      // of identities called "claude-code", "claude-code-2" is a list nobody can
+      // read six weeks later.
+      const into = mine.guest || String(guest || name).trim()
+      const already = guests.get(into)
+      if (already && already.holder && already.holder !== name) {
+        throw new Error(`"${into}" is out on ${already.holder}. Take it back from there first — writing over it here would leave that machine signed in as an identity this host no longer has.`)
+      }
 
       // Printed rather than copied out of a path this host cannot see. base64 so
       // a newline or a shell metacharacter in the file cannot change what
@@ -235,22 +280,42 @@ module.exports = {
         throw new Error(`"${name}" has no worker credential to take. Sign in on that machine first: open it and run "claude auth login".`)
       }
 
-      const dir = data.sub('credentials')
-      const file = path.join(dir, 'claude.json')
-      // Sealed on the way in, so what lands on disk is not the token. It was
-      // plain until somebody asked where it was kept, and the honest answer was
-      // "readable by anything running as you, or as an administrator, or by
-      // whatever backs this folder up".
-      const sealed = secret.write(file, Buffer.from(b64, 'base64'))
-      // Beside it rather than inside it: which machine it came from and when.
-      // The file's own timestamp would answer the second and nothing answers the
-      // first, and "where did this come from" is the question asked when
-      // something stops working.
-      fs.writeFileSync(path.join(dir, 'about.json'), JSON.stringify({ from: name, taken: new Date().toISOString() }, null, 2))
+      // Sealed on the way in, so what lands on disk is not the token — see
+      // core/secret.js. It was plain until somebody asked where it was kept, and
+      // the honest answer was "readable by anything running as you, or as an
+      // administrator, or by whatever backs this folder up".
+      const text = Buffer.from(b64, 'base64').toString('utf8')
 
-      vms.update(name, { holdsCredential: true })
-      log.on('vm', name).good('its worker credential was taken and kept on this host')
-      return { from: name, kept: file, sealed, note: 'hand it to a machine with vmCredentialsPut, and take it away again with vmCredentialsForget' }
+      const made = already
+        // The same identity coming back. `backFrom` writes only when it differs
+        // and reports which happened, which is the answer to "did signing in
+        // again actually change anything".
+        ? guests.backFrom(into, { token: text })
+        : guests.add({ name: into, token: text, from: `taken from ${name}`, note: 'signed in on a machine by hand' })
+
+      // STILL ON THE MACHINE, because grabbing is copying and not moving. A
+      // machine that was signed in by hand stays signed in until somebody takes
+      // it away — vmCredentialsForget is the one that removes it — so the record
+      // says it is holding, and it is holding this guest.
+      guests.lentTo(into, name)
+      vms.update(name, { holdsCredential: true, guest: into })
+
+      log.on('vm', name).good(already
+        ? `its worker credential was taken again into the Claude guest "${into}" — ${made.rotated ? 'and it had changed' : 'unchanged'}`
+        : `its worker credential is now the Claude guest "${into}"`)
+
+      return {
+        from: name,
+        guest: into,
+        // A fingerprint, never the token. Sixteen hex characters of sha256, which
+        // says "the same one as before" and nothing else.
+        fingerprint: made.fingerprint,
+        rotated: already ? made.rotated : true,
+        made: !already,
+        note: already
+          ? `"${into}" now holds what ${name} has${made.rotated ? ' — it had changed since it was lent out' : ', which is what it already had'}.`
+          : `Kept as the Claude guest "${into}". Lend it with vmCredentialsPut and take it back with vmCredentialsForget.`
+      }
     }
   },
 
@@ -268,8 +333,13 @@ module.exports = {
     about: 'Take a machine, hand it the stored credential, and see whether the worker can really authenticate',
     takes: ['name'],
     run: async ({ name }) => {
+      // Either place a sign-in can be: the list, or the single file on a host
+      // that has not been moved over. vmCredentialsPut picks between them, so
+      // this only has to know whether there is anything to pick.
       const file = path.join(data.sub('credentials'), 'claude.json')
-      if (!fs.existsSync(file)) throw new Error('This host holds no worker credential, so there is nothing to test.')
+      if (!guests.all().some(g => g.has) && !fs.existsSync(file)) {
+        throw new Error('This host holds no worker credential, so there is nothing to test. Add a Claude guest on the Virtual machines tab, or sign a machine in and take it with vmCredentialsGrab.')
+      }
 
       const borrowed = await actions.vmBorrow.run({ name, why: 'testing whether the stored worker credential authenticates' })
       const on = borrowed.name
@@ -302,9 +372,30 @@ module.exports = {
       vms.get(name)
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
 
-      const file = path.join(data.sub('credentials'), 'claude.json')
+      // WHICH IDENTITY THIS MACHINE IS SIGNED IN AS.
+      //
+      // There was one credential and every machine got it. There is a list now —
+      // see core/guests.js — and this picks from it: the guest this machine
+      // already has, or one that is free. Two machines therefore work as two
+      // identities, which is the whole point: the CLI refreshes the token as a
+      // worker runs, so a shared sign-in is two workers rotating one credential
+      // underneath each other.
+      //
+      // The old single file is still the answer on a host that has not been
+      // moved over yet, and `guests.adoptTheOldOne` moves it on the next start.
+      const mine = vms.read().find(v => v.name === name) || {}
+      const held = guests.all()
+      const wanted = mine.guest
+        ? held.find(g => g.name === mine.guest)
+        : held.find(g => g.has && (!g.holder || g.holder === name))
+
+      const file = wanted ? guests.fileFor(wanted.name) : path.join(data.sub('credentials'), 'claude.json')
+      const chosen = wanted ? wanted.name : null
+
       if (!fs.existsSync(file)) {
-        throw new Error('This host has no worker credential yet. Sign in on one machine and take it with vmCredentialsGrab first.')
+        throw new Error(held.length
+          ? `Every Claude guest is out on another machine: ${held.filter(g => g.holder).map(g => `${g.name} on ${g.holder}`).join(', ')}. Take one back, or add another — two machines cannot share one sign-in without rotating the same token underneath each other.`
+          : 'This host has no worker credential yet. Add a Claude guest on the Runners tab, or sign in on a machine and take it with vmCredentialsGrab.')
       }
 
       // ASKED BEFORE IT IS SPENT. A dead credential can be recognised here, on
@@ -368,7 +459,13 @@ echo okc-credential-placed
 claude auth status 2>/dev/null || true`, { what: 'handing it a worker credential', timeout: 60000 })
 
       if (!/okc-credential-placed/.test(r.output || '')) throw new Error(`"${name}" did not take the credential.`)
-      vms.update(name, { holdsCredential: true })
+
+      // WHO HAS WHAT, written down here rather than worked out later. A machine
+      // that is switched off still has a credential on its disk, so "which guest
+      // is on that machine" has to be answerable while it is off — and a guest
+      // recorded as out is one that will not be handed to a second machine.
+      if (chosen) guests.lentTo(chosen, name)
+      vms.update(name, { holdsCredential: true, guest: chosen })
 
       // What the worker itself says, believed over what we just wrote. It prints
       // JSON; anything else -- an old version, a missing binary -- leaves this
@@ -405,17 +502,50 @@ claude auth status 2>/dev/null || true`, { what: 'handing it a worker credential
   },
 
   vmCredentialsForget: {
-    about: 'Take the worker credential off a machine',
+    about: 'Take the worker credential off a machine, keeping whatever the worker refreshed',
     takes: ['name'],
     run: async ({ name }) => {
-      vms.get(name)
+      const mine = vms.get(name)
+
+      // READ BEFORE IT IS REMOVED, which this did not do and which cost the
+      // credential this host was holding.
+      //
+      // The Claude CLI refreshes the token as a worker runs, so what is on the
+      // machine at the end is newer than what went on. This deleted it — `rm -f`
+      // and nothing else — so every rotation was thrown away and the host went on
+      // handing out a token one or more refreshes behind. That is the failure on
+      // record: credentialsHeld reporting the refresh half good until September
+      // while the worker answered "OAuth session expired and could not be
+      // refreshed".
+      //
+      // Only for a machine holding a GUEST. A host still on the single file has
+      // nowhere to put a newer one, and writing it back into the old path would
+      // be maintaining the thing being replaced.
+      let text = null
+      if (mine.guest && channel.connected(name)) {
+        const said = await channel.run(name, 'cat "$HOME/.claude/.credentials.json" 2>/dev/null || true',
+          { what: 'reading what the worker refreshed, before taking it back', timeout: 60000 })
+        const body = String(said.output || '').split('\n').slice(1).join('\n').trim()
+        if (body.startsWith('{')) text = body
+      }
+
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
       const r = await channel.run(name, 'rm -f "$HOME/.claude/.credentials.json" && echo okc-credential-gone',
         { what: 'taking its worker credential away', timeout: 60000 })
       if (!/okc-credential-gone/.test(r.output || '')) throw new Error(`"${name}" still has it.`)
-      vms.update(name, { holdsCredential: false })
+
+      let rotated = false
+      if (mine.guest) {
+        const now = guests.backFrom(mine.guest, { token: text })
+        rotated = now.rotated
+        log.on('vm', name)[rotated ? 'good' : 'info'](rotated
+          ? `the Claude guest "${mine.guest}" came back refreshed — ${now.fingerprint}`
+          : `the Claude guest "${mine.guest}" came back unchanged`)
+      }
+
+      vms.update(name, { holdsCredential: false, guest: null })
       log.on('vm', name).good(`${name} no longer holds a worker credential`)
-      return { from: name, removed: true }
+      return { from: name, removed: true, guest: mine.guest || null, rotated, kept: text !== null }
     }
   },
 }

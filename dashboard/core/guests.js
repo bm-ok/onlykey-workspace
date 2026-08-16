@@ -168,4 +168,30 @@ const token = name => {
   return secret.read(fileFor(name)).toString('utf8')
 }
 
-module.exports = { all, get, add, forget, lentTo, backFrom, token, fingerprint, okName, ROOT, fileFor }
+// ---- the one that was here before -----------------------------------------
+//
+// There was a single credential at `credentials/claude.json`, kept on the Keys
+// tab and lent to whoever was working. It becomes a guest, because the list is
+// where identities live now and two places holding credentials is how one of
+// them goes stale unnoticed.
+//
+// MOVED, NOT COPIED. The original file is left where it is only until the first
+// lend proves the new path works, and `credentialsHeld` reads the list from then
+// on — see actions/credentials.js. Copying and leaving both would give this app
+// two answers to "what is the token", which is the fault being fixed.
+//
+// Idempotent, and quiet when there is nothing to do: it runs on startup, and a
+// host that has already moved must not gain a second copy on every restart.
+function adoptTheOldOne (file, name = 'claude-code') {
+  if (read().length) return null                 // already a list; nothing to adopt
+  if (!fs.existsSync(file)) return null          // nothing was ever kept here
+
+  let text = null
+  try { text = secret.read(file).toString('utf8') } catch { return null }
+  if (!String(text).trim()) return null
+
+  const made = add({ name, token: text, from: 'moved from the Keys tab', note: 'the single credential this host used to keep' })
+  return made
+}
+
+module.exports = { all, get, add, forget, lentTo, backFrom, token, fingerprint, okName, adoptTheOldOne, ROOT, fileFor }

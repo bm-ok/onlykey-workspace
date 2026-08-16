@@ -247,6 +247,11 @@ async function drawOnce () {
   paintBranches()
   paintTasks(running)
   paintSessions()
+  // On the loop, not only when the sub-tab is clicked. It was wired to the
+  // switcher alone, so a window opened with this pane already remembered drew
+  // nothing at all — an empty column that looks exactly like having no guests.
+  // Its own view guard is what keeps it from asking anything behind a tab.
+  paintGuests()
   paintTests()
   paintSettings()
   paintAddTask()

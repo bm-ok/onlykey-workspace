@@ -696,19 +696,23 @@
        has to exist inside a machine -- so it is signed in once, taken, and
        handed out per machine rather than living in any of them. -->
   <section class="view" id="view-keys">
-    <!-- A "Get Claude Code credentials" button sat in this header, above and
-         away from the card that describes the credential it would replace. The
-         card is where its state is read, so it is where the two things you can
-         do about that state belong: try it, or replace it. A header button is
-         also the one that stays the same whatever the card says. -->
+    <!-- WORKER SIGN-INS ARE NOT HERE ANY MORE, and this says so rather than
+         going quiet. There was one Claude credential and this tab was where it
+         lived; there is a list of named ones now, under Virtual machines →
+         Claude guest, because one machine per sign-in is what stops two workers
+         rotating the same token underneath each other.
+
+         A signpost and not a redirect: somebody who comes here is looking for
+         something that used to be here, and being told where it went is the
+         difference between "moved" and "gone". -->
     <div class="sync-head">
       <h2>Worker sign-in <span class="muted" id="keys-context"></span></h2>
     </div>
     <p class="note">
-      One machine is signed in by you; the credential is taken from it and kept
-      here. Every other machine is handed a copy when it needs one — so a
-      credential is part of a task rather than part of a machine, and a machine
-      that is deleted or snapshotted takes none with it.
+      Claude sign-ins are kept as named <b>guests</b>, one per machine that is
+      working. A guest is lent to a machine for a task and taken back afterwards
+      — with whatever the CLI refreshed while it ran — so a credential is part of
+      a task rather than part of a machine.
     </p>
     <div id="keys" class="stack"></div>
 
