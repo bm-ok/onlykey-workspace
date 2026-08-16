@@ -48,23 +48,32 @@ say 'making sure the clock keeps itself right'
 timedatectl set-ntp true 2>/dev/null || true
 systemctl enable --now systemd-timesyncd 2>/dev/null || true
 
-# AND THE BOOT WAITS FOR IT, which is the half that was missing.
+# NOT systemd-time-wait-sync, WHICH WAS TRIED AND HUNG A MACHINE.
 #
-# "It syncs eventually" is not good enough for the things that care. A machine
-# whose clock is wrong for the first thirty seconds is a machine that spends
-# those thirty seconds unable to verify this host's certificate and arguing with
-# apt — and both failures point somewhere else entirely.
+# It looks like the right answer: it holds time-sync.target until the clock is
+# genuinely synchronised, so anything ordered after it starts with a clock it can
+# trust. What it actually does is wait with NO LIMIT — and on a machine whose
+# clock is set by the guest additions rather than by timesyncd, that condition
+# never arrives. The machine booted, brought up its desktop, and never started
+# the agent. It looked perfectly healthy and was unreachable.
 #
-# The guest additions help and are not enough on their own: VBoxService sets the
-# clock from the host, but it does it on its own schedule, and being late is
-# precisely the problem. systemd-time-wait-sync holds time-sync.target until the
-# clock is actually right, so anything ordered after it starts with a clock it
-# can trust.
+# So it is explicitly disabled rather than left to chance, because enabling it is
+# the obvious-looking fix somebody will reach for again.
+systemctl disable systemd-time-wait-sync.service 2>/dev/null || true
+
+# WHAT ACTUALLY KEEPS THE CLOCK RIGHT, and neither can block a boot:
 #
-# Note that NTPSynchronized only ever reports timesyncd — a machine whose clock
-# has been set correctly by the additions still reads "no", which is how three
-# machines looked broken tonight while telling the time perfectly well.
-systemctl enable systemd-time-wait-sync.service 2>/dev/null || true
+#   the guest additions   VBoxService sets it from the host, needs no network,
+#                         and is why a machine with no NTP still tells the time
+#   timesyncd             corrects it against the network as it runs
+#
+# The virtual clock does drift — measured at six and a half minutes behind after
+# one boot — so this matters. It is fixed within the first minute, and nothing is
+# ordered behind it.
+#
+# Note that NTPSynchronized only ever reports timesyncd, so a machine whose clock
+# has been set correctly by the additions still reads "no". That is how three
+# machines looked broken in one evening while telling the time perfectly well.
 
 if timedatectl 2>/dev/null | grep -q 'synchronized: yes'; then
   say 'the clock is synchronised'

@@ -340,15 +340,22 @@ Description=Dial the dashboard and stay connected
 # a reboot is an ordinary reconnect, so starting early and failing twice costs
 # nothing and starting late costs the operator their visibility.
 #
-# THE CLOCK IS DIFFERENT, and it is ordered rather than merely hoped for. This
-# agent talks to the dashboard over TLS, and a certificate is only valid between
-# two dates: a machine whose clock has not been set yet cannot verify the host it
-# is trying to reach, and the failure it reports is about certificates rather
-# than about time. time-sync.target is held open by systemd-time-wait-sync until
-# the clock is right — see toolchain.sh — so waiting for it costs a moment at
-# boot and saves an error that points in the wrong direction.
-After=network.target time-sync.target
-Wants=time-sync.target
+# AND NOT time-sync.target EITHER, which was tried and hung a machine solid.
+#
+# The reasoning was sound: this agent speaks TLS, a certificate is only valid
+# between two dates, and a machine whose clock is wrong reports a certificate
+# error rather than a time one. So it was ordered after time-sync.target, which
+# systemd-time-wait-sync holds open until the clock is synchronised.
+#
+# That job waits with NO LIMIT. On a machine whose clock is set by the guest
+# additions rather than by timesyncd, it never finishes — so the agent never
+# started, the machine never dialled in, and it sat there with a working desktop
+# looking perfectly healthy. Exactly the failure the paragraph above describes,
+# repeated one line below it.
+#
+# The clock is made right EARLY instead, by things that cannot block a boot —
+# see toolchain.sh. Nothing here waits on a target that has no timeout.
+After=network.target
 
 [Service]
 # As the user, not root. Nothing the agent does needs root, and running it as root
