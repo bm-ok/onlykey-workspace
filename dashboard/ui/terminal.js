@@ -267,7 +267,7 @@ function watchInstall (name, { onEnd = null, show = true, auto = false } = {}) {
       const shell = {
         id: ++shellSeq,
         name,
-        what: auto ? 'installing' : 'console',
+        what: 'console',
         target: file || `${name} console`,
         live: true,
         watching: true,
@@ -352,40 +352,43 @@ function watchInstall (name, { onEnd = null, show = true, auto = false } = {}) {
     })
 }
 
-// OPENED AND CLOSED BY WHAT THE MACHINES ARE DOING, not by anybody remembering.
+// A CONSOLE FOR EVERY MACHINE THAT IS RUNNING, AND NOTHING TAKES IT AWAY.
 //
-// An install is the one thing here that runs for ten minutes with nothing to
-// look at, and the moment it is worth looking at is the moment it goes wrong —
-// which is exactly when nobody thought to open a console first. So a machine
-// that starts installing gets a tab, and it appears wherever you are.
+// The first version of this opened a tab when an install started and closed it
+// when the install ended, and closing was where all the bugs were. Two of them,
+// both mine:
 //
-// IT DOES NOT MOVE YOU. Opening a tab is not switching to it: a window that
-// yanks somebody onto a terminal because a machine started installing has taken
-// the screen away from whatever they were doing. The tab is there when they want
-// it, and a notice says so.
+//   - the draw catches a failed vmList as an empty list, and during an install
+//     VBoxManage calls queue behind the install itself. An empty list reads as
+//     "nothing is installing", so a slow answer closed the tab somebody was
+//     reading. That is the "it randomly closed" that was reported.
 //
-// AND WHEN THE INSTALL IS OVER, THE TAB GOES AWAY AGAIN. A finished install is
-// a screenful of somebody else's history, and leaving it open means a strip of
-// dead tabs from every machine ever built. What is left is a line saying it
-// finished and where to read it again — the console file outlives the tab.
+//   - "installing" clears when the guest reports online, which comes from the
+//     INSTALLER's post-install stage — before the machine has ever booted. So
+//     the tab went away with several minutes of the interesting part left.
 //
-// Called from the draw loop with the machine list it already has, so this costs
-// nothing: no extra call, and certainly no VBoxManage.
-function mindInstalls (vms) {
-  const now = new Set((vms || []).filter(v => v.stage === 'installing').map(v => v.name))
+// Neither is worth fixing, because the question they were answering is the wrong
+// one. A console is not an install: the same port carries the installer, the
+// first boot, every boot after it, and the shutdown. So the rule is simply that
+// a machine which is RUNNING has a console tab, and it is opened once.
+//
+// NOTHING IS AUTO-SHOWN AND NOTHING IS AUTO-CLOSED. Opening a tab is not
+// switching to it, and a tab that closes itself is a tab that closes while
+// somebody is reading it. Closing one is a person's decision, and the × is
+// right there.
+function mindConsoles (list) {
+  // A LIST THAT COULD NOT BE READ IS NOT A LIST OF NOTHING. This is the same
+  // trap in the other direction: acting on an empty list would open nothing,
+  // which is harmless, but the guard is written down because the closing half
+  // acted on it and was not harmless at all.
+  if (!list || list.available === false || !Array.isArray(list.vms)) return
 
-  for (const name of now) {
-    if (watchers.has(name)) continue
-    watchInstall(name, { show: false, auto: true }).then(s => {
-      if (!s) return
-      say(`${name} is installing — its console is in the Terminal tab, live.`, undefined, { lasts: 12000 })
+  for (const v of list.vms) {
+    if (!v.running || !v.serial) continue
+    if (watchers.has(v.name)) continue
+    watchInstall(v.name, { show: false, auto: true }).then(s => {
+      if (s) say(`${v.name} is running — its console is in the Terminal tab.`, undefined, { lasts: 8000 })
     })
-  }
-
-  for (const [name, s] of [...watchers.entries()]) {
-    if (now.has(name) || s === 'opening' || !s.auto) continue
-    closeShell(s)
-    say(`${name} has finished installing. Its console tab is closed — read it again with vmLog --which serial.`, 'ok', { lasts: 15000 })
   }
 }
 
@@ -509,6 +512,19 @@ function paintTerminal () {
   const idle = !shells.length
   $('term').classList.toggle('hidden', idle)
   $('term-empty').classList.toggle('hidden', !idle)
+
+  // SOMETHING IS SHOWING WHENEVER THERE IS SOMETHING TO SHOW.
+  //
+  // A console opens itself and deliberately does NOT bring itself forward —
+  // opening a tab is not switching to it, and stealing the view from somebody is
+  // the whole thing that was asked not to happen. But that left the other half
+  // undone: arriving at this tab with sessions open and none of them chosen
+  // showed a strip of tabs above an empty black square, which reads as a broken
+  // terminal rather than an unchosen one.
+  //
+  // Choosing one only happens once somebody is HERE, which is not auto-showing:
+  // nothing moved, they came.
+  if (!idle && !active) showShell(shells[shells.length - 1])
   // Said here as well as in paintShellTabs, which only runs once a shell has
   // existed — so on a window where none ever has, the button sat there looking
   // like something you could press.

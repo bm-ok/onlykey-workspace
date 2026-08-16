@@ -34,11 +34,11 @@ async function drawOnce () {
   const busyMachines = new Set((running.inFlight || []).map(f => f.machine))
   latest = list
 
-  // An install opens its own console tab and closes it again when it is over.
-  // Here rather than in the machines panel, because an install is worth watching
-  // whatever tab somebody is on — and this is the one place that already knows
-  // what every machine is doing. See mindInstalls in ui/terminal.js.
-  mindInstalls(list.vms || [])
+  // A machine that is running has a console tab, opened once and never taken
+  // away. Here rather than in the machines panel, because a console is worth
+  // having whatever tab somebody is on — and this is the one place that already
+  // knows what every machine is doing. See mindConsoles in ui/terminal.js.
+  mindConsoles(list)
   latest.credentialsHeld = held
   queueSays = new Map((running.machines || []).map(m => [m.name, m]))
   queueBusy = new Map((running.inFlight || []).map(f => [f.machine, f.task]))
