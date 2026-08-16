@@ -31,19 +31,20 @@ draft('and an open cut is what asks for one',
   'Automatic would make a queue of judgements running unattended against somebody\'s repository, reporting to GitHub, with nobody having chosen this cut or this chain — which is the same thing this app already refuses about approving a job down a pipe. Asking is free; acting is a decision. ' +
   'THE OTHER HALF OF THE CHECK: an open cut with nobody pressing anything stays unjudged for ever, and nothing runs.')
 
-draft('and the judge tab shows what is waiting, what is being judged, and what was decided',
-  'THE HOME IT NEEDS. "Judge it" used to be a button on the task\'s own card — the screen that asked for a decision showed the QUESTION and not the answer — and it was removed rather than moved, so there is nowhere to do this today. ' +
-  'WHAT THE SCREEN IS BUILT AROUND: the delivery. The cut\'s commits, the diff, the files handed back, the run\'s log, and the two buttons under all of it. ' +
-  'THE LIST is the part this draft adds: every open cut, which are waiting, which have a judgement in flight, and which were decided — with the verdict and what it was judged on. That is the same shape as the task board, one level up, and it is what makes judging something you can be BEHIND on rather than something you remember to do. ' +
-  'THE CHECK: with one cut open and one judged, the tab lists both under the right heading, and the judged one names its verdict and the run behind it. ' +
-  'TO SETTLE: whether this is a tab of its own or the bottom of the board\'s third column once something has arrived. A tab is findable; the column is where somebody already is.')
+draft('and the Judge tab, Judgements, lists what is waiting and what was decided',
+  'A TAB OF ITS OWN, CALLED JUDGE, and the first of its two sub-tabs is Judgements — two columns. ' +
+  'THE HOME IT NEEDS. "Judge it" used to be a button on the task\'s own card, so the screen that asked for a decision showed the QUESTION and not the answer. It was removed rather than moved, and there is nowhere to do this today. ' +
+  'WHAT IT LISTS: every open cut — which are waiting, which have a judgement in flight, which were decided and what the verdict was. That is the same shape as the task board one level up, and it is what makes judging something you can be BEHIND ON rather than something you remember to do. ' +
+  'WHAT THE OTHER COLUMN IS FOR: the delivery. A verdict is somebody reading what came back, so the screen is built around it — the cut\'s commits, the diff, the files handed back, the run\'s log, and the buttons under all of it, including the one that starts a judgement. ' +
+  'THE CHECK: with one cut open and one judged, both are listed under the right heading, and the judged one names its verdict and the run behind it.')
 
-draft('and a sub-tab lists the judgements that can be run, as whole chains',
-  'THE COMBINATIONS, which the library tab cannot show. Jobs, prompts and contracts are listed there one substance at a time, because that is how they are written and approved — but a JUDGEMENT you can run is a whole chain: this job, giving these words, under these rules. Picking one from three separate lists is asking somebody to recombine in their head what the app already knows. ' +
-  'WHAT IT LISTS: every job whose prompt and contract are approved, shown as the chain it is — job <- prompt <- contract — with the ones that cannot run saying which rung is missing. ' +
+draft('and the Judge tab, judges, lists the chains that can do the judging',
+  'THE SECOND SUB-TAB, CALLED JUDGES — three columns, one per rung: job <- prompt <- contract. ' +
+  'A JUDGE IS A COMBINATION, and that is the word this needed. The library lists the three substances one at a time, because that is how each is written and approved; a judge is the whole chain — this job, giving these words, under these rules — and picking one from three separate lists asks somebody to recombine in their head what the app already knows. ' +
+  'WHAT IT LISTS: every job whose prompt and contract are approved, as the chain it is, with the ones that cannot run naming the rung that is missing. ' +
   'THE DATA IS ALREADY THERE: `jobs` reports `runnable` and `whyNot`, and whyNot names the one rung rather than saying "not approved" about the thing that plainly is. Nothing shows it combined. ' +
-  'THE CHECK: with one judging job approved end to end and one whose contract is not, the sub-tab lists both, the first as runnable and the second naming the contract. ' +
-  'TO SETTLE: whether a judgement is chosen per cut, or a cut has a default chain it is judged by — a repository where every cut is judged the same way should not ask the same question every time.')
+  'THE CHECK: with one judge approved end to end and one whose contract is not, both are listed, the first as runnable and the second naming the contract. ' +
+  'TO SETTLE: whether a judge is chosen per cut, or a cut has a default one — a repository where every cut is judged the same way should not be asked the same question every time.')
 
 draft('and it is done by either kind of supervisor',
   'A person reading a diff and a worker running checks are the same act with a different body — which is what the spine already says about who supervises, and the reason judging should not be a special case bolted to a task. ' +

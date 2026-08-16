@@ -60,19 +60,27 @@ That is also why the subject is the cut and not the task: a cut may carry work
 from more than one task, and a task may deliver nothing worth landing. Judging
 follows the change, not the occasion that produced it.
 
-**Which makes it a list, and lists want a tab.** Every open cut: which are
-waiting, which have a judgement in flight, which were decided and what the
-verdict was. The same shape as the task board, one level up — and it is what
-turns judging into something you can be *behind on* rather than something you
-remember to do.
+## The tab
 
-**And a sub-tab for the chains that can be run.** The library lists jobs,
-prompts and contracts one substance at a time, because that is how each is
-written and approved. A judgement you can *run* is the whole chain — this job,
-giving these words, under these rules — and picking one from three separate
-lists asks somebody to recombine in their head what the app already knows.
-`jobs` already reports `runnable` and `whyNot`, and `whyNot` names the one rung
-that is missing; nothing shows it combined.
+A tab of its own, called **Judge**, with two sub-tabs:
+
+    Judgements   two columns    every open cut — waiting, in flight, decided —
+                                and beside it the delivery being judged
+    judges       three columns  the chains that can do the judging, one column
+                                per rung: job <- prompt <- contract
+
+**Judgements** is the list, and it is what turns judging into something you can
+be *behind on* rather than something you remember to do. The second column is
+the delivery: the cut's commits, the diff, the files handed back, the run's log,
+and the buttons under all of it — including the one that starts a judgement,
+since a cut asks and does not act.
+
+**A judge is a combination**, and that is the word this needed. The library
+lists jobs, prompts and contracts one substance at a time, because that is how
+each is written and approved. A judge is the whole chain, and picking one from
+three separate lists asks somebody to recombine in their head what the app
+already knows — `jobs` reports `runnable` and `whyNot`, and `whyNot` names the
+one rung that is missing.
 
 **And it reports outward.** A verdict is not only a note on a board: it belongs
 on the PR cut the work is landing through, and on GitHub beside the pull request
