@@ -68,23 +68,33 @@ it('a signed-out machine is not given work', async ({ okc, assert, log }) => {
   }
 })
 
-// WHAT IT SAW — 16 August 2026, 14:16, neither could be tried
+// WHAT IT SAW — 16 August 2026, 14:45, both passed, in flight
 //
 //   a machine holding a credential cannot be snapshotted
-//     could not be tried: no machine is holding a credential — the queue takes
-//     them back when work ends
+//     asked of runner4, which is holding one — refused, and this is what it said:
+//     "runner4" is holding a worker credential, and a snapshot would keep a copy
+//     of it for as long as the snapshot exists. Take it back first:
+//     vmCredentialsForget --name runner4
 //
 //   a signed-out machine is not given work
-//     could not be tried: no machine is dialled in — a runner rests off
+//     refused, and this is what it said:
+//     "runner3"'s worker is signed out, so the work would fail the moment it
+//     started. Hand it the credential first: vmCredentialsPut --name runner3
 //
-// AND THAT IS THE ORDINARY RESULT FOR THIS FILE, not a bad run. Both checks need
-// a machine that is UP, and the resting state of this host — which
-// 03-the-machines/00-a-machine-at-rest exists to assert — is that none is. On a
-// host where these two ran every time, something would be wrong with the host.
+// AT REST THIS FILE ANSWERS NOTHING, and that is the ordinary result rather than
+// a bad run: both checks need a machine that is UP, and the resting state of
+// this host — which 03-the-machines/00-a-machine-at-rest exists to assert — is
+// that none is. On a host where these ran every time, something would be wrong
+// with the host.
 //
-// They are here rather than deleted because the moment they can run is the
-// moment they matter: run the suite while the queue has work in flight and both
-// have a machine to ask. The same is true of 03-one-machine-per-branch, and the
-// refusals in this folder that could NEVER be tried were moved into
-// 03-the-machines/01-a-machine-comes-up-and-goes-away, which brings up a machine
-// of its own so it can ask.
+// So the transcript above is from a run made DELIBERATELY IN FLIGHT: a task was
+// queued so the queue would take runner4 and put it to work, a second machine
+// was borrowed so there was an idle one to sign out, and the suite was run in
+// the twenty-five seconds while runner4 held its credential. Before that these
+// two had never once been tried.
+//
+// BOTH REFUSALS END WITH THE COMMAND THAT UNDOES THEM, which is the thing worth
+// having on the record here. Neither is a wall: one says take the credential
+// back and then snapshot, the other says hand this machine a credential and then
+// dispatch. That is what separates a guard from an obstacle, and no assertion
+// above says it.

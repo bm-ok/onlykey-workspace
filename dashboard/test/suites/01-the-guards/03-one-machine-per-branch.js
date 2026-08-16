@@ -8,7 +8,6 @@
 // to the ones after it.
 
 const { it } = require('../../../tasks/harness')
-const { scratch } = require('../../helpers')
 
 // WHAT IT SAW LAST TIME is recorded at the bottom of this file. Both checks here
 // need a machine that is WORKING, so the transcript is from a run made while the
@@ -18,11 +17,31 @@ it('a machine is not moved off the branch it is on', async ({ okc, assert, log }
   const { vms } = await okc('vmList')
   const on = vms.find(v => v.connected && v.branch)
   assert.needs(on, 'no connected machine is on a branch — one is only on a branch while it is working')
+
+  // THE BRANCH IT IS OFFERED HAS TO BE REAL, and this check spent its whole life
+  // proving the wrong thing because it was not.
+  //
+  // It used to offer a made-up name — `scratch('elsewhere')` — and was refused,
+  // so it passed. It was refused for the NAME: there is no branch called that,
+  // make it first. The rule this check is about was never consulted, and it
+  // would have gone on passing after "a machine stays on its branch" stopped
+  // being true.
+  //
+  // It only ever showed itself the first time this file ran with a machine
+  // actually working, because until then the check could not be tried at all.
+  // The same mistake was found and fixed in
+  // 03-the-machines/01-a-machine-comes-up-and-goes-away, which cuts a second
+  // real branch for exactly this; here there is no series to cut one in, so it
+  // asks for a branch that already exists.
+  const { branches } = await okc('gitBranches')
+  const elsewhere = (branches || []).find(b => b.name !== on.branch && !(b.missing || []).length)
+  assert.needs(elsewhere, 'there is no other branch that exists everywhere, so the only branch to offer would be a name — and a name is refused for being a name')
+
   const refusal = await assert.refuses(
-    () => okc('vmWorkspace', { name: on.name, branch: scratch('elsewhere') }),
+    () => okc('vmWorkspace', { name: on.name, branch: elsewhere.name }),
     'stays there until it is clean',
     'Switching is how half-finished work stops being anywhere')
-  log(`asked of ${on.name}, which is on "${on.branch}" — refused, and this is what it said:\n${refusal.message}`)
+  log(`asked of ${on.name}, which is on "${on.branch}", offering the real branch "${elsewhere.name}" — refused, and this is what it said:\n${refusal.message}`)
 })
 
 it('a branch already claimed is not handed to a second machine', async ({ okc, assert, log }) => {
@@ -53,18 +72,35 @@ it('a branch already claimed is not handed to a second machine', async ({ okc, a
   log(`${claimed.name} claims "${claimed.branch}"; offering it to ${free.name} was refused, and this is what it said:\n${refusal.message}`)
 })
 
-// WHAT IT SAW — 16 August 2026, 14:16, neither could be tried
+// WHAT IT SAW — 16 August 2026, 14:45, both passed, in flight
 //
 //   a machine is not moved off the branch it is on
-//     could not be tried: no connected machine is on a branch — one is only on a
-//     branch while it is working
+//     asked of runner4, which is on "drill/guards-inflight", offering the real
+//     branch "brads/testing2" — refused, and this is what it said:
+//     "runner4" is set up on drill/guards-inflight and stays there until it is
+//     clean. To work on something else, go back to a snapshot taken before that
+//     branch — "Go back to it" says what it discards — or use another machine.
 //
 //   a branch already claimed is not handed to a second machine
-//     could not be tried: no machine claims a branch — a machine is rolled back
-//     when its work ends
+//     runner4 claims "drill/guards-inflight"; offering it to runner3 was refused,
+//     and this is what it said:
+//     "drill/guards-inflight" is already being worked on by "runner4". Two
+//     machines on one branch race for the same ref and the loser's commits
+//     strand. Pick another branch, or roll "runner4" back to a point before it.
 //
-// EXPECTED AT REST, like 02-a-machine-is-not-asked-to-lose-work beside it, and
-// for the same reason. Both refusals ARE proven — by
-// 03-the-machines/01-a-machine-comes-up-and-goes-away, which borrows two
-// machines, brings them both up and asks. Its transcript is where the wording of
-// these two refusals is on the record.
+// AND THE RUN BEFORE THIS ONE IS WHY THE FIRST CHECK IS WRITTEN THE WAY IT IS.
+//
+// The very first time this file was tried with a real working machine — which
+// took arranging, because at rest it answers nothing — it did not pass. It was
+// offering a made-up branch name and being refused for the NAME:
+//
+//     expected something matching /stays there until it is clean/, got:
+//     There is no branch called "drill/elsewhere-144315". Make it first, with a
+//     reason — branchCreate --branch drill/elsewhere-144315 ...
+//
+// It had never proven anything about one machine per branch. It could not have,
+// and nothing would have said so: at rest it reports "could not be tried", and
+// the moment it could be tried it would have reported a pass for the wrong rule.
+// It is fixed here by offering a branch that exists — "brads/testing2" above is
+// a real one somebody cut — and the only reason any of it surfaced is that
+// `refuses` matches the message rather than merely catching a throw.
