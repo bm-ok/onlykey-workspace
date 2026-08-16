@@ -65,9 +65,19 @@ function describe (name, fn) {
 // up, and a worker takes longer than that — so a check that waits on one says so
 // here, in the file, where somebody reading it can see what it is going to cost.
 // `minutes` rather than milliseconds because that is the unit these are in.
-function it (name, fn, { minutes = 0 } = {}) {
+// `gate: true` says this check is the DOOR, not a step: if it does not pass —
+// failed OR could not be tried — the rest of the series is not attempted.
+//
+// Needed because an unmet precondition deliberately does NOT stop a series: each
+// check states what IT needed, and replacing precise sentences with one borrowed
+// from above loses the only useful thing they said. That is right for a file of
+// related checks and wrong for a file whose first check is permission to run at
+// all. "Building a machine" asks for `slow` and the checks after it build one —
+// so with the gate unmet they carried on, made a machine with no installer
+// image, and reported a FAILURE about a drill nobody had asked to run.
+function it (name, fn, { minutes = 0, gate = false } = {}) {
   if (!currentSuite) throw new Error('it() must be called inside describe()')
-  currentSuite.tests.push({ name, fn, timeoutMs: minutes > 0 ? Math.round(minutes * 60000) : 0 })
+  currentSuite.tests.push({ name, fn, gate, timeoutMs: minutes > 0 ? Math.round(minutes * 60000) : 0 })
 }
 
 // WHAT TO UNDO WHEN THE SERIES IS OVER, however it ends.
@@ -238,6 +248,10 @@ async function run (context = {}) {
           testRes.unrunnable = why.slice(UNMET.length)
           testRes.ms = Date.now() - started
           results.unrunnable++
+          // A DOOR THAT DID NOT OPEN CLOSES THE REST. Only for a check that
+          // said it was one: everywhere else an unmet precondition is a fact
+          // about the moment and the checks after it speak for themselves.
+          if (t.gate) stoppedBy = `${t.name} — ${testRes.unrunnable}`
           try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'unrunnable', error: testRes.unrunnable }) } catch {}
           log(`  SKIP ${t.name} -> ${testRes.unrunnable}`)
           try { if (onTestEnd) onTestEnd({ groupName: suite.group, suiteName: suite.name, testName: t.name, result: testRes }) } catch { /* a reporter must not fail a test */ }

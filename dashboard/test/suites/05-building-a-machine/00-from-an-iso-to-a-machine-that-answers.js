@@ -36,7 +36,11 @@ it('there is an ISO to install from, and this was asked for', async ({ okc, asse
 
   const { vms } = await okc('vmList')
   assert.ok(!vms.some(v => v.name === NAME), `"${NAME}" already exists, which should be impossible — it is named after the minute it was made`)
-})
+  // A GATE, not a step. Without this the checks below carried on when nobody
+  // had asked for a slow run: they made a machine with no installer image and
+  // reported it as a FAILURE, which is a red line about a drill that was never
+  // meant to run. See `gate` in tasks/harness.js.
+}, { gate: true })
 
 it('a machine is defined, and it is only defined', async ({ okc, assert, state }) => {
   // Making a machine and installing one are separate acts on purpose: the first
