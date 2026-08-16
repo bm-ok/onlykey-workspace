@@ -162,15 +162,115 @@ module.exports = {
   //
   // Dropped before the stop rather than after, because after is a race with how
   // long VirtualBox takes.
+  // AND IT WAITS TO SEE, because pressing the power button is a REQUEST.
+  //
+  // `acpipowerbutton` is exactly what the button on a real machine's case does:
+  // it tells the guest that somebody would like it to shut down. A guest that is
+  // wedged, or still on its boot splash, or has no acpid, ignores it — and this
+  // returned the instant the request was sent, with nothing to say. So a stop
+  // that did nothing at all was indistinguishable from a stop that worked, and
+  // the next thing to look at the machine found it still running with no record
+  // of why.
+  //
+  // Found by a drill: "vmStop" printed nothing, twice, on a machine hung at its
+  // splash screen, and it took a screenshot to work out that the machine had
+  // simply ignored the request.
+  //
+  // It does NOT pull the power on its own. That is a different act with a
+  // different cost — an unclean shutdown, mid-write — and choosing it is the
+  // operator's, which is what `force` is for. What this does instead is say
+  // plainly that the machine did not answer, and what to do about it.
   vmStop: {
-    about: 'Shut a virtual machine down, or pull its power',
-    takes: ['name', 'force'],
-    run: ({ name, force }) => {
+    about: 'Shut a virtual machine down and wait for it, or pull its power with force',
+    takes: ['name', 'force', 'seconds'],
+    run: ({ name, force, seconds }) => {
       vms.get(name)
-      return busy.during(name, 'being shut down', () => {
-        channel.drop(name, force ? 'had its power pulled' : 'was asked to shut down')
-        return vbox.stop(name, !!force)
+      const pull = force === true || force === 'true'
+      // Generous for a request, brief for a pull: a guest shutting down tidily
+      // takes as long as its services take, and a power cut is immediate.
+      const wait = Math.max(5, Math.min(Number(seconds) || (pull ? 30 : 120), 900)) * 1000
+
+      return busy.during(name, 'being shut down', async () => {
+        // ALREADY OFF IS THE STATE THAT WAS WANTED, not an error. VirtualBox
+        // answers "Machine 'x' is not currently running", which reads as a
+        // failure and stops whatever asked — and stopping a machine that is
+        // already stopped is the most ordinary thing in the world: a queue
+        // tidying up, a drill cleaning up, somebody pressing it twice.
+        if (await vbox.isOff(name)) {
+          return { name, off: true, how: 'already', took: 0, note: `"${name}" was already off.` }
+        }
+
+        channel.drop(name, pull ? 'had its power pulled' : 'was asked to shut down')
+        const began = Date.now()
+        await vbox.stop(name, pull)
+
+        const off = await vbox.waitUntilOff(name, { timeout: wait }).then(() => true, () => false)
+        const took = Math.round((Date.now() - began) / 1000)
+        if (off) {
+          log.on('vm', name)[pull ? 'warn' : 'good'](pull ? `power pulled, off after ${took}s` : `shut down after ${took}s`)
+          return { name, off: true, how: pull ? 'pulled' : 'asked', took, note: `"${name}" is off after ${took}s.` }
+        }
+
+        log.on('vm', name).warn(`did not go off within ${took}s of being asked`)
+        return {
+          name,
+          off: false,
+          how: pull ? 'pulled' : 'asked',
+          took,
+          note: pull
+            ? `"${name}" was told to power off and VirtualBox still reports it running after ${took}s. That is VirtualBox itself being stuck rather than the guest — vmInfo says what it thinks the machine is doing.`
+            : `"${name}" did not answer the power button within ${took}s. A guest ignores it while it is wedged, still booting, or has no acpid — vmScreenshot is the only thing that tells those apart. Pull its power with force=true when you have looked.`
+        }
       })
+    }
+  },
+
+  // WHAT VIRTUALBOX ITSELF RECORDED, for a machine that will not come up.
+  //
+  // Between "start it" and "it dialled in" this app has been blind: no agent
+  // means no log line, and the only instrument was a screenshot — which
+  // distinguishes a splash screen from a prompt and nothing else. A machine sat
+  // on that splash for eleven minutes here and there was no way to ask why.
+  //
+  // VirtualBox wrote the whole account of it while that was happening.
+  //
+  // TWO KINDS. The machine's own log is one run of one machine — its devices,
+  // its disks, what the guest did. The service log is about VirtualBox: a
+  // registry lock, a session that would not open, a host that refused to start
+  // anything at all. Asking for the wrong one is most of what makes this
+  // frustrating by hand, so both are here by name.
+  //
+  // `find` because these are tens of thousands of lines and the useful ones say
+  // Error, or timeout, or the name of a device that would not initialise.
+  vmLogs: {
+    about: "The VirtualBox logs a machine has: the current run and the ones before it",
+    takes: ['name'],
+    run: async ({ name }) => {
+      vms.get(name)
+      const found = await vbox.logs(name)
+      return {
+        ...found,
+        note: found.files.length
+          ? `${found.files.length} log(s) in ${found.folder}. VBox.log is the run happening now or the last one; the numbered ones are older, newest first.`
+          : `Nothing is logged for "${name}" — it may never have been started.`
+      }
+    }
+  },
+
+  vmLog: {
+    about: 'Read a machine\'s VirtualBox log, or the service log, for why it will not boot',
+    takes: ['name', 'which', 'lines', 'find'],
+    run: async ({ name, which, lines, find }) => {
+      // The service log is about VirtualBox rather than about a machine, so it
+      // is readable without naming one this app made.
+      if (!/^service$|VBoxSVC/i.test(String(which || ''))) vms.get(name)
+      const out = await vbox.logRead(name, { which, lines, find })
+      return {
+        ...out,
+        note: find
+          ? `${out.matched} line(s) matched "${find}" of ${out.of} — the last ${out.lines.length} are here.`
+          : `The last ${out.lines.length} of ${out.of} lines. Pass find to search it — "error", "timeout", or a device name.`
+      }
     }
   },
 

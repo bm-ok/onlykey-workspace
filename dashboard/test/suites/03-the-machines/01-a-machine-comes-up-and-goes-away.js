@@ -40,10 +40,15 @@ it('two branches to work on, and a machine to work on one', async ({ okc, assert
   state.other = scratch('elsewhere')
   await okc('branchCreate', { branch: state.other, reason: 'a drill needing a second real branch to try to be moved onto', group: line })
 
+  // WHAT IS FREE IS THE APP'S QUESTION, NOT THIS DRILL'S. This filter used to
+  // also pick the SECOND machine for the check further down, by taking the rest
+  // of its own list — and its list disagreed with the queue's, which knows about
+  // machines kept back. So the "second machine" it chose was the machine that
+  // had just been borrowed, and the refusal it got was about the branch it was
+  // already on. Every later choice here asks vmList again, at the time.
   const { vms } = await okc('vmList')
-  const free = vms.filter(v => v.stage === 'ready' && v.state !== 'running' && !v.branch && !v.borrowed)
-  assert.needs(free.length, 'no machine is ready, off and free — this needs one it can borrow')
-  state.spare = free.slice(1).map(v => v.name)
+  assert.needs(vms.some(v => v.stage === 'ready' && v.state !== 'running' && !v.branch && !v.borrowed),
+    'no machine is ready, off and free — this needs one it can borrow')
 })
 
 it('it is borrowed, and it dials in', async ({ okc, assert, state }) => {
@@ -76,22 +81,40 @@ it('and it is not moved off the branch it is on', async ({ okc, assert, state })
   // FROM 01-the-guards, where it could only ever report "no connected machine is
   // on a branch". Moving a working machine to another branch strands whatever it
   // has not pushed, and the machine is the only place that work exists.
+  // The words the app actually uses — "is set up on X and stays there until it
+  // is clean" — matched rather than merely catching a throw. Written from memory
+  // the first time as "is on", which matched nothing: a refusal drill that does
+  // not match is a drill that cannot tell the right rule from the wrong one, and
+  // that is the whole reason this matches at all.
   await assert.refuses(
     () => okc('vmWorkspace', { name: state.machine, branch: state.other }),
-    'is on|already|working on',
+    'stays there until it is clean|is set up on',
     'A machine was moved off the branch it was working on, which strands anything it had not pushed')
 }, { minutes: 3 })
 
-it('and a second machine is not handed the same branch', async ({ okc, assert, state }) => {
-  // The other half of the same rule, and the one that needs two machines. One
-  // branch, one machine: two workers on one branch is two histories of the same
-  // work, and whichever pushes second loses.
-  assert.needs(state.spare.length, 'there is only one free machine here, so nothing can be offered the same branch')
+it('and a second machine, dialled in, is not handed the same branch', async ({ okc, assert, state }) => {
+  // The other half of the same rule, and the one that needs TWO machines up.
+  //
+  // Both halves of that are load-bearing. `vmWorkspace` refuses "not dialled in"
+  // BEFORE it refuses "already being worked on", so offering the branch to a
+  // machine that is switched off proves nothing about claims — it proves the
+  // machine is off, which nobody doubted. Two rules can refuse the same call.
+  //
+  // So the second machine is borrowed and brought up like the first, and if
+  // there is not one to borrow this says so rather than making do.
+  const { vms } = await okc('vmList')
+  const other = vms.find(v => v.name !== state.machine && v.stage === 'ready' && !v.borrowed && !v.branch && v.forTasks !== false)
+  assert.needs(other, 'there is no second machine free here — one branch, one machine cannot be shown with one machine')
+
+  await okc('vmBorrow', { name: other.name, why: 'a drill proving one branch is only ever handed to one machine' })
+  state.second = other.name
+  await okc('vmAwait', { name: state.second, for: 'connected', seconds: 300 })
+
   await assert.refuses(
-    () => okc('vmWorkspace', { name: state.spare[0], branch: state.branch }),
-    'claimed|already|' + state.machine,
-    `${state.spare[0]} was set up on a branch ${state.machine} is already working on`)
-}, { minutes: 3 })
+    () => okc('vmWorkspace', { name: state.second, branch: state.branch }),
+    'already being worked on|race for the same ref',
+    `${state.second} was set up on a branch ${state.machine} is already working on — two machines on one branch race, and the loser's commits strand`)
+}, { minutes: 12 })
 
 it('and it goes away clean', async ({ okc, assert, state }) => {
   // Put away, which is a rollback to the base snapshot and a power off — so the
@@ -111,6 +134,10 @@ it('and it goes away clean', async ({ okc, assert, state }) => {
 cleanup(async ({ okc, state }) => {
   // The machine first: a branch that cannot be deleted because a machine claims
   // it is a worse mess than a branch left behind.
+  //
+  // The second machine is only ever borrowed to be refused, so it is holding
+  // nothing and goes back the ordinary way.
+  if (state.second) await okc('vmReturn', { name: state.second }).catch(() => {})
   if (state.machine && !state.returned) {
     await okc('vmReturn', { name: state.machine }).catch(async () => {
       // It could not be put away clean — usually because it is holding something

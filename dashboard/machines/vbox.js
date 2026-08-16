@@ -504,6 +504,87 @@ const machineFolder = async name => {
   try { return path.dirname((await info(name)).CfgFile || '') || null } catch { return null }
 }
 
+// ---- what VirtualBox itself wrote down -----------------------------------
+//
+// THE ONE ACCOUNT OF A BOOT THAT NOBODY HERE WAS WATCHING.
+//
+// A machine that will not come up says nothing to this app: there is no agent
+// yet, so no log line, and the only tool for it was a screenshot — which
+// answers "splash screen or stuck", and nothing else. VirtualBox has been
+// writing the whole story to a file the entire time, and this app could not read
+// it.
+//
+// FROM THE FILE, NOT FROM VBoxManage, and that is the point rather than a
+// shortcut. The moment this is most wanted is when VirtualBox is wedged, which
+// is exactly when `showvminfo` hangs too — so the ordinary location is tried
+// first with plain file reads, and the machine is only ASKED where its folder is
+// if that fails. Debugging a stuck hypervisor through the stuck hypervisor is
+// how a diagnosis costs an afternoon.
+//
+// VirtualBox rotates these: VBox.log is the current run, VBox.log.1 the one
+// before it, and so on. The run that failed is usually not the newest one by the
+// time somebody comes to look, which is why they are all listed.
+const DEFAULT_LOGS = name => path.join(os.homedir(), 'VirtualBox VMs', name, 'Logs')
+
+// The service's own log, which is about VirtualBox rather than about any one
+// machine: registry locks, sessions that would not open, a host that refused to
+// start a VM at all.
+const SERVICE_LOG = () => path.join(os.homedir(), '.VirtualBox', 'VBoxSVC.log')
+
+async function logFolder (name) {
+  const usual = DEFAULT_LOGS(name)
+  try { if (fs.statSync(usual).isDirectory()) return usual } catch { /* not where it usually is */ }
+  const folder = await machineFolder(name)
+  if (!folder) return null
+  const at = path.join(folder, 'Logs')
+  try { return fs.statSync(at).isDirectory() ? at : null } catch { return null }
+}
+
+async function logs (name) {
+  const at = await logFolder(name)
+  if (!at) return { folder: null, files: [] }
+  const files = fs.readdirSync(at)
+    .filter(f => /^VBox\.log(\.\d+)?$/i.test(f))
+    .map(f => {
+      const s = fs.statSync(path.join(at, f))
+      return { file: f, bytes: s.size, at: new Date(s.mtimeMs).toISOString() }
+    })
+    // Newest first, by what VirtualBox wrote rather than by name: VBox.log.10
+    // sorts before VBox.log.2 as text, and nobody wants to think about that.
+    .sort((a, b) => (a.at < b.at ? 1 : -1))
+  return { folder: at, files }
+}
+
+// The end of one of them, which is where a failure is. Read whole and sliced
+// rather than streamed: these are a few megabytes at the very most, and reading
+// is non-exclusive — VirtualBox holds the file open and appending to it, which a
+// plain read does not disturb.
+async function logRead (name, { which = null, lines = 200, find = null } = {}) {
+  const wanted = String(which || 'VBox.log')
+  const service = /^service$|VBoxSVC/i.test(wanted)
+  const file = service ? SERVICE_LOG() : path.join((await logFolder(name)) || '', wanted)
+
+  if (!service && !/^VBox\.log(\.\d+)?$/i.test(wanted)) {
+    throw new Error(`"${wanted}" is not a VirtualBox log. Ask for VBox.log, VBox.log.1 and so on, or "service" for VBoxSVC.log.`)
+  }
+  let text = null
+  try { text = fs.readFileSync(file, 'utf8') } catch (e) {
+    throw new Error(`Could not read ${file}: ${e.code === 'ENOENT' ? 'there is no such log — the machine may never have been started' : e.message}`)
+  }
+
+  const all = text.split(/\r?\n/)
+  const rows = find
+    ? all.filter(l => new RegExp(find, 'i').test(l))
+    : all
+  const want = Math.max(1, Math.min(Number(lines) || 200, 5000))
+  return {
+    file,
+    lines: rows.slice(-want),
+    of: all.length,
+    matched: find ? rows.length : null
+  }
+}
+
 // What `unregistervm --delete` does not take with it.
 //
 // It removes the disks and the .vbox file, and leaves the machine's folder
@@ -550,5 +631,6 @@ module.exports = {
   waitForState, waitUntilOff, waitUntilUnlocked,
   isos, bridges, hostAddress,
   start, stop, setLink, screenshot, snapshots, takeSnapshot, restoreSnapshot, deleteSnapshot, destroy,
+  logs, logRead, logFolder,
   OFF_STATES
 }
