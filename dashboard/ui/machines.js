@@ -232,6 +232,29 @@ function vmActions () {
     // as a feature that does not exist, and the reason is worth saying.
     // The only way to see a machine that is not talking yet -- which is most of
     // an install, and exactly when somebody wants to know whether it is working.
+    // ITS CONSOLE, WHICH IS THE OTHER HALF OF "SEE ITS SCREEN".
+    //
+    // A screenshot is one moment and a picture of it — you cannot search it,
+    // scroll back through it, or read what went past before you looked. The
+    // console is the whole boot as text, and it is being written whether or not
+    // anybody is watching.
+    //
+    // Offered even when the machine is off, because that is when it is most
+    // useful: the console of a machine that would not come up is the record of
+    // why, and it outlives the machine being switched off.
+    el('button', {
+      className: 'btn',
+      textContent: 'Read its console',
+      title: v.serial
+        ? 'The whole boot, as text, live — in the Terminal tab'
+        : 'Nothing is capturing this machine\'s console. Turn it on with vmSerial while it is off',
+      disabled: !v.serial,
+      onclick: () => watchInstall(v.name, { show: false }).then(s => {
+        showTab('terminal')
+        if (s) showShell(s)
+      })
+    }),
+
     el('button', {
       className: 'btn',
       textContent: 'See its screen',

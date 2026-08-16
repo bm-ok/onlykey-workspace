@@ -33,6 +33,12 @@ async function drawOnce () {
   ])
   const busyMachines = new Set((running.inFlight || []).map(f => f.machine))
   latest = list
+
+  // An install opens its own console tab and closes it again when it is over.
+  // Here rather than in the machines panel, because an install is worth watching
+  // whatever tab somebody is on — and this is the one place that already knows
+  // what every machine is doing. See mindInstalls in ui/terminal.js.
+  mindInstalls(list.vms || [])
   latest.credentialsHeld = held
   queueSays = new Map((running.machines || []).map(m => [m.name, m]))
   queueBusy = new Map((running.inFlight || []).map(f => [f.machine, f.task]))
@@ -532,6 +538,16 @@ app.onCapture(async want => {
 const seen = n => !!n.offsetParent
 const words = n => (n.textContent || '').replace(/\s+/g, ' ').trim()
 
+// The same, minus anything that is itself pressable. A card's title carries a
+// settings cog and a badge or two; a name with a cog stuck to the end of it
+// matches nothing anybody would type, and reads in the answer like a mistake.
+const cardWords = n => [...n.childNodes]
+  .filter(c => !(c.nodeType === 1 && (c.tagName === 'BUTTON' || c.classList.contains('badge'))))
+  .map(c => (c.textContent || '').replace(/\s+/g, ' '))
+  .join(' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+
 function drivingRegion () {
   const dlg = document.querySelector('.dlg-overlay .dlg')
   if (dlg) return { where: 'the open dialog', node: dlg, dialog: true }
@@ -583,9 +599,39 @@ if (app) app.onDrive(async want => {
   drivingNow(true)
 
   const region = drivingRegion()
-  const buttons = [...region.node.querySelectorAll('button')]
-    .filter(seen)
-    .map(n => ({ node: n, label: words(n), disabled: !!n.disabled, why: n.title || '' }))
+  // BUTTONS, AND THE CARDS THAT ARE ALSO BUTTONS.
+  //
+  // Half of this window is chosen rather than pressed: a machine, a task, a
+  // suite, a cut. Those are cards with a click handler and the class `pick`, and
+  // to the driver they did not exist — so a machine could be started, stopped
+  // and deleted from the command line, and could not be SELECTED. Every test
+  // that needed a particular one had to arrange for it to be the first in the
+  // list, which is arranging the world to suit the instrument.
+  //
+  // A card's label is its title, which is the same thing a person reads. It is
+  // marked as a pick rather than a button so the answer still says which is
+  // which: pressing "Delete it" and choosing "runner4" are different acts and
+  // should not read the same in a log.
+  const buttons = [
+    ...[...region.node.querySelectorAll('button')]
+      .filter(seen)
+      .map(n => ({ node: n, label: words(n), disabled: !!n.disabled, why: n.title || '' })),
+    ...[...region.node.querySelectorAll('.pick')]
+      .filter(seen)
+      .filter(n => typeof n.onclick === 'function')
+      .map(n => ({
+        node: n,
+        // The title's own words, WITHOUT the buttons sitting inside it. A card
+        // title holds a settings cog and sometimes a badge, and reading the lot
+        // gave "runner4⚙" — which matches nothing anybody would type and reads
+        // like a typo in the answer.
+        label: cardWords(n.querySelector('.card-title') || n),
+        picks: true,
+        disabled: false,
+        why: n.classList.contains('on') ? 'already chosen' : 'choose it'
+      }))
+      .filter(x => x.label)
+  ]
   const fields = [...region.node.querySelectorAll('input, select, textarea')]
     .filter(seen)
     .map(n => ({
@@ -648,6 +694,7 @@ if (app) app.onDrive(async want => {
       return {
         on: region.where,
         would: one.label,
+        picks: !!one.picks,
         disabled: one.disabled,
         why: one.why || null,
         note: 'Nothing was pressed. Run it again without --dry to press it.'
@@ -668,7 +715,7 @@ if (app) app.onDrive(async want => {
     await new Promise(r => setTimeout(r, 600))
     const after = drivingRegion()
     return {
-      clicked: one.label,
+      [one.picks ? 'chose' : 'clicked']: one.label,
       on: region.where,
       // WHERE IT LANDED, because that is the assertion. A click that was meant
       // to switch panes and did not is the failure being looked for, and it is

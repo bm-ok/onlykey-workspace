@@ -210,6 +210,185 @@ function sizeTerminal () {
   box.style.height = `${Math.max(240, Math.round(window.innerHeight - top - 16))}px`
 }
 
+// ---- watching an install ------------------------------------------------
+//
+// A tab that is not a shell: it reads the machine's console, which VirtualBox is
+// writing to a file on this host, and shows it as it arrives.
+//
+// THE CONSOLE RATHER THAN SSH, and that is the whole point. ssh into the
+// installer works and is nicer to look at — it attaches to subiquity's own
+// session — but it only exists in the window where the network is already up,
+// sshd is already running and the machine has an address. The console starts at
+// the kernel's first line, needs no address and no credentials, survives the
+// installer rebooting into the installed system, and keeps working when the
+// machine is wedged with no network at all. Those are exactly the installs
+// somebody needs to watch.
+//
+// NOTHING IS TYPED INTO IT. There is no far end to type at: this is a file. The
+// tab says so rather than swallowing keystrokes silently.
+//
+// One per machine. Asking to watch a machine already being watched brings that
+// tab forward instead of opening a second reader on the same file.
+const watchers = new Map()   // machine name -> shell-shaped object
+
+function watchInstall (name, { onEnd = null, show = true, auto = false } = {}) {
+  const already = watchers.get(name)
+  if (already) {
+    if (show && already !== 'opening') showShell(already)
+    return Promise.resolve(already === 'opening' ? null : already)
+  }
+  // Claimed before the asking, because the answer takes a moment and the draw
+  // loop comes round every few seconds — without this an install opens four
+  // readers on the same file before the first one exists.
+  watchers.set(name, 'opening')
+
+  return api('vmLog', { name, which: 'serial', lines: 400 })
+    .catch(() => null)
+    .then(seen => {
+      const fs = require('node:fs')
+      const holder = el('div', { className: 'term-pane' })
+      $('term').append(holder)
+
+      const term = new Terminal({
+        fontFamily: 'Consolas, "Cascadia Mono", monospace',
+        fontSize: 13,
+        theme: { background: '#0a0d12', foreground: '#c9d1d9', cursor: '#58a6ff' },
+        // No cursor: nothing here is waiting for anybody to type.
+        cursorBlink: false,
+        // Longer than a shell's. An install is thousands of lines and the
+        // interesting one is rarely the last.
+        scrollback: 20000
+      })
+      const fit = new FitAddon.FitAddon()
+      term.loadAddon(fit)
+      term.open(holder)
+
+      const file = seen && seen.file
+      const shell = {
+        id: ++shellSeq,
+        name,
+        what: auto ? 'installing' : 'console',
+        target: file || `${name} console`,
+        live: true,
+        watching: true,
+        // WHO OPENED IT, which decides who may close it. A tab opened because an
+        // install started is closed again when that install ends; a tab somebody
+        // opened to read a console stays until they close it. Without this, the
+        // first thing that happened after pressing "Read its console" was the
+        // draw loop noticing the machine was not installing and taking the tab
+        // away again — with a notice explaining that it had.
+        auto,
+        term,
+        fit,
+        holder,
+        child: null,
+        off: [],
+        ended: false
+      }
+
+      // What is already there, before following what comes next — an install
+      // watched from the middle should not start at the middle.
+      if (seen && seen.lines && seen.lines.length) {
+        term.write(seen.lines.join('\r\n') + '\r\n')
+      }
+
+      // FOLLOWED BY READING WHAT IS NEW, from where we had got to. `fs.watch` is
+      // the notification and the read is ours: a watcher says "it changed", not
+      // what changed, and re-reading the whole file every time an installer
+      // writes a line is a megabyte a second by the end of it.
+      let at = 0
+      try { at = file ? fs.statSync(file).size : 0 } catch { at = 0 }
+
+      const pull = () => {
+        if (!file || shell.ended) return
+        let now = 0
+        try { now = fs.statSync(file).size } catch { return }
+        // A file that shrank was replaced — a new install into the same file.
+        // Start again rather than reading from a position that no longer means
+        // anything.
+        if (now < at) { at = 0; term.write('\r\n[33m— the console started again —[0m\r\n') }
+        if (now === at) return
+        try {
+          const fd = fs.openSync(file, 'r')
+          const buf = Buffer.alloc(now - at)
+          fs.readSync(fd, buf, 0, buf.length, at)
+          fs.closeSync(fd)
+          at = now
+          term.write(buf.toString('utf8').split('\n').join('\r\n'))
+        } catch { /* it will be read on the next change */ }
+      }
+
+      let watcher = null
+      try {
+        watcher = fs.watch(file, { persistent: false }, () => pull())
+      } catch { /* said below */ }
+      // AND A SLOW HEARTBEAT BEHIND IT. fs.watch on Windows misses appends to a
+      // file held open by another process often enough to matter, and the thing
+      // being missed here is the last few lines before a machine goes quiet —
+      // which is the part somebody is watching for.
+      const beat = setInterval(pull, 2000)
+
+      shell.stop = () => {
+        clearInterval(beat)
+        try { watcher && watcher.close() } catch { /* already closed */ }
+      }
+      shell.onEnd = onEnd
+
+      shells.push(shell)
+      watchers.set(name, shell)
+      // BROUGHT FORWARD ONLY IF SOMEBODY IS ALREADY LOOKING AT THE TERMINAL.
+      //
+      // showShell focuses the widget, and focusing a terminal in a view nobody
+      // is on steals the keyboard from whatever they are actually typing into.
+      // An install opening a tab must not take the cursor out of somebody's
+      // task brief.
+      if (show && view === 'terminal') showShell(shell)
+      else paintShellTabs()
+      if (!file) {
+        term.write('[33mThis machine has no console being captured.[0m\r\n' +
+          'Turn it on with vmSerial while the machine is off, and it will be readable from the next start.\r\n')
+      }
+      return shell
+    })
+}
+
+// OPENED AND CLOSED BY WHAT THE MACHINES ARE DOING, not by anybody remembering.
+//
+// An install is the one thing here that runs for ten minutes with nothing to
+// look at, and the moment it is worth looking at is the moment it goes wrong —
+// which is exactly when nobody thought to open a console first. So a machine
+// that starts installing gets a tab, and it appears wherever you are.
+//
+// IT DOES NOT MOVE YOU. Opening a tab is not switching to it: a window that
+// yanks somebody onto a terminal because a machine started installing has taken
+// the screen away from whatever they were doing. The tab is there when they want
+// it, and a notice says so.
+//
+// AND WHEN THE INSTALL IS OVER, THE TAB GOES AWAY AGAIN. A finished install is
+// a screenful of somebody else's history, and leaving it open means a strip of
+// dead tabs from every machine ever built. What is left is a line saying it
+// finished and where to read it again — the console file outlives the tab.
+//
+// Called from the draw loop with the machine list it already has, so this costs
+// nothing: no extra call, and certainly no VBoxManage.
+function mindInstalls (vms) {
+  const now = new Set((vms || []).filter(v => v.stage === 'installing').map(v => v.name))
+
+  for (const name of now) {
+    if (watchers.has(name)) continue
+    watchInstall(name, { show: false, auto: true }).then(s => {
+      if (!s) return
+      say(`${name} is installing — its console is in the Terminal tab, live.`, undefined, { lasts: 12000 })
+    })
+  }
+
+  for (const [name, s] of [...watchers.entries()]) {
+    if (now.has(name) || s === 'opening' || !s.auto) continue
+    closeShell(s)
+    say(`${name} has finished installing. Its console tab is closed — read it again with vmLog --which serial.`, 'ok', { lasts: 15000 })
+  }
+}
+
 function showShell (shell) {
   active = shell || null
   for (const s of shells) s.holder.classList.toggle('on', s === active)
@@ -227,6 +406,10 @@ function showShell (shell) {
 function closeShell (shell) {
   if (!shell) return
   if (shell.child) { try { shell.child.kill() } catch { /* already gone */ } }
+  // A watcher has no child to kill; it has a file watcher and a timer, and both
+  // outlive the widget unless they are told not to.
+  if (shell.stop) { try { shell.stop() } catch { /* already stopped */ } }
+  if (shell.watching) watchers.delete(shell.name)
   // Disposed EXPLICITLY, both the handlers and the widget. This is the half
   // that was missing before: a killed child stops producing output, but a
   // handler on a widget that outlives it goes on delivering keystrokes.
