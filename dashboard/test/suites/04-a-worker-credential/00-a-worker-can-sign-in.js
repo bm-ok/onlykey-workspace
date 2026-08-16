@@ -67,9 +67,27 @@ it('and a machine can really sign in with it', async ({ okc, assert, state, log 
   log('and it was taken back — a machine is never left holding one')
 }, { minutes: 12 })
 
-draft('and no two machines hold one at the same time',
-  'There is one credentials/claude.json and it is lent to whoever is working. ' +
+// TWO DRAFTS, NOT ONE, and the difference is worth the second title.
+//
+// The first was written as "no two machines hold one at the same time", which
+// reads as a decision to LOCK IT DOWN — one credential, guarded — and says
+// nothing about the thing actually wanted. Locking it down is a fine place to
+// start and is a real check; it is not the feature, and a to-do list where the
+// constraint has a line and the capability does not is a list that quietly
+// argues for never building it.
+draft('and no two machines hold the same credential at once',
+  'THE LOCK, and it can be written today. There is one credentials/claude.json, lent to whoever is working. ' +
   'vmCredentialsPut checks the machine is dialled in and that the credential is not dead, and says nothing about who else is holding it — so two machines working at once would run as the same worker against the same session. ' +
-  'The queue serialises most work, which is why it has not bitten, and the whole point of kit-1 and kit-2 is two machines at the same time. ' +
-  'The check is "at most one machine reports holdsCredential" today, and "no credential is held by two machines" once there is a set of them. ' +
-  'It would fail right now if two tasks were dispatched at once, which is the honest way to start. See TODO.md, "More than one worker credential".')
+  'The check is "at most one machine reports holdsCredential", asked while work is in flight. ' +
+  'It would fail right now if two tasks were dispatched at once, which is the honest way to start: a guard that would catch the thing nobody has hit yet. ' +
+  'The queue serialises most work, which is why it has not bitten.')
+
+draft('and two machines can work at once, each with a credential of its own',
+  'THE FEATURE, and it needs building before this can pass. ' +
+  'Multi-credential logic: a SET of worker credentials kept here rather than one file, one handed to each machine while it works and taken back after, and a machine that cannot be given one waiting rather than borrowing somebody else\'s. ' +
+  'Until that exists the check above is the whole story and two machines cannot both work — which is the point of kit-1 and kit-2 and is not reachable today. ' +
+  'THE CHECK: dispatch two tasks at once, both run, and the two machines report different credentials. ' +
+  'WHAT TO SETTLE FIRST, because these change the shape rather than the code. ' +
+  '(1) Where does a second sign-in come from — credentialsBegin on another machine, a different account, or the same account signed in twice? ' +
+  '(2) Is a credential PINNED to a machine or drawn from a pool per job? Pinned is simpler to reason about and wastes one per idle machine; pooled is the same shape as the machines themselves, which the queue already knows how to do. ' +
+  '(3) What does the Keys tab show — one row per credential, with who holds it now? A count and a holder, never a value: the rule that a model may know something was done in there and not what still holds.')

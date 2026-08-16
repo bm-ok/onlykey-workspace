@@ -43,42 +43,6 @@ is outstanding is not failures; it is these:
   coverage that a single sequential run does not reach.
 
 
-More than one worker credential
--------------------------------
-
-**There is one credential and it is lent to whoever is working.** It lives at
-`credentials/claude.json`, sealed on this host; `vmCredentialsPut` copies it onto
-a machine for the length of a job and `vmCredentialsForget` takes it back. That
-was right when one machine worked at a time.
-
-**Two machines working at once share one sign-in.** Nothing refuses the second
-hand-out: `vmCredentialsPut` checks the machine is dialled in and that the
-credential is not dead, and says nothing about who else is holding it. The queue
-happens to serialise most work, so this has not bitten — but the whole point of
-building `kit-1` and `kit-2` is two machines working at the same time, and two
-parallel tasks would run as the same worker against the same session.
-
-**What it wants is a credential per machine.** Not one file, but a set: several
-sign-ins kept here, one handed to a machine while it works and taken back after,
-and a machine that cannot be given one waiting rather than borrowing somebody
-else's. Which raises the questions worth settling before any of it is built:
-
-* Where does a second sign-in come from — `credentialsBegin` on another machine,
-  under a different account, or the same account signed in twice?
-* Is a credential PINNED to a machine, or drawn from a pool per job? Pinned is
-  simpler to reason about and wastes one per idle machine; pooled is the same
-  shape as the machines themselves, which the queue already knows how to do.
-* What does the Keys tab show — one row per credential, with who holds it now?
-  The rule that a model may know something was done in there and not what still
-  holds, so it is a count and a holder, never a value.
-
-**And it is checkable.** A drill can assert that no two machines hold a
-credential at the same moment: `vmList` reports `holdsCredential`, so the check
-is "at most one machine is holding one" today, and "no credential is held by two
-machines" once there is a set of them. That check would fail right now if two
-tasks were dispatched at once, which is the honest way to start.
-
-
 How the window gets checked
 ---------------------------
 
