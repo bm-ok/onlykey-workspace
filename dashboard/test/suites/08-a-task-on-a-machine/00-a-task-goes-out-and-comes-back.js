@@ -20,7 +20,7 @@
 // a credential, and prove less — whether a worker writes good code is not a
 // question this suite can answer.
 
-const { it, cleanup, requires } = require('../../../tasks/harness')
+const { it, draft, cleanup, requires } = require('../../../tasks/harness')
 const { scratch, aLine } = require('../../helpers')
 
 // WHAT THIS SUITE STANDS ON, and it stands on two separate things at once.
@@ -318,3 +318,26 @@ cleanup(async ({ okc, state }) => {
 // back, which is `api-tour` doing exactly what it says, and it is why the last
 // check is a refusal rather than a verdict. An artifact and a change on a branch
 // are different deliveries, and only the second one can be judged.
+
+// ---- what this round trip still cannot reach ------------------------------
+//
+// The series above ends on a refusal, and that refusal is correct: nothing was
+// pushed, so there is nothing to judge. What it means is that the LAST STEP of
+// the whole tool — somebody reading what came back and saying yes or no — has
+// never been exercised end to end. These two say so, in the suite where it would
+// happen, rather than in a list somewhere else.
+
+draft('and a task that pushed something can be accepted',
+  'THE ACCEPT PATH, and no job here can reach it. ' +
+  'api-tour hands back a FILE and never commits, so the branch is exactly as it was cut and taskJudge refuses — correctly. ' +
+  'ask-a-worker would push, and needs a Claude credential, which makes it a different and slower drill. ' +
+  'WHAT IT NEEDS: a job that makes a small change and pushes it, written and approved at the window, because approving a job over the wire is refused on purpose. ' +
+  'THE CHECK: queue a task under that job, let the queue run it, and accept the delivery — the verdict is recorded, the task reads accepted, and the artifact it was judged on is named in the verdict. ' +
+  'AND ACCEPTING MUST NOT MERGE. Landing work is a separate act with its own rules; a verdict that quietly merged would make reading the work and publishing it the same button.')
+
+draft('and a rejection says what happens to the work',
+  'NOT A CHECK YET, BECAUSE THE BEHAVIOUR IS NOT DECIDED. taskJudge records a verdict and a note, and refuses a rejection with no reason — "a rejection with no reason is sent back to a worker that cannot ask what was wrong". That sentence implies something goes back; nothing does. ' +
+  'WHAT TO SETTLE: does a rejection re-queue the same task so a worker sees the note and tries again, write a NEW task carrying it, or is it only a record about work that is finished? ' +
+  'The first keeps one identity and loses the history of attempts unless attempts are kept — they are, in `attempts`. The second keeps both and makes "what happened to this piece of work" span two numbers. The third is what the code does today, and the wording says otherwise. ' +
+  'THE CHECK follows the answer: reject with a note, and assert what the board says next — either the task is queued again carrying the note, or a new task exists naming the old one, or the verdict is recorded and the task stays done. ' +
+  'One of those is true today by accident. Deciding which is meant is the work.')

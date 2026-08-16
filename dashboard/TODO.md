@@ -17,16 +17,19 @@ What the test kit is owed
 -------------------------
 
 The suites run green — 76 passed, 0 failed, 7 could not be tried, in nine
-minutes — and the seven say what they needed rather than what went wrong. What
-is outstanding is not failures; it is these:
+minutes — and the seven say what they needed rather than what went wrong.
 
-* **Judging is not described.** A verdict is recorded and nothing says what a
-  rejection MEANS: whether it goes back out as work, or is a fact about work
-  that is finished. The accept path cannot even be reached by a drill, because
-  no job here pushes a commit — `api-tour` hands back a file, so the round trip
-  ends on "nothing has arrived on this branch, so there is nothing to judge".
-  Proving it needs a job that makes a change and pushes it, which a person has
-  to write and approve at the window.
+**What is outstanding about the app itself is not here any more.** A thing the
+app should do and does not is a DRAFT check, declared in the suite where it
+would happen — `draft(name, note)` in `tasks/harness.js` — and every one of them
+is gathered at the top of `test/outline.md` with its note. That file is
+generated, and the app rewrites it on startup while testing mode is on, so the
+list cannot go stale the way this one does. Judging and the credentials are
+there now.
+
+What is left below is about the KIT rather than the app — the machinery that
+runs the checks, which cannot describe its own gaps as checks without arguing
+in a circle: 
 
 * **`requires()` marks dirty and does not refuse.** The order is declared and
   has consequences; it does not yet stop a suite being run before the ground it

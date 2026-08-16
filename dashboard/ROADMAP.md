@@ -2,9 +2,27 @@ ROADMAP — from here to the vision
 =================================
 
 `../EXPLAINER.md` is the why and does not change. `GAPS.md` is what the older
-design projected and what of it was one ecosystem rather than a tool. This is the
-order to build in, and it is expected to change — when it does, change it here
-rather than remembering.
+design projected and what of it was one ecosystem rather than a tool.
+
+**This is mostly the road TAKEN, and partly the road ahead** — which is why it
+was hard to tell where anything stood. Every section now says which in its
+heading:
+
+    BUILT                 it exists, and this is why it is shaped that way
+    NOT BUILT             decided, not written. There is a draft check for it
+    AN IDEA, not decided  worth doing, and nobody has settled what it means yet
+
+**The difference between the last two is the useful one.** A thing whose
+behaviour is decided can be stated as a check before it is built — so it is
+`draft(name, note)` in the suite where it would happen, carrying what has to
+exist, what the check would be, and what has to be settled first. Those are
+gathered at the top of `test/outline.md`, and the app rewrites that file on
+startup while testing mode is on, so the list of what is outstanding cannot go
+stale the way a document does.
+
+A thing whose behaviour is NOT decided cannot honestly be a check — a check
+would be asserting an answer nobody has chosen. It stays here as reasoning until
+somebody decides, and then it becomes a draft and leaves.
 
 **The spine this is built around:**
 
@@ -147,8 +165,8 @@ destination can name somebody else's.
   task uid, so they land on disk and no pane in the window shows them
 
 
-Judging needs a home of its own
---------------------------------------------------
+Judging needs a home of its own — NOT BUILT
+-------------------------------------------
 
 **A verdict is somebody reading what came back.** "Judge it" was a button on the
 task's own card, which is where the BRIEF is — so the screen that asked for a
@@ -166,8 +184,8 @@ rules, and a verdict that quietly merged would make reading the work and
 publishing it the same button.
 
 
-Signing a worker in, as a job rather than as code
---------------------------------------------------
+Signing a worker in, as a job rather than as code — NOT BUILT
+-------------------------------------------------------------
 
 **The flow is hard-coded, and it no longer has to be.** `credentialsBegin`
 borrows a clean machine, starts a sign-in on it and hands back a URL;
@@ -211,8 +229,8 @@ else ("nothing unapproved runs") has to be true of it before it is trusted with
 the thing every other run depends on.
 
 
-A key exchange between host and guest, for the credential
-----------------------------------------------------------
+A key exchange between host and guest, for the credential — NOT BUILT
+---------------------------------------------------------------------
 
 **The credential travels as cleartext inside a shell command.** `vmCredentialsPut`
 opens the sealed file on this host, base64s it, and sends this down the channel:
@@ -332,8 +350,8 @@ both are about the credential path being the one thing that still goes through
 a shell.
 
 
-Judging, as its own kind of run
---------------------------------
+Judging, as its own kind of run — NOT BUILT
+-------------------------------------------
 
 A tab of its own, because judging is not a task and pretending it is one is what
 has kept it from existing. A task produces work; a judgement is a reading OF
@@ -501,8 +519,8 @@ merging rather than after: the thing that should decide whether work lands ought
 to exist before the thing that lands it.
 
 
-Served over http, to a browser that is not on this computer
-------------------------------------------------------------
+Served over http, to a browser that is not on this computer — NOT BUILT
+-----------------------------------------------------------------------
 
 The window is an app page loaded from disk, and that is what lets it call the
 actions in its own process with no socket in between. A remote version is the
@@ -575,8 +593,8 @@ hardware chain, a repository list naming firmware repos, review thresholds
 counted in firmware files. `GAPS.md` sorts those out from the parts worth taking.
 
 
-The supervisor gets a machine of its own
------------------------------------------
+The supervisor gets a machine of its own — AN IDEA, not decided
+---------------------------------------------------------------
 
 **A supervising model runs on the host today, and that is the wrong side of the
 line.** It reaches every action through the local pipe — the same door a person
@@ -616,8 +634,8 @@ the record should say what happened; see `whoAsked` in actions/shared.js.
   supervisor acting through its own API should be as legible there as the queue is
 
 
-A conflict is a decision, so it is a task
-------------------------------------------
+A conflict is a decision, so it is a task — AN IDEA, not decided
+----------------------------------------------------------------
 
 **An idea, recorded rather than scheduled.** Bringing a line into a branch that
 was cut before it can conflict, and a conflict is the one thing here that no

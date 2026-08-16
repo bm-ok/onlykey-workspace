@@ -91,3 +91,23 @@ draft('and two machines can work at once, each with a credential of its own',
   '(1) Where does a second sign-in come from — credentialsBegin on another machine, a different account, or the same account signed in twice? ' +
   '(2) Is a credential PINNED to a machine or drawn from a pool per job? Pinned is simpler to reason about and wastes one per idle machine; pooled is the same shape as the machines themselves, which the queue already knows how to do. ' +
   '(3) What does the Keys tab show — one row per credential, with who holds it now? A count and a holder, never a value: the rule that a model may know something was done in there and not what still holds.')
+
+// ---- what the roadmap wants from this suite -------------------------------
+//
+// Two of the roadmap's items are claims about what this app does with a
+// credential, which makes them checks rather than plans. They are written here
+// as drafts so they sit beside the claim they would replace — "a machine can
+// really sign in with it" — rather than in a document that describes an order to
+// build in.
+
+draft('and the credential never travels as cleartext in a shell command',
+  'IT DOES TODAY. vmCredentialsPut opens the sealed file, base64s it, and sends `printf \'%s\' \'<the whole credential>\' | base64 -d > ~/.claude/.credentials.json` down the channel. ' +
+  'Base64 is not encryption. TLS covers the wire and core/secret.js covers the file at rest; what neither covers is the middle — a plain string in this host\'s memory, a shell argument visible in `ps` on the guest, and a line in its history. ' +
+  'WHAT IT NEEDS: a key exchange between host and guest, so the credential is sealed to that machine and the dashboard hands over a blob it cannot read. That carries the authorize URL up as well as the credential down. ' +
+  'THE CHECK: what is sent to the machine contains no part of the credential, and the machine still authenticates afterwards. The second half is what makes it a check rather than a rule about strings.')
+
+draft('and signing a worker in is a job, not a sequence written into this app',
+  'credentialsBegin and credentialsFinish are guest commands hard-coded in actions/credentials.js and machines/auth.js — written before there was any other way to run a sequence of commands on a machine. There is one now: a job is a script that runs ON a machine, read and approved before it does. ' +
+  'WHAT IT WOULD BUY: the flow becomes editable without a release, and the sign-in URL stays on the machine rather than being logged here. ' +
+  'THE STICKING POINT, which is why this is a draft and not a task: a credential is NOT an artifact and must not be handed back like one. A job hands files back; this one would have to hand back something the host stores sealed and never shows, which is a hole in the job API rather than a thing to write around. ' +
+  'THE CHECK: the sign-in runs as an approved job, the credential arrives sealed on this host, and no URL or token appears in the log.')
