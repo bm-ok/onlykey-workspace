@@ -47,10 +47,29 @@ apt-get -o DPkg::Lock::Timeout=600 install -y \
 say 'making sure the clock keeps itself right'
 timedatectl set-ntp true 2>/dev/null || true
 systemctl enable --now systemd-timesyncd 2>/dev/null || true
+
+# AND THE BOOT WAITS FOR IT, which is the half that was missing.
+#
+# "It syncs eventually" is not good enough for the things that care. A machine
+# whose clock is wrong for the first thirty seconds is a machine that spends
+# those thirty seconds unable to verify this host's certificate and arguing with
+# apt — and both failures point somewhere else entirely.
+#
+# The guest additions help and are not enough on their own: VBoxService sets the
+# clock from the host, but it does it on its own schedule, and being late is
+# precisely the problem. systemd-time-wait-sync holds time-sync.target until the
+# clock is actually right, so anything ordered after it starts with a clock it
+# can trust.
+#
+# Note that NTPSynchronized only ever reports timesyncd — a machine whose clock
+# has been set correctly by the additions still reads "no", which is how three
+# machines looked broken tonight while telling the time perfectly well.
+systemctl enable systemd-time-wait-sync.service 2>/dev/null || true
+
 if timedatectl 2>/dev/null | grep -q 'synchronized: yes'; then
   say 'the clock is synchronised'
 else
-  say 'WARNING: the clock is not synchronised — TLS to the dashboard and apt will both eventually complain'
+  say 'the clock is not synchronised yet — the boot will wait for it from now on'
 fi
 
 # --- docker ------------------------------------------------------------------
