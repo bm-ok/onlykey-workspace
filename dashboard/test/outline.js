@@ -88,6 +88,11 @@ function build () {
   const out = []
   let tests = 0
   let checks = 0
+  // The ones nobody has written yet, gathered as they are met. Listed once at
+  // the top as well as in place, because this file is a to-do list as much as a
+  // description: what is outstanding should be answerable without reading
+  // eighty lines to find the three that are marked.
+  const drafts = []
 
   // THE NUMBERS, WHICH THE LOADER STRIPS ON PURPOSE.
   //
@@ -147,7 +152,13 @@ function build () {
         // A DRAFT MUST NOT READ AS A CHECK. This file is the closest thing to a
         // specification here, and a line that has never been written looking
         // exactly like one that runs is how a spec starts lying.
-        out.push(`  ${k + 1}. ${check.name}${check.draft ? ' — **draft, not written yet**' : ''}`)
+        if (check.draft) drafts.push({ group, file: file.name, name: check.name, note: check.note })
+        // A PREFIX RATHER THAN A SUFFIX, because a list is READ DOWN THE LEFT.
+        // Marked at the end, "draft" arrives after the eye has already taken the
+        // line as a claim the app makes — and on a long line it wraps out of
+        // sight entirely. In front, it is the first thing read and nothing after
+        // it can be mistaken for something that runs.
+        out.push(`  ${k + 1}. ${check.draft ? '**DRAFT** — ' : ''}${check.name}`)
       })
       out.push('')
     })
@@ -165,10 +176,26 @@ function build () {
     for (const name of needs) if (!known.has(name)) broken.push(`${group} requires "${name}", and there is no such suite`)
   }
 
+  // WHAT IS OUTSTANDING, FIRST. A draft is a check somebody meant to write and
+  // has not, so it belongs at the top of the file that says what this app
+  // claims — not only in place, where it is one marked line among eighty.
+  const todo = drafts.length
+    ? [
+        `## ${drafts.length} draft${drafts.length === 1 ? '' : 's'}, not written yet`,
+        '',
+        ...drafts.flatMap(d => [
+          `- **${d.group} / ${d.file}** — ${d.name}`,
+          ...(d.note ? [`  ${d.note}`] : [])
+        ]),
+        ''
+      ]
+    : []
+
   const text = [
     '<!-- generated: node dashboard/test/outline.js --write -->',
-    `<!-- ${byGroup.size} suites, ${tests} tests, ${checks} checks -->`,
+    `<!-- ${byGroup.size} suites, ${tests} tests, ${checks} checks${drafts.length ? `, ${drafts.length} of them ${drafts.length === 1 ? 'a draft' : 'drafts'}` : ''} -->`,
     '',
+    ...todo,
     // The blank line each block ends with separates it from the next header; the
     // last one has nothing to separate from, so the file ends with a single
     // newline like every other text file here.

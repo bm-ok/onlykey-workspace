@@ -1,5 +1,10 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 10 suites, 20 tests, 84 checks -->
+<!-- 10 suites, 20 tests, 84 checks, 1 of them a draft -->
+
+## 1 draft, not written yet
+
+- **a worker credential / a worker can sign in** — and no two machines hold one at the same time
+  There is one credentials/claude.json and it is lent to whoever is working. vmCredentialsPut checks the machine is dialled in and that the credential is not dead, and says nothing about who else is holding it — so two machines working at once would run as the same worker against the same session. The queue serialises most work, which is why it has not bitten, and the whole point of kit-1 and kit-2 is two machines at the same time. The check is "at most one machine reports holdsCredential" today, and "no credential is held by two machines" once there is a set of them. It would fail right now if two tasks were dispatched at once, which is the honest way to start. See TODO.md, "More than one worker credential".
 
 # 00 — what this host has
 
@@ -100,7 +105,7 @@ The second door a person has to open, and it is deliberately not beside the
   1. this host holds a worker credential
   2. and it has not expired past refreshing
   3. and a machine can really sign in with it
-  4. and no two machines hold one at the same time — **draft, not written yet**
+  4. **DRAFT** — and no two machines hold one at the same time
 
 # 05 — the machines
 
