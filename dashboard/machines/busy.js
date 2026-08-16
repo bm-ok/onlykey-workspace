@@ -63,21 +63,26 @@ async function during (name, job, fn) {
 // applies to the paths the queue does not own — somebody pressing Start on two
 // machines, a drill borrowing one while another is coming up, re-provisioning.
 //
-// A BOOT IS WAITED FOR. AN INSTALL IS REFUSED. Both are "a machine coming up"
-// and they are nothing alike in the one respect that matters, which is how long
-// the answer takes to change.
+// EVERYTHING WAITS ITS TURN, AND A TURN IS SHORT. Boots and installs alike.
 //
-// A boot stops being in the way in about a minute, so what the caller wants is
-// their turn, not to be told to try again. An install is twenty-five minutes and
-// it does not dial in until its FIRST BOOT — so for most of that time there is
-// no agent, no channel, and nothing to say it is nearly done. Making somebody
-// wait behind that, silently, is worse than saying no; and the same fact is why
-// an install cannot be gated on dialling in the way a boot is.
+// It was not always: an install used to hold this for its whole length and
+// refuse everything else, on the reasoning that twelve minutes is too long to
+// wait silently. Both halves of that were wrong.
 //
-// So an install holds this for its whole length and anything else that wants to
-// come up is refused, by name, with the reason. The one refusal that has to be
-// right, because a restart in the middle of an install throws away twenty-five
-// minutes: see the note about that in the dashboard's own instructions.
+// It never actually held anything — `vmInstall` starts an installer and returns,
+// so the hold lasted about four seconds and a second install began straight over
+// the top of the first. Proved by doing it, deliberately, to see what would
+// happen.
+//
+// And refusing was the wrong correction. WHAT COMPETES IS THE FIRST MINUTE: a
+// snapshot restore and a cold kernel boot, pulling on disk and every core at
+// once. After that an install is mostly waiting on a mirror, and two of them
+// coexist perfectly well. Blocking the second for twelve minutes would cost most
+// of an evening to avoid one minute of contention.
+//
+// So a turn ends when the machine's console says something — its kernel is up
+// and running code — which is a fact reported by the machine rather than a guess
+// about how long a boot takes. See untilItSpeaks in actions/machines.js.
 let holder = null          // { name, kind } — what is coming up right now
 const waiting = []         // boots that have not had their turn yet
 
@@ -93,9 +98,12 @@ function takeTurn (name, kind, waitMs, onWait) {
     // ever. Counted rather than a flag, because the nesting is two deep today
     // and nothing says it stays that way.
     if (holder.name === name) { holder.depth++; return resolve() }
-    if (holder.kind === 'install') {
-      return reject(new Error(`"${holder.name}" is being installed, which takes about twenty-five minutes and does not dial in until its first boot. "${name}" is not being started — one machine comes up at a time on this host, and two at once wedges it. Wait for the install, or watch it on the Runners tab.`))
-    }
+    // AN INSTALL IS NO LONGER A SPECIAL CASE. It used to hold this for its
+    // whole length and refuse everything else, because there was no way to tell
+    // when the expensive part was over. There is now: the machine's console
+    // starts carrying bytes the moment its kernel is up, and that is where the
+    // turn ends — see untilItSpeaks in actions/machines.js. What competes is
+    // the first minute, not the twelve.
     if (onWait) onWait(holder.name)
     const mine = { name, kind, resolve, reject, timer: null }
     // Only the WAIT is bounded. What runs afterwards takes as long as it takes —

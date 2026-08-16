@@ -381,12 +381,37 @@ async function run (actions, log, task, machine) {
 // See machines/busy.js. It waits rather than refusing, because "another machine
 // is booting" stops being true in about a minute.
 async function bringUp (actions, to, machine) {
-  return busy.comingUp(machine, () => bringItUp(actions, to, machine), {
-    onWait: other => to.info(`waiting for "${other}" to finish coming up — one machine at a time on this host`)
+  // THE TURN IS THE EXPENSIVE MINUTE, NOT THE WHOLE BOOT.
+  //
+  // What two machines fight over is the snapshot restore and the cold kernel
+  // boot: disk and every core, at once. Once a kernel is up and talking, the
+  // rest of a boot is services starting and a network coming up, and the next
+  // machine can start into that quite happily.
+  //
+  // So the host is handed on as soon as this machine's console says something,
+  // and the wait for it to DIAL IN — which is what makes it usable, and is
+  // minutes later — happens outside the turn. On a queue giving work to several
+  // machines that is the difference between starting one a minute and starting
+  // one every three.
+  //
+  // The console is the signal because it is the machine reporting a fact rather
+  // than this app guessing how long a boot takes on somebody else's hardware.
+  await busy.comingUp(machine, async () => {
+    await startItUp(actions, to, machine)
+    await actions.vmAwait.run({ name: machine, for: 'console', seconds: 180 })
+      .catch(e => to.info(`could not tell when its kernel came up (${e.message.split('.')[0]}) — handing the host on anyway`))
+  }, {
+    onWait: other => to.info(`waiting for "${other}" to get its kernel up — one machine starts at a time on this host`)
   })
+
+  // Started is not ready. Everything that talks to a guest refuses until it has
+  // dialled in, and a machine boots for a minute or two — so this is the step
+  // most worth counting out loud, and the one that was silent for five minutes
+  // while a machine sat at a cursor.
+  await settle(actions, to, machine, v => v.connected, 6 * 60000, 'it to dial in', 60000)
 }
 
-async function bringItUp (actions, to, machine) {
+async function startItUp (actions, to, machine) {
   const before = (await actions.vmList.run({})).vms.find(v => v.name === machine)
   if (!before) throw new Error(`"${machine}" is gone`)
 
@@ -416,11 +441,6 @@ async function bringItUp (actions, to, machine) {
 
   to.info('starting it')
   await actions.vmStart.run({ name: machine })
-  // Started is not ready. Everything that talks to a guest refuses until it has
-  // dialled in, and a machine boots for a minute or two -- so this is the step
-  // most worth counting out loud, and the one that was silent for five minutes
-  // while a machine sat at a cursor.
-  await settle(actions, to, machine, v => v.connected, 6 * 60000, 'it to dial in', 60000)
 }
 
 // Back to its natural state: off, clean, holding nothing.

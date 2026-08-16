@@ -24,6 +24,49 @@ const {
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
 } = s
 
+// UNTIL THE MACHINE SAYS SOMETHING, which is how the host knows a kernel is up.
+//
+// THE SIGNAL IS THE MACHINE'S OWN VOICE, not a stopwatch. A fixed wait is a
+// guess about somebody else's hardware: too short on a loaded host and too long
+// on an idle one, and wrong in a different direction every time. The console
+// starts carrying bytes the moment the kernel does anything at all, and that is
+// the fact worth waiting for.
+//
+// Two signals exist and they answer different questions. The console says "this
+// kernel is alive", which is the expensive minute and the only part that
+// competes with another machine coming up. Dialling in says "this machine is
+// ready to be given work", which is minutes later and is what queue.bringUp
+// already waits for. This is the first one.
+//
+// The cap is a bound, not a timer: a machine that never speaks must not hold the
+// host for ever. Reached only when something is wrong, and it says so.
+async function untilItSpeaks (name, { capMs = 180000 } = {}) {
+  const vm = vms.read().find(v => v.name === name)
+  const file = vm && vm.serial
+  const to = log.on('vm', name)
+  if (!file) {
+    // No console, no signal. Said rather than replaced with a guess — a machine
+    // whose console is not captured is one nothing can watch, and that is worth
+    // knowing at the moment it matters rather than later.
+    to.info('its console is not being captured, so nothing can tell when its kernel is up — vmSerial turns that on')
+    return { spoke: false, why: 'no console' }
+  }
+
+  const size = () => { try { return fs.statSync(file).size } catch { return 0 } }
+  const began = Date.now()
+  const was = size()
+  while (Date.now() - began < capMs) {
+    if (size() > was) {
+      const took = Math.round((Date.now() - began) / 1000)
+      to.good(`its kernel is up and talking after ${took}s — the host is free for the next machine`)
+      return { spoke: true, took }
+    }
+    await new Promise(r => setTimeout(r, 500))
+  }
+  to.warn(`nothing has come out of its console in ${Math.round(capMs / 1000)}s — carrying on, but that machine may be stuck before the kernel`)
+  return { spoke: false, why: 'silent' }
+}
+
 // WHICH MACHINE IS HAVING ITS PROVISIONING UPDATED, IF ANY, across the host.
 //
 // One at a time is a refusal rather than a queue — see vmProvisionUpdate. In
@@ -56,9 +99,34 @@ module.exports = {
   vmInstall: {
     about: 'Install an operating system, unattended, and run its provisioning scripts. Nothing else comes up while it does',
     takes: ['name'],
-    run: ({ name }) => busy.during(name, 'being installed', () => busy.comingUp(name,
-      () => provisioner.install(name, { port: net.port, caPort: net.caPort }),
-      { kind: 'install' }))
+    run: ({ name }) => {
+      vms.get(name)
+
+      // STAGGERED, NOT REFUSED — AND THE TURN ENDS WHEN THE KERNEL IS UP.
+      //
+      // Two things were wrong before, and trying it proved both. The lock was
+      // held for the duration of the CALL, and `vmInstall` starts an installer
+      // and returns — the twelve minutes happen inside the machine. So the host
+      // was held for about four seconds and a second install started straight
+      // over the top of the first.
+      //
+      // Refusing the second one was the wrong correction. What actually competes
+      // is the first minute: a snapshot restore and a cold kernel boot, pulling
+      // on disk and every core at once. After that an install is mostly waiting
+      // on a mirror, and two of them coexist perfectly well. Blocking the second
+      // for twelve minutes would cost most of an evening to avoid one minute of
+      // contention.
+      //
+      // So the turn ends when this machine's console SAYS SOMETHING. That is the
+      // machine itself reporting that its kernel is up and running code, which
+      // is a fact rather than a guess about how long a boot takes — and it is
+      // exactly what the serial port was added for.
+      return busy.during(name, 'being installed', () => busy.comingUp(name, async () => {
+        const started = await provisioner.install(name, { port: net.port, caPort: net.caPort })
+        await untilItSpeaks(name)
+        return started
+      }, { kind: 'install' }))
+    }
   },
 
   vmRemove: {
@@ -1024,13 +1092,24 @@ module.exports = {
   // "not yet after 180s" and "never" are different problems, and the first one
   // is usually a machine that needs another minute.
   vmAwait: {
-    about: 'Wait until a machine has dialled in, or is off, and say how long it took',
+    about: 'Wait until a machine speaks on its console, has dialled in, or is off — and say how long it took',
     takes: ['name', 'for', 'seconds'],
     run: async ({ name, for: want, seconds }) => {
       const machine = vms.get(name)
       const wants = String(want || 'connected')
       const limit = Math.max(5, Math.min(Number(seconds) || 300, 3600)) * 1000
       const began = Date.now()
+
+      // THE EARLIEST THING A MACHINE CAN SAY, and the most useful one for
+      // anything deciding whether the host is free again. "connected" means it
+      // is ready for work, which is minutes later; "console" means its kernel is
+      // up and running code, which is when the expensive minute ends.
+      if (wants === 'console' || wants === 'speaking') {
+        const said = await untilItSpeaks(machine.name, { capMs: limit })
+        const took = Math.round((Date.now() - began) / 1000)
+        if (!said.spoke) throw new Error(`"${machine.name}" said nothing on its console within ${took}s (${said.why}).`)
+        return { name: machine.name, was: 'speaking', took, note: `"${machine.name}" started talking after ${took}s.` }
+      }
 
       const here = () => {
         if (wants === 'connected') return !!channel.list().find(a => a.vm === machine.name)
