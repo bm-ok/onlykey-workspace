@@ -260,6 +260,15 @@ function buildFields (fields = []) {
       : f.multiline
         ? el('textarea', { placeholder: f.placeholder || '', value: f.value || '', rows: f.rows || 8 })
         : el('input', { placeholder: f.placeholder || '', value: f.value || '', type: f.type || 'text' })
+    // A FIELD THAT IS THERE AND CANNOT BE USED YET, which is a different thing
+    // from a field that is absent.
+    //
+    // "Which kind of machine" has nothing to offer until a machine is tagged.
+    // Hidden until then, it is a feature that appears one day out of nowhere;
+    // shown greyed out with its label saying why, it is a thing somebody can see
+    // exists and find out how to turn on. Same rule as a button: disable what
+    // must not be used, and say why rather than going quiet.
+    if (f.disabled) input.disabled = true
     inputs[f.name] = input
     // A hint under any field, not only a checkbox: where a value comes from is
     // the thing somebody is missing at the moment they are asked for it, and a

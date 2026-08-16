@@ -281,6 +281,18 @@ function add (input) {
     // otherwise be abandoned at hour six while still working perfectly and have
     // its machine put away underneath it.
     hours: Number(input.hours) > 0 ? Number(input.hours) : null,
+    // WHICH MACHINES THIS WILL RUN ON, or none for any of them.
+    //
+    // A task does not name a machine — the queue decides that, and a task tied
+    // to one machine is a task that waits for it while three others sit idle.
+    // But it may name a KIND: the machines tagged "test", or the one with the
+    // hardware plugged into it. Empty is the ordinary case and means anything
+    // free, which is what every task did before this existed.
+    //
+    // Lower-cased on the way in so "Test" and "test" are the same tag. A tag
+    // that depends on how somebody typed it is a tag that silently matches
+    // nothing.
+    tag: String(input.tag || '').trim().toLowerCase() || null,
     state: 'draft',
     machine: null,
     // The LAST run, kept for the things that only care about the latest.

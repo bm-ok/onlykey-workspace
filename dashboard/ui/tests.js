@@ -36,6 +36,16 @@ let testsRunning = false
 let testsAllowed = false
 let testsWhy = null
 
+// WHICH CHECKS HAVE THEIR CODE OPEN, and it is deliberately not remembered
+// across windows. The source is shut by default because a series is eight or ten
+// checks and a pane that opens on two thousand lines of editor is one nobody
+// scrolls; opening one is a thing somebody is doing NOW, about the check they
+// are reading now, and carrying it into tomorrow's window would restore a state
+// nobody asked for.
+const codeOpen = new Set()
+// All three, because a check's name is only unique inside its file.
+const codeKey = (suite, test, c) => `${suite && suite.name} / ${test && test.name} / ${c.name}`
+
 const TEST_LOOK = {
   passed: { className: 'badge ok', textContent: 'passed' },
   failed: { className: 'badge bad', textContent: 'failed' },
@@ -61,9 +71,12 @@ const TEST_LOOK = {
   // state of the system, and it stays until somebody does it.
   'asks you': { className: 'badge warn', textContent: 'needs you' },
   carried: { className: 'badge muted', textContent: 'carried' },
+  // Blue, and it is the app's existing blue: `run` is what the Runners tab, the
+  // PR cuts and the repositories all use for "in flight". A colour invented here
+  // would mean the same thing in a different language.
+  running: { className: 'badge run', textContent: 'running' },
   changed: { className: 'badge warn', textContent: 'check changed' },
   interrupted: { className: 'badge warn', textContent: 'interrupted' },
-  running: { className: 'badge', textContent: 'running' }
 }
 
 // The worst thing in a list, for the badge on a card. Failed beats not-tried
@@ -73,12 +86,18 @@ const TEST_LOOK = {
 // waiting on a person is not the same as one that happened to find no free
 // machine, and burying it under an amber count is how a fresh host looks merely
 // untidy instead of looking like it is waiting for somebody.
+//
+// AND "running" OUTRANKS EVERYTHING BUT A FAILURE, so that while a run is going
+// the suite and the test carrying the live check say so. Without it a suite
+// halfway through reads "not run", because most of its checks have not been
+// reached yet — which is true of them and the opposite of what is happening.
 const worstOf = states =>
   states.some(s => s === 'failed') ? 'failed'
-    : states.some(s => s === 'asks you') ? 'asks you'
-      : states.some(s => s === 'unrunnable') ? 'unrunnable'
-        : states.length && states.every(s => s === 'passed') ? 'passed'
-          : 'not run'
+    : states.some(s => s === 'running') ? 'running'
+      : states.some(s => s === 'asks you') ? 'asks you'
+        : states.some(s => s === 'unrunnable') ? 'unrunnable'
+          : states.length && states.every(s => s === 'passed') ? 'passed'
+            : 'not run'
 
 // Only the counts that are not zero. A row of three zeroes is three things to
 // read past on every suite that is simply fine.
@@ -248,7 +267,18 @@ async function paintTestsNow () {
 // it said. Everything about a step is in one block, because the alternative is
 // reading a result in one place and the code for it in another.
 function checkBlock (suite, test, c, n) {
-  return el('div', { className: 'card', style: 'margin-top:10px' },
+  // THE ONE THAT IS HAPPENING RIGHT NOW, marked on the card and not only in a
+  // badge. A run of eighty checks scrolls, and "which step is it on" is the
+  // question somebody has while watching one — answering it with a word in a
+  // row of words means finding it first.
+  //
+  // `on` is the class this window already uses for the row you are looking at,
+  // so a running check looks the same as a selected one: an accent border. That
+  // is deliberate — it is the app's existing word for "this is the one".
+  const now = c.state === 'running'
+  const open = codeOpen.has(codeKey(suite, test, c))
+
+  return el('div', { className: `card${now ? ' on' : ''}`, style: 'margin-top:10px' },
     el('div', { className: 'card-title' },
       // The number is the ORDER, which is the thing this whole level exists to
       // state. Written 1, 2, 3 rather than the file's 00 — the file numbers
@@ -273,8 +303,32 @@ function checkBlock (suite, test, c, n) {
           codeBlock(String(c.why || 'no message'), 'text'))
       : null,
 
-    el('div', { className: 'dlg-heading', style: 'margin-top:8px', textContent: 'What it does' }),
-    codeBlock(String(c.source || ''), 'javascript'),
+    // THE CODE, FOLDED AWAY UNTIL IT IS WANTED.
+    //
+    // Reading what a check actually does is the only way to know what a green
+    // tick means, which is why it is here at all. But a series is eight or ten
+    // of them, each with thirty lines of editor under it, and a pane that opens
+    // on two thousand lines of source is one nobody scrolls — the result they
+    // came to read is somewhere below the horizon.
+    //
+    // So it is a line you click, and it says how much is behind it. Shut by
+    // default, remembered per check while the window is open, and built only
+    // when open: an Ace editor created inside something hidden has no width to
+    // lay itself out in, and comes back the wrong size when it is shown.
+    el('div', {
+      className: 'dlg-heading',
+      style: 'margin-top:8px; cursor:pointer; user-select:none',
+      textContent: `${open ? '▾' : '▸'} the code it runs — ${String(c.source || '').split('\n').length} lines`,
+      title: open ? 'Hide it' : 'Read what this check actually does',
+      onclick: () => {
+        const key = codeKey(suite, test, c)
+        if (codeOpen.has(key)) codeOpen.delete(key)
+        else codeOpen.add(key)
+        forget('test-detail')
+        paintTests()
+      }
+    }),
+    open ? codeBlock(String(c.source || ''), 'javascript') : null,
 
     // AND WHAT IT SAID WHILE IT RAN.
     //

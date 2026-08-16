@@ -130,8 +130,38 @@ async function tick (actions, log) {
     const free = availability(vms).filter(a => a.free)
     if (!free.length) return
 
+    // WHICH MACHINES A TASK WILL ACCEPT.
+    //
+    // A task with no tag takes anything free, which is what every task did
+    // before this existed and is still the ordinary case. A task WITH a tag
+    // takes only machines carrying it — "run this on the test machines", "run
+    // this on the one with the hardware plugged in" — and waits rather than
+    // taking somebody else's.
+    //
+    // WAITS, RATHER THAN FALLING BACK. A tag that quietly means "prefer" is a
+    // tag that sends work to the wrong machine on a busy afternoon, which is the
+    // one thing somebody who bothered to tag a machine was trying to prevent.
+    // The board says a tagged task is waiting for a tagged machine; nothing
+    // happens silently.
+    const tagsOf = name => ((vms.find(v => v.name === name) || {}).tags || []).map(t => String(t).toLowerCase())
+    const willTake = (task, machine) => {
+      const want = String(task.tag || '').trim().toLowerCase()
+      if (!want) return true
+      return tagsOf(machine.name).includes(want)
+    }
+
     for (const task of waiting) {
-      const next = free.shift()
+      // Taken from the free list by MATCH rather than by position, so a tagged
+      // task waiting for a machine it cannot have does not hold up the ones
+      // behind it that would take anything.
+      const at = free.findIndex(m => willTake(task, m))
+      if (at < 0) {
+        if (String(task.tag || '').trim()) {
+          log.on('queue').info(`#${task.number} wants a machine tagged "${task.tag}" and none is free — it waits`)
+        }
+        continue
+      }
+      const next = free.splice(at, 1)[0]
       if (!next) break
       // Claimed synchronously, before any await, so two ticks cannot hand the
       // same machine to two tasks.

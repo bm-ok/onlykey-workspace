@@ -1262,7 +1262,7 @@ let addDraft = been.get('add-draft', null)
 // a second copy of this form would be the one that stops matching.
 let addEditing = been.get('add-editing', null)
 
-const draftFields = ['title', 'branch', 'promptId', 'brief', 'job', 'contractId', 'folder']
+const draftFields = ['title', 'branch', 'promptId', 'brief', 'job', 'contractId', 'folder', 'tag']
 const rememberDraft = d => { addDraft = d; been.set('add-draft', d) }
 const rememberEditing = id => { addEditing = id; been.set('add-editing', id) }
 // Something worth not losing, which is not the same as "not empty". Arriving
@@ -1361,10 +1361,25 @@ async function paintAddTaskNow () {
     // board's last paint: the pane can be arrived at directly, with the board
     // never having been looked at, and a form built from an empty list would
     // silently be a form for writing a new task under an "editing" heading.
-    addEditing ? api('tasks').catch(() => ({ tasks: [] })) : Promise.resolve({ tasks: [] })
-  ]).then(([{ branches: known, protected: guarded }, lib, work, lines, board]) => {
+    addEditing ? api('tasks').catch(() => ({ tasks: [] })) : Promise.resolve({ tasks: [] }),
+    // The machines, for the tags they carry. Read here rather than kept in a
+    // list of its own: the tags that exist ARE the tags on the machines, so
+    // there is nothing to maintain and nothing that can drift.
+    api('vmList').catch(() => ({ vms: [] }))
+  ]).then(([{ branches: known, protected: guarded }, lib, work, lines, board, machines]) => {
     if (view !== 'tasks' || taskPane !== 'add') return
     const taken = new Set((guarded || []).map(g => g.branch))
+
+    // Every tag on any machine, with who carries it — so the dropdown says what
+    // choosing one would actually mean rather than offering a bare word.
+    const byTag = new Map()
+    for (const vm of (machines.vms || [])) {
+      for (const t of (vm.tags || [])) {
+        if (!byTag.has(t)) byTag.set(t, [])
+        byTag.get(t).push(vm.name)
+      }
+    }
+    const machineTags = [...byTag.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([tag, names]) => ({ tag, names }))
     contractsNow = lib.contracts || contractsNow
 
     // WHAT IS BEING EDITED, IF IT IS STILL THERE AND STILL A DRAFT.
@@ -1508,7 +1523,31 @@ async function paintAddTaskNow () {
           ...contractsNow.filter(c => c.approved).map(c => ({ value: c.id, label: c.name }))
         ]
       },
-      { name: 'folder', label: 'Folder on the machine (optional)', value: val('folder'), placeholder: 'defaults to its workspace' }
+      { name: 'folder', label: 'Folder on the machine (optional)', value: val('folder'), placeholder: 'defaults to its workspace' },
+
+      // WHICH KIND OF MACHINE, and the field is here even when there are no
+      // tags — disabled, saying why.
+      //
+      // A task does not name a machine: the queue decides that, and a task tied
+      // to one waits for it while three others sit idle. A tag lets it say what
+      // KIND without saying which one — the machines the test kit built, the one
+      // with hardware plugged into it.
+      //
+      // The options are read from the machines themselves, so there is no second
+      // list to keep in step and a tag stops existing when the last machine
+      // carrying it does. Shown disabled rather than hidden when none exist,
+      // because a field that appears the day somebody tags a machine is a
+      // feature nobody knew they had.
+      {
+        name: 'tag',
+        label: machineTags.length ? 'On which kind of machine (optional)' : 'On which kind of machine — no machine is tagged yet',
+        value: val('tag'),
+        disabled: !machineTags.length,
+        options: [
+          { value: '', label: machineTags.length ? 'any free machine' : 'any free machine — tag one with vmTags to group them' },
+          ...machineTags.map(t => ({ value: t.tag, label: `${t.tag} — ${t.names.join(', ')}` }))
+        ]
+      }
     ])
 
     // WHAT IS TYPED IS KEPT AS IT IS TYPED.

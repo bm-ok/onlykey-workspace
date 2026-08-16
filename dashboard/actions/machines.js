@@ -214,6 +214,48 @@ module.exports = {
     }
   },
 
+  // WHAT KIND OF MACHINE THIS IS, so work can ask for a kind rather than a name.
+  //
+  // A task never names a machine — the queue decides that, and a task tied to
+  // one machine waits for it while three others sit idle. But there are real
+  // reasons to want a KIND: the machines the test kit built, the one with
+  // hardware plugged into it, the one on the other network. A tag is how a task
+  // says which without saying which one.
+  //
+  // FREE TEXT, AND DELIBERATELY NOT A LIST SOMEBODY MAINTAINS. The tags that
+  // exist are the tags on the machines, read from the machines — so there is no
+  // second place to keep them in step, and a tag stops existing when the last
+  // machine carrying it does.
+  //
+  // Lower-cased and de-duplicated, because "Test" and "test" being different
+  // tags is a fault that shows up as work never being picked up.
+  vmTags: {
+    about: 'Tag a machine, so tasks can ask for a kind of machine rather than a name. Pass nothing to read them',
+    takes: ['name', 'tags'],
+    run: ({ name, tags }) => {
+      const vm = vms.get(name)
+      if (tags === undefined) return { name, tags: vm.tags || [] }
+
+      const want = [...new Set(
+        (Array.isArray(tags) ? tags : String(tags).split(','))
+          .map(t => String(t).trim().toLowerCase())
+          .filter(Boolean)
+      )]
+
+      const now = vms.update(name, { tags: want })
+      log.on('vm', name).info(want.length
+        ? `tagged ${want.map(t => `"${t}"`).join(', ')} — a task asking for one of those can be given this machine`
+        : 'no longer tagged, so only work that asks for no particular kind of machine will come here')
+      return {
+        name,
+        tags: now.tags,
+        note: want.length
+          ? `"${name}" is tagged ${want.join(', ')}. A task with no tag still takes it — a tag adds a way to be asked for, it does not hold a machine back. Use vmForTasks for that.`
+          : `"${name}" carries no tags.`
+      }
+    }
+  },
+
   // Let go of a branch, once there is nothing left on it to lose.
   //
   // THE RULE WAS ALWAYS "until it is clean" and only half of it existed. A
