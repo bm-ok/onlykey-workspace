@@ -26,7 +26,11 @@ const { it, cleanup } = require('../../../tasks/harness')
 // so `drillSweep` knows it is not somebody's real runner.
 const NAME = `drill-vm-${new Date().toISOString().replace(/[^0-9]/g, '').slice(8, 14)}`
 
-it('there is an ISO to install from, and this was asked for', async ({ okc, assert, slow, state }) => {
+// WHAT IT SAW LAST TIME is recorded at the bottom of this file, and it is the
+// most valuable transcript here: this drill costs half an hour and holds the
+// host, so the record of one run is what somebody reads INSTEAD of running it.
+
+it('there is an ISO to install from, and this was asked for', async ({ okc, assert, slow, state, log }) => {
   assert.needs(slow, 'this builds a machine from nothing — about half an hour, and nothing else on this host may come up while it runs. Ask for it with: suiteRun --suite "building a machine" --slow true')
 
   const { isos } = await okc('vmIsos')
@@ -36,13 +40,15 @@ it('there is an ISO to install from, and this was asked for', async ({ okc, asse
 
   const { vms } = await okc('vmList')
   assert.ok(!vms.some(v => v.name === NAME), `"${NAME}" already exists, which should be impossible — it is named after the minute it was made`)
+  state.began = Date.now()
+  log(`installing "${NAME}" from ${state.iso}`)
   // A GATE, not a step. Without this the checks below carried on when nobody
   // had asked for a slow run: they made a machine with no installer image and
   // reported it as a FAILURE, which is a red line about a drill that was never
   // meant to run. See `gate` in tasks/harness.js.
 }, { gate: true })
 
-it('a machine is defined, and it is only defined', async ({ okc, assert, state }) => {
+it('a machine is defined, and it is only defined', async ({ okc, assert, state, log }) => {
   // Making a machine and installing one are separate acts on purpose: the first
   // is instant and reversible, the second is half an hour. A machine that exists
   // and has never been installed is a real state this app reports, and this is
@@ -69,9 +75,10 @@ it('a machine is defined, and it is only defined', async ({ okc, assert, state }
   const mine = vms.find(v => v.name === NAME)
   assert.ok(mine, 'It was made and is not in the list')
   assert.notEqual(mine.stage, 'ready', 'A machine that has not been installed is not ready')
+  log(`defined: 4096 MB, 3 cpus, a 40 GB disk — stage "${mine.stage}", no base snapshot, nothing installed`)
 })
 
-it('the install runs unattended, and the machine dials in', async ({ okc, assert, state }) => {
+it('the install runs unattended, and the machine dials in', async ({ okc, assert, state, log }) => {
   // THE WHOLE POINT, and everything that can be wrong is wrong here: the ISO,
   // the answer file VirtualBox generates for it, where the post-install command
   // runs, whether the guest can reach this host, whether it trusts this host's
@@ -90,9 +97,11 @@ it('the install runs unattended, and the machine dials in', async ({ okc, assert
   const said = agents.find(a => a.vm === NAME)
   assert.ok(said, `"${NAME}" installed and never dialled in`)
   assert.ok(said.facts && said.facts.system, 'It dialled in without saying what it is')
+  log(`installed unattended and dialled in ${Math.round((Date.now() - state.began) / 60000)} minutes after it was asked for`)
+  log(`it says it is: ${String(said.facts.system).split('\n')[0]}`)
 }, { minutes: 45 })
 
-it('and it is a machine this app can use', async ({ okc, assert, state }) => {
+it('and it is a machine this app can use', async ({ okc, assert, state, log }) => {
   // Installed is not usable. The queue needs a machine that answers commands and
   // has a clean point to be returned to; without the second one it is correctly
   // never picked up, which looks exactly like a queue that has gone quiet.
@@ -104,9 +113,10 @@ it('and it is a machine this app can use', async ({ okc, assert, state }) => {
   const mine = vms.find(v => v.name === NAME)
   assert.equal(mine.stage, 'ready', `It finished installing and reports "${mine.stage}"`)
   assert.ok(mine.baseSnapshot, 'It has no base snapshot, so nothing could ever put it away clean')
+  log(`it answers commands, is stage "${mine.stage}", and has a base snapshot ("${mine.baseSnapshot}") to be put away to`)
 }, { minutes: 10 })
 
-it('and it can be thrown away completely', async ({ okc, assert }) => {
+it('and it can be thrown away completely', async ({ okc, assert, log }) => {
   // The other half of building one. A machine this app made is a machine it can
   // destroy — disks and all — and a drill that leaves a 40 GB disk image behind
   // is the most expensive debris in this project.
@@ -115,6 +125,7 @@ it('and it can be thrown away completely', async ({ okc, assert }) => {
 
   const { vms } = await okc('vmList')
   assert.ok(!vms.some(v => v.name === NAME), 'It was removed and is still in the list')
+  log(`"${NAME}" is gone, disks and all`)
 }, { minutes: 10 })
 
 cleanup(async ({ okc, state }) => {

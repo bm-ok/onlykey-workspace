@@ -67,3 +67,24 @@ it('a signed-out machine is not given work', async ({ okc, assert, log }) => {
     if (held) await okc('vmCredentialsPut', { name: target.name })
   }
 })
+
+// WHAT IT SAW — 16 August 2026, 14:16, neither could be tried
+//
+//   a machine holding a credential cannot be snapshotted
+//     could not be tried: no machine is holding a credential — the queue takes
+//     them back when work ends
+//
+//   a signed-out machine is not given work
+//     could not be tried: no machine is dialled in — a runner rests off
+//
+// AND THAT IS THE ORDINARY RESULT FOR THIS FILE, not a bad run. Both checks need
+// a machine that is UP, and the resting state of this host — which
+// 03-the-machines/00-a-machine-at-rest exists to assert — is that none is. On a
+// host where these two ran every time, something would be wrong with the host.
+//
+// They are here rather than deleted because the moment they can run is the
+// moment they matter: run the suite while the queue has work in flight and both
+// have a machine to ask. The same is true of 03-one-machine-per-branch, and the
+// refusals in this folder that could NEVER be tried were moved into
+// 03-the-machines/01-a-machine-comes-up-and-goes-away, which brings up a machine
+// of its own so it can ask.

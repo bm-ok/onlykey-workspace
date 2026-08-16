@@ -53,3 +53,29 @@ cleanup(async ({ okc, state }) => {
   if (state.stray) await okc('taskRemove', { id: state.stray.id }).catch(() => {})
   if (state.branch) await okc('branchDelete', { branch: state.branch, force: true }).catch(() => {})
 })
+
+// WHAT IT SAW — 16 August 2026, 14:16, three passed
+//
+//   a task with nowhere to deliver is refused
+//     refused, and this is what it said:
+//     A branch needs a name.
+//
+//   a cut to write the rest of these against
+//     cut "drill/written-wrong-141615" from line "default" — so the check below
+//     meets the contract rule and not the branch rule
+//
+//   a contract that is not there is refused
+//     refused, and this is what it said:
+//     There is no contract at C:\nothing\here.md. It is read from this host when
+//     the task is given out.
+//
+// "A BRANCH NEEDS A NAME." is four words where everything else here is three
+// lines, and that is worth seeing rather than assuming. It is right — there is
+// nothing more to say about an empty field, and a paragraph would be padding —
+// but it is the one refusal in this project that tells you nothing about what to
+// do next, which is a deliberate difference and not an oversight.
+//
+// The second one says where it looked and when it would have read it, which is
+// the useful half: a contract path that is wrong on this host fails when the
+// task is GIVEN OUT, not when it is written, and that sentence is what stops
+// somebody hunting for the mistake at the wrong end.

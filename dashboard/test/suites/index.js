@@ -19,6 +19,25 @@
 // shown, so `00-the-order` is "the order" in the window. Renumbering is how the
 // order changes; nothing anywhere lists these files.
 //
+// A CHECK SAYS WHAT IT SAW, AND THE FILE KEEPS A TRANSCRIPT.
+//
+// Every check is handed `log` along with `okc` and `assert`, and what it logs is
+// kept against that check — the window shows it beside the source, and
+// `suiteRun --json` returns it as `log`. Checks use it for the concrete thing
+// they met: a branch name, a task number, how many seconds a machine took, and
+// above all THE WORDING OF A REFUSAL.
+//
+// At the bottom of each file is a "WHAT IT SAW" block: those lines from a real
+// run, quoted, with the date. It is not decoration. Half of what this app
+// promises is a refusal, a refusal is only as good as the sentence it hands
+// back, and that sentence is the part that gets edited without anybody noticing.
+// A reader comparing the block against a fresh run sees drift immediately; a
+// reader who will never run the half-hour drills gets to read what one run
+// actually said.
+//
+// Written from a run rather than from memory. An invented transcript is worse
+// than none — it reads exactly like evidence and is not.
+//
 // Registration is a SIDE EFFECT OF REQUIRING a file: each file calls it() as it
 // loads, into the test this loader has opened around it. So this module exists
 // to require them in a fixed order and to be required exactly once — the

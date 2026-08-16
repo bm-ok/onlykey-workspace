@@ -52,3 +52,19 @@ it('a branch already claimed is not handed to a second machine', async ({ okc, a
     'Two machines on one branch race for the same ref and the loser\'s commits strand')
   log(`${claimed.name} claims "${claimed.branch}"; offering it to ${free.name} was refused, and this is what it said:\n${refusal.message}`)
 })
+
+// WHAT IT SAW — 16 August 2026, 14:16, neither could be tried
+//
+//   a machine is not moved off the branch it is on
+//     could not be tried: no connected machine is on a branch — one is only on a
+//     branch while it is working
+//
+//   a branch already claimed is not handed to a second machine
+//     could not be tried: no machine claims a branch — a machine is rolled back
+//     when its work ends
+//
+// EXPECTED AT REST, like 02-a-machine-is-not-asked-to-lose-work beside it, and
+// for the same reason. Both refusals ARE proven — by
+// 03-the-machines/01-a-machine-comes-up-and-goes-away, which borrows two
+// machines, brings them both up and asks. Its transcript is where the wording of
+// these two refusals is on the record.

@@ -24,7 +24,11 @@
 const { it, cleanup } = require('../../../tasks/harness')
 const { scratch, aLine } = require('../../helpers')
 
-it('two branches to work on, and a machine to work on one', async ({ okc, assert, state }) => {
+// WHAT IT SAW LAST TIME is recorded at the bottom of this file, and this is the
+// file where the numbers are worth having: how long a machine takes to dial in
+// is the figure everything else here is budgeted against.
+
+it('two branches to work on, and a machine to work on one', async ({ okc, assert, state, log }) => {
   const line = await aLine(okc, assert)
   state.branch = scratch('machine')
   await okc('branchCreate', { branch: state.branch, reason: 'a drill proving a machine comes up and is set up on a branch', group: line })
@@ -49,35 +53,42 @@ it('two branches to work on, and a machine to work on one', async ({ okc, assert
   const { vms } = await okc('vmList')
   assert.needs(vms.some(v => v.stage === 'ready' && v.state !== 'running' && !v.branch && !v.borrowed),
     'no machine is ready, off and free — this needs one it can borrow')
+  log(`cut "${state.branch}" and "${state.other}" from line "${line}"`)
+  log(`free to borrow: ${vms.filter(v => v.stage === 'ready' && v.state !== 'running' && !v.branch && !v.borrowed).map(v => v.name).join(', ')}`)
 })
 
-it('it is borrowed, and it dials in', async ({ okc, assert, state }) => {
+it('it is borrowed, and it dials in', async ({ okc, assert, state, log }) => {
   // Minutes, not seconds: a base snapshot is restored, the machine boots, the
   // agent starts and connects back here. Two is usual and five is not alarming.
+  const began = Date.now()
   const got = await okc('vmBorrow', { why: 'a drill proving a machine comes up and goes away' })
   state.machine = got.name
 
   await okc('vmAwait', { name: state.machine, for: 'connected', seconds: 300 })
   const { agents } = await okc('vmAgents')
   assert.ok(agents.some(a => a.vm === state.machine), `"${state.machine}" was brought up and is not dialled in`)
+  log(`borrowed ${state.machine}; it dialled in ${Math.round((Date.now() - began) / 1000)}s after being asked for`)
 }, { minutes: 12 })
 
-it('and it answers', async ({ okc, assert, state }) => {
+it('and it answers', async ({ okc, assert, state, log }) => {
   // The channel, end to end: this host asks, the guest runs it, the answer comes
   // back. Everything else this app does to a machine goes through here.
   const said = await okc('vmRun', { name: state.machine, command: 'echo okc-drill-reply', what: 'a drill asking for a reply' })
   const text = JSON.stringify(said)
   assert.ok(text.includes('okc-drill-reply'), `The machine did not say what it was asked to say: ${text.slice(0, 300)}`)
+  log(`asked ${state.machine} to say "okc-drill-reply", and it did`)
 }, { minutes: 3 })
 
-it('it is set up on the branch, and claims it', async ({ okc, assert, state }) => {
+it('it is set up on the branch, and claims it', async ({ okc, assert, state, log }) => {
+  const began = Date.now()
   await okc('vmWorkspace', { name: state.machine, branch: state.branch })
   const { vms } = await okc('vmList')
   const mine = vms.find(v => v.name === state.machine)
   assert.equal(mine.branch, state.branch, `"${state.machine}" was set up on ${state.branch} and claims ${mine.branch || 'nothing'}`)
+  log(`${state.machine} was set up on "${state.branch}" in ${Math.round((Date.now() - began) / 1000)}s, and claims it`)
 }, { minutes: 8 })
 
-it('and it is not moved off the branch it is on', async ({ okc, assert, state }) => {
+it('and it is not moved off the branch it is on', async ({ okc, assert, state, log }) => {
   // FROM 01-the-guards, where it could only ever report "no connected machine is
   // on a branch". Moving a working machine to another branch strands whatever it
   // has not pushed, and the machine is the only place that work exists.
@@ -86,13 +97,14 @@ it('and it is not moved off the branch it is on', async ({ okc, assert, state })
   // the first time as "is on", which matched nothing: a refusal drill that does
   // not match is a drill that cannot tell the right rule from the wrong one, and
   // that is the whole reason this matches at all.
-  await assert.refuses(
+  const refusal = await assert.refuses(
     () => okc('vmWorkspace', { name: state.machine, branch: state.other }),
     'stays there until it is clean|is set up on',
     'A machine was moved off the branch it was working on, which strands anything it had not pushed')
+  log(`offering ${state.machine} the real branch "${state.other}" was refused, and this is what it said:\n${refusal.message}`)
 }, { minutes: 3 })
 
-it('and a second machine, dialled in, is not handed the same branch', async ({ okc, assert, state }) => {
+it('and a second machine, dialled in, is not handed the same branch', async ({ okc, assert, state, log }) => {
   // The other half of the same rule, and the one that needs TWO machines up.
   //
   // Both halves of that are load-bearing. `vmWorkspace` refuses "not dialled in"
@@ -110,13 +122,14 @@ it('and a second machine, dialled in, is not handed the same branch', async ({ o
   state.second = other.name
   await okc('vmAwait', { name: state.second, for: 'connected', seconds: 300 })
 
-  await assert.refuses(
+  const refusal = await assert.refuses(
     () => okc('vmWorkspace', { name: state.second, branch: state.branch }),
     'already being worked on|race for the same ref',
     `${state.second} was set up on a branch ${state.machine} is already working on — two machines on one branch race, and the loser's commits strand`)
+  log(`${state.second} came up too; offering it "${state.branch}" was refused, and this is what it said:\n${refusal.message}`)
 }, { minutes: 12 })
 
-it('and it goes away clean', async ({ okc, assert, state }) => {
+it('and it goes away clean', async ({ okc, assert, state, log }) => {
   // Put away, which is a rollback to the base snapshot and a power off — so the
   // claim goes, the credential goes, and the next task starts from the same
   // place every other task starts from.
@@ -129,6 +142,7 @@ it('and it goes away clean', async ({ okc, assert, state }) => {
   assert.ok(!mine.borrowed, `"${state.machine}" was given back and is still borrowed`)
   assert.ok(!mine.branch, `"${state.machine}" was put away and still claims ${mine.branch}`)
   assert.notEqual(mine.state, 'running', `"${state.machine}" was put away and is still running`)
+  log(`${state.machine}: ${mine.state}, on "${mine.baseSnapshot}", claiming nothing, borrowed by nobody`)
 }, { minutes: 10 })
 
 cleanup(async ({ okc, state }) => {
@@ -150,3 +164,47 @@ cleanup(async ({ okc, state }) => {
     if (b) await okc('branchDelete', { branch: b, force: true }).catch(() => {})
   }
 })
+
+// WHAT IT SAW — 16 August 2026, 14:17, all seven passed
+//
+//   two branches to work on, and a machine to work on one
+//     cut "drill/machine-141727" and "drill/elsewhere-141727" from line "default"
+//     free to borrow: runner4, runner3
+//
+//   it is borrowed, and it dials in
+//     borrowed runner4; it dialled in 33s after being asked for
+//
+//   and it answers
+//     asked runner4 to say "okc-drill-reply", and it did
+//
+//   it is set up on the branch, and claims it
+//     runner4 was set up on "drill/machine-141727" in 5s, and claims it
+//
+//   and it is not moved off the branch it is on
+//     offering runner4 the real branch "drill/elsewhere-141727" was refused, and
+//     this is what it said:
+//     "runner4" is set up on drill/machine-141727 and stays there until it is
+//     clean. To work on something else, go back to a snapshot taken before that
+//     branch — "Go back to it" says what it discards — or use another machine.
+//
+//   and a second machine, dialled in, is not handed the same branch
+//     runner3 came up too; offering it "drill/machine-141727" was refused, and
+//     this is what it said:
+//     "drill/machine-141727" is already being worked on by "runner4". Two
+//     machines on one branch race for the same ref and the loser's commits
+//     strand. Pick another branch, or roll "runner4" back to a point before it.
+//
+//   and it goes away clean
+//     runner4: poweroff, on "base", claiming nothing, borrowed by nobody
+//
+// THIRTY-THREE SECONDS FROM ASKED-FOR TO DIALLED IN, and five seconds to be set
+// up on a branch. Both are worth having written down: the comment above budgets
+// "two minutes is usual and five is not alarming", which was true of the desktop
+// image and is now pessimistic by a factor of four. A number in a transcript is
+// how that gets noticed.
+//
+// THE TWO REFUSALS ARE THE POINT OF THE FILE. Both are the ones from
+// 01-the-guards that can never run at rest, and both do more than refuse: each
+// says what to do instead — go back to a snapshot, use another machine, pick
+// another branch. That is the difference between a guard and an obstacle, and it
+// is only visible by reading what they actually say.

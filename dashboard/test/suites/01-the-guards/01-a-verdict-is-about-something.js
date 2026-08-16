@@ -52,3 +52,27 @@ cleanup(async ({ okc, state }) => {
   if (state.task) await okc('taskRemove', { id: state.task.id }).catch(() => {})
   if (state.branch) await okc('branchDelete', { branch: state.branch, force: true }).catch(() => {})
 })
+
+// WHAT IT SAW — 16 August 2026, 14:16, two passed and one could not be tried
+//
+//   an empty cut, and a task delivering on it
+//     cut "drill/empty-141618" with nothing on it, and wrote #99 to deliver there
+//
+//   a verdict on a branch with nothing on it is refused
+//     refused, and this is what it said:
+//     Nothing has arrived on "drill/empty-141618", so there is nothing to judge.
+//     A worker that finished without pushing has delivered nothing.
+//
+//   a rejection with no reason is refused
+//     could not be tried: no task has anything on its branch — run the round
+//     trip first
+//
+// THE SAME SENTENCE THE ROUND TRIP MEETS. 06-a-task-on-a-machine ends on this
+// exact refusal, after a real machine has done real work and handed back a file
+// — and the wording is identical, because to this app the two situations are the
+// same situation: nothing on the branch. That is the rule being consistent
+// rather than two rules that happen to agree, and reading the two transcripts
+// together is the only place it shows.
+//
+// The third check needs a task that DID deliver, which a tidy host does not
+// keep, so it says so rather than making one.
