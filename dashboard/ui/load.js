@@ -53,6 +53,7 @@
     'repos',     // the repositories, and everything open across them
     'prcuts',    // a change once it has left
     'sessions',  // what workers remember, kept across the machines they pass through
+    'guests',    // the Claude identities kept here, lent to a machine while it works
     'machines',  // the virtual machines this app made
     'live',      // the log, and every action there is
     'tests',     // this app run against itself, for developing it

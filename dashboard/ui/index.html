@@ -442,7 +442,45 @@
          runner and belongs beside it. -->
     <div class="subtabs">
       <button class="subtab active" data-pane="machines">Virtual machines</button>
-      <button class="subtab" data-pane="guest">Claude guest</button>
+      <!-- The identities, on the same template as the machines beside them: a
+           list you pick from, what is known about the one picked, and what it
+           has been part of. -->
+      <button class="subtab" data-pane="guests">Claude guest</button>
+      <!-- What the sessions pane was called. Kept under its own name rather than
+           removed, because it is where the remembered transcripts still live and
+           taking it away would lose them from the window before the new pane
+           carries them. -->
+      <button class="subtab" data-pane="guest">old claude guest</button>
+    </div>
+
+    <!-- ---------------- Claude guests ----------------
+         A guest is a Claude sign-in kept on this host under a name, lent to a
+         machine while it works and taken back after. One per machine is the
+         point: the CLI refreshes the token as a worker runs, so two machines
+         sharing one sign-in rotate the same credential underneath each other. -->
+    <div class="pane" id="pane-guests">
+      <p class="note" id="guests-note"></p>
+      <div class="cols">
+
+        <div class="col narrow">
+          <h2 class="titlerow">
+            Guests <span class="muted" id="guests-context"></span>
+            <button class="plus" id="add-guest-open" title="Keep a Claude token here under a name">+</button>
+          </h2>
+          <div id="guests-list" class="stack"></div>
+        </div>
+
+        <div class="col">
+          <h2>Credential <span class="muted" id="guest-context">— nothing selected</span></h2>
+          <div id="guest-detail" class="panel"></div>
+        </div>
+
+        <div class="col">
+          <h2>Sessions <span class="muted" id="guest-sessions-context"></span></h2>
+          <div id="guest-sessions" class="stack"></div>
+        </div>
+
+      </div>
     </div>
 
     <div class="pane active" id="pane-machines">

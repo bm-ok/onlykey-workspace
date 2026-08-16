@@ -62,6 +62,8 @@ Object.assign(actions,
   require('./actions/runs'),
   require('./actions/host'),
   require('./actions/credentials'),
+  // The Claude identities this host holds, one per name. See core/guests.js.
+  require('./actions/guests'),
   require('./actions/branches'),
   require('./actions/tasks'),
   require('./actions/repos'),

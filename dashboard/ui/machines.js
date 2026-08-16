@@ -826,6 +826,7 @@ const taskById = id => (taskList || []).find(t => t.id === id) || null
 let runnerPane = been.get('runner-pane', 'machines')
 paneSwitcher('view-runners', () => runnerPane, p => { runnerPane = p; been.set('runner-pane', p) }, () => {
   paintVms()
+  paintGuests()
   paintSessions()
 })
 
