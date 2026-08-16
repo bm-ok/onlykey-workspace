@@ -563,6 +563,59 @@ module.exports = {
   // What the dial-in makes possible.
   vmAgents: { about: 'Which machines are dialled in right now, and what they say they are', run: async () => ({ agents: channel.list() }) },
 
+  // WAITING FOR A MACHINE, as something anybody can ask for.
+  //
+  // The queue has always waited — for a machine to come up, for a run to end —
+  // and every one of those waits was private to it. So the command line could
+  // start a machine and then had nothing to do but ask again, and a drill that
+  // wanted to prove "it starts and dials in" had to invent a loop of its own.
+  //
+  // A machine is not up when VirtualBox says it is running. It is up when it has
+  // DIALLED IN: booted, provisioned, and holding a channel back to here, which
+  // is a minute or two after the power comes on and the only definition anything
+  // else in this app cares about.
+  //
+  // Bounded, and it says how long it waited rather than only that it gave up:
+  // "not yet after 180s" and "never" are different problems, and the first one
+  // is usually a machine that needs another minute.
+  vmAwait: {
+    about: 'Wait until a machine has dialled in, or is off, and say how long it took',
+    takes: ['name', 'for', 'seconds'],
+    run: async ({ name, for: want, seconds }) => {
+      const machine = vms.get(name)
+      const wants = String(want || 'connected')
+      const limit = Math.max(5, Math.min(Number(seconds) || 300, 3600)) * 1000
+      const began = Date.now()
+
+      const here = () => {
+        if (wants === 'connected') return !!channel.list().find(a => a.vm === machine.name)
+        if (wants === 'gone') return !channel.list().find(a => a.vm === machine.name)
+        // Anything else is a VirtualBox state, asked of the one place allowed
+        // to ask: see machines/vbox.js, one call at a time.
+        return null
+      }
+
+      if (here() === null) {
+        const ok = wants === 'off'
+          ? await vbox.waitUntilOff(machine.name, { timeout: limit }).then(() => true, () => false)
+          : await vbox.waitForState(machine.name, s => s === wants, { timeout: limit }).then(() => true, () => false)
+        const took = Math.round((Date.now() - began) / 1000)
+        if (!ok) throw new Error(`"${machine.name}" was not ${wants} after ${took}s.`)
+        return { name: machine.name, was: wants, took, note: `"${machine.name}" was ${wants} after ${took}s.` }
+      }
+
+      // The channel is in this process, so this is a lookup rather than a call
+      // out to anything. Asked twice a second, which costs nothing and makes the
+      // answer arrive when it happens rather than up to a tick later.
+      while (!here() && Date.now() - began < limit) {
+        await new Promise(r => setTimeout(r, 500))
+      }
+      const took = Math.round((Date.now() - began) / 1000)
+      if (!here()) throw new Error(`"${machine.name}" was not ${wants} after ${took}s. A machine that is powered on and not dialled in is either still booting or stuck — vmScreenshot is the only thing that tells those apart.`)
+      return { name: machine.name, was: wants, took, note: `"${machine.name}" was ${wants} after ${took}s.` }
+    }
+  },
+
   vmRun: {
     about: 'Run a command on a dialled-in machine and wait for it',
     takes: ['name', 'command', 'what'],

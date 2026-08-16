@@ -58,9 +58,16 @@ function describe (name, fn) {
   }
 }
 
-function it (name, fn) {
+// A check, and how long it is allowed to take.
+//
+// The default is short on purpose: a check that hangs holds the whole run, and
+// most of these are a call and an assertion. But a machine takes minutes to come
+// up, and a worker takes longer than that — so a check that waits on one says so
+// here, in the file, where somebody reading it can see what it is going to cost.
+// `minutes` rather than milliseconds because that is the unit these are in.
+function it (name, fn, { minutes = 0 } = {}) {
   if (!currentSuite) throw new Error('it() must be called inside describe()')
-  currentSuite.tests.push({ name, fn })
+  currentSuite.tests.push({ name, fn, timeoutMs: minutes > 0 ? Math.round(minutes * 60000) : 0 })
 }
 
 // WHAT TO UNDO WHEN THE SERIES IS OVER, however it ends.
@@ -201,11 +208,15 @@ async function run (context = {}) {
           await t.fn({ ...context, assert, state })
         })()
 
-        if (timeoutMs > 0) {
+        // What this check asked for, or the run's own limit. A check that says
+        // it needs ten minutes gets ten minutes; everything else stays on the
+        // short clock, so one slow drill does not make the whole suite patient.
+        const limit = t.timeoutMs || timeoutMs
+        if (limit > 0) {
           const timeoutPromise = new Promise((_, rej) => {
             const id = setTimeout(() => {
-              rej(new Error(`Test timeout after ${timeoutMs}ms`))
-            }, timeoutMs)
+              rej(new Error(`This check gave up after ${Math.round(limit / 1000)}s. If it is waiting on a machine, say so with it(..., { minutes })`))
+            }, limit)
             testPromise.then(() => clearTimeout(id), () => clearTimeout(id))
           })
           await Promise.race([testPromise, timeoutPromise])
