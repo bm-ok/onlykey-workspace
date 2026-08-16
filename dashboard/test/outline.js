@@ -94,16 +94,23 @@ folders.forEach((folder, i) => {
     throw new Error(`test/suites/${folder} holds ${onDisk.length} file(s) and registered ${files.length} test(s)`)
   }
 
-  out.push(`## ${numberOf(folder)} — ${group}`)
+  // A SUITE IS THE TOP LEVEL, so it gets the biggest header. The first version
+  // had this the wrong way round — `##` for the folder and an indented `#` for
+  // the file — which renders as a suite subordinate to the tests inside it, and
+  // an indented `#` is barely a header at all.
+  out.push(`# ${numberOf(folder)} — ${group}`, '')
   files.forEach((file, j) => {
     tests++
-    out.push(`  # ${numberOf(folder)}.${numberOf(onDisk[j])} — ${file.name}`)
+    out.push(`## ${numberOf(folder)}.${numberOf(onDisk[j])} — ${file.name}`, '')
     file.tests.forEach((check, k) => {
       checks++
-      // The check's number is its position in the file, which is the order it
-      // runs in and the only number it has — an it() has no name on disk.
-      out.push(`    ${String(k + 1).padStart(2, '0')}. ${check.name}`)
+      // AN ORDERED LIST, so the numbers are markdown's rather than painted on.
+      // A check has no name on disk — its number is its position in the file,
+      // which is also the order it runs in, and that is exactly what an ordered
+      // list means.
+      out.push(`${k + 1}. ${check.name}`)
     })
+    out.push('')
   })
 })
 
@@ -113,7 +120,11 @@ folders.forEach((folder, i) => {
 const text = [
   '<!-- generated: node dashboard/test/outline.js --write -->',
   `<!-- ${byGroup.size} suites, ${tests} tests, ${checks} checks -->`,
-  ...out,
+  '',
+  // The blank line each block ends with is what separates it from the next
+  // header; the last one has nothing to separate from, so it goes, and the file
+  // ends with a single newline like every other text file here.
+  out.join('\n').trimEnd(),
   ''
 ].join('\n')
 
