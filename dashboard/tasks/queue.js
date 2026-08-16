@@ -398,7 +398,7 @@ async function bringUp (actions, to, machine) {
   // than this app guessing how long a boot takes on somebody else's hardware.
   await busy.comingUp(machine, async () => {
     await startItUp(actions, to, machine)
-    await actions.vmAwait.run({ name: machine, for: 'console', seconds: 180 })
+    await actions.vmAwait.run({ name: machine, for: 'console', seconds: 60, tries: 3 })
       .catch(e => to.info(`could not tell when its kernel came up (${e.message.split('.')[0]}) — handing the host on anyway`))
   }, {
     onWait: other => to.info(`waiting for "${other}" to get its kernel up — one machine starts at a time on this host`)

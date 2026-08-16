@@ -40,7 +40,22 @@ const {
 //
 // The cap is a bound, not a timer: a machine that never speaks must not hold the
 // host for ever. Reached only when something is wrong, and it says so.
-async function untilItSpeaks (name, { capMs = 180000 } = {}) {
+// SIXTY SECONDS IS NOT A GUESS AT HOW LONG A BOOT TAKES — it is how long a
+// kernel takes to say ANYTHING, which is a much smaller and much steadier
+// number. A machine that has not managed one line in a minute is not slow, it is
+// stuck: runner1 sat on a splash screen for eleven minutes, ignored its power
+// button, and had to have the plug pulled. It never said a word in all of it.
+//
+// So silence is treated as a failed start rather than as patience: pull the
+// power, start it again, and listen once more. Three starts and then it is
+// somebody's problem — a machine that cannot boot three times running has
+// something wrong that another attempt will not fix, and the honest thing is to
+// stop and say so rather than cycle it all afternoon.
+//
+// `tries` is 1 by default, because most callers only want to WAIT. The paths
+// that are actually responsible for a machine being up — installing one, and
+// the queue bringing one up for a task — ask for the retries.
+async function untilItSpeaks (name, { capMs = 60000, tries = 1 } = {}) {
   const vm = vms.read().find(v => v.name === name)
   const file = vm && vm.serial
   const to = log.on('vm', name)
@@ -53,18 +68,36 @@ async function untilItSpeaks (name, { capMs = 180000 } = {}) {
   }
 
   const size = () => { try { return fs.statSync(file).size } catch { return 0 } }
-  const began = Date.now()
-  const was = size()
-  while (Date.now() - began < capMs) {
-    if (size() > was) {
-      const took = Math.round((Date.now() - began) / 1000)
-      to.good(`its kernel is up and talking after ${took}s — the host is free for the next machine`)
-      return { spoke: true, took }
+  const listen = async () => {
+    const began = Date.now()
+    const was = size()
+    while (Date.now() - began < capMs) {
+      if (size() > was) return Math.round((Date.now() - began) / 1000)
+      await new Promise(r => setTimeout(r, 500))
     }
-    await new Promise(r => setTimeout(r, 500))
+    return null
   }
-  to.warn(`nothing has come out of its console in ${Math.round(capMs / 1000)}s — carrying on, but that machine may be stuck before the kernel`)
-  return { spoke: false, why: 'silent' }
+
+  for (let attempt = 1; attempt <= Math.max(1, tries); attempt++) {
+    const took = await listen()
+    if (took !== null) {
+      to.good(`its kernel is up and talking after ${took}s${attempt > 1 ? ` (start ${attempt})` : ''} — the host is free for the next machine`)
+      return { spoke: true, took, attempt }
+    }
+    if (attempt >= Math.max(1, tries)) break
+
+    // THE POWER IS PULLED RATHER THAN ASKED. A machine that has not reached a
+    // kernel has nothing to answer an ACPI button with — asking it politely is
+    // a minute spent proving what its silence already said.
+    to.warn(`nothing on its console in ${Math.round(capMs / 1000)}s — its kernel never came up. Pulling the power and starting it again (start ${attempt + 1} of ${tries})`)
+    await vbox.stop(name, true).catch(() => {})
+    await vbox.waitUntilOff(name, { timeout: 60000 }).catch(() => {})
+    await vbox.waitUntilUnlocked(name).catch(() => {})
+    await vbox.start(name, 'gui').catch(e => to.bad(`could not start it again: ${e.message}`))
+  }
+
+  to.bad(`"${name}" said nothing on its console after ${tries} start(s) — it is not reaching a kernel`)
+  return { spoke: false, why: `silent after ${tries} start(s)` }
 }
 
 // WHICH MACHINE IS HAVING ITS PROVISIONING UPDATED, IF ANY, across the host.
@@ -123,7 +156,10 @@ module.exports = {
       // exactly what the serial port was added for.
       return busy.during(name, 'being installed', () => busy.comingUp(name, async () => {
         const started = await provisioner.install(name, { port: net.port, caPort: net.caPort })
-        await untilItSpeaks(name)
+        // Three starts at most. An installer that never reaches a kernel is a
+        // machine that will sit there for twenty-five minutes achieving nothing,
+        // which is exactly how an evening was lost to runner1.
+        await untilItSpeaks(name, { tries: 3 })
         return started
       }, { kind: 'install' }))
     }
@@ -1092,9 +1128,9 @@ module.exports = {
   // "not yet after 180s" and "never" are different problems, and the first one
   // is usually a machine that needs another minute.
   vmAwait: {
-    about: 'Wait until a machine speaks on its console, has dialled in, or is off — and say how long it took',
-    takes: ['name', 'for', 'seconds'],
-    run: async ({ name, for: want, seconds }) => {
+    about: 'Wait until a machine speaks on its console, has dialled in, or is off. With tries, a silent machine is restarted',
+    takes: ['name', 'for', 'seconds', 'tries'],
+    run: async ({ name, for: want, seconds, tries }) => {
       const machine = vms.get(name)
       const wants = String(want || 'connected')
       const limit = Math.max(5, Math.min(Number(seconds) || 300, 3600)) * 1000
@@ -1105,7 +1141,10 @@ module.exports = {
       // is ready for work, which is minutes later; "console" means its kernel is
       // up and running code, which is when the expensive minute ends.
       if (wants === 'console' || wants === 'speaking') {
-        const said = await untilItSpeaks(machine.name, { capMs: limit })
+        // `tries` turns waiting into supervising: silence becomes a failed start
+        // rather than patience, and the machine is power-cycled and listened to
+        // again. Off unless asked for, because most callers only want to know.
+        const said = await untilItSpeaks(machine.name, { capMs: limit, tries: Math.max(1, Number(tries) || 1) })
         const took = Math.round((Date.now() - began) / 1000)
         if (!said.spoke) throw new Error(`"${machine.name}" said nothing on its console within ${took}s (${said.why}).`)
         return { name: machine.name, was: 'speaking', took, note: `"${machine.name}" started talking after ${took}s.` }
