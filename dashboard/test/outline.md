@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 43 tests, 196 checks, 10 of them drafts -->
+<!-- 12 suites, 45 tests, 209 checks, 18 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -15,7 +15,7 @@
   A capability with no check here is one somebody will build again.
 -->
 
-## 10 drafts, not written yet
+## 18 drafts, not written yet
 
 - **the refusals / the ways round a refusal** — and the window cannot be driven while the drills are off
   THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. It matters more than it looks: windowClick and windowFill reach the SAME handlers a person's press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. WHY IT IS NOT A CHECK HERE: a drill runs only while testing mode is on, which is exactly when this is allowed. Proving the refusal means turning testing mode OFF, which stops the drills. HOW TO WRITE IT: from outside the kit — a script that turns testing mode off at the window, calls windowClick over the wire, sees the refusal, and turns it back on. That is a person-driven drill rather than one the harness can run, and it belongs in the same family as the sign-in that needs somebody to visit a page. WHAT CAN BE CHECKED FROM HERE AND IS NOT YET: that a press driven from outside carries the mark — press an APPROVE button through windowClick and watch it refused for being over the wire. That proves the anti-bypass property without turning anything off. See drivenFromTheWire in ui/base.js.
@@ -37,6 +37,22 @@
   THE ACCEPT PATH, and no job here can reach it. api-tour hands back a FILE and never commits, so the branch is exactly as it was cut and taskJudge refuses — correctly. ask-a-worker would push, and needs a Claude credential, which makes it a different and slower drill. WHAT IT NEEDS: a job that makes a small change and pushes it, written and approved at the window, because approving a job over the wire is refused on purpose. THE CHECK: queue a task under that job, let the queue run it, and accept the delivery — the verdict is recorded, the task reads accepted, and the artifact it was judged on is named in the verdict. AND ACCEPTING MUST NOT MERGE. Landing work is a separate act with its own rules; a verdict that quietly merged would make reading the work and publishing it the same button.
 - **judging / a judgement is work of its own** — and GitHub is told, beside the pull request
   THE OUTWARD HALF, and the only part of the original nine that is still true as a draft. Anybody looking at the change on GitHub — which is where a reviewer looks — has no way to know this app read it. A verdict belongs there: a status or a check beside the pull request, saying what was run and what it found. THE CHECK: after a judgement of a PR cut, the pull request on the parent carries a status naming this app and the verdict. TO SETTLE, AND STILL UNSETTLED: whether that is a commit status, a check run, or a comment — a comment is the easiest and the least useful, since it cannot gate a merge. And whether a rejection blocks the merge button, which is a decision about somebody else's repository rather than about this app. WHAT HAS CHANGED SINCE THIS WAS FIRST WRITTEN: everything inward. The verdict exists, it is the judge's own, it is current or stale against the tips it was made on, and prCutMake already refuses to send out work a judgement has rejected. So this is now the last mile rather than the whole road.
+- **the supervisor / an issue becomes a pull request** — a person opens an issue and the supervisor reads it
+  THE TRIGGER, AND IT IS THE PART THAT IS NOT BUILT. `whatsNew` carries what was said, tasks, machines, cuts and what happened — and NOT issues or pull requests. So a supervisor waking on a quiet host is never told that an issue arrived; it can ASK (`issues` is on its list, and it did) but only because the wake reason named it. Without that it would wake, see nothing new, and go back to sleep with an open issue sitting there. WHAT HAS TO EXIST FIRST: `whatsNew` reporting open issues and incoming pull requests, and something that wakes the supervisor when one arrives. This app deliberately never asks GitHub on a timer, so that is a decision rather than a line of code — poll on a slow cadence, or check on every wake and rely on other things waking it. THE CHECK: with an issue open that the supervisor has not been told about, wake it for an unrelated reason, and it still finds the issue. Today it does not, and the run above only worked because the wake reason said "a new issue arrived on local-repo-c: #2".
+- **the supervisor / an issue becomes a pull request** — and a judge decides whether the claim is real before any work is written
+  THIS HALF IS BUILT AND WAS PROVEN. `taskCreate` over the wire refuses without `becauseOf` naming a FINISHED judgement, and in the real run the supervisor tried twice to get round it — once passing a prose sentence as the ref, once leaving it off — before reasoning its way to "the issue's claim has to be checked first". The refusal text is what taught it the path, which is the argument for refusals that say what to do next. THE CHECK, as a drill rather than the unit version in `judging`: from an issue, the supervisor produces a judgement of the claim BEFORE any task exists, and the task that follows names that judgement. The unit refusals are already checked — see "the judge is the gate" — so what this adds is that a supervisor actually walks it.
+- **the supervisor / an issue becomes a pull request** — and the work is judged again before it goes out
+  BUILT, AND THE SECOND JUDGEMENT IS THE ONE THAT MATTERS. J31 established the claim was real; J32 read what the task delivered. `prCutMake` refuses over the wire unless a judgement of that line has finished, is not stale against the tips it was made on, and did not reject. A judgement made before the last push does not count — which is exactly the case here, because J31 was made before the fix was pushed. THE CHECK: after the task delivers, sending the change out is refused until a judgement made AFTER that push has accepted it. Then it goes.
+- **the supervisor / an issue becomes a pull request** — and the pull request carries the issue it came from
+  THE ONE THAT BROKE, AND IT BROKE SILENTLY. The supervisor wrote "Closes #2 — <url>" into the draft with `prDraftSave`, then called `prCutMake`, which read only its `body` argument and ignored the draft entirely. The pull request went out as template blocks, titled after the LINE, with no closing keyword anywhere in it — so the issue stayed open through the merge and had to be closed by hand. Nothing failed, nothing warned, and the only way to find it was to ask GitHub what the body actually said. FIXED — the body and the title fall back to the saved draft — so this is now a check that can be written rather than a draft. It is here rather than done because it needs a real cut against GitHub, which is a drill with somebody's repository at the end of it. THE CHECK: save a draft naming an issue URL, cut without passing a body, and the pull request on GitHub carries the draft's title and its issue link. And the merge closes the issue, which is the whole point of the keyword and is the thing that was actually wanted.
+- **the supervisor / an issue becomes a pull request** — and one cut, never one repository
+  BUILT AND ENFORCED BY THE ARGUMENT TYPE. `prCutMake` takes two LINE names and `twoLines` refuses anything that is not a line, so a raw branch cannot be sent out — it has to be made a line first, and the line is what goes out as one act with one pull request per repository that carries something. There is no per-repository PR action anywhere, and none on the supervisor's list. THE CHECK: with a line carrying commits in one repository of three, one pull request is opened and the cut records it as one landing; and `prCutMake` given a branch name rather than a line name is refused.
+- **the supervisor / somebody elses pull request** — a judge investigates an arrived pull request
+  NOT BUILT: a judgement's subject is a branch in this workspace or a cut this host made, and a stranger's pull request is neither — `judgementCreate` refuses it outright. So there is nothing to allow yet, which is why the gate above landed first. WHAT HAS TO EXIST: a subject of kind "pull" — repository, number and head sha — refused unless `allowed.check` says yes at THAT sha, so an allowance and a judgement cannot drift apart. WHAT THE OPERATOR ASKED IT TO DO, in their words: why, what and where the changes were made; whether other repositories need changes that are not there (a pull request that is half a change is the case this app exists to catch — one repository cannot half-land); whether the code is proper to check at all; then a rundown of how the project says it should work, and a re-check of exactly what the change touched. GREEN MEANS THREE THINGS AT ONCE: it is safe, it does what it intends, and it is exactly what the pull request says it is. Any one of those failing is not green. TO SETTLE: whether "check it" ever means RUNNING the contributor's code. Reading a diff is much cheaper to make safe; running its tests is what makes "it does what it says" a verdict rather than an opinion — and it is arbitrary execution by a stranger on a machine holding a credential. The proposal on the table is to split them: the read is a Claude judge under a contract that forbids running the change, and the test is a credential-free shell job whose output the judge then reads.
+- **the supervisor / somebody elses pull request** — and what it found is reported back on the pull request
+  NOT BUILT: nothing in this app can write to a pull request or an issue. `prCutUpdate` changes a title, a description or a state, and there is no comment anywhere. So a judge can read somebody's change and reach a verdict that only this host can see, which is half a review. WHAT HAS TO EXIST: an action that posts a comment to a pull request in THIS workspace — taking a repository this host holds rather than an owner/name, or the restriction the operator set ("these three forks and no others") leaks straight through the new door. THE CHECK: after a judgement of an arrived pull request, the pull request carries a comment naming this app, the verdict, and what was checked. And a comment cannot be posted to a repository the workspace does not hold. TO SETTLE: whether a rejection comments at all. A green light is useful to a contributor; a red one written by a model on somebody's work is a different act, and it may want a person to press it.
+- **the supervisor / somebody elses pull request** — and a merge somewhere else does not leave what is out unmergeable
+  NOT BUILT, and it is the first thing here that is maintenance rather than work somebody asked for. When anything lands, every open PR cut is measured against a base that has moved — so a change that was mergeable an hour ago now conflicts, and nobody finds out until somebody presses Merge. WHAT THE OPERATOR ASKED FOR: on a merge, the supervisor checks its open cuts for conflicts and fixes them properly, so what is out stays mergeable. WHAT HAS TO EXIST: something that notices a merge (the same trigger gap as everywhere else here), a way to ask "would this still merge" per cut, and a task shape for "bring this line up to the base it is landing into". THE CHECK: land something into a line that two open cuts are based on, and both cuts are reported as needing attention; after the supervisor has dealt with them, both merge cleanly. TO SETTLE, AND IT IS THE INTERESTING PART: a rebase or a merge changes what a judge already accepted. If J32 accepted a line and the line then moves to a new base, the verdict is stale by the same rule everything else here uses — so "keep it mergeable" implies "and judge it again", and the cost of keeping ten cuts current is ten more judgements. Whether that is worth it, or whether cuts should simply be told they are stale and left, is a decision nobody has made.
 
 # 00 — what this host has
 
@@ -357,7 +373,7 @@ Reading what came back and saying yes or no — and it is **work**, not a field.
 
 The machine that decides what work there is, rather than one doing it.
 
-*stands on the machines are built and what this host has and a worker credential*
+*stands on the machines are built and what this host has and a worker credential and the supervisor and judging*
 
 ## 00 — a supervisor is not a runner
 
@@ -414,6 +430,25 @@ The machine that decides what work there is, rather than one doing it.
   2. and "in use" is not the same question as "free to hand over"
   3. and signing one in is idempotent, quiet, and never starts anything
   4. and what it is signed in as is on its own state
+
+## 07 — an issue becomes a pull request
+
+  1. **DRAFT** — a person opens an issue and the supervisor reads it
+  2. **DRAFT** — and a judge decides whether the claim is real before any work is written
+  3. **DRAFT** — and the work is judged again before it goes out
+  4. **DRAFT** — and the pull request carries the issue it came from
+  5. **DRAFT** — and one cut, never one repository
+
+## 08 — somebody elses pull request
+
+  1. an incoming pull request is not judgeable until somebody says so
+  2. and an allowance names the commit, not the pull request
+  3. and STALE is its own answer, because it is neither of the other two
+  4. and a model cannot allow one
+  5. and it is not on the supervisor's list at all
+  6. **DRAFT** — a judge investigates an arrived pull request
+  7. **DRAFT** — and what it found is reported back on the pull request
+  8. **DRAFT** — and a merge somewhere else does not leave what is out unmergeable
 
 # 11 — cooling the host
 
