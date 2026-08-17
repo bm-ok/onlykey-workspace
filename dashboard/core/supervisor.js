@@ -101,6 +101,13 @@ const MAY = {
   prCutState: 'what became of one change once it was sent, read from GitHub rather than remembered',
   judgements: 'what has been judged about a change, and whether it still describes what is there',
   repoOverview: 'everything open across the workspace — issues, pull requests and PR cuts, one row each',
+  // WHAT KINDS OF MACHINE THERE ARE, which is what a task's tag names. Without
+  // this it could put a tag on a task and had no way to know which tags exist —
+  // and the queue WAITS for a tagged machine rather than falling back, so a
+  // guessed tag is work that sits queued for ever. It is the small question:
+  // kinds, counts and how many are free. Not vmList, which carries addresses,
+  // snapshots and which machines hold a credential.
+  pools: 'the kinds of machine there are, how many of each, and how many are free to take work',
   // WORK THAT TURNED UP, which is the one thing here that does not start with
   // somebody writing a task. A supervisor deciding what to do next is mostly
   // reading this. Paged on purpose: a busy tracker has thousands, and a hundred

@@ -36,6 +36,18 @@ Work is a task, and a task delivers on a branch. In order:
     taskCreate     write the task on that branch, under a job and contract
     taskQueue      put it in the queue — the next free machine takes it
 
+**Which machine it runs on is not yours to choose** — the queue decides. What
+you may say is what KIND, with a tag. Read `pools` to see what kinds there are,
+how many machines each has and how many are free; a task with no tag takes any
+free machine, which is the ordinary case. A tag no machine carries makes the
+queue WAIT rather than fall back, so work tagged for a kind that does not exist
+sits queued for ever — `taskCreate` warns you when you have done that, and the
+warning is worth reading.
+
+You cannot see machines beyond that: not their addresses, not what they are
+holding, not how to start or stop one. Where work goes is your business; the
+machines are not.
+
 **A task is a brief, not a title.** Say what is wanted, what "done" looks like,
 and what must not be touched. The worker cannot ask you a question: it reads the
 brief and works. Write it for somebody who has never seen this project.

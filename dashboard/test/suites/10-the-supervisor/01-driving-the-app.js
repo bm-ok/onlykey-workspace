@@ -132,6 +132,49 @@ it('and it may send a change out, and not land it', async ({ okc, assert, state,
   log('it may push a change out and open the pull requests; merging them is refused for being a supervisor')
 })
 
+it('and all it can see of the machines is their names and their tags', async ({ okc, assert, state, log }) => {
+  // A SUPERVISOR DECIDES WHERE WORK GOES, WHICH NEEDS THE KINDS AND NOTHING ELSE.
+  //
+  // A tag is how a task asks for a kind of machine — "the ones the kit built",
+  // "the one with the hardware" — and the queue WAITS for a match rather than
+  // falling back, so a supervisor that cannot read the kinds either guesses (and
+  // the work waits for ever) or never uses them.
+  //
+  // WHAT IT MUST NOT SEE IS THE REST OF vmList: addresses, snapshots, which
+  // machines are holding a credential, what each was built from. None of that is
+  // needed to decide where work goes, and all of it is worth having if you are
+  // something that talked its way into this machine.
+  const said = await asSupervisor(okc, state.machine,
+    "okc pools '{}'", 'asking what kinds of machine there are')
+  const pools = readJson(said)
+  assert.ok(pools && Array.isArray(pools.pools), `it could not read the pools: ${said.slice(0, 300)}`)
+
+  // Every machine it can see is a name, a tag and whether it is free.
+  const seen = [...pools.pools.flatMap(p => p.machines || []), ...((pools.untagged || {}).machines || [])]
+  assert.ok(seen.length, 'it can see no machines at all, so it cannot tell where work would go')
+  for (const m of seen) {
+    assert.ok(m.name, 'a machine came back with no name')
+    const fields = Object.keys(m).sort().join(',')
+    assert.equal(fields, 'free,name,why',
+      `a machine in the pools carries ${fields} — the only things a supervisor needs are its name, whether it is free, and why not`)
+  }
+
+  // AND NOT THE THINGS THAT ARE NOT ITS BUSINESS, asked of the whole answer
+  // rather than field by field: a new key added to vmList one day would arrive
+  // here silently, and this is the check that would notice.
+  const whole = JSON.stringify(pools)
+  for (const tell of ['address', 'token', 'serial', 'holdsCredential', 'snapshot', 'baseSnapshot', 'spec', 'guest']) {
+    assert.ok(!new RegExp(tell, 'i').test(whole),
+      `the pools answer contains "${tell}", which is a fact about a machine rather than about where work goes`)
+  }
+
+  // AND THE FULL LIST IS NOT ON ITS SURFACE AT ALL.
+  const tried = await asSupervisor(okc, state.machine, "okc vmList '{}'", 'trying to read the machine list')
+  assert.ok(/may not ask for/.test(tried), `a supervisor read the whole machine list: ${tried.slice(0, 300)}`)
+
+  log(`it sees ${seen.length} machine(s) as name + free, in ${pools.pools.length} tagged pool(s), and vmList is refused`)
+})
+
 it('and what it proposes waits for a person', async ({ okc, assert, state, log }) => {
   // THE ASKING IS THE FEATURE; THE APPROVING IS SOMEBODY ELSE'S.
   //

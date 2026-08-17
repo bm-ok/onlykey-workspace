@@ -229,6 +229,74 @@ module.exports = {
   //
   // Lower-cased and de-duplicated, because "Test" and "test" being different
   // tags is a fault that shows up as work never being picked up.
+  // ---- the pools, which is what a tag actually is --------------------------
+  //
+  // A tag is how work asks for a KIND of machine rather than a name: "the ones
+  // the test kit built", "the one with the hardware plugged in". The queue
+  // matches on it and WAITS rather than falling back, which is what makes it
+  // useful and also what makes a typo expensive — a task tagged for a kind
+  // nothing carries sits queued for ever, looking exactly like a queue that has
+  // gone quiet.
+  //
+  // SO THE KINDS HAVE TO BE READABLE. Everything else could already be worked out
+  // from vmList, and vmList is the wrong answer for anything that only needs to
+  // decide where work goes: it carries addresses, snapshots, whether a machine is
+  // holding a credential. This is the smaller question — what kinds are there,
+  // how many of each, how many free right now — which is all a supervisor needs
+  // and all it may have.
+  //
+  // FREE MEANS WHAT THE QUEUE MEANS, asked of the queue rather than worked out
+  // again here. A second opinion about whether a machine is available is the bug
+  // this app has already paid for twice.
+  pools: {
+    about: 'The kinds of machine there are, how many of each, and how many are free to take work',
+    run: async () => {
+      const { vms: all } = await actions.vmList.run({})
+      const free = new Map(queue.availability(all).map(a => [a.name, a]))
+
+      const kinds = new Map()
+      const note = (tag, vm) => {
+        const row = kinds.get(tag) || { tag, machines: [], free: 0, busy: 0 }
+        const how = free.get(vm.name) || {}
+        row.machines.push({ name: vm.name, free: !!how.free, why: how.why || null })
+        if (how.free) row.free++
+        else row.busy++
+        kinds.set(tag, row)
+      }
+
+      // A SUPERVISOR IS NOT A POOL. It is out of the queue's reach for good, so
+      // listing it among the kinds work can ask for would be listing a machine
+      // no task can ever have. Counted separately, because "why does this host
+      // have five machines and four in the pools" is a fair question.
+      const supervisors = all.filter(v => v.supervisor)
+      const workers = all.filter(v => !v.supervisor)
+
+      for (const vm of workers) {
+        for (const tag of vm.tags || []) note(String(tag).toLowerCase(), vm)
+      }
+
+      // AND THE ONES WITH NO TAG AT ALL, which is not a pool but is the answer to
+      // "what takes a task that asks for nothing in particular" — which is most
+      // tasks. Named rather than left out: a supervisor reading only the tagged
+      // kinds would think this host had two machines.
+      const untagged = workers.filter(v => !(v.tags || []).length)
+
+      return {
+        pools: [...kinds.values()].sort((a, b) => a.tag.localeCompare(b.tag)),
+        untagged: {
+          machines: untagged.map(v => ({ name: v.name, free: !!(free.get(v.name) || {}).free, why: (free.get(v.name) || {}).why || null })),
+          free: untagged.filter(v => (free.get(v.name) || {}).free).length
+        },
+        // Any free machine at all takes an untagged task, tagged or not.
+        anyFree: workers.filter(v => (free.get(v.name) || {}).free).length,
+        supervisors: supervisors.map(v => v.name),
+        note: kinds.size
+          ? `${kinds.size} kind(s) of machine: ${[...kinds.values()].map(k => `"${k.tag}" (${k.free} of ${k.machines.length} free)`).join(', ')}. A task with no tag takes any free machine.`
+          : 'No machine carries a tag, so every task takes any free machine. Tag one to be able to ask for a kind.'
+      }
+    }
+  },
+
   vmTags: {
     about: 'Tag a machine, so tasks can ask for a kind of machine rather than a name. Pass nothing to read them',
     takes: ['name', 'tags'],

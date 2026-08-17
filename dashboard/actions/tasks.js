@@ -182,7 +182,25 @@ module.exports = {
         if (!one) throw new Error(`There is no job called "${input.job}". Ask for "jobs" to see what there is.`)
         input.jobName = one.name
       }
-      return tasks.add(input)
+      const made = tasks.add(input)
+
+      // A TAG NOTHING CARRIES IS WORK THAT WAITS FOR EVER, and the board shows it
+      // as queued rather than as wrong. The queue waits by design — a tag that
+      // quietly meant "prefer" would send work to the wrong machine on a busy
+      // afternoon — so the place to notice a typo is here, where it was written.
+      //
+      // SAID, NOT REFUSED. A machine can be tagged after the task is written, and
+      // that is an ordinary way to work: write the task, then tag the machine
+      // that will take it. What is not ordinary is not knowing.
+      if (made.tag) {
+        const carried = new Set()
+        for (const vm of vms.read()) for (const t of vm.tags || []) carried.add(String(t).toLowerCase())
+        if (!carried.has(made.tag)) {
+          made.warning = `No machine carries the tag "${made.tag}", so this waits in the queue until one does. What is there: ${[...carried].join(', ') || 'no tags at all'}.`
+          log.on('task').warn(`#${made.number} asks for a machine tagged "${made.tag}" and none carries it — it will wait`)
+        }
+      }
+      return made
     }
   },
 

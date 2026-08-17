@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 30 tests, 150 checks, 25 of them drafts -->
+<!-- 12 suites, 30 tests, 151 checks, 25 of them drafts -->
 
 ## 25 drafts, not written yet
 
@@ -310,9 +310,10 @@ The machine that decides what work there is, rather than one doing it.
   1. a supervisor machine is up, and it can ask what it may do
   2. and everything else does not exist for it
   3. and it may send a change out, and not land it
-  4. and what it proposes waits for a person
-  5. and it can cut a branch, write a task on it, and queue it
-  6. and the machine it runs on is never given work itself
+  4. and all it can see of the machines is their names and their tags
+  5. and what it proposes waits for a person
+  6. and it can cut a branch, write a task on it, and queue it
+  7. and the machine it runs on is never given work itself
 
 ## 02 — reading a long list
 
