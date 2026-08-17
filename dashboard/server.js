@@ -29,6 +29,8 @@ const workspaces = require('./core/workspaces')
 // Read by `call` below, for the actions that only exist while the drills are
 // switched on. See `needs: 'testing'`.
 const settings = require('./core/settings')
+// What a supervisor machine may ask this host for — a named list, not a filter.
+const supervisor = require('./core/supervisor')
 const tasks = require('./tasks/store')
 const queue = require('./tasks/queue')
 // Only the HTTP handler below uses this — a guest handing a file over. It went
@@ -378,6 +380,112 @@ function handler (req, res) {
   //
   // It is the same shape as everything else a guest talks to: prove which
   // machine you are, then be told what you get.
+  // ---- what a supervisor may ask this host to do -------------------------
+  //
+  // THE OTHER DIRECTION FROM EVERYTHING ELSE HERE. A runner is GIVEN work and
+  // hands results back; a supervisor ASKS for work to exist. It is a machine
+  // running Claude Code whose job is to drive this app — write a task, queue it,
+  // read what came back, decide what to write next.
+  //
+  // Three gates, in this order, and each is a different question:
+  //
+  //   1. is it the machine it says it is    the same proof every guest gives
+  //   2. is that machine a SUPERVISOR       the tag it was built with; a runner
+  //                                         asking gets the same 401 as a
+  //                                         stranger, because from here it IS one
+  //   3. is what it asks for on the list    core/supervisor.js, an allowlist
+  //
+  // The third is the one that matters and the one that keeps mattering: it is a
+  // named list, so adding an action to this app never adds a supervisor
+  // capability. See core/supervisor.js for what is on it and what is deliberately
+  // not.
+  if (url.pathname === '/supervisor' || url.pathname.startsWith('/supervisor/')) {
+    const name = url.searchParams.get('vm') || ''
+    const asking = guestAsking(req, url)
+    if (!asking) return refuseGuest(res, name, 'to drive this dashboard as a supervisor')
+
+    // A RUNNER IS NOT A SUPERVISOR, and the refusal is the same 401 rather than a
+    // 403 that would tell a machine what it is not. Read from the tag, which is
+    // what everything else reads and is what the machine was built with.
+    const isSupervisor = ((asking.tags || [])).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
+    if (!isSupervisor) {
+      log.on('supervisor', name).warn(`${name} asked to drive the dashboard and is not a supervisor machine`)
+      return refuseGuest(res, name, 'to drive this dashboard as a supervisor')
+    }
+
+    // WHAT IT MAY DO, asked for rather than remembered. A model that has to guess
+    // the list will guess, and every wrong guess is a refusal in the log that
+    // looks like something trying doors.
+    if (url.pathname === '/supervisor' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        vm: name,
+        may: supervisor.list().map(one => ({ ...one, takes: (actions[one.what] || {}).takes || [] })),
+        how: 'POST /supervisor/do?vm=<name>&what=<action> with a JSON object of arguments as the body.',
+        note: 'This is a named list, not a filter over what this host can do. Anything not on it does not exist here.'
+      }, null, 2))
+      return
+    }
+
+    if (url.pathname === '/supervisor/do' && req.method === 'POST') {
+      const what = url.searchParams.get('what') || ''
+      if (!supervisor.may(what)) {
+        log.on('supervisor', name).warn(`refused "${what}" — a supervisor may not ask for it`)
+        res.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: supervisor.refuse(what) }, null, 2))
+        return
+      }
+
+      const chunks = []
+      let size = 0
+      let refused = false
+      req.on('data', c => {
+        if (refused) return
+        size += c.length
+        // A task brief is prose and can be long; a megabyte is not a brief.
+        if (size > 1024 * 1024) {
+          refused = true
+          res.writeHead(413, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'that is more than a megabyte of arguments' }))
+          req.destroy()
+          return
+        }
+        chunks.push(c)
+      })
+      req.on('end', async () => {
+        if (refused) return
+        const body = Buffer.concat(chunks).toString('utf8').trim()
+        let args = {}
+        if (body) {
+          try { args = JSON.parse(body) } catch (e) {
+            res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `the body is not JSON: ${e.message}` }))
+            return
+          }
+        }
+        if (!args || typeof args !== 'object' || Array.isArray(args)) {
+          res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'the body is a JSON object of arguments, or nothing at all' }))
+          return
+        }
+
+        try {
+          // THROUGH THE SAME DOOR EVERY OTHER CALLER USES. This decides whether;
+          // `call` decides how, and every refusal, workspace gate and record that
+          // applies to a person at the window applies here unchanged.
+          const said = await call(what, args)
+          // KEPT, because this is the record of a machine deciding something. It
+          // is the one log line that answers "why is there a task nobody wrote".
+          log.on('supervisor', name).good(`${name} asked for "${what}" and it was done`)
+          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(said === undefined ? { ok: true } : said, null, 2))
+        } catch (e) {
+          log.on('supervisor', name).warn(`${name} asked for "${what}" and was refused: ${e.message}`)
+          res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: e.message }, null, 2))
+        }
+      })
+      return
+    }
+
+    res.writeHead(404, { 'content-type': 'application/json' })
+      .end(JSON.stringify({ error: 'a supervisor asks GET /supervisor for what it may do, and POST /supervisor/do?what=<action> to do one of them' }))
+    return
+  }
+
   // ---- the transcript, both ways ----------------------------------------
   //
   // A worker's session is the only record of why it did what it did, and the

@@ -131,12 +131,18 @@ draft('and the jobs API a runner uses is proven end to end',
   'THE CHECK: from a machine, exercise every endpoint the jobs API exposes — the ones that should answer, and the ones that should be REFUSED when asked by a machine that is not running that task. Suite 08 already posts to /artifact and /session exactly as machines/job-api.js does, so the pattern is written; what is missing is the list being complete rather than the two calls a drill happened to need. ' +
   'AND IT IS THE MODEL FOR THE SUPERVISOR API BELOW, which is the other reason to write it first: the same drill shape, pointed at the other direction.')
 
-draft('and a supervisor can ask this host for work over an API of its own',
-  'NOTHING OF THIS EXISTS YET. A supervisor machine runs Claude Code and needs to reach this dashboard: cut a branch, write a task on it, give it out, read what came back, judge it, cut a pull request. ' +
-  'NOT THE COMMAND LINE, AND THIS IS THE DECISION. The obvious answer is to hand the machine okc.js — that was the plan, and it is a security fault rather than a shortcut. The CLI is the WHOLE action surface: it deletes machines, approves jobs, hands out credentials, opens pull requests. A supervisor with a shell has all of it, and so does anything that talks its way into that shell. A model reading a repository is a model reading text somebody else wrote. ' +
-  'WHAT IT NEEDS INSTEAD: a strict, named set of things a supervisor may ask for, served over the same TLS-and-token channel the jobs API uses, with everything else simply not existing for it. Not a filter over the actions — a separate surface, so a new action does not become a new supervisor capability by default. ' +
-  'THE CHECK: a supervisor asks for each thing it is allowed to and gets it, and is REFUSED every action outside that set — including approving a job, which is already refused over the wire for the same reason (see the refusals suite). ' +
-  'WHAT TO SETTLE FIRST. (1) Which verbs are on the list — the smallest set that lets one decide work is probably: read the board, cut a branch, write a task, queue it, read a run, read a cut, and ask for judgement. (2) Whether a supervisor may approve anything at all; today approving is refused over the wire full stop, and a supervisor is over the wire. (3) What it is signed in as — one of the supervisor sign-ins in the guest list, which is why those are a role of their own.')
+// THE API THAT WAS DRAFTED HERE IS BUILT, and its checks are the file beside
+// this one: "driving the app". What it settled, since a draft is only worth
+// keeping while the questions in it are open:
+//
+//   the verbs      twelve to look at, four to do — cut a branch, write a task,
+//                  queue it, take it back out. See core/supervisor.js.
+//   approving      no, and not as a filter decision: jobApprove and its
+//                  siblings are simply not on the list. A supervisor writes a
+//                  task under a job a PERSON approved.
+//   landing        no. prCutMake and prCutLand are the two acts with
+//                  consequences outside this host, and they are the natural
+//                  next additions rather than part of the first one.
 
 draft('and a supervisor holds no repositories and gets no project setup',
   'HALF BUILT AND UNPROVEN. first-boot.sh skips the project\'s extra.sh and extra-user.sh when OKC_SUPERVISOR is yes, and runs supervisor-user.sh instead — node, Claude Code, and a folder to think in. That is the intent; nothing has watched it happen. ' +

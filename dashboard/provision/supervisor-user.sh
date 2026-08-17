@@ -56,6 +56,80 @@ else
   fi
 fi
 
+# --- the only way it may talk to the dashboard --------------------------------
+#
+# A COMMAND, BECAUSE A MODEL WILL NOT REMEMBER A CURL LINE. What is behind it is
+# a strict allowlist on the host -- see core/supervisor.js -- and this is the
+# thing that makes it usable: `okc` on its own says what it may do, `okc <what>`
+# does one of them.
+#
+# THIS IS NOT THE DASHBOARD'S CLI. okc.js is the whole action surface and is not
+# on this machine; nothing here can reach it. This wrapper can ask for exactly
+# what the host is willing to answer and nothing else, and the host decides that,
+# not this file -- a supervisor that edited its own wrapper would gain nothing.
+#
+# The token is already on this machine: the agent has it, every provisioning
+# script is handed it. Written here as its own file, readable only by this user,
+# so the command does not carry it on a command line where `ps` would show it.
+
+mkdir -p "$HOME/.okc" "$HOME/.local/bin"
+chmod 700 "$HOME/.okc"
+umask 077
+cat > "$HOME/.okc/env" <<ENVEOF
+OKC_VM='$OKC_VM'
+OKC_BASE='$OKC_BASE'
+OKC_TOKEN='$OKC_TOKEN'
+OKC_CA='$OKC_CA'
+ENVEOF
+chmod 600 "$HOME/.okc/env"
+
+cat > "$HOME/.local/bin/okc" <<'CLIEOF'
+#!/bin/bash
+# Ask the dashboard for something a supervisor is allowed to ask for.
+#
+#   okc                       what this machine may ask for, and what each takes
+#   okc <what>                do one of them, with no arguments
+#   okc <what> '<json>'       do one of them, with arguments as a JSON object
+#
+# Everything not on that list does not exist here. The list is the host's, not
+# this file's.
+set -u
+. "$HOME/.okc/env"
+
+what=${1:-}
+body=${2:-}
+
+# --fail-with-body, not -f. With -f curl throws the body away on any error status
+# and prints "curl: (22) ... error: 403" -- so a refusal that carefully explains
+# what a supervisor may ask for instead arrived as a number. The whole point of
+# the refusal is that the thing reading it can act on it.
+if [ -z "$what" ]; then
+  curl -sS --fail-with-body --cacert "$OKC_CA" -u "$OKC_VM:$OKC_TOKEN" \
+    "$OKC_BASE/supervisor?vm=$OKC_VM"
+  exit $?
+fi
+
+curl -sS --fail-with-body --cacert "$OKC_CA" -u "$OKC_VM:$OKC_TOKEN" \
+  -H 'content-type: application/json' \
+  --data "${body:-{\}}" \
+  "$OKC_BASE/supervisor/do?vm=$OKC_VM&what=$what"
+CLIEOF
+chmod 700 "$HOME/.local/bin/okc"
+
+# On the path for a login shell. Ubuntu's own .profile adds ~/.local/bin when it
+# exists, and it did not exist when .profile was read -- so it is said here as
+# well rather than relying on the next login.
+if ! grep -q 'okc: the supervisor command' "$HOME/.profile" 2>/dev/null; then
+  {
+    echo ''
+    echo '# okc: the supervisor command'
+    echo 'case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac'
+    echo 'export PATH'
+  } >> "$HOME/.profile"
+fi
+
+say 'supervisor: it can ask the dashboard for work with the okc command'
+
 # --- what it can reach --------------------------------------------------------
 #
 # Reported rather than assumed, and each of these has been wrong before while

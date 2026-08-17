@@ -50,7 +50,12 @@ const KEEP = new Set([
   'workspace', // opened, closed, added, forgotten
   'keys', // this host's own identity changing
   'github', // the token being set or thrown away
-  'server' // certificates, ports, startup
+  'server', // certificates, ports, startup
+  // A MACHINE DECIDING SOMETHING, which is the one thing here nobody typed. A
+  // supervisor writes tasks and queues them on its own initiative, so this is
+  // what answers "why is there a task nobody wrote" six weeks later — and what a
+  // refused call leaves behind when something tries a door it does not have.
+  'supervisor'
 ])
 
 // NOT KEPT, and each for a reason rather than by omission:

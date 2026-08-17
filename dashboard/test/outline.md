@@ -1,7 +1,7 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 24 tests, 121 checks, 26 of them drafts -->
+<!-- 12 suites, 25 tests, 124 checks, 25 of them drafts -->
 
-## 26 drafts, not written yet
+## 25 drafts, not written yet
 
 - **a worker credential / a worker can sign in** — and no two machines hold the same credential at once
   THE LOCK, and it can be written today. There is one credentials/claude.json, lent to whoever is working. vmCredentialsPut checks the machine is dialled in and that the credential is not dead, and says nothing about who else is holding it — so two machines working at once would run as the same worker against the same session. The check is "at most one machine reports holdsCredential", asked while work is in flight. It would fail right now if two tasks were dispatched at once, which is the honest way to start: a guard that would catch the thing nobody has hit yet. The queue serialises most work, which is why it has not bitten.
@@ -49,8 +49,6 @@
   It is the placeholder this design grew around: a verdict recorded on a task, from before there was a shape for judging. It refuses a verdict on a branch nothing arrived on, and that refusal is proven in 08 and in the guards — so it is doing real work today. THE CHECK, when the rest of this suite is built: nothing calls taskJudge except the thing that replaces it, and the board shows a judgement where it used to show a field. Kept until then, because the alternative is a period with no way to record a verdict at all.
 - **the supervisor / a supervisor is not a runner** — and the jobs API a runner uses is proven end to end
   IT IS EXERCISED AND NOT PROVEN, which are different. A job on a machine is handed a set of calls — fetch its task, post an artifact, hand back its session, report a run — and suite 08 uses several of them by running a real task through the queue with the api-tour job. What is missing is a check of the API ITSELF: every call it offers, asked directly, with the answers and the refusals stated. Today a call that quietly stopped working would show up as a task that failed for some other-looking reason, twenty minutes into a drill that needs a machine. THE CHECK: from a machine, exercise every endpoint the jobs API exposes — the ones that should answer, and the ones that should be REFUSED when asked by a machine that is not running that task. Suite 08 already posts to /artifact and /session exactly as machines/job-api.js does, so the pattern is written; what is missing is the list being complete rather than the two calls a drill happened to need. AND IT IS THE MODEL FOR THE SUPERVISOR API BELOW, which is the other reason to write it first: the same drill shape, pointed at the other direction.
-- **the supervisor / a supervisor is not a runner** — and a supervisor can ask this host for work over an API of its own
-  NOTHING OF THIS EXISTS YET. A supervisor machine runs Claude Code and needs to reach this dashboard: cut a branch, write a task on it, give it out, read what came back, judge it, cut a pull request. NOT THE COMMAND LINE, AND THIS IS THE DECISION. The obvious answer is to hand the machine okc.js — that was the plan, and it is a security fault rather than a shortcut. The CLI is the WHOLE action surface: it deletes machines, approves jobs, hands out credentials, opens pull requests. A supervisor with a shell has all of it, and so does anything that talks its way into that shell. A model reading a repository is a model reading text somebody else wrote. WHAT IT NEEDS INSTEAD: a strict, named set of things a supervisor may ask for, served over the same TLS-and-token channel the jobs API uses, with everything else simply not existing for it. Not a filter over the actions — a separate surface, so a new action does not become a new supervisor capability by default. THE CHECK: a supervisor asks for each thing it is allowed to and gets it, and is REFUSED every action outside that set — including approving a job, which is already refused over the wire for the same reason (see the refusals suite). WHAT TO SETTLE FIRST. (1) Which verbs are on the list — the smallest set that lets one decide work is probably: read the board, cut a branch, write a task, queue it, read a run, read a cut, and ask for judgement. (2) Whether a supervisor may approve anything at all; today approving is refused over the wire full stop, and a supervisor is over the wire. (3) What it is signed in as — one of the supervisor sign-ins in the guest list, which is why those are a role of their own.
 - **the supervisor / a supervisor is not a runner** — and a supervisor holds no repositories and gets no project setup
   HALF BUILT AND UNPROVEN. first-boot.sh skips the project's extra.sh and extra-user.sh when OKC_SUPERVISOR is yes, and runs supervisor-user.sh instead — node, Claude Code, and a folder to think in. That is the intent; nothing has watched it happen. THE CHECK: build a machine with the supervisor box ticked, and afterwards it has claude, has no clone of anything, and its first-boot log says the project setup was skipped. It is the same shape as the provisioning suite's checks and costs the same: one install. WHY IT MATTERS BEYOND TIDINESS: the project's half is what knows about repositories and devices, and a supervisor that ran it would hold a copy of the work it is supposed to be handing out — which is the difference between deciding and doing.
 - **the supervisor / a supervisor is not a runner** — and a supervisor is signed in as a supervisor, not as a worker
@@ -296,9 +294,15 @@ The machine that decides what work there is, rather than one doing it.
   3. and it cannot be typed off one that has it
   4. and a task cannot ask to be run on one
   5. **DRAFT** — and the jobs API a runner uses is proven end to end
-  6. **DRAFT** — and a supervisor can ask this host for work over an API of its own
-  7. **DRAFT** — and a supervisor holds no repositories and gets no project setup
-  8. **DRAFT** — and a supervisor is signed in as a supervisor, not as a worker
+  6. **DRAFT** — and a supervisor holds no repositories and gets no project setup
+  7. **DRAFT** — and a supervisor is signed in as a supervisor, not as a worker
+
+## 01 — driving the app
+
+  1. a supervisor machine is up, and it can ask what it may do
+  2. and everything else does not exist for it
+  3. and it can cut a branch, write a task on it, and queue it
+  4. and the machine it runs on is never given work itself
 
 # 11 — cooling the host
 
