@@ -95,10 +95,10 @@ module.exports = {
   },
 
   judgementCreate: {
-    about: 'Ask for a judgement of a branch cut or a PR cut: what is read, and which job reads it',
+    about: 'Ask for a judgement of a branch cut or a PR cut: what is read, which job reads it, and what question it is being asked',
     needs: 'workspace',
-    takes: ['kind', 'branch', 'source', 'target', 'job', 'by', 'tag'],
-    run: async ({ kind, branch, source, target, job, by, tag }) => {
+    takes: ['kind', 'branch', 'source', 'target', 'job', 'by', 'tag', 'question'],
+    run: async ({ kind, branch, source, target, job, by, tag, question }) => {
       // WHAT IS BEING READ, resolved before anything is written, so a judgement
       // is never filed against a cut that does not exist. `subjectFrom` is where
       // the two shapes are understood, and it refuses anything else.
@@ -177,7 +177,30 @@ module.exports = {
         }
       }
 
-      const made = judging.add({ subject, by, tag, ...chain })
+      // THE PARTICULAR THING BEING ASKED, on top of the approved words.
+      //
+      // One approved prompt cannot name the issue it is checking — the issue did
+      // not exist when the prompt was read. "Is this claim true of the code" is
+      // the approved question; WHICH claim is the parameter, and without it a
+      // judge can only ever be pointed at a change in general.
+      //
+      // ADDED, NEVER SUBSTITUTED. The approved text stands exactly as it was
+      // approved and this is appended under a heading that says what it is, so
+      // reading the brief six weeks later shows both halves and which is which.
+      //
+      // This is the same latitude a task already has — a task's whole brief is
+      // written by whoever wrote the task, under an approved contract — so it
+      // grants nothing new. The contract still governs, and the contract is the
+      // half that says what a judge may not do.
+      const asked = String(question || '').trim()
+      if (asked && !chain.brief) {
+        throw new Error('A question needs a judge to ask it. Give this a job as well — the question is added to what that job\'s prompt says, and on its own it is words with no rules around them.')
+      }
+      if (asked) {
+        chain.brief = `${chain.brief}\n\n---\n\n## What you are being asked about, specifically\n\n${asked}`
+      }
+
+      const made = judging.add({ subject, by, tag, question: asked || null, ...chain })
       log.on('judging', made.id).good(`${made.ref} written — reads ${subject.name}`)
       return {
         ...made,

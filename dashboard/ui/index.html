@@ -754,10 +754,31 @@
 
     <div class="pane" id="pane-judges">
       <p class="note" id="judges-note"></p>
-      <!-- A JUDGE IS A COMBINATION: this job, giving these words, under these
-           rules. The library lists the three one at a time because that is how
-           each is written and approved; this is the whole chain, with the ones
-           that cannot run naming the rung that is missing. -->
+      <!-- THE JUDGING LIBRARY, ONE COLUMN PER RUNG. Its own jobs, prompts and
+           contracts, kept apart from the ones work is done under — a judge asks
+           a different question under different rules, and a list that mixed
+           them is a list somebody picks wrongly from once.
+
+           THREE COLUMNS RATHER THAN THREE MORE TABS. The chain reads
+           job <- prompt <- contract in one direction, and seeing which rung is
+           missing is the whole reason to look at this screen. -->
+      <div class="cols3">
+        <div class="col">
+          <h2>Jobs <span class="muted" id="judge-jobs-context"></span></h2>
+          <div id="judge-jobs" class="stack"></div>
+        </div>
+        <div class="col">
+          <h2>Prompts <span class="muted" id="judge-prompts-context"></span></h2>
+          <div id="judge-prompts" class="stack"></div>
+        </div>
+        <div class="col">
+          <h2>Contracts <span class="muted" id="judge-contracts-context"></span></h2>
+          <div id="judge-contracts" class="stack"></div>
+        </div>
+      </div>
+      <!-- The whole chains, underneath the rungs they are made of: which can
+           judge, and which is missing what. -->
+      <h2>Whole chains</h2>
       <div id="judge-chains" class="stack"></div>
     </div>
   </section>

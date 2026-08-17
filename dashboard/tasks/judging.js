@@ -178,6 +178,10 @@ function add (input) {
     // have been held to.
     job: input.job ? String(input.job) : null,
     brief: input.brief ? String(input.brief) : null,
+    // THE PARTICULAR THING IT WAS ASKED, kept beside the brief that carries it.
+    // The brief has it appended already — this is so a board can show what was
+    // asked without printing the whole approved prompt to find out.
+    question: input.question ? String(input.question) : null,
     promptId: input.promptId ? String(input.promptId) : null,
     promptName: input.promptName ? String(input.promptName) : null,
     rules: input.rules ? String(input.rules) : null,

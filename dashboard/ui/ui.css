@@ -345,6 +345,11 @@ main { padding: 16px; }
 .view.active { display: block; }
 
 .cols { display: flex; gap: 16px; align-items: flex-start; }
+/* Three up, for a chain read a rung at a time: job <- prompt <- contract. The
+   same flex rules as .cols; the narrower minimum is what lets three fit before
+   they wrap, since each holds a short list rather than a detail panel. */
+.cols3 { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.cols3 > .col { min-width: 220px; }
 .col { flex: 1 1 0; min-width: 260px; }
 .col.narrow { flex: 0 1 260px; }
 .col.wide { flex: 1.6 1 0; }

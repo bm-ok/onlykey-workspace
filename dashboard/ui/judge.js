@@ -163,13 +163,48 @@ function paintJudges () {
   // and a list that mixed them would be a list somebody picks wrongly from once.
   Promise.all([
     api('jobs', { kind: 'judge' }).catch(() => ({ jobs: [] })),
-    api('prompts', { kind: 'judge' }).catch(() => ({ prompts: [] }))
-  ]).then(([{ jobs }, { prompts }]) => {
+    api('prompts', { kind: 'judge' }).catch(() => ({ prompts: [], contracts: [] }))
+  ]).then(([{ jobs }, { prompts, contracts }]) => {
     if (view !== 'judge' || judgePane !== 'judges') return
-    if (!changed('judge-chains', [jobs, prompts])) return
+    if (!changed('judge-chains', [jobs, prompts, contracts])) return
 
     const words = new Map((prompts || []).map(p => [p.id, p]))
     const list = (jobs || []).map(j => ({ ...j, words: j.promptId ? words.get(j.promptId) || null : null }))
+
+    // ---- one column per rung ------------------------------------------------
+    //
+    // READ AND APPROVED IS THE WHOLE JOB HERE. A judge decides whether somebody
+    // else's work holds, so what it is told and what it may not do are read by a
+    // person before it runs — and a model may write one and may not ratify its
+    // own. That rule is enforced in the actions; these are where it happens.
+    rungs('judge-jobs', jobs || [], j => ({
+      title: j.name || j.id,
+      approved: j.approved,
+      lines: [j.about, j.promptId ? `runs "${j.promptId}"` : 'no prompt — it would say nothing to a worker'],
+      read: () => readIt(`Job — ${j.name}`, j.code || '', 'javascript', j, 'jobApprove'),
+      of: 'job'
+    }))
+
+    rungs('judge-prompts', prompts || [], p => ({
+      title: p.name || p.id,
+      approved: p.approved,
+      lines: [p.about, p.contractId ? `under "${p.contractId}"` : 'no contract — nothing says what it may not do'],
+      read: () => readIt(`Prompt — ${p.name}`, p.text || '', 'markdown', p, 'promptApprove'),
+      of: 'prompt'
+    }))
+
+    rungs('judge-contracts', contracts || [], c => ({
+      title: c.name || c.id,
+      approved: c.approved,
+      lines: [c.about, `${c.lines || 0} lines`],
+      read: () => readIt(`Contract — ${c.name}`, c.text || '', 'markdown', c, 'contractApprove'),
+      of: 'contract'
+    }))
+
+    for (const [where, what] of [['judge-jobs', jobs || []], ['judge-prompts', prompts || []], ['judge-contracts', contracts || []]]) {
+      const waiting = what.filter(x => !x.approved).length
+      setText($(`${where}-context`), what.length ? (waiting ? `— ${waiting} to read` : '— all approved') : '')
+    }
     fill($('judge-chains'), list.length
       ? el('div', {}, ...list.map(j => el('div', { className: 'card' },
         el('div', { className: 'card-title' },
@@ -200,6 +235,52 @@ function paintJudges () {
       ? `${can} of ${list.length} can judge. A judge is the whole chain — this job, giving these words, under these rules — and every rung is read and approved by a person before anything runs.`
       : 'A judge reads a change and says whether it holds: did it follow the rules, is it secure, is there a bug nobody caught. Its chain is its own — a job written for work cannot judge, and a judge cannot be given work.')
   }).catch(() => { /* the chrome says when the dashboard is unreachable */ })
+}
+
+// ONE COLUMN OF RUNGS, drawn the same way for all three. Three copies of this
+// drifted within a minute of being written, which is the argument for the shape
+// rather than for the saving.
+function rungs (where, list, describe) {
+  fill($(where), list.length
+    ? el('div', {}, ...list.map(x => {
+      const row = describe(x)
+      return el('div', {
+        className: 'card',
+        onclick: row.read,
+        style: 'cursor:pointer'
+      },
+      el('div', { className: 'card-title' },
+        el('span', { textContent: row.title }),
+        el('span', { className: `badge ${row.approved ? 'ok' : 'warn'}`, textContent: row.approved ? 'approved' : 'to read' })),
+      ...row.lines.filter(Boolean).map(t => el('div', { className: 'card-sub muted', textContent: t })))
+    }))
+    // NOT AN ERROR, AND SAID AS SUCH. An empty judging library is the ordinary
+    // state of a host that has not started judging yet.
+    : el('p', { className: 'empty', textContent: 'None yet.' }))
+}
+
+// READ IT, THEN DECIDE. Approving happens at the window and nowhere else — the
+// actions refuse it over the wire — so this is the one place a judging chain
+// becomes runnable, and it puts the text in front of somebody first.
+function readIt (title, text, mode, it, approveWith) {
+  ask({
+    title,
+    plain: [
+      it.about || '',
+      it.approved
+        ? 'Approved. Withdrawing it stops anything using it until it is read again.'
+        : 'Not approved yet — nothing can run until it is. Read it, then approve it.'
+    ].filter(Boolean),
+    extra: codeBlock(text, mode, { max: 30 }),
+    confirm: it.approved ? 'Withdraw it' : 'Approve it',
+    danger: it.approved,
+    onYes: async () => {
+      const call = it.approved ? approveWith.replace('Approve', 'Withdraw') : approveWith
+      await api(call, { id: it.id })
+      say(it.approved ? `"${it.name}" is no longer approved.` : `"${it.name}" is approved.`)
+      paintJudge()
+    }
+  })
 }
 
 // A rung, said the same way in every row: what it is called, and whether it has

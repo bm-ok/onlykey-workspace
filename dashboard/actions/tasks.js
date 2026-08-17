@@ -118,12 +118,53 @@ module.exports = {
   },
 
   taskCreate: {
-    about: 'Write a task: what the work is, and the branch it delivers on',
+    about: 'Write a task: what the work is, and the branch it delivers on. Over the wire it also needs the judgement that established the work is real',
     needs: 'workspace',
-    takes: ['task'],
-    run: ({ task }) => {
+    takes: ['task', 'becauseOf'],
+    run: ({ task, becauseOf, _overTheWire }) => {
       const input = typeof task === 'string' ? JSON.parse(task) : task
       if (!input || typeof input !== 'object') throw new Error('Pass the task as an object.')
+
+      // ---- THE JUDGE IS THE GATE BETWEEN A SUPERVISOR AND A TASK -----------
+      //
+      // A supervisor cannot see the code. Everything it believes about this
+      // codebase, a judge told it — so a task it writes on any other basis is
+      // work commissioned from a rumour: an issue somebody filed about a version
+      // that no longer exists, a claim about a different project, its own
+      // recollection of a finding from a fortnight ago.
+      //
+      // The cost of that is not abstract. It is a machine booted, rolled back,
+      // handed a credential and pointed at a branch for twenty minutes to fix
+      // something that was never wrong — and then a second judgement to find out
+      // that nothing was.
+      //
+      // SO WORK OVER THE WIRE NAMES THE JUDGEMENT THAT ESTABLISHED IT IS REAL,
+      // and that judgement has to have finished. A queued one has established
+      // nothing yet.
+      //
+      // NOT AT THE WINDOW. A person writing a task has read the code, or has
+      // decided they do not need to, and either is their business — this is the
+      // same boundary as approving a job, which is refused down the pipe and
+      // ordinary at the window.
+      if (_overTheWire) {
+        const ref = String(becauseOf || '').trim()
+        if (!ref) {
+          throw new Error('Say which judgement established this work is real — pass becauseOf with its ref, like "J4". You cannot see the code, so a task written without one is work commissioned from a rumour. Ask for a judgement first, read what it handed back, and write the task from that.')
+        }
+        let found = null
+        try { found = judging.get(ref) } catch { found = null }
+        if (!found) {
+          throw new Error(`There is no judgement "${ref}". Ask for "judging" to see what has been asked for — becauseOf names the judgement whose findings this work comes from.`)
+        }
+        if (found.state !== 'done') {
+          throw new Error(`${found.ref} is "${found.state}" and has not finished reading yet, so it has established nothing. Wait for it, read what it handed back with judgementFindings, and then write the task.`)
+        }
+        // KEPT ON THE TASK. Six weeks later "why was this done" is answerable by
+        // reading the judgement it came from rather than by asking whoever was
+        // supervising that afternoon.
+        input.becauseOf = found.ref
+        input.becauseOfId = found.id
+      }
 
       // WHAT IS IMPOSSIBLE, BEFORE WHAT IS MERELY NOT READY YET.
       //

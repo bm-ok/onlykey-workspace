@@ -252,9 +252,51 @@ module.exports = {
         // heading for a bash -c inside an ssh command, and this file has already
         // watched quoting eat a regular expression today.
         const b64 = Buffer.from(WAKE, 'utf8').toString('base64')
+
+        // THE SKILL IS RE-FETCHED EVERY TIME IT WAKES, and that is not tidiness.
+        //
+        // The skill on the machine is what knows the loop — this file says so a
+        // few lines up, and repeating it in the wake prompt would be a second
+        // copy that goes stale. The consequence was left unhandled: the skill is
+        // fetched once, during provisioning, so a machine built before the loop
+        // changed goes on supervising by the old one for ever. The day judging
+        // arrived, the supervisor on this host was still being told to read
+        // `repoOverview` — an action it is no longer allowed to call.
+        //
+        // It is six kilobytes over a connection that is already open, once per
+        // waking, and it makes "the supervisor is running last month's rules"
+        // impossible rather than unlikely. `|| true` because a supervisor that
+        // cannot refresh its skill should still take its turn with the one it
+        // has — losing the turn entirely is worse than running a version behind,
+        // and the line above says which happened.
+        // WHERE THIS HOST LISTENS COMES FROM THIS HOST. The first version of
+        // this read `$OKC_BASE` out of the agent's env file, which holds the
+        // machine's name, its token and the authority — and not the base. The
+        // fetch failed with "URL rejected: No host part in the URL", which is
+        // the guest reporting an empty variable, and it would have failed
+        // silently for ever behind the `|| true` this deliberately has.
+        let where = null
+        try {
+          const at = await s.vbox.hostAddress()
+          if (at) where = `https://${at}:${s.net.port}`
+        } catch { /* no address means no refresh, and the turn still happens */ }
+
+        const refresh = where
+          ? 'mkdir -p "$HOME/.claude/skills/supervising" && ' +
+            'eval "$(sudo -n cat /etc/okc-agent.env | grep -E \'^OKC_(VM|TOKEN|CA)=\')" && ' +
+            'curl -fsS --cacert "$OKC_CA" -u "$OKC_VM:$OKC_TOKEN" ' +
+            '-o "$HOME/.claude/skills/supervising/SKILL.md" ' +
+            `"${where}/provision/supervisor-skill.md?vm=$OKC_VM" ` +
+            '&& echo okc-skill-refreshed || echo okc-skill-stale'
+          : 'echo okc-skill-stale'
+
         const said = await channel.run(on,
-          `cd ~ && printf %s '${b64}' | base64 -d > /tmp/okc-wake.txt && timeout 600 bash -lc 'okc-supervisor -p "$(cat /tmp/okc-wake.txt)"'; rm -f /tmp/okc-wake.txt`,
+          `cd ~ && ${refresh}; printf %s '${b64}' | base64 -d > /tmp/okc-wake.txt && timeout 600 bash -lc 'okc-supervisor -p "$(cat /tmp/okc-wake.txt)"'; rm -f /tmp/okc-wake.txt`,
           { what: 'one turn of the supervisor', timeout: 660000 })
+
+        if (/okc-skill-stale/.test(said.output || '')) {
+          log.on('supervisor', on).warn('it could not refresh the supervising skill, so it took its turn on whatever copy it already had')
+        }
 
         const took = Math.round((Date.now() - began) / 1000)
         log.on('supervisor', on).good(`it thought for ${took}s`)

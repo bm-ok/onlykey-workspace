@@ -232,6 +232,15 @@ function add (input) {
     // happened; this is set when something has. See the note there.
     usedClaude: false,
     folder: input.folder ? String(input.folder) : null,
+
+    // WHICH JUDGEMENT ESTABLISHED THIS WORK IS REAL, for a task written over the
+    // wire. A supervisor cannot see the code, so every task it writes comes from
+    // what a judge found — and "why was this done" is then answerable six weeks
+    // later by reading that judgement rather than by asking whoever was
+    // supervising. Null for a task a person wrote: they had their own reasons
+    // and are not asked to file them here.
+    becauseOf: input.becauseOf ? String(input.becauseOf) : null,
+    becauseOfId: input.becauseOfId ? String(input.becauseOfId) : null,
     // WHO DOES IT. A slot with three implementations, not a special case.
     //
     //   claude   a worker session in the machine, given the brief as a prompt
