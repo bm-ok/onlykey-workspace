@@ -43,6 +43,13 @@ async function drawOnce () {
   queueSays = new Map((running.machines || []).map(m => [m.name, m]))
   queueBusy = new Map((running.inFlight || []).map(f => [f.machine, f.task]))
 
+  // THE BADGE IS SET HERE, not in the panel, because the panel is view-guarded
+  // and a badge whose whole job is to be read from another tab cannot depend on
+  // that tab being open. The answer is already in hand.
+  const inLine = (running.waiting || []).length + (running.inFlight || []).length
+  setText($('queue-badge'), inLine ? String(inLine) : '')
+  $('queue-badge').classList.toggle('hidden', !inLine)
+
   // Reconcile the selection against what actually exists, every time, before
   // anything that depends on it is painted.
   //
@@ -246,6 +253,10 @@ async function drawOnce () {
   paintTerminal()
   paintBranches()
   paintTasks(running)
+  // Handed the same answer the loop already fetched, rather than asking again —
+  // `queueState` walks every machine. Its own view guard keeps it from drawing
+  // behind a tab nobody is on.
+  paintQueue(running)
   paintSessions()
   paintChat()
   // On the loop, not only when the sub-tab is clicked. It was wired to the

@@ -133,8 +133,10 @@ async function tick (actions, log) {
   running = true
   try {
     const { tasks } = await actions.tasks.run({})
-    // Oldest first. A queue that is not first-in-first-out is a queue somebody
-    // has to reason about, and the number is the order they were written.
+    // Oldest first WITHIN A KIND, and judgements ahead of tasks — see `order`
+    // at the foot of this file, which is the one place that rule is written and
+    // is what the Queue tab reports. Everything here is a task today, so this
+    // is exactly the old ordering until there is a second kind to sort.
     //
     // A PERSON'S TASK IS NEVER PICKED UP HERE, wherever it got its state from.
     // The queue's job is to find work nobody is doing and give it to a worker,
@@ -142,7 +144,7 @@ async function tick (actions, log) {
     // rolls a machine back to a snapshot and runs Claude over the top of it.
     // Belt and braces with the adoption rule above: this is the door, and it
     // should be shut whether or not something upstream went wrong.
-    const waiting = tasks.filter(t => t.state === 'queued' && t.worker !== 'person').sort((a, b) => a.number - b.number)
+    const waiting = order(tasks.filter(t => t.state === 'queued' && t.worker !== 'person').map(t => ({ ...t, kind: 'task' })))
     if (!waiting.length) return
 
     const { vms } = await actions.vmList.run({})
@@ -162,12 +164,11 @@ async function tick (actions, log) {
     // one thing somebody who bothered to tag a machine was trying to prevent.
     // The board says a tagged task is waiting for a tagged machine; nothing
     // happens silently.
-    const tagsOf = name => ((vms.find(v => v.name === name) || {}).tags || []).map(t => String(t).toLowerCase())
-    const willTake = (task, machine) => {
-      const want = String(task.tag || '').trim().toLowerCase()
-      if (!want) return true
-      return tagsOf(machine.name).includes(want)
-    }
+    const tagsOf = name => (vms.find(v => v.name === name) || {}).tags || []
+    // The rule itself is at the foot of this file, so what this dispatches by and
+    // what `taskQueue` promises are the same function rather than two readings
+    // of the same paragraph.
+    const willTake = (task, machine) => takes(task, tagsOf(machine.name))
 
     for (const task of waiting) {
       // Taken from the free list by MATCH rather than by position, so a tagged
@@ -910,4 +911,44 @@ async function redial (actions, log, machine) {
 
 const state = () => ({ inFlight: [...busyWith.entries()].map(([machine, task]) => ({ machine, task })) })
 
-module.exports = { begin, stop, tick, redial, availability, state, busyWith, bringUp, putAway, TICK }
+// ---- what goes next ----------------------------------------------------
+//
+// ONE PLACE, BECAUSE TWO WOULD DISAGREE. The Queue tab reports the order and
+// this file dispatches in it. Written twice, the two drift the first time
+// anything changes — and the failure is a board that says a judgement is next
+// while a task goes out, which nobody would think to check because both halves
+// look right on their own.
+//
+// JUDGEMENTS BEFORE TASKS. A judgement reads work that is already waiting to
+// land, and behind it somebody is holding a change; a task makes MORE work to be
+// read. So a queue that runs tasks first grows the thing it is behind on. This
+// is the only priority there is: within a kind it is strictly oldest-first,
+// because a queue anybody has to reason about is one somebody works around.
+// WHICH MACHINES AN ENTRY WILL ACCEPT, and the same reasoning as `order`: the
+// tick applies this rule, so anything that TELLS somebody what will happen has
+// to apply the same one. `taskQueue` did not, and answered "4 machine(s) can
+// take it" about a task tagged for a kind of machine this host does not have —
+// which is precisely the sentence its own comment says it exists to avoid.
+//
+// WAITS, RATHER THAN FALLING BACK. A tag that quietly means "prefer" is a tag
+// that sends work to the wrong machine on a busy afternoon, which is the one
+// thing somebody who bothered to tag a machine was trying to prevent.
+const wants = entry => String((entry && entry.tag) || '').trim().toLowerCase()
+const takes = (entry, tags) => {
+  const want = wants(entry)
+  if (!want) return true
+  return (tags || []).map(t => String(t).toLowerCase()).includes(want)
+}
+
+const FIRST = { judgement: 0, task: 1 }
+const rank = entry => (FIRST[entry && entry.kind] !== undefined ? FIRST[entry.kind] : FIRST.task)
+
+// Sorts a COPY. The caller's list is usually somebody else's array and a queue
+// that reorders what it was shown is a queue that changes a board by reading it.
+const order = entries => [...(entries || [])].sort((a, b) => rank(a) - rank(b) || a.number - b.number)
+
+// Said in words, because the board draws it and a model reads it. Kept beside
+// the rule so it cannot describe an order that is not this one.
+const ORDER = 'Judgements first, then tasks; oldest first within each. A judgement reads work that is already waiting to land, so it goes ahead of work that makes more.'
+
+module.exports = { begin, stop, tick, redial, availability, state, busyWith, bringUp, putAway, order, takes, ORDER, TICK }

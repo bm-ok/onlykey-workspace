@@ -332,7 +332,9 @@ function paintTasks (queued) {
         : el('p', { className: 'empty', textContent: 'No tasks yet. Write one with +.' }))
     }
 
-    paintQueue(queued)
+    // The queue strip that was drawn here has a tab of its own — ui/queue.js.
+    // One queue, two kinds of work, and a panel inside the task board could
+    // only ever draw the half that is tasks.
 
     const task = tasks.find(t => t.id === pickedTask)
     setText($('task-context'), task ? `— #${task.number}  ${task.id}` : '— nothing selected')
@@ -350,44 +352,8 @@ function paintTasks (queued) {
   })
 }
 
-// What the queue is doing, and why it is not doing anything.
-//
-// Shown only when there is something to say — work waiting, work running, or a
-// machine held back. An empty queue with everything free is the ordinary state
-// and does not need a panel announcing it.
-//
-// The REASONS are the point. "Nothing is queued" and "everything is queued and
-// no machine can take it" look identical from outside and want opposite
-// responses, and the four ways a machine can be unavailable each want a
-// different one: release it, snapshot it, put it back in the pool, or wait.
-function paintQueue (q) {
-  // Handed in rather than fetched. drawOnce already asked, and asking twice per
-  // draw doubles a call that walks every machine -- which is a VBoxManage
-  // process each. A window that polls every three seconds cannot afford to ask
-  // the same question twice out of tidiness.
-  Promise.resolve(q || api('queueState')).then(q => {
-    const held = q.machines.filter(m => !m.free)
-    const worth = q.waiting.length || q.inFlight.length || held.some(m => /kept back/.test(m.why))
-    $('queue').classList.toggle('hidden', !worth)
-    if (!worth || !changed('queue', q)) return
-
-    fill($('queue'), el('div', { className: 'card' },
-      el('div', { className: 'card-title' },
-        el('span', { textContent: 'The queue' }),
-        el('span', {
-          className: `badge ${q.inFlight.length ? 'run' : q.waiting.length ? 'warn' : 'muted'}`,
-          textContent: q.inFlight.length ? `${q.inFlight.length} running` : q.waiting.length ? `${q.waiting.length} waiting` : 'idle'
-        })),
-      ...q.inFlight.map(f => el('div', { className: 'card-sub', textContent: `${f.task} on ${f.machine}` })),
-      ...q.waiting.map(w => el('div', { className: 'card-sub muted', textContent: `#${w.number} ${w.title} — waiting` })),
-      // Only the ones that cannot take work. A list of free machines is noise
-      // on the normal case and makes the exception harder to find.
-      ...held.map(m => el('div', { className: 'card-sub muted', textContent: `${m.name} ${m.why}` })),
-      q.machines.some(m => m.free) || !q.waiting.length
-        ? null
-        : el('div', { className: 'card-sub bad', textContent: 'Nothing can take it. It stays queued until something can.' })))
-  }).catch(() => { /* the board already says if the dashboard is unreachable */ })
-}
+// The queue panel that lived here is ui/queue.js now, on a tab of its own.
+// See the head of that file: one queue, two kinds of work.
 
 function paintTaskDetail (task) {
   if (!changed('task-detail', task && taskKey(task))) return

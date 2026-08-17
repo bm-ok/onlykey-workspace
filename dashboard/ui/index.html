@@ -46,6 +46,10 @@
          to go and a token that may or may not reach it. -->
     <button class="tab active" data-view="repos">Repositories</button>
     <button class="tab" data-view="tasks">Tasks <span class="tab-badge hidden" id="tasks-badge"></span></button>
+    <!-- ITS OWN TAB, because two kinds of work share it. A judgement waits for a
+         machine exactly as a task does, so the queue stopped being part of the
+         task board the moment there was a second thing to put in it. -->
+    <button class="tab" data-view="queue">Queue <span class="tab-badge hidden" id="queue-badge"></span></button>
     <!-- WHAT IS DEFINED, beside what is happening. A contract, a prompt and a
          job are written once, approved once and run whenever — a task is one
          occasion of them. They were sub-tabs of Tasks, which put a library
@@ -626,11 +630,9 @@
              nothing while definitions piled up -- indistinguishable from there
              being none. -->
         <div id="approvals" class="hidden"></div>
-        <!-- What the queue is doing, where the question is asked. "Why has
-             nothing picked this up" was answerable only from a terminal, and
-             the four reasons a machine is not free want four different
-             responses. -->
-        <div id="queue" class="hidden"></div>
+        <!-- The queue strip that was here has a tab of its own now. It is one
+             queue shared by two kinds of work, and a panel inside the task board
+             could only ever draw one of them. -->
         <div id="tasks" class="stack"></div>
       </div>
 
@@ -703,6 +705,37 @@
        watching while you are doing something else, so a stream that dropped
        while the view was hidden would lose exactly the output you switched away
        to cause. The element stops being displayed; the subscription is global. -->
+  <!-- ---------------- Queue ----------------
+       ONE QUEUE, TWO KINDS OF WORK. A task makes a change; a judgement reads one
+       that is already waiting to land. Both wait for the same machines, so both
+       wait in the same line — and judgements go first, because a queue that runs
+       tasks first grows the thing it is behind on.
+
+       THE REASONS ARE THE POINT, and they are why this is a screen rather than a
+       count. "Nothing is queued" and "everything is queued and no machine can
+       take it" look identical from outside and want opposite responses; so do
+       the four ways a machine can be unavailable — release it, snapshot it, put
+       it back in the pool, or wait. -->
+  <section class="view" id="view-queue">
+    <div class="sync-head">
+      <h2>Queue <span class="muted" id="queue-context"></span></h2>
+    </div>
+    <div class="cols">
+      <div class="col">
+        <h2>Waiting</h2>
+        <div id="queue-waiting" class="stack"></div>
+      </div>
+      <div class="col">
+        <h2>Machines</h2>
+        <!-- Every machine and why each cannot take work, rather than only the
+             free ones: "why has nothing picked this up" is the question this
+             screen exists to answer. -->
+        <div id="queue-machines" class="panel"></div>
+        <p class="note" id="queue-order"></p>
+      </div>
+    </div>
+  </section>
+
   <section class="view" id="view-live">
     <div class="sync-head">
       <h2>Live <span class="muted" id="live-context"></span></h2>

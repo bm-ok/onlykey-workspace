@@ -46,6 +46,7 @@
     // Then a file per tab, in the order the work goes.
     'keys',      // the credential this host holds so machines do not have to
     'tasks',     // what has been asked for, who is doing it, what came back
+    'queue',     // what is waiting for a machine, of whichever kind
     'branches',  // where the work lives, and the lines cut across repositories
     'terminal',  // shells on machines, landed in from a task
     'github',    // the token, and what it may reach

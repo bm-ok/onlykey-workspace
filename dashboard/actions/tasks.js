@@ -323,15 +323,24 @@ module.exports = {
       // Said now rather than discovered in fifteen minutes' time. A task that
       // can never be picked up looks exactly like one that is merely waiting,
       // and the difference matters most when somebody has gone home.
-      const free = queue.availability((await actions.vmList.run({})).vms)
-      const can = free.filter(a => a.free)
+      //
+      // BY THE SAME RULE THE TICK DISPATCHES BY, tag and all. Counting free
+      // machines alone answered "4 machine(s) can take it" about a task tagged
+      // for a kind of machine this host has none of — the exact sentence the
+      // paragraph above says this exists to avoid, written by the code under it.
+      const vms = (await actions.vmList.run({})).vms
+      const free = queue.availability(vms)
+      const tagsOf = name => (vms.find(v => v.name === name) || {}).tags || []
+      const can = free.filter(a => a.free && queue.takes(queued, tagsOf(a.name)))
       log.on('task', task.id).good(`#${task.number} queued`)
       return {
         ...queued,
-        waitingFor: can.length ? null : free.map(a => `${a.name} ${a.why}`),
+        waitingFor: can.length ? null : free.map(a => `${a.name} ${a.why || `is not tagged "${task.tag}"`}`),
         note: can.length
           ? `${can.length} machine(s) can take it; the next tick picks it up.`
-          : 'Nothing can take it yet. It stays queued until something can.'
+          : task.tag
+            ? `Nothing tagged "${task.tag}" is free. It stays queued until something is — a tagged task waits rather than taking a machine of another kind.`
+            : 'Nothing can take it yet. It stays queued until something can.'
       }
     }
   },
@@ -427,29 +436,10 @@ module.exports = {
     }
   },
 
-  queueState: {
-    about: 'What the queue is doing, and which machines could take work',
-    needs: 'workspace',
-    run: async () => {
-      const { vms } = await actions.vmList.run({})
-      // The STORE, not the `tasks` action.
-      //
-      // That action reads every task's branch out of git to say what is on it,
-      // which is three or four processes per repository per task -- and this is
-      // asked for on every draw, alongside the action that already does it.
-      // Nothing here needs to know what a branch contains: a queued task is
-      // queued whatever is on its branch.
-      const all = tasks.read()
-      return {
-        ...queue.state(),
-        waiting: all.filter(t => t.state === 'queued')
-          .sort((a, b) => a.number - b.number)
-          .map(t => ({ number: t.number, id: t.id, title: t.title, branch: t.branch })),
-        machines: queue.availability(vms),
-        every: `${queue.TICK / 1000}s`
-      }
-    }
-  },
+  // `queueState` used to be here, and moved to actions/queue.js when the queue
+  // stopped being a thing only tasks go into. See the head of that file: a
+  // judgement waits for a machine exactly as a task does, and they share one
+  // queue rather than having one each.
 
   // Hand a task to a machine: set its workspace up on the task's branch, then
   // dispatch the brief under the task's contract.
