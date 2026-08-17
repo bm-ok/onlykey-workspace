@@ -44,10 +44,22 @@
 //   credentials and keys   never. It does not need to see one to use one, and
 //                          "a model may know something was done in the Keys tab
 //                          without knowing what" is the rule this app is built to.
-//   landing a change       prCutMake, prCutLand. Sending work out and merging it
-//                          are the two acts with consequences outside this host.
-//                          They are the natural next things to add and they are
-//                          not on this list today.
+//   MERGING a change       prCutLand, and this is the line rather than an
+//                          absence of one. A supervisor may push work onward and
+//                          open the pull requests — that is the flow it exists to
+//                          drive — and it may not merge them. Landing is the act
+//                          that changes what everybody else builds on, and it is
+//                          the one place a person reads the change and says yes.
+//                          Everything before it is reversible from GitHub; this
+//                          is not.
+//   editing or closing     prCutUpdate can close every pull request in a cut, and
+//   a pull request         prCutForget stops tracking one here. Neither is
+//                          needed to send work out, and both undo somebody's
+//                          reading of it. Off until there is a reason. What it
+//                          may do instead is write what the pull requests will
+//                          SAY before they exist — see prDraftSave.
+//   deleting a branch      branchDelete, branchDeleteRemote. Tidying up after a
+//                          merge is part of landing, which is not a supervisor's.
 //   judging                taskJudge. A verdict decides whether work was any
 //                          good, and a supervisor judging its own delivery is a
 //                          worker marking its own homework. Judging is being
@@ -69,7 +81,13 @@ const MAY = {
   prompts: 'the prompt library, which is what a worker can be told',
   contracts: 'the contract library, which is the rules a worker is held to',
   prCuts: 'every change that has been sent out, and how far each has got',
+  prCutState: 'what became of one change once it was sent, read from GitHub rather than remembered',
   judgements: 'what has been judged about a change, and whether it still describes what is there',
+  repoOverview: 'everything open across the workspace — issues, pull requests and PR cuts, one row each',
+  repositories: 'the repositories this workspace holds, and where each points',
+  repoBranches: "one repository's branches: where each is here, where origin has it, and which are out of step",
+  changeRead: 'what one line carries that another does not, so it can tell whether a change is worth sending',
+  branchArtifact: 'what is on a branch — commits and files per repository — without going through a task',
 
   // ---- what it may do ------------------------------------------------------
   //
@@ -79,7 +97,39 @@ const MAY = {
   branchCreate: 'cut a branch across the repositories, which is where a task delivers',
   taskCreate: 'write a task on a branch that has been cut, under a job and contract a person approved',
   taskQueue: 'put a task in the queue, so the next free machine takes it',
-  taskUnqueue: 'take a task back out of the queue, for one that should not have gone in'
+  taskUnqueue: 'take a task back out of the queue, for one that should not have gone in',
+
+  // ---- and what it may send onward -----------------------------------------
+  //
+  // THE FAR END OF THE SAME FLOW, and the reason a supervisor exists: work that
+  // never leaves is work nobody can read. It pushes, it opens the pull requests,
+  // and it stops there. Merging is the act that changes what everybody else
+  // builds on, and it is where a person reads the change and says yes.
+  //
+  // Pulling is on this list for the same reason pushing is: a fork that has
+  // fallen behind its parent makes a pull request full of somebody else's
+  // commits, and the fix is a button anybody could press. Fetching and
+  // fast-forwarding changes nothing that was not already decided elsewhere.
+  // A PULL REQUEST IS NEVER TOUCHED ON ITS OWN. Everything a supervisor may do
+  // to one is a PR CUT: one act, one pull request per repository, tracked
+  // together. That is how this app manages pull requests at all — there is no
+  // action here that opens or edits a single one — and it is the rule for a
+  // supervisor rather than an accident of the surface: a change that lands in two
+  // repositories out of three is the failure this whole idea exists to prevent,
+  // and something driving the flow unattended is exactly what would produce it.
+  //
+  // So: it may write what the pull requests will SAY before there are any
+  // (prDraftSave changes nothing on GitHub), and it may cut them (prCutMake).
+  // After that they belong to whoever reads them.
+  prDraft: 'what has been written for a pair of lines and not cut yet',
+  prDraftSave: 'write what the pull requests will say, before there are any — this changes nothing on GitHub',
+  prTemplatePreview: 'what the pull requests would say for a pair of lines, composed from the blocks that are on',
+  repoSync: 'fetch from origin and fast-forward every default branch, so it is not deciding from a stale copy',
+  repoSyncBranch: 'fetch and fast-forward one branch, or every branch in one repository',
+  lineSync: 'fetch and fast-forward every branch a line names, as one act',
+  repoForkSync: "pull each fork's default branch up from its parent on GitHub, so a change is cut from what is current",
+  branchAsLine: 'make a line out of a branch, which is what a change has to be before it can be compared or sent',
+  prCutMake: 'push a line onward and open a pull request per repository, tracked together as one change — it may SEND work out, and may not land it'
 }
 
 // Whether an action is on the list. The name is compared exactly: a supervisor

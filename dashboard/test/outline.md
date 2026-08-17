@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 25 tests, 124 checks, 25 of them drafts -->
+<!-- 12 suites, 25 tests, 125 checks, 25 of them drafts -->
 
 ## 25 drafts, not written yet
 
@@ -301,8 +301,9 @@ The machine that decides what work there is, rather than one doing it.
 
   1. a supervisor machine is up, and it can ask what it may do
   2. and everything else does not exist for it
-  3. and it can cut a branch, write a task on it, and queue it
-  4. and the machine it runs on is never given work itself
+  3. and it may send a change out, and not land it
+  4. and it can cut a branch, write a task on it, and queue it
+  5. and the machine it runs on is never given work itself
 
 # 11 — cooling the host
 

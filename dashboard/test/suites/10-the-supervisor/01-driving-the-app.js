@@ -92,6 +92,46 @@ it('and everything else does not exist for it', async ({ okc, assert, state, log
   log('deleting a machine, approving a job and landing a change are all refused, and the refusal says what it may do instead')
 })
 
+it('and it may send a change out, and not land it', async ({ okc, assert, state, log }) => {
+  // THE LINE THIS APP DRAWS, and it is a line rather than an absence of one.
+  //
+  // A supervisor drives work all the way to a pull request: it pulls so it is not
+  // deciding from a stale copy, cuts, writes, queues, makes a line out of what
+  // came back, and pushes it onward as a pull request per repository. Then it
+  // stops. Merging changes what everybody else builds on, and it is the one place
+  // a person reads the change and says yes.
+  //
+  // Checked as a pair, because either half alone is a different tool: allowed to
+  // land and this is an app that merges its own work; not allowed to send and it
+  // is an app whose work never leaves.
+  const may = new Set(state.may || [])
+  for (const send of ['prCutMake', 'prDraftSave', 'repoSync', 'repoForkSync', 'branchAsLine']) {
+    assert.ok(may.has(send), `a supervisor cannot "${send}", so the work it drives never leaves this host`)
+  }
+  for (const land of ['prCutLand', 'prCutUpdate', 'prCutForget', 'branchDelete', 'branchDeleteRemote']) {
+    assert.ok(!may.has(land), `a supervisor may "${land}", which puts landing or undoing somebody's reading of a change in the hands of the thing that wrote it`)
+  }
+
+  // AND PULL REQUESTS ONLY EVER AS CUTS. A change that lands in two repositories
+  // out of three is the failure the whole PR-cut idea exists to prevent, and
+  // something driving the flow unattended is exactly what would produce it. So
+  // everything on the list that touches a pull request is a prCut — asked of the
+  // list rather than assumed, because the day somebody adds a per-repository
+  // action is the day this matters.
+  for (const what of may) {
+    if (!/^pr/i.test(what)) continue
+    assert.ok(/^prCut|^prDraft|^prTemplate|^prompt/.test(what),
+      `"${what}" is on the supervisor's list and touches a pull request without being a PR cut — a supervisor manages pull requests as one act across every repository, or not at all`)
+  }
+
+  // AND ASKED FOR REAL, not only read off the list. prCutLand with a cut that
+  // does not exist would be refused either way — what this proves is that it is
+  // refused for being a supervisor, before the action is ever reached.
+  const said = await asSupervisor(okc, state.machine, "okc prCutLand '{\"id\":\"nothing\"}'", 'trying to merge a change, as a supervisor')
+  assert.ok(/may not ask for/.test(said), `a supervisor asked to merge a change and was refused for some other reason: ${said.slice(0, 300)}`)
+  log('it may push a change out and open the pull requests; merging them is refused for being a supervisor')
+})
+
 it('and it can cut a branch, write a task on it, and queue it', async ({ okc, assert, state, log }) => {
   // THE WHOLE POINT, END TO END. A supervisor is a project manager: it decides
   // there is work, cuts somewhere for it to land, writes it down, and puts it in
@@ -151,10 +191,17 @@ cleanup(async ({ okc, state }) => {
 // 17 August 2026, against supervisor-1 — a machine built with the box ticked,
 // running, dialled in, holding nothing. Four checks, thirteen seconds.
 //
-//     16 things it may ask for: branchBoard, branchCreate, contracts, jobs,
-//     judgements, lines, prCuts, prompts, taskArtifact, taskCreate, taskDiff,
+//     31 things it may ask for: branchArtifact, branchAsLine, branchBoard,
+//     branchCreate, changeRead, contracts, jobs, judgements, lineSync, lines,
+//     prCutMake, prCutState, prCuts, prDraft, prDraftSave, prTemplatePreview,
+//     prompts, repoBranches, repoForkSync, repoOverview, repoSync,
+//     repoSyncBranch, repositories, taskArtifact, taskCreate, taskDiff,
 //     taskLog, taskProgress, taskQueue, taskUnqueue, tasks
-//     PASS a supervisor machine is up, and it can ask what it may do (2s)
+//     PASS a supervisor machine is up, and it can ask what it may do (1s)
+//
+//     it may push a change out and open the pull requests; merging them is
+//     refused for being a supervisor
+//     PASS and it may send a change out, and not land it (0s)
 //
 //     deleting a machine, approving a job and landing a change are all refused,
 //     and the refusal says what it may do instead
