@@ -70,6 +70,20 @@
 // shown to the supervisor when it asks what it may do, so it can choose without
 // guessing, and it is what somebody adding a line here has to be able to write.
 const MAY = {
+  // ---- talking to the person, which is the only way it is heard -------------
+  //
+  // A supervisor decides things, and a decision nobody was told about is a
+  // machine going quietly ahead. These two are how it is answerable: what was
+  // said to it, and what it says back.
+  //
+  // `whatsNew` is deliberately one call rather than four. A supervisor wakes,
+  // reads, decides and stops — everything it needs on waking is "what changed
+  // since last time", across the conversation, the board and this host's own
+  // record. One bookmark, handed back each time, instead of a model keeping four
+  // of them correctly across a restart.
+  whatsNew: 'everything that changed since a bookmark: what was said to you, what finished, what is waiting',
+  supervisorSays: 'say something to the person — it appears on the Chat tab, signed with this machine',
+
   // ---- what it may see -----------------------------------------------------
   tasks: 'the board: every task, and whether its branch has anything on it yet',
   taskProgress: 'every attempt at one task, and what its worker is doing now',

@@ -61,6 +61,11 @@
          Sessions was a tab of its own and is the second: what a worker
          remembered is a fact about a runner and belongs beside it. -->
     <button class="tab" data-view="runners">Runners</button>
+    <!-- TALKING TO THE SUPERVISOR, which is the one tab where the app is not
+         reporting but conversing. It sits beside Live because that is where
+         somebody watches from, and what is said here is what the watching is
+         about. -->
+    <button class="tab" data-view="chat">Chat <span class="tab-badge hidden" id="chat-badge"></span></button>
     <button class="tab" data-view="live">Live <span class="tab-badge hidden" id="live-badge"></span></button>
     <button class="tab" data-view="terminal">Terminal</button>
     <button class="tab" data-view="keys">Keys</button>
@@ -657,6 +662,34 @@
 
   </section>
 
+
+  <!-- ---------------- Chat ----------------
+       WHAT WAS ASKED FOR, AND WHAT WAS SAID ABOUT IT. Everything else in this
+       window reports what was DONE; this is the other half of the record.
+
+       BOTH ENDS ARE OFTEN AWAY. A supervisor is switched off most of the time
+       and reads this when it next wakes; a person types something and closes the
+       window. So it is a file on this host rather than a connection — see
+       core/chat.js — and neither end has to be present for the other to speak. -->
+  <section class="view" id="view-chat">
+    <div class="sync-head">
+      <h2>Chat <span class="muted" id="chat-context"></span></h2>
+      <div class="sync-controls">
+        <button class="btn" id="chat-clear">Clear</button>
+      </div>
+    </div>
+    <p class="note" id="chat-note"></p>
+    <div id="chat-thread" class="stack"></div>
+    <!-- Inside a panel, because `.row` is only laid out as a row in one -- see
+         `.panel .row` in ui.css. Written without it first, and the composer came
+         out as a box the width of its placeholder. -->
+    <div class="panel" style="margin-top:12px">
+      <div class="row">
+        <input id="chat-text" placeholder="say something to the supervisor" style="flex:1">
+        <button class="btn ok" id="chat-send">Say it</button>
+      </div>
+    </div>
+  </section>
 
   <!-- ---------------- Live ----------------
        Never torn down and never stops appending. Its whole value is that it is

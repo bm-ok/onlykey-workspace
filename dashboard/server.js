@@ -69,6 +69,8 @@ Object.assign(actions,
   require('./actions/branches'),
   require('./actions/tasks'),
   require('./actions/repos'),
+  // Talking to the supervisor, and it talking back. See core/chat.js.
+  require('./actions/chat'),
   // This app run against itself. Last, because every drill in it drives the
   // table above and there has to be a table first.
   require('./actions/tests')
@@ -528,6 +530,12 @@ function handler (req, res) {
         const clean = {}
         for (const [k, v] of Object.entries(args)) if (!k.startsWith('_')) clean[k] = v
         clean._overTheWire = true
+        // AND WHICH MACHINE IS TALKING, stamped here rather than claimed there.
+        // A message on the Chat tab says who said it, and the one question that
+        // record has to answer later is who asked for a thing — so the name comes
+        // from the token that authenticated the call, and anything the machine
+        // sent under a `_` key was dropped a line ago.
+        clean._fromMachine = name
 
         try {
           // THROUGH THE SAME DOOR EVERY OTHER CALLER USES. This decides whether;

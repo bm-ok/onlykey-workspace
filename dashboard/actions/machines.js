@@ -388,8 +388,33 @@ module.exports = {
   vmStart: {
     about: 'Start a virtual machine, waiting its turn if another is coming up',
     takes: ['name', 'type'],
-    run: ({ name, type }) => {
-      vms.get(name)
+    run: async ({ name, type }) => {
+      const mine = vms.get(name)
+
+      // ONE SUPERVISOR RUNS AT A TIME, AND THAT IS A RULE ABOUT WHAT THEY ARE.
+      //
+      // A supervisor decides what work there is: it reads the board, writes
+      // tasks and queues them. Two of them running is two things deciding, with
+      // no idea of each other — the same issue picked up twice, two branches cut
+      // for one piece of work, two tasks queued against each other. Nothing here
+      // would fail; the board would just fill with work nobody asked for twice.
+      //
+      // Refused at the one door that brings a machine up, rather than left to
+      // whoever remembers. The refusal names the one that is already running,
+      // because "stop that one first" is the only thing to do about it.
+      //
+      // A RUNNER IS NOT AFFECTED. Two, four, ten runners at once is the point of
+      // the queue — they are told what to do and cannot decide anything.
+      if ((mine.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)) {
+        const others = vms.read().filter(v =>
+          v.name !== name &&
+          (v.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR))
+        for (const other of others) {
+          if (await vbox.isOff(other.name).catch(() => true)) continue
+          throw new Error(`"${other.name}" is already running, and one supervisor runs at a time. Two of them decide what work there is with no idea of each other — the same issue picked up twice, two branches cut for one piece of work. Stop "${other.name}" first.`)
+        }
+      }
+
       // THE TURN ENDS WHEN THE KERNEL IS UP, not when VBoxManage returns.
       //
       // Starting a machine is instant to ask for and expensive to do: the reply
