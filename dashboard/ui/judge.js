@@ -28,6 +28,25 @@
 let judgePane = been.get('judge-pane', 'judgements')
 let pickedJudgement = been.get('judgement', null)
 
+// DO THE FILE AND THE RECORD AGREE? Two vocabularies for one answer: a judge's
+// file ends "RECOMMENDATION: accept|reject" or "CLAIM: true|false|unclear", and
+// what it SENDS is accept, reject or pending. Mapped in one place, because a
+// screen that read "accept" and "accepted" as a disagreement would cry wolf on
+// every row and be ignored on the one that mattered.
+//
+// A CLAIM IS THE INVERSE, and this is the trap: "CLAIM: true" means the reported
+// fault is real, which is a REJECTION of the code as it stands. Getting that
+// backwards would flag every honest claim-check as a contradiction.
+const SAME = {
+  accept: 'accepted',
+  reject: 'rejected',
+  pending: 'pending',
+  true: 'rejected',
+  false: 'accepted',
+  unclear: 'pending'
+}
+const sameAnswer = (fromFile, sent) => SAME[String(fromFile).toLowerCase()] === String(sent).toLowerCase()
+
 const JUDGE_BADGE = { queued: 'warn', given: 'run', done: 'muted', draft: 'muted' }
 const VERDICT_BADGE = { accepted: 'ok', rejected: 'bad' }
 // What a judge concluded, which is not a verdict — see the note in the queue.
@@ -96,10 +115,28 @@ function paintJudgements () {
 
     // ---- what is waiting to be read -------------------------------------
     //
-    // Only the changes nothing current has read. A cut with a live judgement is
-    // not waiting on anybody, and listing it here would make the strip say
-    // "eight things need attention" on a host where none do.
-    const rows = (cuts.cuts || []).filter(c => !c.current)
+    // WAITING MEANS SOMETHING COULD STILL COME OF IT. Two conditions, and the
+    // second was missing on the day this was written:
+    //
+    //   nothing current has read it  — a cut with a live judgement is not
+    //                                  waiting on anybody
+    //   it still carries something    — `repos` lists where this line has
+    //                                  anything the target does not already
+    //                                  have. Empty means merged, reverted or
+    //                                  gone: there is nothing left to read, and
+    //                                  reading it would be history rather than
+    //                                  work.
+    //
+    // THE SECOND ONE IS ASKED LOCALLY, on purpose. Whether GitHub has merged a
+    // pull request is a question for GitHub, and this is drawn every few
+    // seconds — so it is answered from the repositories on this host instead,
+    // which know perfectly well whether that line still carries anything.
+    //
+    // The comment here already said this strip must not "say eight things need
+    // attention on a host where none do", and then it said exactly that: eight
+    // drill cuts, every one merged weeks ago, in a list headed "waiting". A
+    // count that is never zero is a count nobody reads.
+    const rows = (cuts.cuts || []).filter(c => !c.current && (c.repos || []).length > 0)
     const worth = rows.length > 0
     $('judge-waiting').classList.toggle('hidden', !worth)
     if (worth && changed('judge-waiting', rows.map(c => `${c.id}${c.reads}`))) {
@@ -107,6 +144,7 @@ function paintJudgements () {
         el('div', { className: 'card-title' },
           el('span', { textContent: 'Waiting to be read' }),
           el('span', { className: 'badge warn', textContent: String(rows.length) })),
+        el('div', { className: 'card-sub muted', textContent: 'Still carrying something, and nothing current has read it.' }),
         // A ROW, NOT A LINK. These were anchors, which the browser drew in its
         // own blue-then-purple with an underline and wrapped mid-phrase — a
         // control that looks like nothing else in this window and reads as
@@ -143,14 +181,31 @@ function paintJudgementDetail (j) {
       el('tr', {}, el('th', { textContent: 'reads' }), el('td', { className: 'mono', style: 'user-select:text', textContent: j.subject ? j.subject.name : '' })),
       el('tr', {}, el('th', { textContent: 'which is a' }), el('td', {}, el('span', { className: 'muted', textContent: j.subject && j.subject.kind === 'cut' ? 'PR cut — a change proposed for landing' : 'branch cut — the work as it stands' }))),
       el('tr', {}, el('th', { textContent: 'state' }), el('td', {}, el('span', { className: `badge ${JUDGE_BADGE[j.state] || 'muted'}`, textContent: j.state }))),
-      // RECOMMENDED AND DECIDED, KEPT APART, because they are different acts by
-      // different hands: a judge recommends, a person records the verdict.
-      el('tr', {}, el('th', { textContent: 'it recommends' }), el('td', {}, j.concluded
-        ? el('span', { className: `badge ${CONCLUDED_BADGE[j.concluded] || 'muted'}`, textContent: j.concluded })
-        : el('span', { className: 'muted', textContent: j.state === 'done' ? 'it did not say' : 'not yet' }))),
+      // THE VERDICT IS THE JUDGE'S OWN, and the row says so in whichever way is
+      // true. "Nobody has decided yet" was the old model — a judge that
+      // recommended and a person who decided — and on a finished worker
+      // judgement it described a wait that is never going to end.
+      //
+      // A worker judge sends its verdict as the last act of its session. If it
+      // finished and none arrived, that is a FAULT: the reading happened and the
+      // conclusion did not, and nothing downstream can use it. Said as a fault.
       el('tr', {}, el('th', { textContent: 'verdict' }), el('td', {}, j.verdict
         ? el('span', { className: `badge ${VERDICT_BADGE[j.verdict] || 'muted'}`, textContent: j.verdict })
-        : el('span', { className: 'muted', textContent: 'nobody has decided yet' }))),
+        : j.state !== 'done'
+          ? el('span', { className: 'muted', textContent: j.by === 'person' ? 'yours to give, once you have read it' : 'not yet — it has not finished reading' })
+          : j.by === 'person'
+            ? el('span', { className: 'muted', textContent: 'you have not said yet' })
+            : el('span', { className: 'warn', textContent: 'it finished without sending one — the reading happened and the conclusion did not' }))),
+
+      // AND WHAT ITS OWN FILE SAID, shown only when it DISAGREES with what it
+      // sent. Two accounts of one judgement agreeing is not worth a row; two
+      // accounts disagreeing is the most interesting thing on this screen, and
+      // it means the file a person will read says something the record does not.
+      j.concluded && j.verdict && !sameAnswer(j.concluded, j.verdict)
+        ? el('tr', {}, el('th', { textContent: 'but its file says' }), el('td', {},
+          el('span', { className: 'badge warn', textContent: j.concluded }),
+          el('span', { className: 'muted', style: 'margin-left:6px', textContent: 'read it — the record and the report do not agree' })))
+        : null,
       j.note ? el('tr', {}, el('th', { textContent: 'because' }), el('td', { style: 'user-select:text', textContent: j.note })) : null,
       el('tr', {}, el('th', { textContent: 'judged by' }), el('td', {}, el('span', {
         className: j.by === 'person' ? 'badge warn' : 'badge muted',

@@ -254,4 +254,23 @@ const refuse = what =>
 // is stable and a model comparing two answers sees a real difference.
 const list = () => Object.keys(MAY).sort().map(name => ({ what: name, why: MAY[name] }))
 
-module.exports = { MAY, may, refuse, list }
+// ---- HOW MANY TIMES IT HAS ASKED FOR ANYTHING -------------------------------
+//
+// One number, counted for one purpose: telling a wake that did something from a
+// wake that did nothing.
+//
+// A supervisor is woken, and what happens next is invisible from here — it runs
+// on a machine, thinks, and either uses this app or does not. When it cannot run
+// at all (no credential, a broken launcher, a machine that came up wrong) the
+// turn ENDS NORMALLY and quickly, having asked for nothing, and every panel goes
+// on looking exactly as it did. That happened: a wake fired, Claude exited in
+// three seconds because the machine had no credential, and the person watching
+// the Chat tab saw their message sit there unread with nothing to say why.
+//
+// A COUNT RATHER THAN A FLAG, so it works across overlapping turns and needs no
+// resetting: the caller takes a reading before and after and compares.
+let asked = 0
+const noteAsked = () => { asked += 1 }
+const asksSoFar = () => asked
+
+module.exports = { MAY, may, refuse, list, noteAsked, asksSoFar }

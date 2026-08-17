@@ -756,6 +756,17 @@ module.exports = {
           id: k,
           source: cut.source,
           target: cut.target,
+          // NO `landed` HERE, AND THAT IS DELIBERATE. Whether a cut has merged
+          // is a fact about GitHub, and `landings.all()` returns what was true
+          // when the cut was MADE — every pull in it says "open" for ever. Only
+          // `landings.state()` knows, and that asks GitHub, which this must
+          // never do: it is read on every draw.
+          //
+          // `repos` below answers the useful half locally: it lists the
+          // repositories where this line still carries something the target
+          // does not have. Empty means there is nothing left to read — merged,
+          // or reverted, or the branch is gone — and that is the same answer
+          // for judging purposes, arrived at without asking anybody.
           title: (cut.said && cut.said.title) || cut.source,
           repos: Object.keys(now),
           tips: now,

@@ -19,6 +19,10 @@
 
 const chat = require('../core/chat')
 const actions = require('./table')
+// What a supervisor may ask for, and how many times it has asked — see the
+// wake below, which uses the count to tell a turn that did something from one
+// that could not run at all.
+const supervisor = require('../core/supervisor')
 const s = require('./shared')
 const { log, events, tasks, vms, landings, channel, settings } = s
 
@@ -251,6 +255,12 @@ module.exports = {
         // THE PROMPT GOES OVER AS BASE64. It is prose with apostrophes in it,
         // heading for a bash -c inside an ssh command, and this file has already
         // watched quoting eat a regular expression today.
+        // Taken before the turn starts, so what is compared afterwards is what
+        // THIS turn asked for. A count rather than a flag, because two turns can
+        // overlap on a busy host and a flag would be reset by whichever finished
+        // first.
+        const askedBefore = supervisor.asksSoFar()
+
         const b64 = Buffer.from(WAKE, 'utf8').toString('base64')
 
         // THE SKILL IS RE-FETCHED EVERY TIME IT WAKES, and that is not tidiness.
@@ -299,11 +309,52 @@ module.exports = {
         }
 
         const took = Math.round((Date.now() - began) / 1000)
-        log.on('supervisor', on).good(`it thought for ${took}s`)
+
+        // ---- DID ANYTHING ACTUALLY HAPPEN? ---------------------------------
+        //
+        // A turn that ends normally having asked this host for nothing did
+        // nothing, whatever it printed. The commonest cause is a machine that
+        // cannot run a worker at all — no credential, a launcher that is gone,
+        // a machine that came up wrong — and every one of those ends in seconds
+        // and leaves every panel looking exactly as it did.
+        //
+        // THAT IS THE FAULT THIS FIXES. A wake fired, Claude exited in three
+        // seconds for want of a credential, and the person watching the Chat tab
+        // saw their message sit unread with nothing anywhere saying why. The host
+        // knew: it had logged a three-second turn and not one request.
+        //
+        // SAID IN THE CHAT, not only in the log, because the chat is where
+        // somebody is waiting. A message that is never answered is the exact
+        // shape of this failure, so the answer goes where the question is.
+        const used = supervisor.asksSoFar() - askedBefore
+        if (!used) {
+          log.on('supervisor', on).bad(`it woke and asked for nothing in ${took}s — it cannot use this app, so nothing was done`)
+          try {
+            chat.say({
+              who: 'supervisor',
+              from: on,
+              via: 'wire',
+              about: 'it could not run',
+              text: `I woke and stopped after ${took}s without asking this host for anything, so nothing was done.\n\n` +
+                'That usually means the machine cannot run a worker at all — most often it is holding no credential ' +
+                '(Runners → Claude supervisor), and sometimes the launcher or the tool server is missing. ' +
+                'Nothing about your message was lost; wake me again once it can run.'
+            })
+          } catch (e) {
+            log.on('supervisor', on).warn(`could not say that it failed to run: ${e.message}`)
+          }
+        } else {
+          log.on('supervisor', on).good(`it thought for ${took}s`)
+        }
+
         return {
           woke: true,
           name: on,
           seconds: took,
+          // WHETHER IT USED THIS APP AT ALL, on the answer as well as in the
+          // chat, so a caller at the command line sees it without reading a log.
+          asked: used,
+          ranProperly: used > 0,
           // What it printed, which is its own summary rather than what it said to
           // the person — that went through supervisorSays and is in the chat.
           said: String(said.output || '').split('\n').slice(1).join('\n').trim().slice(-2000),

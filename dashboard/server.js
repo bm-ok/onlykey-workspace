@@ -611,11 +611,19 @@ function handler (req, res) {
           // `call` decides how, and every refusal, workspace gate and record that
           // applies to a person at the window applies here unchanged.
           const said = await call(what, clean)
+          // COUNTED, so a wake can tell afterwards whether the machine used this
+          // app at all. A turn that asked for nothing is a turn that did nothing,
+          // however normally it ended — see supervisorWake.
+          supervisor.noteAsked()
           // KEPT, because this is the record of a machine deciding something. It
           // is the one log line that answers "why is there a task nobody wrote".
           log.on('supervisor', name).good(`${name} asked for "${what}" and it was done`)
           res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(said === undefined ? { ok: true } : said, null, 2))
         } catch (e) {
+          // A REFUSAL COUNTS TOO. It asked and was told no, which is the machine
+          // working: what is being detected is a turn where nothing reached this
+          // host at all.
+          supervisor.noteAsked()
           log.on('supervisor', name).warn(`${name} asked for "${what}" and was refused: ${e.message}`)
           res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: e.message }, null, 2))
         }
