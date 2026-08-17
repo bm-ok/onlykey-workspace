@@ -647,6 +647,85 @@ claude auth status 2>/dev/null || true`
     }
   },
 
+  // ---- GETTING ONE BACK OFF A MACHINE THAT IS NOT RUNNING -------------------
+  //
+  // The banner has said this for a while and there was nothing to press: "X is
+  // powered off and still holding a worker credential — start it, take the
+  // credential back, and shut it down again". Three steps, in an order that
+  // matters, that somebody has to do by hand at the moment they least want a
+  // procedure. It happened on this host after a Windows update stopped a machine
+  // outside the ordinary sequence.
+  //
+  // WHY IT CANNOT JUST BE FORGOTTEN. The copy on that disk may be NEWER than the
+  // one here: the CLI rotates its refresh token as a worker runs, and the only
+  // way that rotation comes home is reading the file off the machine. Marking it
+  // back without reading throws away the newest token this host will ever see,
+  // and then hands out an older one until it dies.
+  //
+  // IT PUTS THE MACHINE BACK AS IT FOUND IT. Started to be read and stopped
+  // again — a machine that was off is off afterwards. One that was already
+  // running is left running: it may be being used, and this is a repair rather
+  // than a tidy-up.
+  credentialRecover: {
+    about: 'Start a machine that is holding a sign-in, take it back with whatever the worker refreshed, and leave the machine as it was found',
+    takes: ['name'],
+    run: async ({ name }) => {
+      const vm = vms.get(name)
+      const live = ((await actions.vmList.run({})).vms || []).find(v => v.name === name) || {}
+      if (!vm.holdsCredential && !live.holdsCredential) {
+        throw new Error(`"${name}" is not recorded as holding a sign-in, so there is nothing to take back.`)
+      }
+
+      const wasRunning = live.state === 'running'
+      const did = []
+
+      // STARTED AND WAITED FOR, because a credential cannot be read off a
+      // machine that is not talking yet. supervisorMachine does both and is the
+      // one place that decision lives — but it is for supervisors, so this does
+      // the same two steps through the same actions.
+      if (!wasRunning) {
+        await actions.vmStart.run({ name })
+        did.push('started it')
+        // The channel is what "reachable" means here. Waited for rather than
+        // assumed: vmStart returns when the kernel speaks, which is before the
+        // agent has dialled in.
+        const until = Date.now() + 180000
+        while (Date.now() < until && !channel.connected(name)) {
+          await new Promise(r => setTimeout(r, 2000))
+        }
+        if (!channel.connected(name)) {
+          throw new Error(`"${name}" started but has not dialled in, so its sign-in still cannot be read. It is running now — try again, or take it back by hand once it connects.`)
+        }
+        did.push('waited for it to dial in')
+      }
+
+      // THE ONE THAT READS BEFORE IT DELETES. See vmCredentialsForget: it reads
+      // the file, hands what it finds to the guest list, and only then removes
+      // it from the machine.
+      const back = await actions.vmCredentialsForget.run({ name })
+      did.push(back.rotated
+        ? `took the sign-in back, refreshed — ${back.fingerprint}`
+        : 'took the sign-in back unchanged')
+
+      // AS IT WAS FOUND. A machine somebody had running stays running.
+      if (!wasRunning) {
+        await actions.vmStop.run({ name })
+        did.push('stopped it again')
+      }
+
+      return {
+        name,
+        rotated: !!back.rotated,
+        fingerprint: back.fingerprint || null,
+        wasRunning,
+        did,
+        note: `${name}: ${did.join(', and ')}.` + (back.rotated
+          ? ' That token was newer than the one here — it would have been lost.'
+          : ' It was the same token this host already had.')
+      }
+    }
+  },
+
   vmCredentialsForget: {
     about: 'Take the worker credential off a machine, keeping whatever the worker refreshed',
     takes: ['name'],

@@ -118,6 +118,21 @@ async function drawOnce () {
   // Read here rather than asked for, and applied before anything paints below.
   slowMs = Number(status.slowMs) || 0
 
+  // WHAT A FIX BUTTON DOES, written once. Say it before it starts — starting a
+  // machine is a minute of nothing visible happening, and a button that goes
+  // quiet is one somebody presses twice — then say what came of it, and redraw
+  // so the warning it fixed disappears by itself rather than by being dismissed.
+  //
+  // NOTHING HERE DECIDES ANYTHING. Each button calls one action that already
+  // knows the whole procedure, so the banner cannot grow its own opinion about
+  // machines. If an action refuses, the refusal is what appears.
+  const fixIt = (what, args, saying) => {
+    say(saying)
+    api(what, args)
+      .then(said => { say(said.note || 'done'); draw() })
+      .catch(e => say(e.message, 'bad'))
+  }
+
   const trouble = [
     // SAID WHILE IT IS ON, because a window that has been deliberately slowed
     // and does not admit it is a window somebody debugs for an hour. It is the
@@ -173,9 +188,22 @@ async function drawOnce () {
         v.stage !== 'installing')           // it is being built
       .map(v => v.holdsCredential
         ? [`${v.name} is on, doing nothing, and holding a worker credential. `,
-            'A runner rests off and holding nothing. Take the credential back and shut it down, or give it something to do.']
+            'A runner rests off and holding nothing. Take the credential back and shut it down, or give it something to do.',
+            // THE SAME REPAIR, and the machine is already up so it is one step
+            // rather than three. `credentialRecover` leaves a machine it found
+            // running exactly as it found it — this is a repair, not a tidy-up,
+            // and something may be using it.
+            {
+              label: 'Take it back',
+              onClick: () => fixIt('credentialRecover', { name: v.name },
+                `Taking ${v.name}'s sign-in back.`)
+            }]
         : [`${v.name} is on and doing nothing. `,
-            'A runner rests off — the queue starts one when there is work. Shut it down, or give it something to do.']),
+            'A runner rests off — the queue starts one when there is work. Shut it down, or give it something to do.',
+            // NOT OFFERED HERE. Stopping a machine somebody may be about to use
+            // is not a repair, and this line is a nudge rather than a fault —
+            // the one before it is the one with something wrong to put right.
+            null]),
 
     // OFF, and still holding one. Which nothing said, because every other rule
     // here is about a machine that is running.
@@ -195,7 +223,21 @@ async function drawOnce () {
       .filter(v => !v.running && v.live && v.holdsCredential)
       .map(v => [
         `${v.name} is powered off and still holding a worker credential. `,
-        'That cannot happen in the ordinary sequence — a credential is taken back before a machine is shut down — so it was stopped from outside it, which a host restart does. Start it, take the credential back, and shut it down again. Until then it cannot be snapshotted.'
+        'That cannot happen in the ordinary sequence — a credential is taken back before a machine is shut down — so it was stopped from outside it, which a host restart does. Until then it cannot be snapshotted.',
+        // THE INSTRUCTION BECAME A BUTTON. This sentence used to end "start it,
+        // take the credential back, and shut it down again" — three steps in an
+        // order that matters, told to somebody at the moment they least want a
+        // procedure. A warning that describes a fix and cannot perform it is one
+        // that gets read and postponed.
+        //
+        // It can be one press because every step is decided: the machine ends up
+        // off again exactly as it was found, and whatever the worker refreshed
+        // comes home rather than being lost with the rollback.
+        {
+          label: 'Take it back',
+          onClick: () => fixIt('credentialRecover', { name: v.name },
+            `Starting ${v.name} to take its sign-in back — this takes a minute.`)
+        }
       ])
   ].filter(Boolean)
 
