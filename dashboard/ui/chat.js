@@ -123,11 +123,30 @@ function paintSupervisorState () {
 
   api('supervisorState').then(st => {
     if (view !== 'chat') return
+
+    // WHICH BODY IS SHOWING IS DECIDED FIRST, and outside the guard below.
+    //
+    // `changed` compares the ANSWER, and the answer is the same whether or not
+    // somebody has just asked to read the log — that is a decision made in this
+    // window, not a fact about the supervisor. So the guard was returning early
+    // and the body never swapped: pressing "Read what was said" set the flag,
+    // repainted, and the paint stopped one line in. The Wake button had the same
+    // fault, staying enabled after the state that disabled it had gone.
+    //
+    // standIn has a guard of its own that DOES include what this window decided,
+    // so this costs nothing when nothing has changed.
+    standIn(st, st.supervisors || [])
+
+    // AND THE HEADER'S OWN WAKE BUTTON, for the same reason: it is not this
+    // panel's element, and a control that is offered while it would do nothing
+    // is the fault this whole tab exists to end.
+    $('chat-wake').disabled = !st.ready
+    $('chat-wake').title = st.ready ? 'One turn: it reads what changed and answers' : 'It cannot run yet — start it first'
+
     if (!changed('supervisor-state', st)) return
 
     if (!st.there) {
-      fill($('supervisor-state'), el('span', { className: 'muted', textContent: 'no supervisor machine', title: st.note }))
-      return standIn(st, [])
+      return fill($('supervisor-state'), el('span', { className: 'muted', textContent: 'no supervisor machine', title: st.note }))
     }
 
     const one = (st.supervisors || [])[0] || {}
@@ -171,9 +190,6 @@ function paintSupervisorState () {
           title: 'Starts the machine, waits for it to dial in, and signs it in',
           onclick: () => press('supervisorUp', 'Starting it and signing it in — this takes a minute.')
         }))
-
-    // AND THE BOX YOU TYPE INTO GOES WITH IT.
-    standIn(st, st.supervisors || [])
   }).catch(() => { /* the chrome says when the dashboard is unreachable */ })
 }
 
@@ -188,8 +204,16 @@ function paintSupervisorState () {
 // So when nothing can read it, the composer is replaced in place by the decision
 // that would actually help: which supervisor, and start it. Same position, same
 // height, so the page does not jump when one comes up.
+// WHICH OF THE TWO OFF-BODIES IS SHOWING. Remembered across draws but not
+// across sessions: a tab that opens on the log because somebody read it once
+// last week is a tab that hides the thing they came for.
+let offlineReading = false
+
 function standIn (st, rows) {
   const ready = !!(st && st.ready)
+  // Reset the moment one is up, so putting the next one away starts on the
+  // decision again rather than wherever this was left.
+  if (ready) offlineReading = false
 
   // THE WHOLE BODY GOES, not only the composer. A thread nothing can answer is
   // not useful context — it is a record of a conversation with something that is
@@ -199,10 +223,15 @@ function standIn (st, rows) {
   //
   // THE HEADER STAYS, because it says WHY: the name, "cannot run", and what it
   // is signed in as. That line is the answer to the question this screen raises.
-  for (const id of ['chat-note', 'chat-thread', 'chat-composer']) {
-    $(id).classList.toggle('hidden', !ready)
-  }
-  $('chat-offline').classList.toggle('hidden', ready)
+  // THE COMPOSER IS THE ONE THING THAT NEVER COMES BACK WHILE IT IS DOWN.
+  // Reading what was said is useful with nothing running — especially when
+  // supervisors are being swapped, since the conversation outlives any one of
+  // them. Typing is not: a message goes nowhere and waits, looking sent.
+  const showThread = ready || offlineReading
+  $('chat-note').classList.toggle('hidden', !showThread)
+  $('chat-thread').classList.toggle('hidden', !showThread)
+  $('chat-composer').classList.toggle('hidden', !ready)
+  $('chat-offline').classList.toggle('hidden', showThread)
 
   // AND THE HEADER'S OWN WAKE BUTTON, which is not this panel's but is the one
   // thing on the screen that would still do nothing if pressed. A control that
@@ -211,9 +240,23 @@ function standIn (st, rows) {
   $('chat-wake').title = ready ? 'One turn: it reads what changed and answers' : 'It cannot run yet — start it first'
   if (ready) return
 
-  if (!changed('chat-offline', [rows.map(r => `${r.name}${r.state}${r.signedInAs || ''}`), !!(st && st.there)])) return
+  if (!changed('chat-offline', [rows.map(r => `${r.name}${r.state}${r.signedInAs || ''}`), !!(st && st.there), offlineReading])) return
 
   const instead = $('chat-offline')
+
+  // READING IT WHILE NOTHING IS UP. The way back is a button in the same place
+  // the decision was, so the body has one control at a time and it is always in
+  // the middle of the screen.
+  if (offlineReading) {
+    return fill(instead,
+      el('p', { className: 'why muted', textContent: 'Nothing is running. This is what was said — you cannot add to it until a supervisor is up.' }),
+      el('button', {
+        className: 'btn',
+        textContent: 'Back',
+        onclick: () => { offlineReading = false; forget('chat-offline'); paintSupervisorState() }
+      }))
+  }
+
   if (!st || !st.there) {
     return fill(instead,
       el('p', { className: 'why', textContent: 'This host has no supervisor machine.' }),
@@ -242,10 +285,17 @@ function standIn (st, rows) {
           const chose = pick ? pick.value : (rows[0] || {}).name
           press('supervisorUp', `Starting ${chose} and signing it in — this takes a minute.`)
         }
+      }),
+      // THE CONVERSATION OUTLIVES ANY ONE SUPERVISOR, which is the whole reason
+      // this is here: swapping machines is expected, and what was said belongs
+      // to the host rather than to the machine that happened to say it. Every
+      // message already records which machine did — see `from` in core/chat.js.
+      el('button', {
+        className: 'btn',
+        textContent: 'Read what was said',
+        title: 'The conversation so far, including anything an earlier supervisor said',
+        onclick: () => { offlineReading = true; forget('chat-offline'); paintSupervisorState() }
       })),
-    // SAID PLAINLY, because a message typed while it is down is not lost — it is
-    // kept and delivered whenever one next wakes, which is the behaviour that
-    // makes an accepting composer worse than none at all.
     el('p', { className: 'why muted', textContent: 'Anything said while it is down would wait unread until one is up, so there is nowhere to type until then.' }))
 }
 
