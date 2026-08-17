@@ -257,14 +257,22 @@ function paintJudgementDetail (j) {
       // THROUGH branchWorkOn, which is the action that already does this — the
       // machine is borrowed, the queue leaves it alone, and giving it back is
       // vmReturn. A second path to a machine is a second set of rules.
-      j.subject
+      // NOT WHILE A MACHINE IS READING IT. Opening the change means borrowing a
+      // machine and setting it up on the same branch — which the branch claim
+      // refuses while a judge holds it, so this would be a button whose only
+      // outcome is a refusal. Offered again the moment the reading ends.
+      j.subject && j.state !== 'given'
         ? el('button', {
           className: 'btn',
           textContent: 'Open in VS Code',
           onclick: () => openToRead(j, 'editor')
         })
         : null,
-      j.subject
+      // NOT WHILE A MACHINE IS READING IT. Opening the change means borrowing a
+      // machine and setting it up on the same branch — which the branch claim
+      // refuses while a judge holds it, so this would be a button whose only
+      // outcome is a refusal. Offered again the moment the reading ends.
+      j.subject && j.state !== 'given'
         ? el('button', {
           className: 'btn',
           textContent: 'Open a terminal',

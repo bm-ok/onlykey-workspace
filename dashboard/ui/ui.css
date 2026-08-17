@@ -624,7 +624,15 @@ table.kv th {
   vertical-align: top;
   font-size: 12px;
 }
-table.kv td { padding: 3px 0; word-break: break-all; }
+/* BREAK ANYWHERE ONLY WHEN THERE IS NOWHERE ELSE TO BREAK. `break-all` is right
+   for what this table mostly holds — a branch name, a commit, a path, a
+   fingerprint, none of which have spaces and all of which must not push the
+   column wide. It is wrong for a sentence: "it has not finished reading" came
+   out as "readin / g".
+
+   `break-word` keeps whole words together and still breaks a long unspaced
+   value, which is both cases rather than the more common one. */
+table.kv td { padding: 3px 0; word-break: break-word; overflow-wrap: anywhere; }
 
 /* A fact in a fact table that is good or bad news, coloured as a sentence
    rather than as a pill. `bad` and `ok` existed only as modifiers of .badge and

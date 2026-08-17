@@ -94,7 +94,39 @@ function rememberThis (id) {
   return size
 }
 
-function call (method, where, body, { timeout = 20000 } = {}) {
+// A CONNECTION OF ITS OWN, EVERY TIME, AND ONE RETRY.
+//
+// This cost a whole run and was invisible until the machine was made to say why.
+// Node's global agent keeps sockets alive and pools them. A job makes a couple
+// of calls, then hands the machine to a worker for four minutes, then comes back
+// to hand its findings over — and the pooled socket has been dead for most of
+// that. The first write after the pause fails with EPIPE.
+//
+// It failed in the worst possible order, too: `log` and `report` swallow their
+// errors, so the run printed two "did not reach the dashboard" notes and carried
+// on; `artifact` throws, correctly, because a job asked to produce something and
+// unable to hand it over HAS failed. So a judge read three repositories for four
+// minutes, wrote a 22,000-character survey, passed every check, and the run
+// ended with nothing handed back and "exit 1" as the only thing on this host.
+//
+// `agent: false` is the fix: a fresh connection per call. The cost is one TLS
+// handshake per request, on a machine that makes a handful — nothing, against a
+// pause that is always longer than any keep-alive.
+//
+// THE RETRY IS BELT AND BRACES, and only for the errors that mean "this socket is
+// gone" rather than "the dashboard said no". A run that dies at the handoff
+// throws away everything it just did, which is worth one more attempt.
+const GONE = new Set(['EPIPE', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EHOSTUNREACH'])
+
+function call (method, where, body, opts = {}) {
+  return once(method, where, body, opts).catch(e => {
+    if (!GONE.has(e && e.code)) throw e
+    process.stdout.write('okc: the connection to the dashboard had gone (' + e.code + '), trying once more\n')
+    return new Promise(r => setTimeout(r, 1000)).then(() => once(method, where, body, opts))
+  })
+}
+
+function once (method, where, body, { timeout = 20000 } = {}) {
   return new Promise((resolve, reject) => {
     if (!BASE) return reject(new Error('this run was not told where the dashboard is, so it cannot hand anything back'))
     if (!VM || !TOKEN) return reject(new Error('this run was not given its machine credential'))
@@ -106,6 +138,8 @@ function call (method, where, body, { timeout = 20000 } = {}) {
       method,
       ca,
       auth: VM + ':' + TOKEN,
+      // Never pooled. See above.
+      agent: false,
       headers: body ? { 'content-length': Buffer.byteLength(body) } : {}
     }, res => {
       const chunks = []

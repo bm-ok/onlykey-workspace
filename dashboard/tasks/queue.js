@@ -319,6 +319,33 @@ async function runJudgement (actions, log, judgement, machine) {
 
     const outcome = await phase('reading', () => waitForRun(actions, to, machine, started.run, Number(judgement.hours) || 6))
 
+    // ---- WHY, IF IT WENT WRONG, WHILE THE MACHINE IS STILL UP ------------
+    //
+    // A job's own output lives ON THE MACHINE, and the machine is restored to
+    // its base snapshot the moment this function ends. So a run that failed
+    // takes the reason with it, and what is left on this host is "exit 1" and
+    // nothing else.
+    //
+    // That cost two diagnoses today. The second was worse than the first: a
+    // judge read three repositories for four minutes, wrote a 21,000-character
+    // survey, and the run still exited 1 — and the sentence saying why was
+    // deleted with the machine before anybody could read it.
+    //
+    // READ ONLY WHEN IT FAILED, because a successful run's output is already
+    // summarised and this is a round trip to a machine that is about to go away.
+    if (outcome.exit !== 0) {
+      try {
+        const tail = await actions.vmRunOutput.run({ name: machine, run: started.run, lines: 30 })
+        const said = String((tail && (tail.output || tail.tail)) || '').trim()
+        if (said) {
+          to.bad(`${ref} failed — what the run said before the machine was put away:`)
+          for (const line of said.split('\n').slice(-30)) to.info('  ' + line)
+        }
+      } catch (e) {
+        to.warn(`${ref} failed and its output could not be read off ${machine}: ${e.message}`)
+      }
+    }
+
     // WHAT CAME BACK, before the machine is touched again — it is about to be
     // rolled back, which is exactly when nobody is watching.
     const handed = files.list(judgement.uid) || []
