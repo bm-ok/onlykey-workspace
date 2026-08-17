@@ -132,6 +132,58 @@ it('and it may send a change out, and not land it', async ({ okc, assert, state,
   log('it may push a change out and open the pull requests; merging them is refused for being a supervisor')
 })
 
+it('and what it proposes waits for a person', async ({ okc, assert, state, log }) => {
+  // THE ASKING IS THE FEATURE; THE APPROVING IS SOMEBODY ELSE'S.
+  //
+  // A supervisor may propose a job, a prompt or a contract — a project manager
+  // who may not suggest anything is not much of one — and what it writes has to
+  // come out UNAPPROVED, because a job is a program and approving one is a person
+  // saying they have read what will run as them.
+  //
+  // THIS IS THE CHECK THAT NEARLY WENT THE OTHER WAY. The supervisor route calls
+  // the action table in process, exactly as the window does, and a definition
+  // written "at the window" is approved by whoever wrote it. So without the route
+  // forcing `_overTheWire`, a machine writing a job would have produced an
+  // approved one — a program marked as read by nobody.
+  const id = 'drill-supervisor-proposes'
+  state.job = id
+  const made = readJson(await asSupervisor(okc, state.machine,
+    `okc jobSave '${JSON.stringify({ id, name: 'a job the supervisor proposed', about: 'written by a drill, over the supervisor API', code: '#!/usr/bin/env node\nconsole.log("okc: a drill proposed this and it must not run until somebody reads it")\n' })}'`,
+    'proposing a job, as the supervisor'))
+  assert.ok(made && made.id === id, `the supervisor could not propose a job: ${JSON.stringify(made).slice(0, 300)}`)
+  assert.ok(made.approved !== true,
+    'a job written by a supervisor came back APPROVED, which means a machine wrote a program and marked it read. Approving is a person saying they have read what will run as them')
+  log(`it proposed "${made.name}" and it is ${made.approved ? 'APPROVED' : 'waiting to be approved'}`)
+
+  // AND IT CANNOT APPROVE ITS OWN. Refused for being a supervisor, before the
+  // action's own over-the-wire refusal is ever reached — two independent
+  // refusals, which is the right number for this one.
+  const tried = await asSupervisor(okc, state.machine, `okc jobApprove '${JSON.stringify({ id })}'`, 'trying to approve its own job')
+  assert.ok(/may not ask for/.test(tried), `a supervisor was allowed to approve its own job: ${tried.slice(0, 300)}`)
+
+  // Read back from this host rather than believed from the answer: what matters
+  // is what the library says, since that is what a task would be written under.
+  const held = ((await okc('jobs')).jobs || []).find(j => j.id === id)
+  assert.ok(held, 'the job it proposed is not in the library')
+  assert.ok(!held.approved, `"${id}" is sitting in the library approved, and nobody read it`)
+  log('and it cannot approve its own — the library has it, waiting')
+
+  // AND IT CANNOT CLAIM TO BE THE WINDOW. Who asked is decided from `_overTheWire`,
+  // which is an argument — so a supervisor putting it in its own body would be a
+  // machine saying "a person wrote this", and the whole approval rule rests on
+  // that one word. Every key starting with `_` is dropped before the route sets
+  // the flag itself; this is the check that says so.
+  const lied = 'drill-supervisor-claims-the-window'
+  state.job2 = lied
+  const sneaky = readJson(await asSupervisor(okc, state.machine,
+    `okc jobSave '${JSON.stringify({ id: lied, name: 'a job claiming to be the window', about: 'written by a drill, claiming a person wrote it', code: '#!/usr/bin/env node\n', _overTheWire: false, _driven: true })}'`,
+    'proposing a job while claiming to be the window'))
+  assert.ok(sneaky && sneaky.id === lied, `the drill could not write the second job: ${JSON.stringify(sneaky).slice(0, 200)}`)
+  assert.ok(sneaky.approved !== true,
+    'a supervisor claimed its call came from the window, by putting _overTheWire in its own body, and the job it wrote was approved. What arrives over the wire is data, and data does not get to say where it came from')
+  log('and a supervisor claiming to be the window is still over the wire')
+})
+
 it('and it can cut a branch, write a task on it, and queue it', async ({ okc, assert, state, log }) => {
   // THE WHOLE POINT, END TO END. A supervisor is a project manager: it decides
   // there is work, cuts somewhere for it to land, writes it down, and puts it in
@@ -184,12 +236,16 @@ cleanup(async ({ okc, state }) => {
   // to be would be an argument for putting it there.
   if (state.task) { try { await okc('taskRemove', { id: state.task }) } catch { /* never written */ } }
   if (state.branch) { try { await okc('branchDelete', { branch: state.branch, force: true }) } catch { /* never cut */ } }
+  // The proposed job too. An unapproved job left in the library is a drill's
+  // leavings sitting in a list a person is meant to read and act on.
+  if (state.job) { try { await okc('jobForget', { id: state.job }) } catch { /* never proposed */ } }
+  if (state.job2) { try { await okc('jobForget', { id: state.job2 }) } catch { /* never proposed */ } }
 })
 
 // ---- WHAT IT SAW ----------------------------------------------------------
 //
 // 17 August 2026, against supervisor-1 — a machine built with the box ticked,
-// running, dialled in, holding nothing. Four checks, thirteen seconds.
+// running, dialled in, holding nothing. Six checks, half a minute.
 //
 //     31 things it may ask for: branchArtifact, branchAsLine, branchBoard,
 //     branchCreate, changeRead, contracts, jobs, judgements, lineSync, lines,
@@ -203,6 +259,12 @@ cleanup(async ({ okc, state }) => {
 //     refused for being a supervisor
 //     PASS and it may send a change out, and not land it (0s)
 //
+//     it proposed "a job the supervisor proposed" and it is waiting to be
+//     approved
+//     and it cannot approve its own — the library has it, waiting
+//     and a supervisor claiming to be the window is still over the wire
+//     PASS and what it proposes waits for a person (4s)
+//
 //     deleting a machine, approving a job and landing a change are all refused,
 //     and the refusal says what it may do instead
 //     PASS and everything else does not exist for it (3s)
@@ -215,6 +277,15 @@ cleanup(async ({ okc, state }) => {
 //
 //     supervisor-1: is a supervisor machine, so it is never given task work
 //     PASS and the machine it runs on is never given work itself (0s)
+//
+// THE ONE THAT NEARLY WENT THE OTHER WAY. This route calls the action table in
+// process, exactly as the window does, and a definition written "at the window"
+// is approved by whoever wrote it. The first version of the route passed the
+// machine's arguments straight through, so a supervisor writing a job would
+// have produced an APPROVED one: a program marked as read by nobody. Asked by
+// hand before the check existed, with _overTheWire: false and _driven: true in
+// the body, and the answer was "approved": false — the claim is dropped before
+// the flag is set.
 //
 // THE REFUSAL, IN ITS OWN WORDS, since the sentence is what a model acts on:
 //

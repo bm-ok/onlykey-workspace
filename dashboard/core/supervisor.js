@@ -32,9 +32,10 @@
 //
 //   approving anything     jobApprove, promptApprove, contractApprove. Approving
 //                          is already refused over the wire, on purpose, and a
-//                          supervisor is over the wire. It may write a task under
-//                          a job a PERSON approved; it cannot decide what a
-//                          worker is allowed to be told.
+//                          supervisor is over the wire. It may PROPOSE a job, a
+//                          prompt or a contract — see the saves below, which
+//                          write one that waits — and it cannot approve its own.
+//                          A person reads it in the window and says yes.
 //   deleting anything      taskRemove, branchDelete, jobForget, prCutForget. A
 //                          project manager that can throw work away is one bad
 //                          turn from an empty board, and nothing here needs it.
@@ -78,8 +79,10 @@ const MAY = {
   branchBoard: 'every branch, who claims it, and what is on it',
   lines: 'the named lines, which are what a branch is cut from',
   jobs: 'the jobs it may write a task under — a job is a script a person approved',
+  job: 'one job with its script in full, so it can read what it is proposing to change',
   prompts: 'the prompt library, which is what a worker can be told',
   contracts: 'the contract library, which is the rules a worker is held to',
+  contract: 'one contract with its rules in full',
   prCuts: 'every change that has been sent out, and how far each has got',
   prCutState: 'what became of one change once it was sent, read from GitHub rather than remembered',
   judgements: 'what has been judged about a change, and whether it still describes what is there',
@@ -98,6 +101,26 @@ const MAY = {
   taskCreate: 'write a task on a branch that has been cut, under a job and contract a person approved',
   taskQueue: 'put a task in the queue, so the next free machine takes it',
   taskUnqueue: 'take a task back out of the queue, for one that should not have gone in',
+
+  // ---- and what it may PROPOSE ---------------------------------------------
+  //
+  // A supervisor that can only write tasks under definitions somebody else wrote
+  // is a project manager who may not suggest anything. It can write a job, a
+  // prompt or a contract — and what it writes WAITS.
+  //
+  // That is not a rule added here. A definition written over the wire is
+  // unapproved by construction, and approving is refused over the wire outright:
+  // "a model may write one and may not approve its own". This route makes sure a
+  // supervisor is over the wire whatever it says about itself — see server.js —
+  // because it calls in process exactly as the window does, and without that a
+  // supervisor writing a job would have produced an approved one.
+  //
+  // So the shape is: it proposes, a person reads it in the window and says yes,
+  // and only then can a task be written under it. The asking is the feature; the
+  // approving is deliberately somebody else's.
+  jobSave: 'propose a job, or a change to one. What it writes is unapproved and cannot run until a person reads it',
+  promptSave: 'propose a prompt, or a change to one. It waits for a person the same way',
+  contractSave: 'propose a contract, or a change to one. It waits for a person the same way',
 
   // ---- and what it may send onward -----------------------------------------
   //

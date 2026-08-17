@@ -464,11 +464,33 @@ function handler (req, res) {
           return
         }
 
+        // IT IS OVER THE WIRE, AND IT DOES NOT GET TO SAY OTHERWISE.
+        //
+        // Several actions behave differently depending on who asked. A job,
+        // prompt or contract written AT THE WINDOW is approved by whoever wrote
+        // it, because a person read it; written OVER THE WIRE it waits. And
+        // approving is refused over the wire outright — "a model may write one
+        // and may not approve its own".
+        //
+        // That is decided from `_overTheWire`, which the caller passes. This
+        // route calls `call()` in process, exactly as the window does, so
+        // without this a supervisor writing a job would have produced an
+        // APPROVED one: a machine writing a program and marking it read.
+        //
+        // Two halves, and the second is the one that would have been forgotten:
+        // every key the machine sent that starts with `_` is dropped before the
+        // flag is set, so a supervisor cannot claim to be the window by putting
+        // `_overTheWire: false` or `_driven: true` in its own body. What arrives
+        // over the wire is data, and data does not get to say where it came from.
+        const clean = {}
+        for (const [k, v] of Object.entries(args)) if (!k.startsWith('_')) clean[k] = v
+        clean._overTheWire = true
+
         try {
           // THROUGH THE SAME DOOR EVERY OTHER CALLER USES. This decides whether;
           // `call` decides how, and every refusal, workspace gate and record that
           // applies to a person at the window applies here unchanged.
-          const said = await call(what, args)
+          const said = await call(what, clean)
           // KEPT, because this is the record of a machine deciding something. It
           // is the one log line that answers "why is there a task nobody wrote".
           log.on('supervisor', name).good(`${name} asked for "${what}" and it was done`)
