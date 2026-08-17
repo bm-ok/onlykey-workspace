@@ -31,12 +31,11 @@ const path = require('node:path')
 const GUEST_API = fs.readFileSync(path.join(__dirname, 'job-api.js'), 'utf8')
 const GUEST_RUNNER = fs.readFileSync(path.join(__dirname, 'job-runner.js'), 'utf8')
 
-// THE WATCHER, WRITTEN INTO EVERY RUN'S DIRECTORY. Not a module on this host:
-// it runs in the guest, on the guest's node, reading the log that guest is
-// writing. Kept here as text for the same reason the contract is carried rather
-// than referenced -- it has to exist on a machine that has never heard of it.
-const GUEST_WATCH = "'use strict'\n\n// WHAT A WORKER IS DOING, WHILE IT IS DOING IT.\n//\n// The run log is Claude stream-json: one event per line, each a complete JSON\n// object carrying more than anybody watching wants. This turns it into the four\n// things a person is actually looking for -- what it said, what it reached for,\n// what came back, and what it cost -- and drops the rest.\n//\n// It reads stdin and nothing else, so it is a filter: `tail -f | this`. Nothing\n// here decides what to follow, which is why it also works on a finished run.\nconst DIM = '\\x1b[38;5;244m'\nconst OFF = '\\x1b[0m'\nconst LIT = '\\x1b[38;5;39m'\nconst BAD = '\\x1b[31m'\n\nlet rest = ''\nprocess.stdin.setEncoding('utf8')\nprocess.stdin.on('data', d => {\n  rest += d\n  const lines = rest.split('\\n')\n  // The last piece is whatever arrived without its newline yet. Held rather\n  // than parsed: tail hands over what the writer has flushed, and half an event\n  // is the ordinary case rather than a broken one.\n  rest = lines.pop()\n  for (const line of lines) show(line)\n})\n\n// One line, and short enough to sit in a terminal beside a name.\nfunction brief (s) {\n  const one = String(s == null ? '' : s).replace(/\\s+/g, ' ').trim()\n  return one.length > 140 ? one.slice(0, 137) + '...' : one\n}\n\nfunction show (line) {\n  const text = line.trim()\n  if (!text) return\n  // Anything that is not an event is printed as it came. A worker that fails\n  // to start says so in plain words, and that is the most important line in\n  // the file when it happens.\n  if (text.charAt(0) !== '{') { console.log(DIM + text + OFF); return }\n\n  let e = null\n  try { e = JSON.parse(text) } catch (err) { console.log(DIM + brief(text) + OFF); return }\n\n  if (e.type === 'system') {\n    console.log(DIM + '[' + (e.subtype || 'system') + (e.model ? ' ' + e.model : '') + ']' + OFF)\n    return\n  }\n\n  if (e.type === 'assistant' && e.message) {\n    for (const part of e.message.content || []) {\n      if (part.type === 'text' && String(part.text).trim()) console.log(String(part.text).trim())\n      if (part.type === 'tool_use') {\n        const put = part.input || {}\n        const what = put.command || put.file_path || put.path || put.pattern || put.url || put.prompt || ''\n        console.log(LIT + '-> ' + part.name + OFF + (what ? ' ' + DIM + brief(what) + OFF : ''))\n      }\n    }\n    return\n  }\n\n  if (e.type === 'user' && e.message) {\n    for (const part of e.message.content || []) {\n      if (part.type !== 'tool_result') continue\n      const body = part.content\n      const said = typeof body === 'string'\n        ? body\n        : (Array.isArray(body) ? body.map(x => (x && x.text) || '').join(' ') : '')\n      const lines = String(said).split('\\n').length\n      console.log((part.is_error ? BAD : DIM) + '   ' + brief(said) +\n        (lines > 1 ? ' (' + lines + ' lines)' : '') + OFF)\n    }\n    return\n  }\n\n  if (e.type === 'result') {\n    console.log(LIT + '[' + (e.subtype || 'result') + ' -- ' + (e.num_turns || 0) + ' turns' +\n      (e.total_cost_usd ? ', ' + Number(e.total_cost_usd).toFixed(4) + ' USD' : '') + ']' + OFF)\n  }\n}"
-
+// THE WATCHER, READ THE SAME WAY. It runs in the guest, on the guest's node,
+// reading the log that guest is writing -- see machines/watch-guest.js, which
+// is a real file for the same reason the two above are. The supervisor writes
+// the same one for its own turns; one watcher, two places it is used.
+const GUEST_WATCH = fs.readFileSync(path.join(__dirname, 'watch-guest.js'), 'utf8')
 // Shell-single-quoted. Everything here crosses into a script, and a task is
 // written by a person -- or by another agent -- so its shape is not this file's
 // to assume.
@@ -53,6 +52,37 @@ function heredoc (path, body, tag) {
     throw new Error(`That text contains a line reading exactly "${tag}", which is the marker used to send it to the machine. Change that line.`)
   }
   return `cat > ${path} <<'${tag}'\n${body}\n${tag}`
+}
+
+// A WAY TO STAND BEHIND A MODEL AND WATCH IT WORK, in a directory on a machine.
+//
+// Shell that writes two files and makes one of them executable: the watcher
+// itself, which is node and lives at machines/watch-guest.js, and a launcher
+// that pipes a log into it. Two files rather than one because the pipe is shell
+// and the parsing is node, and putting node inside a quoted shell string is how
+// this file's contents get corrupted.
+//
+// USED IN TWO PLACES AND THEREFORE WRITTEN IN ONE. A worker's run gets it in the
+// run's own directory; the supervisor gets it in its own, for the turn it is
+// taking. The two logs are produced by different machinery and read identically,
+// because both are claude's stream-json.
+//
+// `tail -F` RATHER THAN `-f`, and that is the difference between watching one
+// log and watching a machine. -F follows by NAME: when the supervisor relinks
+// current.log to its next turn, a terminal already open picks it up and carries
+// on. With -f it would sit on a file nothing writes to again.
+function watcherFor (dir, log) {
+  return [
+    `mkdir -p ${dir}`,
+    heredoc(`${dir}/watch.js`, GUEST_WATCH, 'OKC_WATCH_EOF'),
+    heredoc(`${dir}/okc-watch`, `#!/bin/sh
+# okc-watch -- follow what the model is doing, as a person can read it.
+# Ctrl-C stops the watching and does not touch what is being watched.
+set -eu
+exec tail -n +1 -F "${log}" | node "${dir}/watch.js"
+`, 'OKC_WATCH_SH_EOF'),
+    `chmod +x ${dir}/okc-watch`
+  ].join('\n')
 }
 
 // Where a run's record lives on the machine. One directory per run: the prompt
@@ -167,24 +197,13 @@ exit 0
 `, 'OKC_SAY_EOF')}
 chmod +x ${dir}/okc-say
 
-# AND A WAY TO STAND BEHIND IT AND WATCH.
+# AND A WAY TO STAND BEHIND IT AND WATCH -- see watcherFor above.
 #
 # The run log is followed rather than summarised, because the question this
-# answers is "is it doing anything" -- which a status field cannot answer and
-# a finished report answers too late. Dispatch asks claude for stream-json for
+# answers is "is it doing anything", which a status field cannot answer and a
+# finished report answers too late. Dispatch asks claude for stream-json for
 # exactly this reason; without a reader the file is correct and unreadable.
-#
-# Two files rather than one, because the pipe is shell and the parsing is node,
-# and putting node inside a quoted shell string is how this gets corrupted.
-${heredoc(`${dir}/watch.js`, GUEST_WATCH, 'OKC_WATCH_EOF')}
-${heredoc(`${dir}/okc-watch`, `#!/bin/sh
-# okc-watch -- follow this run as a person can read it. Ctrl-C stops watching
-# and does not touch the run.
-set -eu
-here=$(dirname "$0")
-exec tail -n +1 -f "$here/out.log" | node "$here/watch.js"
-`, 'OKC_WATCH_SH_EOF')}
-chmod +x ${dir}/okc-watch
+${watcherFor(dir, `${dir}/out.log`)}
 
 # AND THE SKILL THAT SAYS WHAT ANY OF THIS IS.
 #
@@ -402,4 +421,49 @@ function runs (out) {
 // is a name somebody types back to ask what happened to it.
 const newId = () => 'run-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
 
-module.exports = { script, list, output, runs, stop, newId, RUNS, path }
+// ONE TURN OF THE SUPERVISOR, as the machine will receive it.
+//
+// HERE RATHER THAN IN THE ACTION THAT SENDS IT. Everything below is shell
+// heading for a guest, and shell assembled inside an action is shell nothing can
+// look at without waking a supervisor to watch what happens -- which is how a
+// `continue` outside a loop and a self-matching `pkill` both reached a machine
+// in this project. Built here, it can be printed, checked with `bash -n`, and
+// read by somebody who is not currently debugging it.
+//
+// WHAT IT DOES, IN ORDER, and each line is load-bearing:
+//
+//   the skill is refreshed, so it supervises by this host's current rules
+//   the watcher is written, so a person can stand behind it
+//   the brief is decoded from base64 -- it is prose with apostrophes in it, and
+//     it is heading for a bash -c inside an ssh command
+//   current.log is relinked to this turn, so a terminal already open follows it
+//   the turn runs, writing stream-json to this turn's own file
+//   the brief is removed
+//
+// THE TRANSCRIPT GOES TO A FILE, NOT DOWN THE CHANNEL. It used to come back as
+// prose at the end, and exactly one thing read it: the skill-refresh marker,
+// which is echoed before any of this and still arrives. What a turn PRODUCES
+// reaches the host through the supervisor API rather than through stdout, so
+// nothing downstream loses anything -- and a supervisor is never rolled back, so
+// the file is still there tomorrow when somebody asks what it did.
+//
+// `timeout 600` IS KEPT. A turn that has stopped making progress must not hold
+// the channel for ever, and ten minutes is longer than any turn that has worked.
+const SUPERVISOR = '$HOME/.okc-supervisor'
+
+function supervisorTurn ({ stamp, brief, refresh }) {
+  const turn = `${SUPERVISOR}/turns/${stamp}.log`
+  return [
+    `cd ~ && ${refresh}`,
+    `mkdir -p ${SUPERVISOR}/turns`,
+    // Follows current.log rather than this turn's file, so a terminal left open
+    // shows every wake instead of one and then silence.
+    watcherFor(SUPERVISOR, `${SUPERVISOR}/current.log`),
+    `printf %s '${brief}' | base64 -d > /tmp/okc-wake.txt`,
+    `ln -sfn ${turn} ${SUPERVISOR}/current.log`,
+    `timeout 600 bash -lc 'okc-supervisor -p "$(cat /tmp/okc-wake.txt)" --output-format stream-json --verbose > ${turn} 2>&1'`,
+    'rm -f /tmp/okc-wake.txt'
+  ].join('\n')
+}
+
+module.exports = { script, list, output, runs, stop, newId, watcherFor, supervisorTurn, SUPERVISOR, RUNS, path }

@@ -353,8 +353,37 @@ module.exports = {
             '&& echo okc-skill-refreshed || echo okc-skill-stale'
           : 'echo okc-skill-stale'
 
+        // ---- AND IT CAN BE WATCHED WHILE IT THINKS -------------------------
+        //
+        // A turn is a command over the channel, which hands back everything at
+        // the end -- so a supervisor thinking for four minutes was a spinner and
+        // nothing else, exactly as a worker's run was until dispatch started
+        // asking for `stream-json`. This is the same fix in the other half of
+        // the app: the turn writes one event per line to a file on the machine,
+        // and `okc-watch` there follows it.
+        //
+        // THE FILE IS WHERE THE OUTPUT GOES, not a copy of it. `said.output`
+        // carried the whole turn as prose and exactly one thing read it -- the
+        // skill-refresh marker, which is echoed before any of this and still
+        // arrives. What a turn actually PRODUCES reaches this host through the
+        // supervisor API, not through stdout, so nothing downstream loses
+        // anything by the transcript going to a file instead. What is gained is
+        // that it is a file: a supervisor is never rolled back, so a turn that
+        // went wrong is still readable tomorrow.
+        //
+        // ONE PER TURN, AND A NAME THAT DOES NOT MOVE. `current.log` is
+        // relinked at the start of each turn, so a terminal left running
+        // `tail -F` on it shows every wake as it happens rather than one and
+        // then silence -- which is the way somebody actually watches this.
+        // BUILT IN machines/, checked in machines/. What reaches a machine is
+        // shell, and shell assembled in an action is shell nothing can render
+        // without waking a supervisor to see it -- which is how a `continue`
+        // outside a loop and a self-matching `pkill` both got as far as a guest
+        // in this project. `supervisorTurn` hands back the text, and the suite
+        // runs `bash -n` over it.
+        const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-')
         const said = await channel.run(on,
-          `cd ~ && ${refresh}; printf %s '${b64}' | base64 -d > /tmp/okc-wake.txt && timeout 600 bash -lc 'okc-supervisor -p "$(cat /tmp/okc-wake.txt)"'; rm -f /tmp/okc-wake.txt`,
+          s.dispatch.supervisorTurn({ stamp, brief: b64, refresh }),
           { what: 'one turn of the supervisor', timeout: 660000 })
 
         if (/okc-skill-stale/.test(said.output || '')) {
@@ -382,6 +411,26 @@ module.exports = {
         const used = supervisor.asksSoFar() - askedBefore
         if (!used) {
           log.on('supervisor', on).bad(`it woke and asked for nothing in ${took}s — it cannot use this app, so nothing was done`)
+
+          // AND WHAT IT SAID BEFORE IT STOPPED, which used to be nowhere.
+          //
+          // The turn's transcript is a file on the machine now, and this is the
+          // moment it is worth reading: a turn that asked for nothing has a
+          // reason, and the reason is in there. It was previously in `output`
+          // and was not looked at, then briefly nowhere at all.
+          //
+          // Best effort and short. The failure being diagnosed may well be the
+          // machine itself, so this must not become a second thing that hangs;
+          // the whole file is still on the machine for anybody who wants it.
+          try {
+            const tail = await channel.run(on,
+              `tail -c 1200 ${s.dispatch.SUPERVISOR}/current.log 2>/dev/null || true`,
+              { what: 'reading why the turn did nothing', timeout: 20000, quiet: true })
+            const words = String(tail.output || '').trim()
+            if (words) log.on('supervisor', on).info(`the end of its transcript: ${words.slice(-600)}`)
+          } catch (e) {
+            log.on('supervisor', on).warn(`could not read its transcript: ${e.message}`)
+          }
           try {
             chat.say({
               who: 'supervisor',

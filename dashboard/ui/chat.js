@@ -195,6 +195,26 @@ function paintSupervisorState () {
       one.signedInAs
         ? el('span', { className: 'muted', style: 'margin-left:8px', title: `fingerprint ${one.fingerprint || ''}`, textContent: one.signedInAs })
         : el('span', { className: 'warn', style: 'margin-left:8px', title: 'A worker on it cannot authenticate, so waking it does nothing.', textContent: 'no credential' }),
+      // WATCHING IT THINK, which is the answer to the only question this row
+      // could not settle. "thinking" is true for four minutes whether it is
+      // reading what changed or stuck on something, and the turn's transcript
+      // is the only place the difference shows -- it goes to a file on the
+      // machine as it happens, and this follows that file.
+      //
+      // OFFERED WHENEVER THE MACHINE IS UP, not only while it is thinking. It
+      // follows `current.log` by name, so a terminal opened between wakes is
+      // already in place when the next one starts -- which is how somebody
+      // actually watches a supervisor, rather than racing to press a button
+      // during a turn they did not know had begun.
+      one.connected
+        ? el('button', {
+          className: 'btn',
+          style: 'margin-left:10px',
+          textContent: 'Watch it',
+          title: 'Follows its turns in a terminal, as they happen. Ctrl-C stops watching, not the turn.',
+          onclick: () => watchSupervisor(one.name)
+        })
+        : null,
       st.ready
         ? el('button', {
           className: 'btn',

@@ -220,6 +220,23 @@ function openShell (name, { what = null, cwd = null, task = null, then = null } 
 // Shared by tasks and judgements because a run is a run -- neither tab should
 // know how a log is followed, and the only difference between them is what the
 // tab is called.
+// THE SUPERVISOR'S OWN TURNS, followed the same way and from a fixed place.
+//
+// A worker's log is named after its run, because a run is a thing that happens
+// once. A supervisor wakes over and over on one machine, so the file it writes
+// is relinked to each new turn and this follows the LINK -- `tail -F`, by name.
+// A terminal opened between wakes is already in place when the next one starts,
+// which is how somebody watches a supervisor rather than racing a button.
+//
+// The path is the supervisor's box on the machine and is written by the same
+// helper that writes a run's -- see watcherFor in machines/dispatch.js.
+function watchSupervisor (machine) {
+  showTab('terminal')
+  return openShell(machine, { what: 'supervisor', then: '$HOME/.okc-supervisor/okc-watch' })
+    .then(() => say(`Following ${machine}'s turns. Ctrl-C stops watching, not the thinking.`))
+    .catch(e => say(`${machine} would not open a shell: ${e.message}`, 'bad'))
+}
+
 function watchRun (machine, run, what) {
   showTab('terminal')
   const dir = `$HOME/.okc-runs/${String(run).split("'").join('')}`
