@@ -341,11 +341,22 @@ module.exports = {
         return {
           ...whose(it),
           files: handed.map(f => ({ name: f.file, bytes: f.bytes, kept: f.kept || null })),
+          // A RUN THAT CRASHED IS NOT A JUDGE THAT FOUND NOTHING, and saying so
+          // is the whole of this branch. It said "it read the change and handed
+          // nothing back. That is an answer" about a job that died at `require`
+          // before reading a line — which sends whoever asked looking at the
+          // code for a fault that is in the judge.
+          //
+          // From the attempt's exit code, which the queue records — see
+          // tasks/queue.js. Absent on judgements from before that was kept, and
+          // absent reads as the old sentence, which is right for them.
           note: handed.length
             ? 'Ask again with a file name to read one in full.'
-            : it.state === 'done'
-              ? 'It read the change and handed nothing back. That is an answer: there is no finding, and nothing about the code is known from it.'
-              : 'Nothing yet — it has not finished reading.'
+            : it.state !== 'done'
+              ? 'Nothing yet — it has not finished reading.'
+              : (it.attempts || []).some(a => a.exit != null && a.exit !== 0)
+                ? `The run FAILED — it did not read the change. Nothing here is a finding about the code. Look at what it said before the machine was put away: taskLogs, or judgementFindings once it has run properly. Exit ${(it.attempts || []).map(a => a.exit).filter(x => x != null).pop()}.`
+                : 'It read the change and handed nothing back. That is an answer: there is no finding, and nothing about the code is known from it.'
         }
       }
 

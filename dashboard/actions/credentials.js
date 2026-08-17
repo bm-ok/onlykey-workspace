@@ -645,7 +645,30 @@ claude auth status 2>/dev/null || true
 # Dispatch writes it again, per run, which is not waste: a run's own directory
 # keeps its own copy so a finished run is still readable, and this one follows
 # whichever run is current.
-${dispatch.watcherFor(dispatch.RUNS, `${dispatch.RUNS}/current/out.log`)}`
+${dispatch.watcherFor(dispatch.RUNS, `${dispatch.RUNS}/current/out.log`)}
+
+# AND THE SSH DOOR, RE-OPENED, BECAUSE A ROLLBACK SHUT IT.
+#
+# vmAuthorizeKey writes this app key into a machine authorized_keys, which is
+# exactly right and exactly not durable: a runner is restored to its base
+# snapshot after every task, and base predates the key. So the door was open
+# until the next rollback and shut afterwards, while the registry went on saying
+# the machine accepts it -- which is worse than never having placed it, because
+# vmShell then offers a key that is refused and ssh reports Too many
+# authentication failures about a machine with no keys at all.
+#
+# It is re-placed HERE, with the credential, for the reason the watcher is: this
+# is the moment a machine becomes something a person watches, and it is the one
+# moment that recurs after every rollback. A supervisor is never rolled back and
+# needs it once; a runner needs it every time, and this is every time.
+#
+# Idempotent, and quiet about it -- see vmAuthorizeKey, which does the same
+# thing as an action for a machine that is not about to be given work.
+umask 077
+mkdir -p "$HOME/.ssh"
+touch "$HOME/.ssh/authorized_keys"
+chmod 700 "$HOME/.ssh" && chmod 600 "$HOME/.ssh/authorized_keys"
+grep -qxF '${String(ssh.publicKey() || '').trim()}' "$HOME/.ssh/authorized_keys" || printf '%s\\n' '${String(ssh.publicKey() || '').trim()}' >> "$HOME/.ssh/authorized_keys"`
 
       const r = await handover.deliver({
         run: (command, opts) => channel.run(name, command, opts),

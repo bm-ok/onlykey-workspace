@@ -391,9 +391,31 @@ module.exports = {
       process.stdout.write('okc: could not restore what this task remembers, starting fresh — ' + e.message + '\n')
     }
 
-    const args = ['-p', brief, '--dangerously-skip-permissions', '--output-format', 'json']
+    // ASKED FOR AS A STREAM, AND WRITTEN WHERE SOMEBODY CAN SEE IT.
+    //
+    // THIS WAS THE HALF THAT WAS MISSED. Dispatch was changed to ask for
+    // stream-json so a run could be watched, and that covered a plain task —
+    // where the shell redirects claude straight into out.log. A JOB does not go
+    // that way: it calls this function, which ran claude with `json` and
+    // captured stdout IN MEMORY. So for every job — which is every judge, and
+    // every task with a script behind it — the log stayed empty for the whole
+    // run and arrived complete at the end. The exact fault that was supposedly
+    // fixed, in the path that does most of the work.
+    const args = ['-p', brief, '--dangerously-skip-permissions', '--output-format', 'stream-json', '--verbose']
     if (rulesFile) args.push('--append-system-prompt-file', rulesFile)
     if (resume) args.push('--resume', String(resume))
+
+    // INTO THE JOB'S OWN out.log, rather than a file beside it.
+    //
+    // The job's log lines and the worker's events end up in one file, in the
+    // order they happened — which is what a person watching actually wants:
+    // "checking a claim on kit-1" followed by the worker reading files, not two
+    // logs to correlate by timestamp. The watcher prints anything that is not an
+    // event as it came, so the job's own narration reads normally between them.
+    //
+    // This file is where api.js lives — a run's directory holds both — so it is
+    // found without being told, and there is no path to pass down.
+    const logFile = path.join(__dirname, 'out.log')
 
     // THE ANSWER IS READ WHETHER OR NOT IT EXITED WELL, and that is not
     // defensive coding — it is the ordinary case. A machine with no worker
@@ -405,23 +427,42 @@ module.exports = {
     // worker failed: {"is_error":true,"duration_api_ms":0,...}" — the one useful
     // sentence buried in four hundred characters of telemetry, for the single
     // most likely thing to be wrong with a machine.
+    // WHERE THIS CALL'S EVENTS START, so what is read back afterwards is this
+    // worker's answer and not the one before it. A job may call claude more than
+    // once, and the file is appended to by all of them.
+    let from = 0
+    try { from = fs.statSync(logFile).size } catch { /* the first thing to write it */ }
+
     let out = ''
     let died = null
     try {
-      out = cp.execFileSync('claude', args, {
-        encoding: 'utf8',
+      cp.execFileSync('claude', args, {
         cwd: cwd || process.cwd(),
         timeout,
-        // A transcript is not small, and truncating one at the default 1MB turns
-        // a finished run into unparseable JSON -- which reads as the worker
-        // having failed.
-        maxBuffer: 64 * 1024 * 1024,
-        stdio: ['ignore', 'pipe', 'pipe']
+        // STRAIGHT INTO THE FILE, by descriptor. No pipe, so nothing is held in
+        // this process while the worker thinks -- the events land as they
+        // happen and `tail -F` shows them.
+        //
+        // It also means a worker that is KILLED leaves its transcript behind.
+        // Captured through a pipe, a timeout threw away everything it had said,
+        // which is the moment the transcript is worth the most.
+        stdio: ['ignore', 1, 1]
       })
     } catch (e) {
-      if (e.killed) throw new Error(`the worker was still going after ${Math.round(timeout / 60000)} minutes, so it was stopped`)
-      out = String(e.stdout || '')
       died = e
+    }
+
+    // READ BACK FROM THE FILE, because nothing came back through a pipe. This
+    // is also why the timeout case is no longer fatal here: whatever it managed
+    // to say is on disk, and the parser below reports "it said nothing" if it
+    // truly said nothing.
+    try {
+      const whole = fs.readFileSync(logFile, 'utf8')
+      out = whole.slice(from)
+    } catch { out = '' }
+
+    if (died && died.killed) {
+      throw new Error(`the worker was still going after ${Math.round(timeout / 60000)} minutes, so it was stopped. What it had said by then is in this run's log.`)
     }
 
     // ONE OBJECT, OR A STREAM OF THEM, AND BOTH ARE READ THE SAME WAY.

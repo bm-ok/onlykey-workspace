@@ -374,7 +374,18 @@ async function runJudgement (actions, log, judgement, machine) {
 
     spent.total = Date.now() - began
     const latest = judging.get(id)
-    const marked = (latest.attempts || []).map(a => a.run === started.run ? { ...a, spent } : a)
+    // HOW THE RUN ENDED, KEPT ON THE ATTEMPT. The log said "exit 1" and the
+    // record did not, so a judgement that CRASHED and one that read the change
+    // and found nothing were the same row afterwards — and the panel described
+    // the crash as a finding: "it read the change and handed nothing back. That
+    // is an answer." It was not an answer. `check a claim` died at `require`
+    // thirty-seven seconds in, having read nothing at all.
+    //
+    // The distinction cannot be recovered later: the machine is rolled back a
+    // few lines below, and the exit code goes with it.
+    const marked = (latest.attempts || []).map(a => a.run === started.run
+      ? { ...a, spent, exit: outcome.exit === undefined ? null : outcome.exit, outcome: outcome.state || null }
+      : a)
 
     // DONE MEANS THE READING ENDED, not that a verdict was reached. A judgement
     // that ran and said nothing is a real and useful thing to see: it is the
@@ -395,6 +406,33 @@ async function runJudgement (actions, log, judgement, machine) {
       `${ref} done — ${outcome.state}${outcome.exit === undefined ? '' : ` (exit ${outcome.exit})`} — ${handed.length ? `${handed.length} file(s) handed back` : 'nothing handed back'}`)
     to.info(`${ref} took ${secs(spent.total)} — ${Object.entries(spent)
       .filter(([k]) => k !== 'total').map(([k, v]) => `${k} ${secs(v)}`).join(', ')}`)
+
+    // AND THE SUPERVISOR IS TOLD, which it was not, and which left a hole in the
+    // middle of its own loop.
+    //
+    // A finished TASK woke it and a finished JUDGEMENT did not — so the one
+    // thing a supervisor is most often waiting on was the one thing that never
+    // arrived. It queues a judge because it cannot see the code, records that it
+    // is waiting, and then sits there: the answer lands, the board changes, and
+    // nothing tells it. It found out whenever something ELSE happened to wake
+    // it, which on a quiet host is never.
+    //
+    // This is the more important of the two wakes, not the lesser. A task
+    // finishing produces work to look at; a judgement finishing produces a
+    // DECISION to make — whether there is work at all, or whether a change may
+    // go out — and it is the step everything downstream of the gate waits on.
+    //
+    // Same conditions as the task's: only when it has been switched on, never
+    // awaited, and never fatal. A supervisor that cannot be woken must not hold
+    // up the machine being put away.
+    try {
+      if (settings.read().supervisorWakes === true) {
+        actions.supervisorWake.run({ why: `${ref} finished — ${concluded ? `it concluded "${concluded}"` : 'it reached no conclusion'}` })
+          .catch(e => log.on('supervisor').warn(`it could not be woken after ${ref}: ${e.message}`))
+      }
+    } catch (e) {
+      log.on('supervisor').warn(`could not tell the supervisor about ${ref}: ${e.message}`)
+    }
   } finally {
     // ALWAYS, and for the same reason a task's machine is: a machine left on,
     // holding a credential, is out of service until somebody notices, and the
