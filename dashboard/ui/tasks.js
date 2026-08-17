@@ -698,6 +698,26 @@ function paintTaskDetail (task) {
       // AND ONLY WHEN THERE IS A RUN TO STOP. A person's task reads as "working"
       // the same way a worker's does, and there is no process on the other end of
       // it -- "Stop it" would have killed nothing and reported the task lost.
+      // BEFORE THE BUTTON THAT KILLS IT, THE ONE THAT LOOKS AT IT.
+      //
+      // The two questions sit together and only one of them was answerable: a
+      // task reads "working" for as long as it takes, and deciding whether that
+      // is progress or a worker stuck at a prompt meant opening a shell,
+      // remembering where runs live, and typing the run id. So the honest
+      // options were wait, or stop it and find out.
+      //
+      // Only while it is running and on a machine. A finished run's log is
+      // still there and still readable, but the place for that is the record,
+      // not a terminal -- and the machine is usually gone by then anyway.
+      task.reads === 'working' && task.run && task.machine
+        ? el('button', {
+            className: 'btn',
+            textContent: 'Watch it',
+            title: `Follows ${task.run} in a terminal. Ctrl-C stops watching, not the run.`,
+            onclick: () => watchRun(task.machine, task.run, `#${task.number}`)
+          })
+        : null,
+
       task.reads === 'working' && task.run
         ? el('button', {
             className: 'btn danger',

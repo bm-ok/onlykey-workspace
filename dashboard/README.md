@@ -389,6 +389,54 @@ in was refused with "this machine is not running a task" by a host that was abou
 to record that it was. The queue always had this right; giving a task straight to
 a named machine did not.
 
+Watching a run, while it runs
+------------------------------
+
+A run used to be invisible until it ended. `claude -p --output-format json`
+writes ONE object when the worker finishes, so the log was zero bytes for twenty
+minutes and then complete -- and "working" was true whether the worker was
+reading files or stuck at a sign-in prompt. The only ways to tell were to wait or
+to stop it.
+
+Dispatch now asks for `--output-format stream-json --verbose`, which writes one
+event per line as it happens. Nothing else changed about the record: the same
+file, in the same run directory, kept here afterwards the same way. What reads it
+afterwards takes the LAST `result` line instead of parsing the whole file, and
+still accepts the old single-object shape, so a run started before this reads
+exactly as it did.
+
+**Watch it** on a task or a judgement opens a terminal on the machine and follows
+that run:
+
+    ~/.okc-runs/<run>/okc-watch
+
+Which is a real shell, not a viewer. It prints what the worker said, what it
+reached for, and what came back -- and Ctrl-C stops the watching and leaves a
+person on the machine, in the run's own directory, which is where they wanted to
+be if what they saw was worth stopping for. **Nothing there can touch the run.**
+
+Three commands are written into every run's directory and put on its PATH, and
+they are the whole of what a run can say to this host:
+
+| | |
+|---|---|
+| `okc-artifact <file> [name]` | hand a file back, filed against the task |
+| `okc-say <text>` | put a line in the live log, tagged with this machine |
+| `okc-watch` | follow this run's log, for a person at a terminal |
+
+`okc-say` exists because a plain task's worker is not a job and had no way to say
+anything at all until its run ended. It is best-effort and always exits 0: a line
+that could not be delivered must never fail the work it was describing.
+
+A worker is also given a **skill** at dispatch -- `provision/runner-skill.md`,
+fetched from this host and unpacked as `working-here` -- which is where those
+commands are explained, along with the two facts a worker cannot discover for
+itself: the branch is the deliverable and the machine is rolled back underneath
+it, so anything not committed and pushed did not happen. Fetched per run rather
+than installed at provisioning time, for the same reason the supervisor's is
+re-fetched on every wake: a machine built last month would otherwise be working
+to last month's rules.
+
 What a task is made of
 -----------------------
 

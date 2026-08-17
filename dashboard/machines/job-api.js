@@ -424,8 +424,28 @@ module.exports = {
       died = e
     }
 
+    // ONE OBJECT, OR A STREAM OF THEM, AND BOTH ARE READ THE SAME WAY.
+    //
+    // Dispatch asks for `stream-json` so the log can be watched while a worker
+    // works — one event per line rather than a single object at the end. The
+    // thing this function needs is still just the last one, which carries the
+    // same fields `--output-format json` used to carry on its own.
+    //
+    // The whole-file parse is tried first and still works, so a run started by
+    // anything that asks for the old format reads exactly as before. Nothing
+    // here decides which was used; it takes whichever it finds.
     let said = null
-    try { said = JSON.parse(out) } catch { /* it said something else, handled below */ }
+    try { said = JSON.parse(out) } catch { /* a stream, or something else — below */ }
+    if (!said) {
+      for (const line of String(out).split('\n')) {
+        const text = line.trim()
+        if (!text.startsWith('{')) continue
+        let one = null
+        try { one = JSON.parse(text) } catch { continue }
+        // The LAST result wins. A resumed conversation can carry more than one.
+        if (one && one.type === 'result') said = one
+      }
+    }
 
     // KEPT NOW, BEFORE ANY OF THE REFUSALS BELOW.
     //

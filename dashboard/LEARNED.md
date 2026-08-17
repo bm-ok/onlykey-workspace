@@ -882,3 +882,20 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   snapshot the moment the run ends. What survived was the session archive, which
   is what actually said why. Anything a failure needs to be diagnosed from has to
   be handed back before the rollback, not read afterwards.
+
+* **A twenty-minute run was a file of zero bytes, by request.** Dispatch asked
+  `claude -p` for `--output-format json`, which writes ONE object when the worker
+  finishes — so the run log was empty for the whole run and then complete. The
+  record was correct and unwatchable, and "is it doing anything" had two answers
+  available: wait, or stop it and find out. `stream-json` writes an event per
+  line as it happens, costs nothing else, and makes `tail -f` the live view.
+  What made this last so long is that nothing was BROKEN: every panel was
+  truthful, the record was kept, and the missing thing was only visible to
+  somebody sitting in front of it wanting to watch.
+
+* **The reader has to change in the same commit as the format.** `claude()` in
+  the job API parsed the whole log as one object, so switching to a stream would
+  have made every run report "it said nothing" — a silent, total failure of
+  every job at once, on a change that reads like a display preference. It now
+  takes the last `result` line and still accepts a whole-file object, so runs
+  from either side of the change read the same.

@@ -93,6 +93,10 @@ const STAGES = {
   mcp: 'okc-mcp.js',
   // And how to use it: the loop, what a task has to say, what it may never do.
   skill: 'supervisor-skill.md',
+  // And the one a WORKER gets. Different audience entirely: the supervisor's
+  // skill is about deciding what work there is, this one is about doing a piece
+  // of it on a machine that will be rolled back underneath you.
+  workerSkill: 'runner-skill.md',
   // AND THE GATE IN FRONT OF EVERY TOOL CALL. Deny by default: only the
   // dashboard's own tools are let through, so anything a future Claude Code adds
   // is refused the day it ships rather than the day somebody notices. See

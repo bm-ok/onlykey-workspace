@@ -171,7 +171,10 @@ function paintJudgements () {
 }
 
 function paintJudgementDetail (j) {
-  if (!changed('judgement-detail', j && `${j.ref}${j.state}${j.verdict || ''}${j.concluded || ''}${j.machine || ''}`)) return
+  // `run` is in here because a button depends on it. It arrives a tick after
+  // `given` does, so a signature without it draws the panel once, correctly, at
+  // the one moment there is nothing to watch yet — and then never again.
+  if (!changed('judgement-detail', j && `${j.ref}${j.state}${j.verdict || ''}${j.concluded || ''}${j.machine || ''}${j.run || ''}`)) return
   if (!j) return fill($('judge-detail'), el('p', { className: 'empty', textContent: 'Select a judgement.' }))
 
   fill($('judge-detail'),
@@ -277,6 +280,20 @@ function paintJudgementDetail (j) {
           className: 'btn',
           textContent: 'Open a terminal',
           onclick: () => openToRead(j, 'terminal')
+        })
+        : null,
+      // WHILE IT IS READING, THE ONE THING THERE IS TO DO IS LOOK.
+      //
+      // Every other button here is refused during `given` and correctly so — the
+      // machine has the branch and a second borrower would be told no. This one
+      // touches nothing: it follows the run's own log, which is the only account
+      // of a judge that exists before it hands anything back.
+      j.state === 'given' && j.machine && j.run
+        ? el('button', {
+          className: 'btn',
+          textContent: 'Watch it',
+          title: `Follows ${j.run} in a terminal. Ctrl-C stops watching, not the reading.`,
+          onclick: () => watchRun(j.machine, j.run, j.ref)
         })
         : null,
       j.state !== 'given'

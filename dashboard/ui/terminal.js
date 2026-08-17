@@ -47,7 +47,14 @@ const shellFor = id => shells.find(s => s.id === id) || null
 // deliberate: the point of a terminal is that a person is at it. Typing the
 // command is how they decide what session this is, and a window that types it
 // for them has taken the one decision the terminal was opened to make.
-function openShell (name, { what = null, cwd = null, task = null } = {}) {
+//
+// `then` IS THE ONE EXCEPTION, AND IT IS NOT THAT DECISION. It types a command
+// after the shell lands -- for watching a run that is already going, where the
+// terminal was opened FOR that command and typing it by hand means retyping a
+// run id nobody has memorised. It is sent visibly rather than through
+// `quietly`, so the line is on screen: Ctrl-C leaves an ordinary shell on the
+// machine, and up-arrow brings it back.
+function openShell (name, { what = null, cwd = null, task = null, then = null } = {}) {
   return api('vmShell', { name }).then(where => {
     const { spawn } = require('node:child_process')
 
@@ -170,10 +177,15 @@ function openShell (name, { what = null, cwd = null, task = null } = {}) {
     //
     // Quoted, because the folder came from a dialog somebody can type in and
     // this is a line being handed to a shell.
-    setTimeout(() => quietly(
-      `stty rows ${term.rows} cols ${term.cols} 2>/dev/null` +
-      (cwd ? `; cd '${String(cwd).split("'").join("'\\''")}' 2>/dev/null || echo "could not enter ${String(cwd).split('"').join('')}"` : '')
-    ), 700)
+    setTimeout(() => {
+      quietly(
+        `stty rows ${term.rows} cols ${term.cols} 2>/dev/null` +
+        (cwd ? `; cd '${String(cwd).split("'").join("'\\''")}' 2>/dev/null || echo "could not enter ${String(cwd).split('"').join('')}"` : '')
+      )
+      // After the housekeeping, and visibly. A moment later than the rest so it
+      // lands after the prompt rather than interleaved with the login banner.
+      if (then) setTimeout(() => write(`${then}\r`), 250)
+    }, 700)
 
     shell.child.on('close', code => {
       term.write(`\r\n\x1b[38;5;244m[the session ended${code ? ` — ssh exited ${code}` : ''}]\x1b[0m\r\n`)
@@ -191,6 +203,29 @@ function openShell (name, { what = null, cwd = null, task = null } = {}) {
     // asked -- a task opening one wants the failure said next to the task.
     return shell
   })
+}
+
+// WATCHING A RUN GO PAST, which is the question a status field cannot answer.
+//
+// "Working" is true for twenty minutes whether the worker is reading files or
+// stuck on a sign-in prompt, and the run log is the only place the difference
+// shows. Dispatch writes `okc-watch` into every run's own directory for exactly
+// this: it follows that run's log and prints what was said, what was reached
+// for, and what came back.
+//
+// A REAL SHELL, NOT A VIEWER. Ctrl-C stops the watching and leaves a person on
+// the machine, in the run's directory, which is where they wanted to be anyway
+// if what they saw was worth stopping for. Nothing here can touch the run.
+//
+// Shared by tasks and judgements because a run is a run -- neither tab should
+// know how a log is followed, and the only difference between them is what the
+// tab is called.
+function watchRun (machine, run, what) {
+  showTab('terminal')
+  const dir = `$HOME/.okc-runs/${String(run).split("'").join('')}`
+  return openShell(machine, { what, cwd: undefined, then: `${dir}/okc-watch` })
+    .then(() => say(`Following ${run} on ${machine}. Ctrl-C stops watching, not the run.`))
+    .catch(e => say(`${machine} would not open a shell: ${e.message}`, 'bad'))
 }
 
 // The box gets whatever is left of the window, measured rather than assumed.

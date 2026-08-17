@@ -31,6 +31,12 @@ const path = require('node:path')
 const GUEST_API = fs.readFileSync(path.join(__dirname, 'job-api.js'), 'utf8')
 const GUEST_RUNNER = fs.readFileSync(path.join(__dirname, 'job-runner.js'), 'utf8')
 
+// THE WATCHER, WRITTEN INTO EVERY RUN'S DIRECTORY. Not a module on this host:
+// it runs in the guest, on the guest's node, reading the log that guest is
+// writing. Kept here as text for the same reason the contract is carried rather
+// than referenced -- it has to exist on a machine that has never heard of it.
+const GUEST_WATCH = "'use strict'\n\n// WHAT A WORKER IS DOING, WHILE IT IS DOING IT.\n//\n// The run log is Claude stream-json: one event per line, each a complete JSON\n// object carrying more than anybody watching wants. This turns it into the four\n// things a person is actually looking for -- what it said, what it reached for,\n// what came back, and what it cost -- and drops the rest.\n//\n// It reads stdin and nothing else, so it is a filter: `tail -f | this`. Nothing\n// here decides what to follow, which is why it also works on a finished run.\nconst DIM = '\\x1b[38;5;244m'\nconst OFF = '\\x1b[0m'\nconst LIT = '\\x1b[38;5;39m'\nconst BAD = '\\x1b[31m'\n\nlet rest = ''\nprocess.stdin.setEncoding('utf8')\nprocess.stdin.on('data', d => {\n  rest += d\n  const lines = rest.split('\\n')\n  // The last piece is whatever arrived without its newline yet. Held rather\n  // than parsed: tail hands over what the writer has flushed, and half an event\n  // is the ordinary case rather than a broken one.\n  rest = lines.pop()\n  for (const line of lines) show(line)\n})\n\n// One line, and short enough to sit in a terminal beside a name.\nfunction brief (s) {\n  const one = String(s == null ? '' : s).replace(/\\s+/g, ' ').trim()\n  return one.length > 140 ? one.slice(0, 137) + '...' : one\n}\n\nfunction show (line) {\n  const text = line.trim()\n  if (!text) return\n  // Anything that is not an event is printed as it came. A worker that fails\n  // to start says so in plain words, and that is the most important line in\n  // the file when it happens.\n  if (text.charAt(0) !== '{') { console.log(DIM + text + OFF); return }\n\n  let e = null\n  try { e = JSON.parse(text) } catch (err) { console.log(DIM + brief(text) + OFF); return }\n\n  if (e.type === 'system') {\n    console.log(DIM + '[' + (e.subtype || 'system') + (e.model ? ' ' + e.model : '') + ']' + OFF)\n    return\n  }\n\n  if (e.type === 'assistant' && e.message) {\n    for (const part of e.message.content || []) {\n      if (part.type === 'text' && String(part.text).trim()) console.log(String(part.text).trim())\n      if (part.type === 'tool_use') {\n        const put = part.input || {}\n        const what = put.command || put.file_path || put.path || put.pattern || put.url || put.prompt || ''\n        console.log(LIT + '-> ' + part.name + OFF + (what ? ' ' + DIM + brief(what) + OFF : ''))\n      }\n    }\n    return\n  }\n\n  if (e.type === 'user' && e.message) {\n    for (const part of e.message.content || []) {\n      if (part.type !== 'tool_result') continue\n      const body = part.content\n      const said = typeof body === 'string'\n        ? body\n        : (Array.isArray(body) ? body.map(x => (x && x.text) || '').join(' ') : '')\n      const lines = String(said).split('\\n').length\n      console.log((part.is_error ? BAD : DIM) + '   ' + brief(said) +\n        (lines > 1 ? ' (' + lines + ' lines)' : '') + OFF)\n    }\n    return\n  }\n\n  if (e.type === 'result') {\n    console.log(LIT + '[' + (e.subtype || 'result') + ' -- ' + (e.num_turns || 0) + ' turns' +\n      (e.total_cost_usd ? ', ' + Number(e.total_cost_usd).toFixed(4) + ' USD' : '') + ']' + OFF)\n  }\n}"
+
 // Shell-single-quoted. Everything here crosses into a script, and a task is
 // written by a person -- or by another agent -- so its shape is not this file's
 // to assume.
@@ -138,6 +144,61 @@ exec curl -fsS --cacert "\${OKC_CA:-/etc/okc/ca.pem}" \\
   "${base}/artifact?vm=\${OKC_VM}&name=\${2:-$(basename "$1")}"
 `, 'OKC_ART_EOF')}
 chmod +x ${dir}/okc-artifact
+
+# SAYING WHAT IT IS DOING, WHILE IT IS DOING IT.
+#
+# A worker that thinks for twenty minutes is invisible: the machine is on, the
+# run is "running", and the person watching has a spinner. The job API has had
+# log and report since jobs existed — but a plain task's worker is not a job and
+# had no way to say anything at all until its run ended.
+#
+# Best effort, always exits 0. A line that could not be delivered must never fail
+# the work it was describing.
+${heredoc(`${dir}/okc-say`, `#!/bin/sh
+# okc-say <text> -- put a line in the dashboard's live log, tagged with this
+# machine. Never fails the caller.
+[ $# -ge 1 ] || { echo "usage: okc-say <text>" >&2; exit 2; }
+curl -fsS --get --cacert "\${OKC_CA:-/etc/okc/ca.pem}" \\
+  -u "\${OKC_VM}:\${OKC_TOKEN}" \\
+  --data-urlencode "vm=\${OKC_VM}" \\
+  --data-urlencode "text=$*" \\
+  "${base}/provision/say" >/dev/null 2>&1 || true
+exit 0
+`, 'OKC_SAY_EOF')}
+chmod +x ${dir}/okc-say
+
+# AND A WAY TO STAND BEHIND IT AND WATCH.
+#
+# The run log is followed rather than summarised, because the question this
+# answers is "is it doing anything" -- which a status field cannot answer and
+# a finished report answers too late. Dispatch asks claude for stream-json for
+# exactly this reason; without a reader the file is correct and unreadable.
+#
+# Two files rather than one, because the pipe is shell and the parsing is node,
+# and putting node inside a quoted shell string is how this gets corrupted.
+${heredoc(`${dir}/watch.js`, GUEST_WATCH, 'OKC_WATCH_EOF')}
+${heredoc(`${dir}/okc-watch`, `#!/bin/sh
+# okc-watch -- follow this run as a person can read it. Ctrl-C stops watching
+# and does not touch the run.
+set -eu
+here=$(dirname "$0")
+exec tail -n +1 -f "$here/out.log" | node "$here/watch.js"
+`, 'OKC_WATCH_SH_EOF')}
+chmod +x ${dir}/okc-watch
+
+# AND THE SKILL THAT SAYS WHAT ANY OF THIS IS.
+#
+# Fetched at dispatch rather than installed when the machine was provisioned, for
+# the same reason the supervisor's is re-fetched on every wake: a machine built
+# last month would otherwise be working to last month's rules, and the failure is
+# a worker doing something this host stopped wanting weeks ago.
+#
+# Best effort. A worker with no skill is a worker that has to be told everything
+# in its brief — which is where this project started, and is survivable.
+mkdir -p "$HOME/.claude/skills/working-here"
+curl -fsS --cacert "\${OKC_CA:-/etc/okc/ca.pem}" -u "\${OKC_VM}:\${OKC_TOKEN}" \\
+  -o "$HOME/.claude/skills/working-here/SKILL.md" \\
+  "${base}/provision/runner-skill.md?vm=\${OKC_VM}" 2>/dev/null || true
 ` : ''}
 
 ${job ? `
@@ -218,8 +279,21 @@ ${job
   ? `node ${dir}/run-job.js`
   : shell
     ? `bash ${dir}/task.txt`
-    : `claude -p "$(cat ${dir}/task.txt)" --dangerously-skip-permissions --output-format json${rules ? ` --append-system-prompt-file ${rules}` : ''}${resume ? ` --resume ${q(resume)}` : ''}`} > ${dir}/out.log 2>&1
+    : `claude -p "$(cat ${dir}/task.txt)" --dangerously-skip-permissions --output-format stream-json --verbose${rules ? ` --append-system-prompt-file ${rules}` : ''}${resume ? ` --resume ${q(resume)}` : ''}`} > ${dir}/out.log 2>&1
 echo $? > ${dir}/status
+# STREAMED, RATHER THAN ONE BLOB AT THE END.
+#
+# --output-format json writes a single object when the worker finishes, so
+# out.log is empty for the whole run and then complete. Nothing can be watched:
+# a twenty-minute worker is a file of zero bytes and a machine that is on.
+#
+# stream-json writes one event per line as they happen -- which makes tail -f
+# on this file the live view of a worker thinking, and costs nothing else.
+# --verbose is required alongside it when running with -p.
+#
+# What reads it afterwards had to change with it: see claude() in
+# machines/job-api.js, which now takes the LAST result line rather than parsing
+# the whole file as one object.
 OKC_RUN_EOF
 
 # Detached with nohup and its own session, so the run outlives the connection
