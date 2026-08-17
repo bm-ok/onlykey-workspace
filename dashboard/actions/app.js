@@ -337,7 +337,7 @@ module.exports = {
   settingSet: {
     about: 'Change one setting. Turning the drills on is done in the window, by a person',
     takes: ['name', 'value'],
-    run: ({ name, value, _overTheWire, _driven }) => {
+    run: ({ name, value, _overTheWire, _driven, _fromTest }) => {
       const key = String(name || '').trim()
       if (!(key in settings.DEFAULTS)) {
         throw new Error(`"${key}" is not a setting. It is one of: ${Object.keys(settings.DEFAULTS).join(', ')}.`)
@@ -354,7 +354,16 @@ module.exports = {
       // `_driven` counts as the pipe. A press made in the window BY the command
       // line is still the command line, which is the whole reason that mark
       // exists — see whoAsked in actions/shared.js.
-      if (key === 'testsEnabled' && (_overTheWire || _driven)) {
+      // AND A DRILL IS NOT A PERSON AT THE WINDOW EITHER, which is the hole this
+      // closes. The harness calls the action table in process, exactly as the
+      // window does, so a drill asking to switch the drills on looked like
+      // somebody clicking — and the one thing this guard exists to stop is
+      // something deciding for itself that a folder is a fine place to run them.
+      //
+      // Found by reading test/claims.md: this refusal was one of 242 the code
+      // makes that no drill watches. Writing the check is what showed that the
+      // check could not have been written honestly without this.
+      if (key === 'testsEnabled' && (_overTheWire || _driven || _fromTest)) {
         throw new Error('The drills are switched on in the window, by somebody who knows what folder is open. They write a task and take a credential off a machine — that is a decision about somebody\'s repository, not a flag to be set down a pipe.')
       }
 
@@ -409,8 +418,11 @@ module.exports = {
   testsAnswer: {
     about: 'Answer a request to run the drills — yes for this workspace, or no',
     takes: ['allow'],
-    run: ({ allow, _overTheWire, _driven }) => {
-      if (_overTheWire || _driven) {
+    run: ({ allow, _overTheWire, _driven, _fromTest }) => {
+      // A drill counts as the pipe here for the same reason: something that can
+      // answer its own request has not asked for anything, and a drill asking is
+      // still not a person who can see which folder is open.
+      if (_overTheWire || _driven || _fromTest) {
         throw new Error('A request to run the drills is answered in the window, by somebody who can see which folder is open. Something that could answer its own request has not asked for anything.')
       }
       const yes = allow === true || allow === 'true' || allow === 1 || allow === '1'

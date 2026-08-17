@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 31 tests, 159 checks, 25 of them drafts -->
+<!-- 12 suites, 32 tests, 164 checks, 27 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -15,8 +15,12 @@
   A capability with no check here is one somebody will build again.
 -->
 
-## 25 drafts, not written yet
+## 27 drafts, not written yet
 
+- **the refusals / the ways round a refusal** — and the window cannot be driven while the drills are off
+  THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. It matters more than it looks: windowClick and windowFill reach the SAME handlers a person's press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. WHY IT IS NOT A CHECK HERE: a drill runs only while testing mode is on, which is exactly when this is allowed. Proving the refusal means turning testing mode OFF, which stops the drills. HOW TO WRITE IT: from outside the kit — a script that turns testing mode off at the window, calls windowClick over the wire, sees the refusal, and turns it back on. That is a person-driven drill rather than one the harness can run, and it belongs in the same family as the sign-in that needs somebody to visit a page. WHAT CAN BE CHECKED FROM HERE AND IS NOT YET: that a press driven from outside carries the mark — press an APPROVE button through windowClick and watch it refused for being over the wire. That proves the anti-bypass property without turning anything off. See drivenFromTheWire in ui/base.js.
+- **the refusals / the ways round a refusal** — and a change cannot be landed from outside the window while the drills are off
+  THE REFUSAL: "Landing a cut from outside the window is only done while testing mode is on for this workspace… this is a model merging into somebody's repository, and that needs to have been said out loud first." — actions/repos.js. It is the one act in this app with consequences outside this host: everything before a merge is reversible from GitHub and a merge is not. WHY IT IS NOT A CHECK HERE: same as above — the drills run with testing mode on, which is the state in which this is permitted. THE CHECK, WHEN THERE IS A WAY TO WRITE IT: with testing mode off, prCutLand over the wire is refused and names the window; with it on, the refusal is not what stops it — a cut that is not ready still is. AND THE RELATED ONE WORTH HAVING EITHER WAY: a supervisor is refused prCutLand whatever testing mode says, because it is not on its list at all. That one IS checked — see the supervisor suite.
 - **a worker credential / a worker can sign in** — and no two machines hold the same credential at once
   THE LOCK, and it can be written today. There is one credentials/claude.json, lent to whoever is working. vmCredentialsPut checks the machine is dialled in and that the credential is not dead, and says nothing about who else is holding it — so two machines working at once would run as the same worker against the same session. The check is "at most one machine reports holdsCredential", asked while work is in flight. It would fail right now if two tasks were dispatched at once, which is the honest way to start: a guard that would catch the thing nobody has hit yet. The queue serialises most work, which is why it has not bitten.
 - **a worker credential / a worker can sign in** — and two machines can work at once, each with a credential of its own
@@ -119,6 +123,8 @@ The order every piece of work goes through here, stated as a series and checked 
 
 What this app will not do, proved by asking it to do each thing and reading what it says back.
 
+*stands on what this host has*
+
 ## 00 — approving is refused over the wire
 
   1. a job cannot be approved down the pipe
@@ -141,6 +147,14 @@ What this app will not do, proved by asking it to do each thing and reading what
 
   1. a machine that is not dialled in cannot be given a workspace
   2. a branch nobody has is not a branch to sync
+
+## 04 — the ways round a refusal
+
+  1. the drills cannot be switched on by anything but a person at the window
+  2. and a request to run them cannot answer itself
+  3. and the settings that can be changed are named, not assumed
+  4. **DRAFT** — and the window cannot be driven while the drills are off
+  5. **DRAFT** — and a change cannot be landed from outside the window while the drills are off
 
 # 03 — the machines are built
 
