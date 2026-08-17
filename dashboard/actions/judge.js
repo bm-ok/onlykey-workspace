@@ -24,7 +24,7 @@ const s = require('./shared')
 // No `tasks` here, and that is the point of the file: a judgement is about a
 // change, and the task that produced it is a fact about where the change came
 // from rather than the thing being read.
-const { log, judging, jobs, prompts, contracts, judgements, prtemplate, branches, repos } = s
+const { log, judging, jobs, prompts, contracts, judgements, prtemplate, branches, repos, files } = s
 
 // WHAT EACH REPOSITORY WAS AT WHEN IT WAS READ, for either kind of subject.
 //
@@ -53,6 +53,23 @@ function tipsFor (subject) {
   }
   return out
 }
+
+// WHOSE FINDINGS THESE ARE, on every answer that carries any. A page of findings
+// with no judgement attached is opinions about nothing in particular — and the
+// caller most likely to be reading them is a supervisor, which knows about the
+// code only through this.
+//
+// Named `whose` rather than `said` because `said` is already a local inside
+// judgementCreate, and a helper that quietly means something else two functions
+// down is the kind of thing that is only ever found the hard way.
+const whose = it => ({
+  ref: it.ref,
+  reads: it.subject && it.subject.name,
+  state: it.state,
+  verdict: it.verdict || null,
+  note: it.note || null,
+  contractName: it.contractName || null
+})
 
 // A judgement reads; it does not write. So every one of these refuses to take a
 // branch to work ON, and the one thing a caller names is what is to be read.
@@ -116,6 +133,15 @@ module.exports = {
       if (job) {
         const which = jobs.get(job)
         if (!which) throw new Error(`There is no job "${job}". Ask jobs for the list — a judgement runs a job like any other work.`)
+
+        // A JUDGE IS NOT A WORKER, and the libraries are kept apart so that is
+        // not a matter of somebody picking carefully. "Did this follow the
+        // rules, is it secure, what bug was missed" and "make this change" are
+        // different questions written under different rules, and a job written
+        // for one run as the other is a machine doing something nobody read for.
+        if (which.kind !== 'judge') {
+          throw new Error(`"${which.id}" is a job for doing work, not for judging it. A judge is written under the Judge tab and kept apart on purpose — a working job run as a judge would read a change under rules written for changing it.`)
+        }
         const answer = await actions.jobs.run({})
         const said = (answer.jobs || []).find(j => j.id === which.id) || {}
         if (!said.runnable) {
@@ -205,6 +231,48 @@ module.exports = {
       const it = judging.get(id)
       if (it.state !== 'queued') throw new Error(`${it.ref} is "${it.state}", not queued. One already given out is not called back by this — the machine is reading and would have to be stopped on it.`)
       return judging.update(id, { state: 'draft' })
+    }
+  },
+
+  judgementFindings: {
+    about: 'What a judgement handed back: the files it wrote, and one of them in full',
+    needs: 'workspace',
+    takes: ['id', 'file'],
+    run: ({ id, file }) => {
+      const it = judging.get(id)
+
+      // THE ONLY WAY A JUDGE CAN SAY ANYTHING. It may not push to what it reads
+      // — that is refused on the host, in the git route — so everything it found
+      // arrives as files filed under the judgement.
+      const handed = files.list(it.uid) || []
+
+      // AND THIS IS THE SUPERVISOR'S ONE WINDOW ONTO THE CODE, which is the
+      // whole reason it is worth being careful about. A supervisor decides what
+      // to do next on a line from what a JUDGE says about it, not from reading
+      // the repositories: it is not given the diff, the files a task delivered,
+      // or a change to read. So what a judge hands back is not a convenience —
+      // it is the channel, and if a judge says nothing the supervisor knows
+      // nothing, which is the correct outcome rather than a gap to route around.
+      if (!file) {
+        return {
+          ...whose(it),
+          files: handed.map(f => ({ name: f.file, bytes: f.bytes, kept: f.kept || null })),
+          note: handed.length
+            ? 'Ask again with a file name to read one in full.'
+            : it.state === 'done'
+              ? 'It read the change and handed nothing back. That is an answer: there is no finding, and nothing about the code is known from it.'
+              : 'Nothing yet — it has not finished reading.'
+        }
+      }
+
+      const one = handed.find(f => f.file === String(file))
+      if (!one) {
+        throw new Error(`${it.ref} handed back nothing called "${file}". It handed back: ${handed.map(f => f.file).join(', ') || 'nothing at all'}.`)
+      }
+      // `files.read` refuses what is not text rather than mangling it, and says
+      // so — which is the right answer to pass straight through.
+      const body = files.read(it.uid, one.file)
+      return { ...whose(it), file: one.file, bytes: one.bytes, text: body.text }
     }
   },
 

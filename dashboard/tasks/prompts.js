@@ -63,6 +63,9 @@ const all = () => read().map(p => {
   const now = hash(p.text)
   return {
     ...p,
+    // Filled at read time, so an entry written before there were two
+    // libraries answers rather than answering undefined. See save().
+    kind: p.kind === 'judge' ? 'judge' : 'task',
     hash: now,
     approved: !!(p.approval && p.approval.hash === now),
     lapsed: !!(p.approval && p.approval.hash !== now),
@@ -79,7 +82,12 @@ const idFor = name => String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-
 // Written, or rewritten. The id never changes once made: something may be
 // pointing at it, and a rename that silently becomes a different prompt is the
 // quietest way to break a reference.
-function save ({ id, name, text, about, contractId }, by = 'the window') {
+// `kind` — WHAT THIS IS FOR: being given to a worker doing work, or to one
+// judging it. Two libraries in one store, so a judging chain cannot be picked
+// for work or the other way round with nothing but a name to tell them apart.
+// Defaults to `task`, and an existing entry keeps what it had: everything
+// written before there were two was written for work.
+function save ({ id, name, text, about, contractId, kind }, by = 'the window') {
   const title = String(name || '').trim()
   if (!title) throw new Error('Give it a name. A prompt with no name is one nobody finds again.')
   const body = String(text || '').trim()
@@ -112,8 +120,12 @@ function save ({ id, name, text, about, contractId }, by = 'the window') {
     ? (at === -1 ? null : list[at].contractId || null)
     : (String(contractId || '').trim() || null)
 
+  const which = kind === undefined
+    ? (at === -1 ? 'task' : list[at].kind || 'task')
+    : (String(kind) === 'judge' ? 'judge' : 'task')
+
   if (at === -1) {
-    list.push({ id: key, name: title, about: String(about || '').trim() || null, text: body, contractId: rules, written: now, edited: null, approval: stamp })
+    list.push({ id: key, name: title, about: String(about || '').trim() || null, text: body, contractId: rules, kind: which, written: now, edited: null, approval: stamp })
   } else {
     const was = list[at]
     // THE CONTRACT IS PART OF WHAT WAS APPROVED. Changing which rules a prompt
@@ -126,6 +138,7 @@ function save ({ id, name, text, about, contractId }, by = 'the window') {
       about: String(about || '').trim() || null,
       text: body,
       contractId: rules,
+      kind: which,
       edited: changed ? now : was.edited,
       // An unchanged save keeps whatever approval it had; a changed one is
       // re-approved only if a person is the one saving it.

@@ -87,8 +87,6 @@ const MAY = {
   // ---- what it may see -----------------------------------------------------
   tasks: 'the board: every task, and whether its branch has anything on it yet',
   taskProgress: 'every attempt at one task, and what its worker is doing now',
-  taskArtifact: "what arrived on a task's branch: commits and files, per repository",
-  taskDiff: "one repository's changes on a task's branch, in full",
   taskLog: "one attempt's output, so it can read why a run did what it did",
   branchBoard: 'every branch, who claims it, and what is on it',
   lines: 'the named lines, which are what a branch is cut from',
@@ -100,7 +98,31 @@ const MAY = {
   prCuts: 'every change that has been sent out, and how far each has got',
   prCutState: 'what became of one change once it was sent, read from GitHub rather than remembered',
   judgements: 'what has been judged about a change, and whether it still describes what is there',
-  repoOverview: 'everything open across the workspace — issues, pull requests and PR cuts, one row each',
+  // ---- WHAT IT MAY NOT SEE: THE CODE ITSELF --------------------------------
+  //
+  // Five entries were here and are deliberately gone: taskArtifact, taskDiff,
+  // changeRead, branchArtifact and repoOverview. Each handed a supervisor the
+  // contents of the repositories — a diff, the files a task delivered, what one
+  // line carries that another does not.
+  //
+  // A SUPERVISOR DOES NOT KNOW WHAT IS IN THE CODEBASE, and that is the design
+  // rather than a restriction bolted on. It decides what to do next on a line
+  // from what a JUDGE says about it: run a judge, read what the judge handed
+  // back, decide whether to write a task, run a judge again to see whether the
+  // task was done correctly. Judging is the only sense it has.
+  //
+  // WHY THAT IS BETTER THAN LETTING IT READ. A supervisor that reads the code
+  // forms its own opinion of it, and then its decisions rest on an unrecorded
+  // reading nobody approved, made by the thing whose work is being checked. A
+  // judge's reading is a job, a prompt and a contract a person approved, run on
+  // a machine, with what it found kept as files. The first is a hunch; the
+  // second is evidence with a name on it.
+  //
+  // So the window onto the code is judgementFindings, and if a judge says
+  // nothing then nothing is known — which is the right outcome rather than a
+  // gap to route around.
+  judging: 'every judgement: what is waiting to be read, what is being read, and what was decided',
+  judgementFindings: 'what a judgement handed back, and one of those files in full — the only way it learns anything about the code',
   // WHAT KINDS OF MACHINE THERE ARE, which is what a task's tag names. Without
   // this it could put a tag on a task and had no way to know which tags exist —
   // and the queue WAITS for a tagged machine rather than falling back, so a
@@ -116,8 +138,6 @@ const MAY = {
   pulls: "a repository's pull requests, a page at a time — everything open there, not only what this host cut",
   repositories: 'the repositories this workspace holds, and where each points',
   repoBranches: "one repository's branches: where each is here, where origin has it, and which are out of step",
-  changeRead: 'what one line carries that another does not, so it can tell whether a change is worth sending',
-  branchArtifact: 'what is on a branch — commits and files per repository — without going through a task',
 
   // ---- what it may do ------------------------------------------------------
   //
@@ -128,6 +148,21 @@ const MAY = {
   taskCreate: 'write a task on a branch that has been cut, under a job and contract a person approved',
   taskQueue: 'put a task in the queue, so the next free machine takes it',
   taskUnqueue: 'take a task back out of the queue, for one that should not have gone in',
+
+  // ---- AND THE LOOP THIS IS ALL FOR ---------------------------------------
+  //
+  // Run a judge on a line. Read what it handed back. Decide whether the line
+  // needs a change, and if it does, write a task on it. Run a judge again to
+  // find out whether the task was done correctly. Repeat.
+  //
+  // The supervisor never reads the code at any point in that loop — see the
+  // note above the judging entries. What it may not do is REACH a verdict:
+  // judgementVerdict is absent, because a supervisor recording its own verdict
+  // on work it commissioned is the thing this whole arrangement exists to
+  // prevent. It asks; a judge answers; a person decides what that is worth.
+  judgementCreate: 'ask for a judgement of a branch cut or a PR cut, under a judging chain a person approved',
+  judgementQueue: 'put a judgement in the queue — it goes ahead of tasks, because it reads work already waiting',
+  judgementUnqueue: 'take a judgement back out of the queue',
 
   // ---- and what it may PROPOSE ---------------------------------------------
   //

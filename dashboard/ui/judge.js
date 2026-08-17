@@ -157,9 +157,13 @@ function paintJudges () {
   // answer drew "contract: none" for every chain — including one whose contract
   // is right there and named on every judgement written from it. A screen whose
   // whole subject is approvals cannot be wrong about a rung.
+  // THE JUDGING LIBRARY ONLY. A judge's job, prompt and contract are kept apart
+  // from the ones work is done under — "did this follow the rules, is it secure,
+  // what bug was missed" is a different question written under different rules,
+  // and a list that mixed them would be a list somebody picks wrongly from once.
   Promise.all([
-    api('jobs').catch(() => ({ jobs: [] })),
-    api('prompts').catch(() => ({ prompts: [] }))
+    api('jobs', { kind: 'judge' }).catch(() => ({ jobs: [] })),
+    api('prompts', { kind: 'judge' }).catch(() => ({ prompts: [] }))
   ]).then(([{ jobs }, { prompts }]) => {
     if (view !== 'judge' || judgePane !== 'judges') return
     if (!changed('judge-chains', [jobs, prompts])) return
@@ -189,10 +193,12 @@ function paintJudges () {
         // WHICH RUNG IS MISSING, in the app's own words. `whyNot` names the one
         // that is wrong rather than saying "not approved" about the whole chain.
         j.runnable ? null : el('div', { className: 'card-sub warn', textContent: j.whyNot || 'something in its chain is not approved' }))))
-      : el('p', { className: 'empty', textContent: 'No jobs yet. A judge is a job, a prompt and a contract — write them under Actions.' }))
+      : el('p', { className: 'empty', textContent: 'No judge yet. A judge is its own job, prompt and contract — written for reading a change rather than making one, and kept apart from the library work runs under.' }))
 
     const can = list.filter(j => j.runnable).length
-    setText($('judges-note'), `${can} of ${list.length} can judge. A judge is the whole chain — this job, giving these words, under these rules — and every rung is read and approved by a person before anything runs.`)
+    setText($('judges-note'), list.length
+      ? `${can} of ${list.length} can judge. A judge is the whole chain — this job, giving these words, under these rules — and every rung is read and approved by a person before anything runs.`
+      : 'A judge reads a change and says whether it holds: did it follow the rules, is it secure, is there a bug nobody caught. Its chain is its own — a job written for work cannot judge, and a judge cannot be given work.')
   }).catch(() => { /* the chrome says when the dashboard is unreachable */ })
 }
 

@@ -1320,8 +1320,10 @@ async function paintAddTaskNow () {
 
   Promise.all([
     api('gitBranches'),
-    api('prompts').catch(() => ({ prompts: [] })),
-    api('jobs').catch(() => ({ jobs: [] })),
+    // WORK ONLY. A judge cannot be given a task — the libraries are apart, and
+    // offering one here would move the refusal from before the press to after.
+    api('prompts', { kind: 'task' }).catch(() => ({ prompts: [] })),
+    api('jobs', { kind: 'task' }).catch(() => ({ jobs: [] })),
     api('lines').catch(() => ({ groups: [] })),
     // Only when one is being edited, and asked for rather than read out of the
     // board's last paint: the pane can be arrived at directly, with the board
@@ -1776,7 +1778,7 @@ async function paintPromptsNow () {
   // still paint: prompts are kept for this computer and jobs belong to a
   // workspace, so with none open the library is still readable and the answer to
   // "what uses this" is simply nothing.
-  Promise.all([api('prompts'), api('jobs').catch(() => ({ jobs: [] }))]).then(([{ prompts, contracts, note }, work]) => {
+  Promise.all([api('prompts', { kind: 'task' }), api('jobs', { kind: 'task' }).catch(() => ({ jobs: [] }))]).then(([{ prompts, contracts, note }, work]) => {
     contractsNow = contracts || []
     const usersOf = id => (work.jobs || []).filter(j => j.promptId === id)
 
@@ -2036,7 +2038,7 @@ async function paintContractsNow () {
   // The prompts too, only to say which run under each. A contract with nothing
   // under it is not a fault — it is one somebody wrote before the brief that
   // needs it — so this never fails the paint.
-  Promise.all([api('contracts'), api('prompts').catch(() => ({ prompts: [] }))]).then(([{ contracts, note }, lib]) => {
+  Promise.all([api('contracts', { kind: 'task' }), api('prompts', { kind: 'task' }).catch(() => ({ prompts: [] }))]).then(([{ contracts, note }, lib]) => {
     const boundTo = id => (lib.prompts || []).filter(p => p.contractId === id)
 
     if (!contracts.some(c => c.id === pickedContract)) {
@@ -2274,7 +2276,8 @@ async function paintJobsNow () {
   await settle()
   if (view !== 'actions' || actionPane !== 'jobs') return
 
-  api('jobs').then(v => {
+  // The work library. Judges live under the Judge tab and are not listed here.
+  api('jobs', { kind: 'task' }).then(v => {
     jobsNow = v.jobs || []
     promptsNow = v.prompts || []
     const shown = jobTag ? jobsNow.filter(j => (j.tags || []).includes(jobTag)) : jobsNow

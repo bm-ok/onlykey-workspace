@@ -180,6 +180,13 @@ module.exports = {
       if (input.job) {
         const one = jobs.get(String(input.job))
         if (!one) throw new Error(`There is no job called "${input.job}". Ask for "jobs" to see what there is.`)
+        // AND IT IS A JOB FOR DOING WORK. The judging library is kept apart, and
+        // the refusal runs in both directions: a judge given to a task would
+        // send a machine to READ a change under rules written for reading, on a
+        // branch it was told to deliver on.
+        if (one.kind === 'judge') {
+          throw new Error(`"${one.id}" is a judge — it reads a change and says whether it holds. A task makes one. Pick a job from the work library, or ask for a judgement instead with judgementCreate.`)
+        }
         input.jobName = one.name
       }
       const made = tasks.add(input)
@@ -978,15 +985,21 @@ module.exports = {
   // See tasks/jobs.js for why the code is a file rather than a string, and
   // tasks/jobrun.js for what a running job is handed.
   jobs: {
-    about: 'The jobs this workspace has: scripts that take a prompt and do something with it',
+    about: 'The jobs this workspace has: scripts that take a prompt and do something with it. "kind" is task or judge',
     needs: 'workspace',
-    takes: ['tag'],
-    run: ({ tag }) => {
+    takes: ['tag', 'kind'],
+    run: ({ tag, kind }) => {
       // The prompts as the prompt library itself reports them, so a prompt's own
       // contract is already resolved and this does not work it out a second time
       // with a second chance of getting it wrong.
       const library = actions.prompts.run({}).prompts
+      // TWO LIBRARIES, ASKED FOR BY NAME. Everything is returned when nothing is
+      // said, so a plain listing never hides half of what exists — the screens
+      // ask for the half they are about, and every row carries its `kind` either
+      // way. See tasks/jobs.js for why judging chains are kept apart.
+      const want = kind === undefined ? null : (String(kind) === 'judge' ? 'judge' : 'task')
       const rows = jobs.all()
+        .filter(j => !want || j.kind === want)
         .filter(j => !tag || (j.tags || []).includes(tag))
         .map(j => {
           const from = j.promptId ? library.find(p => p.id === j.promptId) || null : null
@@ -1051,7 +1064,7 @@ module.exports = {
   jobSave: {
     about: 'Write a job, or rewrite it. Written at the window it is approved by whoever wrote it; written over the wire it waits',
     needs: 'workspace',
-    takes: ['id', 'name', 'about', 'code', 'promptId', 'tags'],
+    takes: ['id', 'name', 'about', 'code', 'promptId', 'tags', 'kind'],
     run: ({ _overTheWire, _driven, ...fields }) => {
       const a = { _overTheWire, _driven }
       const saved = jobs.save(fields, s.whoAsked(a))
@@ -1205,9 +1218,13 @@ module.exports = {
   // code" names neither, and a library that emptied itself when somebody
   // switched workspace is one nobody would build.
   prompts: {
-    about: 'The prompt library: what a worker can be told, written once and kept',
-    run: () => {
+    about: 'The prompt library: what a worker can be told, written once and kept. "kind" is task or judge',
+    takes: ['kind'],
+    run: ({ kind } = {}) => {
       const rules = contracts.all()
+      // Two libraries, asked for by name — see the jobs action above. Everything
+      // comes back when nothing is said, and every row carries its own kind.
+      const want = kind === undefined ? null : (String(kind) === 'judge' ? 'judge' : 'task')
       // THE CONTRACT IT RUNS UNDER, resolved here, the same way a job's prompt
       // is. A prompt is what a worker is told to do and a contract is what it
       // may not do while doing it, and the two are only ever read together --
@@ -1230,8 +1247,8 @@ module.exports = {
         }
       })
       return {
-        prompts: list,
-        contracts: rules,
+        prompts: want ? list.filter(p => p.kind === want) : list,
+        contracts: want ? rules.filter(c => c.kind === want) : rules,
         where: prompts.FILE(),
         note: list.length
           ? 'A task copies the text it was given rather than pointing at it, so editing one here never rewrites a task that already went out.'
@@ -1242,15 +1259,15 @@ module.exports = {
 
   promptSave: {
     about: 'Write a prompt, or rewrite one. The id never changes once it is made',
-    takes: ['id', 'name', 'text', 'about', 'contractId'],
+    takes: ['id', 'name', 'text', 'about', 'contractId', 'kind'],
     run: a => {
-      const { id, name, text, about, contractId } = a
+      const { id, name, text, about, contractId, kind } = a
       // Refused by name here rather than discovered as a dangling reference in
       // the panel three days later.
       if (contractId && !contracts.get(String(contractId))) {
         throw new Error(`There is no contract called "${contractId}". Write it first — the rules a prompt runs under are not a name typed into a box.`)
       }
-      const saved = prompts.save({ id, name, text, about, contractId }, s.whoAsked(a))
+      const saved = prompts.save({ id, name, text, about, contractId, kind }, s.whoAsked(a))
       log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the prompt "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
       return saved
     }
@@ -1297,9 +1314,11 @@ module.exports = {
   // NOT GATED ON A WORKSPACE, for the same reason prompts are not: "do not
   // force-push" names no repository.
   contracts: {
-    about: 'The contract library: the rules a worker is given, written once and kept',
-    run: () => {
-      const list = contracts.all()
+    about: 'The contract library: the rules a worker is given, written once and kept. "kind" is task or judge',
+    takes: ['kind'],
+    run: ({ kind } = {}) => {
+      const want = kind === undefined ? null : (String(kind) === 'judge' ? 'judge' : 'task')
+      const list = contracts.all().filter(c => !want || c.kind === want)
       const waiting = list.filter(c => !c.approved).length
       return {
         contracts: list,
@@ -1323,10 +1342,10 @@ module.exports = {
 
   contractSave: {
     about: 'Write a contract, or rewrite one. Written at the window it is approved by whoever wrote it; written over the wire it waits',
-    takes: ['id', 'name', 'about', 'text'],
+    takes: ['id', 'name', 'about', 'text', 'kind'],
     run: a => {
-      const { id, name, about, text } = a
-      const saved = contracts.save({ id, name, about, text }, s.whoAsked(a))
+      const { id, name, about, text, kind } = a
+      const saved = contracts.save({ id, name, about, text, kind }, s.whoAsked(a))
       log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the contract "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
       return saved
     }

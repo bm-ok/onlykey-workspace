@@ -84,6 +84,10 @@ const all = () => read().map(j => {
   return {
     ...j,
     code,
+    // FILLED AT READ TIME, so every job written before there were two libraries
+    // answers the question rather than answering `undefined`. Everything that
+    // existed then was written to do work.
+    kind: j.kind === 'judge' ? 'judge' : 'task',
     hash: now,
     there: !!code,
     approved: !!(j.approval && j.approval.hash === now),
@@ -170,6 +174,20 @@ function save (fields, by = 'the window') {
       : Array.isArray(fields.tags)
         ? fields.tags.map(t => String(t).trim()).filter(Boolean)
         : String(fields.tags).split(',').map(t => t.trim()).filter(Boolean),
+    // WHAT THIS IS FOR: doing work, or judging it.
+    //
+    // Two libraries in one store. A judging chain is a different question from a
+    // working one — "did this follow the rules, is it secure, what bug was
+    // missed" against "make this change" — and mixing them means a task can be
+    // queued under a judge's rules, or a judge can be run under a worker's, with
+    // nothing but a name to tell somebody which they picked.
+    //
+    // DEFAULTS TO `task`, AND AN EXISTING ONE KEEPS WHAT IT HAD. Everything
+    // written before this was written for work, and a save that means "rename
+    // this" must not quietly move it to the other library.
+    kind: fields.kind === undefined
+      ? (at === -1 ? 'task' : list[at].kind || 'task')
+      : (String(fields.kind) === 'judge' ? 'judge' : 'task'),
     written: at === -1 ? now : list[at].written,
     edited: at === -1 ? null : now
   }
