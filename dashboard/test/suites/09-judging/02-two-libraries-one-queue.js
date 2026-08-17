@@ -21,7 +21,22 @@
 // reporters and the tick agree about what is next.
 
 const { it, cleanup, requires } = require('../../../tasks/harness')
-const { scratch, aLine, POOL_TAG } = require('../../helpers')
+const { scratch, aLine } = require('../../helpers')
+
+// A TAG NO MACHINE CARRIES, and it is not a detail — it is the difference
+// between proving the queue's ORDER and ambushing a machine with a drill's work.
+//
+// This was written with the test pool's tag, and the queue did exactly what it
+// is built to do: it ticked, took the task, brought a machine up and dispatched
+// it. The drill then failed trying to take it back out — "#147 is given, not
+// queued" — which is the queue reporting that it had won a race the drill should
+// never have entered.
+//
+// A tag nothing carries makes the queue WAIT, visibly and by design, so both
+// things are genuinely queued and neither is dispatched. Proving "it can queue"
+// does not require proving "a machine can be ambushed". The same trick is used
+// by the supervisor drill for the same reason.
+const NO_MACHINE = 'okc-no-machine-carries-this'
 
 requires('the order')
 
@@ -70,10 +85,10 @@ it('and both kinds wait in one line, with judgements in front', async ({ okc, as
   state.task = await okc('taskCreate', {
     task: {
       title: 'drill: something waiting behind a judgement',
-      brief: 'Written by a drill. Tagged for the test pool so nothing else picks it up.',
+      brief: 'Written by a drill, tagged for a machine that does not exist so nothing picks it up.',
       branch: state.branch,
       job: working.id,
-      tag: POOL_TAG
+      tag: NO_MACHINE
     }
   })
   await okc('taskQueue', { id: state.task.id })
@@ -86,7 +101,7 @@ it('and both kinds wait in one line, with judgements in front', async ({ okc, as
     kind: 'branch',
     branch: state.branch,
     job: judge.id,
-    tag: POOL_TAG,
+    tag: NO_MACHINE,
     question: 'Written by a drill, and queued after a task to prove which goes first.'
   })
   mine.push(asked.id)

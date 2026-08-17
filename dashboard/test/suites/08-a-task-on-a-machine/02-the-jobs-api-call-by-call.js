@@ -66,7 +66,11 @@ it('a machine is running a task, which is what most of this surface answers', as
   state.base = (String(served.script).match(/OKC_BASE='([^']+)'/) || [])[1]
   assert.ok(state.base, 'this host does not say where it listens in the script it serves a machine')
   log(`#${state.task.number} is in flight on ${machine.name}, talking to ${state.base}`)
-}, { minutes: 8 })
+// A GATE: every check below asks this machine something. Reported without it,
+// a quiet host produced one honest "could not run" followed by three failures
+// saying `"undefined" is not a virtual machine this app made` — the app blamed
+// for a machine nobody had started.
+}, { minutes: 8, gate: true })
 
 it('and every call it offers answers', async ({ okc, assert, state, log }) => {
   const ask = (method, path, extra = '') => run(okc, state.machine,

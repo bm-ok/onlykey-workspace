@@ -93,7 +93,12 @@ it('a machine is dialled in, and this host has something to hand it', async ({ o
   assert.equal(made.fingerprint, handover.fingerprint(MADE_UP),
     `this host sealed something that is not what it was handed — ${made.fingerprint} where the token given is ${handover.fingerprint(MADE_UP)}`)
   log(`${state.machine} is up; "${NAME}" is here as ${made.fingerprint}`)
-}, { minutes: 6 })
+// A GATE, because everything below needs the machine this went and got. Without
+// it, a host with nothing dialled in reported this honestly as "could not run"
+// and then FAILED every check after it with `"undefined" is not a virtual
+// machine this app made` — which reads as a broken app rather than as a machine
+// nobody had started.
+}, { minutes: 6, gate: true })
 
 it('and nothing sent to the machine carries any part of it', async ({ okc, assert, state, log }) => {
   // THE SHIPPING CODE, WATCHED. The runner records and forwards; nothing about
