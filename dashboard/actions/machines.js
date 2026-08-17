@@ -582,11 +582,29 @@ module.exports = {
   // whole life of a machine, and a default that quietly logs everything for ever
   // is a default nobody chose.
   vmSerial: {
-    about: "Send a machine's console to a file on this host, so its boot can be read. The machine must be off",
+    about: "Make sure a machine's console is written to a file on this host. The machine must be off",
     takes: ['name', 'on'],
     run: async ({ name, on }) => {
       const vm = vms.get(name)
       const want = on === undefined ? true : !(on === false || on === 'false' || on === 'no' || on === '0')
+
+      // IT CANNOT BE TURNED OFF ANY MORE, and this action is what is left of the
+      // switch: a way to put the console back on a machine that somehow lacks one.
+      //
+      // Off was the default, and what it produced was an instrument only the
+      // drills had — every machine the test kit built could be watched and every
+      // machine made at the window could not. A machine that will not boot is
+      // exactly the machine somebody cannot ask anything of, so the one time this
+      // is wanted is the one time it cannot be arranged.
+      //
+      // Every machine has one now: attached when it is built, given to the older
+      // ones at startup. Turning it off for one machine would put that machine
+      // back in the blind spot, and the saving is a file VirtualBox truncates on
+      // every boot.
+      if (!want) {
+        throw new Error(`Every machine keeps its console now, so this cannot be turned off for "${name}". It is attached when a machine is built and given to older ones at startup — a machine with no console is one that cannot be debugged when it will not boot, which is the only time anybody wants it. The file is truncated on every start, so it does not grow.`)
+      }
+
       if (!(await vbox.isOff(name))) {
         throw new Error(`"${name}" is running. VirtualBox will not add or remove a serial port on a running machine — stop it first, which is worth knowing before a boot you wanted to watch.`)
       }

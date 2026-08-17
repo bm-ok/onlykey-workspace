@@ -807,6 +807,18 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
         log.on('keys').warn(`the old worker credential could not be moved into the guest list — ${e.message}`)
       }
 
+      // EVERY MACHINE HAS A CONSOLE, INCLUDING THE ONES THAT ALREADY EXISTED.
+      //
+      // The serial port is attached when a machine is built, which covers
+      // everything made from now on and nothing made before — and "before" is
+      // most of them. This gives one to any machine that is off and has none.
+      //
+      // Not awaited: it is a handful of VBoxManage calls and the dashboard has no
+      // reason to wait for them before answering anything.
+      provisioner.makeSureConsolesAreCaptured()
+        .then(r => { if (r.given.length) log.on('machines').good(`${r.given.join(', ')} now write their console here — every machine has one`) })
+        .catch(e => log.on('machines').warn(`could not check every machine has a console — ${e.message}`))
+
       // THE OUTLINE, REWRITTEN IF THE SUITES HAVE MOVED — and only while the
       // drills are switched on for the open folder.
       //

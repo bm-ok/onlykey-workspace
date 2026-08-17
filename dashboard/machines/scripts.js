@@ -203,9 +203,25 @@ okc_ca || true
 
 # Everything a script prints goes to one log on the machine and to the dashboard,
 # so the live log and the machine's own record say the same thing.
+#
+# ONCE, HOWEVER MANY SCRIPTS DEEP THIS IS. This header is prepended to every
+# stage, and a stage is run BY another script that is already teeing into the
+# same file -- so the child wrote each line to the log itself and also to the
+# parent's stdout, which the parent teed into the log. Every line appeared twice.
+#
+# Read in the supervisor's first boot: "okc: supervisor: installing claude code"
+# twice, in a row, for its whole run. Nothing was wrong and the record was twice
+# the length, which is the kind of noise that makes a log stop being read.
+#
+# The flag is exported, so a stage started from a stage inherits it and writes
+# through its parent instead of opening its own tee.
 OKC_LOG=/var/log/okc-provision.log
 touch "$OKC_LOG" 2>/dev/null || OKC_LOG=/tmp/okc-provision.log
-exec > >(tee -a "$OKC_LOG") 2>&1
+if [ "\${OKC_TEEING:-no}" != yes ]; then
+  OKC_TEEING=yes
+  export OKC_TEEING OKC_LOG
+  exec > >(tee -a "$OKC_LOG") 2>&1
+fi
 
 # Never fatal, and never noisy about it: a machine must not fail to build because
 # the dashboard was restarted while it was talking.

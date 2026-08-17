@@ -345,8 +345,13 @@ function watchInstall (name, { onEnd = null, show = true, auto = false } = {}) {
       if (show && view === 'terminal') showShell(shell)
       else paintShellTabs()
       if (!file) {
-        term.write('[33mThis machine has no console being captured.[0m\r\n' +
-          'Turn it on with vmSerial while the machine is off, and it will be readable from the next start.\r\n')
+        // A TAB WITH NOTHING IN IT IS STILL THE RIGHT TAB. It says why rather than
+        // looking broken, and the reason is always the same one: the port is
+        // attached when a machine is BUILT, and VirtualBox will not add one to a
+        // machine that is running. Every machine made from now on has it.
+        term.write('[33mThis machine is running with no console being captured.[0m\r\n' +
+          'The serial port is attached when a machine is built, and VirtualBox will not add one to a\r\n' +
+          'running machine, so this boot cannot be watched. It is captured from the next install.\r\n')
       }
       return shell
     })
@@ -384,7 +389,13 @@ function mindConsoles (list) {
   if (!list || list.available === false || !Array.isArray(list.vms)) return
 
   for (const v of list.vms) {
-    if (!v.running || !v.serial) continue
+    // RUNNING IS THE WHOLE CONDITION. It also asked for a console to be captured,
+    // which sounds sensible and is the same mistake as closing the tab: a machine
+    // running with no console is precisely the one somebody cannot see, and it
+    // got no tab at all — so the Terminal tab showed "no terminals are open"
+    // while an install ran. The tab is opened either way and says what it has;
+    // see the note written into it below when there is no file.
+    if (!v.running) continue
     if (watchers.has(v.name)) continue
     watchInstall(v.name, { show: false, auto: true }).then(s => {
       if (s) say(`${v.name} is running — its console is in the Terminal tab.`, undefined, { lasts: 8000 })

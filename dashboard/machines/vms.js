@@ -23,11 +23,30 @@ const FILE = path.join(STATE, 'vms.json')
 // wrong are easy to hit: a byte-order mark, which JSON.parse rejects outright, and
 // a single entry saved as an object rather than a list. Neither should empty the
 // list of machines and make it look as though nothing was ever made.
+// WHAT A RECORD WRITTEN BY AN OLDER VERSION IS MISSING, filled in on the way
+// out rather than by rewriting the file.
+//
+// Two fields moved from the spec to the top of the record — see add() — and a
+// machine made before that has them only in its spec. Both are read on every
+// draw and by the queue, so a missing one is not cosmetic: no tags meant a
+// supervisor machine was offered to the queue as an ordinary runner.
+//
+// Read-time and idempotent, so nothing has to be migrated and a record that
+// already has them is untouched. `tags: []` set on purpose is left alone —
+// only a record that never had the field at all falls back to its spec.
+const asRecorded = vm => ({
+  ...vm,
+  tags: Array.isArray(vm.tags) ? vm.tags : ((vm.spec || {}).tags || []),
+  serial: vm.serial !== undefined ? vm.serial : ((vm.spec || {}).serial || null)
+})
+
 function read () {
   if (!fs.existsSync(FILE)) return []
   try {
     const data = JSON.parse(fs.readFileSync(FILE, 'utf8').replace(/^\uFEFF/, ''))
-    return Array.isArray(data) ? data : [data]
+    // Every reader goes through here \u2014 the queue, the window, update() \u2014 so the
+    // filling-in above happens once rather than at each place that asks.
+    return (Array.isArray(data) ? data : [data]).map(asRecorded)
   } catch (e) {
     log.on('vm').bad(`${FILE} could not be read (${e.message}). Fix or delete it; no machine is listed until then.`)
     return []
@@ -55,7 +74,28 @@ function add (spec) {
   // nothing. Named here rather than appearing the first time one is set, so a
   // machine that has never been set up reads as "not allowed yet" instead of as
   // a field somebody forgot.
-  const vm = { name: spec.name, spec, created: new Date().toISOString(), baseSnapshot: null, reported: null, branch: null }
+  // TAGS ARE LIFTED OUT OF THE SPEC, and this is a fix rather than a tidy-up.
+  //
+  // `provisioner.fill` puts tags in the spec, because that is where what somebody
+  // asked for at creation goes. Everything that READS a tag reads it here at the
+  // top: vmTags writes it here, the queue matches on it, the card draws it. So a
+  // machine made with tags had them written down in a place nothing looked at —
+  // it came back carrying none, and the supervisor machine built with the box
+  // ticked was offered to the queue like any other runner.
+  //
+  // One place to read from, filled from the one place it is asked for.
+  const vm = {
+    name: spec.name,
+    spec,
+    tags: Array.isArray(spec.tags) ? spec.tags : [],
+    // Where its console is written, for the same reason: the window opens a
+    // terminal on this, and buildInVbox is what attached the port.
+    serial: spec.serial || null,
+    created: new Date().toISOString(),
+    baseSnapshot: null,
+    reported: null,
+    branch: null
+  }
   write([...list, vm])
   return vm
 }

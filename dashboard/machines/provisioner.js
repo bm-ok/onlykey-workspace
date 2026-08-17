@@ -244,6 +244,31 @@ async function buildInVbox (spec, to) {
     await vbox.run(['modifyvm', spec.name, '--natpf1', `ssh,tcp,127.0.0.1,${spec.sshPort},,22`], { tags: [spec.name] })
   }
 
+  // THE CONSOLE, ON EVERY MACHINE, FROM THE MOMENT IT IS BUILT.
+  //
+  // A serial port in raw-file mode is a wire out of the guest that needs nothing
+  // running inside it: the kernel writes to ttyS0 from its first line, before the
+  // network, before systemd, before there is any agent to dial home — and
+  // VirtualBox copies every byte to a file here. It is the only way to watch a
+  // boot that never finishes, which is the failure it was built for.
+  //
+  // It used to be off unless asked for, on the reasoning that a file the host
+  // writes for the life of a machine is not a default anybody chose. What that
+  // produced was an instrument only the drills had: every machine the test kit
+  // built could be watched and every machine made at the window could not, and an
+  // install ran for twelve minutes with the Terminal tab showing nothing.
+  //
+  // The cost is small and bounded: VirtualBox truncates the file on every start
+  // and the previous boot is rolled aside, so it is two boots' worth per machine
+  // rather than a growing record. The cost of not having it is a machine that
+  // will not boot and no way to see why.
+  //
+  // Here rather than at install, because this is the one place a VirtualBox
+  // machine is built — create() and the rebuild inside install() both come
+  // through — so there is no second path that can be forgotten.
+  const serial = path.join(data.sub('serial'), `${spec.name}.log`)
+  await vbox.setSerial(spec.name, serial).catch(e => to.warn(`could not capture its console: ${e.message}`))
+
   const folder = path.dirname((await vbox.info(spec.name)).CfgFile || '.')
   const disk = path.join(folder, `${spec.name}.vdi`)
   await vbox.run(['createmedium', 'disk', '--filename', disk, '--size', String(spec.diskMB), '--format', 'VDI'],
@@ -276,7 +301,7 @@ async function buildInVbox (spec, to) {
     { tags: [spec.name] })
   }
 
-  return { iso, bridge, disk }
+  return { iso, bridge, disk, serial }
 }
 
 // ---- making the machine ----------------------------------------------
@@ -293,9 +318,13 @@ async function create (input) {
     throw new Error(`VirtualBox already has a machine called "${spec.name}". Pick another name — this app will not touch a machine it did not make.`)
   }
 
-  const { iso, bridge, disk } = await buildInVbox(spec, to)
+  const { iso, bridge, disk, serial } = await buildInVbox(spec, to)
 
-  const vm = vms.add({ ...spec, iso, bridge, disk })
+  // `serial` among the rest: the port was attached as the machine was built, and
+  // the registry has to say so or the window will not know there is a console to
+  // read. Two records of one fact is how they come to disagree, so it is carried
+  // out of the one place that made it.
+  const vm = vms.add({ ...spec, iso, bridge, disk, serial })
   to.good(`${spec.name} created. It has no operating system yet — install one next.`)
   return vm
 }
@@ -401,45 +430,18 @@ async function install (name, { port, caPort }) {
     // install it was opened to watch runs invisibly.
     //
     // Reported as it happened: "the serial never reconnected on the new machine".
-    if (vm.serial) {
-      await vbox.setSerial(name, vm.serial).catch(e => to.warn(`could not capture its console again: ${e.message}`))
-      to.info('its console is being captured again, on the new build')
-    }
+    // AND THE CONSOLE COMES BACK WITH THE BUILD. buildInVbox attaches the port to
+    // every machine it makes, so what is left here is the record: this app's own
+    // note of where the console is written has to name the file that now exists,
+    // or the window has no reason to open a terminal on it.
+    //
+    // Written whatever it said before. The port is not optional any more — see
+    // buildInVbox — so a machine whose record said "off" is a record that is now
+    // wrong rather than a preference to preserve.
+    const console1 = path.join(data.sub('serial'), `${name}.log`)
+    vms.update(name, { serial: console1 })
+    to.info(`its console is captured again on the new build, at ${path.basename(console1)}`)
     to.good(`${name} is a new machine again — installing onto it`)
-  }
-
-  // AND A MACHINE THAT HAS NEVER BEEN ASKED GETS ONE NOW.
-  //
-  // The console was off unless somebody turned it on, which is a defensible
-  // default for the life of a machine and the wrong one for an INSTALL. An
-  // install is exactly the boot nothing inside is alive to report: no agent, no
-  // network, no ssh, twelve minutes of an installer that either finishes or does
-  // not. It is also the one boot somebody sits and watches.
-  //
-  // Reported as it happened: a machine made at the window installed with no
-  // console at all, so the Terminal tab had nothing to show for it — while every
-  // machine the test kit built did, because the drills turn the port on before
-  // installing. The instrument existed and only the drills had it.
-  //
-  // THREE STATES, NOT TWO, which is what makes this safe to default:
-  //
-  //   a path      it was on; the block above puts it back on the new build
-  //   null        somebody turned it OFF on purpose, and that is left alone
-  //   undefined   nobody has ever decided, which is every machine made at the
-  //               window — and this is the case that gets one
-  //
-  // Bounded, so it is not "logging everything for ever": VirtualBox truncates
-  // the file on every start and the previous boot is rolled to <name>.previous
-  // — two boots' worth per machine, not a growing record.
-  if (vm.serial === undefined) {
-    const file = path.join(data.sub('serial'), `${name}.log`)
-    try {
-      await vbox.setSerial(name, file)
-      vms.update(name, { serial: file })
-      to.info(`its console will be written to ${path.basename(file)}, so this install can be watched in the Terminal tab`)
-    } catch (e) {
-      to.warn(`could not capture its console for the install: ${e.message}`)
-    }
   }
 
   // A BLANK DISK, every time, and this is not tidiness.
@@ -723,4 +725,46 @@ async function base (name, title = 'base') {
   return { name, baseSnapshot: title }
 }
 
-module.exports = { fill, create, install, report, base, firstSnapshotIfItNeedsOne, resolveISO, pickBridge }
+// ---- the console every machine is supposed to have -------------------------
+//
+// EVERY MACHINE, NOT ONLY THE NEW ONES. buildInVbox attaches the port to
+// anything built from now on, which leaves the machines that already exist —
+// including ones built by an earlier version, which is most of them.
+//
+// Run at startup. It only touches a machine that is OFF and has no port, because
+// VirtualBox will not add one to a running machine, and it says so rather than
+// failing silently: a machine that is up right now gets its port the next time it
+// is off, and this is called again on the next start.
+//
+// Cheap when there is nothing to do: one registry read, and no VBoxManage call
+// at all for a machine that already has a console.
+async function makeSureConsolesAreCaptured () {
+  if (!vbox.available()) return { checked: 0, given: [], later: [] }
+  const given = []
+  const later = []
+
+  for (const vm of vms.read()) {
+    if (vm.serial) continue
+    const to = log.on('vm', vm.name)
+    let off = false
+    try { off = await vbox.isOff(vm.name) } catch { continue }   // not built yet; the build will do it
+    if (!off) { later.push(vm.name); continue }
+
+    const file = path.join(data.sub('serial'), `${vm.name}.log`)
+    try {
+      await vbox.setSerial(vm.name, file)
+      vms.update(vm.name, { serial: file })
+      given.push(vm.name)
+      to.good(`its console is now captured — every machine has one, and this one did not`)
+    } catch (e) {
+      to.warn(`could not capture its console: ${e.message}`)
+    }
+  }
+
+  if (later.length) {
+    log.on('machines').info(`${later.join(', ')} ${later.length === 1 ? 'is' : 'are'} running, so ${later.length === 1 ? 'its' : 'their'} console cannot be captured until ${later.length === 1 ? 'it is' : 'they are'} next off — VirtualBox will not add a serial port to a running machine`)
+  }
+  return { checked: vms.read().length, given, later }
+}
+
+module.exports = { fill, create, install, report, base, firstSnapshotIfItNeedsOne, resolveISO, pickBridge, makeSureConsolesAreCaptured }
