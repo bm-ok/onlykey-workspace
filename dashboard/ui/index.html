@@ -734,21 +734,41 @@
     </div>
 
     <div class="pane active" id="pane-judgements">
+      <p class="note">What has been read and what it found. A judgement changes nothing — it may not even push to what it reads — so everything it has to say is in what it handed back.</p>
       <div class="cols">
-        <div class="col">
-          <h2>Asked for <span class="muted" id="judge-context"></span></h2>
+
+        <div class="col narrow">
+          <h2 class="titlerow">
+            Judgements
+            <button class="plus" id="judge-new" title="Ask for a judgement">+</button>
+          </h2>
+          <!-- WHAT IS WAITING ON SOMEBODY, above the list, exactly like the
+               approvals strip on the task board. A change nothing has read is
+               the judging equivalent of a definition nobody has approved: it
+               sits there being invisible until something says so.
+
+               AN OPEN CUT ASKS AND DOES NOT ACT. Nothing runs because a cut
+               exists — an automatic queue of judgements would be work running
+               unattended against somebody's repository with nobody having
+               chosen this cut or this chain. -->
+          <div id="judge-waiting" class="hidden"></div>
           <div id="judge-list" class="stack"></div>
         </div>
+
         <div class="col">
-          <h2>Changes waiting to be read</h2>
-          <!-- AN OPEN CUT ASKS AND DOES NOT ACT. A cut is opened when work is
-               proposed for landing, which is the moment it stops being one
-               machine's business — so it appears here on its own. Nothing runs
-               because a cut exists: an automatic queue of judgements would be
-               work running unattended against somebody's repository with nobody
-               having chosen this cut or this chain. -->
-          <div id="judge-subjects" class="stack"></div>
+          <h2>Judgement <span class="muted" id="judge-context">— nothing selected</span></h2>
+          <div id="judge-detail" class="panel"></div>
         </div>
+
+        <div class="col wide">
+          <!-- THE ONLY WAY A JUDGE CAN SAY ANYTHING. It may not push to what it
+               reads, so there is no "artifact" column here in the task board's
+               sense — nothing arrives on a branch. What it found is a file it
+               handed over, and this is it. -->
+          <h2>Handed back <span class="muted" id="judge-handed-context"></span></h2>
+          <div id="judge-handed" class="panel"></div>
+        </div>
+
       </div>
     </div>
 
@@ -764,15 +784,24 @@
            missing is the whole reason to look at this screen. -->
       <div class="cols3">
         <div class="col">
-          <h2>Jobs <span class="muted" id="judge-jobs-context"></span></h2>
+          <h2 class="titlerow">
+            Jobs <span class="muted" id="judge-jobs-context"></span>
+            <button class="plus" id="judge-job-new" title="Write a judging job">+</button>
+          </h2>
           <div id="judge-jobs" class="stack"></div>
         </div>
         <div class="col">
-          <h2>Prompts <span class="muted" id="judge-prompts-context"></span></h2>
+          <h2 class="titlerow">
+            Prompts <span class="muted" id="judge-prompts-context"></span>
+            <button class="plus" id="judge-prompt-new" title="Write a judging prompt">+</button>
+          </h2>
           <div id="judge-prompts" class="stack"></div>
         </div>
         <div class="col">
-          <h2>Contracts <span class="muted" id="judge-contracts-context"></span></h2>
+          <h2 class="titlerow">
+            Contracts <span class="muted" id="judge-contracts-context"></span>
+            <button class="plus" id="judge-contract-new" title="Write a judging contract">+</button>
+          </h2>
           <div id="judge-contracts" class="stack"></div>
         </div>
       </div>
