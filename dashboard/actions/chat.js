@@ -18,8 +18,28 @@
 // means four bookmarks and a model keeping three of them correctly.
 
 const chat = require('../core/chat')
+const actions = require('./table')
 const s = require('./shared')
-const { log, events, tasks, vms, landings } = s
+const { log, events, tasks, vms, landings, channel, settings } = s
+
+// ---- waking it ------------------------------------------------------------
+//
+// ONE TURN AT A TIME, ACROSS EVERYTHING THAT MIGHT ASK. A chat message, a task
+// finishing and somebody pressing the button are three doors into the same
+// model, and two turns at once on one machine is two things deciding — the fault
+// the one-supervisor rule exists to prevent, arriving from inside instead.
+//
+// A flag in memory rather than on disk, deliberately: it is about this process
+// having a child running, and a restart genuinely does end that.
+let thinking = false
+const busyThinking = () => thinking
+
+// What it is told when it wakes. Deliberately short: the skill on the machine is
+// what knows the loop, and repeating it here would be a second copy that goes
+// stale — see provision/supervisor-skill.md.
+const WAKE = 'Wake. Use the supervising skill: call whatsNew, read what changed, ' +
+  'do what needs doing if anything does, and reply to the person with supervisorSays. ' +
+  'One message, two or three sentences. If there is nothing to do, say that instead.'
 
 module.exports = {
   chat: {
@@ -27,8 +47,13 @@ module.exports = {
     takes: ['since'],
     run: ({ since = null } = {}) => {
       const rows = since == null ? { messages: chat.all(), bookmark: chat.lastNumber(), missed: 0 } : chat.since(since)
+      // HOW FAR THE SUPERVISOR HAS READ, so the window can show which of your
+      // messages have actually reached it. One number rather than a field per
+      // message — see core/chat.js.
+      const read = chat.readMark()
       return {
         ...rows,
+        read,
         note: rows.messages.length
           ? `${rows.messages.length} message(s)${rows.missed ? `, and ${rows.missed} older ones not shown` : ''}.`
           : 'Nothing has been said yet. Type something and the supervisor will read it next time it looks.'
@@ -45,7 +70,31 @@ module.exports = {
       // hand was asked for in here, and six weeks later this line is the answer
       // to "why did it do that".
       log.on('supervisor').info(`you said: ${said.text.slice(0, 120)}${said.text.length > 120 ? '…' : ''}`)
-      return { ...said, note: 'Said. The supervisor reads it when it next asks what is new — which is when it finishes what it is doing, not this second.' }
+
+      // AND IT WAKES, IF IT HAS BEEN TOLD TO. This is what "no response" was:
+      // the message was written down, correctly, and nothing on this host had
+      // any reason to read it.
+      //
+      // NOT AWAITED. A turn is the better part of a minute — a machine may have
+      // to start first — and the person who typed a sentence should not be
+      // watching a spinner for it. What it says arrives in the conversation, and
+      // the conversation is on screen.
+      //
+      // Off by default, because a sentence typed here would otherwise start a
+      // machine and spend a model's time. See `supervisorWakes` in core/settings.
+      const wakes = settings.read().supervisorWakes === true
+      if (wakes && !busyThinking()) {
+        actions.supervisorWake.run({ why: 'you said something' })
+          .catch(e => log.on('supervisor').warn(`it could not be woken: ${e.message}`))
+      }
+
+      return {
+        ...said,
+        woke: wakes && !busyThinking(),
+        note: wakes
+          ? 'Said, and it is waking to read it. What it says back appears here.'
+          : 'Said. It reads this when it next wakes — press "Wake it" to do that now, or switch on "Answers by itself".'
+      }
     }
   },
 
@@ -92,8 +141,19 @@ module.exports = {
   whatsNew: {
     about: 'Everything that changed since a bookmark: what was said, what finished, what is waiting',
     takes: ['since', 'events'],
-    run: ({ since = null, events: wantEvents = true } = {}) => {
+    run: ({ since = null, events: wantEvents = true, _fromMachine = null } = {}) => {
       const talk = chat.since(since == null ? 0 : since)
+
+      // THE RECEIPT, WRITTEN HERE BECAUSE HERE IS WHERE THE WORDS ARRIVE. Not
+      // when the message was stored, which says only that this host took it, and
+      // not when the supervisor replies, which may never happen — a supervisor
+      // that reads something and decides to do nothing has still read it.
+      //
+      // Everything up to the bookmark it was just handed, stamped with the
+      // machine that asked. From the person's side this is the difference
+      // between "it has not looked yet" and "it looked and said nothing", which
+      // are the same silence and very different situations.
+      if (talk.messages.length) chat.markRead(talk.bookmark, _fromMachine)
 
       // The board as it stands, rather than a diff of it. A supervisor deciding
       // what to do next needs the state, and the state is small.
@@ -129,5 +189,64 @@ module.exports = {
         : `Nothing said since ${since == null ? 'ever' : since}. Ask again with since=${out.bookmark}.`
       return out
     }
+  }
+,
+
+  // ---- waking the supervisor ------------------------------------------------
+  //
+  // This is what was missing, and the way it was missing is the reason it needs
+  // saying: a message was left on the Chat tab, nothing read it, and the tab
+  // looked exactly like a chat where the other end is ignoring you.
+  //
+  // WHAT A WAKE IS: the machine is started if it is down, one turn of its model
+  // runs with the supervising skill, and whatever it says arrives in the
+  // conversation through supervisorSays. Not a session, not a loop — one turn,
+  // because a supervisor that runs continuously is a supervisor spending money
+  // to discover that nothing has changed.
+  supervisorWake: {
+    about: 'Wake the supervisor: one turn of its model, reading what changed and answering',
+    takes: ['name', 'why'],
+    run: async ({ name, why = null }) => {
+      if (busyThinking()) {
+        return { woke: false, why: 'it is already thinking. One turn at a time — two would be two things deciding, which is the thing the one-supervisor rule exists to prevent.' }
+      }
+
+      // The same machine the sign-in desk uses, started if it is off — one
+      // function in actions/shared.js, because "start it if it is down" is a
+      // decision and two copies of a decision drift.
+      const on = await s.supervisorMachine(name)
+
+      thinking = true
+      const began = Date.now()
+      log.on('supervisor', on).info(why ? `waking it — ${why}` : 'waking it')
+      try {
+        // THE PROMPT GOES OVER AS BASE64. It is prose with apostrophes in it,
+        // heading for a bash -c inside an ssh command, and this file has already
+        // watched quoting eat a regular expression today.
+        const b64 = Buffer.from(WAKE, 'utf8').toString('base64')
+        const said = await channel.run(on,
+          `cd ~ && printf %s '${b64}' | base64 -d > /tmp/okc-wake.txt && timeout 600 bash -lc 'okc-supervisor -p "$(cat /tmp/okc-wake.txt)"'; rm -f /tmp/okc-wake.txt`,
+          { what: 'one turn of the supervisor', timeout: 660000 })
+
+        const took = Math.round((Date.now() - began) / 1000)
+        log.on('supervisor', on).good(`it thought for ${took}s`)
+        return {
+          woke: true,
+          name: on,
+          seconds: took,
+          // What it printed, which is its own summary rather than what it said to
+          // the person — that went through supervisorSays and is in the chat.
+          said: String(said.output || '').split('\n').slice(1).join('\n').trim().slice(-2000),
+          note: `${on} took a turn. What it said to you is on the Chat tab.`
+        }
+      } finally {
+        thinking = false
+      }
+    }
+  },
+
+  supervisorThinking: {
+    about: 'Whether the supervisor is mid-turn right now',
+    run: () => ({ thinking: busyThinking(), wakes: settings.read().supervisorWakes === true })
   }
 }

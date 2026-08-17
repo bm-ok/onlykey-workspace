@@ -84,6 +84,40 @@ function say ({ who, text, from = null, about = null }) {
   return line
 }
 
+// ---- what has actually been read -------------------------------------------
+//
+// A MESSAGE WRITTEN DOWN IS NOT A MESSAGE DELIVERED, and the difference is the
+// whole reason this needs saying: the supervisor is switched off most of the
+// time, so a line sitting in this file may have been read a second ago or may be
+// waiting for a machine to boot. From the person's side those look identical,
+// which makes the tab read as a chat where the other end is ignoring you.
+//
+// A POINTER, NOT A FLAG ON EACH LINE. The numbering already answers it — a
+// message is read when its number is at or below the last number handed to the
+// supervisor — so this is one small file rather than rewriting an append-only
+// log to set a field. It is written when the supervisor asks what is new, which
+// is the moment the words actually reach it.
+const READ = () => path.join(data.state(), 'chat-read.json')
+
+function readMark () {
+  try {
+    const m = JSON.parse(fs.readFileSync(READ(), 'utf8'))
+    return { n: Number(m.n) || 0, at: m.at || null, by: m.by || null }
+  } catch { return { n: 0, at: null, by: null } }
+}
+
+function markRead (n, by = null) {
+  const upTo = Number(n) || 0
+  const was = readMark()
+  // Never backwards. A supervisor asking with an old bookmark is re-reading, not
+  // un-reading, and a receipt that flickers off is worse than none.
+  if (upTo <= was.n) return was
+  const now = { n: upTo, at: new Date().toISOString(), by: by || null }
+  try { fs.mkdirSync(path.dirname(READ()), { recursive: true }) } catch { /* it exists */ }
+  try { fs.writeFileSync(READ(), JSON.stringify(now, null, 2), 'utf8') } catch { /* the answer still stands */ }
+  return now
+}
+
 // Everything, or everything after a number. `since` is what the other end was
 // last told, so it is EXCLUSIVE: asking again with the same number twice must
 // not deliver the same message twice.
@@ -114,4 +148,4 @@ function clear () {
   return { cleared: true }
 }
 
-module.exports = { say, since, all, clear, lastNumber, FILE }
+module.exports = { say, since, all, clear, lastNumber, readMark, markRead, FILE }

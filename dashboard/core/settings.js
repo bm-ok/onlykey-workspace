@@ -58,7 +58,22 @@ const DEFAULTS = {
   // restart that a code change causes. Being asked and then having the question
   // vanish because the app reloaded is how somebody ends up running the drills
   // by hand to find out what was wanted.
-  testsAsked: null
+  testsAsked: null,
+
+  // WHETHER THE SUPERVISOR ANSWERS BY ITSELF, and it is off until somebody says
+  // otherwise.
+  //
+  // A supervisor woken is a machine started and a model spending tokens, on its
+  // own initiative, because somebody typed a sentence. That is the entire point
+  // of it and it is not a thing to switch on by accident — so this exists, and
+  // it defaults to no.
+  //
+  // WITH IT OFF, the Chat tab is a note left for something that reads it when
+  // you next start it by hand. With it on, saying something wakes it: the
+  // machine comes up if it is down, one turn runs, and whatever it says appears
+  // in the conversation. Nothing else about what it may do changes — it is the
+  // same allowlist either way.
+  supervisorWakes: false
 }
 
 function read () {

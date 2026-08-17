@@ -25,15 +25,23 @@ let chatSeen = 0
 // right, the supervisor's on the left — the one convention every chat window
 // shares, which makes the label above a bubble a courtesy rather than the only
 // way to tell.
-const oneMessage = m => {
+const oneMessage = (m, read) => {
   const mine = m.who === 'person'
-  return el('div', { className: `msg ${mine ? 'mine' : 'theirs'}` },
+  // DELIVERED, WHICH IS NOT THE SAME AS SENT. Yours sits faded until the
+  // supervisor has actually been handed it — it is switched off most of the
+  // time, and a message waiting for a machine to boot looks exactly like a
+  // message being ignored. See the receipt in core/chat.js.
+  const waiting = mine && Number(m.n) > Number((read && read.n) || 0)
+  return el('div', { className: `msg ${mine ? 'mine' : 'theirs'}${waiting ? ' waiting' : ''}` },
     el('div', { className: 'msg-who' },
       el('span', { textContent: mine ? 'you' : 'the supervisor' }),
       // Which machine said it, when it was a machine. Two supervisors are not
       // supposed to run at once, and this is where it would show.
       !mine && m.from ? el('span', { className: 'mono', textContent: m.from }) : null,
       el('span', { textContent: ago(m.at) }),
+      mine
+        ? el('span', { textContent: waiting ? 'not read yet' : 'read' })
+        : null,
       m.about ? el('span', { textContent: `about ${m.about}` }) : null),
     // textContent, never anything that parses. This is text from a model, and a
     // window that renders what a model sends renders what anything that talked
@@ -52,11 +60,24 @@ function paintChat () {
       ? 'The supervisor reads this when it next wakes, not this second — it is a note left for it, and it is switched off most of the time.'
       : 'Nothing said yet. What you type here is what the supervisor is asked to do; it reads it when it next looks, and answers here.')
 
-    if (!changed('chat-thread', said.bookmark)) return
+    // Whether it answers by itself, and whether it is thinking right now.
+    // Asked here rather than in the draw loop, because this is the only tab that
+    // shows either and a panel behind a tab must ask nothing.
+    api('supervisorThinking').then(how => {
+      if (view !== 'chat') return
+      $('chat-wakes').checked = !!how.wakes
+      $('chat-wake').disabled = !!how.thinking
+      setText($('chat-wake'), how.thinking ? 'thinking…' : 'Wake it')
+    }).catch(() => { /* the tab still works without it */ })
+
+    // The mark is part of the signature: a message going from unread to read
+    // changes nothing about the messages themselves, and it is exactly what
+    // somebody is watching for.
+    if (!changed('chat-thread', [said.bookmark, said.read && said.read.n])) return
     chatSeen = said.bookmark
 
     fill($('chat-thread'), rows.length
-      ? rows.map(oneMessage)
+      ? rows.map(m => oneMessage(m, said.read))
       : el('p', { className: 'empty', textContent: 'No conversation yet.' }))
 
     // The newest at the bottom and in view, which is where a conversation is
@@ -103,6 +124,48 @@ $('chat-text').onkeydown = e => {
   // Enter sends, Shift+Enter makes a line. The other way round is defensible and
   // is not what anybody's fingers expect from a chat box.
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saySomething() }
+}
+
+// WAKING IT, WHICH IS THE HALF THAT WAS MISSING. A message was left on this tab,
+// nothing read it, and the tab looked exactly like a chat where the other end is
+// ignoring you.
+//
+// One turn: the machine comes up if it is down, its model reads what changed,
+// does what needs doing and answers here. Not a session and not a loop — a
+// supervisor that runs continuously is one spending money to discover that
+// nothing has changed.
+//
+// SAID WHILE IT HAPPENS, because a turn takes the better part of a minute and a
+// button that goes quiet for that long reads as a button that did nothing.
+const wakeIt = async why => {
+  const button = $('chat-wake')
+  button.disabled = true
+  setText(button, 'thinking…')
+  try {
+    const said = await api('supervisorWake', { why })
+    if (said.woke === false) say(said.why, 'muted')
+    paintChat()
+  } catch (e) {
+    oops(e)
+  } finally {
+    button.disabled = false
+    setText(button, 'Wake it')
+  }
+}
+
+$('chat-wake').onclick = () => wakeIt('you pressed the button')
+
+$('chat-wakes').onchange = async e => {
+  const on = !!e.target.checked
+  try {
+    await api('settingSet', { name: 'supervisorWakes', value: on })
+    say(on
+      ? 'it will wake and answer when you say something — a machine starts and a model thinks, each time'
+      : 'it will not wake by itself. What you say here waits until you press Wake it.', on ? 'good' : 'muted')
+  } catch (err) {
+    e.target.checked = !on
+    oops(err)
+  }
 }
 
 $('chat-clear').onclick = () => ask({

@@ -675,6 +675,12 @@
     <div class="sync-head">
       <h2>Chat <span class="muted" id="chat-context"></span></h2>
       <div class="sync-controls">
+        <!-- ANSWERING BY ITSELF IS A MACHINE STARTING AND A MODEL SPENDING, on
+             its own initiative, because somebody typed a sentence. That is the
+             point of it and it is not a thing to switch on by accident, so it is
+             a switch rather than a default. -->
+        <label class="inline"><input type="checkbox" id="chat-wakes"> Answers by itself</label>
+        <button class="btn" id="chat-wake">Wake it</button>
         <button class="btn" id="chat-clear">Clear</button>
       </div>
     </div>

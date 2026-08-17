@@ -54,54 +54,10 @@ const {
 // come off the same desk and differ only in what they are filed as.
 const DESK = 'okc-signin'
 
-const isSupervisorMachine = vm => (vm.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
-
-// Which supervisor machine has the desk, brought up if it is not already.
-//
-// STARTED RATHER THAN REFUSED, which is the difference between an instrument and
-// a checklist. Wanting a login URL is not a moment to be told to go and start a
-// machine first: the desk is a facility, the machine it lives on is an
-// implementation detail of that facility, and a supervisor is switched off most
-// of the time because nothing is asking it to think.
-//
-// It costs the boot — this machine dials in about ten seconds after it is
-// started — and it is said out loud, because a call that quietly takes a minute
-// looks like a call that has hung.
-//
-// ONE IS THE ORDINARY CASE. More than one is refused rather than guessed at,
-// because "whose desk signed this in" is a thing somebody will want to answer
-// later — unless exactly one of them is already up, which is an answer rather
-// than a guess.
-async function whichSupervisor (name) {
-  const all = vms.read().filter(isSupervisorMachine)
-  if (!all.length) {
-    throw new Error('There is no supervisor machine on this host, and the sign-in desk lives on one. Make a machine with the "Supervisor machine" box ticked.')
-  }
-
-  let pick = name
-  if (pick) {
-    const mine = vms.get(pick)
-    if (!isSupervisorMachine(mine)) {
-      throw new Error(`"${pick}" is a runner, and only a supervisor machine has a sign-in desk. Every Claude sign-in happens on one machine, as a user that exists for nothing else — a runner is handed a credential when it works and never asks for one.`)
-    }
-  } else if (all.length === 1) {
-    pick = all[0].name
-  } else {
-    const up = all.filter(v => channel.connected(v.name))
-    if (up.length !== 1) {
-      throw new Error(`There is more than one supervisor machine (${all.map(v => v.name).join(', ')}). Say which one should hold the sign-in.`)
-    }
-    pick = up[0].name
-  }
-
-  if (!channel.connected(pick)) {
-    log.on('vm', pick).info('starting it — the sign-in desk is on it')
-    await actions.vmStart.run({ name: pick })
-    await actions.vmAwait.run({ name: pick, for: 'connected', seconds: 240 })
-    log.on('vm', pick).good('it is up, and the desk is ready')
-  }
-  return pick
-}
+// Which supervisor machine has the desk, started if it is down. One function,
+// in actions/shared.js, because waking the supervisor wants exactly the same
+// thing and two copies of "start it if it is off" is two copies of a decision.
+const whichSupervisor = s.supervisorMachine
 
 module.exports = {
   // ---- getting a Claude credential -----------------------------------------

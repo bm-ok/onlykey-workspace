@@ -1068,3 +1068,14 @@ table.kv td .ok { color: var(--ok); }
   max-height: 9rem;
   font: inherit;
 }
+
+/* NOT READ YET. A message of yours is faded until the supervisor has been handed
+   it: it is switched off most of the time, so "written down" and "delivered" are
+   hours apart, and from this side they look identical. The transition is what
+   makes it useful — you see it settle. */
+.msg.waiting .msg-body {
+  opacity: 0.55;
+  border-style: dashed;
+  transition: opacity .25s ease, border-color .25s ease;
+}
+.msg .msg-body { transition: opacity .25s ease, border-color .25s ease; }

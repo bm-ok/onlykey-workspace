@@ -306,8 +306,54 @@ const whoAsked = ({ _driven, _overTheWire } = {}) =>
     : _overTheWire ? 'the command line'
       : 'the window'
 
+// WHICH SUPERVISOR MACHINE, AND UP, which two different things now need: the
+// sign-in desk lives on one, and waking the supervisor runs a turn on one.
+//
+// STARTED RATHER THAN REFUSED. A supervisor is switched off most of the time,
+// and neither "get me a login URL" nor "read what I just said" is a moment to be
+// handed a checklist. The machine is an implementation detail of the facility
+// being asked for.
+//
+// ONE IS THE ORDINARY CASE. More than one is refused rather than guessed at —
+// unless exactly one of them is already up, which is an answer rather than a
+// guess. Only one may RUN at a time anyway; see vmStart.
+//
+// The table is required inside the call rather than at the top, because this file
+// is what the table is built out of. See actions/table.js.
+async function supervisorMachine (name) {
+  const actions = require('./table')
+  const is = vm => (vm.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
+  const all = vms.read().filter(is)
+  if (!all.length) {
+    throw new Error('There is no supervisor machine on this host. Make one with the "Supervisor machine" box ticked.')
+  }
+
+  let pick = name
+  if (pick) {
+    if (!is(vms.get(pick))) {
+      throw new Error(`"${pick}" is a runner, not a supervisor machine.`)
+    }
+  } else if (all.length === 1) {
+    pick = all[0].name
+  } else {
+    const up = all.filter(v => channel.connected(v.name))
+    if (up.length !== 1) {
+      throw new Error(`There is more than one supervisor machine (${all.map(v => v.name).join(', ')}). Say which one.`)
+    }
+    pick = up[0].name
+  }
+
+  if (!channel.connected(pick)) {
+    log.on('vm', pick).info('starting it — something wants the supervisor')
+    await actions.vmStart.run({ name: pick })
+    await actions.vmAwait.run({ name: pick, for: 'connected', seconds: 240 })
+    log.on('vm', pick).good('it is up')
+  }
+  return pick
+}
+
 module.exports = {
-  whoAsked,
+  whoAsked, supervisorMachine,
   log, events, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, judgements,
   judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
