@@ -27,9 +27,26 @@ const DIR = process.env.OKC_DATA || (process.platform === 'win32'
 // A folder inside it, made if it is not there. Returning the path rather than a
 // boolean, so a caller writes `path.join(sub('screenshots'), name)` and never
 // has to remember to create anything.
+//
+// MADE ONCE PER RUN, NOT ONCE PER CALL. `mkdirSync` on a directory that already
+// exists is cheap and is still a filesystem syscall, and this is on the read
+// path of things the window asks every few seconds -- it showed up as the
+// fourth most sampled function in an idle trace, for directories that had
+// existed since the app started.
+//
+// Remembered in memory rather than checked with `existsSync`, which would be
+// the same syscall wearing a different name. If somebody deletes a state
+// directory while the app is running, the next write there fails and says so --
+// which is the honest outcome, and better than this quietly re-making a folder
+// underneath a problem somebody should know about.
+const made = new Set()
+
 function sub (name) {
   const dir = path.join(DIR, name)
-  fs.mkdirSync(dir, { recursive: true })
+  if (!made.has(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+    made.add(dir)
+  }
   return dir
 }
 
