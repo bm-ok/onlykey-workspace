@@ -81,6 +81,30 @@ not fixed, and the state of the machines.
 Outstanding
 -----------
 
+* **A judge has never actually read anything.** The lane is built and two runs
+  have reached a machine; neither produced a finding. The first died on a chain
+  fault (since fixed and guarded); the second got the whole brief to the worker
+  and came back "Failed to authenticate: OAuth session expired and could not be
+  refreshed". **The next thing to do here is one survey that works** — queue
+  `investigate the codebase` on a branch cut with a live worker credential and
+  read the `CODEBASE.md` that comes back. Until that has happened, every claim
+  about judging is a claim about code rather than about a judgement.
+
+* **The supervisor has one triage entry pointing at a judgement that is gone.**
+  It wrote `judge-survey-codebase-1` down as "waiting on a judge" and that
+  judgement was removed. `triage` resolves ids now, so on its next waking it
+  will be told there is nothing to wait for — worth watching, because that is
+  the first time the notebook will contradict what it believed.
+
+* **Two sign-ins have never been used.** `runner1` and `runner2` replaced the
+  credential that died. Nothing has run a worker on either, so "this host can do
+  work" is currently an assumption. One task or one judgement settles it.
+
+* **The judging chains have been approved twice and rewritten three times.**
+  They are approved and runnable now, and the scripts have never had a
+  successful run through them — so what is approved is read but not exercised.
+
+
 * **The credential comes BACK in a command's output.** Going down it is sealed
   now — the machine makes a keypair, publishes the public half, and this host
   sends ciphertext (`core/handover.js`, checked by "nothing travels as

@@ -427,6 +427,83 @@ script, so a worker a job starts and a worker the queue starts are the same
 worker.
 
 
+Judging: the third role
+-----------------------
+
+There are three of them and it is worth naming them that way:
+
+    supervisor   the project manager. Decides what is worth doing, in what
+                 order, and never touches the code.
+    judge        the investigator. Goes and looks, reports what is actually
+                 there, and changes nothing.
+    task         the worker. Does what is needed to SATISFY THE JUDGE.
+
+That last line is the arrangement. A worker is not working to satisfy the
+supervisor: it is working to meet what a judge will find when it looks next,
+which makes the standard written down, checkable, and the same whoever is
+supervising that afternoon. **Nobody marks their own work anywhere in the loop.**
+
+**A judgement is work, not a field.** It gets a machine, a run, and its own chain
+— exactly what a task gets — because "why was this accepted" has to be answerable
+six weeks later by something other than asking whoever typed it.
+
+    branch cut  <- task       <- job <- prompt <- contract    the work
+    branch cut  <- judgement  <- job <- prompt <- contract    reading the work
+    PR cut      <- judgement  <- job <- prompt <- contract    reading it as it lands
+
+**What is judged is never a task.** A change can come from more than one task,
+and a task can deliver nothing worth reading — so judging follows the CHANGE: a
+branch cut, or a PR cut once the change is proposed for landing. `taskJudge` is
+the placeholder this replaced and is kept only until nothing needs it.
+
+**A judgement reads and may not write.** Reading code means having it, so a
+judging machine is set up on the branch like any other — and being set up on a
+branch is what every other machine's permission to push is made of. Without a
+rule, a judge could push to the very line it was asked to pass judgement on. The
+refusal is in the git route, on the host, where no guest can edit it:
+
+    remote: refused: this machine is reading a change, not making one.
+    remote: a judgement may not push to what it judges - hand your findings
+    remote: back as a file instead: okc-artifact <file>
+
+**So everything it has to say, it hands back.** A written report is one useful
+thing to hand back and is not what an artifact is. If a judge hands nothing back,
+nothing is known — which is an answer rather than a gap to route around.
+
+**The judge sends its own verdict**, at the end of its session, after the
+handoff: `accept`, `reject` or `pending`. The one that READ the change is the one
+that concludes. A person can be the judge instead — same record, no machine, and
+then the verdict is theirs. A supervisor is never either.
+
+**Its own library.** A judging job, prompt and contract are kept apart from the
+ones work is done under: "did this follow the rules, is it secure, what bug was
+missed" is a different question under different rules. A judge given to
+`taskCreate` is refused, and a working job given to `judgementCreate` is refused.
+
+**And the judge is the gate.** A supervisor cannot see the code — no diff, no
+files, no change to read — so everything it believes came from a judge.
+`taskCreate` over the wire refuses unless it names the judgement that established
+the work is real, and `prCutMake` refuses unless a judgement of that line has
+finished, still describes what is there, and did not reject it. A judgement made
+before the last push is a green light from a different change.
+
+
+One queue, two kinds of work
+----------------------------
+
+A judgement waits for a machine exactly as a task does, wants the same machines,
+and is refused one for the same reasons — so there is one queue and a tab of its
+own. Two queues would mean two answers to "what is next" and a priority nobody
+wrote down.
+
+**Judgements go first.** A judgement reads work already waiting to land; a task
+makes more of it, so a queue that runs tasks first grows the thing it is behind
+on. Within a kind it is strictly oldest-first. The rule lives in one place —
+`tasks/queue.js` sorts what it dispatches and hands the same sentence to the
+board — because written twice they drift, and the failure is a screen saying a
+judgement is next while a task goes out.
+
+
 What a worker remembers
 ------------------------
 
@@ -1684,14 +1761,31 @@ ordinary user. What follows is what is still not proven.
   that has produced anything took minutes. Nothing here has been tested against a
   worker that thinks for a long time, fills a transcript, and has to be watched
   while it does.
-* **Nothing has been judged by anything but a person.** `taskJudge` records a
-  verdict and the Judge tab in `ROADMAP.md` is not built. Every accept and reject
-  on the board was typed by hand.
+* **A judgement has never actually read anything.** The whole lane is built —
+  its own store, actions, library, queue place, Judge tab, the push refusal, and
+  a judge that sends its own verdict — and two attempts have run on a machine.
+  Neither produced a finding. The first died on a chain fault since fixed; the
+  second reached the worker with a complete 3,435-character brief and came back
+  "Failed to authenticate: OAuth session expired and could not be refreshed".
+  So every part has been exercised except the one that matters: a judge reading
+  a change and handing back what it found.
 * **A job's artifacts are only findable through a task.** A job run on its own is
   filed under its run id, and no pane shows those — only `taskFiles` reads them,
   and only for a task.
-* **The credential's clock has been wrong once, in the direction that matters.**
-  `credentialsHeld` said the refresh token was valid until September and the
-  worker answered "OAuth session expired and could not be refreshed". Nothing
-  marks a held credential as suspect after a run fails that way, so the Keys tab
-  goes on saying it is good until somebody reads a log.
+* **The credential's clock has been wrong twice, in the direction that matters.**
+  `credentialsHeld` reads the refresh token's own expiry, and a token the server
+  has stopped accepting still says September. It happened again on 17 August: the
+  suite's "a machine can really sign in with it" passed at 14:30 and the same
+  credential was dead by 17:11, discovered only because a judge failed on a
+  machine and its transcript said so. Nothing marks a held credential as suspect
+  after a run fails that way.
+
+  A REFRESHED TOKEN IS NOT A WORKING ONE, either. Taking that credential back
+  reported it as rotated — a new fingerprint — because the CLI wrote its failed
+  refresh state back to the file. Rotation is evidence that something happened,
+  not that it worked.
+* **A backup exists and has never been restored in anger.** `guestBackup` and
+  `guestRestore` round-trip byte-identically and refuse a wrong passphrase, an
+  altered file, and an overwrite of something newer. What has not happened is
+  restoring onto a host that genuinely lost its sign-ins, which is the only run
+  that proves the thing it is for.

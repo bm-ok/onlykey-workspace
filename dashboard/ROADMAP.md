@@ -165,7 +165,7 @@ destination can name somebody else's.
   task uid, so they land on disk and no pane in the window shows them
 
 
-Judging needs a home of its own — NOT BUILT
+Judging needs a home of its own — BUILT, AND NEVER YET USED FOR REAL
 -------------------------------------------
 
 **A verdict is somebody reading what came back.** "Judge it" was a button on the
@@ -373,8 +373,13 @@ both are about the credential path being the one thing that still goes through
 a shell.
 
 
-Judging, as its own kind of run — NOT BUILT
--------------------------------------------
+Judging, as its own kind of run — BUILT
+---------------------------------------
+
+**Built on 17 August 2026.** A judgement is a piece of work with its own store,
+its own actions, its own library and its own place in the queue — see the
+section above and README.md. The reasoning below is what it was built to and is
+kept for that reason.
 
 A tab of its own, because judging is not a task and pretending it is one is what
 has kept it from existing. A task produces work; a judgement is a reading OF

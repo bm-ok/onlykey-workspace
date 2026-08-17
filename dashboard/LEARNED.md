@@ -834,3 +834,51 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   base64 run in what was sent before searching now, and that was verified by
   running it against a reconstruction of the old command, which it correctly
   condemns.
+
+* **A repaint guard hid a real state change, twice in one afternoon.**
+  `changed(key, signature)` compares the ANSWER a panel was given, and a panel's
+  own state is not part of that answer. Pressing "Read what was said" set a flag
+  and repainted; the paint returned one line in, because `supervisorState` had
+  not changed. The same early return left a Wake button enabled after the state
+  that disabled it had gone, and the Judge tab had it too. The shape is always
+  the same: **the data did not change, the decision did, and the guard only
+  knows about the first.** Anything driven by a decision this window made belongs
+  above the guard, with its own guard that includes the decision.
+
+* **An option given a value of the wrong shape failed silently in three checks.**
+  `ask({ extra })` is a second BUTTON — `{ label, onClick }` — and two dialogs
+  passed it a DOM node. The result was a button with `textContent: undefined`
+  and the thing that was supposed to be shown never rendered at all: a "write a
+  judging prompt" dialog with no editor in it. `node --check` passed, the markup
+  checker passed, `npm test` passed. Only looking at it found it, which is what
+  a screenshot is for.
+
+* **`jobSave` unbound every judging job from its prompt, and every panel still
+  said "can judge".** `promptId` was overwritten with null whenever a save did
+  not mention it, unlike the code and the tags beside it — so two rewrites that
+  only changed a script quietly cut the chain. The fault appeared twenty minutes
+  later as a machine booting, taking a credential, cloning three repositories and
+  refusing with "no brief, so there is nothing to give the job". A job with no
+  prompt is not broken; only a JUDGE with no prompt is, so the refusal now lives
+  at `judgementCreate` where the difference is known.
+
+* **A worker credential can be clock-valid, freshly "rotated", and dead.**
+  `credentialsHeld` reads the refresh token's own expiry, and the suite's "a
+  machine can really sign in with it" passed at 14:30 on a credential that was
+  dead by 17:11. Worse: taking it back reported it ROTATED, with a new
+  fingerprint — the CLI had written its failed-refresh state back to the file.
+  Rotation says something happened, not that it worked. The only proof is a
+  worker's own transcript: "Failed to authenticate: OAuth session expired and
+  could not be refreshed".
+
+* **Testing it yourself is not optional, and I skipped it.** Three judging chains
+  were written, approved by the operator, and handed straight to a supervisor to
+  run. The first real use was the bootstrap, and it failed on a fault that one
+  command-line run would have found in a minute. The operator's question —
+  "did we ever try to test the judge out ourselves?" — was the whole review.
+
+* **Rolling a machine back destroys the evidence of why the run failed.** The
+  job's own output lives on the machine, and the machine is restored to its base
+  snapshot the moment the run ends. What survived was the session archive, which
+  is what actually said why. Anything a failure needs to be diagnosed from has to
+  be handed back before the rollback, not read afterwards.

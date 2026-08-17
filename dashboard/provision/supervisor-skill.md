@@ -323,7 +323,7 @@ enough to decide, which is usually sooner.
 
 ## Talking to the person
 
-`supervisorSays` puts a message on their Chat tab. Use it:
+`supervisorSays` puts a message on their Supervisor tab. Use it:
 
 * when you have done something they did not ask for specifically
 * when you are about to spend a machine on something
