@@ -191,9 +191,47 @@ function build () {
       ]
     : []
 
+  // WHAT THIS FILE IS FOR, said at the top of it, because the answer is not the
+  // obvious one and the obvious one costs work.
+  //
+  // A test kit is a net that catches what breaks. This is that, and it is also a
+  // CATALOGUE: every capability this app has, in the order a person uses them,
+  // in one file — which is the thing nobody has when they sit down to add
+  // something.
+  //
+  // Written after a mechanism was very nearly built twice over. The concern was
+  // "a supervisor writing work unattended might reach a machine somebody is
+  // using", and the answer was a new setting for where its work may go. The app
+  // already had the answer: "keep it back from tasks", one lever, honoured by
+  // every caller. It was not found because nothing said out loud what this app
+  // could already do — and the second mechanism would have been the fault, not
+  // the fix: two of them eventually disagree, and the one somebody forgets is
+  // always the one that mattered.
+  //
+  // So: read this before adding a mechanism, and add a check when a capability
+  // arrives. A capability with no check here is one the next person will build
+  // again.
+  const preamble = [
+    '<!-- What this app can do, in the order a person does it. Generated; do not edit. -->',
+    '<!--',
+    '  TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:',
+    '',
+    '    a net       these run against this app for real, and half of them pass by',
+    '                being REFUSED.',
+    '    a catalogue every capability there is, named, in one place. Read it before',
+    '                building a mechanism. The last thing nearly built twice was a',
+    '                setting for "where may a supervisor\'s work go" — the app',
+    '                already had "keep it back from tasks", and a second lever for',
+    '                one more kind of asker is how two of them come to disagree.',
+    '',
+    '  A capability with no check here is one somebody will build again.',
+    '-->'
+  ]
+
   const text = [
     '<!-- generated: node dashboard/test/outline.js --write -->',
     `<!-- ${byGroup.size} suites, ${tests} tests, ${checks} checks${drafts.length ? `, ${drafts.length} of them ${drafts.length === 1 ? 'a draft' : 'drafts'}` : ''} -->`,
+    ...preamble,
     '',
     ...todo,
     // The blank line each block ends with separates it from the next header; the

@@ -1,5 +1,19 @@
 <!-- generated: node dashboard/test/outline.js --write -->
 <!-- 12 suites, 31 tests, 159 checks, 25 of them drafts -->
+<!-- What this app can do, in the order a person does it. Generated; do not edit. -->
+<!--
+  TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
+
+    a net       these run against this app for real, and half of them pass by
+                being REFUSED.
+    a catalogue every capability there is, named, in one place. Read it before
+                building a mechanism. The last thing nearly built twice was a
+                setting for "where may a supervisor's work go" — the app
+                already had "keep it back from tasks", and a second lever for
+                one more kind of asker is how two of them come to disagree.
+
+  A capability with no check here is one somebody will build again.
+-->
 
 ## 25 drafts, not written yet
 
