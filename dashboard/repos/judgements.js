@@ -64,4 +64,40 @@ function staleAgainst (judgement, tips) {
   return false
 }
 
-module.exports = { all, on, key, staleAgainst, FILE }
+// ---- writing one down ------------------------------------------------------
+//
+// APPENDED, NEVER REPLACED — the rule at the top of this file, made into the
+// only way in. There was no way in at all until judging became work: this file
+// could read and compare opinions that nothing could write, which is why
+// `judgements` sat in test/unused.md.
+//
+// WHAT IT WAS READ AGAINST IS NOT OPTIONAL. A judgement with no tips can never
+// say whether it still describes what is there, so it would read as current for
+// ever — the one thing this file exists to prevent. Refused rather than filed
+// with an empty object, which is the shape that lies.
+function add (source, target, judgement) {
+  const from = String(source || '').trim()
+  const to = String(target || '').trim()
+  if (!from || !to) throw new Error('A judgement is filed against a cut, which is a source line and a target. Both are needed, or it is filed under a name nobody will find.')
+
+  const tips = judgement && judgement.tips
+  if (!tips || typeof tips !== 'object' || !Object.keys(tips).length) {
+    throw new Error('A judgement has to record what each repository was at when it was made. Without that it can never say whether it still describes what is there, and it would read as current for ever.')
+  }
+
+  const now = all()
+  const k = key(from, to)
+  const one = {
+    ...judgement,
+    at: judgement.at || new Date().toISOString()
+  }
+  now[k] = [...(now[k] || []), one]
+
+  const file = FILE()
+  if (!file) throw new Error('No workspace is open, so there is nowhere to keep a judgement.')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify(now, null, 2))
+  return one
+}
+
+module.exports = { all, on, key, add, staleAgainst, FILE }

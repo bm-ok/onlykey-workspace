@@ -32,6 +32,10 @@ const settings = require('./core/settings')
 // What a supervisor machine may ask this host for — a named list, not a filter.
 const supervisor = require('./core/supervisor')
 const tasks = require('./tasks/store')
+// WHAT A MACHINE IS RUNNING, task or judgement, in one place rather than the
+// same `find` written out at every endpoint a guest can reach. See the head of
+// it for why a judgement wins when both somehow answer.
+const { whatIsOn } = require('./tasks/onmachine')
 const queue = require('./tasks/queue')
 // Only the HTTP handler below uses this — a guest handing a file over. It went
 // missing when the require block was rebuilt around what the ACTIONS needed,
@@ -332,6 +336,35 @@ function gitRoute (req, res, url) {
   // ours and keeps its punctuation.
   const env = {}
   if (service === 'git-receive-pack') {
+    // A JUDGEMENT READS. IT DOES NOT WRITE.
+    //
+    // A judging machine is set up on the branch it is reading, because reading
+    // code means having it — and being set up on a branch is what every other
+    // machine's permission to push is made of. So without this, a judge could
+    // push to the very line it was asked to pass judgement on, and the change
+    // somebody is waiting to land would quietly contain the judge's own work.
+    //
+    // Refused HERE rather than by giving the judging job no push in its script.
+    // A script is a thing a job's author writes; this is the host, and it is the
+    // only end a guest cannot edit. What a judge hands back it hands back as
+    // artifacts, the same way any other work does — a written report is one
+    // useful thing to hand back and is not what an artifact IS.
+    const doing = whatIsOn(who.name)
+    if (doing && doing.kind === 'judgement') {
+      log.on('git', who.name).warn(`${who.name} is judging ${doing.reads} and tried to push to ${repo}`)
+      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+        // NAMING THE COMMAND THAT EXISTS. This said `okc-hand-back`, which is
+        // not a thing on any machine — an error message telling somebody to run
+        // a command that does not exist is worse than one that says nothing,
+        // because it costs them the time to find that out. It is `okc-artifact`,
+        // which is on the PATH of every provisioned machine.
+        .end('refused: this machine is reading a change, not making one.\n' +
+             'a judgement may not push to what it judges - hand your findings back as a file instead:\n' +
+             '  okc-artifact <file>\n' +
+             'nothing was taken - your commits are still on your own copy.\n')
+      return
+    }
+
     if (!who.branch) {
       log.on('git', who.name).warn(`${who.name} tried to push to ${repo} without being set up on a branch`)
       res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
@@ -608,14 +641,18 @@ function handler (req, res) {
     const name = url.searchParams.get('vm') || ''
     if (!workerAsking(req, url)) return refuseGuest(res, name, 'to fetch its session')
 
-    const task = tasks.read().find(t => t.machine === name && t.state === 'given') || null
-    if (!task) {
+    // OF EITHER KIND. A judgement's worker keeps a conversation across the
+    // machines it passes through exactly as a task's does — and under its OWN
+    // uid, so a judgement of a branch never opens the transcript of the task
+    // that made it.
+    const doing = whatIsOn(name)
+    if (!doing) {
       // 204 rather than 404: "there is no session to continue" is an ordinary
       // answer to this question, and the first run of every task gives it.
       res.writeHead(204).end()
       return
     }
-    const kept = sessions.get(task.uid)
+    const kept = sessions.get(doing.uid)
     if (!kept) { res.writeHead(204).end(); return }
     try {
       const body = require('node:fs').readFileSync(kept.path)
@@ -626,7 +663,7 @@ function handler (req, res) {
         // told which; it does not choose.
         'x-okc-session': kept.id || ''
       }).end(body)
-      log.on('vm', name, 'guest').info(`sent #${task.number} what it remembers — ${Math.round(kept.bytes / 1024)} KB, ${kept.runs} run(s) so far`)
+      log.on('vm', name, 'guest').info(`sent ${doing.ref} what it remembers — ${Math.round(kept.bytes / 1024)} KB, ${kept.runs} run(s) so far`)
     } catch (e) {
       res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' }).end(`${e.message}\n`)
     }
@@ -643,10 +680,10 @@ function handler (req, res) {
       return
     }
 
-    const task = tasks.read().find(t => t.machine === name && t.state === 'given') || null
-    if (!task) {
+    const doing = whatIsOn(name)
+    if (!doing) {
       res.writeHead(409, { 'content-type': 'text/plain; charset=utf-8' })
-        .end('this machine is not running a task, so a transcript has nothing to belong to.\n')
+        .end('this machine is not running anything, so a transcript has nothing to belong to.\n')
       return
     }
 
@@ -674,12 +711,18 @@ function handler (req, res) {
         // identity would be a worker choosing which one to bill.
         const on = vms.read().find(v => v.name === name) || {}
 
-        const kept = sessions.keep(task.uid, Buffer.concat(chunks), {
+        const work = doing.item
+        const kept = sessions.keep(doing.uid, Buffer.concat(chunks), {
           id: id || null,
-          run: task.run || null,
+          run: work.run || null,
           machine: name,
-          taskId: task.id,
-          number: task.number,
+          // What it belonged to, beside the archive, so the folder says so
+          // without anything having to resolve a uid. `kind` because a judgement
+          // and a task can share a number, and a reader needs both to know
+          // which one this was.
+          kind: doing.kind,
+          taskId: doing.id,
+          number: work.number,
           guest: on.guest || null,
           folder: url.searchParams.get('folder') || null
         })
@@ -688,8 +731,15 @@ function handler (req, res) {
         // about the run says whether it started a worker or only moved files
         // around. Recorded on the task, because "was Claude used for this" is a
         // question about the work and not about the archive.
-        try { tasks.update(task.id, { usedClaude: true }) } catch { /* the board may have moved on */ }
-        log.on('vm', name, 'guest').good(`kept what #${task.number} remembers — ${Math.round(kept.bytes / 1024)} KB, run ${kept.runs}`)
+        //
+        // ON A TASK ONLY, because that is where the board reads it from. The
+        // same fact about a judgement is worth having and has nowhere to go
+        // yet; writing it into the task store from here would file it against
+        // whatever task happened to share that number.
+        if (doing.kind === 'task') {
+          try { tasks.update(doing.id, { usedClaude: true }) } catch { /* the board may have moved on */ }
+        }
+        log.on('vm', name, 'guest').good(`kept what ${doing.ref} remembers — ${Math.round(kept.bytes / 1024)} KB, run ${kept.runs}`)
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end('kept\n')
       } catch (e) {
         log.on('vm', name, 'guest').bad(`could not keep that transcript: ${e.message}`)
@@ -710,16 +760,22 @@ function handler (req, res) {
       return
     }
 
-    // WHICH TASK IT BELONGS TO IS NOT ASKED, IT IS LOOKED UP. A machine is
-    // running exactly one task or it is not running one at all, and an artifact
-    // from a machine doing nothing has nowhere to belong -- so that is refused
-    // with the reason rather than filed somewhere plausible.
+    // WHAT IT BELONGS TO IS NOT ASKED, IT IS LOOKED UP. A machine is running
+    // exactly one thing or it is running nothing, and an artifact from a machine
+    // doing nothing has nowhere to belong -- so that is refused with the reason
+    // rather than filed somewhere plausible.
     //
-    // From the task record rather than from the queue, because the queue only
-    // knows about work IT dispatched: a task handed straight to a named machine
-    // with taskGive is just as real, and looking in the wrong place would have
+    // From the record rather than from the queue, because the queue only knows
+    // about work IT dispatched: a task handed straight to a named machine with
+    // taskGive is just as real, and looking in the wrong place would have
     // refused every artifact from one. Both paths write the same two fields.
-    const task = tasks.read().find(t => t.machine === name && t.state === 'given') || null
+    //
+    // AND A JUDGEMENT HANDS THINGS BACK TOO -- which is the ONLY way it can say
+    // anything, since it may not push to what it is reading. A written report is
+    // one useful thing to hand back and is not what an artifact is; whatever it
+    // is, it is filed under the judgement that produced it.
+    const doing = whatIsOn(name)
+    const task = doing && doing.kind === 'task' ? doing.item : null
 
     // A JOB IS NOT A TASK, and it hands things back too.
     //
@@ -732,11 +788,14 @@ function handler (req, res) {
     // that ALSO runs a job is filing against the work, which is what somebody
     // reading it afterwards is looking for.
     const run = String(url.searchParams.get('run') || '')
-    const job = !task && /^job-/.test(run) ? run : null
+    // A judgement is preferred over a run id for the same reason a task is: it
+    // is the thing somebody will look under afterwards.
+    const judgement = doing && doing.kind === 'judgement' ? doing : null
+    const job = !task && !judgement && /^job-/.test(run) ? run : null
 
-    if (!task && !job) {
+    if (!task && !judgement && !job) {
       res.writeHead(409, { 'content-type': 'text/plain; charset=utf-8' })
-        .end('this machine is not running a task or a job, so there is nothing for an artifact to belong to.\n')
+        .end('this machine is not running a task, a judgement or a job, so there is nothing for an artifact to belong to.\n')
       return
     }
 
@@ -760,18 +819,28 @@ function handler (req, res) {
     req.on('end', () => {
       if (refused) return
       try {
-        // Filed under the task's uid where there is a task, and under the run's
-        // own id where it is a job. Both are unique and neither is reused, which
-        // is the only property this needs of them.
+        // Filed under a uid where there is one -- a task's or a judgement's --
+        // and under the run's own id where it is a job. All three are unique and
+        // none is reused, which is the only property this needs of them.
+        const body = Buffer.concat(chunks)
         const kept = task
-          ? files.keep(task.uid, called, Buffer.concat(chunks), {
+          ? files.keep(task.uid, called, body, {
             run: task.run || null,
             // Written into the record beside the file so the folder says which
             // task it belonged to. The uid is still what it is keyed on.
             taskId: task.id, number: task.number, title: task.title
           })
-          : files.keep(job, called, Buffer.concat(chunks), { run: job })
-        log.on('vm', name, 'guest').good(`handed over "${called}" (${Math.round(kept.bytes / 1024)} KB) for ${task ? `#${task.number}` : job}`)
+          : judgement
+            ? files.keep(judgement.uid, called, body, {
+              run: judgement.item.run || null,
+              // `kind` and `reads` rather than a task id: what a judgement's
+              // file belongs to is a judgement, and what that judgement was
+              // about is the change it read.
+              kind: 'judgement', judgementId: judgement.id, number: judgement.item.number,
+              title: judgement.title, reads: judgement.reads
+            })
+            : files.keep(job, called, body, { run: job })
+        log.on('vm', name, 'guest').good(`handed over "${called}" (${Math.round(kept.bytes / 1024)} KB) for ${doing ? doing.ref : job}`)
         res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end('kept\n')
       } catch (e) {
         log.on('vm', name, 'guest').bad(`could not keep "${called}": ${e.message}`)

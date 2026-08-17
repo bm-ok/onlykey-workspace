@@ -48,6 +48,12 @@ const vms = require('../machines/vms')
 // The one tag this app gives a meaning to. See vms.js.
 const { SUPERVISOR } = vms
 const store = require('./store')
+// The other kind of work this dispatches. Its own store, because a judgement is
+// a different record about a different subject — see the head of it.
+const judging = require('./judging')
+// What a judgement hands back, which is the only way it can say anything: it may
+// not push to what it is reading.
+const files = require('./files')
 const channel = require('../machines/channel')
 // One machine coming up at a time, across the whole host — see bringUp below.
 const busy = require('../machines/busy')
@@ -144,7 +150,20 @@ async function tick (actions, log) {
     // rolls a machine back to a snapshot and runs Claude over the top of it.
     // Belt and braces with the adoption rule above: this is the door, and it
     // should be shut whether or not something upstream went wrong.
-    const waiting = order(tasks.filter(t => t.state === 'queued' && t.worker !== 'person').map(t => ({ ...t, kind: 'task' })))
+    // BOTH KINDS IN ONE LINE, and `order` puts judgements at the front of it.
+    //
+    // A judgement written for a person is skipped for exactly the reason a
+    // person's task is: the queue's job is to find work nobody is doing and give
+    // it to a worker, and dispatching one would roll a machine back and run
+    // Claude over a change somebody was reading themselves.
+    const toJudge = judging.read()
+      .filter(j => j.state === 'queued' && j.by !== 'person' && j.job)
+      .map(j => ({ ...j, kind: 'judgement', ref: judging.refOf(j.number) }))
+
+    const waiting = order([
+      ...toJudge,
+      ...tasks.filter(t => t.state === 'queued' && t.worker !== 'person').map(t => ({ ...t, kind: 'task', ref: `#${t.number}` }))
+    ])
     if (!waiting.length) return
 
     const { vms } = await actions.vmList.run({})
@@ -177,7 +196,7 @@ async function tick (actions, log) {
       const at = free.findIndex(m => willTake(task, m))
       if (at < 0) {
         if (String(task.tag || '').trim()) {
-          log.on('queue').info(`#${task.number} wants a machine tagged "${task.tag}" and none is free — it waits`)
+          log.on('queue').info(`${task.ref} wants a machine tagged "${task.tag}" and none is free — it waits`)
         }
         continue
       }
@@ -185,7 +204,25 @@ async function tick (actions, log) {
       if (!next) break
       // Claimed synchronously, before any await, so two ticks cannot hand the
       // same machine to two tasks.
-      busyWith.set(next.name, `#${task.number}`)
+      busyWith.set(next.name, task.ref)
+
+      // A JUDGEMENT GOES DOWN ITS OWN PATH. It shares everything up to the point
+      // where work is given — a machine, rolled back, dialled in, holding a
+      // credential — and then differs in the two ways that matter: it is set up
+      // on what it READS, and it may not push to it. See runJudgement.
+      if (task.kind === 'judgement') {
+        runJudgement(actions, log, task, next.name).catch(async e => {
+          log.on('queue', next.name).bad(`${task.ref} — ${e.message}`)
+          try {
+            judging.update(task.id, {
+              state: 'done',
+              attempts: [...(task.attempts || []), { machine: next.name, at: new Date().toISOString(), failed: e.message }]
+            })
+          } catch { /* the log already carries it */ }
+        })
+        continue
+      }
+
       run(actions, log, task, next.name).catch(async e => {
         log.on('queue', next.name).bad(`#${task.number} — ${e.message}`)
         // A task whose setup failed has to LAND somewhere.
@@ -212,6 +249,99 @@ async function tick (actions, log) {
     }
   } finally {
     running = false
+  }
+}
+
+// ---- one judgement, start to finish ------------------------------------
+//
+// The same shape as a task run, and deliberately not the same function. What is
+// shared is the machine handling — rolled back, brought up, given a credential,
+// put away afterwards — and those are called here rather than copied. What
+// differs is the two things that make a judgement a judgement:
+//
+//   IT IS SET UP ON WHAT IT READS. A branch cut is read on its own branch; a PR
+//   cut is read on the line the pull requests were opened from, because that is
+//   where the change is. Reading code means having it, so the machine is set up
+//   exactly as a worker's would be.
+//
+//   AND IT MAY NOT PUSH. Being set up on a branch is what every other machine's
+//   permission to push is MADE of, so this would otherwise hand a judge the
+//   right to write to the very line it is judging. The refusal is on the host,
+//   in the git route, where no guest can edit it — see server.js. Nothing here
+//   relies on the judging job being written politely.
+//
+// What it hands back it hands back as artifacts, filed under the judgement,
+// which is the only way it can say anything at all.
+async function runJudgement (actions, log, judgement, machine) {
+  const to = log.on('queue', machine)
+  const id = judgement.id
+  const ref = judgement.ref || judging.refOf(judgement.number)
+
+  const spent = {}
+  const began = Date.now()
+  const phase = async (name, fn) => {
+    const at = Date.now()
+    try { return await fn() } finally { spent[name] = Date.now() - at }
+  }
+
+  // WHICH BRANCH CARRIES THE CHANGE. A judgement's subject is never a branch it
+  // owns — this is where the code it must read happens to live.
+  const subject = judgement.subject || {}
+  const branch = subject.kind === 'cut' ? subject.source : subject.branch
+  if (!branch) throw new Error(`${ref} does not say what it is reading, so there is nothing to set a machine up on.`)
+
+  try {
+    to.info(`${ref} "${judgement.title}" -> ${machine}`)
+    judging.update(id, { state: 'given', machine })
+
+    await phase('bringUp', () => bringUp(actions, to, machine))
+    await phase('credential', () => actions.vmCredentialsPut.run({ name: machine }))
+    await phase('workspace', () => actions.vmWorkspace.run({
+      name: machine,
+      branch,
+      // What this machine is for, left on it so it can say so if it dials back
+      // in. A judgement says what it is READING, which is the honest sentence
+      // for a machine that will not be delivering anything.
+      task: `${ref}: reading ${subject.name} — a judgement. Hand findings back as files; this machine may not push.`
+    }))
+
+    const started = await actions.jobRun.run({
+      id: judgement.job,
+      judgement: id,
+      name: machine
+    })
+    judging.update(id, {
+      run: started.run,
+      attempts: [...(judgement.attempts || []), { run: started.run, machine, at: new Date().toISOString() }]
+    })
+
+    const outcome = await phase('reading', () => waitForRun(actions, to, machine, started.run, Number(judgement.hours) || 6))
+
+    // WHAT CAME BACK, before the machine is touched again — it is about to be
+    // rolled back, which is exactly when nobody is watching.
+    const handed = files.list(judgement.uid) || []
+
+    spent.total = Date.now() - began
+    const latest = judging.get(id)
+    const marked = (latest.attempts || []).map(a => a.run === started.run ? { ...a, spent } : a)
+
+    // DONE MEANS THE READING ENDED, not that a verdict was reached. A judgement
+    // that ran and said nothing is a real and useful thing to see: it is the
+    // difference between "nobody has looked" and "somebody looked and would not
+    // say". The verdict is recorded separately — see judgementVerdict.
+    judging.update(id, { state: 'done', attempts: marked, read: new Date().toISOString() })
+
+    to[handed.length ? 'good' : 'warn'](
+      `${ref} done — ${outcome.state}${outcome.exit === undefined ? '' : ` (exit ${outcome.exit})`} — ${handed.length ? `${handed.length} file(s) handed back` : 'nothing handed back'}`)
+    to.info(`${ref} took ${secs(spent.total)} — ${Object.entries(spent)
+      .filter(([k]) => k !== 'total').map(([k, v]) => `${k} ${secs(v)}`).join(', ')}`)
+  } finally {
+    // ALWAYS, and for the same reason a task's machine is: a machine left on,
+    // holding a credential, is out of service until somebody notices, and the
+    // credential outlives the work in a snapshot. There is no handed-over case
+    // here — a judgement with no job never reaches the queue.
+    await putAway(actions, log, machine)
+    busyWith.delete(machine)
   }
 }
 

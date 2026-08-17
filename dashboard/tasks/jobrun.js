@@ -64,10 +64,17 @@ async function run ({ id, promptId, fromTask, machine, token, prompts, contracts
   // to `claude -p`. Running it through a job instead is the same words to the
   // same worker on the same machine, so it grants nothing new.
   if (fromTask) {
+    // A JUDGEMENT ARRIVES HERE TOO, and nothing below had to change for it: a
+    // judgement carries the same fields for the same reason a task does — the
+    // words it was written with and the rules it is held to, copied in rather
+    // than referenced. What differs is only what it is CALLED, so that is the
+    // one thing read off the record instead of built from a number. J1 and #1
+    // are different pieces of work.
+    const called = fromTask.ref || `#${fromTask.number}`
     if (!fromTask.brief || !String(fromTask.brief).trim()) {
-      throw new Error(`#${fromTask.number} has no brief, so there is nothing to give the job.`)
+      throw new Error(`${called} has no brief, so there is nothing to give the job.`)
     }
-    prompt = { id: fromTask.id, name: `#${fromTask.number} ${fromTask.title}`, text: String(fromTask.brief) }
+    prompt = { id: fromTask.id, name: `${called} ${fromTask.title}`, text: String(fromTask.brief) }
     contract = fromTask.rules
       ? { id: fromTask.contractId || 'the task\'s own', name: fromTask.contractName || 'the rules it was written under', text: String(fromTask.rules) }
       : null

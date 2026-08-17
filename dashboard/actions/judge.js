@@ -24,7 +24,35 @@ const s = require('./shared')
 // No `tasks` here, and that is the point of the file: a judgement is about a
 // change, and the task that produced it is a fact about where the change came
 // from rather than the thing being read.
-const { log, judging, jobs } = s
+const { log, judging, jobs, prompts, contracts, judgements, prtemplate, branches, repos } = s
+
+// WHAT EACH REPOSITORY WAS AT WHEN IT WAS READ, for either kind of subject.
+//
+// This is not bookkeeping. A judgement made before another push is a judgement
+// of something ELSE, and the only thing that can ever say so is the commit each
+// repository was at when it was made. Without it a verdict reads as current for
+// ever — see repos/judgements.js, which refuses one that has none.
+//
+// Two ways of asking, because the two subjects are different questions. A PR cut
+// knows its own repositories: `prtemplate.about` walks the pairs a cut is made
+// of and returns a tip each. A branch cut is simply wherever that branch exists,
+// which is what `headsIn` answers per repository.
+function tipsFor (subject) {
+  const out = {}
+  if (subject.kind === 'cut') {
+    let context = null
+    try { context = prtemplate.about(subject.source, subject.target) } catch { context = null }
+    for (const r of (context ? context.repos : [])) out[r.repo] = r.tip
+    return out
+  }
+  for (const r of repos.list()) {
+    try {
+      const heads = branches.headsIn(repos.gitDirOf(r.name)) || {}
+      if (heads[subject.branch]) out[r.name] = heads[subject.branch]
+    } catch { /* a repository that cannot be read is one this cannot claim to have read */ }
+  }
+  return out
+}
 
 // A judgement reads; it does not write. So every one of these refuses to take a
 // branch to work ON, and the one thing a caller names is what is to be read.
@@ -97,14 +125,29 @@ module.exports = {
         // judgement read six weeks later has to be able to say what it was
         // holding the work to, and a library entry rewritten since would
         // silently change the answer.
+        //
+        // FROM THE LIBRARY, because that is where the words live. The `jobs`
+        // action reports which prompt a job runs and whether it is approved —
+        // not its text, quite rightly — so the first version of this copied a
+        // field that does not exist and produced a judgement with no brief,
+        // which fails at the machine rather than here.
+        const words = which.promptId ? (prompts.all() || []).find(p => p.id === which.promptId) : null
+        if (which.promptId && !words) {
+          throw new Error(`The job "${which.id}" runs the prompt "${which.promptId}", and there is no such prompt. A judgement copies the words it will be read under when it is written, so this is refused now rather than on a machine.`)
+        }
+        const under = words && words.contractId ? (contracts.all() || []).find(c => c.id === words.contractId) : null
+        if (words && words.contractId && !under) {
+          throw new Error(`The prompt "${words.id}" runs under the contract "${words.contractId}", and there is no such contract. It will not be copied without the rules it was approved with.`)
+        }
+
         chain = {
           job: which.id,
-          brief: said.brief || which.brief || null,
-          promptId: said.promptId || null,
-          promptName: said.promptName || null,
-          rules: said.rules || null,
-          contractId: said.contractId || null,
-          contractName: said.contractName || null
+          brief: words ? words.text : null,
+          promptId: words ? words.id : null,
+          promptName: words ? words.name : null,
+          rules: under ? under.text : null,
+          contractId: under ? under.id : null,
+          contractName: under ? under.name : null
         }
       }
 
@@ -162,6 +205,80 @@ module.exports = {
       const it = judging.get(id)
       if (it.state !== 'queued') throw new Error(`${it.ref} is "${it.state}", not queued. One already given out is not called back by this — the machine is reading and would have to be stopped on it.`)
       return judging.update(id, { state: 'draft' })
+    }
+  },
+
+  judgementVerdict: {
+    about: 'Record what a judgement decided: accepted or rejected, and why',
+    needs: 'workspace',
+    takes: ['id', 'verdict', 'note'],
+    run: async ({ id, verdict, note }) => {
+      const it = judging.get(id)
+
+      const said = String(verdict || '').trim().toLowerCase()
+      if (!judging.VERDICTS.includes(said)) {
+        throw new Error(`A verdict is ${judging.VERDICTS.join(' or ')}. "${verdict}" is neither, and a judgement that cannot say which is one that has not been made.`)
+      }
+
+      // A REJECTION SAYS WHY, and this refusal is inherited from taskJudge, which
+      // is the one thing in it worth keeping. The old wording promised the note
+      // was "sent back to a worker" — nothing was sent anywhere, and it still is
+      // not: a rejection is a RECORD, and what happens to the work is a person's
+      // decision. Said plainly here rather than implied by a sentence that
+      // describes something this app does not do.
+      const why = String(note || '').trim()
+      if (said === 'rejected' && !why) {
+        throw new Error('Say why it was rejected. A rejection with no reason cannot be acted on by anybody — and nothing is automatically re-run, so this note is the whole of what survives.')
+      }
+
+      // WHAT IT WAS READ AGAINST, taken now, from git. This is what lets the
+      // verdict say later whether it still describes what is there: a judgement
+      // made before another push is a judgement of something else.
+      //
+      // REFUSED WHEN THERE ARE NONE, for either kind. The first version asked
+      // `prtemplate.about` for both and got an empty object for every branch
+      // judgement — recorded, accepted, and unable ever to go stale. An empty
+      // set of tips is not "no information", it is a judgement that will read as
+      // current for ever, which is the shape that lies.
+      const tips = tipsFor(it.subject)
+      if (!Object.keys(tips).length) {
+        throw new Error(`This host cannot see where ${it.subject.name} is now, so a verdict could not record what it was made against — and would read as current for ever. Nothing was filed. Check the branch still exists across the repositories it was cut in.`)
+      }
+
+      const decided = judging.update(id, {
+        state: 'done',
+        verdict: said,
+        note: why || null,
+        tips,
+        decided: new Date().toISOString()
+      })
+
+      // AND IT REACHES THE CUT, when the subject is one. A verdict living only
+      // on the judgement is a verdict nobody looking at the change can see —
+      // which is what taskJudge did, and why nothing about a landing ever said
+      // whether it had been read.
+      let onTheCut = null
+      if (it.subject.kind === 'cut') {
+        onTheCut = judgements.add(it.subject.source, it.subject.target, {
+          verdict: said,
+          note: why || null,
+          by: it.by,
+          judgement: it.id,
+          ref: it.ref,
+          job: it.job || null,
+          contractName: it.contractName || null,
+          tips
+        })
+      }
+
+      log.on('judging', it.id)[said === 'accepted' ? 'good' : 'warn'](`${it.ref} ${said} — ${it.subject.name}`)
+      return {
+        ...decided,
+        onTheCut,
+        note: it.subject.kind === 'cut'
+          ? `Recorded, and filed against ${it.subject.name}. It stops describing what is there the moment anything is pushed to it.`
+          : `Recorded against ${it.subject.name}. Nothing is re-run and nothing is sent anywhere — what happens to the work is a person's decision.`
+      }
     }
   },
 

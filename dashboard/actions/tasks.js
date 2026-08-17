@@ -17,7 +17,7 @@ const actions = require('./table')
 const s = require('./shared')
 const {
   log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
-  vbox, vms, provisioner, scripts, channel, tasks, artifact,
+  vbox, vms, provisioner, scripts, channel, tasks, judging, artifact,
   archive, files, sessions, prompts, contracts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,
@@ -1098,10 +1098,10 @@ module.exports = {
   },
 
   jobRun: {
-    about: 'Send a job to a machine and let it run there, with a prompt — or with what a task carries',
+    about: 'Send a job to a machine and let it run there, with a prompt — or with what a task or a judgement carries',
     needs: 'workspace',
-    takes: ['id', 'promptId', 'task', 'name', 'folder'],
-    run: async ({ id, promptId, task: taskId, name, folder }) => {
+    takes: ['id', 'promptId', 'task', 'judgement', 'name', 'folder'],
+    run: async ({ id, promptId, task: taskId, judgement: judgementId, name, folder }) => {
       const one = jobs.get(id)
       if (!one) throw new Error(`There is no job called "${id}".`)
 
@@ -1154,7 +1154,14 @@ module.exports = {
       // here would run it under whatever those say now, which is a different
       // text the moment anybody edits one -- and the task's is the one somebody
       // wrote, queued, and will be judged on.
-      const forTask = taskId ? tasks.get(taskId) : null
+      //
+      // OR WHAT A JUDGEMENT CARRIES, which is the same fields for the same
+      // reason — copied in when it was written, so what a finished run was held
+      // to cannot be changed afterwards by editing a library entry. Nothing
+      // downstream had to learn about judging: the only thing it reads that a
+      // task does not carry is `ref`, because J1 and #1 are different work.
+      if (taskId && judgementId) throw new Error('Run it for a task or for a judgement, not both — they are different pieces of work and the run belongs to one of them.')
+      const forTask = taskId ? tasks.get(taskId) : judgementId ? judging.get(judgementId) : null
       if (taskId && !forTask) throw new Error(`There is no task called "${taskId}".`)
       if (forTask && promptId) throw new Error('Give it either a prompt from the library or a task, not both — a task already carries the words it was written with.')
 

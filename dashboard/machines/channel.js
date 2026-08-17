@@ -212,9 +212,12 @@ function handle (vm, msg) {
   const to = log.on('vm', vm, 'guest')
 
   if (msg.type === 'out') {
-    to.out(msg.text || '')
     const job = jobs.get(msg.job)
+    // KEPT FOR THE CALLER, WITHHELD FROM THE LOG. See `quiet` in run(): the one
+    // thing this is for is reading a credential back off a machine, where the
+    // caller needs every byte and the log must have none of them.
     if (job) job.lines.push(msg.text || '')
+    if (!(job && job.quiet)) to.out(msg.text || '')
     return
   }
 
@@ -284,7 +287,20 @@ const list = () => [...agents.entries()].map(([name, a]) => ({
 // re-running a provisioning script on a live machine takes a minute, where
 // reinstalling to try a change takes half an hour, and nobody iterates on a
 // half-hour loop.
-function run (name, command, { what = 'command', timeout = 30 * 60 * 1000 } = {}) {
+// `quiet` — WHAT COMES BACK IS NOT PUT IN THE LOG.
+//
+// The caller still gets every line; the live log gets none of them. There is
+// exactly one reason to want this and it is the reason it was added: reading a
+// CREDENTIAL back off a machine. `guestBack` does that with `cat`, the guest
+// dutifully reports what it printed, and an access token and a refresh token
+// were then sitting in the live log — which the window draws, `windowShot`
+// photographs, and `logSince` hands to anyone at the command line.
+//
+// The line saying the command RAN is still logged, because "this host read the
+// credential off kit-1" is exactly the kind of act that should be visible. It is
+// the VALUE that must not be, which is the rule the Keys tab is built to: a
+// model may know something was done in there without knowing what.
+function run (name, command, { what = 'command', timeout = 30 * 60 * 1000, quiet = false } = {}) {
   const agent = agents.get(name)
   if (!agent) throw new Error(`"${name}" is not dialled in, so there is nothing to run a command on. Start it and wait for it to connect.`)
 
@@ -299,6 +315,7 @@ function run (name, command, { what = 'command', timeout = 30 * 60 * 1000 } = {}
 
     jobs.set(job, {
       vm: name,
+      quiet,
       lines: [],
       resolve: out => { clearTimeout(give_up); resolve(out) },
       reject: err => { clearTimeout(give_up); reject(err) }

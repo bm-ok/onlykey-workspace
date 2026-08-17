@@ -101,11 +101,16 @@ module.exports = {
 
       // OFF THE DESK AND INTO THE LIST. Read as the desk user, because the file
       // is 0600 in the desk's home and the machine user is not it. base64 so a
-      // newline or a shell metacharacter cannot change what arrives, and so the
-      // value never appears as readable text in the live log.
+      // newline or a shell metacharacter cannot change what arrives.
+      //
+      // AND QUIET, WHICH IS THE HALF THAT WAS MISSING. This said base64 meant
+      // "the value never appears as readable text in the live log" — true and
+      // beside the point: base64 is not readable and IS the credential, and
+      // anybody reading the log can decode it in one command. The value does not
+      // go to the log at all now. See machines/channel.js.
       const r = await channel.run(on,
         `sudo -n -u ${DESK} -H bash -c 'base64 -w0 "$HOME/.claude/.credentials.json" 2>/dev/null || echo OKC_NO_CREDENTIAL'`,
-        { what: 'taking the credential off the sign-in desk', timeout: 60000 })
+        { what: 'taking the credential off the sign-in desk', timeout: 60000, quiet: true })
       const b64 = String(r.output || '').split('\n').map(x => x.trim()).filter(Boolean).pop() || ''
       if (!b64 || b64 === 'OKC_NO_CREDENTIAL') {
         throw new Error(`The code was accepted and the desk on ${on} has no credential to take. The sign-in did not finish — start it again.`)
@@ -378,10 +383,14 @@ module.exports = {
 
       // Printed rather than copied out of a path this host cannot see. base64 so
       // a newline or a shell metacharacter in the file cannot change what
-      // arrives -- and so the value never appears as readable text in the live
-      // log, which is captured and kept.
+      // arrives.
+      //
+      // AND QUIET. base64 is not readable text and is still the credential —
+      // this comment used to offer the first half as if it were the second. The
+      // value does not reach the log at all now; the line saying this host read
+      // one still does.
       const r = await channel.run(name, 'base64 -w0 ~/.claude/.credentials.json 2>/dev/null || echo OKC_NO_CREDENTIAL',
-        { what: 'taking its worker credential', timeout: 60000 })
+        { what: 'taking its worker credential', timeout: 60000, quiet: true })
 
       const b64 = String(r.output || '').split('\n').map(s => s.trim()).filter(Boolean).pop() || ''
       if (!b64 || b64 === 'OKC_NO_CREDENTIAL') {
@@ -660,8 +669,10 @@ claude auth status 2>/dev/null || true`
       // be maintaining the thing being replaced.
       let text = null
       if (mine.guest && channel.connected(name)) {
+        // QUIET — see machines/channel.js. What a machine prints is reported
+        // back and logged, so reading a credential file logs a credential.
         const said = await channel.run(name, 'cat "$HOME/.claude/.credentials.json" 2>/dev/null || true',
-          { what: 'reading what the worker refreshed, before taking it back', timeout: 60000 })
+          { what: 'reading what the worker refreshed, before taking it back', timeout: 60000, quiet: true })
         const body = String(said.output || '').split('\n').slice(1).join('\n').trim()
         if (body.startsWith('{')) text = body
       }

@@ -43,13 +43,45 @@ const entries = []
 const listeners = new Set()
 let seq = 0
 
+// A CREDENTIAL IS NEVER A LINE HERE, whatever printed it.
+//
+// This stream is not written to disk and that was taken as enough. It is not:
+// the window draws it on the Live tab, `windowShot` photographs it, and
+// `logSince` hands it to whoever asks at the command line. A worker credential
+// went through all three — `guestBack` reads the credential off a machine with
+// `cat`, the guest sends what it printed, and every byte of an access token and
+// a refresh token was sitting in the log I was reading.
+//
+// NARROW ON PURPOSE. The durable record scrubs anything long and random, which
+// is right for sentences this app writes about itself and would be wrong here:
+// a guest's output is full of commit hashes and base64, and mangling those makes
+// the log useless for the thing it exists for. These two shapes cannot be
+// anything else.
+//
+// AND IT IS THE SECOND LINE OF DEFENCE, not the first. What must not be in a log
+// must not be sent to one — see `quiet` in machines/channel.js, which is why the
+// value no longer arrives. This is here because "must not" is a rule somebody
+// has to be right about every time.
+const NEVER = [
+  // Anthropic's own key shapes, which say what they are.
+  [/\bsk-ant-[A-Za-z0-9_-]+/g, 'sk-ant-<redacted>'],
+  // The credential file's own fields, whether or not the value looks like a key.
+  [/("(?:access|refresh)Token"\s*:\s*")[^"]+/gi, '$1<redacted>']
+]
+
+const noCredentials = text => {
+  let out = String(text == null ? '' : text)
+  for (const [re, with_] of NEVER) out = out.replace(re, with_)
+  return out
+}
+
 function add (tags, text, level = 'info') {
   const entry = {
     id: ++seq,
     at: new Date().toISOString(),
     tags: [...new Set(tags.filter(Boolean))],
     level,
-    text: String(text).replace(/\s+$/, '')
+    text: noCredentials(String(text)).replace(/\s+$/, '')
   }
   entries.push(entry)
   if (entries.length > MAX) entries.splice(0, entries.length - MAX)

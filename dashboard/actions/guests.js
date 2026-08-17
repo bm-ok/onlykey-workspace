@@ -172,9 +172,14 @@ module.exports = {
       // September while the worker was answering "OAuth session expired".
       let text = null
       if (channel.connected(on)) {
+        // QUIET, and this is the call that proved why it had to exist. The guest
+        // reports what a command printed, so `cat` of the credential file put an
+        // access token and a refresh token straight into the live log — which
+        // the window draws and `windowShot` photographs. The caller still gets
+        // every byte; the log gets the act and not the value.
         const said = await channel.run(on,
           'cat "$HOME/.claude/.credentials.json" 2>/dev/null || true',
-          { what: `taking the Claude guest "${name}" back`, timeout: 60000 })
+          { what: `taking the Claude guest "${name}" back`, timeout: 60000, quiet: true })
         const body = String(said.output || '').split('\n').slice(1).join('\n').trim()
         if (body.startsWith('{')) text = body
 
