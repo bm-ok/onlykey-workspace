@@ -292,7 +292,23 @@ function add (input) {
     // Lower-cased on the way in so "Test" and "test" are the same tag. A tag
     // that depends on how somebody typed it is a tag that silently matches
     // nothing.
-    tag: String(input.tag || '').trim().toLowerCase() || null,
+    // AND ONE TAG A TASK MAY NOT ASK FOR. A supervisor machine is out of the
+    // pool for good — see availability() in tasks/queue.js — so a task asking
+    // for one is a task that waits for ever while the board says it is queued.
+    // Refused where it is written rather than left to be discovered as silence.
+    //
+    // THE WORD, NOT THE CONSTANT, and deliberately. `machines/vms.js` exports
+    // SUPERVISOR and importing it here would make the task store depend on the
+    // machine manager — the two halves of this app meet at one point, where a
+    // task is GIVEN to a machine, and this is not that point. A literal that can
+    // never change is the cheaper of the two prices.
+    tag: (() => {
+      const want = String(input.tag || '').trim().toLowerCase() || null
+      if (want === 'supervisor') {
+        throw new Error('A task cannot ask for a machine tagged "supervisor". Those are out of the pool for good — a supervisor decides what work to give and is never given any — so this task would sit queued for ever waiting for one.')
+      }
+      return want
+    })(),
     state: 'draft',
     machine: null,
     // The LAST run, kept for the things that only care about the latest.

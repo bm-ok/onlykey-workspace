@@ -131,7 +131,12 @@ const vmCard = v => el('div', {
     // Muted, because a tag is not a state — nothing is wrong or right about
     // carrying one, and it must not compete with the badges that say whether
     // this machine can be used at all.
-    ...(v.tags || []).map(t => el('span', { className: 'badge muted', textContent: t, title: `Work asking for "${t}" can be given to this machine` })),
+    // Except the one tag that is not a label. A supervisor is not a kind of
+    // runner work can be sent to — it is the machine that decides what work
+    // there is — so it says so rather than sitting muted among the others.
+    ...(v.tags || []).map(t => t === 'supervisor'
+      ? el('span', { className: 'badge run', textContent: 'supervisor', title: 'It decides what work to give, and is never given a task itself' })
+      : el('span', { className: 'badge muted', textContent: t, title: `Work asking for "${t}" can be given to this machine` })),
 
     // WHY THE QUEUE WILL NOT TAKE IT, in the queue's own words.
     //
@@ -707,6 +712,13 @@ function paintDetails () {
     // be a lie that took twenty-five minutes to find out about.
     ['built with', v.desktopWanted ? 'a desktop' : 'no display — a terminal-only runner'],
 
+    // WHAT IT IS FOR, and it is worth a row of its own because it changes what
+    // every other row on this card means. A supervisor is never given a task, so
+    // "doing: nothing" is its resting state rather than a machine going spare.
+    v.supervisor
+      ? ['what it is', 'a supervisor — it decides what work to give, and is never given any']
+      : null,
+
     // WHAT VIRTUALBOX CANNOT SAY WITHOUT THE GUEST ADDITIONS. Its memory metrics
     // come from the additions, so the graph is empty for every machine built
     // without them — which is now every runner with no desktop. The machine
@@ -938,6 +950,25 @@ $('add-vm-open').onclick = () => Promise.all([api('vmIsos'), api('hostKeys')]).t
       type: 'checkbox',
       value: false,
       hint: 'Off is a terminal-only runner: no display manager, no session, a fraction of the memory. On installs a small desktop that logs itself in, for a machine somebody is going to sit at. This cannot be changed later.'
+    },
+    // WHAT THIS MACHINE IS FOR, and it is the one kind that is not a runner.
+    //
+    // A supervisor runs Claude Code to decide what work to give and asks this
+    // dashboard for it. It is never given a task — the queue skips it, by the
+    // tag this ticks on — so it clones nothing, builds nothing, and gets none of
+    // the project's provisioning: node and Claude Code, and that is all.
+    //
+    // ALSO DECIDED HERE OR NEVER, like the desktop above, and for a stronger
+    // reason: it changes what is installed at first boot AND it is what keeps
+    // the machine out of the pool. A supervisor that could be untagged later is
+    // a supervisor that gets rolled back to base mid-thought by the first queued
+    // task, so vmTags refuses to add or remove it.
+    {
+      name: 'supervisor',
+      label: 'Supervisor machine',
+      type: 'checkbox',
+      value: false,
+      hint: 'Off is an ordinary runner that takes tasks. On makes a machine that decides what work to give instead of doing any: it is permanently out of the queue, holds no repositories, and gets a slim setup — node and Claude Code. This cannot be changed later.'
     },
     // ASKED AT CREATION, unlike the desktop above, and for the opposite reason:
     // this one can be changed whenever you like, from the gear on the card. It

@@ -334,3 +334,17 @@ draft('and a task that pushed something can be accepted',
   'WHAT IT NEEDS: a job that makes a small change and pushes it, written and approved at the window, because approving a job over the wire is refused on purpose. ' +
   'THE CHECK: queue a task under that job, let the queue run it, and accept the delivery — the verdict is recorded, the task reads accepted, and the artifact it was judged on is named in the verdict. ' +
   'AND ACCEPTING MUST NOT MERGE. Landing work is a separate act with its own rules; a verdict that quietly merged would make reading the work and publishing it the same button.')
+
+// ---- the surface a job actually talks to ----------------------------------
+//
+// This drill exercises the jobs API by running a real task through it, which is
+// the right way round for proving the ROUND TRIP and the wrong way round for
+// proving the API: a call that quietly stopped answering shows up here as a task
+// that failed for some other-looking reason, twenty minutes in, on a machine.
+
+draft('and every call the jobs API offers is proven, one at a time',
+  'EXERCISED, NOT PROVEN. A job running on a machine is handed a set of calls — read its task, post an artifact, hand back and fetch its session, report what happened — and this suite uses whichever of them api-tour happens to need. ' +
+  'The ones nothing uses are the ones that break quietly, and the failure arrives disguised as a task that did not work. ' +
+  'THE CHECK: from a machine, ask every endpoint machines/job-api.js exposes, one at a time, and state both halves — what it answers, and what it REFUSES. The refusals are the half worth the drill: a machine asking for another machine\'s task, for a session that is not its own, or posting an artifact while running nothing at all. ' +
+  'THE PATTERN IS ALREADY WRITTEN. "what survives the machine" posts to /artifact and /session from a machine exactly as job-api.js does, without spending a worker run — this is that, made complete rather than made of the two calls a drill needed. ' +
+  'AND IT IS THE MODEL FOR THE OTHER DIRECTION: a supervisor asking this host for work needs the same drill pointed the opposite way. See the supervisor suite.')

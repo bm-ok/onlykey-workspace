@@ -42,6 +42,8 @@ const workspaces = require('../core/workspaces')
 // machine handed over to a person has to be marked borrowed, and `vmBorrow`
 // cannot do it because it brings the machine up as part of borrowing it.
 const vms = require('../machines/vms')
+// The one tag this app gives a meaning to. See vms.js.
+const { SUPERVISOR } = vms
 const store = require('./store')
 const channel = require('../machines/channel')
 // One machine coming up at a time, across the whole host — see bringUp below.
@@ -79,6 +81,20 @@ function availability (vms) {
     // the most temporary: a machine somebody is inside is the one the queue must
     // not roll back, whatever else is true of it.
     if (v.borrowed) return { name: v.name, free: false, why: `borrowed — ${v.borrowed.why || 'somebody is using it'}` }
+
+    // A SUPERVISOR IS NOT IN THE POOL AT ALL, and this is not a preference.
+    //
+    // A supervisor machine runs Claude Code to decide what work to give and asks
+    // this dashboard for it. Giving it a task would roll it back to its base
+    // snapshot mid-thought and run a worker over the top of the thing that was
+    // handing out the work — so it is out, permanently, and by the tag it was
+    // built with rather than by a setting somebody can flip.
+    //
+    // Checked before `forTasks`, which is a decision that can be changed: this
+    // one cannot, and reporting it as "kept back" would suggest a button exists.
+    if ((v.tags || []).some(t => String(t).toLowerCase() === SUPERVISOR)) {
+      return { name: v.name, free: false, why: 'is a supervisor machine, so it is never given task work' }
+    }
 
     // A decision, checked before any of the facts. Someone has said keep this
     // one back, and that outranks it merely looking idle -- which is exactly

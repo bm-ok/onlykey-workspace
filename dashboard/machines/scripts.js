@@ -60,8 +60,17 @@ const STAGES = {
   wallpaper: 'wallpaper.sh',
   // The project's additions, run after the app's. Usually only a project has these,
   // and a machine works perfectly well without either.
+  //
+  // NOT RUN ON A SUPERVISOR. A supervisor takes no tasks, so the project's half —
+  // its repositories, its build inputs, its devices — is setup for work that will
+  // never happen there. See first-boot.sh.
   extra: 'extra.sh',
   extraUser: 'extra-user.sh',
+  // WHAT A SUPERVISOR GETS INSTEAD, and it is the app's own rather than a
+  // project's: Claude Code, and nothing else. A supervisor is a machine this app
+  // knows the purpose of — it decides what work to give and asks the dashboard
+  // for it — so what it needs is not a project's business.
+  supervisorUser: 'supervisor-user.sh',
   // Not shell, and served without a header for that reason -- its values arrive
   // through the service unit first-boot.sh writes for it.
   agent: 'agent.py'
@@ -136,6 +145,16 @@ OKC_REPROVISION_ON_BOOT=${q(spec.reprovisionOnBoot ? 'yes' : 'no')}
 # gdm here" is also true of a desktop machine whose install went wrong, and those
 # two need opposite responses.
 OKC_DESKTOP=${q(spec.desktop === false ? 'no' : 'yes')}
+# WHETHER THIS MACHINE IS A SUPERVISOR rather than a runner, decided when it was
+# made and never afterwards.
+#
+# A supervisor runs Claude Code to decide what work to give and asks the
+# dashboard for it. It takes no tasks, so it needs none of what a task needs: no
+# repositories, no project toolchain, no kernel headers for something it will
+# never build. What it gets instead is slim -- see supervisor-user.sh -- and the
+# project's own provisioning is skipped entirely, because "this project" is not
+# what a supervisor is about.
+OKC_SUPERVISOR=${q(spec.supervisor === true ? 'yes' : 'no')}
 # This machine's own secret, and the port it dials in on. It can only ever connect
 # as itself, because the dashboard checks this against the machine it claims to be.
 #
@@ -159,7 +178,7 @@ OKC_CA=/etc/okc/ca.pem
 OKC_CA_URL=${q(`http://${hostAddress}:${caPort}/ca.pem`)}
 OKC_CA_FINGERPRINT=${q(caFingerprint || '')}
 
-export OKC_VM OKC_HOST OKC_PORT OKC_BASE OKC_USER OKC_SSH_KEY OKC_REPROVISION_ON_BOOT OKC_DESKTOP
+export OKC_VM OKC_HOST OKC_PORT OKC_BASE OKC_USER OKC_SSH_KEY OKC_REPROVISION_ON_BOOT OKC_DESKTOP OKC_SUPERVISOR
 export OKC_TOKEN OKC_CHANNEL_PORT OKC_CA OKC_CA_URL OKC_CA_FINGERPRINT
 
 # Fetches the authority if it is not here, and refuses it unless it is the one

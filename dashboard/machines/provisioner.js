@@ -18,6 +18,9 @@ const vbox = require('./vbox')
 const vms = require('./vms')
 const channel = require('./channel')
 const keys = require('../core/keys')
+// The one tag with a meaning, taken from the registry rather than spelled again
+// here. See vms.js.
+const { SUPERVISOR } = vms
 
 // What a VM is, with everything optional filled in. One place, so a spec read
 // back later means the same thing as when it was made.
@@ -60,6 +63,19 @@ function fill (input = {}) {
     // machine was built to be is a fact about that build, and flipping the flag
     // later would say "desktop" about a machine that has no X on it at all.
     desktop: input.desktop === true || input.desktop === 'true',
+    // WHAT THIS MACHINE IS FOR, and it is the one kind that is not a runner.
+    //
+    // A supervisor machine runs Claude Code and nothing else: it decides what
+    // work to give and asks this dashboard for it. It never takes a task itself,
+    // it clones no repositories, and it gets none of the project's provisioning —
+    // see SUPERVISOR in tasks/queue.js and OKC_SUPERVISOR in provision/.
+    //
+    // DECIDED HERE OR NEVER, like `desktop` above and for the same reason: it
+    // changes what gets installed at first boot, so flipping it afterwards would
+    // say "supervisor" about a machine built as a runner. It also carries a tag
+    // that cannot be taken off by hand — vmTags refuses — because the tag is what
+    // keeps it out of the pool, and a tag somebody can remove is not a guarantee.
+    supervisor: input.supervisor === true || input.supervisor === 'true',
     // WHAT KIND OF MACHINE THIS IS, and unlike `desktop` above it can be
     // changed whenever you like — see vmTags. It is asked for here because the
     // moment somebody is making a machine is the moment they know what it is
@@ -68,11 +84,17 @@ function fill (input = {}) {
     // Accepted as a list or as one comma-separated string, because the window
     // sends a typed line and a script sends an array, and neither should have to
     // know what the other does.
-    tags: [...new Set(
-      (Array.isArray(input.tags) ? input.tags : String(input.tags || '').split(','))
+    //
+    // A supervisor carries its tag whatever else was typed, because the tag is
+    // what the queue reads — see tasks/queue.js. Written in here rather than
+    // checked in three places later: the tag and the flag cannot disagree if
+    // there is only one moment where either is set.
+    tags: [...new Set([
+      ...(Array.isArray(input.tags) ? input.tags : String(input.tags || '').split(','))
         .map(t => String(t).trim().toLowerCase())
-        .filter(Boolean)
-    )],
+        .filter(Boolean),
+      ...(input.supervisor === true || input.supervisor === 'true' ? [SUPERVISOR] : [])
+    ])],
     // Bridged, because a guest has to be able to reach this app to fetch its
     // setup, and on NAT it cannot see the host at all without more plumbing.
     network: input.network === 'nat' ? 'nat' : 'bridged',

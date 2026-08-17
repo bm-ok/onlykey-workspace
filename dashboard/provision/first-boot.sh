@@ -457,8 +457,24 @@ fi
 
 stage_user toolchain-user.sh; report_stage "the user's toolchain" $?
 
-stage extra.sh;          report_stage "this project's extra setup" $?
-stage_user extra-user.sh;    report_stage "this project's extra user setup" $?
+# A SUPERVISOR GETS THE APP'S HALF AND STOPS THERE.
+#
+# The project's pair is what a machine needs in order to do WORK: its
+# repositories, its build inputs, its devices. A supervisor is never given a
+# task — the queue will not hand one to a machine carrying the supervisor tag —
+# so all of that is weight it carries and never uses, and half of it is setup for
+# hardware that is not plugged into it.
+#
+# What it gets instead is slim and is the app's own: node is already here from
+# toolchain-user.sh, and supervisor-user.sh adds Claude Code. That is the whole
+# of it, because deciding what work to give needs nothing else.
+if [ "${OKC_SUPERVISOR:-no}" = yes ]; then
+  say 'this machine is a supervisor, so the project setup is skipped -- it takes no tasks'
+  stage_user supervisor-user.sh; report_stage 'the supervisor setup' $?
+else
+  stage extra.sh;          report_stage "this project's extra setup" $?
+  stage_user extra-user.sh;    report_stage "this project's extra user setup" $?
+fi
 
 say 'first boot finished'
 report online

@@ -90,6 +90,22 @@ function stageOf (vm, live) {
 
 const STAGES = ['defined', 'created', 'installing', 'online', 'ready', 'connected']
 
+// THE ONE TAG THIS APP GIVES A MEANING TO, and it is here so that everything
+// reading it reads the same string.
+//
+// Tags are otherwise free text and deliberately so: they are what somebody calls
+// a kind of machine, and the tags that exist are the tags on the machines. This
+// one is different. A machine carrying it is a SUPERVISOR — it runs Claude Code
+// to decide what work to give, asks this dashboard for it over an API of its
+// own, and is never given a task itself.
+//
+// A tag rather than a flag alone, because the queue already reads tags when it
+// decides which machines a task will accept, and the alternative was a second
+// idea of "which machines are eligible" alongside the one that exists. It is
+// applied at creation and refused by vmTags afterwards — see actions/machines.js
+// — because a guarantee somebody can type away is not a guarantee.
+const SUPERVISOR = 'supervisor'
+
 // The list the UI shows: ours only, with live state attached.
 async function all () {
   const mine = read()
@@ -129,10 +145,17 @@ async function all () {
       // was installed from a desktop image and has one. A machine built since
       // says so either way.
       desktopWanted: (vm.spec || {}).desktop !== false,
+      // WHETHER IT IS A SUPERVISOR RATHER THAN A RUNNER, which decides whether
+      // the queue will ever look at it. Read from the TAG rather than from the
+      // spec flag, because the tag is what every reader here acts on and two
+      // sources for one answer is how they come to disagree. The flag is what
+      // put the tag there — see provisioner.fill — and vmTags refuses to move it
+      // afterwards.
+      supervisor: (vm.tags || []).some(t => String(t).toLowerCase() === SUPERVISOR),
       agent: channel.list().find(a => a.vm === vm.name) || null
     })
   }
   return { available: true, vms }
 }
 
-module.exports = { all, read, get, add, update, forget, stageOf, STAGES }
+module.exports = { all, read, get, add, update, forget, stageOf, STAGES, SUPERVISOR }

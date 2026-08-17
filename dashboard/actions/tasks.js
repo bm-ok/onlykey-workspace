@@ -124,6 +124,24 @@ module.exports = {
     run: ({ task }) => {
       const input = typeof task === 'string' ? JSON.parse(task) : task
       if (!input || typeof input !== 'object') throw new Error('Pass the task as an object.')
+
+      // WHAT IS IMPOSSIBLE, BEFORE WHAT IS MERELY NOT READY YET.
+      //
+      // A task asking for a machine tagged "supervisor" can never run: those are
+      // out of the queue's pool for good — see availability() in tasks/queue.js —
+      // so it would sit queued for ever while the board showed it as waiting.
+      //
+      // Checked here rather than only in the store, which also refuses it, and
+      // the reason is the ORDER a person meets these in. The branch checks below
+      // are about the workspace as it stands: cut the branch and the task is
+      // fine. This one is about the task itself and is true whatever anybody
+      // cuts, so being told about the branch first sends somebody off to fix
+      // something that was never the problem. The store keeps its own copy as
+      // the backstop for every other way a task can be written.
+      if (String(input.tag || '').trim().toLowerCase() === 'supervisor') {
+        throw new Error('A task cannot ask for a machine tagged "supervisor". Those are out of the pool for good — a supervisor decides what work to give and is never given any — so this task would sit queued for ever waiting for one.')
+      }
+
       const why = branches.nameIsOk(String(input.branch || '').trim())
       if (why) throw new Error(why)
       mustBeCut(String(input.branch || '').trim())

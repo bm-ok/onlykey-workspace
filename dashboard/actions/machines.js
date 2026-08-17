@@ -242,6 +242,30 @@ module.exports = {
           .filter(Boolean)
       )]
 
+      // EXCEPT THE ONE TAG THAT IS NOT A LABEL.
+      //
+      // "supervisor" is what keeps a machine out of the task pool — see
+      // availability() in tasks/queue.js — and it is decided when the machine is
+      // built, because it also decides what gets installed on it. So it cannot
+      // be typed on, and it cannot be typed off:
+      //
+      //   typed on   a runner would stop taking work and would still have none
+      //              of what a supervisor needs, which reads as a queue that has
+      //              gone quiet
+      //   typed off  a supervisor would join the pool and be rolled back to base
+      //              mid-thought by the first queued task
+      //
+      // Refused rather than quietly kept, because a refusal is the only version
+      // of this somebody learns from.
+      const was = (vm.tags || []).map(t => String(t).toLowerCase())
+      const isSupervisor = was.includes(vms.SUPERVISOR)
+      if (!isSupervisor && want.includes(vms.SUPERVISOR)) {
+        throw new Error(`"${vms.SUPERVISOR}" is not a tag you can add. It is what keeps a machine out of the task pool and it decides what gets installed at first boot, so it is chosen when the machine is made — tick "supervisor machine" then, or make another one.`)
+      }
+      if (isSupervisor && !want.includes(vms.SUPERVISOR)) {
+        throw new Error(`"${name}" is a supervisor machine, so it keeps the "${vms.SUPERVISOR}" tag. Taking it off would put it in the queue's pool, and the first queued task would roll it back to its base snapshot while it was working.`)
+      }
+
       const now = vms.update(name, { tags: want })
       log.on('vm', name).info(want.length
         ? `tagged ${want.map(t => `"${t}"`).join(', ')} — a task asking for one of those can be given this machine`
