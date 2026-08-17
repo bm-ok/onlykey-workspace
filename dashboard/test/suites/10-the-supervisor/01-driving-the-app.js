@@ -195,8 +195,21 @@ it('and it can cut a branch, write a task on it, and queue it', async ({ okc, as
   state.branch = BRANCH
   log(`cut ${BRANCH} in ${cut.made.join(', ')}`)
 
+  // TAGGED FOR A MACHINE THAT DOES NOT EXIST, and that is not a detail.
+  //
+  // This queues a task and takes it straight back out, to prove both. The queue
+  // ticks every fifteen seconds and does not know this is a drill — so it won
+  // that race, took the task, brought runner4 up and started dispatching a
+  // drill's work. Once it got as far as "There is no branch called
+  // drill/supervisor-drives", because the cleanup had already deleted it.
+  //
+  // A tag no machine carries makes the queue WAIT rather than dispatch — which
+  // it does by design, saying so on the board — so the task is genuinely queued,
+  // genuinely refused a machine, and nothing is brought up behind this drill's
+  // back. Proving "it can queue" does not require proving "a machine can be
+  // ambushed".
   const task = readJson(await asSupervisor(okc, state.machine,
-    `okc taskCreate '${JSON.stringify({ task: { title: TASK, brief: 'Written by a drill, over the supervisor API.', branch: BRANCH, job: 'api-tour' } })}'`,
+    `okc taskCreate '${JSON.stringify({ task: { title: TASK, brief: 'Written by a drill, over the supervisor API.', branch: BRANCH, job: 'api-tour', tag: 'okc-no-machine-carries-this' } })}'`,
     'writing a task as the supervisor'))
   assert.ok(task && task.id, `the supervisor could not write a task: ${JSON.stringify(task).slice(0, 300)}`)
   state.task = task.id

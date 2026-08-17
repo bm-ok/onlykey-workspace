@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 26 tests, 130 checks, 25 of them drafts -->
+<!-- 12 suites, 27 tests, 134 checks, 25 of them drafts -->
 
 ## 25 drafts, not written yet
 
@@ -312,6 +312,13 @@ The machine that decides what work there is, rather than one doing it.
   2. and the next page is a different page
   3. and pull requests page the other way, with a count
   4. and a repository in this workspace answers about its parent
+
+## 03 — the two apis
+
+  1. a runner and a supervisor are both up, and this host knows which is which
+  2. and the runner is refused the supervisor API
+  3. and the supervisor is refused the jobs API
+  4. and each still gets its own
 
 # 11 — cooling the host
 

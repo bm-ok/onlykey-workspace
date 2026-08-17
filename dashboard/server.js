@@ -187,6 +187,31 @@ function guestAsking (req, url) {
   return null
 }
 
+// A WORKER, WHICH IS NOT THE SAME AS A MACHINE THIS HOST MADE.
+//
+// There are two APIs here and they are for two different things:
+//
+//   the jobs API      a machine that is DOING work — it fetches what it
+//                     remembers, hands back an artifact, clones the repositories
+//   the supervisor    a machine that DECIDES what work there is — it writes
+//   API               tasks and queues them, and holds no repositories at all
+//
+// A supervisor is a machine with a token, so `guestAsking` says yes to it, and
+// most of the jobs API would then refuse it for the wrong reason: it is not
+// running a task, so there is no session to fetch and nowhere for an artifact to
+// belong. True, accidental, and it would stop being true the day something gave
+// a supervisor a task by hand.
+//
+// So it is refused for what it IS. A supervisor asking the jobs API is asking
+// for somebody else's surface, and the answer should not depend on what it
+// happens to be doing this minute.
+function workerAsking (req, url) {
+  const vm = guestAsking(req, url)
+  if (!vm) return null
+  if ((vm.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)) return null
+  return vm
+}
+
 // One refusal, worded once. ASCII, because curl and wget put it in front of
 // somebody with no other information about what went wrong.
 function refuseGuest (res, name, why) {
@@ -213,6 +238,24 @@ function gitRoute (req, res, url) {
       'www-authenticate': 'Basic realm="the workspace repositories"',
       'content-type': 'text/plain'
     }).end('this asks for the name and token of a machine this app made\n')
+    return
+  }
+
+  // AND A SUPERVISOR HAS NO BUSINESS HERE AT ALL.
+  //
+  // This serves the workspace's repositories to a machine that is DOING work. A
+  // supervisor decides what work there is and holds no repositories — its whole
+  // provisioning skips the project's half for that reason — so a supervisor
+  // cloning from here is a supervisor with a copy of the work it is supposed to
+  // be handing out, which is the difference between deciding and doing.
+  //
+  // The same 401 as a stranger, deliberately: from this route it IS one.
+  if ((who.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)) {
+    log.on('git').warn(`refused ${url.pathname} for "${who.name}" — a supervisor holds no repositories`)
+    res.writeHead(401, {
+      'www-authenticate': 'Basic realm="the workspace repositories"',
+      'content-type': 'text/plain'
+    }).end('this is for a machine doing work. a supervisor holds no repositories.\n')
     return
   }
 
@@ -523,7 +566,7 @@ function handler (req, res) {
   // never asked.
   if (url.pathname === '/session' && req.method === 'GET') {
     const name = url.searchParams.get('vm') || ''
-    if (!guestAsking(req, url)) return refuseGuest(res, name, 'to fetch its session')
+    if (!workerAsking(req, url)) return refuseGuest(res, name, 'to fetch its session')
 
     const task = tasks.read().find(t => t.machine === name && t.state === 'given') || null
     if (!task) {
@@ -552,7 +595,7 @@ function handler (req, res) {
 
   if (url.pathname === '/session' && req.method === 'POST') {
     const name = url.searchParams.get('vm') || ''
-    if (!guestAsking(req, url)) return refuseGuest(res, name, 'to hand back its session')
+    if (!workerAsking(req, url)) return refuseGuest(res, name, 'to hand back its session')
 
     const id = url.searchParams.get('id') || ''
     if (!sessions.okId(id)) {
@@ -618,7 +661,7 @@ function handler (req, res) {
 
   if (url.pathname === '/artifact' && req.method === 'POST') {
     const name = url.searchParams.get('vm') || ''
-    if (!guestAsking(req, url)) return refuseGuest(res, name, 'to hand over an artifact')
+    if (!workerAsking(req, url)) return refuseGuest(res, name, 'to hand over an artifact')
 
     const called = url.searchParams.get('name') || ''
     const why = files.whyNot(called)
