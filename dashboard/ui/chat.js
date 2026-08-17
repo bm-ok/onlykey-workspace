@@ -153,6 +153,16 @@ function paintSupervisorState () {
     }
     $('chat-wake').title = 'One turn: it reads what changed and answers'
 
+    // AND THE STATE LINE ITSELF GOES WHILE CHOOSING, because the body is saying
+    // the same three things in the middle of the screen: which machine, why it
+    // cannot run, and the button that fixes it. Two copies of one sentence, one
+    // of them in small type at the top, is a screen asking somebody to work out
+    // whether they are two different facts.
+    //
+    // IT STAYS WHILE READING. There the body is the conversation, so the header
+    // is the only thing saying why there is nowhere to type.
+    $('supervisor-state').classList.toggle('hidden', showing === 'choosing')
+
     if (!changed('supervisor-state', st)) return
 
     if (!st.there) {
