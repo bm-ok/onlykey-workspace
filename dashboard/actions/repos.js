@@ -16,12 +16,12 @@ const actions = require('./table')
 // block repeated nine times. See actions/shared.js.
 const s = require('./shared')
 const {
-  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements, settings,
+  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, allowed, judgements, settings,
   vbox, vms, provisioner, scripts, channel, tasks, judging, artifact,
   archive, files, prompts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,
-  guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
+  guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines, whoAsked
 } = s
 
 // ---- reading a long list off GitHub ----------------------------------------
@@ -140,6 +140,134 @@ module.exports = {
   //
   // Not exported as an action: it is one sentence used twice, and an action for
   // it would be a third name for something this app already answers.
+
+  // ---- WHOSE CODE IS THIS, AND MAY IT BE READ HERE ------------------------
+  //
+  // A pull request that ARRIVES is not like anything else this app judges.
+  // Everything else is its own: a branch cut here, or a PR cut this host made.
+  // An incoming one is somebody else's code, and judging it means fetching that
+  // code onto a machine holding a Claude credential, a token that can push, and
+  // this app's ssh key. The machine is rolled back afterwards, which does
+  // nothing about anything sent out while it ran.
+  //
+  // There is a subtler one worth naming, because it is easy to miss while
+  // thinking about execution: the judge is a model reading attacker-controlled
+  // TEXT. A diff and a description can say "ignore your instructions" as easily
+  // as they can say anything else. Approval is a control against both, and the
+  // contract a judging job carries is the other half.
+  //
+  // So: a person allows one, at one commit, and nothing else can.
+  prJudging: {
+    about: 'Pull requests that have arrived, who wrote them, and whether a judge may read them',
+    needs: 'workspace',
+    run: async () => {
+      const mine = remotes.read()
+      const rows = []
+
+      for (const r of mine) {
+        const on = r.issuesOn || (r.remote && r.remote.owner ? `${r.remote.owner}/${r.remote.repo}` : null)
+        if (!on) continue
+        let said = null
+        try { said = await actions.pulls.run({ repo: r.repo, state: 'open' }) } catch { continue }
+
+        for (const p of said.pulls || []) {
+          // OURS OR THEIRS, and the test is where the branch lives rather than
+          // who typed it. A cut this host made pushes to a fork this host owns,
+          // so its head repository is one of ours; anything else came from
+          // somewhere this app does not control.
+          const from = String(p.headRepo || '').trim()
+          const ours = mine.some(x => x.remote && `${x.remote.owner}/${x.remote.repo}` === from)
+          const may = allowed.check(on, p.number, p.headSha)
+
+          rows.push({
+            on,
+            repo: r.repo,
+            number: p.number,
+            title: p.title,
+            url: p.url,
+            author: p.user || null,
+            // GitHub's own word for how close the author is to the repository:
+            // OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, NONE. Reported rather
+            // than interpreted -- "is this person trusted" is not this app's
+            // judgement to make, and the answer it would give is somebody's
+            // GitHub permissions rather than their intentions.
+            association: p.association || null,
+            headRepo: from || null,
+            headSha: p.headSha || null,
+            ours,
+            allowed: ours ? true : may.allowed,
+            stale: ours ? false : may.stale,
+            why: ours ? null : may.why,
+            said: may.said || null
+          })
+        }
+      }
+
+      const waiting = rows.filter(x => !x.ours && !x.allowed)
+      return {
+        pulls: rows,
+        waiting: waiting.length,
+        note: rows.length
+          ? (waiting.length
+              ? `${waiting.length} pull request(s) arrived from outside and cannot be judged until you allow it. Allowing names the commit: if the author pushes again it has to be allowed again.`
+              : 'Every open pull request here is either this host\'s own or has been allowed at the commit it is on.')
+          : 'No open pull requests.'
+      }
+    }
+  },
+
+  // ONE COMMIT, BY A PERSON, AT THE WINDOW.
+  //
+  // Refused down the pipe for the same reason approving a job is: this is the
+  // one decision that cannot be delegated to the thing being protected against.
+  // A supervisor asking for it would be a model deciding that a stranger's code
+  // may be read by a model.
+  prAllowJudging: {
+    about: 'Allow a judge to read an incoming pull request, at the commit it is on now',
+    needs: 'workspace',
+    takes: ['repo', 'number', 'note'],
+    run: async ({ repo, number, note = null, _overTheWire, _driven }) => {
+      if (_overTheWire && !_driven) {
+        throw new Error('Allowing a pull request to be judged is done in the window, by a person who has looked at it. A model may not decide that somebody else\'s code is fit to be read here.')
+      }
+      const row = remotes.read().find(x => x.repo === String(repo))
+      if (!row) throw new Error(`There is no repository called "${repo}" in this workspace.`)
+      const on = row.issuesOn || (row.remote && row.remote.owner ? `${row.remote.owner}/${row.remote.repo}` : null)
+      if (!on) throw new Error(`"${repo}" has no GitHub remote this host can read from.`)
+
+      // READ NOW, so what is recorded is the commit that is there at the moment
+      // somebody says yes -- not one remembered from an earlier list.
+      const said = await actions.pulls.run({ repo, state: 'all' })
+      const one = (said.pulls || []).find(p => Number(p.number) === Number(number))
+      if (!one) throw new Error(`${on} has no pull request #${number}.`)
+      if (!one.headSha) throw new Error(`GitHub did not say which commit ${on}#${number} is at, so there is nothing to record an allowance against.`)
+
+      const made = allowed.allow(on, number, one.headSha, { by: whoAsked({ _overTheWire, _driven }), note })
+      log.on('github', row.repo).good(`#${number} on ${on} may be judged at ${one.headSha.slice(0, 7)} — allowed by ${made.by}`)
+      return {
+        ...made,
+        title: one.title,
+        note: `A judge may read ${on}#${number} as it is at ${one.headSha.slice(0, 7)}. If the author pushes again this stops applying, and it has to be allowed again — the point is that you approved the code you read.`
+      }
+    }
+  },
+
+  prForbidJudging: {
+    about: 'Take back an allowance to judge an incoming pull request',
+    needs: 'workspace',
+    takes: ['repo', 'number'],
+    run: ({ repo, number, _overTheWire, _driven }) => {
+      if (_overTheWire && !_driven) {
+        throw new Error('Taking an allowance back is done in the window, like giving one.')
+      }
+      const row = remotes.read().find(x => x.repo === String(repo))
+      if (!row) throw new Error(`There is no repository called "${repo}" in this workspace.`)
+      const on = row.issuesOn || (row.remote && row.remote.owner ? `${row.remote.owner}/${row.remote.repo}` : null)
+      const had = allowed.forget(on, number)
+      if (had) log.on('github', row.repo).warn(`#${number} on ${on} may no longer be judged`)
+      return { forgotten: had, note: had ? `${on}#${number} may no longer be judged.` : `Nothing was allowing ${on}#${number}.` }
+    }
+  },
 
   issues: {
     about: "A repository's issues, a page at a time — from the workspace, or any repository named owner/name",

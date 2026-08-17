@@ -556,7 +556,23 @@ async function pullsOn (repo) {
     draft: !!p.draft,
     title: p.title,
     head: p.head && p.head.label,
-    base: p.base && p.base.ref
+    base: p.base && p.base.ref,
+
+    // WHOSE CODE, AND WHICH COMMIT. GitHub sends all three of these and this
+    // dropped them, which was fine while every pull request here was one this
+    // host had cut. It stops being fine the moment one ARRIVES: deciding
+    // whether a judge may read somebody else's change needs to know whose it
+    // is, and an allowance to read it has to name the commit or it carries
+    // silently onto whatever the author pushes next. See repos/allowed.js.
+    by: p.user && p.user.login,
+    headRepo: p.head && p.head.repo && p.head.repo.full_name,
+    headSha: p.head && p.head.sha,
+    // GitHub's own word for how close the author is to the repository: OWNER,
+    // MEMBER, COLLABORATOR, CONTRIBUTOR, NONE. Carried and never interpreted --
+    // "is this person trusted" is not a question this app should answer, and
+    // the answer it could give is somebody's permissions rather than their
+    // intentions.
+    association: p.author_association || null
   }))
 }
 

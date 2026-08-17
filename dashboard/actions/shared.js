@@ -27,6 +27,9 @@ const landings = require('../repos/landings')
 const judgements = require('../repos/judgements')
 const prtemplate = require('../repos/prtemplate')
 const drafts = require('../repos/drafts')
+// Which incoming pull requests a person has allowed a judge to read, and at
+// which commit. See repos/allowed.js.
+const allowed = require('../repos/allowed')
 const vbox = require('../machines/vbox')
 const vms = require('../machines/vms')
 const provisioner = require('../machines/provisioner')
@@ -365,7 +368,7 @@ async function supervisorMachine (name) {
 
 module.exports = {
   whoAsked, supervisorMachine,
-  log, events, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, judgements,
+  log, events, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, allowed, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, judging, triage, artifact,
   archive, files, sessions, prompts, contracts, jobs, jobrun, harness, suites, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace,
