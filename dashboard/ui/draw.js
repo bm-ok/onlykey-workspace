@@ -257,6 +257,7 @@ async function drawOnce () {
   // `queueState` walks every machine. Its own view guard keeps it from drawing
   // behind a tab nobody is on.
   paintQueue(running)
+  paintJudge()
   paintSessions()
   paintChat()
   // On the loop, not only when the sub-tab is clicked. It was wired to the

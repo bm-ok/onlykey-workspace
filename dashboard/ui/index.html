@@ -50,6 +50,11 @@
          machine exactly as a task does, so the queue stopped being part of the
          task board the moment there was a second thing to put in it. -->
     <button class="tab" data-view="queue">Queue <span class="tab-badge hidden" id="queue-badge"></span></button>
+    <!-- READING WHAT CAME BACK, which is the last step of this tool and the one
+         that had nowhere to happen. "Judge it" used to be a button on the task's
+         own card — so the screen asking for a decision showed the answer and not
+         the question — and it was removed rather than moved. -->
+    <button class="tab" data-view="judge">Judge <span class="tab-badge hidden" id="judge-badge"></span></button>
     <!-- WHAT IS DEFINED, beside what is happening. A contract, a prompt and a
          job are written once, approved once and run whenever — a task is one
          occasion of them. They were sub-tabs of Tasks, which put a library
@@ -705,6 +710,58 @@
        watching while you are doing something else, so a stream that dropped
        while the view was hidden would lose exactly the output you switched away
        to cause. The element stops being displayed; the subscription is global. -->
+  <!-- ---------------- Judge ----------------
+       READING A CHANGE AND SAYING WHETHER IT HOLDS: did it follow the rules, is
+       it secure, are there bugs nobody caught. That is a different question from
+       "did it do what was asked", which is what the work's own contract was
+       about — and the reason a judge has its own chain rather than re-reading
+       the task's.
+
+       WHAT IS JUDGED IS NEVER A TASK. A change can come from more than one task
+       and a task can deliver nothing worth reading, so judging follows the
+       CHANGE: a branch cut, or a PR cut once it is proposed for landing.
+
+       TWO SUB-TABS. Judgements is the list — what is waiting, what is being
+       read, what was decided — which is what makes judging something you can be
+       BEHIND ON rather than something you remember to do. judges is the chains
+       that can do it, one column per rung, because picking a job, a prompt and a
+       contract from three separate lists asks somebody to recombine in their
+       head what this app already knows. -->
+  <section class="view" id="view-judge">
+    <div class="subtabs">
+      <button class="subtab active" data-pane="judgements">Judgement</button>
+      <button class="subtab" data-pane="judges">Judges</button>
+    </div>
+
+    <div class="pane active" id="pane-judgements">
+      <div class="cols">
+        <div class="col">
+          <h2>Asked for <span class="muted" id="judge-context"></span></h2>
+          <div id="judge-list" class="stack"></div>
+        </div>
+        <div class="col">
+          <h2>Changes waiting to be read</h2>
+          <!-- AN OPEN CUT ASKS AND DOES NOT ACT. A cut is opened when work is
+               proposed for landing, which is the moment it stops being one
+               machine's business — so it appears here on its own. Nothing runs
+               because a cut exists: an automatic queue of judgements would be
+               work running unattended against somebody's repository with nobody
+               having chosen this cut or this chain. -->
+          <div id="judge-subjects" class="stack"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-judges">
+      <p class="note" id="judges-note"></p>
+      <!-- A JUDGE IS A COMBINATION: this job, giving these words, under these
+           rules. The library lists the three one at a time because that is how
+           each is written and approved; this is the whole chain, with the ones
+           that cannot run naming the rung that is missing. -->
+      <div id="judge-chains" class="stack"></div>
+    </div>
+  </section>
+
   <!-- ---------------- Queue ----------------
        ONE QUEUE, TWO KINDS OF WORK. A task makes a change; a judgement reads one
        that is already waiting to land. Both wait for the same machines, so both
