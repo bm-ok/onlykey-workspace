@@ -331,7 +331,12 @@ async function supervisorMachine (name) {
   let pick = name
   if (pick) {
     if (!is(vms.get(pick))) {
-      throw new Error(`"${pick}" is a runner, not a supervisor machine.`)
+      // THE WHOLE SENTENCE, because "not a supervisor machine" answers what and
+      // not why. Somebody asking a runner for a login URL is asking for the one
+      // thing this app deliberately moved: sign-ins happen on one machine, at a
+      // user that exists for nothing else. It was shortened when this function
+      // was made shared, and a drill noticed the explanation had gone.
+      throw new Error(`"${pick}" is a runner, and only a supervisor machine has a sign-in desk. Every Claude sign-in happens on one machine, as a user that exists for nothing else — a runner is handed a credential when it works and never asks for one.`)
     }
   } else if (all.length === 1) {
     pick = all[0].name

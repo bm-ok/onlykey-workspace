@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 27 tests, 134 checks, 25 of them drafts -->
+<!-- 12 suites, 30 tests, 150 checks, 25 of them drafts -->
 
 ## 25 drafts, not written yet
 
@@ -195,6 +195,14 @@ The half of this app the other suites can only describe. Everything before this
   6. and a second machine, dialled in, is not handed the same branch
   7. and it goes away clean
 
+## 02 — what a machine is made with
+
+  1. every machine writes its console somewhere
+  2. and it cannot be turned off
+  3. and a machine keeps the tags it was made with
+  4. and a supervisor keeps the one tag that is not a label
+  5. and a borrow can ask for a kind rather than whatever is idle
+
 # 06 — provisioning
 
 What a machine is handed, and how a change to it reaches one.
@@ -319,6 +327,23 @@ The machine that decides what work there is, rather than one doing it.
   2. and the runner is refused the supervisor API
   3. and the supervisor is refused the jobs API
   4. and each still gets its own
+
+## 04 — the conversation
+
+  1. a person can say something, and it is recorded as a person saying it
+  2. and the supervisor cannot say something as you
+  3. and what it says is signed with the machine that said it
+  4. and a message is not read until it has been handed over
+  5. and a receipt never goes backwards
+  6. and two supervisors are never running at once
+
+## 05 — what its model may run
+
+  1. a supervisor machine is up, with its tool server and its gate
+  2. and the tool server offers exactly what this host allows
+  3. and the gate denies everything that is not one of them
+  4. and the sign-in desk holds nothing
+  5. and only a supervisor machine has a desk at all
 
 # 11 — cooling the host
 
