@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 25 tests, 126 checks, 25 of them drafts -->
+<!-- 12 suites, 26 tests, 130 checks, 25 of them drafts -->
 
 ## 25 drafts, not written yet
 
@@ -285,7 +285,7 @@ Reading what came back and saying yes or no — and it is **work**, not a field.
 
 The machine that decides what work there is, rather than one doing it.
 
-*stands on the machines are built*
+*stands on the machines are built and what this host has*
 
 ## 00 — a supervisor is not a runner
 
@@ -305,6 +305,13 @@ The machine that decides what work there is, rather than one doing it.
   4. and what it proposes waits for a person
   5. and it can cut a branch, write a task on it, and queue it
   6. and the machine it runs on is never given work itself
+
+## 02 — reading a long list
+
+  1. a repository with thousands of issues comes back one page at a time
+  2. and the next page is a different page
+  3. and pull requests page the other way, with a count
+  4. and a repository in this workspace answers about its parent
 
 # 11 — cooling the host
 

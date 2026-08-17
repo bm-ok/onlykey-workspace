@@ -596,6 +596,170 @@ async function issuesOn (repo) {
     }))
 }
 
+// ---- issues, a page at a time ---------------------------------------------
+//
+// `issuesOn` above asks for one hundred and takes what comes, which is right for
+// the overview it feeds: a count and a handful of rows beside each repository.
+// It is wrong for reading an issue tracker. A busy repository has thousands —
+// anthropics/claude-code has over five — and one hundred of them, silently, is
+// worse than a refusal: it reads as the whole list, and anything deciding from
+// it is deciding from the first page of a list it does not know is longer.
+//
+// So this is the same request, paged, and it says where it is: which page, how
+// many pages there are, and whether there is another. GitHub does not return a
+// total for this endpoint, and it does not have to — the Link header names the
+// last page, which is the answer to the question anybody actually has.
+//
+// WHERE THE ISSUES LIVE is the same rule as everywhere else here: a fork's own
+// tracker is usually empty and usually disabled, so it asks the PARENT, which is
+// where a conversation about the project happens. `on` names any repository
+// instead, for reading a tracker this workspace does not hold.
+
+// THE LINK HEADER, WHICH IS HOW GITHUB SAYS "THERE IS MORE" — and on this
+// endpoint it no longer says how much more.
+//
+// It used to answer with rel="next" AND rel="last", and the number in the last
+// one was the page count. GitHub has moved big trackers to CURSOR paging, and
+// what comes back for anthropics/claude-code is only:
+//
+//   <https://api.github.com/repositories/937253475/issues?...&page=2&after=Y3Vyc29yOnYy...>; rel="next"
+//
+// No last, so there is no page count to report. The first version of this
+// invented one — it reported "Page 1 of 1" beside a next page, which is a
+// sentence that is wrong twice. What it says now is what is true: this is page
+// one, there is another, and nobody knows how many.
+//
+// THE CURSOR IS CARRIED AS AN OPAQUE STRING. It is GitHub's, it means nothing
+// here, and it is handed back exactly as it arrived — which is the only way to
+// walk a tracker whose pages are not numbered.
+const paramIn = (url, key) => {
+  try { return new URL(String(url)).searchParams.get(key) } catch { return null }
+}
+function paging (link, page) {
+  let next = null
+  let last = null
+  for (const part of String(link || '').split(',')) {
+    const m = /<([^>]+)>;\s*rel="(\w+)"/.exec(part)
+    if (!m) continue
+    if (m[2] === 'next') next = m[1]
+    if (m[2] === 'last') last = m[1]
+  }
+  const lastPage = last ? Number(paramIn(last, 'page')) || null : null
+  return {
+    page,
+    more: !!next,
+    // What to pass back to get the next one, in whichever way this repository is
+    // paged. A caller hands back whichever it was given; both are accepted.
+    nextPage: next ? Number(paramIn(next, 'page')) || null : null,
+    nextAfter: next ? paramIn(next, 'after') : null,
+    // Null rather than a guess. "How many pages" has no answer on a cursor-paged
+    // tracker, and saying so is the difference between a list that is short and a
+    // list that is truncated.
+    pages: lastPage
+  }
+}
+
+const oneIssue = (i, where) => ({
+  number: i.number,
+  title: i.title,
+  url: i.html_url,
+  state: i.state,
+  by: i.user && i.user.login,
+  at: i.created_at,
+  updated: i.updated_at,
+  comments: i.comments,
+  labels: (i.labels || []).map(l => (typeof l === 'string' ? l : l.name)),
+  on: where,
+  body: i.body || null
+})
+
+const onePull = (p, where) => ({
+  number: p.number,
+  title: p.title,
+  url: p.html_url,
+  state: p.state,
+  merged: !!p.merged_at,
+  draft: !!p.draft,
+  by: p.user && p.user.login,
+  at: p.created_at,
+  updated: p.updated_at,
+  head: p.head && p.head.label,
+  base: p.base && p.base.ref,
+  labels: (p.labels || []).map(l => (typeof l === 'string' ? l : l.name)),
+  on: where
+})
+
+const asOwnerRepo = where => {
+  const at = String(where || '').split('/')
+  if (at.length !== 2 || !at[0] || !at[1]) throw new Error(`"${where}" is not a repository — it is written owner/name.`)
+  return at
+}
+
+// One paged read, for the two lists that get long. Issues and pull requests are
+// different endpoints with the same problem: a busy repository has thousands of
+// one and hundreds of the other, and a hundred of five thousand is not a short
+// list, it is a wrong one.
+async function pageOf (kind, where, { state = 'open', page = 1, after = null, perPage = 30, labels = null, sort = null, since = null } = {}) {
+  const at = asOwnerRepo(where)
+
+  // Bounded here rather than passed on: GitHub's own limit is 100, and a caller
+  // asking for a thousand should be told what it got rather than quietly handed
+  // a hundred.
+  const want = Math.max(1, Math.min(100, Number(perPage) || 30))
+  const which = Math.max(1, Number(page) || 1)
+
+  const q = new URLSearchParams({
+    state: ['open', 'closed', 'all'].includes(state) ? state : 'open',
+    per_page: String(want),
+    page: String(which)
+  })
+  // The cursor wins where there is one: it is what a cursor-paged tracker
+  // answers with, and page numbers on one of those go nowhere useful.
+  //
+  // And the page number goes with it. GitHub takes both and honours the cursor,
+  // so a second page fetched by cursor came back saying "page 1" — a number that
+  // is true about the request and false about the answer. A walk by cursor has
+  // no page numbers at all, and reporting none is the honest version.
+  if (after) { q.set('after', String(after)); q.delete('page') }
+  if (labels && kind === 'issues') q.set('labels', String(labels))
+  if (sort) q.set('sort', String(sort))
+  if (since && kind === 'issues') q.set('since', String(since))
+
+  const r = await github.call('GET', `/repos/${at[0]}/${at[1]}/${kind}?${q}`)
+  if (r.status === 404) throw new Error(`GitHub has no repository called "${where}", or this host's token cannot see it.`)
+  if (r.status !== 200 || !Array.isArray(r.body)) {
+    throw new Error(`GitHub answered ${r.status} for the ${kind} on "${where}"${r.body && r.body.message ? ` — ${r.body.message}` : ''}`)
+  }
+
+  const on = `${at[0]}/${at[1]}`
+  // A PULL REQUEST IS AN ISSUE ON GITHUB, with an extra field, so the issues
+  // endpoint returns both. Left unfiltered every pull request appears here as
+  // well as in the pull request list, and every count is wrong the same way.
+  //
+  // Filtered AFTER the page is taken, which is why what was asked for and what
+  // was dropped are both reported: a page of thirty can come back as twenty-two
+  // issues and eight pull requests, and pretending otherwise would make the
+  // paging lie.
+  const rows = kind === 'issues'
+    ? r.body.filter(i => !i.pull_request).map(i => oneIssue(i, on))
+    : r.body.map(p => onePull(p, on))
+
+  return {
+    on,
+    state,
+    [kind]: rows,
+    asked: want,
+    dropped: kind === 'issues' ? r.body.length - rows.length : 0,
+    // Which cursor this page came after, so a caller that lost track can see
+    // where it is. Null on the first page, which is the only page with a number.
+    after: after ? String(after) : null,
+    ...paging(r.headers && r.headers.link, after ? null : which)
+  }
+}
+
+const issuePage = (where, opts) => pageOf('issues', where, opts)
+const pullPage = (where, opts) => pageOf('pulls', where, opts)
+
 // Everything asked for in one go, and written down. One button, because
 // "reachable", "what is open" and "what is being asked" are the same trip.
 async function gather (only = null) {
@@ -717,4 +881,4 @@ const syncDefault = repo => {
   return syncBranch(repo, branch)
 }
 
-module.exports = { read, check, gather, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, mergePull, syncFork, deleteBranch, pullsOn, issuesOn }
+module.exports = { read, check, gather, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }

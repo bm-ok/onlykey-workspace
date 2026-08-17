@@ -87,6 +87,12 @@ const MAY = {
   prCutState: 'what became of one change once it was sent, read from GitHub rather than remembered',
   judgements: 'what has been judged about a change, and whether it still describes what is there',
   repoOverview: 'everything open across the workspace — issues, pull requests and PR cuts, one row each',
+  // WORK THAT TURNED UP, which is the one thing here that does not start with
+  // somebody writing a task. A supervisor deciding what to do next is mostly
+  // reading this. Paged on purpose: a busy tracker has thousands, and a hundred
+  // of five thousand is not a short list, it is a wrong one.
+  issues: "a repository's issues, a page at a time — this workspace's, or any repository named owner/name",
+  pulls: "a repository's pull requests, a page at a time — everything open there, not only what this host cut",
   repositories: 'the repositories this workspace holds, and where each points',
   repoBranches: "one repository's branches: where each is here, where origin has it, and which are out of step",
   changeRead: 'what one line carries that another does not, so it can tell whether a change is worth sending',

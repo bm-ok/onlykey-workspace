@@ -24,6 +24,54 @@ const {
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
 } = s
 
+// ---- reading a long list off GitHub ----------------------------------------
+//
+// Two actions below read lists that get long — issues and pull requests — and
+// they share the same two questions: which repository, and how to ask for more.
+// Written once here rather than twice down there, because the second copy is
+// where the wording drifts.
+
+// WHICH REPOSITORY. `on` names any as owner/name; `repo` is one this workspace
+// holds, read from its PARENT where it is a fork, because a fork's own tracker
+// is usually empty and usually disabled and the conversation happens upstream.
+const whichRepo = ({ repo, on }) => {
+  const named = String(on || '').trim()
+  if (named) return named
+  if (!repo) throw new Error('Say which repository: "repo" for one in this workspace, or "on" as owner/name for any other.')
+  const row = remotes.read().find(r => r.repo === String(repo))
+  if (!row) throw new Error(`There is no repository called "${repo}" in this workspace.`)
+  const where = row.issuesOn || (row.remote && row.remote.owner ? `${row.remote.owner}/${row.remote.repo}` : '')
+  if (!where) throw new Error(`"${repo}" has no GitHub remote this host can read from.`)
+  return where
+}
+
+// HOW TO ASK FOR THE NEXT PAGE, in words, because the thing reading this is
+// often a model and a cursor is not guessable.
+//
+// It says how many pages there are only when GitHub says: big trackers are
+// cursor-paged now and answer with a next and no last, so there is no count.
+// The first version of this printed "Page 1 of 1" beside a next page, which is
+// a sentence that is wrong twice.
+const howToGoOn = (said, what) => {
+  const many = said[what === 'issue' ? 'issues' : 'pulls'] || []
+  // A walk by cursor has no page numbers at all — see repos/remotes.js — so
+  // "where am I" is answered by the cursor rather than by a number that would be
+  // true about the request and false about the answer.
+  const here = said.page ? `Page ${said.page}` : 'This page'
+
+  if (!said.more) {
+    return said.page === 1
+      ? `${many.length} ${what}(s), and there is only one page.`
+      : `${here} is the last — ${many.length} ${what}(s) on it.`
+  }
+  const how = said.nextAfter
+    ? `ask again with after "${said.nextAfter}"`
+    : `ask again with page ${said.nextPage}`
+  return said.pages
+    ? `${here} of ${said.pages} — ${how} for the next ${said.asked}.`
+    : `${here}, and there is more. GitHub does not say how many pages this repository has — ${how} for the next ${said.asked}, and keep going until "more" is false.`
+}
+
 module.exports = {
   // ---- the repositories themselves ---------------------------------------
   //
@@ -64,6 +112,65 @@ module.exports = {
   // Assembled from what was already gathered, so it costs nothing and is as old
   // as the last "Ask GitHub". Sorting and filtering happen in the window, where
   // they are instant.
+  // ---- an issue tracker, a page at a time ---------------------------------
+  //
+  // What is being ASKED of a repository, read live. Everything else in this app
+  // begins with somebody writing a task; an issue is work that turned up.
+  //
+  // PAGED, WHICH IS THE WHOLE POINT OF IT BEING ITS OWN ACTION. `repoOverview`
+  // shows what the last "Ask GitHub" gathered, which is the first hundred, and a
+  // hundred of five thousand is not a short list — it is a wrong one, silently.
+  // Anything deciding what to work on from it is deciding from the first page of
+  // a list it does not know is longer.
+  //
+  // LIVE, NOT FROM THE NOTE, for the same reason: "what is open now" is the
+  // question, and the note is as old as the last time somebody pressed a button.
+  // It is asked for deliberately and never on a timer — see repos/remotes.js.
+  //
+  // A REPOSITORY IN THIS WORKSPACE, OR ONE NAMED OUTRIGHT. `repo` is one this
+  // host holds, and its issues are read from the PARENT where it is a fork,
+  // because that is where the conversation is. `on` names any repository as
+  // owner/name — for reading a tracker this workspace does not hold, which is
+  // ordinary when the work is upstream. Reading only: nothing here writes to
+  // GitHub, and the actions that do are not on a supervisor's list.
+  // Which repository, worked out once for both lists below. `on` names any
+  // repository as owner/name; `repo` is one this workspace holds, and its issues
+  // and pull requests are read from the PARENT where it is a fork, because that
+  // is where the conversation is.
+  //
+  // Not exported as an action: it is one sentence used twice, and an action for
+  // it would be a third name for something this app already answers.
+
+  issues: {
+    about: "A repository's issues, a page at a time — from the workspace, or any repository named owner/name",
+    takes: ['repo', 'on', 'state', 'page', 'after', 'perPage', 'labels', 'sort', 'since'],
+    run: async ({ repo, on, state = 'open', page = 1, after = null, perPage = 30, labels = null, sort = null, since = null }) => {
+      const where = whichRepo({ repo, on })
+      const said = await remotes.issuePage(where, { state, page, after, perPage, labels, sort, since })
+      return { ...said, repo: repo || null, note: howToGoOn(said, 'issue') }
+    }
+  },
+
+  // THE SAME PROBLEM, THE OTHER LIST. A busy repository has hundreds of open
+  // pull requests — anthropics/claude-code has over seven hundred — and
+  // `repoOverview` shows what the last "Ask GitHub" gathered, which is the first
+  // hundred of them.
+  //
+  // SEPARATE FROM THE PR CUTS, and deliberately. A cut is this app's own idea:
+  // one change, one pull request per repository, tracked together. This is
+  // everything open on a repository, whoever opened it and whether or not it has
+  // anything to do with this host — which is what somebody deciding what to work
+  // on needs to see.
+  pulls: {
+    about: "A repository's pull requests, a page at a time — from the workspace, or any repository named owner/name",
+    takes: ['repo', 'on', 'state', 'page', 'after', 'perPage', 'sort'],
+    run: async ({ repo, on, state = 'open', page = 1, after = null, perPage = 30, sort = null }) => {
+      const where = whichRepo({ repo, on })
+      const said = await remotes.pullPage(where, { state, page, after, perPage, sort })
+      return { ...said, repo: repo || null, note: howToGoOn(said, 'pull request') }
+    }
+  },
+
   repoOverview: {
     about: 'Everything open across the workspace — issues, pull requests, and PR cuts as one row each',
     needs: 'workspace',
