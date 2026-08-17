@@ -16,7 +16,7 @@ const actions = require('./table')
 // block repeated nine times. See actions/shared.js.
 const s = require('./shared')
 const {
-  log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
+  log, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
   archive, files, prompts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
@@ -254,6 +254,19 @@ module.exports = {
       const { vms: all } = await actions.vmList.run({})
       const free = new Map(queue.availability(all).map(a => [a.name, a]))
 
+      // A MACHINE THAT CANNOT TAKE WORK IS NOT SHOWN AT ALL.
+      //
+      // This answers "where can work go", and a machine kept back from the queue
+      // is not an answer to it — it is somebody's decision about their own
+      // computer. Listing it with a reason would hand the thing reading this a
+      // name, a state and an implicit suggestion, none of which it can act on.
+      //
+      // KEPT BACK, NOT MERELY BUSY. A machine doing a task is still in its pool
+      // and will be free in a minute; that is worth knowing. One held back is out
+      // until a person says otherwise, and until then it is not this reader's
+      // business.
+      const held = new Set(all.filter(v => v.forTasks === false).map(v => v.name))
+
       const kinds = new Map()
       const note = (tag, vm) => {
         const row = kinds.get(tag) || { tag, machines: [], free: 0, busy: 0 }
@@ -272,6 +285,7 @@ module.exports = {
       const workers = all.filter(v => !v.supervisor)
 
       for (const vm of workers) {
+        if (held.has(vm.name)) continue
         for (const tag of vm.tags || []) note(String(tag).toLowerCase(), vm)
       }
 
@@ -284,16 +298,20 @@ module.exports = {
       //
       // A machine that somehow has none is still counted, because a report that
       // silently drops a machine is worse than one that shows an odd row.
-      const homeless = workers.filter(v => !(v.tags || []).length)
+      const homeless = workers.filter(v => !held.has(v.name) && !(v.tags || []).length)
 
       return {
         pools: [...kinds.values()].sort((a, b) => a.tag.localeCompare(b.tag)),
         inNoPool: homeless.map(v => v.name),
+        // How many are out of reach, without saying which: the number keeps
+        // "this host has five machines and four in pools" from reading as a
+        // fault, and a name would be information the reader cannot use.
+        keptBack: held.size,
         // Any free machine at all takes an untagged task, tagged or not.
         anyFree: workers.filter(v => (free.get(v.name) || {}).free).length,
         supervisors: supervisors.map(v => v.name),
         note: kinds.size
-          ? `${kinds.size} pool(s): ${[...kinds.values()].map(k => `"${k.tag}" (${k.free} of ${k.machines.length} free)`).join(', ')}. A task with no tag takes any free machine; a tagged one takes only its own kind, and waits.`
+          ? `${kinds.size} pool(s): ${[...kinds.values()].map(k => `"${k.tag}" (${k.free} of ${k.machines.length} free)`).join(', ')}. A task with no tag takes any free machine; a tagged one takes only its own kind, and waits.${settings.testsAllowed(workspaces.open()).allowed ? ' The drills are on, so a task written over the supervisor API goes to the "test" pool whatever it asks for.' : ''}`
           : 'There are no machines to put in a pool.'
       }
     }

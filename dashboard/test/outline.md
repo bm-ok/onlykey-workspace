@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 30 tests, 153 checks, 25 of them drafts -->
+<!-- 12 suites, 31 tests, 159 checks, 25 of them drafts -->
 
 ## 25 drafts, not written yet
 
@@ -63,6 +63,7 @@ The first thing, and the only suite whose job is to **stop**.
   1. a folder of repositories is open
   2. and drills are allowed to run here
   3. and a GitHub token that still works
+  4. and every machine that is not the kit's is kept back while it runs
 
 # 01 — the order
 
@@ -242,6 +243,13 @@ The rules that stop work being lost — a task written wrong, a verdict about no
   2. a machine holding a credential cannot be snapshotted
   3. and once it is signed out, it is not given work
 
+## 03 — a machine kept back is left alone
+
+  1. a machine can be kept back from the queue
+  2. and a borrow will not take it either
+  3. and it is not offered as a pool a supervisor could use
+  4. and giving it back puts it where it was
+
 ## 03 — one machine per branch
 
   1. a machine is not moved off the branch it is on
@@ -360,3 +368,4 @@ The last suite, and the only one that takes things away.
   2. nothing of the kit's is still holding anything
   3. and the kit's machines are removed, disks and all
   4. and nothing the drills made is left on this host
+  5. and the machines the kit kept back are available again

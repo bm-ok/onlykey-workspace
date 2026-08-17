@@ -537,6 +537,31 @@ function handler (req, res) {
         // sent under a `_` key was dropped a line ago.
         clean._fromMachine = name
 
+        // WHILE THE DRILLS ARE ON, ITS WORK GOES TO THE KIT'S MACHINES.
+        //
+        // A task with no tag takes any free machine, which is right and means a
+        // supervisor deciding on its own can reach a working runner — it did:
+        // the first task it queued unattended went to runner4. The drills hold
+        // the rest of the fleet back while they run (see suite 00), and this is
+        // the same containment from the other side: in testing mode the pool is
+        // not the supervisor's choice.
+        //
+        // OVERRIDDEN EVEN WHEN IT NAMED ONE, which is the opposite of what this
+        // route does for anything else — a supervisor naming a kind is usually
+        // making a decision about where work belongs. Testing mode is the state
+        // where the app is deliberately contained, and a contained state that
+        // can be argued out of is not one.
+        //
+        // Off the moment testing mode is: nothing to remember, nothing to unset.
+        if (what === 'taskCreate' && testingAllows().allowed && clean.task && typeof clean.task === 'object') {
+          if (clean.task.tag !== 'test') {
+            log.on('supervisor', name).info(clean.task.tag
+              ? `the drills are on, so its task goes to the "test" pool rather than "${clean.task.tag}"`
+              : 'the drills are on, so its task goes to the "test" pool')
+          }
+          clean.task = { ...clean.task, tag: 'test' }
+        }
+
         try {
           // THROUGH THE SAME DOOR EVERY OTHER CALLER USES. This decides whether;
           // `call` decides how, and every refusal, workspace gate and record that

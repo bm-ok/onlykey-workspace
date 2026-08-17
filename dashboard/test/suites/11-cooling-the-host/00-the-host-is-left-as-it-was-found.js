@@ -5,6 +5,11 @@
 // The other end of the kit. See the README beside this file for why it is off
 // unless asked for, and why doing it marks the build stage dirty.
 
+// WHAT THE KIT MARKED WHEN IT KEPT A MACHINE BACK. See suite 00: warming holds
+// every machine that is not the kit's own, so a drill or a supervisor queuing
+// untagged work cannot reach somebody's working runner while the kit is running.
+const HELD = 'kit-held'
+
 const { it, requires } = require('../../../tasks/harness')
 
 // The same two the warming stage builds. Named rather than discovered, because
@@ -78,3 +83,26 @@ it('and nothing the drills made is left on this host', async ({ okc, assert, log
   const took = (swept.gone && ((swept.gone.branches || []).length + (swept.gone.tasks || []).length + (swept.gone.machines || []).length)) || 0
   log(took ? `swept ${took} thing(s) the drills had left: ${swept.note}` : 'the drills left nothing to sweep')
 }, { minutes: 5 })
+
+it('and the machines the kit kept back are available again', async ({ okc, assert, log }) => {
+  // EXACTLY WHAT IT TOOK, WHICH IS WHY IT MARKED THEM. A machine that was already
+  // kept back when the kit started was never marked, and is left exactly as it
+  // was found — re-enabling one because it happens to be kept back and untagged
+  // would be undoing somebody's decision on the way out.
+  const machines = (await okc('vmList')).vms || []
+  const ours = machines.filter(m => (m.tags || []).includes(HELD))
+
+  for (const m of ours) {
+    await okc('vmForTasks', { name: m.name, enabled: true })
+    await okc('vmTags', { name: m.name, tags: (m.tags || []).filter(t => t !== HELD) })
+  }
+
+  // Said as the queue sees it, rather than as the register does.
+  const pools = await okc('pools')
+  const stuck = (pools.pools || [])
+    .flatMap(p => p.machines)
+    .filter(m => ours.some(o => o.name === m.name) && !m.free)
+  assert.ok(!stuck.length, `${stuck.map(m => `${m.name} — ${m.why}`).join('; ')}: given back and still not free to the queue`)
+
+  log(ours.length ? `available again: ${ours.map(m => m.name).join(', ')}` : 'the kit was holding nothing back')
+})

@@ -5,6 +5,11 @@
 // The first suite, and the only one whose purpose is to stop the others. See the
 // README beside this file for why it exists and why it never reads a value.
 
+// WHAT THE KIT MARKS A MACHINE WITH WHEN IT KEEPS IT BACK, so that cooling gives
+// back exactly what warming took and nothing else. See the check below and
+// suite 11.
+const HELD = 'kit-held'
+
 const { it } = require('../../../tasks/harness')
 
 it('a folder of repositories is open', async ({ okc, assert, log }) => {
@@ -63,6 +68,58 @@ it('and a GitHub token that still works', async ({ okc, assert, log }) => {
   log(`a GitHub token is held for ${now.login}${now.kind ? ` (${now.kind})` : ''}, scopes ${(now.scopes || []).join(', ') || 'none listed'}, expires ${now.expires || 'never'}`)
   log('asked of GitHub just now, not read from the last time it was checked')
 }, { gate: true })
+
+it('and every machine that is not the kit\'s is kept back while it runs', async ({ okc, assert, log }) => {
+  // THE KIT QUEUES REAL WORK, AND THE QUEUE TAKES WHATEVER IS FREE.
+  //
+  // A task with no tag takes any free machine — correct, and it means a drill can
+  // reach the operator's own runners, bring one up, and give it back rolled to
+  // its base snapshot. It has happened twice: once when a drill borrowed by hand,
+  // and once when the supervisor queued an untagged task of its own.
+  //
+  // Tagging every drill's work would fix the first and not the second: work the
+  // SUPERVISOR writes is not the kit's to tag. So the fleet is held instead —
+  // while the kit runs, only machines tagged "test" are available to the queue,
+  // whoever asks it for one.
+  //
+  // THE EXISTING LEVER, NOT A NEW ONE. "Keep it back from tasks" is the button a
+  // person already has for exactly this wish, and it applies to every caller
+  // rather than to whichever one somebody thought of. A second mechanism for one
+  // more kind of asker is how two of them come to disagree.
+  //
+  // IT REMEMBERS WHAT IT TOOK, WITH A TAG. A machine already kept back is left
+  // alone and never marked — so cooling gives back exactly the machines this kit
+  // held, and a machine somebody switched off on purpose stays off. Guessing from
+  // "kept back and not tagged test" would re-enable that one on the way out,
+  // which is the sort of tidying-up nobody asked for.
+  const machines = (await okc('vmList')).vms || []
+  const held = []
+  const already = []
+
+  for (const m of machines) {
+    if (m.supervisor) continue                       // never in the queue's reach anyway
+    if ((m.tags || []).includes(HELD)) continue      // this kit already holds it
+    if ((m.tags || []).includes('test')) continue    // the kit's own, and the point of the exercise
+    if (m.forTasks === false) { already.push(m.name); continue }
+
+    await okc('vmForTasks', { name: m.name, enabled: false })
+    await okc('vmTags', { name: m.name, tags: [...(m.tags || []), HELD] })
+    held.push(m.name)
+  }
+
+  // AND IT IS TRUE OF THE POOLS, not merely written down: the queue is what
+  // decides, and this is the queue's own answer.
+  const pools = await okc('pools')
+  const loose = (pools.pools || [])
+    .flatMap(p => p.machines.map(x => ({ ...x, tag: p.tag })))
+    .filter(x => x.free && x.tag !== 'test')
+  assert.ok(!loose.length,
+    `${loose.map(x => `${x.name} (${x.tag})`).join(', ')} are still free to the queue. While the kit runs, only the "test" pool may be taken — a drill or a supervisor queuing untagged work would otherwise reach somebody's working machine`)
+
+  log(held.length ? `kept back for the run: ${held.join(', ')}` : 'nothing needed keeping back')
+  if (already.length) log(`already kept back by somebody, and left that way: ${already.join(', ')}`)
+  log('only the "test" pool is available to the queue until the host is cooled down')
+})
 
 // WHAT IT SAW — 16 August 2026, 16:44, three passed
 //
