@@ -64,12 +64,20 @@ module.exports = {
   chatSay: {
     about: 'Say something to the supervisor. It reads this when it next asks what is new',
     takes: ['text', 'about'],
-    run: ({ text, about = null }) => {
-      const said = chat.say({ who: 'person', text, about })
+    run: ({ text, about = null, _overTheWire, _driven, _fromTest }) => {
+      // HOW IT ARRIVED, from the same flags every other action uses to tell the
+      // window from the command line — see whoAsked in actions/shared.js — plus
+      // the one the drills set on every call they make.
+      //
+      // Taken from the call rather than from an argument anybody could pass: a
+      // message that could claim to be from the window would make the label
+      // worth nothing, which is the same rule the supervisor's half follows.
+      const via = _fromTest ? 'test' : (_overTheWire || _driven) ? 'cli' : 'window'
+      const said = chat.say({ who: 'person', text, about, via })
       // KEPT, because this is where work comes from now. A task nobody wrote by
       // hand was asked for in here, and six weeks later this line is the answer
       // to "why did it do that".
-      log.on('supervisor').info(`you said: ${said.text.slice(0, 120)}${said.text.length > 120 ? '…' : ''}`)
+      log.on('supervisor').info(`${said.via === 'window' ? 'you' : said.via} said: ${said.text.slice(0, 120)}${said.text.length > 120 ? '…' : ''}`)
 
       // AND IT WAKES, IF IT HAS BEEN TOLD TO. This is what "no response" was:
       // the message was written down, correctly, and nothing on this host had
@@ -121,7 +129,7 @@ module.exports = {
       // supervisor route puts the machine's name on every call it forwards — see
       // server.js — and it is stripped from anything the machine sent, so a
       // supervisor cannot sign a message as somebody else, or as a person.
-      const said = chat.say({ who: 'supervisor', text, about, from: _fromMachine })
+      const said = chat.say({ who: 'supervisor', text, about, from: _fromMachine, via: 'wire' })
       log.on('supervisor', _fromMachine || undefined).info(`it said: ${said.text.slice(0, 120)}${said.text.length > 120 ? '…' : ''}`)
       return { ...said, note: 'Said. It is on the Chat tab now.' }
     }

@@ -678,7 +678,13 @@ module.exports = {
             // `okc(...).catch(...)` — the ordinary way to write a cleanup that
             // must not itself fail — throws a TypeError naming the wrong thing.
             // A suite author should not have to know which half they are on.
-            return Promise.resolve(found.run(args))
+            // MARKED AS A DRILL, on every call. An action that records where a
+            // request came from — the conversation does — otherwise has a drill
+            // looking exactly like a person at the window, because a drill calls
+            // the table in process just as the window does. It was worked around
+            // by starting every drill message with "drill:", which is a
+            // convention living in somebody's text.
+            return Promise.resolve(found.run({ ...args, _fromTest: true }))
           },
           // Asked between checks, so a run can be called off without killing
           // the app. See `stopping` above for what it can and cannot interrupt.

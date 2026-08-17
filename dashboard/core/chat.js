@@ -57,8 +57,24 @@ const lastNumber = () => {
 // and a column, and neither exists yet.
 const WHO = new Set(['person', 'supervisor'])
 
-function say ({ who, text, from = null, about = null }) {
+// AND WHERE IT CAME FROM, which is a different question from who said it.
+//
+// "You" covers a person typing in the window, a person at the command line, and
+// a drill exercising this record — and they are worth telling apart. A drill's
+// lines used to say so by starting with "drill:", which is a convention living
+// in the TEXT of a message: it cannot be relied on, it cannot be styled, and it
+// is the sort of thing somebody's real message eventually starts with by
+// accident.
+//
+// So the source is recorded, from how the call actually arrived rather than from
+// anything it claims — see actions/chat.js. The window shows it, and the log line
+// carries it, which is the "visual security" half: a line that came from a drill
+// looks like one at a glance and cannot be dressed up as a person typing.
+const VIA = new Set(['window', 'cli', 'test', 'wire'])
+
+function say ({ who, text, from = null, about = null, via = 'window' }) {
   if (!WHO.has(who)) throw new Error(`"${who}" is not somebody who talks here. It is a person or a supervisor.`)
+  if (!VIA.has(via)) throw new Error(`"${via}" is not a way in. It is ${[...VIA].join(', ')}.`)
   const said = String(text == null ? '' : text).trim()
   if (!said) throw new Error('There is nothing to say.')
   // Long enough for a supervisor to explain itself, short enough that this file
@@ -70,6 +86,9 @@ function say ({ who, text, from = null, about = null }) {
     n: lastNumber() + 1,
     at: new Date().toISOString(),
     who,
+    // How it arrived: the window, the command line, a drill, or over the wire
+    // from a machine. See VIA above.
+    via,
     // Which machine, when it was a supervisor. Two supervisors are not supposed
     // to run at once — see vmStart — and this is what would show it if they did.
     from: from || null,

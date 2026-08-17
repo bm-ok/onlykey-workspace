@@ -80,6 +80,12 @@ const oneMessage = (m, read) => {
   return el('div', { className: `msg ${mine ? 'mine' : 'theirs'}${waiting ? ' waiting' : ''}` },
     el('div', { className: 'msg-who' },
       el('span', { textContent: mine ? 'you' : 'the supervisor' }),
+      // WHERE IT CAME FROM, when it was not somebody typing here. A line written
+      // by a drill or from the command line is not a person asking for
+      // something, and it should not look like one at a glance.
+      m.via && m.via !== 'window' && m.via !== 'wire'
+        ? el('span', { className: 'badge muted', textContent: m.via })
+        : null,
       // Which machine said it, when it was a machine. Two supervisors are not
       // supposed to run at once, and this is where it would show.
       !mine && m.from ? el('span', { className: 'mono', textContent: m.from }) : null,

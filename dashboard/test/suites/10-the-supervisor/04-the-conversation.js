@@ -29,7 +29,12 @@ const { it, cleanup, requires } = require('../../../tasks/harness')
 
 requires('the machines are built')
 
-const MARK = `drill: a line from the conversation suite ${new Date().toISOString().slice(11, 19)}`
+// NO "drill:" PREFIX ANY MORE. A drill's calls are marked as a drill by the
+// harness — every message it writes is recorded as coming from `test`, and the
+// window says so beside it — so the text can be an ordinary sentence. Which is
+// what it should be: this record is read by a person, and a convention living in
+// the words is one somebody's real message eventually starts with by accident.
+const MARK = `a line from the conversation suite at ${new Date().toISOString().slice(11, 19)}`
 
 it('a person can say something, and it is recorded as a person saying it', async ({ okc, assert, state, log }) => {
   const before = (await okc('chat')).messages || []
@@ -66,7 +71,7 @@ it('and what it says is signed with the machine that said it', async ({ okc, ass
   // anything the machine sent under an underscore — see server.js. Here that is
   // exercised through the action directly, which is the half this host owns: a
   // message with no machine named is a message nothing can be traced to.
-  const said = await okc('supervisorSays', { text: 'drill: a line from the supervisor side', about: 'a drill', _fromMachine: 'drill-machine' })
+  const said = await okc('supervisorSays', { text: 'a line from the supervisor side', about: 'a drill', _fromMachine: 'drill-machine' })
   state.theirs = said.n
   assert.equal(said.who, 'supervisor', `it was recorded as "${said.who}"`)
   assert.equal(said.from, 'drill-machine', `it was recorded as coming from "${said.from}"`)
@@ -78,7 +83,7 @@ it('and a message is not read until it has been handed over', async ({ okc, asse
   // off most of the time, so a line may have been read a second ago or may be
   // waiting for a machine to boot — and from the person's side those look
   // identical, which is what the receipt is for.
-  const said = await okc('chatSay', { text: 'drill: this one should be unread until it is fetched', about: 'a drill' })
+  const said = await okc('chatSay', { text: 'this one should be unread until it is fetched', about: 'a drill' })
   const mark = (await okc('chat')).read || {}
   assert.ok(Number(mark.n) < said.n,
     `a message was marked read the moment it was stored (read up to ${mark.n}, message ${said.n}). Stored is not delivered, and saying otherwise makes the receipt worthless`)
@@ -166,8 +171,8 @@ cleanup(async ({ okc, state }) => {
 //     "supervisor-1" first.
 //
 // WHAT IT LEAVES BEHIND, SAID PLAINLY: three lines in the conversation, each
-// starting "drill:". There is no cleanup for them and that is deliberate — the
-// only way to remove a message is chatClear, which throws away the WHOLE
-// conversation including everything a person said. A drill that tidied up after
-// itself by deleting somebody's messages would be worse than a drill that leaves
-// three labelled lines.
+// marked `test` by the window, because the harness stamps every call a drill
+// makes. There is no cleanup for them and that is deliberate — the only way to
+// remove a message is chatClear, which throws away the WHOLE conversation
+// including everything a person said. A drill that tidied up after itself by
+// deleting somebody's messages would be worse than three labelled lines.
