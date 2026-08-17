@@ -34,6 +34,23 @@ const { log, events, tasks, vms, landings, channel, settings } = s
 let thinking = false
 const busyThinking = () => thinking
 
+// AND WHAT HAPPENED WHILE IT WAS THINKING IS NOT DROPPED.
+//
+// Two turns at once are refused, which is right and was the whole of it — so
+// anything that happened mid-turn was simply lost: a task finishing thirty
+// seconds into a turn woke nothing, and the supervisor found out about it
+// whenever somebody next spoke to it. That is the difference between a
+// supervisor that watches and one that is polled by hand.
+//
+// ONE PENDING WAKE, NOT A QUEUE OF THEM. Waking is "go and read what changed",
+// and three of those in a row would read the same thing three times: what is
+// worth keeping is THAT something happened, not how many times. The reasons are
+// collected so the log can say what it was catching up on.
+let pending = null
+const alsoWake = why => {
+  pending = pending ? `${pending}; ${why}` : why
+}
+
 // What it is told when it wakes. Deliberately short: the skill on the machine is
 // what knows the loop, and repeating it here would be a second copy that goes
 // stale — see provision/supervisor-skill.md.
@@ -216,7 +233,10 @@ module.exports = {
     takes: ['name', 'why'],
     run: async ({ name, why = null }) => {
       if (busyThinking()) {
-        return { woke: false, why: 'it is already thinking. One turn at a time — two would be two things deciding, which is the thing the one-supervisor rule exists to prevent.' }
+        // KEPT, NOT DROPPED. It will go again when this turn ends, once, however
+        // many things happened while it was busy — see alsoWake.
+        alsoWake(why || 'something happened while it was thinking')
+        return { woke: false, pending: true, why: 'it is already thinking. One turn at a time — two would be two things deciding, which is the thing the one-supervisor rule exists to prevent. It will look again when this turn ends.' }
       }
 
       // The same machine the sign-in desk uses, started if it is off — one
@@ -249,6 +269,19 @@ module.exports = {
         }
       } finally {
         thinking = false
+
+        // AND THEN CATCH UP, if anything happened while it was busy. Not awaited
+        // and not recursive in any way that matters: it starts one more turn and
+        // returns, and that turn clears the flag the same way.
+        const again = pending
+        pending = null
+        if (again) {
+          log.on('supervisor', on).info(`going again — ${again}`)
+          setTimeout(() => {
+            actions.supervisorWake.run({ name: on, why: again })
+              .catch(e => log.on('supervisor').warn(`the catch-up turn did not run: ${e.message}`))
+          }, 1000)
+        }
       }
     }
   },

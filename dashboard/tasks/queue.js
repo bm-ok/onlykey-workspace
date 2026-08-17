@@ -38,6 +38,9 @@ const TICK = 15000
 const busyWith = new Map()
 
 const workspaces = require('../core/workspaces')
+// Read for one thing only: whether the supervisor is to be woken when a task
+// lands. See the end of run().
+const settings = require('../core/settings')
 // The registry, for the one thing here that is a claim rather than an act: a
 // machine handed over to a person has to be marked borrowed, and `vmBorrow`
 // cannot do it because it brings the machine up as part of borrowing it.
@@ -396,6 +399,31 @@ async function run (actions, log, task, machine) {
     // read when somebody already suspects something; this is what tells them to.
     to.info(`#${task.number} took ${secs(spent.total)} — ${Object.entries(spent)
       .filter(([k]) => k !== 'total').map(([k, v]) => `${k} ${secs(v)}`).join(', ')}`)
+
+    // AND THE SUPERVISOR IS TOLD, if it has been told to listen.
+    //
+    // A supervisor woke when somebody spoke to it and at no other time, so a task
+    // it queued itself finished in silence and it found out whenever the person
+    // next said something. That is a supervisor being polled by hand rather than
+    // one watching, and this is the difference.
+    //
+    // WHY HERE. This is the moment a task stops being work in flight and becomes
+    // something to decide about: what came back, whether it delivered, whether it
+    // is worth sending out. The other two things worth waking for are an issue
+    // and a pull request arriving, and neither is knowable without asking GitHub
+    // — which this app deliberately never does on a timer. So they are read when
+    // it wakes, and this is what wakes it.
+    //
+    // NOT AWAITED, and never fatal: a supervisor that cannot be woken must not
+    // hold up the machine being put away, which is the next thing this does.
+    try {
+      if (settings.read().supervisorWakes === true) {
+        actions.supervisorWake.run({ why: `#${task.number} finished — ${outcome.state}` })
+          .catch(e => log.on('supervisor').warn(`it could not be woken after #${task.number}: ${e.message}`))
+      }
+    } catch (e) {
+      log.on('supervisor').warn(`could not tell the supervisor about #${task.number}: ${e.message}`)
+    }
   } finally {
     // ALWAYS, and in this order. A machine left on, holding a credential, is
     // the failure that costs something: the credential outlives the task in a
