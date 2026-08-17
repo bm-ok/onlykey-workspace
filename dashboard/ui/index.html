@@ -680,14 +680,15 @@
     </div>
     <p class="note" id="chat-note"></p>
     <div id="chat-thread" class="stack"></div>
-    <!-- Inside a panel, because `.row` is only laid out as a row in one -- see
-         `.panel .row` in ui.css. Written without it first, and the composer came
-         out as a box the width of its placeholder. -->
-    <div class="panel" style="margin-top:12px">
-      <div class="row">
-        <input id="chat-text" placeholder="say something to the supervisor" style="flex:1">
-        <button class="btn ok" id="chat-send">Say it</button>
-      </div>
+    <!-- PINNED UNDER THE THREAD, never scrolling with it. A composer that walks
+         off the bottom as a conversation grows is the one thing a chat window
+         must not do. See `.chat-composer` in ui.css.
+
+         A textarea rather than an input: a brief for a supervisor is often a
+         paragraph, and Enter sends while Shift+Enter makes a line. -->
+    <div class="chat-composer">
+      <textarea id="chat-text" rows="1" placeholder="say something to the supervisor — Enter to send, Shift+Enter for a new line"></textarea>
+      <button class="btn ok" id="chat-send">Say it</button>
     </div>
   </section>
 

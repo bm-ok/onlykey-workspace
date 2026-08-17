@@ -21,23 +21,24 @@
 // panel can do.
 let chatSeen = 0
 
-const WHO = {
-  person: { label: 'you', className: 'card' },
-  supervisor: { label: 'the supervisor', className: 'card pick' }
-}
-
+// WHICH SIDE, WHICH IS HOW A CONVERSATION SAYS WHO IS SPEAKING. Yours on the
+// right, the supervisor's on the left — the one convention every chat window
+// shares, which makes the label above a bubble a courtesy rather than the only
+// way to tell.
 const oneMessage = m => {
-  const who = WHO[m.who] || { label: m.who, className: 'card' }
-  return el('div', { className: who.className },
-    el('div', { className: 'card-title' },
-      el('span', { className: 'grow', textContent: who.label }),
-      m.from ? el('span', { className: 'badge muted', textContent: m.from }) : null,
-      el('span', { className: 'muted', textContent: ago(m.at) })),
-    // Prose, kept as written. `textContent` rather than anything that parses:
-    // this is text from a model, and a window that renders what a model sends is
-    // a window that renders what anything that talked to that model sends.
-    el('div', { className: 'note', style: 'white-space:pre-wrap' }, m.text),
-    m.about ? el('div', { className: 'badges' }, el('span', { className: 'muted', textContent: `about ${m.about}` })) : null)
+  const mine = m.who === 'person'
+  return el('div', { className: `msg ${mine ? 'mine' : 'theirs'}` },
+    el('div', { className: 'msg-who' },
+      el('span', { textContent: mine ? 'you' : 'the supervisor' }),
+      // Which machine said it, when it was a machine. Two supervisors are not
+      // supposed to run at once, and this is where it would show.
+      !mine && m.from ? el('span', { className: 'mono', textContent: m.from }) : null,
+      el('span', { textContent: ago(m.at) }),
+      m.about ? el('span', { textContent: `about ${m.about}` }) : null),
+    // textContent, never anything that parses. This is text from a model, and a
+    // window that renders what a model sends renders what anything that talked
+    // its way into that model sends.
+    el('div', { className: 'msg-body', textContent: m.text }))
 }
 
 function paintChat () {
@@ -77,6 +78,7 @@ const saySomething = async () => {
   // sitting there looking unsent — and put back if it failed, because losing
   // what somebody wrote is worse than a duplicate.
   box.value = ''
+  box.style.height = 'auto'
   try {
     await api('chatSay', { text })
     paintChat()
@@ -86,8 +88,22 @@ const saySomething = async () => {
   }
 }
 
+// A TEXTAREA THAT GROWS WITH WHAT IS IN IT, up to a limit the stylesheet sets.
+// A brief for a supervisor is often a paragraph, and typing one into a
+// single-line box that scrolls sideways is how it ends up being one sentence.
+const sizeComposer = () => {
+  const box = $('chat-text')
+  box.style.height = 'auto'
+  box.style.height = Math.min(box.scrollHeight, 144) + 'px'
+}
+
 $('chat-send').onclick = saySomething
-$('chat-text').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saySomething() } }
+$('chat-text').oninput = sizeComposer
+$('chat-text').onkeydown = e => {
+  // Enter sends, Shift+Enter makes a line. The other way round is defensible and
+  // is not what anybody's fingers expect from a chat box.
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saySomething() }
+}
 
 $('chat-clear').onclick = () => ask({
   title: 'Throw the conversation away?',

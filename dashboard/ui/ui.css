@@ -985,3 +985,86 @@ table.kv td .ok { color: var(--ok); }
 }
 .writer textarea { resize: vertical; min-height: 5rem; font-family: var(--mono); }
 .writer input, .writer textarea { margin-bottom: 8px; }
+
+
+/* ---- Chat -----------------------------------------------------------------
+   A CONVERSATION, WHICH IS A DIFFERENT SHAPE FROM EVERYTHING ELSE HERE. Every
+   other panel is a list of records and reads top-down; a conversation reads
+   bottom-up, keeps its composer under your hands, and says who is speaking by
+   WHERE a line sits rather than by a field called "who".
+
+   The view is a column the height of the window: the thread takes what is left
+   and scrolls inside itself, and the composer is pinned under it. Without that
+   the whole page scrolls, the box you type into walks off the bottom as the
+   conversation grows, and the newest message — the one you are waiting for —
+   ends up below the fold. */
+#view-chat.active {
+  display: flex;
+  flex-direction: column;
+  /* The window, less the header, the banners and this view's own padding.
+     A fixed height rather than a flex chain up to <body>, because the banners
+     above come and go and a chain would have to be right in every combination. */
+  height: calc(100vh - 150px);
+  min-height: 320px;
+}
+
+#chat-thread {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 2px 10px;
+  /* The gap belongs to the thread rather than to each bubble, so a run of
+     messages from one side does not get double spacing at its joins. */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* WHO SAID IT, SAID BY WHERE IT IS. Yours on the right, the supervisor's on the
+   left, which is the one convention every chat window shares — and it means the
+   label above a bubble is a courtesy rather than the only way to tell. */
+.msg { max-width: 74%; display: flex; flex-direction: column; gap: 3px; }
+.msg.mine { align-self: flex-end; align-items: flex-end; }
+.msg.theirs { align-self: flex-start; align-items: flex-start; }
+
+.msg-who {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.msg-body {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 11px;
+  /* Prose from a model arrives with its own line breaks and they are meaningful.
+     Wrapped, so a long identifier cannot push the bubble past the window. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Yours is the one with a voice: the accent edge marks the side of the
+   conversation you are responsible for. */
+.msg.mine .msg-body { background: var(--panel-2); border-color: var(--accent); }
+/* One corner squared off on the speaking side, which is what makes a rounded
+   rectangle read as a speech bubble rather than as a card. */
+.msg.mine .msg-body { border-bottom-right-radius: 4px; }
+.msg.theirs .msg-body { border-bottom-left-radius: 4px; }
+
+/* The composer, pinned under the thread and never scrolling with it. */
+.chat-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-top: 4px;
+}
+.chat-composer textarea {
+  flex: 1;
+  resize: none;
+  min-height: 2.4rem;
+  max-height: 9rem;
+  font: inherit;
+}
