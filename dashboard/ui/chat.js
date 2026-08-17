@@ -137,11 +137,21 @@ function paintSupervisorState () {
     // so this costs nothing when nothing has changed.
     standIn(st, st.supervisors || [])
 
-    // AND THE HEADER'S OWN WAKE BUTTON, for the same reason: it is not this
-    // panel's element, and a control that is offered while it would do nothing
-    // is the fault this whole tab exists to end.
-    $('chat-wake').disabled = !st.ready
-    $('chat-wake').title = st.ready ? 'One turn: it reads what changed and answers' : 'It cannot run yet — start it first'
+    // AND THE HEADER ROW, which swaps with the body rather than standing over
+    // it. Running: the controls for talking to it. Reading the log with nothing
+    // up: one way out. Choosing which to start: nothing at all, because the
+    // decision is in the middle of the screen and a row of controls beside it is
+    // only competition.
+    const showing = st.ready ? 'running' : offlineReading ? 'reading' : 'choosing'
+    for (const [id, when] of [
+      ['chat-wakes-label', 'running'],
+      ['chat-wake', 'running'],
+      ['chat-clear', 'running'],
+      ['chat-close', 'reading']
+    ]) {
+      $(id).classList.toggle('hidden', showing !== when)
+    }
+    $('chat-wake').title = 'One turn: it reads what changed and answers'
 
     if (!changed('supervisor-state', st)) return
 
@@ -247,15 +257,9 @@ function standIn (st, rows) {
   // READING IT WHILE NOTHING IS UP. The way back is a button in the same place
   // the decision was, so the body has one control at a time and it is always in
   // the middle of the screen.
-  if (offlineReading) {
-    return fill(instead,
-      el('p', { className: 'why muted', textContent: 'Nothing is running. This is what was said — you cannot add to it until a supervisor is up.' }),
-      el('button', {
-        className: 'btn',
-        textContent: 'Back',
-        onclick: () => { offlineReading = false; forget('chat-offline'); paintSupervisorState() }
-      }))
-  }
+  // Reading it: the body IS the thread, and the way out is Close in the header.
+  // Nothing is drawn here at all.
+  if (offlineReading) return fill(instead)
 
   if (!st || !st.there) {
     return fill(instead,
@@ -319,9 +323,38 @@ function paintChat () {
 
   api('chat').then(said => {
     if (view !== 'chat') return
-    const rows = said.messages || []
-    setText($('chat-context'), rows.length ? `— ${rows.length}` : '')
-    setText($('chat-note'), rows.length
+
+    // FROM THE BOOKMARK ON. Everything before it is still there and still on
+    // this host — see chatFrom — it is simply not what somebody asked to be
+    // looking at. The count says both numbers when they differ, so a shortened
+    // thread never passes for the whole of one.
+    const everything = said.messages || []
+    const startAt = Number((said.from && said.from.n) || 0)
+    const rows = startAt ? everything.filter(m => Number(m.n) > startAt) : everything
+    const hidden = everything.length - rows.length
+
+    setText($('chat-context'), everything.length
+      ? (hidden ? `— ${rows.length} of ${everything.length}` : `— ${rows.length}`)
+      : '')
+    // THE WAY BACK, and only when there is something to come back to. It sits in
+    // the note above the thread rather than in the header, because it is about
+    // what is being shown rather than about the supervisor — and because the
+    // header row already swaps between three states and does not need a fourth.
+    if (hidden) {
+      fill($('chat-note'),
+        el('span', { className: 'muted', textContent: `${hidden} earlier message${hidden === 1 ? '' : 's'} hidden. ` }),
+        el('button', {
+          className: 'btn',
+          textContent: 'Show all of it',
+          onclick: async () => {
+            const back = await api('chatFrom', { n: 0 })
+            say(back.note)
+            chatSeen = 0
+            forget('chat')
+            draw()
+          }
+        }))
+    } else setText($('chat-note'), rows.length
       ? 'The supervisor reads this when it next wakes, not this second — it is a note left for it, and it is switched off most of the time.'
       : 'Nothing said yet. What you type here is what the supervisor is asked to do; it reads it when it next looks, and answers here.')
 
@@ -433,18 +466,41 @@ $('chat-wakes').onchange = async e => {
   }
 }
 
+// NOT A DELETION ANY MORE. This threw the conversation away — the record of what
+// was asked for and why, which is the one place that says why a task exists.
+// Tidying a screen is not a reason to destroy that.
+//
+// It moves a bookmark instead: everything before it stays and stops being drawn,
+// and one press of "Show all of it" brings it back. The action that really
+// deletes is still there for whoever genuinely wants it, and it is not on a
+// button beside a conversation.
 $('chat-clear').onclick = () => ask({
-  title: 'Throw the conversation away?',
+  title: 'Start reading from here?',
   plain: [
-    'Everything said here, both ways, is deleted.',
-    'What was DONE is untouched — the tasks, the branches and the event stream are all still there. This is only what was said about it.'
+    'Everything above stays exactly where it is and stops being shown.',
+    'Nothing is deleted, and "Show all of it" brings the whole conversation back.'
   ],
-  confirm: 'Throw it away',
-  danger: true,
+  confirm: 'Start from here',
   onYes: async () => {
-    await api('chatClear', {})
+    const said = await api('chatFrom', {})
+    say(said.note)
     chatSeen = 0
-    say('the conversation is gone')
-    paintChat()
+    forget('chat')
+    draw()
   }
 })
+
+// THE WAY BACK OUT OF THE LOG, wired once at load like every other control here.
+//
+// It lives in the header rather than in the body because while the log is open
+// the body IS the thread — a button floating in a scrolling conversation is one
+// that walks off the top of it as soon as you read anything.
+//
+// AND IT IS THE ONLY CONTROL IN THAT STATE, deliberately. Before this, reading
+// the log with nothing running left one button on the screen: Clear. The only
+// thing offered was the destructive one, and there was no way back at all.
+$('chat-close').onclick = () => {
+  offlineReading = false
+  forget('chat-offline')
+  paintSupervisorState()
+}

@@ -75,9 +75,14 @@ module.exports = {
       // messages have actually reached it. One number rather than a field per
       // message — see core/chat.js.
       const read = chat.readMark()
+      // WHERE THE PERSON IS READING FROM, which is not where the supervisor has
+      // read TO. Both are pointers into this list and they mean opposite things
+      // — see core/chat.js.
+      const from = chat.fromMark()
       return {
         ...rows,
         read,
+        from,
         note: rows.messages.length
           ? `${rows.messages.length} message(s)${rows.missed ? `, and ${rows.missed} older ones not shown` : ''}.`
           : 'Nothing has been said yet. Type something and the supervisor will read it next time it looks.'
@@ -126,6 +131,32 @@ module.exports = {
         note: wakes
           ? 'Said, and it is waking to read it. What it says back appears here.'
           : 'Said. It reads this when it next wakes — press "Wake it" to do that now, or switch on "Answers by itself".'
+      }
+    }
+  },
+
+  // ---- START READING FROM HERE ---------------------------------------------
+  //
+  // What "Clear" should have been. Nothing is deleted: the bookmark moves and
+  // everything before it stops being drawn. Pass 0 to take it back and see the
+  // whole conversation again.
+  //
+  // A CONVERSATION WITH A SUPERVISOR IS THE RECORD OF WHY WORK EXISTS — what was
+  // asked for, what it decided, what it was told. Throwing that away to tidy a
+  // screen is a trade nobody would make twice, and it cannot be undone.
+  chatFrom: {
+    about: 'Start reading from here: hide what came before without deleting any of it',
+    takes: ['n'],
+    run: ({ n, _fromMachine, _overTheWire, _fromTest }) => {
+      // No argument means "from now" — the ordinary press.
+      const at = n === undefined || n === null || n === '' ? chat.lastNumber() : Number(n)
+      const set = chat.markFrom(at, _fromMachine || (_overTheWire ? 'the command line' : _fromTest ? 'a drill' : 'the window'))
+      return {
+        ...set,
+        of: chat.lastNumber(),
+        note: set.n
+          ? `Reading from message ${set.n + 1} on. Nothing was deleted — ask for chatFrom with n 0 to see all of it again.`
+          : 'Showing the whole conversation again.'
       }
     }
   },

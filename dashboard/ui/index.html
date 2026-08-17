@@ -700,9 +700,24 @@
              its own initiative, because somebody typed a sentence. That is the
              point of it and it is not a thing to switch on by accident, so it is
              a switch rather than a default. -->
-        <label class="inline"><input type="checkbox" id="chat-wakes"> Answers by itself</label>
+        <!-- THREE STATES, ONE ROW. What belongs here depends entirely on whether
+             a supervisor is running, so the row swaps with the body rather than
+             standing over it offering things that do nothing:
+
+               running          the controls below — talk to it, wake it, clear
+               not running,
+                 reading        one way out: Close
+               not running,
+                 choosing       nothing. The decision is in the middle of the
+                                body and this row would only compete with it.
+
+             Kept as elements and shown or hidden rather than rebuilt, because
+             their handlers are wired once at load — a row that is re-rendered is
+             a row whose buttons quietly stop working. -->
+        <label class="inline" id="chat-wakes-label"><input type="checkbox" id="chat-wakes"> Answers by itself</label>
         <button class="btn" id="chat-wake">Wake it</button>
         <button class="btn" id="chat-clear">Clear</button>
+        <button class="btn hidden" id="chat-close">Close</button>
       </div>
     </div>
     <p class="note" id="chat-note"></p>

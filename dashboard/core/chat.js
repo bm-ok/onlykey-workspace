@@ -167,4 +167,44 @@ function clear () {
   return { cleared: true }
 }
 
-module.exports = { say, since, all, clear, lastNumber, readMark, markRead, FILE }
+// ---- WHERE TO START READING --------------------------------------------------
+//
+// NOT A DELETION. "Clear" used to throw the conversation away, and a
+// conversation with a supervisor is a record of what was asked for and why —
+// the one place that says why a task exists at all. Tidying a screen is not a
+// reason to destroy that, and once it is gone there is nowhere to get it back
+// from.
+//
+// So the tidying is a BOOKMARK: everything before it stays exactly where it is
+// and stops being drawn. Move it back to nothing and the whole conversation is
+// there again.
+//
+// KEPT ON THE HOST, not in the window, for the same reason the read receipt is:
+// it is a fact about this installation rather than about one window, and a
+// reading position that resets every time the app restarts is one nobody would
+// bother setting.
+//
+// SEPARATE FROM THE READ RECEIPT, which is the supervisor's pointer into the
+// same list. One says "the machine has seen up to here"; this says "the person
+// does not want to see before here". They move independently and mean opposite
+// things, and one file holding both would eventually have one overwrite the
+// other.
+const FROM = () => path.join(data.state(), 'chat-from.json')
+
+function fromMark () {
+  try { return JSON.parse(fs.readFileSync(FROM(), 'utf8')) } catch { return { n: 0, at: null, by: null } }
+}
+
+// Anything at or below `n` stops being drawn. Zero means everything, which is
+// how the bookmark is taken back — there is no separate "unhide".
+function markFrom (n, by = null) {
+  const at = Math.max(0, Number(n) || 0)
+  const line = { n: at, at: new Date().toISOString(), by: by || null }
+  try {
+    fs.mkdirSync(data.state(), { recursive: true })
+    fs.writeFileSync(FROM(), JSON.stringify(line, null, 2))
+  } catch { /* the answer still stands for this call */ }
+  return line
+}
+
+module.exports = { say, since, all, clear, lastNumber, readMark, markRead, fromMark, markFrom, FILE }
