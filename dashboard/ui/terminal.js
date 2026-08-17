@@ -531,9 +531,14 @@ function paintTermAuth () {
   // as much as the words: `Sign it in` here places a WORKER credential, which a
   // supervisor refuses. `supervisorUp` is the one that finds a supervisor
   // sign-in, and says so plainly when there is none.
+  //
+  // `held.guests` IS THE WRONG PLACE TO ASK, and asking it there is how this
+  // was wrong once already: that list answers "is there anything to hand a
+  // runner" and omits supervisors deliberately, so a host holding one read as
+  // holding none. `held.supervisor` is the field that answers about them.
   const isSup = (vm.tags || []).includes('supervisor')
-  const freeSup = (held.guests || []).some(g => g.role === 'supervisor' && g.has && !g.holder)
-  if (!changed('term-auth', [name, vm.holdsCredential, !!held.held, isSup, freeSup])) return
+  const sup = held.supervisor || { kept: 0, free: false, out: null }
+  if (!changed('term-auth', [name, vm.holdsCredential, !!held.held, isSup, sup.free, sup.out])) return
 
   const has = vm.holdsCredential
   fill(box, el('div', { className: `authline ${has ? 'ok' : isSup ? 'bad' : ''}` },
@@ -544,9 +549,11 @@ function paintTermAuth () {
           ? 'It is holding this host\'s supervisor sign-in, which is where it stays while it is up.'
           : 'It is holding this host\'s worker credential, which also means it cannot be snapshotted until that is taken back.'
         : isSup
-          ? freeSup
+          ? sup.free
             ? 'A supervisor keeps its sign-in while it is up, so this is not a rest — it cannot think until it has one, and there is one free here.'
-            : 'A supervisor keeps its sign-in while it is up, so this is not a rest. This host has no supervisor sign-in at all — the worker credentials here are a different identity and are refused on it. Add one under Runners → Claude supervisor.'
+            : sup.out
+              ? `A supervisor keeps its sign-in while it is up, so this is not a rest. The supervisor sign-in is out on ${sup.out}, and one identity cannot be in two places.`
+              : 'A supervisor keeps its sign-in while it is up, so this is not a rest. This host has no supervisor sign-in at all — the worker credentials here are a different identity and are refused on it. Add one under Runners → Claude supervisor.'
           : held.held
             ? 'A runner is handed a credential per task and it is taken back afterwards, so an idle one is signed out by design.'
             : 'This host holds no worker credential either. Sign one machine in on the Keys tab first.'
@@ -559,7 +566,7 @@ function paintTermAuth () {
             .then(() => say(`${name} no longer holds a credential.`)).catch(oops)
         })
       : isSup
-        ? freeSup
+        ? sup.free
           ? el('button', {
               className: 'btn ok small',
               textContent: 'Sign it in',

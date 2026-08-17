@@ -178,9 +178,12 @@ async function drawOnce () {
     ...latest.vms
       .filter(v => v.running && (v.tags || []).includes('supervisor') && !v.holdsCredential)
       .map(v => {
-        const free = ((latest.credentialsHeld || {}).guests || [])
-          .some(g => g.role === 'supervisor' && g.has && !g.holder)
-        return free
+        // FROM THE FIELD THAT ANSWERS ABOUT SUPERVISORS, and this line is here
+        // because the first version asked `guests` -- which omits them on
+        // purpose, so a host with a supervisor sign-in sitting free was told it
+        // had none, and sent to go and make one it already had.
+        const sup = (latest.credentialsHeld || {}).supervisor || { kept: 0, free: false, out: null }
+        return sup.free
           ? [`${v.name} is up and holding no sign-in, so it cannot think. `,
               'A supervisor is not a runner: it is meant to be up, and a supervisor sign-in is free here to give it.',
               {
@@ -188,11 +191,15 @@ async function drawOnce () {
                 onClick: () => fixIt('supervisorUp', { name: v.name },
                   `Signing ${v.name} in.`)
               }]
-          : [`${v.name} is up and holding no sign-in, and this host has no supervisor sign-in to give it. `,
-              'The worker credentials here are a different identity and are refused on a supervisor. Sign one in under Runners → Claude supervisor; until then it is a machine that cannot be asked anything.',
-              // No button. Signing in is a person at a browser, and the whole
-              // point of that boundary is that nothing here can do it for them.
-              null]
+          : sup.out
+            ? [`${v.name} is up and holding no sign-in, and the supervisor sign-in is out on ${sup.out}. `,
+                `One identity cannot be in two places. Take it back from ${sup.out} first, or use that machine as the supervisor.`,
+                null]
+            : [`${v.name} is up and holding no sign-in, and this host has no supervisor sign-in to give it. `,
+                'The worker credentials here are a different identity and are refused on a supervisor. Sign one in under Runners → Claude supervisor; until then it is a machine that cannot be asked anything.',
+                // No button. Signing in is a person at a browser, and the whole
+                // point of that boundary is that nothing here can do it for them.
+                null]
       }),
 
     // A machine left on, doing nothing, holding a credential.

@@ -297,6 +297,30 @@ module.exports = {
       // Guests only. This answers "is there anything to hand a machine", and a
       // supervisor is never handed to one.
       const held = guests.all().filter(g => g.role !== 'supervisor')
+
+      // AND A COUNT OF THE OTHER KIND, WHICH IS NOT THE SAME QUESTION.
+      //
+      // The line above is right and was read as saying more than it says. The
+      // window's draw loop asks this once and uses the answer for every "is
+      // there a sign-in" it needs -- so a list that deliberately omits
+      // supervisors was read as "there are none", and the banner told somebody
+      // this host had no supervisor sign-in while one was sitting on the
+      // Runners tab with a "here" badge on it.
+      //
+      // A COUNT AND A FLAG, not a row. Everything a supervisor sign-in can be
+      // asked is already on its own pane; what belongs in an answer about
+      // handing things out is whether there is one and whether it is free --
+      // which is the difference between "one press" and "you have to go and
+      // sign one in", and getting that wrong sends somebody to do a thing they
+      // have already done.
+      const sups = guests.all().filter(g => g.role === 'supervisor')
+      const supervisor = {
+        kept: sups.length,
+        free: sups.some(g => g.has && !g.holder),
+        // Which machine has it, if any. A supervisor sign-in that is out is not
+        // free and not missing, and those need different sentences.
+        out: (sups.find(g => g.holder) || {}).holder || null
+      }
       if (held.length) {
         return {
           held: held.some(g => g.has),
@@ -307,16 +331,22 @@ module.exports = {
             ...g,
             life: g.has ? credentialLife(guests.fileFor(g.name)) : { usable: null, why: 'there is no token file for it' }
           })),
+          supervisor,
           note: `${held.length} Claude sign-in${held.length === 1 ? '' : 's'} kept here. One is lent per machine — see the Claude guest pane.`
         }
       }
 
-      if (!fs.existsSync(file)) return { held: false, dir, guests: [] }
+      // NO GUESTS, WHICH IS NOT THE SAME AS NOTHING KEPT HERE. A host with a
+      // supervisor sign-in and no workers falls through to here, and answering
+      // it without the supervisor field would be the same mistake one branch
+      // lower down.
+      if (!fs.existsSync(file)) return { held: false, dir, guests: [], supervisor }
       let meta = {}
       try { meta = JSON.parse(fs.readFileSync(path.join(dir, 'about.json'), 'utf8')) } catch { /* older ones have none */ }
       const stat = fs.statSync(file)
       return {
         held: true,
+        supervisor,
         dir,
         file,
         bytes: stat.size,
