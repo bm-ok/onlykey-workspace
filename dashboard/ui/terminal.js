@@ -519,17 +519,37 @@ function paintTermAuth () {
   box.classList.remove('hidden')
 
   const held = latest.credentialsHeld || {}
-  if (!changed('term-auth', [name, vm.holdsCredential, !!held.held])) return
+  // A SUPERVISOR IS NOT A RUNNER AND THE SENTENCE BELOW WAS WRITTEN FOR A RUNNER.
+  //
+  // "An idle one is signed out by design" is true of a machine that is handed a
+  // credential per task and has it taken back afterwards. A supervisor is handed
+  // one when it comes up and keeps it, so signed-out is not its resting state —
+  // it is a supervisor that cannot think, sitting behind a line saying that is
+  // how it is meant to be. It was up like that and the window agreed with it.
+  //
+  // The two identities are separate and refuse each other, so the button matters
+  // as much as the words: `Sign it in` here places a WORKER credential, which a
+  // supervisor refuses. `supervisorUp` is the one that finds a supervisor
+  // sign-in, and says so plainly when there is none.
+  const isSup = (vm.tags || []).includes('supervisor')
+  const freeSup = (held.guests || []).some(g => g.role === 'supervisor' && g.has && !g.holder)
+  if (!changed('term-auth', [name, vm.holdsCredential, !!held.held, isSup, freeSup])) return
 
   const has = vm.holdsCredential
-  fill(box, el('div', { className: `authline ${has ? 'ok' : ''}` },
+  fill(box, el('div', { className: `authline ${has ? 'ok' : isSup ? 'bad' : ''}` },
     el('strong', { textContent: has ? `claude is signed in on ${name}. ` : `claude is signed out on ${name}. ` }),
     el('span', {
       textContent: has
-        ? 'It is holding this host\'s worker credential, which also means it cannot be snapshotted until that is taken back.'
-        : held.held
-          ? 'A runner is handed a credential per task and it is taken back afterwards, so an idle one is signed out by design.'
-          : 'This host holds no worker credential either. Sign one machine in on the Keys tab first.'
+        ? isSup
+          ? 'It is holding this host\'s supervisor sign-in, which is where it stays while it is up.'
+          : 'It is holding this host\'s worker credential, which also means it cannot be snapshotted until that is taken back.'
+        : isSup
+          ? freeSup
+            ? 'A supervisor keeps its sign-in while it is up, so this is not a rest — it cannot think until it has one, and there is one free here.'
+            : 'A supervisor keeps its sign-in while it is up, so this is not a rest. This host has no supervisor sign-in at all — the worker credentials here are a different identity and are refused on it. Add one under Runners → Claude supervisor.'
+          : held.held
+            ? 'A runner is handed a credential per task and it is taken back afterwards, so an idle one is signed out by design.'
+            : 'This host holds no worker credential either. Sign one machine in on the Keys tab first.'
     }),
     has
       ? el('button', {
@@ -538,15 +558,24 @@ function paintTermAuth () {
           onclick: () => api('vmCredentialsForget', { name })
             .then(() => say(`${name} no longer holds a credential.`)).catch(oops)
         })
-      : held.held
-        ? el('button', {
-            className: 'btn ok small',
-            textContent: 'Sign it in',
-            onclick: () => api('vmCredentialsPut', { name })
-              .then(() => say(`${name} is ready — credential placed and the first-run wizard marked done. A claude already running will not notice; start it again.`))
-              .catch(oops)
-          })
-        : null))
+      : isSup
+        ? freeSup
+          ? el('button', {
+              className: 'btn ok small',
+              textContent: 'Sign it in',
+              onclick: () => api('supervisorUp', { name })
+                .then(r => say(r.note)).catch(oops)
+            })
+          : null
+        : held.held
+          ? el('button', {
+              className: 'btn ok small',
+              textContent: 'Sign it in',
+              onclick: () => api('vmCredentialsPut', { name })
+                .then(() => say(`${name} is ready — credential placed and the first-run wizard marked done. A claude already running will not notice; start it again.`))
+                .catch(oops)
+            })
+          : null))
 }
 
 function paintTerminal () {

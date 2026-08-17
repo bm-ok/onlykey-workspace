@@ -1008,6 +1008,10 @@ table.kv td .ok { color: var(--ok); }
   color: var(--muted);
 }
 .authline.ok { border-left-color: var(--ok); }
+/* A signed-out SUPERVISOR, which is a fault rather than the rest a signed-out
+   runner is. Same line, different edge, because the two states look identical
+   and only one of them is somebody's problem. */
+.authline.bad { border-left-color: var(--fail); }
 .authline strong { color: var(--text); }
 .btn.small { padding: 3px 8px; font-size: 11px; }
 

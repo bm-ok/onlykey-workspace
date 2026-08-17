@@ -160,6 +160,41 @@ async function drawOnce () {
       `A machine working on "${r.on}" cannot push while that is true, and its own error will not say why. Commit or discard them, or put ${r.repo} back on ${r.home}.`
     ]),
 
+    // A SUPERVISOR THAT IS UP AND CANNOT WORK, which every rule here missed
+    // because every rule here is about a runner.
+    //
+    // A runner's natural state is off and holding nothing, and the rules below
+    // say so. A supervisor is the opposite on both counts: it is meant to be up,
+    // and it is useless without a sign-in — so the state that is restful for a
+    // runner is a fault for a supervisor, and the window said nothing at all.
+    // What it DID say was worse: the terminal's own line called it "signed out by
+    // design", which is the runner's sentence read out over a machine it is not
+    // true of.
+    //
+    // Two different faults with two different repairs, and the distinction is
+    // the whole value of the line. There being no supervisor sign-in on this host
+    // cannot be fixed by a button — signing in is a person at a machine, at a
+    // browser, and the credential comes back with them.
+    ...latest.vms
+      .filter(v => v.running && (v.tags || []).includes('supervisor') && !v.holdsCredential)
+      .map(v => {
+        const free = ((latest.credentialsHeld || {}).guests || [])
+          .some(g => g.role === 'supervisor' && g.has && !g.holder)
+        return free
+          ? [`${v.name} is up and holding no sign-in, so it cannot think. `,
+              'A supervisor is not a runner: it is meant to be up, and a supervisor sign-in is free here to give it.',
+              {
+                label: 'Sign it in',
+                onClick: () => fixIt('supervisorUp', { name: v.name },
+                  `Signing ${v.name} in.`)
+              }]
+          : [`${v.name} is up and holding no sign-in, and this host has no supervisor sign-in to give it. `,
+              'The worker credentials here are a different identity and are refused on a supervisor. Sign one in under Runners → Claude supervisor; until then it is a machine that cannot be asked anything.',
+              // No button. Signing in is a person at a browser, and the whole
+              // point of that boundary is that nothing here can do it for them.
+              null]
+      }),
+
     // A machine left on, doing nothing, holding a credential.
     //
     // Said because nothing else says it. A runner's natural state is off; one
