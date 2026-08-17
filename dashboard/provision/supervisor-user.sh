@@ -130,6 +130,132 @@ fi
 
 say 'supervisor: it can ask the dashboard for work with the okc command'
 
+# --- the only thing its model may do ------------------------------------------
+#
+# THE SUPERVISOR'S CLAUDE GETS NO GENERAL-PURPOSE TOOLS. Not "is asked not to use
+# them" -- does not have them. Its whole surface is the dashboard's supervisor
+# API, offered as MCP tools by okc-mcp.js, which fetches the list of verbs from
+# the host itself rather than carrying a copy.
+#
+# WHY NOT `Bash(okc *)`. Allowing one shell command is a rule about a STRING on a
+# tool that runs anything, and it holds until something writes
+# `okc tasks; cat ~/.ssh/id_ed25519` -- which a prompt injected through an issue
+# title is entirely capable of doing. There is no shell here at all.
+#
+# Fetched from the dashboard like every other provisioning file, so editing it in
+# the repository is how it changes on the machine.
+
+mkdir -p "$HOME/.okc" "$HOME/.claude/skills/supervising"
+
+fetch_okc () {
+  curl -fsS --cacert "$OKC_CA" -u "$OKC_VM:$OKC_TOKEN" -o "$2" \
+    "$OKC_BASE/provision/$1?vm=$OKC_VM" 2>/dev/null
+}
+
+if fetch_okc okc-mcp.js "$HOME/.okc/okc-mcp.js"; then
+  chmod 0700 "$HOME/.okc/okc-mcp.js"
+  say 'supervisor: its tool server is installed'
+else
+  say 'supervisor: WARNING: could not fetch its tool server, so it will have no tools at all'
+fi
+
+if fetch_okc supervisor-skill.md "$HOME/.claude/skills/supervising/SKILL.md"; then
+  say 'supervisor: it knows how to supervise'
+else
+  say 'supervisor: WARNING: could not fetch the supervising skill'
+fi
+
+if fetch_okc okc-only-hook.js "$HOME/.okc/okc-only-hook.js"; then
+  chmod 0700 "$HOME/.okc/okc-only-hook.js"
+  say 'supervisor: every tool but the dashboard is denied before it runs'
+else
+  say 'supervisor: WARNING: could not fetch the tool gate — do not start it until this works'
+fi
+
+# WHICH SERVER, AND ONLY THAT ONE. `--strict-mcp-config` below means nothing else
+# is read: not a project file, not a user one, not anything a task might write.
+cat > "$HOME/.okc/mcp.json" <<MCPEOF
+{
+  "mcpServers": {
+    "okc": {
+      "command": "$(bash -lc 'command -v node')",
+      "args": ["$HOME/.okc/okc-mcp.js"]
+    }
+  }
+}
+MCPEOF
+
+# DENY BY DEFAULT, THROUGH A HOOK, because a list of denied tools is a list
+# somebody has to keep complete.
+#
+# The first version named the eleven tools I could think of and allowed
+# `mcp__okc`. The supervisor's own model was asked what it had and reported the
+# hole itself: --allowedTools is an AUTO-APPROVE list rather than an exclusive
+# one, and this Claude Code ships `Monitor` (runs an arbitrary shell command and
+# streams its output) and `Workflow` (spawns subagents with toolsets of their
+# own). Both were reachable. It declined to use them and said so, which is a
+# careful model rather than a boundary.
+#
+# So the hook decides, and it permits exactly one prefix. Anything a future
+# release adds is denied the day it ships. The deny list stays as well — belt for
+# the classics — but it is no longer what is holding.
+cat > "$HOME/.okc/settings.json" <<SETEOF
+{
+  "permissions": {
+    "allow": ["mcp__okc"],
+    "deny": [
+      "Bash", "Read", "Write", "Edit", "NotebookEdit", "Glob", "Grep",
+      "WebFetch", "WebSearch", "Task", "Agent", "Monitor", "Workflow",
+      "ToolSearch", "Skill", "SendMessage", "RemoteTrigger", "CronCreate",
+      "CronDelete", "CronList", "TaskOutput", "TaskStop", "EnterWorktree",
+      "ExitWorktree", "PushNotification", "ScheduleWakeup", "ListAgents",
+      "DesignSync", "ReportFindings"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "$(bash -lc 'command -v node') $HOME/.okc/okc-only-hook.js" }
+        ]
+      }
+    ]
+  }
+}
+SETEOF
+
+# HOW IT IS STARTED, in one place rather than in whatever remembered the flags.
+cat > "$HOME/.local/bin/okc-supervisor" <<'RUNEOF'
+#!/bin/bash
+# Start the supervisor's model, with nothing but the dashboard's supervisor API.
+#
+#   okc-supervisor              a session you can sit in
+#   okc-supervisor -p "..."     one question, printed, no session
+#
+# --strict-mcp-config    only the server named in ~/.okc/mcp.json
+# --settings             which carries the PreToolUse hook that denies by
+#                        default. That hook is what actually holds; everything
+#                        else here is belt.
+# --allowedTools         auto-approve ours, so it is not asked about every call.
+#                        It does NOT mean "and nothing else" — that was the
+#                        misreading that left Monitor and Workflow reachable.
+#
+# NO --disallowedTools HERE. It listed the tools by name, which is a list that
+# has to be kept complete, and naming one that does not exist prints "Permission
+# deny rule "MultiEdit" matches no known tool" at the top of every answer. The
+# settings file carries the deny list; the hook carries the rule.
+set -u
+exec claude \
+  --mcp-config "$HOME/.okc/mcp.json" \
+  --strict-mcp-config \
+  --settings "$HOME/.okc/settings.json" \
+  --allowedTools "mcp__okc" \
+  "$@"
+RUNEOF
+chmod 0700 "$HOME/.local/bin/okc-supervisor"
+say 'supervisor: it is started with okc-supervisor, and has no tools but the dashboard'
+
 # --- what it can reach --------------------------------------------------------
 #
 # Reported rather than assumed, and each of these has been wrong before while

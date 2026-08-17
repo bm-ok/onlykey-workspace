@@ -80,14 +80,31 @@ const STAGES = {
   supervisorUser: 'supervisor-user.sh',
   // Not shell, and served without a header for that reason -- its values arrive
   // through the service unit first-boot.sh writes for it.
-  agent: 'agent.py'
+  agent: 'agent.py',
+
+  // ---- what a supervisor's model is given ---------------------------------
+  //
+  // Neither is shell either, and for the same reason both are served exactly as
+  // they are on disk: one is a node program and one is a document a model reads.
+  //
+  // THE TOOL SERVER IS THE WHOLE SURFACE. It speaks MCP on stdin and stdout and
+  // offers one tool per verb of the supervisor API — no shell, no file, no fetch.
+  // See provision/okc-mcp.js for why that is a server rather than a permission.
+  mcp: 'okc-mcp.js',
+  // And how to use it: the loop, what a task has to say, what it may never do.
+  skill: 'supervisor-skill.md',
+  // AND THE GATE IN FRONT OF EVERY TOOL CALL. Deny by default: only the
+  // dashboard's own tools are let through, so anything a future Claude Code adds
+  // is refused the day it ships rather than the day somebody notices. See
+  // provision/okc-only-hook.js.
+  toolGate: 'okc-only-hook.js'
 }
 
 // Every script available, and which copy of it would actually be used.
 function list () {
   const seen = new Map()
   for (const dir of searchPath()) {
-    for (const f of fs.readdirSync(dir).filter(f => /\.(sh|py)$/.test(f)).sort()) {
+    for (const f of fs.readdirSync(dir).filter(f => /\.(sh|py|js|md)$/.test(f)).sort()) {
       // First directory wins, and the workspace is first.
       if (!seen.has(f)) seen.set(f, { file: f, from: dir === WORKSPACE ? 'the project' : 'the app' })
     }
@@ -100,7 +117,11 @@ function list () {
 // would otherwise serve any file on this machine to a guest.
 function resolve (wanted) {
   const name = path.basename(String(wanted || ''))
-  if (!/\.(sh|py)$/.test(name)) throw new Error(`"${wanted}" is not a provisioning script.`)
+  // Four kinds now: shell and python are run, a node program is run, and a
+  // markdown file is read by a model. The guard is about what may be SERVED from
+  // this folder — the point of it is the basename, which stops a spec naming a
+  // path — so it grows with the folder rather than meaning "scripts only".
+  if (!/\.(sh|py|js|md)$/.test(name)) throw new Error(`"${wanted}" is not a provisioning file.`)
   for (const dir of searchPath()) {
     const file = path.join(dir, name)
     if (file.startsWith(dir) && fs.existsSync(file)) return file

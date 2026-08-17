@@ -749,19 +749,38 @@ function handler (req, res) {
     return
   }
 
-  // The agent, served exactly as it is on disk: it is python, so a shell header
-  // would break it. Its values reach it through the service unit instead.
-  if (url.pathname === '/provision/agent.py') {
+  // ---- provisioning files that are not shell ------------------------------
+  //
+  // Served exactly as they are on disk, because a shell header would break every
+  // one of them: the agent is python, the supervisor's tool server is a node
+  // program, and its skill is a document a model reads. What a shell script gets
+  // from that header — its name, its token, where this host is — the agent gets
+  // through its service unit and the tool server gets from ~/.okc/env.
+  //
+  // ONE ROUTE RATHER THAN A CASE PER FILE. There was a hand-written branch for
+  // agent.py, and adding two more would have been two more; what they have in
+  // common is "a registered provisioning file that is not shell", which is a
+  // thing this app can already answer — see machines/scripts.js.
+  //
+  // The same proof as every other provisioning file: name the machine, and prove
+  // you are it.
+  if (/^\/provision\/[^/]+\.(py|js|md)$/.test(url.pathname)) {
+    const file = path.basename(url.pathname)
     const name = url.searchParams.get('vm') || ''
     const asking = guestAsking(req, url)
-    if (!asking) return refuseGuest(res, name, 'the agent')
+    if (!asking) return refuseGuest(res, name, file)
     try {
-      log.on('vm', name, 'guest').good(`${name} asked for the agent`)
-      res.writeHead(200, { 'content-type': 'text/x-python' })
-      res.end(scripts.raw(asking, 'agent'))
+      const stage = scripts.stageOfFile(file)
+      if (!stage) throw new Error(`"${file}" is not a provisioning file this app serves`)
+      log.on('vm', name, 'guest').good(`${name} asked for ${file}`)
+      res.writeHead(200, {
+        'content-type': file.endsWith('.py')
+          ? 'text/x-python'
+          : file.endsWith('.js') ? 'application/javascript' : 'text/markdown'
+      })
+      res.end(scripts.raw(asking, stage))
     } catch (e) {
-      res.writeHead(404, { 'content-type': 'text/plain' }).end(`# ${e.message}
-`)
+      res.writeHead(404, { 'content-type': 'text/plain' }).end(`# ${e.message}\n`)
     }
     return
   }
