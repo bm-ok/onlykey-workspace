@@ -18,6 +18,9 @@ const vbox = require('./vbox')
 const vms = require('./vms')
 const channel = require('./channel')
 const keys = require('../core/keys')
+// Where this host keeps what it writes. Used for the serial console an install
+// turns on — see install().
+const data = require('../core/data')
 // The one tag with a meaning, taken from the registry rather than spelled again
 // here. See vms.js.
 const { SUPERVISOR } = vms
@@ -403,6 +406,40 @@ async function install (name, { port, caPort }) {
       to.info('its console is being captured again, on the new build')
     }
     to.good(`${name} is a new machine again — installing onto it`)
+  }
+
+  // AND A MACHINE THAT HAS NEVER BEEN ASKED GETS ONE NOW.
+  //
+  // The console was off unless somebody turned it on, which is a defensible
+  // default for the life of a machine and the wrong one for an INSTALL. An
+  // install is exactly the boot nothing inside is alive to report: no agent, no
+  // network, no ssh, twelve minutes of an installer that either finishes or does
+  // not. It is also the one boot somebody sits and watches.
+  //
+  // Reported as it happened: a machine made at the window installed with no
+  // console at all, so the Terminal tab had nothing to show for it — while every
+  // machine the test kit built did, because the drills turn the port on before
+  // installing. The instrument existed and only the drills had it.
+  //
+  // THREE STATES, NOT TWO, which is what makes this safe to default:
+  //
+  //   a path      it was on; the block above puts it back on the new build
+  //   null        somebody turned it OFF on purpose, and that is left alone
+  //   undefined   nobody has ever decided, which is every machine made at the
+  //               window — and this is the case that gets one
+  //
+  // Bounded, so it is not "logging everything for ever": VirtualBox truncates
+  // the file on every start and the previous boot is rolled to <name>.previous
+  // — two boots' worth per machine, not a growing record.
+  if (vm.serial === undefined) {
+    const file = path.join(data.sub('serial'), `${name}.log`)
+    try {
+      await vbox.setSerial(name, file)
+      vms.update(name, { serial: file })
+      to.info(`its console will be written to ${path.basename(file)}, so this install can be watched in the Terminal tab`)
+    } catch (e) {
+      to.warn(`could not capture its console for the install: ${e.message}`)
+    }
   }
 
   // A BLANK DISK, every time, and this is not tidiness.

@@ -529,10 +529,28 @@ function paintTerminal () {
   // existed — so on a window where none ever has, the button sat there looking
   // like something you could press.
   $('term-close').disabled = !active
-  if (idle && changed('term-empty', true)) {
+  // A MACHINE THAT IS RUNNING AND CANNOT BE WATCHED SAYS SO HERE.
+  //
+  // A console opens itself for any machine that is running AND has its serial
+  // port captured — see mindConsoles. A machine with the port off is running
+  // invisibly, and this tab showed the ordinary "no terminals are open" for it,
+  // which reads as nothing happening rather than as something happening
+  // unwatched. It was found exactly that way: an install running, and nothing
+  // here for it.
+  //
+  // Only while one is actually running, so this is silent on a quiet host.
+  const dark = ((latest && latest.vms) || []).filter(v => v.running && !v.serial)
+
+  if (idle && changed('term-empty', [true, dark.map(v => v.name)])) {
     fill($('term-empty'), el('div', { className: 'panel' },
       el('p', { className: 'empty', textContent: 'No terminals are open.' }),
       el('p', { className: 'empty', textContent: 'They start from a task, the same way VS Code does — take a task and choose "in a terminal", and the shell lands here with the branch checked out and the machine signed in. Then type claude, or anything else.' }),
+      dark.length
+        ? el('p', { className: 'note' },
+            `${dark.map(v => v.name).join(', ')} ${dark.length === 1 ? 'is' : 'are'} running with no console being captured, so there is nothing to show for `,
+            dark.length === 1 ? 'it' : 'them',
+            '. The serial port is what makes a boot watchable, and VirtualBox will only add one to a machine that is switched off — so this cannot be turned on mid-install. An install turns it on by itself from now on.')
+        : null,
       el('button', {
         className: 'btn',
         textContent: 'Go to the tasks',
