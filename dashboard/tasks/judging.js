@@ -51,7 +51,11 @@ const FILE = () => { const at = STATE(); return at ? path.join(at, 'judging.json
 const COUNTER = () => { const at = STATE(); return at ? path.join(at, 'judging-highest.json') : null }
 
 const STATES = ['draft', 'queued', 'given', 'done']
-const VERDICTS = ['accepted', 'rejected']
+// PENDING IS A VERDICT. A judge that read a change and could not settle it has
+// reached a real conclusion — 'I looked and I cannot say' — and it is different
+// from having not looked. Without it, an unsettled reading has to pretend to be
+// one of the other two or leave the field empty, which reads as unjudged.
+const VERDICTS = ['accepted', 'rejected', 'pending']
 
 function read () {
   if (!FILE() || !fs.existsSync(FILE())) return []

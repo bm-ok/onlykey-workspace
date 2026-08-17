@@ -152,7 +152,11 @@ function paintJudgementDetail (j) {
         ? el('span', { className: `badge ${VERDICT_BADGE[j.verdict] || 'muted'}`, textContent: j.verdict })
         : el('span', { className: 'muted', textContent: 'nobody has decided yet' }))),
       j.note ? el('tr', {}, el('th', { textContent: 'because' }), el('td', { style: 'user-select:text', textContent: j.note })) : null,
-      el('tr', {}, el('th', { textContent: 'judge' }), el('td', { className: 'mono', textContent: j.job || 'none — nothing can run it' })),
+      el('tr', {}, el('th', { textContent: 'judged by' }), el('td', {}, el('span', {
+        className: j.by === 'person' ? 'badge warn' : 'badge muted',
+        textContent: j.by === 'person' ? 'a person' : 'a worker'
+      }))),
+      el('tr', {}, el('th', { textContent: 'judge' }), el('td', { className: 'mono', textContent: j.job || (j.by === 'person' ? 'none — a person reads it themselves' : 'none — nothing can run it') })),
       j.contractName ? el('tr', {}, el('th', { textContent: 'under' }), el('td', { textContent: j.contractName })) : null,
       j.question ? el('tr', {}, el('th', { textContent: 'asked about' }), el('td', { style: 'user-select:text', textContent: j.question })) : null,
       j.machine ? el('tr', {}, el('th', { textContent: 'read on' }), el('td', { className: 'mono', textContent: j.machine })) : null,
@@ -168,11 +172,49 @@ function paintJudgementDetail (j) {
       j.state === 'queued'
         ? el('button', { className: 'btn', textContent: 'Take it back out', onclick: () => thenSay(() => api('judgementUnqueue', { id: j.id }), `${j.ref} is out of the queue.`) })
         : null,
-      j.state === 'done' && !j.verdict
+      // ---- WHOEVER JUDGED SAYS ---------------------------------------
+      //
+      // A worker-judge sends its own verdict at the end of its session, through
+      // the job API — the one that READ the change is the one that concludes,
+      // and a person transcribing that afterwards would be a second opinion
+      // wearing the first one's clothes.
+      //
+      // So these appear only when the judge is a PERSON. That is a judgement
+      // with `by: person` on it: no machine, no run, somebody reading it
+      // themselves — and then they are the judge and the verdict is theirs.
+      j.by === 'person' && !j.verdict
         ? el('button', { className: 'btn ok', textContent: 'Accept', onclick: () => recordVerdict(j, 'accepted') })
         : null,
-      j.state === 'done' && !j.verdict
+      j.by === 'person' && !j.verdict
         ? el('button', { className: 'btn danger', textContent: 'Reject', onclick: () => recordVerdict(j, 'rejected') })
+        : null,
+      j.by === 'person' && !j.verdict
+        ? el('button', { className: 'btn', textContent: 'Could not settle it', onclick: () => recordVerdict(j, 'pending') })
+        : null,
+
+      // ---- AND A PERSON READS IT THE WAY THEY READ ANYTHING ELSE ------
+      //
+      // The same two ways a task's branch is opened: a machine taken, set up on
+      // the line, and opened in VS Code or in a terminal here. A person judging
+      // needs the code in front of them exactly as a worker-judge does, and
+      // there is no reason for them to learn a second route to it.
+      //
+      // THROUGH branchWorkOn, which is the action that already does this — the
+      // machine is borrowed, the queue leaves it alone, and giving it back is
+      // vmReturn. A second path to a machine is a second set of rules.
+      j.subject
+        ? el('button', {
+          className: 'btn',
+          textContent: 'Open in VS Code',
+          onclick: () => openToRead(j, 'editor')
+        })
+        : null,
+      j.subject
+        ? el('button', {
+          className: 'btn',
+          textContent: 'Open a terminal',
+          onclick: () => openToRead(j, 'terminal')
+        })
         : null,
       j.state !== 'given'
         ? el('button', { className: 'btn', textContent: 'Throw it away', onclick: () => thenSay(() => api('judgementRemove', { id: j.id }), `${j.ref} is gone. What it found stays on the cut.`) })
@@ -225,6 +267,33 @@ function paintHandedBack (j) {
   }).catch(() => { /* said in the panel above */ })
 }
 
+// OPENING THE CHANGE TO READ IT YOURSELF.
+//
+// A judgement's subject is a branch cut or a PR cut; either way the code lives
+// on a branch, and for a cut that is the line the pull requests were opened
+// from. So both resolve to one branch to set a machine up on — the same one a
+// worker-judge would be given.
+//
+// IT DOES NOT MARK THE JUDGEMENT AS RUNNING. Nothing is dispatched here: a
+// person is borrowing a machine to look, and the judgement stays exactly where
+// it was until they say what they think.
+function openToRead (j, how) {
+  const branch = j.subject.kind === 'cut' ? j.subject.source : j.subject.branch
+  ask({
+    title: how === 'terminal' ? 'Open a terminal on it' : 'Open it in VS Code',
+    plain: [
+      `A machine is taken, rolled back, and set up on "${branch}" — the change ${j.ref} is about.`,
+      'It is yours until you give it back with vmReturn. The queue will not touch it while you have it.',
+      'Nothing about the judgement changes: read it, then say what you think on its card.'
+    ],
+    confirm: how === 'terminal' ? 'Open a terminal' : 'Open VS Code',
+    onYes: async () => {
+      const said = await api('branchWorkOn', { branch, open: how })
+      say(said.note || `${said.name || 'a machine'} is set up on ${branch}.`)
+    }
+  })
+}
+
 // A person's verdict, which is the one thing in this whole flow that is nobody
 // else's. A rejection needs a reason — the action refuses one without.
 function recordVerdict (j, verdict) {
@@ -272,11 +341,16 @@ function askForOne (about = null) {
     // which kind it is so nothing has to be inferred from the shape of a name.
     const subjects = [
       ...(board.branches || []).filter(b => b.cut && !b.protected).map(b => ({ value: `branch:${b.name}`, label: `${b.name} — branch cut` })),
-      ...(cuts.cuts || []).map(c => ({ value: `cut:${c.source} ${c.target}`, label: `${c.source} -> ${c.target} — PR cut` }))
+      // ENCODED AS JSON, not joined with a separator. A line name can contain a
+      // space — "testing2 line" is one — so anything split on one loses half of
+      // it and files the judgement against a cut that does not exist.
+      ...(cuts.cuts || []).map(c => ({ value: `cut:${JSON.stringify([c.source, c.target])}`, label: `${c.source} -> ${c.target} — PR cut` }))
     ]
     if (!subjects.length) return say('There is nothing to read: no branch has been cut and nothing has been sent out.', 'bad')
 
-    const prefill = about && about.kind === 'cut' ? `cut:${about.source} ${about.target}` : about && about.branch ? `branch:${about.branch}` : subjects[0].value
+    const prefill = about && about.kind === 'cut'
+      ? `cut:${JSON.stringify([about.source, about.target])}`
+      : about && about.branch ? `branch:${about.branch}` : subjects[0].value
     const kinds = [...new Set((pools.pools || []).map(p => p.tag))]
 
     ask({
@@ -303,15 +377,36 @@ function askForOne (about = null) {
       ],
       confirm: 'Ask for it',
       onYes: async f => {
-        const [kind, rest] = String(f.subject).split(':')
+        // Split ONCE: a branch name contains colons often enough, and the
+        // rest of the value is the payload whatever is in it.
+        const chose = String(f.subject)
+        const kind = chose.slice(0, chose.indexOf(':'))
+        const rest = chose.slice(chose.indexOf(':') + 1)
         const args = kind === 'cut'
-          ? { kind: 'cut', source: rest.split(' ')[0], target: rest.split(' ')[1] }
+          ? (([source, target]) => ({ kind: 'cut', source, target }))(JSON.parse(rest))
           : { kind: 'branch', branch: rest }
-        const made = await api('judgementCreate', { ...args, job: f.job, question: f.question || undefined, tag: f.tag || undefined })
-        await api('judgementQueue', { id: made.id })
+
+        const mine = f.by === 'person'
+        const made = await api('judgementCreate', {
+          ...args,
+          by: mine ? 'person' : 'worker',
+          // A person's judgement takes no job: there is no machine, no run and
+          // nothing to dispatch. A chain exists to tell a WORKER what to look
+          // for, and somebody reading it themselves is not being instructed.
+          job: mine ? undefined : f.job,
+          question: f.question || undefined,
+          tag: mine ? undefined : (f.tag || undefined)
+        })
+        // NOT QUEUED WHEN IT IS YOURS. The queue would give it to a machine and
+        // run a worker over the change you said you would read — judgementQueue
+        // refuses it for exactly that reason, and asking anyway would be this
+        // window walking into a refusal it already knew about.
+        if (!mine) await api('judgementQueue', { id: made.id })
         pickedJudgement = made.ref
         been.set('judgement', made.ref)
-        say(`${made.ref} is queued — it goes ahead of any task waiting.`)
+        say(mine
+          ? `${made.ref} is yours to read. Open it in VS Code or a terminal from its card, then say what you think.`
+          : `${made.ref} is queued — it goes ahead of any task waiting.`)
         paintJudgements()
       }
     })

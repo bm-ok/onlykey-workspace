@@ -36,6 +36,8 @@ const tasks = require('./tasks/store')
 // same `find` written out at every endpoint a guest can reach. See the head of
 // it for why a judgement wins when both somehow answer.
 const { whatIsOn } = require('./tasks/onmachine')
+// A judge records its own verdict through /verdict below.
+const judging = require('./tasks/judging')
 const queue = require('./tasks/queue')
 // Only the HTTP handler below uses this — a guest handing a file over. It went
 // missing when the require block was rebuilt around what the ACTIONS needed,
@@ -748,6 +750,62 @@ function handler (req, res) {
         res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end(`${e.message}\n`)
       }
     })
+    return
+  }
+
+  // ---- a judge's own verdict ----------------------------------------------
+  //
+  // THE JUDGE DECIDES, and this is the door it says so through. Not the
+  // supervisor — which commissioned the reading and must not grade it — and not
+  // a person, unless the person IS the judge, which is a different judgement
+  // with `by: person` on it and no machine anywhere near it.
+  //
+  // WHICH JUDGEMENT IS NOT ASKED, IT IS LOOKED UP, exactly like an artifact and
+  // a session. The machine proves which machine it is by holding its own token;
+  // this host looks up what that machine is reading. So there is no argument to
+  // lie about, and a machine cannot reach a verdict on somebody else's change.
+  //
+  // AT THE END OF ITS SESSION, AFTER THE HANDOFF, which is why this is separate
+  // from the run ending: the findings are the evidence and the verdict is the
+  // conclusion, and a run that hands nothing back has no business concluding
+  // anything. The job calls it; see `verdict` in machines/job-api.js.
+  if (url.pathname === '/verdict' && req.method === 'POST') {
+    const name = url.searchParams.get('vm') || ''
+    if (!workerAsking(req, url)) return refuseGuest(res, name, 'to record a verdict')
+
+    const doing = whatIsOn(name)
+    if (!doing || doing.kind !== 'judgement') {
+      res.writeHead(409, { 'content-type': 'text/plain; charset=utf-8' })
+        .end('this machine is not reading a change, so there is nothing for a verdict to be about.\n')
+      return
+    }
+
+    const said = String(url.searchParams.get('verdict') || '').trim().toLowerCase()
+    const asked = { accept: 'accepted', accepted: 'accepted', reject: 'rejected', rejected: 'rejected', pending: 'pending' }[said]
+    if (!asked) {
+      res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+        .end('a verdict is "accept", "reject" or "pending".\n')
+      return
+    }
+
+    const why = String(url.searchParams.get('note') || '').trim().slice(0, 2000)
+    // A REJECTION SAYS WHY. The same refusal the action makes, made here too:
+    // this is a different door onto the same record, and a rule enforced at one
+    // door is a rule with a way round it.
+    if (asked === 'rejected' && !why) {
+      res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+        .end('say why it was rejected. nothing is automatically re-run, so that note is the whole of what survives.\n')
+      return
+    }
+
+    try {
+      judging.update(doing.id, { verdict: asked, note: why || null, decided: new Date().toISOString(), decidedBy: name })
+      log.on('judging', doing.id)[asked === 'accepted' ? 'good' : asked === 'rejected' ? 'warn' : 'info'](
+        `${doing.ref} judged ${doing.reads}: ${asked}${why ? ` — ${why.slice(0, 120)}` : ''}`)
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(`${asked}\n`)
+    } catch (e) {
+      res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end(`${e.message}\n`)
+    }
     return
   }
 

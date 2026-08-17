@@ -203,6 +203,42 @@ module.exports = {
     }), body, { timeout: 60000 })
   },
 
+  // THE JUDGE'S OWN VERDICT, at the end of its session, after the handoff.
+  //
+  // The one who READ the change is the one who says whether it holds. Not the
+  // supervisor — it commissioned the reading and cannot see the code, so it must
+  // not grade the answer — and not a person, unless the person is the judge,
+  // which is a judgement with no machine in it at all.
+  //
+  // WHICH JUDGEMENT IS NOT SAID AND CANNOT BE. This host looks it up from what
+  // this machine is reading, the same as an artifact and a session: the token
+  // proves which machine, and the machine proves nothing else. There is no
+  // argument here to point at somebody else's change.
+  //
+  // AFTER THE HANDOFF, ALWAYS. The findings are the evidence and this is the
+  // conclusion; a run that concluded without handing anything back has published
+  // a verdict nobody can check.
+  //
+  // IT THROWS, like `artifact` and unlike `log`. A judgement whose verdict did
+  // not arrive is a reading nothing acted on, and reporting that as a note in a
+  // log would be the run saying it finished when the only thing that mattered
+  // did not.
+  //
+  //   accept    nothing here should stop this landing
+  //   reject    something must be dealt with first, and `why` says what
+  //   pending   read, and not settled. A real answer, and not the same as
+  //             having not looked
+  verdict (what, why) {
+    const said = String(what || '').trim().toLowerCase()
+    if (!['accept', 'reject', 'pending'].includes(said)) {
+      throw new Error(`"${what}" is not a verdict. It is "accept", "reject" or "pending".`)
+    }
+    if (said === 'reject' && !String(why || '').trim()) {
+      throw new Error('a rejection has to say why — nothing is automatically re-run, so that note is the whole of what survives')
+    }
+    return call('POST', '/verdict?' + q({ vm: VM, verdict: said, note: String(why || '') }), null, { timeout: 15000 })
+  },
+
   // A command, here, in the guest. Synchronous because a job is read top to
   // bottom, and the first thing an async shell helper costs is that.
   // Where the run already is, rather than where the folder was configured to be.
