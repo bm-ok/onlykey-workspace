@@ -203,12 +203,19 @@ function paintHandedBack (j) {
           style: 'margin-top:8px',
           textContent: 'Read it',
           onclick: () => api('judgementFindings', { id: j.id, file: f.name })
-            .then(one => ask({
-              title: `${j.ref} — ${f.name}`,
-              plain: [`What ${j.ref} found reading ${j.subject ? j.subject.name : 'this change'}.`],
-              extra: codeBlock(one.text || '', 'markdown', { max: 40 }),
-              confirm: 'Close'
-            }))
+            .then(one => {
+              ask({
+                title: `${j.ref} — ${f.name}`,
+                plain: [`What ${j.ref} found reading ${j.subject ? j.subject.name : 'this change'}.`],
+                confirm: 'Close'
+              })
+              // APPENDED AFTER THE DIALOG IS UP, the way every other dialog
+              // carrying text does it: `ask` builds FIELDS, and a page of
+              // findings is not a field. `extra` is a second BUTTON — passing a
+              // node to it drew a blank one and showed nothing.
+              const body = document.querySelector('.dlg-body')
+              if (body) body.append(codeBlock(one.text || '', 'markdown', { max: 40 }))
+            })
             .catch(e => say(e.message, 'bad'))
         }))))
       // SAID PLAINLY, because it is an answer rather than an absence: a judge
@@ -461,45 +468,30 @@ function writeRung (kind, it) {
           ]
         : [`This is the judging library, kept apart from the one work is done under. A ${kind} written here cannot be given to a task.`],
       fields,
-      // THE EDITOR, AND ABOVE IT THE WAY OUT. Throwing one away lives in the
-      // dialog rather than on the card: it is the same object, and a delete
-      // control sitting in a list is one somebody hits while scrolling past.
-      extra: el('div', {},
-        it
-          ? el('div', { style: 'margin-bottom:8px; display:flex; gap:8px; align-items:center' },
-            el('button', {
-              className: 'btn danger',
-              textContent: 'Throw it away',
-              onclick: () => {
-                document.querySelectorAll('.dlg-overlay').forEach(o => o.remove())
-                ask({
-                  title: `Throw away "${it.name}"?`,
-                  plain: [
-                    'Nothing that already ran is touched — a judgement carries its own copy of what it was read under.',
-                    'Anything still pointing at this stops being runnable and says so.'
-                  ],
-                  confirm: 'Throw it away',
-                  danger: true,
-                  onYes: async () => {
-                    await api(K.forget, { id: it.id })
-                    say(`"${it.name}" is gone.`)
-                    paintJudges()
-                  }
-                })
+      // THROWING ONE AWAY IS THE OTHER THING YOU MIGHT HAVE COME TO DO, which
+      // is exactly what `extra` is for: one more button beside the confirm, for
+      // the case that is not a variation of it but its opposite. It closes this
+      // dialog and asks on its own screen.
+      extra: it
+        ? {
+            label: 'Throw it away',
+            danger: true,
+            onClick: () => ask({
+              title: `Throw away "${it.name}"?`,
+              plain: [
+                'Nothing that already ran is touched — a judgement carries its own copy of what it was read under.',
+                'Anything still pointing at this stops being runnable and says so.'
+              ],
+              confirm: 'Throw it away',
+              danger: true,
+              onYes: async () => {
+                await api(K.forget, { id: it.id })
+                say(`"${it.name}" is gone.`)
+                paintJudges()
               }
-            }),
-            it.approved
-              ? el('button', {
-                className: 'btn',
-                textContent: 'Withdraw approval',
-                onclick: async () => {
-                  document.querySelectorAll('.dlg-overlay').forEach(o => o.remove())
-                  try { await api(K.withdraw, { id: it.id }); say(`"${it.name}" is no longer approved.`); paintJudges() } catch (e) { say(e.message, 'bad') }
-                }
-              })
-              : null)
-          : null,
-        editorBlock(body || '', K.mode, { edit: true, min: 8, max: 30, onReady: ed => { editor = ed } })),
+            })
+          }
+        : null,
       confirm: it ? 'Save it' : 'Write it',
       onYes: async f => {
         const payload = { id: it ? it.id : undefined, name: f.name, about: f.about, kind: 'judge' }
@@ -511,6 +503,32 @@ function writeRung (kind, it) {
         paintJudges()
       }
     })
+
+    // APPENDED AFTER THE DIALOG IS UP, the way every other dialog carrying code
+    // does it — `ask` builds fields, and an editor is not a field.
+    const at = document.querySelector('.dlg-body')
+    if (at) {
+      at.append(el('label', { textContent: kind === 'job' ? 'The script' : 'The words' }))
+      at.append(editorBlock(body || '', K.mode, { edit: true, min: 8, max: 30, onReady: ed => { editor = ed } }))
+      // WITHDRAWING IS NOT THROWING AWAY, and it belongs beside what is being
+      // read rather than in the row of ways out: it changes what this thing IS
+      // — unapproved, unrunnable — and leaves it exactly where it was.
+      if (it && it.approved) {
+        at.append(el('button', {
+          className: 'btn',
+          style: 'margin-top:8px',
+          textContent: 'Withdraw approval',
+          onclick: async () => {
+            document.querySelectorAll('.dlg-overlay').forEach(o => o.remove())
+            try {
+              await api(K.withdraw, { id: it.id })
+              say(`"${it.name}" is no longer approved — nothing can run it until it is read again.`)
+              paintJudges()
+            } catch (e) { say(e.message, 'bad') }
+          }
+        }))
+      }
+    }
   }).catch(e => say(e.message, 'bad'))
 }
 
