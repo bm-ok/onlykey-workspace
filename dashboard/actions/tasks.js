@@ -1118,11 +1118,11 @@ module.exports = {
     about: 'Say a job is fit to run, having read its script',
     needs: 'workspace',
     takes: ['id', 'note'],
-    run: ({ id, note, _overTheWire }) => {
+    run: ({ id, note, _overTheWire, _driven }) => {
       // The boundary, not a courtesy. This socket is what a supervising model
       // drives, and a job is a program: approving one is a person saying they
       // have read what will run as them.
-      if (_overTheWire) throw new Error('Approving is done in the window, by a person who has read the script. A model may write one and may not approve its own.')
+      if (_overTheWire || _driven) throw new Error('Approving is done in the window, by a person who has read the script. A model may write one and may not approve its own. A press driven from the command line is the command line, whichever button it lands on.')
       const done = jobs.approve(id, note)
       log.on('task').good(`job "${done.name}" approved`)
       return { ...done, code: undefined }
@@ -1317,10 +1317,10 @@ module.exports = {
   promptApprove: {
     about: 'Say a prompt is fit to be sent to a worker, having read it',
     takes: ['id', 'note'],
-    run: ({ id, note, _overTheWire }) => {
+    run: ({ id, note, _overTheWire, _driven }) => {
       // The same boundary as a job, and for the sharper reason: this is the text
       // a worker is actually handed.
-      if (_overTheWire) throw new Error('Approving is done in the window, by a person who has read it. A model may write a prompt and may not approve its own.')
+      if (_overTheWire || _driven) throw new Error('Approving is done in the window, by a person who has read it. A model may write a prompt and may not approve its own. A press driven from the command line is the command line, whichever button it lands on.')
       const done = prompts.approve(id, note)
       log.on('task').good(`prompt "${done.name}" approved`)
       return done
@@ -1395,11 +1395,11 @@ module.exports = {
   contractApprove: {
     about: 'Say a contract is fit to govern a run, having read it',
     takes: ['id', 'note'],
-    run: ({ id, note, _overTheWire }) => {
+    run: ({ id, note, _overTheWire, _driven }) => {
       // The same boundary as a prompt and a job, and here it is the sharpest of
       // the three: this is the text that says what a worker may NOT do, and a
       // model ratifying its own limits is the one review that reviews nothing.
-      if (_overTheWire) throw new Error('Approving is done in the window, by a person who has read it. A model may write a contract and may not approve its own.')
+      if (_overTheWire || _driven) throw new Error('Approving is done in the window, by a person who has read it. A model may write a contract and may not approve its own. A press driven from the command line is the command line, whichever button it lands on.')
       const done = contracts.approve(id, note)
       log.on('task').good(`contract "${done.name}" approved`)
       return done

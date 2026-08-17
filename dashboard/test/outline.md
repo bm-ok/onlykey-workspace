@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 45 tests, 209 checks, 18 of them drafts -->
+<!-- 12 suites, 45 tests, 210 checks, 18 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -135,8 +135,9 @@ What this app will not do, proved by asking it to do each thing and reading what
   1. the drills cannot be switched on by anything but a person at the window
   2. and a request to run them cannot answer itself
   3. and the settings that can be changed are named, not assumed
-  4. **DRAFT** — and the window cannot be driven while the drills are off
-  5. **DRAFT** — and a change cannot be landed from outside the window while the drills are off
+  4. a press driven from the command line is still the command line
+  5. **DRAFT** — and the window cannot be driven while the drills are off
+  6. **DRAFT** — and a change cannot be landed from outside the window while the drills are off
 
 # 03 — the machines are built
 

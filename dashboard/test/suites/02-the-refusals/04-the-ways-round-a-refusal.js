@@ -79,6 +79,40 @@ it('and the settings that can be changed are named, not assumed', async ({ okc, 
 // carry cannot be reached. Written down rather than left as a gap somebody
 // discovers by assuming they were covered.
 
+it('a press driven from the command line is still the command line', async ({ actions, assert, log }) => {
+  // THE ANTI-BYPASS PROPERTY, AND IT DID NOT HOLD.
+  //
+  // `windowClick` and `windowFill` reach the same handlers a person's press
+  // reaches. The window marks those calls `_driven`; every approval refused
+  // only `_overTheWire`, which a driven press is NOT, because it happens in
+  // the window's own process. So the command line could approve a job, a
+  // prompt or a contract by pressing the button — two clicks instead of one,
+  // with nothing in the way but testing mode being on.
+  //
+  // Found by trying it: one windowClick opened the confirm dialog and stopped,
+  // which looked like the guard working and was only the dialog. The guard
+  // itself was not there.
+  //
+  // Checked on all three, because they are three separate lines of code that
+  // happen to agree, and the next one added will be a fourth.
+  for (const what of ['jobApprove', 'promptApprove', 'contractApprove']) {
+    await assert.refuses(
+      () => actions[what].run({ id: 'anything-at-all', _driven: true }),
+      'window|person|command line',
+      `${what} let a press driven from the command line through`
+    )
+  }
+
+  // AND THE SAME FOR ALLOWING SOMEBODY ELSE'S CODE TO BE READ, which is the
+  // newest approval here and had the identical hole, written the identical way.
+  await assert.refuses(
+    () => actions.prAllowJudging.run({ repo: 'local-repo-c', number: 1, _driven: true }),
+    'window|person|may not',
+    'a pull request could be allowed by driving the window'
+  )
+  log('four approvals, none of them reachable by driving the window')
+})
+
 draft('and the window cannot be driven while the drills are off',
   'THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. ' +
   'It matters more than it looks: windowClick and windowFill reach the SAME handlers a person\'s press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. ' +

@@ -227,7 +227,10 @@ module.exports = {
     needs: 'workspace',
     takes: ['repo', 'number', 'note'],
     run: async ({ repo, number, note = null, _overTheWire, _driven }) => {
-      if (_overTheWire && !_driven) {
+      // A DRIVEN PRESS IS THE COMMAND LINE. This read `_overTheWire && !_driven`,
+      // which let `windowClick` press the button -- the same hole every other
+      // approval here had. Whichever button it lands on, it is not a person.
+      if (_overTheWire || _driven) {
         throw new Error('Allowing a pull request to be judged is done in the window, by a person who has looked at it. A model may not decide that somebody else\'s code is fit to be read here.')
       }
       const row = remotes.read().find(x => x.repo === String(repo))
@@ -257,7 +260,7 @@ module.exports = {
     needs: 'workspace',
     takes: ['repo', 'number'],
     run: ({ repo, number, _overTheWire, _driven }) => {
-      if (_overTheWire && !_driven) {
+      if (_overTheWire || _driven) {
         throw new Error('Taking an allowance back is done in the window, like giving one.')
       }
       const row = remotes.read().find(x => x.repo === String(repo))
