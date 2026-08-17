@@ -74,7 +74,12 @@
          reporting but conversing. It sits beside Live because that is where
          somebody watches from, and what is said here is what the watching is
          about. -->
-    <button class="tab" data-view="chat">Chat <span class="tab-badge hidden" id="chat-badge"></span></button>
+    <!-- CALLED WHAT IT IS. It was "Chat", which named the medium rather than
+         the thing: this tab is the supervisor — whether it is up, whether it can
+         run, and the conversation with it. The view key stays "chat" because it
+         is what the actions, the remembered state and every id here are called,
+         and renaming those would be churn with nothing at the end of it. -->
+    <button class="tab" data-view="chat">Supervisor <span class="tab-badge hidden" id="chat-badge"></span></button>
     <button class="tab" data-view="live">Live <span class="tab-badge hidden" id="live-badge"></span></button>
     <button class="tab" data-view="terminal">Terminal</button>
     <button class="tab" data-view="keys">Keys</button>
@@ -680,7 +685,7 @@
        core/chat.js — and neither end has to be present for the other to speak. -->
   <section class="view" id="view-chat">
     <div class="sync-head">
-      <h2>Chat <span class="muted" id="chat-context"></span></h2>
+      <h2>Supervisor <span class="muted" id="chat-context"></span></h2>
       <div class="sync-controls">
         <!-- ANSWERING BY ITSELF IS A MACHINE STARTING AND A MODEL SPENDING, on
              its own initiative, because somebody typed a sentence. That is the
@@ -691,6 +696,12 @@
         <button class="btn" id="chat-clear">Clear</button>
       </div>
     </div>
+    <!-- WHETHER IT CAN ACTUALLY RUN, before anything else on the screen.
+         A supervisor machine that is running, dialled in, and holding no
+         credential looks identical to a working one from every other panel —
+         and a wake against it does nothing at all. That cost an afternoon here,
+         so it is the first thing this tab says. -->
+    <div id="supervisor-state" class="panel"></div>
     <p class="note" id="chat-note"></p>
     <div id="chat-thread" class="stack"></div>
     <!-- PINNED UNDER THE THREAD, never scrolling with it. A composer that walks

@@ -102,7 +102,97 @@ const oneMessage = (m, read) => {
         : m.text))
 }
 
+
+// ---- IS IT UP, AND CAN IT RUN -----------------------------------------------
+//
+// The first thing this tab says, because it is the thing that is invisible
+// everywhere else. A supervisor machine that is running and dialled in and
+// holding NO credential looks exactly like a working one on the Runners tab, on
+// the queue, and here — and every wake against it ends in three seconds having
+// done nothing. That is what happened on this host: a message sat unread all
+// afternoon and nothing anywhere said why.
+//
+// ONE PRESS TO START IT, because it is two steps in an order that matters —
+// start the machine, wait for it to dial in, then give it its sign-in. Doing
+// that by hand is what went wrong; a button that does both cannot forget the
+// second half. Stopping is the same two steps backwards, and that order matters
+// more: the credential comes off BEFORE the machine goes down, or a sign-in is
+// left on a disk with nothing on this host recording it as out.
+function paintSupervisorState () {
+  if (view !== 'chat') return
+
+  api('supervisorState').then(st => {
+    if (view !== 'chat') return
+    if (!changed('supervisor-state', st)) return
+
+    if (!st.there) {
+      return fill($('supervisor-state'), el('p', { className: 'empty', textContent: st.note }))
+    }
+
+    const one = (st.supervisors || [])[0] || {}
+    const busy = !!st.thinking
+
+    fill($('supervisor-state'), el('div', { className: 'card' },
+      el('div', { className: 'card-title' },
+        el('span', { textContent: one.name }),
+        el('span', {
+          className: `badge ${busy ? 'run' : st.ready ? 'ok' : 'warn'}`,
+          textContent: busy ? 'thinking' : st.ready ? 'ready' : 'cannot run'
+        })),
+
+      // THE THREE FACTS IT TURNS ON, each said plainly rather than left to be
+      // inferred from a badge. "Signed in as" is a NAME and a fingerprint and
+      // never a value — the same rule the Keys tab is built to.
+      el('table', { className: 'kv' },
+        el('tr', {}, el('th', { textContent: 'machine' }), el('td', {},
+          el('span', { className: `badge ${one.state === 'running' ? 'ok' : 'muted'}`, textContent: one.state || 'unknown' }),
+          el('span', { className: 'muted', style: 'margin-left:6px', textContent: one.connected ? 'dialled in' : one.state === 'running' ? 'not dialled in yet' : '' }))),
+        el('tr', {}, el('th', { textContent: 'signed in as' }), el('td', {}, one.signedInAs
+          ? el('span', {}, el('span', { className: 'mono', textContent: one.signedInAs }), el('span', { className: 'muted', style: 'margin-left:6px', textContent: one.fingerprint || '' }))
+          : el('span', { className: 'warn', textContent: 'nothing — a worker on it cannot authenticate' })))),
+
+      one.why ? el('div', { className: 'card-sub warn', textContent: one.why }) : null,
+
+      el('div', { style: 'margin-top:10px; display:flex; gap:8px; flex-wrap:wrap' },
+        st.ready
+          ? el('button', {
+            className: 'btn danger',
+            textContent: 'Put it away',
+            title: 'Takes its credential back first, then stops it',
+            onclick: () => press('supervisorDown', 'Putting it away — taking the credential back first.')
+          })
+          : el('button', {
+            className: 'btn ok',
+            textContent: 'Start it',
+            title: 'Starts the machine, waits for it to dial in, and signs it in',
+            onclick: () => press('supervisorUp', 'Starting it and signing it in — this takes a minute.')
+          }),
+        el('button', {
+          className: 'btn',
+          textContent: 'Wake it',
+          disabled: !st.ready || busy,
+          title: st.ready ? 'One turn: it reads what changed and answers' : 'It cannot run yet',
+          onclick: () => press('supervisorWake', 'Waking it.')
+        }))))
+  }).catch(() => { /* the chrome says when the dashboard is unreachable */ })
+}
+
+// A press that takes a while, said before it starts rather than after: starting
+// a machine is a minute of nothing visible happening, and a button that goes
+// quiet is one somebody presses again.
+function press (what, saying) {
+  say(saying)
+  api(what).then(said => {
+    say(said.note || 'done')
+    forget('supervisor-state')
+    paintSupervisorState()
+  }).catch(e => say(e.message, 'bad'))
+}
+
 function paintChat () {
+  // The state strip first: it is the thing that decides whether anything below
+  // it can happen at all.
+  paintSupervisorState()
   if (view !== 'chat') return
 
   api('chat').then(said => {

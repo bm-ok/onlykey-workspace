@@ -18,6 +18,9 @@
 // means four bookmarks and a model keeping three of them correctly.
 
 const chat = require('../core/chat')
+// The Claude identities this host holds — a supervisor is ready only when it is
+// holding one, which is the state that looks identical to working from outside.
+const guests = require('../core/guests')
 const actions = require('./table')
 // What a supervisor may ask for, and how many times it has asked — see the
 // wake below, which uses the count to tell a turn that did something from one
@@ -375,6 +378,158 @@ module.exports = {
               .catch(e => log.on('supervisor').warn(`the catch-up turn did not run: ${e.message}`))
           }, 1000)
         }
+      }
+    }
+  },
+
+  // ---- IS IT READY, AND WHAT IS MISSING ------------------------------------
+  //
+  // One question, asked in one place, because the answer has four parts and
+  // getting any of them wrong looks identical from outside: a supervisor that is
+  // off, one that is up but holds no credential, one that is up and signed in,
+  // and one that has no chain approved to judge with.
+  //
+  // THE CREDENTIAL IS THE ONE THAT BIT. A supervisor machine that is running and
+  // dialled in and holding nothing looks exactly like a working one from every
+  // panel in this window — until it is woken, exits in three seconds, and does
+  // nothing. That is the state this makes visible before it costs somebody an
+  // afternoon.
+  supervisorState: {
+    about: 'The supervisor machine: whether it is up, signed in, and able to run',
+    run: async () => {
+      const all = vms.read()
+      const mine = all.filter(v => (v.tags || []).some(x => String(x).toLowerCase() === vms.SUPERVISOR))
+      if (!mine.length) {
+        return { there: false, note: 'This host has no supervisor machine. Make one on the Runners tab — tick "supervisor machine?" when you create it.' }
+      }
+
+      // ONE IS THE ORDINARY CASE and more than one is refused from running
+      // together — see vmStart. Reported as a list so a host with two says so
+      // rather than picking one quietly.
+      const rows = await Promise.all(mine.map(async v => {
+        const live = (await actions.vmList.run({})).vms.find(x => x.name === v.name) || v
+        const held = guests.all().find(g => g.holder === v.name) || null
+        const why = []
+        if (live.state !== 'running') why.push('it is switched off')
+        else if (!live.connected) why.push('it is starting up — it has not dialled in yet')
+        if (!held) why.push('it is holding no credential, so a worker on it cannot authenticate')
+        return {
+          name: v.name,
+          state: live.state,
+          connected: !!live.connected,
+          // WHICH SIGN-IN, by name and fingerprint, never a value. Same rule as
+          // the Keys tab: a model may know something is there without knowing
+          // what it is.
+          signedInAs: held ? held.name : null,
+          fingerprint: held ? held.fingerprint : null,
+          ready: !why.length,
+          why: why.length ? why.join(', and ') : null
+        }
+      }))
+
+      const up = rows.find(r => r.ready) || null
+      return {
+        there: true,
+        supervisors: rows,
+        ready: !!up,
+        name: up ? up.name : rows[0].name,
+        thinking,
+        note: up
+          ? `${up.name} is up and signed in as "${up.signedInAs}". It answers when you say something, if that is switched on.`
+          : `${rows[0].name} cannot run: ${rows[0].why}.`
+      }
+    }
+  },
+
+  // ---- ONE PRESS TO START IT ------------------------------------------------
+  //
+  // Two steps that must both happen and must happen in this order, and doing
+  // them by hand is how a supervisor ends up running with nothing to
+  // authenticate with. That happened on this host: the credential was taken back
+  // to fix something, the machine was started again later, and the sign-in was
+  // never given back — so every wake for the rest of the day did nothing.
+  //
+  // THROUGH THE ACTIONS THAT ALREADY DO EACH PART, because each carries its own
+  // refusals: vmStart refuses a second supervisor running at once, and guestLend
+  // refuses a sign-in whose role does not match the machine.
+  supervisorUp: {
+    about: 'Start the supervisor and sign it in, in one press',
+    run: async () => {
+      const state = await actions.supervisorState.run({})
+      if (!state.there) throw new Error(state.note)
+      const name = state.name
+
+      const started = []
+      const was = vms.read().find(v => v.name === name) || {}
+      if (was.state !== 'running') {
+        // supervisorMachine starts it AND waits for it to dial in, which is
+        // the part a person doing this by hand forgets — a credential cannot be
+        // put on a machine that is not talking yet.
+        await s.supervisorMachine(name)
+        started.push('started it')
+      }
+
+      // WHATEVER IT IS ALREADY HOLDING IS LEFT ALONE. Lending a second sign-in
+      // over the top would be two identities on one machine, and taking one back
+      // to put the same one on again would rotate a token for nothing.
+      const held = guests.all().find(g => g.holder === name) || null
+      if (!held) {
+        const free = guests.all().find(g => g.role === 'supervisor' && g.has && !g.holder)
+        if (!free) {
+          throw new Error('There is no supervisor sign-in free to give it. Add one under Runners → Claude supervisor, or take the one that is out back from whatever is holding it.')
+        }
+        await actions.guestLend.run({ name: free.name, machine: name })
+        started.push(`signed it in as "${free.name}"`)
+      }
+
+      const now = await actions.supervisorState.run({})
+      return {
+        ...now,
+        did: started.length ? started.join(', and ') : 'it was already up and signed in',
+        note: now.ready
+          ? `${name} is ready — ${started.length ? started.join(', and ') : 'it was already up'}.`
+          : `${name} is still not ready: ${(now.supervisors[0] || {}).why}`
+      }
+    }
+  },
+
+  // ---- AND ONE PRESS TO PUT IT AWAY ----------------------------------------
+  //
+  // The credential comes off BEFORE the machine stops, and that order is the
+  // whole point of this being one press. Stopping it first leaves a sign-in on a
+  // powered-off disk with nothing on this host recording it as out — which is
+  // exactly what a host restart does, and what somebody then has to notice and
+  // unpick by hand.
+  //
+  // AND WHAT THE WORKER REFRESHED COMES BACK WITH IT. guestBack reads the
+  // credential off the machine first: a supervisor session rotates its token,
+  // and stopping without reading throws the newer one away.
+  supervisorDown: {
+    about: 'Take the credential back and stop the supervisor, in that order',
+    run: async () => {
+      const state = await actions.supervisorState.run({})
+      if (!state.there) throw new Error(state.note)
+      const name = state.name
+      const did = []
+
+      const held = guests.all().find(g => g.holder === name) || null
+      if (held) {
+        const back = await actions.guestBack.run({ name: held.name, machine: name })
+        did.push(back.rotated
+          ? `took "${held.name}" back, refreshed — ${back.fingerprint}`
+          : `took "${held.name}" back unchanged`)
+      }
+
+      const was = vms.read().find(v => v.name === name) || {}
+      if (was.state === 'running') {
+        await actions.vmStop.run({ name })
+        did.push('stopped it')
+      }
+
+      return {
+        name,
+        did: did.length ? did.join(', and ') : 'it was already off and holding nothing',
+        note: `${name}: ${did.length ? did.join(', and ') : 'nothing to do — it was already away'}.`
       }
     }
   },
