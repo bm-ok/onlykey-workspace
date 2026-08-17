@@ -61,7 +61,7 @@ it('a throwaway identity can be lent to a machine', async ({ okc, assert, state,
   const onIt = String(sum.output || '').trim().split('\n').pop().trim()
   assert.ok(/^[0-9a-f]{16}$/.test(onIt), `the machine has no credential to fingerprint: ${JSON.stringify(sum).slice(0, 200)}`)
   log(`${GUEST} (${made.fingerprint}) is on ${machine.name}`)
-})
+}, { gate: true })
 
 it('and a change made on the machine is what comes back', async ({ okc, assert, state, log }) => {
   // WHAT A REFRESH LOOKS LIKE FROM HERE: the file on the machine is different

@@ -251,10 +251,41 @@ it('and it can cut a branch, write a task on it, and queue it', async ({ okc, as
   // genuinely refused a machine, and nothing is brought up behind this drill's
   // back. Proving "it can queue" does not require proving "a machine can be
   // ambushed".
+  // AND IT IS REFUSED UNTIL A JUDGE HAS ESTABLISHED THE WORK IS REAL.
+  //
+  // THIS CHECK PREDATES THE GATE AND WAS FAILING ON IT, which is the honest
+  // reason it is written this way now rather than a tidier one: a supervisor
+  // cannot see the codebase, so a task it writes without naming the judgement
+  // the work came from is work commissioned from a rumour. Asked without one,
+  // over the wire, it is refused — and this asks, because the refusal arriving
+  // from the supervisor's OWN side is worth more than the same refusal asked of
+  // the action table with a flag set.
+  const rumour = readJson(await asSupervisor(okc, state.machine,
+    `okc taskCreate '${JSON.stringify({ task: { title: TASK, brief: 'Written by a drill, with nothing behind it.', branch: BRANCH, job: 'api-tour', tag: 'okc-no-machine-carries-this' } })}'`,
+    'writing a task with no judgement behind it'))
+  assert.ok(rumour && /judgement|becauseOf/i.test(JSON.stringify(rumour)),
+    `the supervisor wrote a task with nothing behind it: ${JSON.stringify(rumour).slice(0, 300)}`)
+  log('refused a task with no judgement behind it, which is the gate')
+
+  // SO ONE IS ESTABLISHED THE WAY A PERSON ESTABLISHES ONE. At the window, not
+  // over the wire: a judgement read and concluded by a person is exactly what
+  // the gate is there to require, and a drill that had the supervisor conclude
+  // its own would be proving the opposite of the rule.
+  // NO QUESTION AND NO JOB, and the two go together: a question is what a JUDGE
+  // is asked, added to what its prompt says, so one without a judge is refused —
+  // correctly, because there would be nobody to ask. A person reading something
+  // themselves has no prompt and needs none; what they concluded goes in the
+  // verdict's note, which is where anybody would look for it.
+  const judged = await okc('judgementCreate', { kind: 'branch', branch: BRANCH, by: 'person' })
+  state.judgement = judged.id
+  await okc('judgementVerdict', { id: judged.id, verdict: 'accepted', note: 'A drill: there is work to do here.' })
+  log(`${judged.ref} is decided, so a task may now be written from it`)
+
   const task = readJson(await asSupervisor(okc, state.machine,
-    `okc taskCreate '${JSON.stringify({ task: { title: TASK, brief: 'Written by a drill, over the supervisor API.', branch: BRANCH, job: 'api-tour', tag: 'okc-no-machine-carries-this' } })}'`,
+    `okc taskCreate '${JSON.stringify({ task: { title: TASK, brief: 'Written by a drill, over the supervisor API.', branch: BRANCH, job: 'api-tour', tag: 'okc-no-machine-carries-this' }, becauseOf: judged.ref })}'`,
     'writing a task as the supervisor'))
   assert.ok(task && task.id, `the supervisor could not write a task: ${JSON.stringify(task).slice(0, 300)}`)
+  assert.equal(task.becauseOf, judged.ref, 'the task does not record the judgement it was written from, so "why was this done" is unanswerable later')
   state.task = task.id
   log(`wrote #${task.number} "${task.title}" on ${task.branch}`)
 
@@ -291,6 +322,11 @@ cleanup(async ({ okc, state }) => {
   // throwing work away is not on a supervisor's list, and a drill that needed it
   // to be would be an argument for putting it there.
   if (state.task) { try { await okc('taskRemove', { id: state.task }) } catch { /* never written */ } }
+  // BEFORE THE BRANCH. A judgement holds no branch, but one left open against a
+  // subject refuses the next judgement of it — so a drill that abandons one
+  // blocks the next run of itself, with a message about something being read
+  // that nothing is reading.
+  if (state.judgement) { try { await okc('judgementRemove', { id: state.judgement }) } catch { /* never asked for */ } }
   if (state.branch) { try { await okc('branchDelete', { branch: state.branch, force: true }) } catch { /* never cut */ } }
   // The proposed job too. An unapproved job left in the library is a drill's
   // leavings sitting in a list a person is meant to read and act on.

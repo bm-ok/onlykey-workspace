@@ -113,7 +113,7 @@ it('and it cannot ask about a task that is not its own', async ({ okc, assert, s
     `a machine asked for ${other.name}'s session with its own token and got ${code}. The name in the query and the name in the token must be the same machine, or a token is a key to every task on this host`)
 
   log(`${state.machine} asking about ${other.name} is refused: 401`)
-})
+}, { gate: true })
 
 it('and a file handed over is filed under the task, not under a name it chose', async ({ okc, assert, state, log }) => {
   // AN ARTIFACT IS A DELIVERY, and which task it belongs to is looked up rather

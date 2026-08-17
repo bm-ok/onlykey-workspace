@@ -48,7 +48,7 @@ it('two machines are up, and this host holds two identities', async ({ okc, asse
   assert.notEqual(a.fingerprint, b.fingerprint, 'two different tokens were kept with the same fingerprint, which would make every comparison below meaningless')
   state.prints = { [A]: a.fingerprint, [B]: b.fingerprint }
   log(`${state.one} and ${state.two} are up; ${A} (${a.fingerprint}) and ${B} (${b.fingerprint}) are here`)
-})
+}, { gate: true })
 
 it('and each machine can hold its own at the same time', async ({ okc, assert, state, log }) => {
   // AT THE SAME MOMENT, which is the whole claim. One after the other would be

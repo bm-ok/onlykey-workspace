@@ -55,6 +55,12 @@ it('and a machine that is dialled in can be given it', async ({ okc, assert, sta
 
   const where = await okc('vmShell', { name: machine.name })
   assert.ok(where.identity, `${machine.name} accepts this app's key and vmShell does not offer it, so ssh will try everything it has instead`)
+
+// NOT A GATE, deliberately, though the check after it depends on this one. A
+// gate closes the REST of the file, and the last check here needs no machine at
+// all — it is about a machine that is switched off. What the middle check needs
+// it says for itself, with `needs`, which reports "could not run" without
+// taking anything else down with it.
 })
 
 it('and giving it twice does not write it twice', async ({ okc, assert, state }) => {

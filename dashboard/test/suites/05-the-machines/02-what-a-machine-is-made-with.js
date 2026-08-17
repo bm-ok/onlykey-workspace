@@ -70,9 +70,23 @@ it('and every machine is in a pool', async ({ okc, assert, state, log }) => {
   const pools = await okc('pools')
   assert.ok(!(pools.inNoPool || []).length, `pools reports ${pools.inNoPool.join(', ')} as belonging to nothing`)
   const named = new Set((pools.pools || []).flatMap(p => p.machines.map(m => m.name)))
-  for (const m of machines.filter(x => !x.supervisor)) {
+
+  // EXCEPT THE ONES THIS KIT IS HOLDING, and leaving them out was a mistake this
+  // check made about the suite two folders up from it. Warming keeps somebody's
+  // own machines back — `kit-held`, `forTasks: false` — precisely so the drills
+  // cannot borrow them, and `pools` reports what the QUEUE can reach, which is
+  // correctly not those. So this failed on a host in exactly the state the kit
+  // had deliberately put it in, and it failed saying "work can go to it", about
+  // a machine the kit had just made sure work cannot go to.
+  //
+  // Cooling gives them back. Until it runs — and it does not run on a sweep that
+  // stopped early — this is the honest state rather than a fault.
+  const reachable = machines.filter(x => !x.supervisor && x.forTasks !== false && !(x.tags || []).includes('kit-held'))
+  for (const m of reachable) {
     assert.ok(named.has(m.name), `${m.name} is a machine work can go to and is in none of the pools`)
   }
+  const held = machines.filter(x => !x.supervisor && !reachable.includes(x))
+  if (held.length) log(`kept back, so not in a pool: ${held.map(m => m.name).join(', ')} — suite 11 gives them back`)
   log(`${(pools.pools || []).map(p => `${p.tag} (${p.machines.length})`).join(', ')}`)
 })
 

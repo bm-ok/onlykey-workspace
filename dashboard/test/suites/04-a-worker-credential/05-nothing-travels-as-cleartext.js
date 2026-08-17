@@ -138,7 +138,7 @@ it('and the machine ends up holding exactly it', async ({ okc, assert, state, lo
   assert.equal(onIt, handover.fingerprint(MADE_UP),
     `${state.machine} is holding ${onIt} where the credential sealed to it is ${handover.fingerprint(MADE_UP)}. It arrived, and it arrived changed`)
   log(`${state.machine} holds ${onIt}, byte for byte what was sealed to it`)
-})
+}, { gate: true })
 
 it('and the key that could open it does not outlive the handover', async ({ okc, assert, state, log }) => {
   // ONE PAIR PER HANDOVER. If the private half stayed on the machine, a recording
