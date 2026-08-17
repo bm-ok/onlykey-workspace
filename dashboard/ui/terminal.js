@@ -54,7 +54,7 @@ const shellFor = id => shells.find(s => s.id === id) || null
 // run id nobody has memorised. It is sent visibly rather than through
 // `quietly`, so the line is on screen: Ctrl-C leaves an ordinary shell on the
 // machine, and up-arrow brings it back.
-function openShell (name, { what = null, cwd = null, task = null, then = null } = {}) {
+function openShell (name, { what = null, cwd = null, task = null, then = null, only = false, stream = null } = {}) {
   return api('vmShell', { name }).then(where => {
     const { spawn } = require('node:child_process')
 
@@ -97,6 +97,13 @@ function openShell (name, { what = null, cwd = null, task = null, then = null } 
       // tabs all reading "runner1" is what a machine-picker produces; a strip
       // reading "#25 claude" is what work arriving produces.
       what,
+      // The tab says the identity ALONE, without "· kit-1" after it. For a
+      // stream the machine is not the subject: what is being watched is a
+      // sign-in doing work, and it will be on a different machine next time.
+      only,
+      // Which identity this is a window onto, if it is one. Kept so closing it
+      // can be remembered -- see closeShell and mindClaudeStreams.
+      stream,
       task,
       target: where.target,
       live: where.live,
@@ -282,6 +289,79 @@ function sizeTerminal () {
 // One per machine. Asking to watch a machine already being watched brings that
 // tab forward instead of opening a second reader on the same file.
 const watchers = new Map()   // machine name -> shell-shaped object
+
+// ---- A WINDOW ONTO WHATEVER CLAUDE IS DOING --------------------------------
+//
+// A tab per Claude IDENTITY that is signed in on a machine right now, opened by
+// itself, showing what that identity is doing as it does it.
+//
+// NAMED FROM THE SIGN-IN, NOT THE MACHINE. "runner1" and "supervisor1" are the
+// names on the Claude guest and Claude supervisor lists, and they are what a
+// person is actually watching -- the identity spending the tokens and doing the
+// work. Which machine happens to be carrying it is a detail that changes every
+// task, and a strip of tabs reading "kit-1", "kit-2" says nothing about who is
+// in them. The machine is on the tab's hover.
+//
+// ONE TAB, REUSED. An identity works, is taken back, and goes out again on some
+// other machine an hour later; a tab per session would be a tab per hour. This
+// one is keyed by the identity, and the far end follows a link on the machine
+// rather than a run -- so the same tab shows the next piece of work without
+// being reopened, and only a change of MACHINE makes a new session necessary.
+//
+// NOTHING IS AUTO-SHOWN AND NOTHING IS AUTO-CLOSED, the same rule the console
+// tabs follow: opening a tab is not switching to it, and a tab that closes
+// itself closes while somebody is reading it. Closing one is a person's
+// decision -- and it is remembered, so the draw loop does not reopen it four
+// seconds later, which would be the window arguing with the ×.
+const streams = new Map()      // identity -> shell, or 'opening'
+const notWatching = new Set()  // identity@machine somebody closed
+
+function mindClaudeStreams (list, busy) {
+  if (!list || list.available === false || !Array.isArray(list.vms)) return
+
+  // WHERE A CLAUDE SESSION IS, which is a question about credentials rather
+  // than about processes. An identity is placed on a machine when there is work
+  // for it and taken back when there is not, so "signed in, on a running
+  // machine" IS "a session is happening or about to" -- and it needs no extra
+  // call to ask. A supervisor holds its sign-in the whole time it is up, which
+  // is right: its tab sits there and fills when it thinks.
+  const live = list.vms.filter(v => v.running && v.holdsCredential && v.guest)
+
+  for (const v of live) {
+    const who = v.guest
+    const where = `${who}@${v.name}`
+    if (notWatching.has(where)) continue
+
+    const had = streams.get(who)
+    if (had === 'opening') continue
+    if (had && !had.ended && had.name === v.name) continue
+    // The identity moved to another machine, or the session died. Same tab,
+    // new far end -- the old one is closed rather than left as a second tab
+    // with the same name on it, which is the confusion this is meant to end.
+    if (had) closeShell(had)
+
+    streams.set(who, 'opening')
+    // Where the watcher is depends on which half of the app is working: a
+    // supervisor's turns are in its own box, a worker's runs are in theirs.
+    // Both are written by the same helper and both follow a link, so neither
+    // path names anything that expires.
+    const isSup = (v.tags || []).some(t => String(t).toLowerCase() === 'supervisor')
+    const cmd = isSup ? '$HOME/.okc-supervisor/okc-watch' : '$HOME/.okc-runs/okc-watch'
+
+    openShell(v.name, { what: who, only: true, stream: who, then: cmd })
+      .then(s => { streams.set(who, s) })
+      .catch(() => { streams.delete(who) })
+  }
+
+  // An identity that is no longer out anywhere stops being minded, so it opens
+  // again next time it goes to work. The TAB is left alone -- what it said is
+  // worth reading after the work ended, which is exactly when somebody looks.
+  const out = new Set(live.map(v => v.guest))
+  for (const who of [...streams.keys()]) if (!out.has(who)) streams.delete(who)
+  for (const where of [...notWatching]) {
+    if (!live.some(v => `${v.guest}@${v.name}` === where)) notWatching.delete(where)
+  }
+}
 
 function watchInstall (name, { onEnd = null, show = true, auto = false } = {}) {
   const already = watchers.get(name)
@@ -476,6 +556,15 @@ function closeShell (shell) {
   // outlive the widget unless they are told not to.
   if (shell.stop) { try { shell.stop() } catch { /* already stopped */ } }
   if (shell.watching) watchers.delete(shell.name)
+  // CLOSING A STREAM MEANS CLOSING IT. Without this the draw loop opens it
+  // again within seconds, which is the window arguing with the × — the same
+  // fault the console tabs had in reverse when they closed themselves. It is
+  // remembered against the identity AND the machine, so it comes back when that
+  // sign-in next goes out to work somewhere.
+  if (shell.stream) {
+    streams.delete(shell.stream)
+    notWatching.add(`${shell.stream}@${shell.name}`)
+  }
   // Disposed EXPLICITLY, both the handlers and the widget. This is the half
   // that was missing before: a killed child stops producing output, but a
   // handler on a widget that outlives it goes on delivering keystrokes.
@@ -498,7 +587,7 @@ function paintShellTabs () {
   // What the shell is for, and the machine second. Two shells opened for two
   // tasks on the same machine were "runner1" and "runner1 #2" -- true, and no
   // help at all in picking the one you meant.
-  el('span', { textContent: s.what ? `${s.what} · ${s.name}` : `${s.name}${shells.filter(o => o.name === s.name).length > 1 ? ` #${s.id}` : ''}` }),
+  el('span', { textContent: s.only ? s.what : s.what ? `${s.what} · ${s.name}` : `${s.name}${shells.filter(o => o.name === s.name).length > 1 ? ` #${s.id}` : ''}` }),
   el('button', {
     className: 'term-x',
     textContent: '×',

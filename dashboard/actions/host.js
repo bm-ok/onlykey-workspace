@@ -34,9 +34,15 @@ module.exports = {
         ...state,
         // Which machines would actually accept it, which is not the same
         // question as whether the key exists. A machine built before this key —
-        // or with a different one chosen in the dialog — has somebody else's
-        // public half in its authorized_keys and nothing here can change that
-        // without being able to get in, which is the thing at issue.
+        // or with a different one chosen in the dialog — does not have this
+        // one's public half in its authorized_keys.
+        //
+        // THIS USED TO SAY THAT COULD NOT BE FIXED: "nothing here can change
+        // that without being able to get in, which is the thing at issue." True
+        // of ssh, false of this app. An agent runs on the machine and executes
+        // what this host sends it, so the key can be put there over the channel
+        // — see `vmAuthorizeKey`. The sentence stopped three machines on this
+        // host from having a working terminal for as long as it stood.
         machines: mine.map(vm => ({
           name: vm.name,
           authorised: !!(vm.spec && vm.spec.sshKey && state.publicKey && vm.spec.sshKey.trim() === state.publicKey.trim()),

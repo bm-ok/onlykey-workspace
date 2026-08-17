@@ -926,3 +926,24 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   already on a machine is not that. The pane asked it "which one is in use" and
   got "none" at the exact moment a supervisor was signed in and working. Two
   fields now, because they are two questions.
+
+* **"Nothing here can change that without being able to get in" was false, and
+  it stood in a comment for months.** A machine built before this app had an ssh
+  key has an EMPTY authorized_keys, so nothing can ssh in at all — not the
+  Terminal tab, not VS Code, not the back door that exists for when the agent
+  stops answering. On this host that was three machines out of five, including
+  the supervisor, and it reads as "Too many authentication failures", which
+  sounds like a key being rejected and is really a machine with no keys to
+  reject. The fix was always available: an agent already runs on the machine and
+  already executes what this host sends it, so the key goes over the CHANNEL —
+  `vmAuthorizeKey`. It grants nothing new, which is why it can be a button: the
+  channel it is sent over can already run any command there as that user. **A
+  sentence in a comment explaining why something is impossible is worth
+  re-reading once the app has grown a new way in.**
+
+* **A feature can be finished and still land on a machine that cannot run it.**
+  The stream tab was correct, the watcher was correct, the shell was correct —
+  and the tab said `Permission denied` because ssh to that machine has never
+  worked. Nothing in the feature was wrong; the road it drove on was out. Test a
+  new path on the machine somebody will actually use it on, not only on the one
+  it was written against.

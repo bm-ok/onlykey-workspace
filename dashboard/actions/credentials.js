@@ -630,7 +630,22 @@ OKC_READY_EOF
 #
 # In the SAME remote command because it is free here and a second round
 # trip is not: this runs before every queued dispatch.
-claude auth status 2>/dev/null || true`
+claude auth status 2>/dev/null || true
+
+# AND THE MEANS TO WATCH WHAT IT DOES WITH IT.
+#
+# HERE BECAUSE THIS IS THE MOMENT. A credential arriving is the moment a machine
+# becomes something a person would want to watch -- before it, there is nothing
+# to see, and after it the work has already started. The window opens a tab when
+# a sign-in goes out, so the thing that tab runs has to exist by then; written at
+# dispatch instead, there is a gap where the tab lands on a machine that has not
+# been given the watcher yet, and what somebody sees is an error where the work
+# should be.
+#
+# Dispatch writes it again, per run, which is not waste: a run's own directory
+# keeps its own copy so a finished run is still readable, and this one follows
+# whichever run is current.
+${dispatch.watcherFor(dispatch.RUNS, `${dispatch.RUNS}/current/out.log`)}`
 
       const r = await handover.deliver({
         run: (command, opts) => channel.run(name, command, opts),

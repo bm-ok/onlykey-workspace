@@ -355,6 +355,87 @@ done`
   // The address comes from the registry rather than the channel, deliberately.
   // Asking the agent where it lives is no use when the agent is the problem, so
   // it is recorded every time a machine dials in and used long afterwards.
+  // ---- THE DOOR THIS APP COULD NOT OPEN, AND ALWAYS COULD ------------------
+  //
+  // A machine built before this app had an ssh key has an EMPTY authorized_keys,
+  // so nothing can ssh into it at all. Not the Terminal tab, not VS Code, not
+  // the back door that exists for when the agent stops answering -- and on this
+  // host that was three machines out of five, including the supervisor. It reads
+  // as "Too many authentication failures", which sounds like a key being
+  // rejected and is actually a machine with no keys to reject.
+  //
+  // THE NOTE ON `sshKey` SAID THIS COULD NOT BE FIXED: "nothing here can change
+  // that without being able to get in, which is the thing at issue." That is
+  // true of ssh and false of this app, and the difference is the channel -- an
+  // agent already runs on the machine and already executes what this host sends
+  // it. The way in was there the whole time; nothing had thought to use it.
+  //
+  // IT GRANTS NOTHING NEW, and that is why it can be a button. This host can
+  // already run any command on that machine as that user, through the channel it
+  // is talking on to do this. What changes is which door -- a second one, to the
+  // same room, for the tools that only know how to knock on that one.
+  vmAuthorizeKey: {
+    about: "Put this app's ssh key on a machine, so terminals and VS Code can reach it",
+    takes: ['name'],
+    run: async ({ name }) => {
+      const vm = vms.get(name)
+      if (!ssh.have()) throw new Error('This app has no ssh key of its own yet. Make one with sshKeyMake first.')
+
+      const pub = String(ssh.publicKey() || '').trim()
+      if (!pub) throw new Error('This app\'s ssh key has no public half that can be read, so there is nothing to authorise.')
+      // It is going into a shell command. A key is base64 and a comment and has
+      // never contained one of these, which is exactly the assumption worth
+      // checking rather than relying on.
+      if (pub.includes("'") || pub.includes('\n')) throw new Error('That public key has a quote or a newline in it, which is not a key this will send anywhere.')
+
+      if (!channel.connected(name)) {
+        throw new Error(`"${name}" is not dialled in, so there is no way to put a key on it. Start it and wait for it to connect — the agent is what does this, which is the whole reason it can be done at all.`)
+      }
+
+      // WRITTEN ONLY IF IT IS NOT THERE. Running this twice must not leave two
+      // copies of one key in the file, and a file that grows by a line every
+      // time somebody presses a button is a file nobody can read later.
+      const done = await channel.run(name, [
+        'umask 077',
+        'mkdir -p "$HOME/.ssh"',
+        'touch "$HOME/.ssh/authorized_keys"',
+        'chmod 700 "$HOME/.ssh" && chmod 600 "$HOME/.ssh/authorized_keys"',
+        `if grep -qxF '${pub}' "$HOME/.ssh/authorized_keys"; then`,
+        '  echo okc-key-was-already-there',
+        'else',
+        `  printf '%s\\n' '${pub}' >> "$HOME/.ssh/authorized_keys"`,
+        '  echo okc-key-added',
+        'fi',
+        'echo okc-keys-now $(grep -c . "$HOME/.ssh/authorized_keys")'
+      ].join('\n'), { what: "authorising this app's ssh key on it" })
+
+      const said = String(done.output || '')
+      if (!/okc-key-added|okc-key-was-already-there/.test(said)) {
+        throw new Error(`It did not say whether the key was written: ${said.trim().slice(-200)}`)
+      }
+      const added = /okc-key-added/.test(said)
+
+      // AND THE REGISTRY LEARNS IT, because that is what `vmShell` reads to
+      // decide whether to offer this key -- and a machine that accepts it while
+      // the record says otherwise gets the same "try everything" ssh that failed
+      // before. The two have to agree or the repair is invisible.
+      vms.update(name, { spec: { ...(vm.spec || {}), sshKey: pub } })
+
+      log.on('vm', name).good(added
+        ? "this app's ssh key is now authorised on it — terminals and VS Code can reach it"
+        : "this app's ssh key was already authorised on it; the record now says so too")
+
+      return {
+        name,
+        added,
+        keys: Number((said.match(/okc-keys-now (\d+)/) || [])[1] || 0) || null,
+        note: added
+          ? `${name} now lets this app's ssh key in. Nothing was granted that this host did not already have — the channel it was told over runs commands on it as the same user.`
+          : `${name} already had it. What changed is the record, which is what decides whether ssh is even offered the key.`
+      }
+    }
+  },
+
   vmShell: {
     about: 'How to ssh into a machine — the way in when its agent has stopped answering',
     takes: ['name'],

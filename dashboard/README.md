@@ -405,15 +405,37 @@ afterwards takes the LAST `result` line instead of parsing the whole file, and
 still accepts the old single-object shape, so a run started before this reads
 exactly as it did.
 
-**Watch it** on a task or a judgement opens a terminal on the machine and follows
-that run:
+**A tab opens by itself, named after the sign-in.** A machine that comes up gets
+a console tab without being asked; a Claude identity that goes out to work gets a
+tab showing the work. It is named `runner1` or `supervisor1` — the names on the
+Claude guest and Claude supervisor lists — because that is what is being
+watched: the identity spending the tokens. Which machine is carrying it changes
+every task and is on the tab's hover.
 
-    ~/.okc-runs/<run>/okc-watch
+One tab per identity, reused. The far end follows a link on the machine rather
+than a run, so the same tab shows the next piece of work without being reopened.
+Closing one is remembered, so the draw loop does not reopen it four seconds
+later; it comes back when that sign-in next goes out.
+
+**Watch it** on a task, a judgement or the supervisor does the same thing on
+purpose rather than by itself:
+
+    ~/.okc-runs/<run>/okc-watch      one run, kept with the run
+    ~/.okc-runs/okc-watch            whichever run is happening now
+    ~/.okc-supervisor/okc-watch      the supervisor's turns
 
 Which is a real shell, not a viewer. It prints what the worker said, what it
 reached for, and what came back -- and Ctrl-C stops the watching and leaves a
 person on the machine, in the run's own directory, which is where they wanted to
 be if what they saw was worth stopping for. **Nothing there can touch the run.**
+
+**A machine has to let ssh in for any of that to work**, and the ones built
+before this app had a key of its own do not: their `authorized_keys` is empty, so
+the Terminal tab, VS Code and the back door all fail with "Too many
+authentication failures" — which sounds like a key being rejected and is a
+machine with no keys to reject. `vmAuthorizeKey` puts this app's key there over
+the channel. It grants nothing new: the channel it is sent over already runs any
+command on that machine as that user.
 
 Three commands are written into every run's directory and put on its PATH, and
 they are the whole of what a run can say to this host:

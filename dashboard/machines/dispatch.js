@@ -137,6 +137,21 @@ function script ({ id, task, folder, contract, contractName, contractId, resume,
 
   return `set -u
 mkdir -p ${dir}
+
+# WHICHEVER RUN IS THE ONE HAPPENING NOW, under a name that does not change.
+#
+# A run's directory is named after the run, which is right for the record and
+# useless for watching: something that wants to SEE the work has to know an id
+# that did not exist a moment ago, and has to be told again for the next one.
+#
+# So the box gets a link, moved at the start of every run, and one watcher beside
+# it that follows through the link. A terminal opened on this machine at any
+# moment shows whatever it is doing now, and goes on showing the next thing --
+# which is what a person watching actually wants, and is the same arrangement the
+# supervisor's turns use.
+ln -sfn ${dir} ${RUNS}/current
+${watcherFor(RUNS, `${RUNS}/current/out.log`)}
+
 cd ${q(folder)} 2>/dev/null || cd "$HOME"
 
 # The task as written, byte for byte, so what was asked can be read back later

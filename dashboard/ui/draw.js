@@ -39,6 +39,11 @@ async function drawOnce () {
   // having whatever tab somebody is on — and this is the one place that already
   // knows what every machine is doing. See mindConsoles in ui/terminal.js.
   mindConsoles(list)
+  // AND A WINDOW ONTO WHATEVER CLAUDE IS DOING, on the same principle: a machine
+  // that comes up gets a console tab without being asked, and a sign-in that
+  // goes to work gets a tab showing the work. Named after the identity rather
+  // than the machine — see mindClaudeStreams in ui/terminal.js.
+  mindClaudeStreams(list, busyMachines)
   latest.credentialsHeld = held
   queueSays = new Map((running.machines || []).map(m => [m.name, m]))
   queueBusy = new Map((running.inFlight || []).map(f => [f.machine, f.task]))

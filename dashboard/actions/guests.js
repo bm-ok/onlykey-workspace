@@ -18,7 +18,7 @@ const handover = require('../core/handover')
 // backup can be restored somewhere else. See core/portable.js.
 const portable = require('../core/portable')
 const s = require('./shared')
-const { log, vms, channel, fs, path } = s
+const { log, vms, channel, dispatch, fs, path } = s
 
 module.exports = {
   guests: {
@@ -134,10 +134,22 @@ module.exports = {
       // SEALED TO A KEY THIS MACHINE MAKES WHILE WE WAIT. It used to travel as a
       // base64 argument on a command line, which is `ps` output to every user on
       // that machine and a line in a shell history. See core/handover.js.
+      // AND THE MEANS TO WATCH WHAT IT DOES WITH IT, in the same round trip.
+      //
+      // A sign-in landing on a machine is the moment that machine becomes worth
+      // watching, and it is the moment the window opens a tab for it -- so what
+      // that tab runs has to be there already. Which box depends on what the
+      // machine is FOR: a supervisor's turns and a runner's runs are written by
+      // different halves of this app into different directories, and each has
+      // its own link to whatever is current.
+      const box = isSupervisor ? dispatch.SUPERVISOR : dispatch.RUNS
+      const log = isSupervisor ? `${box}/current.log` : `${box}/current/out.log`
+
       const done = await handover.deliver({
         run: (command, opts) => channel.run(machine, command, opts),
         text,
-        what: `lending it the Claude guest "${name}"`
+        what: `lending it the Claude guest "${name}"`,
+        andThen: dispatch.watcherFor(box, log)
       })
 
       // AND WHAT LANDED IS WHAT WAS SENT, asked by fingerprint — the same sixteen
