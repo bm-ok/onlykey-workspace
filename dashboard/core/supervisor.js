@@ -164,6 +164,25 @@ const MAY = {
   judgementQueue: 'put a judgement in the queue — it goes ahead of tasks, because it reads work already waiting',
   judgementUnqueue: 'take a judgement back out of the queue',
 
+  // ---- AND WHAT IT IS IN THE MIDDLE OF ------------------------------------
+  //
+  // A supervisor is woken, reads, decides and stops, carrying one bookmark
+  // across. That is enough while a decision finishes inside one waking, and this
+  // flow does not: an issue becomes a judgement, becomes a line, becomes a task,
+  // becomes another judgement. Six wakings before anything lands.
+  //
+  // Without somewhere to put it, every waking re-derives where it had got to by
+  // reading the board and guessing, and a guess about "did I already ask for
+  // that" is how one judgement gets queued twice.
+  //
+  // THE NOTEBOOK HOLDS THE INTENT; THE STORES HOLD THE TRUTH. "triage" resolves
+  // each entry against the records and says which of the things it was waiting
+  // on have finished, so "still running" and "the answer is sitting there" stop
+  // looking identical from its own notes.
+  triage: 'what you are in the middle of, and which of those things finished while you were away',
+  triageSet: 'write down what you are waiting on and why, so the next waking knows what you already asked for',
+  triageForget: 'stop carrying something. Nothing about the task or judgement itself is touched',
+
   // ---- and what it may PROPOSE ---------------------------------------------
   //
   // A supervisor that can only write tasks under definitions somebody else wrote

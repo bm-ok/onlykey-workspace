@@ -79,6 +79,8 @@ Object.assign(actions,
   // What is waiting for a machine, of whichever kind. Its own file because a
   // judgement queues exactly as a task does — see the head of it.
   require('./actions/queue'),
+  // What the supervisor is in the middle of, and what has finished since.
+  require('./actions/triage'),
   require('./actions/repos'),
   // Talking to the supervisor, and it talking back. See core/chat.js.
   require('./actions/chat'),

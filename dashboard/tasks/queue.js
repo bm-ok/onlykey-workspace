@@ -54,6 +54,8 @@ const judging = require('./judging')
 // What a judgement hands back, which is the only way it can say anything: it may
 // not push to what it is reading.
 const files = require('./files')
+// What a judgement was read against, for the record it leaves behind.
+const judgements = require('../repos/judgements')
 const channel = require('../machines/channel')
 // One machine coming up at a time, across the whole host — see bringUp below.
 const busy = require('../machines/busy')
@@ -321,6 +323,28 @@ async function runJudgement (actions, log, judgement, machine) {
     // rolled back, which is exactly when nobody is watching.
     const handed = files.list(judgement.uid) || []
 
+    // WHAT IT CONCLUDED, AND WHAT IT READ, both taken now.
+    //
+    // A judge ends its answer with one line — `RECOMMENDATION: accept|reject`,
+    // or `CLAIM: true|false|unclear` — and that line is what everything
+    // downstream turns on: whether there is work, and whether a change may be
+    // sent out. Read from the file the judge actually handed back rather than
+    // from anything the run reported about itself, because the file is what a
+    // person will read too, and two accounts of one judgement is one too many.
+    //
+    // AND THE TIPS, so this judgement can say later whether it still describes
+    // what is there. A judgement made before another push is a judgement of
+    // something else, and without this it would read as current for ever.
+    let concluded = null
+    for (const f of handed) {
+      let text = ''
+      try { text = String((files.read(judgement.uid, f.file) || {}).text || '') } catch { continue }
+      const m = text.match(/^\s*(RECOMMENDATION|CLAIM):\s*(accept|reject|true|false|unclear)\s*$/mi)
+      if (m) { concluded = m[2].toLowerCase(); break }
+    }
+    const read = judgements.tipsFor(judgement.subject)
+    if (concluded) to.info(`${ref} concluded: ${concluded}`)
+
     spent.total = Date.now() - began
     const latest = judging.get(id)
     const marked = (latest.attempts || []).map(a => a.run === started.run ? { ...a, spent } : a)
@@ -329,7 +353,16 @@ async function runJudgement (actions, log, judgement, machine) {
     // that ran and said nothing is a real and useful thing to see: it is the
     // difference between "nobody has looked" and "somebody looked and would not
     // say". The verdict is recorded separately — see judgementVerdict.
-    judging.update(id, { state: 'done', attempts: marked, read: new Date().toISOString() })
+    judging.update(id, {
+      state: 'done',
+      attempts: marked,
+      read: new Date().toISOString(),
+      // NOT A VERDICT. `concluded` is what the judge recommends; the verdict is
+      // recorded by a person, and a supervisor has no tool for either. Kept
+      // apart in the record for the same reason they are kept apart in the flow.
+      concluded: concluded || null,
+      tips: read
+    })
 
     to[handed.length ? 'good' : 'warn'](
       `${ref} done — ${outcome.state}${outcome.exit === undefined ? '' : ` (exit ${outcome.exit})`} — ${handed.length ? `${handed.length} file(s) handed back` : 'nothing handed back'}`)
@@ -393,6 +426,47 @@ async function run (actions, log, task, machine) {
       // dialling in and naming it. See the hello handler in server.js.
       task: store.noteFor(task)
     }))
+
+    // ---- the judge's report goes onto the machine with it -------------------
+    //
+    // A worker's job is to SATISFY THE JUDGE, and it cannot do that if it has
+    // never seen what the judge said. The supervisor quotes the finding in the
+    // brief, which is necessary and is not enough: a finding is usually a page,
+    // with file names and quoted lines in it, and a brief is a paragraph.
+    //
+    // So whatever the judgement handed back is written into the working folder
+    // beside the repositories, under its own name. Not inside a repository —
+    // the folder root is not a git repository, so nothing here can be committed
+    // by accident, and `ls` shows it immediately.
+    //
+    // ONLY THE JUDGEMENT THIS TASK CAME FROM. Every judgement ever made would be
+    // a filing cabinet; the one that established this work is real is the one
+    // the work has to answer.
+    if (task.becauseOfId) {
+      try {
+        const from = judging.get(task.becauseOfId)
+        const papers = files.list(from.uid) || []
+        for (const f of papers) {
+          const body = files.read(from.uid, f.file)
+          if (!body || typeof body.text !== 'string') continue
+          const called = `${from.ref}-${f.file}`.replace(/[^A-Za-z0-9._-]/g, '-')
+          const b64 = Buffer.from(body.text, 'utf8').toString('base64')
+          await channel.run(machine,
+            `cd ~/workspace 2>/dev/null || cd ~; printf %s '${b64}' | base64 -d > ${JSON.stringify(called)}`,
+            { what: `putting ${from.ref}'s report where the worker will find it`, timeout: 60000 })
+          to.info(`${from.ref} said ${f.file} — left on ${machine} as ${called}`)
+        }
+        if (!papers.length) {
+          // SAID, because it changes what the worker can do. A task written from
+          // a judgement that handed nothing back is a task working from the
+          // brief alone, and somebody should know that is what happened.
+          to.warn(`${from.ref} handed nothing back, so #${task.number} has only its brief to go on`)
+        }
+      } catch (e) {
+        to.warn(`could not put the judge's report on ${machine}: ${e.message}`)
+      }
+    }
+
     // A TASK THAT NAMES A JOB RUNS THAT JOB.
     //
     // It did not, and nothing said so. The job was stored on the task, shown on

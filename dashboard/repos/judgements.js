@@ -64,6 +64,40 @@ function staleAgainst (judgement, tips) {
   return false
 }
 
+// ---- what a judgement was read against -------------------------------------
+//
+// Lives here rather than in the action that first needed it, because three
+// callers need the same answer and a second copy would be a second opinion: the
+// action that records a verdict, the queue when a reading run finishes, and the
+// gate in front of sending a change out. If they disagreed about what a
+// judgement read, "is this judgement still current" would have three answers.
+//
+// Two ways of asking, because the two subjects are different questions. A PR cut
+// knows its own repositories — `prtemplate.about` walks the pairs it is made of
+// and returns a tip each. A branch cut is wherever that branch exists, which is
+// what `headsIn` answers per repository.
+function tipsFor (subject) {
+  const out = {}
+  if (!subject) return out
+  const branches = require('./branches')
+  const serve = require('./serve')
+
+  if (subject.kind === 'cut') {
+    let context = null
+    try { context = require('./prtemplate').about(subject.source, subject.target) } catch { context = null }
+    for (const r of (context ? context.repos : [])) out[r.repo] = r.tip
+    return out
+  }
+
+  for (const r of serve.list()) {
+    try {
+      const heads = branches.headsIn(serve.gitDirOf(r.name)) || {}
+      if (heads[subject.branch]) out[r.name] = heads[subject.branch]
+    } catch { /* a repository that cannot be read is one this cannot claim to have read */ }
+  }
+  return out
+}
+
 // ---- writing one down ------------------------------------------------------
 //
 // APPENDED, NEVER REPLACED — the rule at the top of this file, made into the
@@ -100,4 +134,4 @@ function add (source, target, judgement) {
   return one
 }
 
-module.exports = { all, on, key, add, staleAgainst, FILE }
+module.exports = { all, on, key, add, tipsFor, staleAgainst, FILE }

@@ -37,6 +37,8 @@ const tasks = require('../tasks/store')
 // reaches are kept against a cut in repos/judgements.js above. See the head of
 // tasks/judging.js for why those are two files.
 const judging = require('../tasks/judging')
+// What the supervisor is in the middle of, across wakings. See core/triage.js.
+const triage = require('../core/triage')
 const artifact = require('../tasks/artifact')
 const prompts = require('../tasks/prompts')
 const jobs = require('../tasks/jobs')
@@ -364,7 +366,7 @@ async function supervisorMachine (name) {
 module.exports = {
   whoAsked, supervisorMachine,
   log, events, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, judgements,
-  vbox, vms, provisioner, scripts, channel, tasks, judging, artifact,
+  vbox, vms, provisioner, scripts, channel, tasks, judging, triage, artifact,
   archive, files, sessions, prompts, contracts, jobs, jobrun, harness, suites, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace,
   fs, path, https,

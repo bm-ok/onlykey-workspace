@@ -17,7 +17,7 @@ const actions = require('./table')
 const s = require('./shared')
 const {
   log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements, settings,
-  vbox, vms, provisioner, scripts, channel, tasks, artifact,
+  vbox, vms, provisioner, scripts, channel, tasks, judging, artifact,
   archive, files, prompts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,
@@ -390,6 +390,46 @@ module.exports = {
         if (!art.missing && !art.noBase && art.ahead > 0) carrying.push({ repo, head, base, ahead: art.ahead })
       }
       if (!carrying.length) throw new Error(`"${pair.source.name}" carries nothing that "${pair.target.name}" does not already have.`)
+
+      // ---- EVERYBODY GREEN BEFORE A CHANGE GOES OUT ------------------------
+      //
+      // Three of them work on a change: a supervisor decides it is worth doing,
+      // a worker does it, and a judge reads what came back. Sending it out is
+      // the moment all three have to agree — so over the wire this refuses
+      // unless a judgement of THIS line has finished, still describes what is
+      // there, and did not come back rejected.
+      //
+      // A SUPERVISOR CANNOT SEE THE CODE. Without this, the one step where a
+      // change leaves this host and reaches somebody else's repository would be
+      // the only step it takes on nothing but its own confidence.
+      //
+      // STILL DESCRIBES WHAT IS THERE is half the check and the easier half to
+      // forget: a judgement made before the last push is a judgement of
+      // something else, and a supervisor that judged, pushed a fix, and then
+      // sent it out would be showing a green light from a different change.
+      //
+      // NOT AT THE WINDOW. A person sending a change out has read it, or has
+      // decided they need not — the same boundary as approving a job.
+      if (a._overTheWire) {
+        const subject = { kind: 'branch', branch: pair.source.name }
+        const now = judgements.tipsFor(subject)
+        const mine = judging.all().filter(j =>
+          j.state === 'done' && j.subject && j.subject.kind === 'branch' && j.subject.branch === pair.source.name)
+
+        if (!mine.length) {
+          throw new Error(`Nothing has judged "${pair.source.name}", so there is no reading of this change but your own — and you cannot see the code. Ask for a judgement of it, read what it handed back, and send it out when a judge has looked.`)
+        }
+
+        const current = mine.filter(j => !judgements.staleAgainst(j, now))
+        if (!current.length) {
+          throw new Error(`Every judgement of "${pair.source.name}" was made before the last push, so none of them describes what is there now. Judge it again — a judgement of an earlier state is exactly as useful as none.`)
+        }
+
+        const latest = current[current.length - 1]
+        if (latest.concluded === 'reject' || latest.verdict === 'rejected') {
+          throw new Error(`${latest.ref} read "${pair.source.name}" and came back "${latest.concluded || latest.verdict}". Fix what it found and have it judged again — a change goes out when the judge is satisfied, not when it has been asked twice.`)
+        }
+      }
 
       const said = String(title || '').trim() || pair.source.name
       // WHAT SOMEBODY TYPED, PLUS WHAT THIS APP ALREADY KNOWS. The blocks that
