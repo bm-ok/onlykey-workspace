@@ -210,13 +210,50 @@ async function workFolder (name, where) {
 // Hence `usable` is true/false/null and not a boolean: false is knowledge, true
 // is only the absence of one kind of bad news, and the definitive answer comes
 // from a machine trying it.
+// WHAT WAS READ LAST TIME, KEYED TO THE FILE AS IT WAS THEN.
+//
+// UNSEALING IS EXPENSIVE AND THIS IS ON THE DRAW LOOP. `secret.read` goes
+// through DPAPI, which means starting PowerShell -- about two hundred
+// milliseconds, once per credential this host holds. The window asks
+// `credentialsHeld` every few seconds to draw a sign-in line and a badge, so an
+// idle dashboard was launching a PowerShell per guest per draw: measured at
+// 481ms and two processes, the slowest thing in an idle trace, to answer a
+// question whose answer had not changed.
+//
+// KEYED ON THE FILE'S OWN mtime AND SIZE rather than on a timer. A credential's
+// life changes when the credential changes, and when it changes the file
+// changes -- rotation writes it, taking one back writes it, signing in writes
+// it. So this cannot go stale in the way a time-based cache can: there is no
+// window during which the file is new and the answer is old.
+//
+// The expiry arithmetic is still done fresh every call, because "how long is
+// left" moves without anything being written. Only the UNSEALING is cached.
+const lifeCache = new Map()
+
 function credentialLife (file) {
   let oauth = null
+
+  let stamp = null
   try {
-    const parsed = JSON.parse(secret.read(file).toString('utf8'))
-    oauth = parsed.claudeAiOauth || parsed
-  } catch {
-    return { readable: false, why: 'the stored credential could not be read or is not the shape this knows' }
+    const st = fs.statSync(file)
+    stamp = `${st.mtimeMs}:${st.size}`
+  } catch { /* it may not exist; the read below says so properly */ }
+
+  const had = stamp ? lifeCache.get(file) : null
+  if (had && had.stamp === stamp) {
+    oauth = had.oauth
+  } else {
+    try {
+      const parsed = JSON.parse(secret.read(file).toString('utf8'))
+      oauth = parsed.claudeAiOauth || parsed
+      if (stamp) lifeCache.set(file, { stamp, oauth })
+    } catch {
+      // NOT CACHED. A file that could not be read may be mid-write, and
+      // remembering "unreadable" against an mtime would keep saying so after it
+      // became readable at the same mtime -- which is a thing that happens when
+      // a write finishes within the same millisecond.
+      return { readable: false, why: 'the stored credential could not be read or is not the shape this knows' }
+    }
   }
 
   const at = Number(oauth.expiresAt) || null
