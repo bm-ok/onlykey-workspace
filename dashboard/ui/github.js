@@ -269,82 +269,14 @@ function paintAppKeys () {
 // Now: a free machine is borrowed, brought up at its base snapshot, signed in,
 // emptied and put away. Nothing is chosen because there is nothing worth
 // choosing, and no machine is left carrying anything.
-// Settling it now, rather than a task finding out.
-function testCredentials () {
-  const free = (queueSays.size ? [...queueSays.values()] : []).filter(m => m.free)
-  ask({
-    title: 'Test the worker credential',
-    plain: [
-      'A free machine is borrowed and brought up clean, handed this host\'s credential, and asked whether its worker can actually authenticate.',
-      'The credential is taken back off it and the machine is put away afterwards, whatever the answer — a test that leaves a credential on a disk has silently blocked that machine\'s next snapshot.',
-      'The answer is kept here, so nothing has to ask again until the credential changes.',
-      free.length
-        ? `Free right now: ${free.map(m => m.name).join(', ')}.`
-        : 'Nothing is free at the moment, so this will refuse and say why.'
-    ],
-    cost: 'It takes a minute or two to bring a machine up.',
-    confirm: 'Test it',
-    onYes: async () => {
-      const r = await api('credentialsTest', {})
-      forget('keys')
-      say(r.note, r.ready === false ? 'bad' : undefined)
-      return draw()
-    }
-  })
-}
-
-function getCredentials () {
-  ask({
-    title: 'Get Claude Code credentials',
-    plain: [
-      'A free machine is borrowed and brought up clean, it signs in, this host keeps what it gets, and the machine is put away with nothing left on it.',
-      'You will get an address to visit; the machine holds the sign-in open until you bring the code back.',
-      'The queue will not touch that machine while this is going on.'
-    ],
-    cost: 'It takes a minute or two to bring a machine up before there is anything to visit.',
-    confirm: 'Start the sign-in',
-    onYes: async () => {
-      const started = await api('credentialsBegin', {})
-      // A second dialog rather than a field on the first, because the address
-      // does not exist until a machine has been brought up and asked -- and a
-      // form that asks for a code before there is anything to get one from is a
-      // form nobody can fill in.
-      askForCode(started.name, started.url)
-    }
-  })
-}
-
-function askForCode (name, url) {
-  ask({
-    title: `Sign ${name} in`,
-    plain: [
-      'Open the sign-in page, approve it, and paste back what it gives you.',
-      `${name} is holding the sign-in open until you do — it is waiting on that page, not on this window.`
-    ],
-    link: url,
-    fields: [{ name: 'code', label: 'The code from that page', placeholder: 'paste it here' }],
-    confirm: 'Finish signing in',
-    // GIVING UP HAS TO HAND THE MACHINE BACK, or abandoning a sign-in leaves a
-    // borrowed runner out of the pool with nobody using it — the exact failure
-    // borrowing was meant to stop being possible.
-    extra: {
-      label: 'Give up',
-      onClick: () => api('vmAuthCancel', { name })
-        .catch(() => { /* it may never have started; the machine still goes back */ })
-        .then(() => api('vmReturn', { name }))
-        .then(() => say(`the sign-in on ${name} was abandoned, and ${name} is back in the pool`))
-        .catch(oops)
-    },
-    onYes: async f => {
-      if (!f.code) throw new Error('Paste the code from the sign-in page.')
-      // One call: the code, the credential taken, and the machine put away
-      // clean. Three steps somebody used to have to remember, in the order that
-      // leaves nothing behind.
-      const done = await api('credentialsFinish', { name, code: f.code })
-      say(done.note)
-      showTab('keys')
-      paintKeys()
-      return done
-    }
-  })
-}
+// ---- the Claude credential dialogs are not here any more --------------------
+//
+// Two of them stood here: one that borrowed a machine to sign a worker in, and
+// one that tested the credential by handing it to a machine. Both were driven
+// from the Keys tab, which is a signpost now, and both are the wrong shape.
+//
+// Every Claude sign-in happens at the DESK — a user that exists for nothing else,
+// on the one supervisor machine — see actions/credentials.js. Signing in no
+// longer costs a runner, and asking for a login URL cannot disturb the credential
+// a supervisor is working with. The dialogs that do it live in ui/guests.js,
+// beside the list the credential ends up in.

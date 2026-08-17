@@ -470,7 +470,10 @@ stage_user toolchain-user.sh; report_stage "the user's toolchain" $?
 # of it, because deciding what work to give needs nothing else.
 if [ "${OKC_SUPERVISOR:-no}" = yes ]; then
   say 'this machine is a supervisor, so the project setup is skipped -- it takes no tasks'
+  # The user half first: the desk's profile points at the claude it installs, so
+  # the root half has something to point at.
   stage_user supervisor-user.sh; report_stage 'the supervisor setup' $?
+  stage supervisor.sh;           report_stage 'the sign-in desk' $?
 else
   stage extra.sh;          report_stage "this project's extra setup" $?
   stage_user extra-user.sh;    report_stage "this project's extra user setup" $?

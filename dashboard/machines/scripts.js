@@ -70,6 +70,13 @@ const STAGES = {
   // project's: Claude Code, and nothing else. A supervisor is a machine this app
   // knows the purpose of — it decides what work to give and asks the dashboard
   // for it — so what it needs is not a project's business.
+  //
+  // Two halves, root and user, for the same reason every other stage is split:
+  // making a user is root's, and installing something under nvm is the user's.
+  // The root half builds the SIGN-IN DESK — a second user whose only job is to
+  // hold a sign-in conversation, so asking for a login URL never touches the
+  // credential the supervisor is working with. See provision/supervisor.sh.
+  supervisor: 'supervisor.sh',
   supervisorUser: 'supervisor-user.sh',
   // Not shell, and served without a header for that reason -- its values arrive
   // through the service unit first-boot.sh writes for it.

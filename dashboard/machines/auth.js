@@ -154,4 +154,37 @@ function read (output) {
   }
 }
 
-module.exports = { begin, code, cancel, read, DIR }
+// ---- and none of it ever runs as the machine's own user ---------------------
+//
+// A sign-in writes ~/.claude/.credentials.json for whoever runs it. On a
+// supervisor that user is holding the credential the machine is THINKING with,
+// so asking for a fresh login URL as that user would overwrite it mid-thought:
+// the act of getting a new credential would destroy the one in use.
+//
+// So a supervisor machine has a second user — the sign-in desk, made by
+// provision/supervisor.sh — whose only job is to hold this conversation. Its
+// home is its own, its ~/.claude is its own, and everything above happens there.
+//
+// THROUGH BASE64, WHICH IS NOT DECORATION. The scripts above are full of quotes,
+// pipes, `$(...)` and a fifo; wrapping them in `sudo -u desk bash -c '...'`
+// means quoting all of that a second time, and this file has already paid once
+// for a pattern that matched itself. Base64 has no metacharacters, so the script
+// crosses unchanged and the shell that runs it is the desk's own.
+//
+// `-H` so HOME is the desk's, which is the entire point. `-n` so it fails rather
+// than waiting for a password nobody is there to type.
+// `-l` as well as `-s`: a login shell, so the desk's own profile is read. Without
+// it the script runs with whatever PATH sudo hands over, and the sign-in came
+// back "claude: command not found" from a user that could run it by absolute
+// path perfectly well. The provisioning also links claude into /usr/local/bin,
+// so this is the second of two answers to the same question rather than the only
+// one.
+const asDesk = (script, desk) =>
+  `printf %s ${q(Buffer.from(script, 'utf8').toString('base64'))} | base64 -d | sudo -n -u ${q(desk)} -H bash -ls`
+
+// The desk's own copy of the paths above. `$HOME` in the scripts is expanded by
+// the shell the desk runs, so it is already right — this is for the caller that
+// has to read a credential out of the desk's home from outside it.
+const deskHome = desk => `/home/${desk}`
+
+module.exports = { begin, code, cancel, read, asDesk, deskHome, DIR }

@@ -114,7 +114,9 @@ function identityPanel (g, machines, pane) {
 
     el('div', { className: 'row', style: 'margin-top:10px' },
       !pane.lendable
-        ? el('span', { className: 'muted', textContent: 'A supervisor is never handed to a machine. Lending it would let a worker spend the identity that decides what workers do.' })
+        ? el('span', { className: 'muted', textContent: g.holder
+            ? `${g.holder} is signed in as this, and keeps it: a supervisor is never rolled back, so nothing takes it away.`
+            : 'A supervisor sign-in belongs on a supervisor machine, and on no other. Sign one in below.' })
         : g.holder
           ? el('button', {
               className: 'btn small',
@@ -292,5 +294,69 @@ const askForIdentity = pane => ask({
   }
 })
 
-$('add-guest-open').onclick = () => askForIdentity(IDENTITY_PANES.guests)
-$('add-sup-open').onclick = () => askForIdentity(IDENTITY_PANES.supervisors)
+// ---- getting one, which is a conversation with a person in the middle -------
+//
+// EVERY CLAUDE SIGN-IN HAPPENS AT THE DESK. That is a second user on the one
+// supervisor machine, and it exists so that asking for a login URL cannot touch
+// the credential the supervisor is working with — see actions/credentials.js.
+// It costs no runner and interrupts nothing.
+//
+// TWO DIALOGS, because the address does not exist until the desk has been asked
+// for one. A form that wanted the code first would be a form nobody could fill
+// in.
+//
+// PASTING ONE IN IS STILL THERE, as the other way out of the first dialog: a
+// token somebody already holds does not need a machine at all.
+const signInAtTheDesk = pane => ask({
+  title: pane.role === 'supervisor' ? 'Sign a supervisor in' : 'Sign a worker in',
+  plain: [
+    'The sign-in happens at the desk — a user on the supervisor machine that exists for nothing else. Nothing the supervisor is working with is touched by it.',
+    'You will get an address to visit; the desk holds the sign-in open until you bring the code back.',
+    pane.role === 'supervisor'
+      ? 'What comes back is kept here and put straight onto the supervisor machine, because that is the only place a supervisor sign-in may go.'
+      : 'What comes back is kept here, sealed, and handed to a machine when one is given work.'
+  ],
+  fields: [
+    { name: 'as', label: 'A name for it', placeholder: pane.role === 'supervisor' ? 'supervisor' : 'kit-1, spare', hint: 'Letters, digits, dash, dot and underscore. It is a filename and a label in a list.' },
+    { name: 'note', label: 'A note (optional)', placeholder: 'what this one is for' }
+  ],
+  confirm: 'Start the sign-in',
+  extra: { label: 'I already have a token', onClick: () => askForIdentity(pane) },
+  onYes: async f => {
+    if (!f.as || !f.as.trim()) throw new Error('Give it a name — a credential is kept under one.')
+    const started = await api('claudeSignIn', {})
+    askTheDeskForCode(started.name, started.url, pane, f)
+  }
+})
+
+function askTheDeskForCode (machine, url, pane, f) {
+  ask({
+    title: `Sign "${f.as}" in`,
+    plain: [
+      'Open the sign-in page, approve it, and paste back what it gives you.',
+      `The desk on ${machine} is holding the sign-in open until you do — it is waiting on that page, not on this window.`
+    ],
+    link: url,
+    fields: [{ name: 'code', label: 'The code from that page', placeholder: 'paste it here' }],
+    confirm: 'Finish signing in',
+    // GIVING UP CANCELS THE CONVERSATION AND NOTHING ELSE. No machine was
+    // borrowed to hold it, so there is nothing to give back — which is the whole
+    // difference between this and the sign-in it replaced.
+    extra: {
+      label: 'Give up',
+      onClick: () => api('claudeSignInCancel', { name: machine })
+        .then(said => say(said.note))
+        .catch(() => { /* it may never have started */ })
+    },
+    onYes: async got => {
+      if (!got.code) throw new Error('Paste the code from the sign-in page.')
+      const done = await api('claudeSignedIn', { name: machine, code: got.code, as: f.as.trim(), role: pane.role, note: f.note })
+      pane.set(done.guest)
+      say(done.note, 'good')
+      draw()
+    }
+  })
+}
+
+$('add-guest-open').onclick = () => signInAtTheDesk(IDENTITY_PANES.guests)
+$('add-sup-open').onclick = () => signInAtTheDesk(IDENTITY_PANES.supervisors)

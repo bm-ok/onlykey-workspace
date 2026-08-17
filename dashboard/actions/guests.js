@@ -81,20 +81,28 @@ module.exports = {
       const guest = guests.get(name)
       if (!guest) throw new Error(`There is no guest called "${name}".`)
 
-      // BEFORE THE MACHINE IS EVEN LOOKED AT, and the order is the point.
+      // BEFORE THE MACHINE IS EVEN TOUCHED, and the order is the point.
       //
-      // core/guests.js refuses a supervisor as well, but it refuses at
+      // core/guests.js refuses a mismatched pair as well, but it refuses at
       // `lentTo` — which runs AFTER the credential has been written onto the
       // machine. So the throw would arrive with the token already on a disk and
       // nothing on this host recording that it is there: refused, and handed
       // over anyway. A drill found this by asking for a machine that does not
       // exist and being refused for that instead.
-      if (guest.role === 'supervisor') {
-        throw new Error(`"${name}" is a supervisor, not a guest. It is the sign-in this host works with; lending it to a machine would let a worker spend the identity that decides what workers do. Add a guest for the machine instead.`)
-      }
+      //
+      // The rule is that the ROLES MATCH: a supervisor sign-in belongs on a
+      // supervisor machine and nowhere else, and a worker's belongs on a runner.
+      // Asked of the one function that knows it, so the sentence is the same
+      // here as it is there.
+      const mine = vms.get(machine)
+      // From the TAG, which is what everything else reads and is answerable with
+      // the machine switched off. `vms.get` hands back the record rather than the
+      // computed row the window sees, so the tag is where the answer is.
+      const isSupervisor = (mine.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
+      const why = guests.whyNotOn(guest.role, isSupervisor, name, machine)
+      if (why) throw new Error(why)
 
       if (!guest.has) throw new Error(`"${name}" has no token file any more. It was removed by hand, or sealed by another account.`)
-      vms.get(machine)
       if (!channel.connected(machine)) throw new Error(`"${machine}" is not dialled in. Start it and wait for it to connect.`)
 
       // ONE MACHINE AT A TIME, which is the whole reason this list exists. A
@@ -119,7 +127,7 @@ module.exports = {
         throw new Error(`"${machine}" did not take the credential: ${String(said.output || '').slice(-200)}`)
       }
 
-      guests.lentTo(name, machine)
+      guests.lentTo(name, machine, { supervisor: isSupervisor })
       vms.update(machine, { holdsCredential: true, guest: name })
       log.on('vm', machine).warn(`${machine} is holding the Claude guest "${name}" — it cannot be snapshotted until that is taken back`)
       return { name, machine, note: `${machine} is signed in as "${name}". Take it back with guestBack before the machine is snapshotted or put away.` }

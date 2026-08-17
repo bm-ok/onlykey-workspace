@@ -147,17 +147,44 @@ function forget (name) {
 // machines: a machine that is switched off still has a credential on its disk,
 // and "which guest is on that machine" has to be answerable while it is off.
 
-function lentTo (name, machine) {
+// WHICH SIGN-IN MAY SIT ON WHICH MACHINE, and it is a rule about the PAIR.
+//
+// The first version of this refused a supervisor sign-in outright, wherever it
+// was going — which was right about workers and wrong about the one machine that
+// needs it. A supervisor MACHINE runs Claude Code to decide what work there is,
+// and it cannot do that signed out. What it must not be given is a worker's
+// identity, and what a worker must not be given is the supervising one.
+//
+// So the rule is that the roles match, in both directions:
+//
+//   supervisor sign-in on a supervisor machine     yes — it is what it is for
+//   supervisor sign-in on a runner                 no  — a worker spending the
+//                                                        identity that decides
+//                                                        what workers do
+//   worker sign-in on a supervisor machine         no  — it would take one out
+//                                                        of the pool the runners
+//                                                        draw from, and bill the
+//                                                        deciding to a worker
+//
+// Enforced at the one point that records a machine holding something, rather
+// than at each of the several places that hand one over.
+function whyNotOn (role, machineIsSupervisor, name, machine) {
+  const isSup = role === 'supervisor'
+  if (isSup && !machineIsSupervisor) {
+    return `"${name}" is a supervisor sign-in and ${machine} is a runner. Lending it there would let a worker spend the identity that decides what workers do — give the runner a guest instead.`
+  }
+  if (!isSup && machineIsSupervisor) {
+    return `"${name}" is a worker sign-in and ${machine} is a supervisor machine. A supervisor signs in as itself: it would otherwise hold one of the identities the runners draw from, and everything it decided would be billed to a worker.`
+  }
+  return null
+}
+
+function lentTo (name, machine, { supervisor = false } = {}) {
   const all = read()
   const i = all.findIndex(g => g.name === name)
   if (i < 0) throw new Error(`There is no guest called "${name}".`)
-  // A SUPERVISOR IS NOT LENT OUT. It is the sign-in this host decides work with,
-  // and a machine running as it would be a worker able to spend the identity that
-  // supervises workers. Refused at the one point that records a machine holding
-  // something, rather than at each of the several places that hand one over.
-  if (all[i].role === 'supervisor') {
-    throw new Error(`"${name}" is a supervisor, not a guest. It is the sign-in this host works with; lending it to a machine would let a worker spend the identity that decides what workers do. Add a guest for the machine instead.`)
-  }
+  const why = whyNotOn(all[i].role, supervisor, name, machine)
+  if (why) throw new Error(why)
   all[i] = { ...all[i], holder: machine, lastGiven: new Date().toISOString(), lastGivenTo: machine }
   write(all)
   return get(name)
@@ -220,4 +247,4 @@ function adoptTheOldOne (file, name = 'claude-code') {
   return made
 }
 
-module.exports = { all, get, add, forget, lentTo, backFrom, token, fingerprint, okName, adoptTheOldOne, ROOT, fileFor }
+module.exports = { all, get, add, forget, lentTo, backFrom, token, fingerprint, okName, adoptTheOldOne, whyNotOn, ROOT, fileFor }

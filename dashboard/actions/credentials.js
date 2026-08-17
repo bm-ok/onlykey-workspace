@@ -29,56 +29,185 @@ const {
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
 } = s
 
+// THE SIGN-IN DESK, and there is exactly one of them.
+//
+// A Claude sign-in writes ~/.claude/.credentials.json for whoever runs it. That
+// one sentence decides the whole shape of this:
+//
+//   NOT ON A RUNNER. Signing in used to borrow a clean machine, hold the
+//   conversation there, take the credential off it and put the machine away — a
+//   machine brought up, a person waited on, a machine put away, per credential.
+//   Every one of those steps could be interrupted, and the state it was
+//   interrupted in was "a runner left on, holding a live credential".
+//
+//   NOT AS THE SUPERVISOR'S OWN USER EITHER, which is the flaw this replaces. A
+//   supervisor RUNS as a credential; signing in again as that user would
+//   overwrite the one it is thinking with. Asking for a new login URL would be
+//   the thing that broke it.
+//
+// So a supervisor machine carries a second user — the DESK, made by
+// provision/supervisor.sh — whose only job is to hold sign-in conversations. Its
+// home is its own. Everything below happens there, whatever the credential is
+// eventually for, and the supervisor goes on working while it does.
+//
+// ONE MACHINE PROVIDES EVERY LOGIN URL. A worker's credential and a supervisor's
+// come off the same desk and differ only in what they are filed as.
+const DESK = 'okc-signin'
+
+const isSupervisorMachine = vm => (vm.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
+
+// Which supervisor machine has the desk, brought up if it is not already.
+//
+// STARTED RATHER THAN REFUSED, which is the difference between an instrument and
+// a checklist. Wanting a login URL is not a moment to be told to go and start a
+// machine first: the desk is a facility, the machine it lives on is an
+// implementation detail of that facility, and a supervisor is switched off most
+// of the time because nothing is asking it to think.
+//
+// It costs the boot — this machine dials in about ten seconds after it is
+// started — and it is said out loud, because a call that quietly takes a minute
+// looks like a call that has hung.
+//
+// ONE IS THE ORDINARY CASE. More than one is refused rather than guessed at,
+// because "whose desk signed this in" is a thing somebody will want to answer
+// later — unless exactly one of them is already up, which is an answer rather
+// than a guess.
+async function whichSupervisor (name) {
+  const all = vms.read().filter(isSupervisorMachine)
+  if (!all.length) {
+    throw new Error('There is no supervisor machine on this host, and the sign-in desk lives on one. Make a machine with the "Supervisor machine" box ticked.')
+  }
+
+  let pick = name
+  if (pick) {
+    const mine = vms.get(pick)
+    if (!isSupervisorMachine(mine)) {
+      throw new Error(`"${pick}" is a runner, and only a supervisor machine has a sign-in desk. Every Claude sign-in happens on one machine, as a user that exists for nothing else — a runner is handed a credential when it works and never asks for one.`)
+    }
+  } else if (all.length === 1) {
+    pick = all[0].name
+  } else {
+    const up = all.filter(v => channel.connected(v.name))
+    if (up.length !== 1) {
+      throw new Error(`There is more than one supervisor machine (${all.map(v => v.name).join(', ')}). Say which one should hold the sign-in.`)
+    }
+    pick = up[0].name
+  }
+
+  if (!channel.connected(pick)) {
+    log.on('vm', pick).info('starting it — the sign-in desk is on it')
+    await actions.vmStart.run({ name: pick })
+    await actions.vmAwait.run({ name: pick, for: 'connected', seconds: 240 })
+    log.on('vm', pick).good('it is up, and the desk is ready')
+  }
+  return pick
+}
+
 module.exports = {
-  // Signing a worker in, on a machine that is clean before and gone afterwards.
+  // ---- getting a Claude credential -----------------------------------------
   //
-  // It used to ask which RUNNING machine should sign in, and left the credential
-  // sitting on it -- taking it, forgetting it and putting the machine away were
-  // three more steps with nothing to remind anybody. So the ordinary outcome was
-  // a runner left on, holding a live credential, which is exactly the state the
-  // banner nags about.
-  //
-  // Two halves because there is a human in the middle: a page to visit and a
-  // code to bring back. The machine holds the sign-in open in between.
-  credentialsBegin: {
-    about: 'Borrow a clean machine and start signing a worker in on it',
-    takes: ['name'],
-    run: async ({ name }) => {
-      const borrowed = await actions.vmBorrow.run({ name, why: 'signing a worker in' })
-      const on = borrowed.name
-      try {
-        const started = await actions.vmAuthBegin.run({ name: on })
-        if (!started.url) {
-          throw new Error(started.why || 'it did not produce a sign-in address')
-        }
-        return { name: on, url: started.url, note: `${on} is holding the sign-in open. It is put away as soon as the credential is here.` }
-      } catch (e) {
-        await actions.vmReturn.run({ name: on }).catch(() => { /* said below */ })
-        log.on('vm', on).bad(`the sign-in did not start, so it was put away: ${e.message}`)
-        throw e
+  // Two halves, because there is a person in the middle: the desk prints an
+  // address, somebody visits it and approves, and a code comes back. Nothing
+  // here can do that half, and nothing should.
+  claudeSignIn: {
+    about: 'Get a Claude login URL from the sign-in desk. Every credential this host holds comes from there',
+    takes: ['name', 'wait'],
+    run: async ({ name, wait }) => {
+      const on = await whichSupervisor(name)
+      const started = await actions.vmAuthBegin.run({ name: on, wait })
+      if (!started.url) throw new Error(started.why || 'the desk did not produce a sign-in address')
+      return {
+        name: on,
+        url: started.url,
+        note: `The desk on ${on} is holding the sign-in open. Visit that address, approve it, and give the code back with claudeSignedIn. Nothing the supervisor is working with is touched by this.`
       }
     }
   },
 
-  credentialsFinish: {
-    about: 'Give the code back, keep the credential on this host, and put the machine away',
-    takes: ['name', 'code'],
-    run: async ({ name, code }) => {
-      // Throws on a code that did not work, and the machine is deliberately left
-      // BORROWED when it does: a sign-in is retryable, and putting the machine
-      // away would throw a half-finished one away with it. Giving up is the
-      // dialog's other button, and that is the one that returns it.
-      await actions.vmAuthCode.run({ name, code })
+  claudeSignedIn: {
+    about: 'Give the code back. The credential is kept here under a name, and the desk is left empty',
+    takes: ['name', 'code', 'as', 'role', 'note'],
+    run: async ({ name, code, as, role = 'guest', note = null }) => {
+      const on = await whichSupervisor(name)
+      const kind = role === 'supervisor' ? 'supervisor' : 'guest'
+      const called = String(as || '').trim()
+      if (!called) throw new Error('Say what to call it. A credential is kept under a name, and a list of "claude-code-2" is a list nobody can read six weeks later.')
+      if (guests.get(called)) throw new Error(`There is already a sign-in called "${called}". Pick another name, or throw that one away first.`)
 
-      const kept = await actions.vmCredentialsGrab.run({ name })
-      // putAway forgets the credential before it stops the machine, so nothing
-      // is left on that disk -- and the rollback would remove it regardless.
-      await actions.vmReturn.run({ name })
-      return {
-        name,
-        kept: kept.kept,
-        note: `The credential is on this host and ${name} is off, clean, and back in the pool.`
+      // Throws on a code that did not work, and nothing is undone when it does:
+      // a sign-in is retryable, and nothing was borrowed to hold it.
+      await actions.vmAuthCode.run({ name: on, code })
+
+      // OFF THE DESK AND INTO THE LIST. Read as the desk user, because the file
+      // is 0600 in the desk's home and the machine user is not it. base64 so a
+      // newline or a shell metacharacter cannot change what arrives, and so the
+      // value never appears as readable text in the live log.
+      const r = await channel.run(on,
+        `sudo -n -u ${DESK} -H bash -c 'base64 -w0 "$HOME/.claude/.credentials.json" 2>/dev/null || echo OKC_NO_CREDENTIAL'`,
+        { what: 'taking the credential off the sign-in desk', timeout: 60000 })
+      const b64 = String(r.output || '').split('\n').map(x => x.trim()).filter(Boolean).pop() || ''
+      if (!b64 || b64 === 'OKC_NO_CREDENTIAL') {
+        throw new Error(`The code was accepted and the desk on ${on} has no credential to take. The sign-in did not finish — start it again.`)
       }
+
+      const made = guests.add({
+        name: called,
+        token: Buffer.from(b64, 'base64').toString('utf8'),
+        role: kind,
+        from: `signed in at the desk on ${on}`,
+        note
+      })
+
+      // AND THE DESK IS LEFT EMPTY. It exists to hold a conversation, not a
+      // credential: one left there is a token on a machine's disk that nothing on
+      // this host is recording, which is the state this whole app is arranged to
+      // avoid. Done here rather than at the next sign-in, because "it will be
+      // cleaned up eventually" is how it is still there in six weeks.
+      // AND `.claude.json` GOES TOO, which the first version left behind.
+      //
+      // The credential is in `.claude/.credentials.json` and that was removed —
+      // but Claude Code also writes a config file beside it, and after a sign-in
+      // that file holds the account: the email address, the account uuid, when it
+      // was created, what it is billed as. Not a credential, and not nothing:
+      // it is who signed in, sitting on a machine's disk, in a home this host is
+      // not otherwise recording anything about.
+      //
+      // Found by looking rather than by assuming — the desk was reported empty
+      // and had 1,973 bytes of account in it.
+      await channel.run(on,
+        `sudo -n -u ${DESK} -H bash -c 'rm -rf "$HOME/.claude" "$HOME/.claude.json" "$HOME/.okc-auth"' && echo okc-desk-clear`,
+        { what: 'clearing the sign-in desk', timeout: 60000 }).catch(e => log.on('vm', on).warn(`the desk was not cleared: ${e.message}`))
+
+      log.on('keys').good(`a Claude ${kind} called "${called}" was signed in at the desk on ${on} — ${made.fingerprint}`)
+
+      // A SUPERVISOR SIGN-IN GOES STRAIGHT ONTO THE MACHINE THAT ASKED, because
+      // that is the only place it may go and the only reason it exists. A
+      // worker's is left in the list for the queue to hand out per task.
+      let lent = null
+      if (kind === 'supervisor') {
+        lent = await actions.guestLend.run({ name: called, machine: on })
+      }
+
+      return {
+        name: on,
+        guest: called,
+        role: kind,
+        fingerprint: made.fingerprint,
+        lentTo: lent ? on : null,
+        note: kind === 'supervisor'
+          ? `"${called}" is kept here and ${on} is signed in as it. The desk is empty again.`
+          : `"${called}" is kept here, sealed, and will be handed to a machine when one is given work. The desk is empty again.`
+      }
+    }
+  },
+
+  claudeSignInCancel: {
+    about: 'Abandon a sign-in the desk is part-way through',
+    takes: ['name'],
+    run: async ({ name }) => {
+      const on = await whichSupervisor(name)
+      await actions.vmAuthCancel.run({ name: on })
+      return { name: on, cancelled: true, note: `The desk on ${on} is not waiting for a code any more.` }
     }
   },
 
@@ -112,7 +241,7 @@ module.exports = {
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
 
       const seconds = Math.max(5, Math.min(Number(wait) || 25, 120))
-      const r = await channel.run(name, auth.begin(seconds), { what: 'starting a worker sign-in', timeout: (seconds + 30) * 1000 })
+      const r = await channel.run(name, auth.asDesk(auth.begin(seconds), DESK), { what: 'starting a sign-in at the desk', timeout: (seconds + 30) * 1000 })
       const out = auth.read(r.output)
 
       if (out.url) {
@@ -139,7 +268,7 @@ module.exports = {
       if (!code || !String(code).trim()) throw new Error('Say what the code is.')
 
       const seconds = Math.max(5, Math.min(Number(wait) || 40, 120))
-      const r = await channel.run(name, auth.code(String(code).trim(), seconds), { what: 'finishing a worker sign-in', timeout: (seconds + 30) * 1000 })
+      const r = await channel.run(name, auth.asDesk(auth.code(String(code).trim(), seconds), DESK), { what: 'finishing a sign-in at the desk', timeout: (seconds + 30) * 1000 })
       const out = auth.read(r.output)
 
       if (out.noPipe) throw new Error(`"${name}" is not waiting for a code. Start it again with vmAuthBegin.`)
@@ -166,7 +295,7 @@ module.exports = {
     run: async ({ name }) => {
       vms.get(name)
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
-      await channel.run(name, auth.cancel(), { what: 'abandoning a worker sign-in', timeout: 30000 })
+      await channel.run(name, auth.asDesk(auth.cancel(), DESK), { what: 'abandoning a sign-in at the desk', timeout: 30000 })
       return { name, cancelled: true }
     }
   },
@@ -270,6 +399,22 @@ module.exports = {
         throw new Error(`"${into}" is out on ${already.holder}. Take it back from there first — writing over it here would leave that machine signed in as an identity this host no longer has.`)
       }
 
+      // AND WHAT KIND OF SIGN-IN IT IS, from what kind of machine it came off.
+      //
+      // A supervisor machine signs in as ITSELF: the identity that decides what
+      // work there is, spent by the model doing the deciding. A runner signs in
+      // as a worker. Taking one off a supervisor and filing it as a worker's
+      // would put the supervising identity into the pool the runners draw from —
+      // and the first queued task would spend it.
+      //
+      // Read from the tag, which is the one place this is decided and is
+      // answerable with the machine switched off.
+      const isSupervisor = (mine.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
+      const role = isSupervisor ? 'supervisor' : 'guest'
+      if (already && already.role !== role) {
+        throw new Error(`"${into}" is a ${already.role} sign-in and ${name} is a ${isSupervisor ? 'supervisor machine' : 'runner'}. One of the two is wrong, and guessing which would put the deciding identity in the pool the workers draw from — or the other way round.`)
+      }
+
       // Printed rather than copied out of a path this host cannot see. base64 so
       // a newline or a shell metacharacter in the file cannot change what
       // arrives -- and so the value never appears as readable text in the live
@@ -293,18 +438,31 @@ module.exports = {
         // and reports which happened, which is the answer to "did signing in
         // again actually change anything".
         ? guests.backFrom(into, { token: text })
-        : guests.add({ name: into, token: text, from: `taken from ${name}`, note: 'signed in on a machine by hand' })
+        : guests.add({
+            name: into,
+            token: text,
+            role,
+            from: `taken from ${name}`,
+            note: isSupervisor ? 'the sign-in its supervisor decides work with' : 'signed in on a machine by hand'
+          })
 
       // STILL ON THE MACHINE, because grabbing is copying and not moving. A
       // machine that was signed in by hand stays signed in until somebody takes
       // it away — vmCredentialsForget is the one that removes it — so the record
       // says it is holding, and it is holding this guest.
-      guests.lentTo(into, name)
+      //
+      // FOR A SUPERVISOR THAT IS NOT A LOAN, IT IS WHERE IT LIVES. A runner is
+      // rolled back to its base snapshot between tasks, so a credential on one
+      // has to leave and come back; a supervisor is never rolled back, and taking
+      // its sign-in away would sign out the thing that decides what work there
+      // is. The record is the same either way — this machine holds that
+      // identity — and what differs is that nothing takes a supervisor's back.
+      guests.lentTo(into, name, { supervisor: isSupervisor })
       vms.update(name, { holdsCredential: true, guest: into })
 
       log.on('vm', name).good(already
-        ? `its worker credential was taken again into the Claude guest "${into}" — ${made.rotated ? 'and it had changed' : 'unchanged'}`
-        : `its worker credential is now the Claude guest "${into}"`)
+        ? `its ${role === 'supervisor' ? 'supervisor' : 'worker'} credential was taken again into "${into}" — ${made.rotated ? 'and it had changed' : 'unchanged'}`
+        : `its ${role === 'supervisor' ? 'supervisor sign-in is now kept here as' : 'worker credential is now the Claude guest'} "${into}"`)
 
       return {
         from: name,

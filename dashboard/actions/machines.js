@@ -273,9 +273,16 @@ module.exports = {
       return {
         name,
         tags: now.tags,
-        note: want.length
-          ? `"${name}" is tagged ${want.join(', ')}. A task with no tag still takes it — a tag adds a way to be asked for, it does not hold a machine back. Use vmForTasks for that.`
-          : `"${name}" carries no tags.`
+        // WHAT A TAG MEANS DEPENDS ON THE MACHINE, and saying the general thing
+        // about a supervisor is saying something false. "A task with no tag still
+        // takes it" is true of every runner and true of no supervisor: that one
+        // is out of the pool for good, and its other tags are labels for people
+        // rather than a way for work to reach it.
+        note: !want.length
+          ? `"${name}" carries no tags.`
+          : isSupervisor
+            ? `"${name}" is tagged ${want.join(', ')}. It is a supervisor machine, so no task reaches it whatever it carries — the other tags are for reading, not for routing.`
+            : `"${name}" is tagged ${want.join(', ')}. A task with no tag still takes it — a tag adds a way to be asked for, it does not hold a machine back. Use vmForTasks for that.`
       }
     }
   },
