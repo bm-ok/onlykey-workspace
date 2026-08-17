@@ -1079,3 +1079,17 @@ table.kv td .ok { color: var(--ok); }
   transition: opacity .25s ease, border-color .25s ease;
 }
 .msg .msg-body { transition: opacity .25s ease, border-color .25s ease; }
+
+/* A rendered message fills its bubble: the frame brings its own padding and its
+   own background, so the bubble gives it none of either. */
+.msg-body:has(iframe) { padding: 0; overflow: hidden; }
+.msg-body iframe { display: block; width: 100%; border: 0; border-radius: 11px; }
+/* WIDTH, NOT MAX-WIDTH, and that is the whole fix. A bubble is a flex item in a
+   column, so it shrinks to fit its content — and an iframe's content cannot be
+   measured from out here, so it shrank to a few hundred pixels and rendered a
+   table into a column. An explicit width gives the frame something to be 100% of.
+
+   Wider than a plain bubble as well, because a fenced block in 74% of the window
+   is a fenced block with a horizontal scrollbar. */
+.msg:has(iframe) { width: 92%; max-width: 92%; }
+.msg-body:has(iframe) { width: 100%; }

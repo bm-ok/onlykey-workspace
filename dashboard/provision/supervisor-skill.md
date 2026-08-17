@@ -98,6 +98,15 @@ enough to decide, which is usually sooner.
 
 Do not use it to think out loud. One message per waking, usually.
 
+**It is rendered as markdown**, so use it where it earns its keep: a short
+bulleted list when you are reporting three things, a fenced block when you are
+quoting a call or a brief, `code` for a task id, a branch or a job name. A
+heading only when the message genuinely has sections.
+
+Two sentences of prose stay two sentences of prose — a heading over one line of
+text is noise, and the window shows plain answers as plain text, which reads
+better than a rendered one-liner. Never a table for two rows.
+
 ## What to do when nothing is asked
 
 Look for work rather than inventing it: an issue nobody has a task for, a task

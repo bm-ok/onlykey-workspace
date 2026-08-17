@@ -25,6 +25,51 @@ let chatSeen = 0
 // right, the supervisor's on the left — the one convention every chat window
 // shares, which makes the label above a bubble a courtesy rather than the only
 // way to tell.
+// ---- a message that is written as markdown, read as markdown ---------------
+//
+// A supervisor answers in prose most of the time, and sometimes in a list of
+// three tasks with their branches, or a fenced block of what a job would run. As
+// source that second kind is a wall of dashes and backticks, and the formatting
+// it was written with is the thing that does not happen.
+//
+// IN THE SANDBOXED FRAME, which is not a styling convenience. This text came from
+// a model, and markdown carries raw HTML through by design — marked does not
+// sanitise it and never claimed to. Rendered into THIS document it would be
+// running inside an app page that has node and require(). The frame can do
+// nothing: no scripts, no same-origin, a CSP of default-src 'none'. See
+// markdownFrame in ui/base.js, which the artifact viewer already uses.
+//
+// ONLY WHEN IT IS ACTUALLY MARKDOWN. A frame per bubble is a document per
+// bubble, and a one-line answer does not need one — worse, a frame cannot be
+// measured from out here (that needs same-origin), so its height is an estimate
+// and an estimate around one sentence looks like a bug. So: prose stays text,
+// and anything with structure gets the viewer.
+const LOOKS_MARKDOWN = /(^|\n)\s*(#{1,6} |[-*+] |\d+\. |> |\|)|```|`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^)\s]+\)/
+
+// HOW TALL, ESTIMATED, BECAUSE THE FRAME CANNOT BE ASKED.
+//
+// Reading a frame's height needs allow-same-origin, which is exactly what must
+// not be granted to text off a machine — and letting it MEASURE ITSELF and
+// report back needs allow-scripts, which would mean a <script> in the markdown
+// running too. Both were written and both were thrown away: the trade is a
+// hostile script for a tidier bottom margin, and the margin is not worth it.
+//
+// So: lines as written, plus what long ones wrap to at this width, plus what
+// markdown adds around blocks. About 120 characters is a line at 92% of this
+// window; the first version assumed 95 and left a hand's width of blank under
+// every answer.
+//
+// IT ERRS GENEROUS ON PURPOSE. Blank space under a message reads as spacing; a
+// scrollbar inside a chat bubble reads as broken.
+const guessHeight = text => {
+  const lines = String(text).split('\n')
+  const rows = lines.reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 120)), 0)
+  // Headings, fences and tables carry margins and borders a line count cannot
+  // see.
+  const blocks = (String(text).match(/(^|\n)\s*(#{1,6} |```|\|)/g) || []).length
+  return Math.min(560, Math.max(58, rows * 22 + blocks * 10 + 30))
+}
+
 const oneMessage = (m, read) => {
   const mine = m.who === 'person'
   // DELIVERED, WHICH IS NOT THE SAME AS SENT. Yours sits faded until the
@@ -43,10 +88,12 @@ const oneMessage = (m, read) => {
         ? el('span', { textContent: waiting ? 'not read yet' : 'read' })
         : null,
       m.about ? el('span', { textContent: `about ${m.about}` }) : null),
-    // textContent, never anything that parses. This is text from a model, and a
-    // window that renders what a model sends renders what anything that talked
-    // its way into that model sends.
-    el('div', { className: 'msg-body', textContent: m.text }))
+    el('div', { className: 'msg-body' },
+      // Never textContent-or-innerHTML-by-taste: one of the two branches renders
+      // in a frame that can do nothing, and the other does not parse at all.
+      LOOKS_MARKDOWN.test(m.text)
+        ? markdownFrame(m.text, { height: guessHeight(m.text) + 'px' })
+        : m.text))
 }
 
 function paintChat () {
