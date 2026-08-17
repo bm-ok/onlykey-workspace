@@ -411,16 +411,36 @@ module.exports = {
       // NOT AT THE WINDOW. A person sending a change out has read it, or has
       // decided they need not — the same boundary as approving a job.
       if (a._overTheWire) {
-        const subject = { kind: 'branch', branch: pair.source.name }
-        const now = judgements.tipsFor(subject)
+        // BY THE NAMES A JUDGE COULD ACTUALLY HAVE READ, which is not only the
+        // line's own.
+        //
+        // A judgement is made against a BRANCH — `fix/csvstat-lockfile-ignore`
+        // — and then `branchAsLine` gives that branch a line name, `csvstat
+        // lockfile ignore`. This searched for a judgement of the LINE name, so
+        // the flow the supervisor's skill prescribes — judge it, make it a
+        // line, cut it — could not pass its own gate: the name being searched
+        // for is one nothing has ever judged, by construction.
+        //
+        // It refused with "Nothing has judged it" about a change that had just
+        // been accepted, which is the worst shape a refusal can have: correct
+        // machinery, true-sounding sentence, wrong fact.
+        //
+        // So the accepted names are the line's, plus every branch the line is
+        // made of. A judgement of any of them is a judgement of this change,
+        // because that is what the line IS.
+        const names = new Set([pair.source.name, ...pair.on.map(p => p.head)])
         const mine = judging.all().filter(j =>
-          j.state === 'done' && j.subject && j.subject.kind === 'branch' && j.subject.branch === pair.source.name)
+          j.state === 'done' && j.subject && j.subject.kind === 'branch' && names.has(j.subject.branch))
 
         if (!mine.length) {
-          throw new Error(`Nothing has judged "${pair.source.name}", so there is no reading of this change but your own — and you cannot see the code. Ask for a judgement of it, read what it handed back, and send it out when a judge has looked.`)
+          throw new Error(`Nothing has judged "${pair.source.name}" or the branch it is made of, so there is no reading of this change but your own — and you cannot see the code. Ask for a judgement of it, read what it handed back, and send it out when a judge has looked.`)
         }
 
-        const current = mine.filter(j => !judgements.staleAgainst(j, now))
+        // AND STALENESS IS MEASURED AGAINST WHAT THAT JUDGEMENT READ, one by
+        // one. Asking for the tips of the line name would answer about a name
+        // git does not have, and every judgement would read as current for ever
+        // — which is the failure mode staleness exists to prevent.
+        const current = mine.filter(j => !judgements.staleAgainst(j, judgements.tipsFor(j.subject)))
         if (!current.length) {
           throw new Error(`Every judgement of "${pair.source.name}" was made before the last push, so none of them describes what is there now. Judge it again — a judgement of an earlier state is exactly as useful as none.`)
         }

@@ -947,3 +947,22 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   worked. Nothing in the feature was wrong; the road it drove on was out. Test a
   new path on the machine somebody will actually use it on, not only on the one
   it was written against.
+
+* **A refusal that names something which cannot be created is a trap, not a
+  guard.** `prCutMake` demanded a judgement of the LINE — "Nothing has judged
+  'csvstat lockfile ignore'" — and a judgement can only be made against a
+  BRANCH. The line is what `branchAsLine` renames the branch to, so the flow the
+  supervisor's own skill prescribes (judge it, make it a line, cut it) could
+  never pass its own gate. Watched live, the supervisor tried every way out and
+  each one was shut by a different correct-sounding sentence: `branchAsLine`
+  said the line already exists, `judgementCreate` said there is no branch cut by
+  that name. Three true refusals and no route.
+
+  Two lessons, and the second is the general one. **A gate must accept the names
+  the thing it guards can actually be called** — here, the line's name *and*
+  every branch the line is made of. And **a refusal is only a guard if something
+  can satisfy it**: when writing one, follow the sentence to what somebody would
+  do next, and check that door is open.
+
+  It also cost nothing to find and would have cost everything to miss: the
+  machinery was correct, the message was fluent, and the fact was wrong.

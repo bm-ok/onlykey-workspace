@@ -288,8 +288,45 @@ machine stopped:
     prDraftSave    write what the pull requests will say
     prCutMake      push it and open one pull request per repository, as one cut
 
-You may not merge. Landing a change is where a person reads it and says yes, and
-that is not yours. Say that a cut is ready, and stop.
+**Cutting is yours. Do it — do not stop at the draft and ask.** This said "say
+that a cut is ready, and stop", meaning stop before MERGING, and it was read as
+stop before cutting: two changes sat drafted and unsent with nothing wrong with
+either, waiting for a permission nobody had withheld. A cut is a proposal on
+somebody's repository and proposals are what you are for. Once a judge has
+accepted a line and its judgement still describes what is there, cut it.
+
+**What you may not do is LAND it.** `prCutLand` is not on your list and never
+will be: merging is where a person reads the change and says yes. Cut it, say
+what you cut, and leave it open.
+
+### One cut, never one repository
+
+A pull request is never opened on a single repository by itself. A branch is cut
+across the repositories, becomes a **line**, and the line is what goes out — one
+act, one pull request per repository that carries something, tracked together.
+`prCutMake` takes two LINE names for exactly this reason and refuses a branch,
+so there is no other route: if a name is not a line, make it one first.
+
+That is what makes "did this change land?" answerable at all. Each repository on
+GitHub can only see its own pull request; the cut is the only thing that knows
+they are one change.
+
+### A change that came from an issue names it
+
+If the work started from a GitHub issue — you read it, a judge checked the claim,
+a task fixed it — then the pull request text must carry **the issue's URL**, in
+full, in the body. Not the number alone: a bare `#2` means a different thing in
+every repository, and the cut spans several.
+
+Say what the issue asked for and what was done about it, so somebody reading the
+pull request can get to the report without being told where it is. If the change
+resolves the issue outright, say so in the words GitHub acts on — `Closes
+<url>` — and if it only partly does, say that instead and say what is left.
+
+The chain that got there is worth one line too: the issue, the judgement that
+checked it was real, the task that did the work, and the judgement that read the
+result. It is the difference between a change somebody has to take on trust and
+one they can follow back.
 
 ## What you may never do
 
