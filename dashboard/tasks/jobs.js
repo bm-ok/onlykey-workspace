@@ -156,6 +156,33 @@ function save (fields, by = 'the window') {
     ? (at === -1 ? STARTER : codeOf(id))
     : String(fields.code)
 
+  // IT HAS TO BE JAVASCRIPT THAT LOADS, and this is checked here rather than
+  // discovered on a machine.
+  //
+  // WHAT IT COST TO NOT DO THIS. "check a claim" was written, approved, listed
+  // as runnable, and chosen by a supervisor to read a real change — and it had
+  // `verdict` both as a parameter of the job function and as a `const` inside
+  // it, which is a redeclaration and not a file node will load. So the first
+  // time it ran, a machine booted, took a credential, cloned three
+  // repositories, set itself up on a branch and died at `require`, 37 seconds
+  // in, having read nothing. The judgement came back "done" with no verdict.
+  //
+  // Compiled, never run. `new vm.Script` parses the text and stops; nothing in
+  // it executes, so a job that formats the disk on line one is exactly as safe
+  // to check as one that does not. What this catches is the class of fault that
+  // cannot be argued with -- it is not "this job is wrong", it is "this is not
+  // a program" -- and that is precisely the class worth refusing at the door.
+  //
+  // AT SAVE RATHER THAN AT APPROVAL, because a person approving reads the code
+  // and a syntax error is not what they are reading for. Refusing here means
+  // the broken version is never written down at all.
+  try {
+    // eslint-disable-next-line no-new
+    new (require('node:vm').Script)(code, { filename: `${id}.js` })
+  } catch (e) {
+    throw new Error(`That job is not JavaScript that will load: ${e.message}. Nothing was saved. A job is only found out on a machine — one that cannot be parsed boots a runner, takes a credential, clones the workspace and dies at require, having read nothing.`)
+  }
+
   try { fs.mkdirSync(DIR(), { recursive: true }) } catch { /* it exists */ }
   fs.writeFileSync(codePath(id), code)
 
