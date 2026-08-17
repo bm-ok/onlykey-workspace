@@ -104,8 +104,22 @@ function add ({ name, token, from = null, note = null, role = 'guest' }) {
   if (!okName(name)) {
     throw new Error(`"${name}" is not a name for a guest. Letters, digits, dash, dot and underscore, up to 64 — it is a filename and a label in a list, so it is refused rather than changed into something you would not recognise.`)
   }
-  const text = String(token || '').trim()
+  // A CREDENTIAL IS JSON, AND SOMETHING ON THE WAY HERE MAY HAVE PARSED IT.
+  //
+  // The command line does: `--token '{"claudeAiOauth":...}'` arrives as an
+  // object, because that is what makes `--vm '{...}'` and `--task '{...}'` work.
+  // This used to be `String(token)`, which turns an object into the fourteen
+  // characters "[object Object]" — and then seals them, records a fingerprint of
+  // them, and reports the guest as added. The credential is gone at that point,
+  // and the way you find out is a machine answering "not signed in" weeks later.
+  //
+  // Found by handing a machine one and reading back what landed. The handover was
+  // right: it delivered exactly what this host held, which was "[object Object]".
+  const text = (token && typeof token === 'object' ? JSON.stringify(token) : String(token || '')).trim()
   if (!text) throw new Error('A guest needs a Claude token. It is sealed to this account and never shown again.')
+  if (text === '[object Object]') {
+    throw new Error('That token arrived as the words "[object Object]" rather than as a credential — something turned an object into a string on the way here. Nothing was kept; paste the contents of .credentials.json.')
+  }
   if (get(name)) throw new Error(`There is already a guest called "${name}". Remove it first, or pick another name — replacing one silently would take a credential away from whatever is using it.`)
 
   try { fs.mkdirSync(ROOT(), { recursive: true }) } catch { /* it exists */ }

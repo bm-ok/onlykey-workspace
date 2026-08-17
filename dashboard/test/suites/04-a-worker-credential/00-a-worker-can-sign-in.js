@@ -95,11 +95,18 @@ it('and a machine can really sign in with it', async ({ okc, assert, state, log 
 // really sign in with it" — rather than in a document that describes an order to
 // build in.
 
-draft('and the credential never travels as cleartext in a shell command',
-  'IT DOES TODAY. vmCredentialsPut opens the sealed file, base64s it, and sends `printf \'%s\' \'<the whole credential>\' | base64 -d > ~/.claude/.credentials.json` down the channel. ' +
-  'Base64 is not encryption. TLS covers the wire and core/secret.js covers the file at rest; what neither covers is the middle — a plain string in this host\'s memory, a shell argument visible in `ps` on the guest, and a line in its history. ' +
-  'WHAT IT NEEDS: a key exchange between host and guest, so the credential is sealed to that machine and the dashboard hands over a blob it cannot read. That carries the authorize URL up as well as the credential down. ' +
-  'THE CHECK: what is sent to the machine contains no part of the credential, and the machine still authenticates afterwards. The second half is what makes it a check rather than a rule about strings.')
+// WRITTEN NOW — see "nothing travels as cleartext" beside this file. The key
+// exchange it asked for is core/handover.js: the machine makes a pair and
+// publishes the public half, this host seals to it, and what crosses is
+// ciphertext. What made the second half checkable without a person at a login
+// page was measuring on the MACHINE — the bytes that landed on its disk, hashed
+// there — rather than asking whether a made-up token authenticates.
+//
+// STILL OPEN, AND HONESTLY THE SMALLER HALF: the credential coming BACK.
+// vmCredentialsGrab and guestBack read it with `cat`, so it arrives in a
+// command's OUTPUT rather than in its arguments — not in `ps` and not in a
+// history, but not sealed either. The same two files do the mirror of this when
+// it is done.
 
 draft('and signing a worker in is a job, not a sequence written into this app',
   'credentialsBegin and credentialsFinish are guest commands hard-coded in actions/credentials.js and machines/auth.js — written before there was any other way to run a sequence of commands on a machine. There is one now: a job is a script that runs ON a machine, read and approved before it does. ' +

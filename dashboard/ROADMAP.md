@@ -229,11 +229,23 @@ else ("nothing unapproved runs") has to be true of it before it is trusted with
 the thing every other run depends on.
 
 
-A key exchange between host and guest, for the credential — NOT BUILT
+A key exchange between host and guest, for the credential — HALF BUILT
 ---------------------------------------------------------------------
 
-**The credential travels as cleartext inside a shell command.** `vmCredentialsPut`
-opens the sealed file on this host, base64s it, and sends this down the channel:
+**The credential going DOWN is sealed to the machine that asked for it**, since
+2026-08-17. The machine generates an ephemeral X25519 pair, keeps the private
+half, and publishes the public one; this host derives a shared key from it and
+sends AES-256-GCM ciphertext. `core/handover.js` is this end,
+`provision/okc-credential.js` the other, and the drill "nothing travels as
+cleartext" decodes every base64 run in what was sent before searching it —
+because the way this used to travel WAS base64, and a check that cannot tell the
+difference would have passed the thing it was written to condemn.
+
+**What is still loose** is written below as it was, because the reasoning holds
+for the two halves that remain: the credential coming back up (in a command's
+output, which is not a `ps` line but is not sealed either), and the authorize URL.
+
+The description of the fault, kept because it says why:
 
     printf '%s' '<the whole credential>' | base64 -d > "$HOME/.claude/.credentials.json"
 
@@ -251,12 +263,23 @@ which is a command line:
 None of that is exposure to the network; TLS handles the network. It is exposure
 to everything ON the two machines, which is the part a transport cannot fix.
 
-**What ECDH gives.** The guest generates an ephemeral key pair, hands the public
-half up, and the host encrypts the credential to it. The plaintext then exists
-only inside the guest process that will write the file — never as a shell
-argument, never in a command string, never in a variable on this host after the
-seal is opened. `sealed for one machine, for one delivery` is a stronger claim
-than `sent over a good pipe`, and it is the one worth making about a credential.
+**What ECDH gives — and this half is now built.** The guest generates an
+ephemeral key pair, hands the public half up, and the host encrypts the
+credential to it. The plaintext then exists only inside the guest process that
+will write the file — never as a shell argument, never in a command string,
+never in a variable on this host after the seal is opened. `sealed for one
+machine, for one delivery` is a stronger claim than `sent over a good pipe`, and
+it is the one worth making about a credential.
+
+One pair per handover, and the private half is removed whether the decryption
+worked or not: a key that outlived the delivery would make that machine a place
+where every credential it is ever handed can be opened. The two-command shape is
+what puts it briefly on disk (0600, in a directory only that user can enter),
+because a shell command is one shot and the exchange is a round trip.
+
+The guest half is SENT rather than provisioned — a machine built last month would
+otherwise run last month's end of a protocol changed today, and that failure is a
+decryption error on a machine at two in the morning.
 
 **What ECDSA gives.** The channel already proves which machine is talking, by
 token. Signing adds the other direction and makes it durable: a machine can

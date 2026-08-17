@@ -81,15 +81,15 @@ not fixed, and the state of the machines.
 Outstanding
 -----------
 
-* **The credential travels as cleartext inside a shell command.**
-  `vmCredentialsPut` sends `printf '%s' '<the credential>' | base64 -d > ...`
-  down the channel. TLS covers the network and `core/secret.js` covers the file
-  at rest; what neither covers is the middle — a string in this host's memory, a
-  shell argument visible in `ps` on the guest, and a line in its history. An
-  ECDH tunnel keyed to the machine would carry the whole auth exchange, the
-  authorize URL up as well as the credential down, and the dashboard would hold
-  a blob it cannot read. See `ROADMAP.md`, "A key exchange between host and
-  guest, for the credential".
+* **The credential comes BACK in a command's output.** Going down it is sealed
+  now — the machine makes a keypair, publishes the public half, and this host
+  sends ciphertext (`core/handover.js`, checked by "nothing travels as
+  cleartext"). Coming back, `vmCredentialsGrab` and `guestBack` read it with
+  `cat`, so it arrives in a command's OUTPUT: not in `ps` and not in a shell
+  history, which is why this is the smaller half — but not sealed either. The
+  mirror is the same two files with the roles swapped: this host publishes, the
+  machine seals to it. See `ROADMAP.md`, "A key exchange between host and guest,
+  for the credential".
 
 * **The Claude sign-in flow is hard-coded, and jobs exist now.** Every step of
   `credentialsBegin` / `credentialsFinish` is a sequence of guest commands

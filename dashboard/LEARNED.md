@@ -812,3 +812,25 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   see them, and a drill that refuses to run looks exactly like a drill being
   careful. Only running them found it — which is the argument for the kit, and
   the reason to read an action's answer before writing against it.
+
+* **A guest added from the command line was sealed as `[object Object]`.**
+  `--token '{"claudeAiOauth":...}'` arrives as an OBJECT, because that is what
+  makes `--vm '{...}'` and `--task '{...}'` work, and `core/guests.js` did
+  `String(token)`. So the fourteen characters "[object Object]" were sealed, a
+  fingerprint of them was recorded, and the guest was reported as added. The
+  credential is gone at that point and the way you find out is a machine
+  answering "not signed in" weeks later — with every panel on this host agreeing
+  it holds one, because a fingerprint of the wrong bytes is perfectly consistent
+  with itself. Found by handing a machine one and reading back what landed: the
+  new sealed handover delivered exactly what this host held, and what it held was
+  the mangling. Objects are stringified as JSON now and the literal is refused
+  by name.
+
+* **A check that cannot tell base64 from encryption is worse than no check.** The
+  first version of "nothing travels as cleartext" searched the commands sent to a
+  machine for pieces of the credential. The way the credential USED to travel was
+  base64 inside a command line — so that check would have found nothing and
+  passed against the exact code it was written to condemn. It decodes every
+  base64 run in what was sent before searching now, and that was verified by
+  running it against a reconstruction of the old command, which it correctly
+  condemns.

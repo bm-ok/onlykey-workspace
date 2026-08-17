@@ -17,6 +17,11 @@ const actions = require('./table')
 // reads a credential, and a second door onto them is the thing being closed.
 const guests = require('../core/guests')
 
+// HOW A CREDENTIAL GETS ONTO A MACHINE without existing as itself in a command
+// line on the way. The machine makes a key, this host seals to it. See
+// core/handover.js.
+const handover = require('../core/handover')
+
 // Everything the table is built out of, in one place rather than a require
 // block repeated nine times. See actions/shared.js.
 const s = require('./shared')
@@ -528,8 +533,10 @@ module.exports = {
       }
 
       // Opened here and nowhere else. It exists as cleartext for the length of
-      // this call and is never written back out in that form.
-      const b64 = secret.read(file).toString('base64')
+      // this call and is never written back out in that form — and it is sealed
+      // to a key the machine makes before any of it is sent. See
+      // core/handover.js for what that replaced.
+      const text = secret.read(file).toString('utf8')
 
       // AND THE FIRST-RUN WIZARD IS MARKED DONE, which is not a nicety.
       //
@@ -551,12 +558,11 @@ module.exports = {
       // key and leaves the file otherwise as found. Missing entirely is the
       // ordinary case on a machine that has just been rolled back, and then one
       // key is the whole file.
-      const r = await channel.run(name, `set -u
-mkdir -p "$HOME/.claude"
-umask 077
-printf '%s' '${b64}' | base64 -d > "$HOME/.claude/.credentials.json"
-chmod 600 "$HOME/.claude/.credentials.json"
-node - <<'OKC_READY_EOF'
+      //
+      // IN THE SAME ROUND TRIP AS THE HANDOVER, which is why it is passed as
+      // `andThen` rather than sent on its own: the sealing costs one extra trip
+      // already, and this call runs before every queued dispatch.
+      const alsoDo = `node - <<'OKC_READY_EOF'
 const fs = require('fs'), os = require('os')
 const p = os.homedir() + '/.claude.json'
 let j = {}
@@ -564,7 +570,6 @@ try { j = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { /* absent or unreadab
 j.hasCompletedOnboarding = true
 fs.writeFileSync(p, JSON.stringify(j))
 OKC_READY_EOF
-echo okc-credential-placed
 # AND THEN ASKED WHETHER IT ACTUALLY WORKS, in the same breath.
 #
 # A FILE ON DISK IS NOT A SIGNED-IN WORKER. This returned ready:true for
@@ -575,9 +580,22 @@ echo okc-credential-placed
 #
 # In the SAME remote command because it is free here and a second round
 # trip is not: this runs before every queued dispatch.
-claude auth status 2>/dev/null || true`, { what: 'handing it a worker credential', timeout: 60000 })
+claude auth status 2>/dev/null || true`
 
-      if (!/okc-credential-placed/.test(r.output || '')) throw new Error(`"${name}" did not take the credential.`)
+      const r = await handover.deliver({
+        run: (command, opts) => channel.run(name, command, opts),
+        text,
+        what: 'asking it for a key to hand a worker credential over with',
+        andThen: alsoDo
+      })
+
+      // WHAT LANDED IS WHAT WAS SENT. The machine hashes the bytes it wrote and
+      // this host hashes what it sealed; a handover that opened to anything else
+      // stops here rather than being recorded as a signed-in machine.
+      const mineIs = handover.fingerprint(text)
+      if (r.fingerprint !== mineIs) {
+        throw new Error(`"${name}" wrote ${r.fingerprint} where this host sealed ${mineIs}. Nothing is recorded as lent — that machine is not holding the credential this host thinks it is.`)
+      }
 
       // WHO HAS WHAT, written down here rather than worked out later. A machine
       // that is switched off still has a credential on its disk, so "which guest

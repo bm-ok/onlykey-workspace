@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 36 tests, 173 checks, 20 of them drafts -->
+<!-- 12 suites, 37 tests, 176 checks, 19 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -15,14 +15,12 @@
   A capability with no check here is one somebody will build again.
 -->
 
-## 20 drafts, not written yet
+## 19 drafts, not written yet
 
 - **the refusals / the ways round a refusal** — and the window cannot be driven while the drills are off
   THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. It matters more than it looks: windowClick and windowFill reach the SAME handlers a person's press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. WHY IT IS NOT A CHECK HERE: a drill runs only while testing mode is on, which is exactly when this is allowed. Proving the refusal means turning testing mode OFF, which stops the drills. HOW TO WRITE IT: from outside the kit — a script that turns testing mode off at the window, calls windowClick over the wire, sees the refusal, and turns it back on. That is a person-driven drill rather than one the harness can run, and it belongs in the same family as the sign-in that needs somebody to visit a page. WHAT CAN BE CHECKED FROM HERE AND IS NOT YET: that a press driven from outside carries the mark — press an APPROVE button through windowClick and watch it refused for being over the wire. That proves the anti-bypass property without turning anything off. See drivenFromTheWire in ui/base.js.
 - **the refusals / the ways round a refusal** — and a change cannot be landed from outside the window while the drills are off
   THE REFUSAL: "Landing a cut from outside the window is only done while testing mode is on for this workspace… this is a model merging into somebody's repository, and that needs to have been said out loud first." — actions/repos.js. It is the one act in this app with consequences outside this host: everything before a merge is reversible from GitHub and a merge is not. WHY IT IS NOT A CHECK HERE: same as above — the drills run with testing mode on, which is the state in which this is permitted. THE CHECK, WHEN THERE IS A WAY TO WRITE IT: with testing mode off, prCutLand over the wire is refused and names the window; with it on, the refusal is not what stops it — a cut that is not ready still is. AND THE RELATED ONE WORTH HAVING EITHER WAY: a supervisor is refused prCutLand whatever testing mode says, because it is not on its list at all. That one IS checked — see the supervisor suite.
-- **a worker credential / a worker can sign in** — and the credential never travels as cleartext in a shell command
-  IT DOES TODAY. vmCredentialsPut opens the sealed file, base64s it, and sends `printf '%s' '<the whole credential>' | base64 -d > ~/.claude/.credentials.json` down the channel. Base64 is not encryption. TLS covers the wire and core/secret.js covers the file at rest; what neither covers is the middle — a plain string in this host's memory, a shell argument visible in `ps` on the guest, and a line in its history. WHAT IT NEEDS: a key exchange between host and guest, so the credential is sealed to that machine and the dashboard hands over a blob it cannot read. That carries the authorize URL up as well as the credential down. THE CHECK: what is sent to the machine contains no part of the credential, and the machine still authenticates afterwards. The second half is what makes it a check rather than a rule about strings.
 - **a worker credential / a worker can sign in** — and signing a worker in is a job, not a sequence written into this app
   credentialsBegin and credentialsFinish are guest commands hard-coded in actions/credentials.js and machines/auth.js — written before there was any other way to run a sequence of commands on a machine. There is one now: a job is a script that runs ON a machine, read and approved before it does. WHAT IT WOULD BUY: the flow becomes editable without a release, and the sign-in URL stays on the machine rather than being logged here. THE STICKING POINT, which is why this is a draft and not a task: a credential is NOT an artifact and must not be handed back like one. A job hands files back; this one would have to hand back something the host stores sealed and never shows, which is a hole in the job API rather than a thing to write around. THE CHECK: the sign-in runs as an approved job, the credential arrives sealed on this host, and no URL or token appears in the log.
 - **a worker credential / a worker can sign in** — and each machine keeps its own credential across a rollback
@@ -168,10 +166,9 @@ The second door a person has to open, and it is deliberately not beside the
   1. this host holds a worker credential
   2. and it has not expired past refreshing
   3. and a machine can really sign in with it
-  4. **DRAFT** — and the credential never travels as cleartext in a shell command
-  5. **DRAFT** — and signing a worker in is a job, not a sequence written into this app
-  6. **DRAFT** — and each machine keeps its own credential across a rollback
-  7. **DRAFT** — and the .claude folder can be thrown away without losing the token
+  4. **DRAFT** — and signing a worker in is a job, not a sequence written into this app
+  5. **DRAFT** — and each machine keeps its own credential across a rollback
+  6. **DRAFT** — and the .claude folder can be thrown away without losing the token
 
 ## 01 — more than one sign in
 
@@ -202,6 +199,13 @@ The second door a person has to open, and it is deliberately not beside the
   2. and each machine can hold its own at the same time
   3. and one identity cannot be on two machines
   4. and a machine with nothing free to hand it is refused, not given somebody else's
+
+## 05 — nothing travels as cleartext
+
+  1. a machine is dialled in, and this host has something to hand it
+  2. and nothing sent to the machine carries any part of it
+  3. and the machine ends up holding exactly it
+  4. and the key that could open it does not outlive the handover
 
 # 05 — the machines
 

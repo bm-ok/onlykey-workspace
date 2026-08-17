@@ -102,9 +102,13 @@ it('and a supervisor is refused when a machine asks for it', async ({ okc, asser
   // core/guests.js at the point that RECORDS the lending, which happens after the
   // credential has already been written onto the machine. Refused, and handed
   // over anyway. The action refuses first now, and this is the check that says so.
+  //
+  // MATCHED ON THE ROLE HALF OF THE SENTENCE rather than on the whole of it: the
+  // words are "is a supervisor sign-in and <machine> is a runner", and what this
+  // check is about is which of the two reasons it was refused FOR.
   await assert.refuses(
     () => okc('guestLend', { name: A_SUPERVISOR, machine: 'okc-no-such-machine' }),
-    'supervisor, not a guest',
+    'is a supervisor sign-in',
     'a supervisor was lent to a machine, which puts the sign-in that decides what workers do inside a worker')
 
   log('a supervisor cannot be lent to a machine, and the refusal says why')

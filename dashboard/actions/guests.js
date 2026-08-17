@@ -13,6 +13,7 @@
 // rather than returning it.
 
 const guests = require('../core/guests')
+const handover = require('../core/handover')
 const s = require('./shared')
 const { log, vms, channel } = s
 
@@ -94,13 +95,26 @@ module.exports = {
       // supervisor machine and nowhere else, and a worker's belongs on a runner.
       // Asked of the one function that knows it, so the sentence is the same
       // here as it is there.
-      const mine = vms.get(machine)
+      //
+      // READ RATHER THAN DEMANDED, and that is the difference between this
+      // refusing for the right reason and the wrong one. `vms.get` throws for a
+      // machine this app did not make — so asking it first means a supervisor
+      // named against an unknown machine is refused for the MACHINE, and the role
+      // is never reached. The drill asks with a machine that does not exist for
+      // exactly that reason, and it went back to failing when this line became a
+      // `get`.
+      //
       // From the TAG, which is what everything else reads and is answerable with
-      // the machine switched off. `vms.get` hands back the record rather than the
-      // computed row the window sees, so the tag is where the answer is.
+      // the machine switched off. An unknown machine has no tags, so it is not a
+      // supervisor machine, which is the right answer to be refused by.
+      const mine = vms.read().find(v => v.name === machine) || {}
       const isSupervisor = (mine.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
       const why = guests.whyNotOn(guest.role, isSupervisor, name, machine)
       if (why) throw new Error(why)
+
+      // AND THEN THE MACHINE, so a worker lent to something that does not exist
+      // still gets the sentence that says so.
+      vms.get(machine)
 
       if (!guest.has) throw new Error(`"${name}" has no token file any more. It was removed by hand, or sealed by another account.`)
       if (!channel.connected(machine)) throw new Error(`"${machine}" is not dialled in. Start it and wait for it to connect.`)
@@ -113,18 +127,23 @@ module.exports = {
       }
 
       const text = guests.token(name)
-      // Written the way vmCredentialsPut writes it, which is the path that
-      // exists and works today. That it travels as an argument is a known fault
-      // with a draft of its own — see the credential suite.
-      const b64 = Buffer.from(text, 'utf8').toString('base64')
-      const said = await channel.run(machine,
-        'mkdir -p "$HOME/.claude" && ' +
-        `printf '%s' '${b64}' | base64 -d > "$HOME/.claude/.credentials.json" && ` +
-        'chmod 600 "$HOME/.claude/.credentials.json" && echo okc-guest-lent',
-        { what: `lending it the Claude guest "${name}"`, timeout: 60000 })
 
-      if (!/okc-guest-lent/.test(said.output || '')) {
-        throw new Error(`"${machine}" did not take the credential: ${String(said.output || '').slice(-200)}`)
+      // SEALED TO A KEY THIS MACHINE MAKES WHILE WE WAIT. It used to travel as a
+      // base64 argument on a command line, which is `ps` output to every user on
+      // that machine and a line in a shell history. See core/handover.js.
+      const done = await handover.deliver({
+        run: (command, opts) => channel.run(machine, command, opts),
+        text,
+        what: `lending it the Claude guest "${name}"`
+      })
+
+      // AND WHAT LANDED IS WHAT WAS SENT, asked by fingerprint — the same sixteen
+      // characters the list keeps, computed on the machine from the bytes it
+      // actually wrote. Anything else means a handover that reported success
+      // while placing something else.
+      const mineIs = handover.fingerprint(text)
+      if (done.fingerprint !== mineIs) {
+        throw new Error(`"${machine}" wrote ${done.fingerprint} where "${name}" is ${mineIs}. The credential was sealed to that machine's key and what it opened is not what was sent — nothing on this host records it as lent.`)
       }
 
       guests.lentTo(name, machine, { supervisor: isSupervisor })
