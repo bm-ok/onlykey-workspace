@@ -44,7 +44,7 @@
          checks them out. They had no surface at all while they were local
          folders, which stopped being tolerable the moment they had somewhere
          to go and a token that may or may not reach it. -->
-    <button class="tab active" data-view="repos">Repositories</button>
+    <button class="tab active" data-view="repos">Repositories <span class="tab-badge hidden" id="repos-badge"></span></button>
     <button class="tab" data-view="tasks">Tasks <span class="tab-badge hidden" id="tasks-badge"></span></button>
     <!-- ITS OWN TAB, because two kinds of work share it. A judgement waits for a
          machine exactly as a task does, so the queue stopped being part of the
@@ -59,7 +59,7 @@
          job are written once, approved once and run whenever — a task is one
          occasion of them. They were sub-tabs of Tasks, which put a library
          inside its own consumer and said the two were the same kind of thing. -->
-    <button class="tab" data-view="actions">Actions</button>
+    <button class="tab" data-view="actions">Actions <span class="tab-badge hidden" id="actions-badge"></span></button>
     <!-- The badge is what makes a tab you cannot see safe to have: output
          arriving behind it is announced, and a failure differently from
          ordinary chatter. -->
@@ -156,7 +156,7 @@
       <button class="subtab" data-pane="changes">Changes</button>
       <button class="subtab" data-pane="protected">Protected</button>
       <button class="subtab" data-pane="cuts">PR cuts</button>
-      <button class="subtab" data-pane="templates">New PR Cut</button>
+      <button class="subtab" data-pane="templates">New PR Cut <span class="tab-badge hidden" id="templates-badge"></span></button>
     </div>
 
     <!-- WHAT THE OPEN PANE IS, in the same place for all eleven of them.
@@ -766,7 +766,7 @@
        head what this app already knows. -->
   <section class="view" id="view-judge">
     <div class="subtabs">
-      <button class="subtab active" data-pane="judgements">Judgement</button>
+      <button class="subtab active" data-pane="judgements">Judgement <span class="tab-badge hidden" id="judgements-badge"></span></button>
       <button class="subtab" data-pane="judges">Judges</button>
     </div>
 
@@ -1002,9 +1002,9 @@
   <section class="view" id="view-actions">
 
     <div class="subtabs">
-      <button class="subtab active" data-pane="jobs">Jobs</button>
-      <button class="subtab" data-pane="prompts">Prompts</button>
-      <button class="subtab" data-pane="contracts">Contracts</button>
+      <button class="subtab active" data-pane="jobs">Jobs <span class="tab-badge hidden" id="jobs-badge"></span></button>
+      <button class="subtab" data-pane="prompts">Prompts <span class="tab-badge hidden" id="prompts-badge"></span></button>
+      <button class="subtab" data-pane="contracts">Contracts <span class="tab-badge hidden" id="contracts-badge"></span></button>
     </div>
 
     <!-- WHAT IS DEFINED, rather than what is happening. Grouped by suite because

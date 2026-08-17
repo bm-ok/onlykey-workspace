@@ -12,7 +12,7 @@ async function drawOnce () {
   // The queue is asked here as well as in its own panel, because the banner
   // needs it: a machine the queue is driving is not an idle machine, and
   // nagging about one would train the operator to ignore the banner.
-  const [list, status, running, held] = await Promise.all([
+  const [list, status, running, held, waiting] = await Promise.all([
     // CAUGHT, because a broken VirtualBox is not a broken window.
     //
     // This was the one call in here without a catch, and it took the whole draw
@@ -29,7 +29,12 @@ async function drawOnce () {
     api('queueState').catch(() => ({ inFlight: [] })),
     // Whether there is a credential to hand out at all, which is the difference
     // between "sign this machine in" and "there is nothing to sign it in with".
-    api('credentialsHeld').catch(() => ({ held: false }))
+    api('credentialsHeld').catch(() => ({ held: false })),
+    // AND WHAT IS WAITING ON A PERSON, which is what the badges say. One call
+    // for all of them — see `waiting` in actions/app.js for why it is one
+    // question rather than a count per panel, and why nothing in it touches
+    // git, VirtualBox or GitHub.
+    api('waiting').catch(() => null)
   ])
   const busyMachines = new Set((running.inFlight || []).map(f => f.machine))
   latest = list
@@ -54,6 +59,65 @@ async function drawOnce () {
   const inLine = (running.waiting || []).length + (running.inFlight || []).length
   setText($('queue-badge'), inLine ? String(inLine) : '')
   $('queue-badge').classList.toggle('hidden', !inLine)
+
+  // AND THE ONES THAT SAY SOMETHING IS WAITING ON YOU.
+  //
+  // The queue badge above counts what is HAPPENING. These count what has
+  // stopped: an approval nobody has given, a verdict nobody has recorded, a
+  // change drafted and not sent, something the supervisor said. The difference
+  // matters — a badge that lights for work in flight is lit all day and stops
+  // being read, and the whole reason these exist is that a job sat unapproved
+  // and a pull request sat drafted with nothing on screen pointing at either.
+  //
+  // `judge-badge` and `chat-badge` have been in the markup since those tabs were
+  // built and nothing has ever written to them. Repositories and Actions had no
+  // badge at all, which is where somebody is most often the thing being waited
+  // for.
+  //
+  // THE HOVER CARRIES WHAT IT IS. A number on a tab is a thing to go and
+  // interpret; the title says which judgement, which change, which approval, so
+  // the badge answers rather than summons.
+  const owed = waiting || { actions: 0, judge: 0, repos: 0, supervisor: 0 }
+
+  // `mine` MARKS THE ONES THAT ARE A PERSON'S ALONE, and it is amber rather than
+  // blue for a reason worth stating: an approval is not a count, it is a STOP. A
+  // model may write a job, a prompt or a contract and may not ratify one, so
+  // until somebody reads it nothing runs — and a blue number beside "Actions"
+  // reads as information rather than as "you are the thing being waited for".
+  const nudge = (id, n, title, mine = false) => {
+    const el = $(id)
+    if (!el) return
+    setText(el, n ? String(n) : '')
+    el.className = `tab-badge${n && mine ? ' warn' : ''}${n ? '' : ' hidden'}`
+    el.title = title || ''
+  }
+  const approvals = owed.approvals || []
+  const of = kind => approvals.filter(a => a.kind === kind)
+  const says = list => list.map(a => `${a.kind} "${a.name || a.id}" is written and waiting for you to read it`).join('\n')
+
+  nudge('actions-badge', owed.actions, says(approvals), true)
+  // AND WHICH LIBRARY, because "Actions 3" still makes somebody open three
+  // panes to find them. A sub-tab badge is the difference between being told
+  // there is something and being taken to it.
+  nudge('jobs-badge', of('job').length, says(of('job')), true)
+  nudge('prompts-badge', of('prompt').length, says(of('prompt')), true)
+  nudge('contracts-badge', of('contract').length, says(of('contract')), true)
+
+  nudge('judge-badge', owed.judge, [
+    ...(owed.verdicts || []).map(v => `${v.ref} read ${v.reads} — yours to decide`),
+    ...(owed.silent || []).map(v => `${v.ref} read ${v.reads} and ended without a verdict`)
+  ].join('\n'), (owed.verdicts || []).length > 0)
+  nudge('judgements-badge', owed.judge, [
+    ...(owed.verdicts || []).map(v => `${v.ref} read ${v.reads} — yours to decide`),
+    ...(owed.silent || []).map(v => `${v.ref} read ${v.reads} and ended without a verdict`)
+  ].join('\n'), (owed.verdicts || []).length > 0)
+
+  const drafted = (owed.drafted || []).map(d => `"${d.title || d.source}" is drafted against ${d.target} and has not been sent`).join('\n')
+  nudge('repos-badge', owed.repos, drafted)
+  nudge('templates-badge', owed.repos, drafted)
+
+  nudge('chat-badge', owed.supervisor,
+    owed.supervisor ? `${owed.supervisor} message(s) since you last moved your bookmark` : '')
 
   // Reconcile the selection against what actually exists, every time, before
   // anything that depends on it is painted.
@@ -164,6 +228,36 @@ async function drawOnce () {
       `${r.repo} is on "${r.on}" here with uncommitted changes. `,
       `A machine working on "${r.on}" cannot push while that is true, and its own error will not say why. Commit or discard them, or put ${r.repo} back on ${r.home}.`
     ]),
+
+    // SOMETHING IS WAITING FOR A PERSON TO READ IT, and a badge alone was not
+    // enough.
+    //
+    // A badge is on a tab somebody is not looking at. That is fine for a count
+    // and wrong for a STOP: a job written over the wire sits unapproved, nothing
+    // runs it, the supervisor goes on waiting, and the only sign is a number on
+    // a tab three along from wherever you are. It happened this afternoon — a
+    // judge was rewritten, sat unapproved, and had to be pointed at by hand.
+    //
+    // So it joins the banner, which is the one thing in this window that cannot
+    // be missed, with the button that goes there. It leaves the moment the last
+    // one is read, so it cannot become wallpaper.
+    //
+    // NOT A FAULT, and the wording says so. Everything else in this list is
+    // something that went wrong; this is the machinery working exactly as
+    // designed — a model may write one of these and may not ratify it — and
+    // reading it as an alarm would teach somebody to dismiss the banner.
+    (waiting && waiting.actions)
+      ? [`${waiting.actions} ${waiting.actions === 1 ? 'thing is' : 'things are'} waiting for you to approve. `,
+          `Nothing runs them until you have read them: ${(waiting.approvals || []).map(a => `${a.kind} "${a.name || a.id}"`).join(', ')}. A model may write a job, a prompt or a contract and may not approve its own.`,
+          {
+            label: 'Read them',
+            onClick: () => {
+              const first = (waiting.approvals || [])[0]
+              showTab('actions')
+              if (first) showPane(`${first.kind}s`, 'actions')
+            }
+          }]
+      : null,
 
     // A SUPERVISOR THAT IS UP AND CANNOT WORK, which every rule here missed
     // because every rule here is about a runner.

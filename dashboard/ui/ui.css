@@ -153,6 +153,13 @@ h2:first-child { margin-top: 0; }
   text-align: center;
 }
 .tab-badge.bad { background: var(--fail); color: #fff; }
+/* SOMETHING ONLY A PERSON CAN DO, which is not the same as something happening.
+   The blue badge is a count -- how many are in the queue, how many lines are
+   live. Amber means the thing has STOPPED and you are what it is waiting for:
+   an approval nobody has given, a verdict nobody has recorded. Same shape and
+   same place, so it is read as the same kind of thing, and a different colour
+   so it is not read as the same kind of news. */
+.tab-badge.warn { background: var(--warn); color: #1a1205; }
 .topright { margin-left: 12px; font-size: 12px; white-space: nowrap; }
 
 /* ---------- notice ---------- */

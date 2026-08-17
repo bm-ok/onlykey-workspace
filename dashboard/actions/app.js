@@ -19,10 +19,14 @@ const actions = require('./table')
 // Everything the table is built out of, in one place rather than a require
 // block repeated nine times. See actions/shared.js.
 const s = require('./shared')
+// The conversation, for counting what the supervisor has said since the
+// person's own bookmark — see  below.
+const chat = require('../core/chat')
+
 const {
   log, events, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
-  archive, files, prompts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
+  archive, files, prompts, jobs, contracts, judging, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
@@ -54,6 +58,94 @@ const mayDrive = what => {
 }
 
 module.exports = {
+  // ---- WHAT IS WAITING ON A PERSON -----------------------------------------
+  //
+  // The tab strip has badges and three of them were never set: `judge-badge`
+  // and `chat-badge` are in the markup and nothing ever wrote to them, and the
+  // two tabs where somebody is most often BLOCKING — Repositories and Actions —
+  // had no badge at all. So a job sat unapproved and a pull request sat drafted
+  // and unsent, and the only way to find either was to be told.
+  //
+  // ONE ACTION RATHER THAN A COUNT PER PANEL, because the panels are
+  // view-guarded: a tab that is not open asks nothing, which is exactly right
+  // for a panel and exactly wrong for a badge whose whole job is to be read
+  // from somewhere else. Counted here, in one pass, and the window sets every
+  // badge from the one answer.
+  //
+  // ONLY WHAT A PERSON MUST DO. Not "what is happening" — the queue badge says
+  // that, and a badge that counts things in flight is a badge that is always
+  // lit. Every line below is something that STOPS until somebody acts:
+  //
+  //   an approval        a model may write a job, a prompt or a contract and
+  //                      may not ratify one. Nothing runs until somebody reads
+  //                      it, and nothing said so.
+  //   a verdict          a judgement a PERSON is reading has no other end. And
+  //                      a worker's judgement that finished without sending one
+  //                      is a fault, not a wait — counted, and said differently.
+  //   a change to send   work that is drafted, or a line proposed, and not out.
+  //                      The supervisor is allowed to cut a PR and parks anyway;
+  //                      nothing on screen showed that it had.
+  //   the supervisor     what it said since you last moved your bookmark.
+  //
+  // NOTHING HERE TOUCHES GIT, VIRTUALBOX OR GITHUB. It is read off this host's
+  // own files, because it is called on the draw loop — see the rule about paint
+  // functions in CLAUDE.md, which this would otherwise break for every tab at
+  // once.
+  waiting: {
+    about: 'What is waiting on a person: approvals, verdicts, changes to send, and what the supervisor said',
+    run: () => {
+      const why = []
+      const count = (n, one, many) => { if (n) why.push(`${n} ${n === 1 ? one : many}`) }
+
+      // ---- approvals ------------------------------------------------------
+      const unapproved = [
+        ...jobs.all().filter(j => !j.approved).map(j => ({ kind: 'job', id: j.id, name: j.name })),
+        ...prompts.all().filter(p => !p.approved).map(p => ({ kind: 'prompt', id: p.id, name: p.name })),
+        ...contracts.all().filter(c => !c.approved).map(c => ({ kind: 'contract', id: c.id, name: c.name }))
+      ]
+      count(unapproved.length, 'thing to approve', 'things to approve')
+
+      // ---- verdicts, and judgements that ended without one -----------------
+      const all = judging.read()
+      const mine = all.filter(j => j.by === 'person' && j.state === 'done' && !j.verdict)
+      const mute = all.filter(j => j.by !== 'person' && j.state === 'done' && !j.verdict)
+      count(mine.length, 'judgement to decide', 'judgements to decide')
+      count(mute.length, 'judgement that ended without a verdict', 'judgements that ended without a verdict')
+
+      // ---- work that is ready and has not gone out -------------------------
+      //
+      // A draft is a title and a body somebody wrote for a pair of lines and
+      // did not cut. It is the state the supervisor parks in, deliberately, and
+      // it was invisible.
+      const drafted = Object.values(drafts.all()).map(d => ({ source: d.source, target: d.target, title: d.title || null }))
+      count(drafted.length, 'change drafted and not sent', 'changes drafted and not sent')
+
+      // ---- and what the supervisor said ------------------------------------
+      //
+      // Since the bookmark rather than since for ever: "start reading from here"
+      // is how the conversation is cleared, and a badge that ignored it would
+      // count messages somebody has already decided they are done with.
+      const from = chat.fromMark()
+      const said = chat.all().filter(m => m.who === 'supervisor' && Number(m.n) > Number(from || 0)).length
+      count(said, 'message from the supervisor', 'messages from the supervisor')
+
+      return {
+        actions: unapproved.length,
+        judge: mine.length + mute.length,
+        repos: drafted.length,
+        supervisor: said,
+        total: unapproved.length + mine.length + mute.length + drafted.length + said,
+        // What each of them IS, so a badge can carry it on its hover rather than
+        // being a number somebody has to go and interpret.
+        approvals: unapproved,
+        verdicts: mine.map(j => ({ ref: judging.refOf(j.number), reads: j.subject && j.subject.name })),
+        silent: mute.map(j => ({ ref: judging.refOf(j.number), reads: j.subject && j.subject.name })),
+        drafted,
+        note: why.length ? why.join(', ') : 'nothing is waiting on you'
+      }
+    }
+  },
+
   status: {
     about: 'Is the server up, and what does it have to work with',
     run: async () => ({
