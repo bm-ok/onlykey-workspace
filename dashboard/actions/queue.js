@@ -23,7 +23,7 @@
 
 const actions = require('./table')
 const s = require('./shared')
-const { tasks, queue } = s
+const { tasks, judging, queue } = s
 
 module.exports = {
   queueState: {
@@ -39,7 +39,29 @@ module.exports = {
       // asked for on every draw, alongside the action that already does it.
       // Nothing here needs to know what a branch contains: a queued task is
       // queued whatever is on its branch.
-      const waiting = queue.order(tasks.read()
+      // BOTH KINDS, READ SEPARATELY AND SORTED TOGETHER. Two stores, because a
+      // judgement and a task are different records; one line, because they want
+      // the same machines. `queue.order` is what decides which goes first, and
+      // it is the same function the tick dispatches by.
+      const toJudge = (judging.read() || [])
+        .filter(j => j.state === 'queued')
+        .map(j => ({
+          kind: 'judgement',
+          number: j.number,
+          // ITS OWN LABEL, carried rather than derived. A judgement and a task
+          // can both be number 4, and nothing drawing a row should have to know
+          // this app's prefix conventions to say which is which.
+          ref: judging.refOf(j.number),
+          id: j.id,
+          title: j.title,
+          // What it READS. A judgement takes no branch of its own — it is not
+          // delivering anywhere — so this is the subject, not a destination.
+          on: j.subject && j.subject.name,
+          reads: j.subject && j.subject.kind,
+          tag: j.tag || null
+        }))
+
+      const toDo = tasks.read()
         .filter(t => t.state === 'queued')
         .map(t => ({
           // WHAT KIND OF WORK THIS IS, said on every entry rather than implied
@@ -47,6 +69,7 @@ module.exports = {
           // read from to say what it is cannot show two kinds in one list.
           kind: 'task',
           number: t.number,
+          ref: `#${t.number}`,
           id: t.id,
           title: t.title,
           // What it delivers on. A task works on a branch; a judgement will name
@@ -58,7 +81,9 @@ module.exports = {
           // somebody else's — so a row that is not moving has its reason here
           // rather than in a log line nobody was watching.
           tag: t.tag || null
-        })))
+        }))
+
+      const waiting = queue.order([...toJudge, ...toDo])
 
       return {
         ...queue.state(),

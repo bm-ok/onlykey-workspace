@@ -48,7 +48,11 @@ function paintQueue (q) {
 
       ...waiting.map((w, at) => el('div', { className: 'card' },
         el('div', { className: 'card-title' },
-          el('span', { textContent: `#${w.number} ${w.title || ''}`.trim() }),
+          // THE LABEL THE ENTRY CARRIES, never one built here. A judgement and a
+          // task can both be number 1, and this drew "#1" for J1 the first time
+          // it ran — the two kinds sharing one column and one numbering that is
+          // not shared is exactly the collision `ref` exists to prevent.
+          el('span', { textContent: `${w.ref || `#${w.number}`} ${w.title || ''}`.trim() }),
           el('span', { className: `badge ${KIND_BADGE[w.kind] || 'muted'}`, textContent: w.kind })),
         // WHERE IT IS IN THE LINE, said as a number, because "next" is the only
         // thing anybody wants from a queue and counting rows is not it.

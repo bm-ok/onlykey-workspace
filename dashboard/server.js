@@ -68,6 +68,10 @@ Object.assign(actions,
   require('./actions/guests'),
   require('./actions/branches'),
   require('./actions/tasks'),
+  // Judging: reading a change and saying whether it followed the rules, is
+  // secure, and hides no bug nobody caught. Its own list of actions because it
+  // is a different question about a different subject — see the head of it.
+  require('./actions/judge'),
   // What is waiting for a machine, of whichever kind. Its own file because a
   // judgement queues exactly as a task does — see the head of it.
   require('./actions/queue'),
