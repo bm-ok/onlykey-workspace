@@ -282,6 +282,25 @@ module.exports = {
       // decision and two copies of a decision drift.
       const on = await s.supervisorMachine(name)
 
+      // AND IT CAN ACTUALLY THINK BEFORE IT IS ASKED TO.
+      //
+      // Dialling in signs a supervisor in, which covers every ordinary route --
+      // but a wake that STARTED the machine is racing that, and a wake that
+      // found it already up has no dial-in to have caught it. Both end the same
+      // way without this: `okc-supervisor -p` runs, hits a sign-in menu, exits
+      // in three seconds, and the record says it asked for nothing. That has
+      // happened here and reads as a supervisor with nothing to say.
+      //
+      // Not fatal. If there is no sign-in to give, the turn still runs and
+      // still fails -- and it fails saying so, in the transcript, which is
+      // better than this refusing on its behalf.
+      try {
+        const put = await actions.supervisorSignIn.run({ name: on })
+        if (put.did) log.on('supervisor', on).info('it had no sign-in when it was woken — given one before the turn')
+      } catch (e) {
+        log.on('supervisor', on).warn(`could not check its sign-in before waking it: ${e.message}`)
+      }
+
       thinking = true
       const began = Date.now()
       log.on('supervisor', on).info(why ? `waking it — ${why}` : 'waking it')
@@ -469,6 +488,147 @@ module.exports = {
           ? `${up.name} is up and signed in as "${up.signedInAs}". It answers when you say something, if that is switched on.`
           : `${rows[0].name} cannot run: ${rows[0].why}.`
       }
+    }
+  },
+
+  // ---- AND NO PRESS AT ALL, WHICH IS THE ORDINARY CASE ----------------------
+  //
+  // A SUPERVISOR THAT IS UP SHOULD BE SIGNED IN, FULL STOP. There was a button
+  // for it and a banner explaining when to press it, which is a tool asking
+  // somebody to perform a step that has exactly one right answer: a supervisor
+  // is not handed an identity per task the way a runner is -- it holds one for
+  // as long as it is up, it is useless without one, and there is nothing else
+  // this host would rather do with a supervisor sign-in.
+  //
+  // WHY IT KEPT NOT HAPPENING. Every path that starts the machine is a path
+  // somebody wrote for another reason: a host restart brings it up, `vmStart`
+  // brings it up, a person at the window brings it up. Only `supervisorUp` also
+  // signed it in, so the machine came up able to do nothing rather more often
+  // than it came up ready -- and the failure is silent, because a wake with no
+  // credential runs, exits in three seconds and reports that it asked for
+  // nothing.
+  //
+  // IDEMPOTENT AND QUIET. It is called when a machine dials in and again before
+  // every wake, so it must be safe to call constantly: holding one already is
+  // the ordinary answer and says nothing to the log. It never takes a sign-in
+  // off anything -- one that is out on another machine is a person's decision
+  // and stays that way.
+  //
+  // IF YOU WANT IT SIGNED OUT, STOP IT. `supervisorDown` takes the credential
+  // back and then stops the machine, in that order, and this only ever acts on
+  // a machine that is up -- so the deliberate way to have a signed-out
+  // supervisor is the same one press it always was, and this cannot undo it.
+  supervisorSignIn: {
+    about: 'Make sure a supervisor that is up is holding its sign-in. Does nothing if it already is',
+    takes: ['name'],
+    run: async ({ name = null }) => {
+      const is = v => (v.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
+      const all = vms.read().filter(is).filter(v => !name || v.name === name)
+      if (!all.length) return { did: null, why: name ? `"${name}" is not a supervisor machine` : 'there is no supervisor machine on this host' }
+
+      // ONLY WHAT IS UP. Starting a machine is a decision with a cost and this
+      // is not the thing that gets to make it -- a supervisor that is off is
+      // off on purpose, and `supervisorUp` is how somebody changes their mind.
+      const up = all.filter(v => channel.connected(v.name))
+      if (!up.length) return { did: null, why: 'it is not up' }
+
+      const done = []
+      for (const v of up) {
+        if (guests.all().some(g => g.holder === v.name)) continue   // it has one
+        // THE ONE THAT WAS CHOSEN, not whichever is free. See `whichKey`.
+        const use = guests.supervisorKey()
+        if (!use.key) {
+          // Said once per call and never as an error. Having no sign-in to give
+          // is a real state with a real repair, and the repair is a person --
+          // at a browser, or at the pane where the one to use is chosen.
+          // Throwing here would turn every dial-in and every wake into a
+          // failure.
+          return { did: null, why: use.why }
+        }
+        await actions.guestLend.run({ name: use.key.name, machine: v.name })
+        log.on('supervisor', v.name).good(`signed it in as "${use.key.name}" — a supervisor that is up holds its sign-in`)
+        done.push(`${v.name} signed in as "${use.key.name}"`)
+      }
+      return { did: done.length ? done.join(', ') : null, why: done.length ? null : 'it was already signed in' }
+    }
+  },
+
+  // ---- AND WHICH SIGN-IN IT USES IS A CHOICE, MADE ONCE ---------------------
+  //
+  // Pass a name to choose one; pass nothing to read what is chosen and what
+  // there is to choose from.
+  //
+  // SWITCHING TAKES EFFECT, rather than being a preference that applies next
+  // time. A setting that describes the future and not the present is one
+  // somebody has to work out the consequences of -- and the consequence here is
+  // "which account is this machine spending" -- so choosing a different sign-in
+  // while the supervisor is up takes the old one back and hands the new one
+  // over, in that order, and says so.
+  //
+  // WHAT THE WORKER REFRESHED COMES HOME. Taking one back is guestBack rather
+  // than forgetting it: a token that rotated on the machine is the live one, and
+  // dropping it would leave this host holding a superseded copy of an identity
+  // it still thinks it has.
+  supervisorKey: {
+    about: 'Which supervisor sign-in this host uses, and switching it. Pass nothing to read it',
+    takes: ['name'],
+    run: async ({ name = null }) => {
+      const sups = guests.all().filter(g => g.role === 'supervisor')
+      const chosen = settings.read().supervisorKey
+
+      // Reading. Names, fingerprints and holders -- never anything a credential
+      // says, which is the rule this whole surface is built to.
+      if (!name) {
+        const now = guests.supervisorKey()
+        return {
+          chosen,
+          // WHAT IS ACTUALLY BEING USED, which is the one on a machine if there
+          // is one and otherwise the one that would be handed over next. Read
+          // off `key` alone this said "none" at the exact moment a supervisor
+          // was signed in and working — because `key` means "free to give",
+          // and a sign-in in use is not free.
+          using: now.inUse ? now.inUse.name : (now.key ? now.key.name : null),
+          why: now.why,
+          keys: sups.map(g => ({
+            name: g.name,
+            has: g.has,
+            fingerprint: g.fingerprint || null,
+            holder: g.holder || null,
+            chosen: g.name === chosen,
+            // True when nothing is chosen and there is only one: it IS what
+            // gets used, and a pane that showed nothing selected would be
+            // describing a choice the app is not making.
+            byDefault: !chosen && sups.length === 1
+          })),
+          note: sups.length ? null : 'this host has no supervisor sign-in at all'
+        }
+      }
+
+      const one = sups.find(g => g.name === name)
+      if (!one) throw new Error(`There is no supervisor sign-in called "${name}". Runners → Claude supervisor lists them.`)
+      if (!one.has) throw new Error(`"${name}" has no token file kept here, so it cannot be used. Sign it in again at the desk.`)
+
+      const before = sups.find(g => g.holder) || null
+      settings.write({ supervisorKey: name })
+      log.on('supervisor').info(`the supervisor sign-in is now "${name}"`)
+
+      // Already the one in use. Nothing to move, and saying so is better than a
+      // sentence describing a swap that did not happen.
+      if (before && before.name === name) {
+        return { chosen: name, did: `"${name}" was already the one in use, on ${before.holder}`, on: before.holder }
+      }
+
+      const did = [`"${name}" is the supervisor sign-in from now on`]
+      // Only when something is actually holding the old one. A choice made with
+      // the machine off is just a choice, and it applies when it next comes up.
+      if (before) {
+        const machine = before.holder
+        await actions.vmCredentialsForget.run({ name: machine })
+        did.push(`took "${before.name}" back off ${machine}`)
+        const put = await actions.supervisorSignIn.run({ name: machine })
+        did.push(put.did || `could not sign ${machine} in: ${put.why}`)
+      }
+      return { chosen: name, did: did.join(', ') }
     }
   },
 

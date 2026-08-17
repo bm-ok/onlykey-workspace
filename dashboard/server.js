@@ -1095,8 +1095,57 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
             // It cannot be done when the guest reports "online" — that comes
             // from the installer's post-install stage, before the installed
             // system has ever booted. See provisioner.firstSnapshotIfItNeedsOne.
+            // NO `.catch` ON THIS ONE, and that is not an oversight — it is the
+            // fix for a bug that made every line below this one dead.
+            //
+            // It returns UNDEFINED for a machine that already has a base
+            // snapshot, which is every established machine, so `.catch` on it
+            // threw a TypeError — synchronously, inside a callback channel.js
+            // wraps in a catch that says nothing. The result was silent and
+            // total: for any machine older than its first boot, everything after
+            // this line in `onHello` never ran, and there was no line anywhere
+            // saying so. It surfaced only because something was added below it.
+            //
+            // It needs no catch anyway: it schedules its own work and reports
+            // its own failure — see machines/provisioner.js. The message that
+            // was here was a copy of redial's and described a different call.
             provisioner.firstSnapshotIfItNeedsOne(name)
-              .catch(e => log.on('queue', name).warn(`could not ask it what it is working on: ${e.message}`))
+
+            // AND A SUPERVISOR THAT HAS JUST COME UP IS SIGNED IN.
+            //
+            // This is the moment, and there is no other one that catches every
+            // route: a host restart brings the machine up, vmStart brings it
+            // up, a person brings it up, and only supervisorUp also handed it
+            // an identity — so it arrived able to do nothing rather more often
+            // than it arrived ready. The failure is silent, which is what made
+            // it last: a wake with no credential runs, exits in three seconds
+            // and reports that it asked for nothing.
+            //
+            // Idempotent and quiet — holding one already is the ordinary answer
+            // and says nothing. It never takes a sign-in off anything, and it
+            // never starts a machine.
+            // AND IT SAYS WHY WHEN IT DOES NOTHING, which the first version did
+            // not — it dialled in, nothing happened, and there was no line
+            // anywhere saying so. A quiet no-op on a path nobody watches is
+            // indistinguishable from a call that was never made, and that cost
+            // an evening once already.
+            //
+            // The already-signed-in case stays silent: it is the ordinary
+            // answer, on a path that runs on every dial-in of every machine.
+            try {
+              actions.supervisorSignIn.run({ name })
+                .then(r => {
+                  if (!r.did && r.why && !/already signed in|not a supervisor machine|no supervisor machine/.test(r.why)) {
+                    log.on('supervisor', name).warn(`it dialled in and was not signed in: ${r.why}`)
+                  }
+                })
+                .catch(e => log.on('supervisor', name).warn(`could not sign it in: ${e.message}`))
+            } catch (e) {
+              // Synchronous, and worth catching separately: channel.js wraps
+              // this whole callback in a try that swallows, so a throw before
+              // the promise exists disappears with no line at all.
+              log.on('supervisor', name).warn(`could not even ask about its sign-in: ${e.message}`)
+            }
           }
         })
         net.channelPort = c.port

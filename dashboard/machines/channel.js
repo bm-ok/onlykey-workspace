@@ -167,7 +167,18 @@ function onConnection (socket, tokenFor, onHello) {
               address: String(from || '').replace(/^::ffff:/, '').replace(/:\d+$/, ''),
               user: (msg.facts || {}).user || null
             })
-          } catch { /* never worth dropping a session over */ }
+          } catch (e) {
+            // NOT WORTH DROPPING A SESSION OVER, AND NOT WORTH SAYING NOTHING
+            // ABOUT EITHER. This swallowed silently, and what it swallowed was a
+            // TypeError on the third line of the handler — so for every machine
+            // older than its first boot, the rest of what happens when a machine
+            // dials in simply did not happen, and no line anywhere said so. It
+            // took adding something below it and watching that not run.
+            //
+            // The session still survives, which was always right. What changes
+            // is that the failure is now a sentence somebody can read.
+            log.on('vm', vm, 'channel').warn(`something went wrong handling its arrival: ${e.message}`)
+          }
         }
         send({ type: 'hi' })
         continue

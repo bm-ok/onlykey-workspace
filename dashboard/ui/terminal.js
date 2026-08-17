@@ -550,10 +550,11 @@ function paintTermAuth () {
           : 'It is holding this host\'s worker credential, which also means it cannot be snapshotted until that is taken back.'
         : isSup
           ? sup.free
-            ? 'A supervisor keeps its sign-in while it is up, so this is not a rest — it cannot think until it has one, and there is one free here.'
-            : sup.out
-              ? `A supervisor keeps its sign-in while it is up, so this is not a rest. The supervisor sign-in is out on ${sup.out}, and one identity cannot be in two places.`
-              : 'A supervisor keeps its sign-in while it is up, so this is not a rest. This host has no supervisor sign-in at all — the worker credentials here are a different identity and are refused on it. Add one under Runners → Claude supervisor.'
+            ? `A supervisor keeps its sign-in while it is up, so this is not a rest — and one is signed in automatically when it dials in. "${sup.using}" is free here, so this is a machine that missed that.`
+            // The reason is written where the decision is made — see
+            // supervisorKey in core/guests.js — rather than spelled out again
+            // here, which is how two explanations of one state drift apart.
+            : `A supervisor keeps its sign-in while it is up, so this is not a rest: ${sup.why || 'it has none'}.`
           : held.held
             ? 'A runner is handed a credential per task and it is taken back afterwards, so an idle one is signed out by design.'
             : 'This host holds no worker credential either. Sign one machine in on the Keys tab first.'
@@ -570,8 +571,8 @@ function paintTermAuth () {
           ? el('button', {
               className: 'btn ok small',
               textContent: 'Sign it in',
-              onclick: () => api('supervisorUp', { name })
-                .then(r => say(r.note)).catch(oops)
+              onclick: () => api('supervisorSignIn', { name })
+                .then(r => say(r.did || r.why)).catch(oops)
             })
           : null
         : held.held

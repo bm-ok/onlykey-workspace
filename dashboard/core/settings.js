@@ -73,7 +73,21 @@ const DEFAULTS = {
   // machine comes up if it is down, one turn runs, and whatever it says appears
   // in the conversation. Nothing else about what it may do changes — it is the
   // same allowlist either way.
-  supervisorWakes: false
+  supervisorWakes: false,
+
+  // WHICH SIGN-IN THE SUPERVISOR USES, by name, until somebody switches it.
+  //
+  // A supervisor holds one identity for as long as it is up, and this host can
+  // keep several. Picking "whichever is free" is fine with one and is a guess
+  // the moment there are two — and the wrong guess is not a small thing: it is
+  // which account the deciding gets billed to, and which one appears in
+  // whatever a supervisor touches. That is a choice with a person's name on it,
+  // so it is made once, in the window, and stuck to.
+  //
+  // Null means "the only one there is". A host with a single supervisor sign-in
+  // needs no ceremony, and the choice starts mattering exactly when a second
+  // one exists.
+  supervisorKey: null
 }
 
 function read () {

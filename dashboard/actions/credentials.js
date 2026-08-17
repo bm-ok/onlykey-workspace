@@ -314,12 +314,23 @@ module.exports = {
       // sign one in", and getting that wrong sends somebody to do a thing they
       // have already done.
       const sups = guests.all().filter(g => g.role === 'supervisor')
+      // FROM THE ONE FUNCTION THAT DECIDES THIS, rather than a second reading
+      // of the same list. Two answers to "is there a sign-in to give" that can
+      // disagree is the exact bug this field was added to fix, and writing the
+      // rule out again here would have reintroduced it a level down.
+      const use = guests.supervisorKey()
       const supervisor = {
         kept: sups.length,
-        free: sups.some(g => g.has && !g.holder),
+        // Not "one is free" but "one is available TO USE", which differs the
+        // moment a choice has been made: an unchosen sign-in sitting free is not
+        // something anything is going to reach for.
+        free: !!use.key,
+        using: use.inUse ? use.inUse.name : (use.key ? use.key.name : null),
+        chosen: use.chosen,
+        why: use.why,
         // Which machine has it, if any. A supervisor sign-in that is out is not
         // free and not missing, and those need different sentences.
-        out: (sups.find(g => g.holder) || {}).holder || null
+        out: use.out || (sups.find(g => g.holder) || {}).holder || null
       }
       if (held.length) {
         return {

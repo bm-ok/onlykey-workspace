@@ -60,7 +60,7 @@ const fingerprintOf = g => g.fingerprint
   ? el('span', { className: 'mono muted', textContent: g.fingerprint, title: 'A fingerprint of the token, not the token' })
   : el('span', { className: 'muted', textContent: 'no fingerprint' })
 
-const identityCard = (g, pane) => el('div', {
+const identityCard = (g, pane, key = {}) => el('div', {
   className: `card pick${g.name === pane.get() ? ' on' : ''}`,
   onclick: () => { pane.set(g.name); paintIdentities(pane) }
 },
@@ -73,13 +73,24 @@ const identityCard = (g, pane) => el('div', {
       ? el('span', { className: 'badge run', textContent: `on ${g.holder}` })
       : el('span', { className: 'badge ok', textContent: 'here' })),
   el('div', { className: 'badges' },
+    // WHICH ONE THE SUPERVISOR IS SET TO USE, in the list, because that is the
+    // question somebody has when they look at a list of identities that all
+    // look alike. Two spellings on purpose: one that was CHOSEN says so, and a
+    // lone sign-in that is being used without anybody having chosen it says
+    // that instead -- a badge reading "in use" over a decision nobody made is
+    // how a default gets mistaken for a choice.
+    g.name === key.chosen
+      ? el('span', { className: 'badge ok', textContent: 'in use' })
+      : g.name === key.usingNow
+        ? el('span', { className: 'badge muted', textContent: 'in use — the only one' })
+        : null,
     fingerprintOf(g),
     g.has ? null : el('span', { className: 'badge bad', textContent: 'no token file' }),
     g.note ? el('span', { className: 'muted', textContent: g.note }) : null))
 
 // What is known about the one picked. Everything on this panel is a fact about
 // the credential that is not the credential.
-function identityPanel (g, machines, pane) {
+function identityPanel (g, machines, pane, key = null) {
   if (!g) {
     return el('p', { className: 'empty', textContent: pane.lendable
       ? 'Pick a guest on the left, or add one. A guest is a Claude sign-in kept here under a name.'
@@ -94,7 +105,18 @@ function identityPanel (g, machines, pane) {
     ['token file', g.has ? 'here, sealed to this Windows account' : 'MISSING — it was removed by hand, or sealed by another account'],
     pane.lendable ? ['where it is', g.holder ? `on ${g.holder}` : 'here, lent to nobody'] : null,
     pane.lendable ? ['last lent', g.lastGiven ? `${new Date(g.lastGiven).toLocaleString()}${g.lastGivenTo ? ` to ${g.lastGivenTo}` : ''}` : 'never'] : null,
-    g.refreshed ? ['last refreshed', new Date(g.refreshed).toLocaleString()] : null
+    g.refreshed ? ['last refreshed', new Date(g.refreshed).toLocaleString()] : null,
+    // WHAT THIS ONE IS TO THE SUPERVISOR. Said as a fact in the table rather
+    // than only as a badge, because "the supervisor signs in as this" is the
+    // single most consequential thing about a supervisor sign-in and the panel
+    // listed everything except that.
+    !pane.lendable && key
+      ? ['used by the supervisor', g.name === key.chosen
+          ? 'yes — chosen here'
+          : g.name === key.using
+            ? 'yes — the only one kept here, so it is used without being chosen'
+            : 'no']
+      : null
   ].filter(Boolean)
 
   // Only machines that are dialled in can be lent one — the action refuses the
@@ -113,10 +135,45 @@ function identityPanel (g, machines, pane) {
         el('td', { className: 'mono', textContent: String(v) })))),
 
     el('div', { className: 'row', style: 'margin-top:10px' },
-      !pane.lendable
-        ? el('span', { className: 'muted', textContent: g.holder
-            ? `${g.holder} is signed in as this, and keeps it: a supervisor is never rolled back, so nothing takes it away.`
-            : 'A supervisor sign-in belongs on a supervisor machine, and on no other. Sign one in below.' })
+      // CHOOSING WHICH ONE THE SUPERVISOR USES, which is the only decision a
+      // person makes on this pane and had no control at all.
+      //
+      // Shown as a button only when it is not already the one — a button whose
+      // press changes nothing is one somebody presses to find out, and this one
+      // moves a credential between machines.
+      !pane.lendable && key && g.name !== key.chosen && g.has
+        ? el('button', {
+            className: 'btn small ok',
+            textContent: 'Use this one',
+            title: 'The supervisor signs in as this, from now on and until it is switched here',
+            onclick: () => ask({
+              title: `Use "${g.name}" as the supervisor sign-in?`,
+              plain: [
+                'The supervisor signs in as this from now on, and keeps doing so until it is switched here.',
+                // THREE DIFFERENT THINGS THIS PRESS DOES, and saying the wrong
+                // one is how a dialog stops being read. It can swap an identity
+                // off a running machine, it can decide what the next one gets,
+                // or -- on the one already in use without having been chosen --
+                // it can do nothing at all except write the choice down.
+                key.using === g.name
+                  ? 'This is already what it uses, as the only one kept here. Pressing this changes nothing now; it records the choice, so adding a second sign-in later does not make it ambiguous.'
+                  : key.using
+                    ? `"${key.using}" is what it uses now. If a supervisor is up holding it, that one is taken back — with whatever it refreshed — and this one is handed over in its place.`
+                    : 'Nothing is holding another one, so this takes effect the next time a supervisor comes up.'
+              ],
+              cost: 'Everything the supervisor decides is billed to this identity from now on.',
+              confirm: 'Use this one',
+              onYes: async () => {
+                const said = await api('supervisorKey', { name: g.name })
+                say(said.did)
+                draw()
+              }
+            })
+          })
+        : !pane.lendable
+          ? el('span', { className: 'muted', textContent: g.holder
+              ? `${g.holder} is signed in as this, and keeps it: a supervisor is never rolled back, so nothing takes it away.`
+              : 'A supervisor sign-in belongs on a supervisor machine, and on no other. It is given one when it comes up.' })
         : g.holder
           ? el('button', {
               className: 'btn small',
@@ -192,9 +249,15 @@ async function paintIdentitiesNow (pane) {
   Promise.all([
     api('guests', { role: pane.role }).catch(e => ({ guests: [], note: e.message })),
     api('vmList').catch(() => ({ vms: [] })),
-    api('sessions').catch(() => ({ sessions: [] }))
-  ]).then(([held, machines, kept]) => {
+    api('sessions').catch(() => ({ sessions: [] })),
+    // WHICH ONE THE SUPERVISOR USES, and asked only on the pane where it means
+    // something. A guest is chosen per task by the queue; a supervisor sign-in
+    // is chosen once by a person, and this is where that is done.
+    pane.lendable ? Promise.resolve(null) : api('supervisorKey').catch(() => null)
+  ]).then(([held, machines, kept, key]) => {
     if (view !== 'runners' || runnerPane !== pane.pane) return
+    const chosen = key ? key.chosen : null
+    const usingNow = key ? key.using : null
 
     setText($(pane.ids.note), held.note || '')
     setText($(pane.ids.count), held.guests.length ? `— ${held.guests.length}` : '')
@@ -206,15 +269,15 @@ async function paintIdentitiesNow (pane) {
     }
     const one = held.guests.find(g => g.name === pane.get()) || null
 
-    if (changed(`${pane.pane}-list`, [held.guests, pane.get()])) {
+    if (changed(`${pane.pane}-list`, [held.guests, pane.get(), usingNow, chosen])) {
       fill($(pane.ids.list), held.guests.length
-        ? held.guests.map(g => identityCard(g, pane))
+        ? held.guests.map(g => identityCard(g, pane, { chosen, usingNow }))
         : el('p', { className: 'empty', textContent: pane.empty }))
     }
 
     setText($(pane.ids.picked), one ? `— ${one.name}` : '— nothing selected')
-    if (changed(`${pane.pane}-detail`, [one, (machines.vms || []).map(m => `${m.name}:${m.connected}`)])) {
-      fill($(pane.ids.detail), identityPanel(one, machines.vms || [], pane))
+    if (changed(`${pane.pane}-detail`, [one, (machines.vms || []).map(m => `${m.name}:${m.connected}`), usingNow, chosen, key && key.why])) {
+      fill($(pane.ids.detail), identityPanel(one, machines.vms || [], pane, key))
     }
 
     // THE THIRD COLUMN IS WHAT THIS SIGN-IN HAS BEEN PART OF, and it is filtered

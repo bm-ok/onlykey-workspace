@@ -899,3 +899,30 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   every job at once, on a change that reads like a display preference. It now
   takes the last `result` line and still accepts a whole-file object, so runs
   from either side of the change read the same.
+
+* **A `.catch` on something that returns `undefined`, inside a handler wrapped
+  in a silent catch, killed every line below it.** `firstSnapshotIfItNeedsOne`
+  returns early — no promise — for a machine that already has a base snapshot,
+  which is every established machine. server.js chained `.catch` onto it, so
+  dialling in threw a TypeError on that line, and channel.js caught it with
+  `catch { /* never worth dropping a session over */ }` and said nothing. The
+  rest of what happens when a machine arrives had never run, on any machine
+  older than its first boot, for as long as that line had been there. It
+  surfaced only because something new was added underneath it and did not
+  happen. **A catch that swallows without a word turns the next bug into an
+  afternoon**; that one logs now, and still does not drop the session.
+
+* **Two readings of one question will disagree, and the wrong one will be the
+  one on screen.** `credentialsHeld` filters supervisors out of its guest list
+  deliberately — it answers "is there anything to hand a runner". A new banner
+  read that list, found no supervisor, and told the operator this host had no
+  supervisor sign-in while one sat on the Runners tab with a "here" badge. The
+  fix was not a better filter: it was one function, `guests.supervisorKey()`,
+  that everything asks — the thing that signs a supervisor in, the pane that
+  offers the choice, and the banner that explains what is wrong.
+
+* **"Free" and "in use" are not opposites, and reading one for the other blanked
+  the answer.** The same function reports what could be HANDED OVER; a sign-in
+  already on a machine is not that. The pane asked it "which one is in use" and
+  got "none" at the exact moment a supervisor was signed in and working. Two
+  fields now, because they are two questions.

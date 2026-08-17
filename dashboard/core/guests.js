@@ -41,6 +41,9 @@ const path = require('node:path')
 const crypto = require('node:crypto')
 const data = require('./data')
 const secret = require('./secret')
+// The chosen supervisor sign-in is a setting, and this is the one place that
+// turns a name into an identity to use. See supervisorKey below.
+const settings = require('./settings')
 
 // One folder, one file per guest, named after the guest. Not a single JSON file
 // holding every token: a sealed blob per identity means one going bad cannot
@@ -261,4 +264,70 @@ function adoptTheOldOne (file, name = 'claude-code') {
   return made
 }
 
-module.exports = { all, get, add, forget, lentTo, backFrom, token, fingerprint, okName, adoptTheOldOne, whyNotOn, ROOT, fileFor }
+// WHICH SIGN-IN THE SUPERVISOR USES, and why it is a choice rather than a search.
+//
+// "Whichever is free" is correct with one and a guess with two, and the guess is
+// not a small one: it decides which account the supervising is billed to and
+// which identity appears in everything it touches. So the pane where the
+// sign-ins live is where it is picked, it is remembered in settings, and it is
+// used until somebody switches it there.
+//
+// HERE RATHER THAN IN AN ACTION, because three surfaces need the same answer:
+// the thing that signs a supervisor in, the pane that offers the choice, and the
+// banner that says what is wrong when there is nothing to give. Two readings of
+// "is there a sign-in available" that can disagree is exactly the bug that put a
+// banner on screen telling this host it had none while one sat on the Runners
+// tab.
+//
+// FOUR ANSWERS, each with a different repair, which is why this is one function
+// rather than a `find`:
+//
+//   nothing kept         a person, at a browser, on the sign-in desk
+//   several, none chosen a person, on the Runners pane -- and no guess meanwhile
+//   chosen and free      use it
+//   chosen and out       a name to take it back from, and nothing automatic
+//
+// It never falls back from a choice that is out to one that is free. Somebody
+// picking an identity meant that one, and quietly using the other would bill the
+// deciding to the account they did not pick, with nothing saying so out loud.
+function supervisorKey () {
+  const sups = all().filter(g => g.role === 'supervisor' && g.has)
+
+  // WHICH ONE IS BEING USED RIGHT NOW, which is not the same question as which
+  // one there is to hand over — and reading one as the other made the pane show
+  // no identity in use at the exact moment one was.
+  //
+  // `key` is "what could be given to a supervisor coming up", so an identity
+  // already on a machine is not it. `inUse` is "what a supervisor is signed in
+  // as", and for these two that is the same word: a supervisor sign-in can only
+  // be lent to a supervisor machine — whyNotOn refuses anything else — so a
+  // holder is always a supervisor, and out always means in use.
+  const inUse = sups.find(g => g.holder) || null
+
+  if (!sups.length) {
+    return { key: null, chosen: null, inUse: null, why: 'this host has no supervisor sign-in at all — sign one in under Runners → Claude supervisor' }
+  }
+
+  const picked = settings.read().supervisorKey
+  if (!picked) {
+    if (sups.length > 1) {
+      return { key: null, chosen: null, inUse, why: `there are ${sups.length} supervisor sign-ins and none is chosen — pick one under Runners → Claude supervisor` }
+    }
+    // One is not ambiguous. Reported as chosen: null so nothing calls a default
+    // a decision — the pane says "the only one" rather than "in use".
+    return sups[0].holder
+      ? { key: null, chosen: null, inUse, why: `"${sups[0].name}" is already out on ${sups[0].holder}`, out: sups[0].holder }
+      : { key: sups[0], chosen: null, inUse, why: null }
+  }
+
+  const one = sups.find(g => g.name === picked)
+  if (!one) {
+    // Chosen and then thrown away. Not silently replaced: the setting names an
+    // identity somebody picked, and the honest answer is that it is gone.
+    return { key: null, chosen: picked, inUse, why: `the chosen sign-in "${picked}" is not kept here any more — pick another under Runners → Claude supervisor` }
+  }
+  if (one.holder) return { key: null, chosen: picked, inUse, why: `the chosen sign-in "${picked}" is out on ${one.holder}`, out: one.holder }
+  return { key: one, chosen: picked, inUse, why: null }
+}
+
+module.exports = { all, get, add, forget, lentTo, backFrom, token, fingerprint, okName, adoptTheOldOne, whyNotOn, supervisorKey, ROOT, fileFor }

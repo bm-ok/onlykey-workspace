@@ -437,6 +437,38 @@ than installed at provisioning time, for the same reason the supervisor's is
 re-fetched on every wake: a machine built last month would otherwise be working
 to last month's rules.
 
+The supervisor's sign-in
+-------------------------
+
+A runner is handed a credential per task and has it taken back afterwards, so a
+runner sitting idle is signed out **by design**. A supervisor is the opposite on
+both counts: it is meant to be up, it holds one identity for as long as it is,
+and it can do nothing at all without one. Signed-out is a fault there, not a
+rest, and the window says so in those words now — it used to print the runner's
+sentence over a supervisor and call the fault normal.
+
+**It signs itself in.** A supervisor is given its sign-in the moment it dials in,
+and again before every wake. That covers every route a machine comes up by — a
+host restart, `vmStart`, somebody at the window — where only `supervisorUp` used
+to. The failure it replaces is silent and expensive: a wake with no credential
+runs, meets a sign-in menu, exits in three seconds, and the record says it asked
+for nothing.
+
+**Which sign-in is a choice, not a search.** This host can keep several, and
+picking "whichever is free" decides which account the deciding is billed to. So
+it is chosen once, on Runners → Claude supervisor, and used until it is switched
+there. Switching it takes effect rather than applying next time: if a supervisor
+is up holding the old one, that one comes back — with whatever it refreshed — and
+the new one goes over.
+
+With one sign-in kept there is no ceremony: it is used, and the pane says *"in
+use — the only one"* rather than claiming somebody chose it. `supervisorKey`
+reads and sets it from the command line.
+
+Nothing here ever takes a sign-in off a machine to satisfy a rule. One that is
+out is a person's decision, and the window says whose it is rather than
+correcting it.
+
 What a task is made of
 -----------------------
 
