@@ -2,105 +2,77 @@
 
 Reading what came back and saying yes or no — and it is **work**, not a field.
 
-That is the whole of what this suite is waiting for, and none of it is built. It
-is written down here, as drafts, because judging is the last step of the tool and
-the only one that has never happened end to end: the round trip in `08` finishes
-on a refusal, correctly, because nothing was pushed.
+This suite was nine drafts describing a design. The design was built, and it was
+built *differently* from the drafts in three ways that matter, so what follows is
+the shape as it exists rather than the shape as it was imagined. Anything still
+described here as unbuilt is a draft below, and there is only one of those left.
 
-## The shape it is meant to take
+## The three ways it came out differently
 
-**A judgement is a task of its own.** Not a verdict typed onto the task that
-produced the work — a task cloned from it, pointed at what it delivered. Which
-means it gets everything a task already has: a job that says how the judging is
-done, a prompt that says what to look for, a contract that says what the judge
-may not do, and a run on a machine with a record of what it saw.
+**A judgement is not a task.** The drafts said "a task cloned from the work,
+pointed at what it delivered", and reused the task store. It has its own —
+`tasks/judging.js`, its own file, its own numbering, its own refs: `J1`, `J2`,
+beside the tasks' `#131`. The reason is what the drafts wanted and could not have
+had: a judgement has no branch, no delivery, and no verdict *of its own work*,
+and every one of those is a field a task has and a rule a task is held to.
+Sharing the store meant a judgement pretending to be a task with three quarters
+of it left null, and the board asking "did it deliver" about a thing that reads.
 
-    branch  <- task <- job <- prompt <- contract   the work
-    PR cut  <- task <- job <- prompt <- contract   judging the work
+**It judges a branch cut as well as a PR cut.** The drafts were firm that the
+subject is the pull request — "not a commit, not a branch, but the change as it
+is being proposed for landing". That is right about the *outward* half and wrong
+as the only case: the whole point of judging before a task is written is that
+nothing has been proposed yet. So `subject` is `{ kind: 'branch' | 'cut' }`, and
+the branch case is the one that runs first and most.
 
-**The same chain, and only the left-hand end differs.** Work delivers onto a
-BRANCH; judging delivers onto a **PR cut** — the one pull request per repository
-that carries something, taken as one act. That is what a judgement is about: not
-a commit, not a branch, but the change as it is being proposed for landing.
+**And the judge sends its own verdict.** The drafts left this to be settled —
+"whether a person's judgement is a run at all". What was built: the one that READ
+the change is the one that concludes, and it says so through the job API at the
+end of its session. A person judging records their own, on the Judge tab. Nobody
+transcribes anybody else's, because a verdict transcribed is a second opinion
+wearing the first one's clothes.
 
-It also answers a question that otherwise has to be invented. A judging task
-does not need a branch of its own and must not take one: it reads rather than
-writes, and a task claiming a branch it never pushes to would hold a machine on
-a branch for no reason. Its subject is the cut, and the cut is where its verdict
-goes.
+## What that makes the lane
 
-**And `job <- prompt <- contract` already exists**, with a tab of its own, an
-approval per substance, and a rule that a model may write one and may not ratify
-its own. Judging reuses it: a judging job is a job, its prompt is a prompt, its
-contract is a contract. Nothing new is built there and no second approval path
-appears — which is most of why this shape is worth having rather than a
-judge-specific mechanism beside it.
+    branch cut  <- judgement <- job <- prompt <- contract    reading what is there
+    PR cut      <- judgement <- job <- prompt <- contract    reading what is proposed
 
-So the only genuinely new thing is the left-hand end: a task whose subject is a
-cut rather than a branch.
+    branch      <- task      <- job <- prompt <- contract    changing it
 
-**And the judge can be either kind of supervisor.** A person reading a diff and a
-worker running checks are the same act with a different body — which is exactly
-what the spine already says about who supervises, and the reason judging should
-not be a special case bolted to the side of a task.
+**Two libraries, one shape.** `job <- prompt <- contract` is reused exactly as
+the drafts hoped, with one field added: `kind`, which is `task` or `judge`. They
+are refused in both directions — a working job cannot be run as a judge, and a
+judge cannot be given to a task — because a judging job run under a task's rules
+would read a change under rules written for changing it.
 
-**An open cut is what asks for a judgement.** Not somebody deciding to judge a
-task — a cut is opened when work is proposed for landing, which is the moment the
-change stops being one machine's business and becomes something to be read. So an
-open cut is a thing *waiting*, and this app should say so without being asked.
+**One queue, judgements first.** Both kinds wait in one line. `order()` in
+`tasks/queue.js` puts judgements ahead of tasks, and that is the only priority
+rule there is: a judgement reads work that is already waiting on it, so anything
+behind it in the queue is waiting twice.
 
-**It asks; it does not start.** The judgement is begun by a button on the cut's
-own card. Nothing runs because a cut exists — an automatic queue of judgements
-would be work running unattended against somebody's repository and reporting to
-GitHub, with nobody having chosen this cut or this chain, which is the same thing
-this app already refuses about approving a job down a pipe. Asking is free;
-acting is a decision.
+**The judge is the gate.** `taskCreate` over the wire refuses without
+`becauseOf` — the ref of a *finished* judgement. A supervisor cannot see the
+codebase, so a task written without one is work commissioned from a rumour.
+`prCutMake` refuses without a current judgement that is not a rejection, and
+"current" is measured against the tips the judgement recorded: a judgement made
+before another push is a judgement of something else.
 
-That is also why the subject is the cut and not the task: a cut may carry work
-from more than one task, and a task may deliver nothing worth landing. Judging
-follows the change, not the occasion that produced it.
+**And a judgement cannot push.** The git route refuses a push from a machine
+running one. A judge hands artifacts back — that is `okc-artifact`, the same door
+a task uses — and what it hands back is read on the Judge tab under *Handed
+back*.
 
-## The tab
+## What is still not built
 
-A tab of its own, called **Judge**, with two sub-tabs:
+**GitHub is not told.** A verdict does not appear beside the pull request, so
+anybody looking at the change where a reviewer looks has no way to know this app
+read it. That is the one draft left below, and it is still a draft for the reason
+it always was: nobody has decided whether it is a commit status, a check run or a
+comment — and whether a rejection should block somebody else's merge button.
 
-    Judgements   two columns    every open cut — waiting, in flight, decided —
-                                and beside it the delivery being judged
-    judges       three columns  the chains that can do the judging, one column
-                                per rung: job <- prompt <- contract
+## `taskJudge`
 
-**Judgements** is the list, and it is what turns judging into something you can
-be *behind on* rather than something you remember to do. The second column is
-the delivery: the cut's commits, the diff, the files handed back, the run's log,
-and the buttons under all of it — including the one that starts a judgement,
-since a cut asks and does not act.
-
-**A judge is a combination**, and that is the word this needed. The library
-lists jobs, prompts and contracts one substance at a time, because that is how
-each is written and approved. A judge is the whole chain, and picking one from
-three separate lists asks somebody to recombine in their head what the app
-already knows — `jobs` reports `runnable` and `whyNot`, and `whyNot` names the
-one rung that is missing.
-
-**And it reports outward.** A verdict is not only a note on a board: it belongs
-on the PR cut the work is landing through, and on GitHub beside the pull request
-— the place anybody looking at the change would expect to find out whether it was
-checked. Testing, verifying, whatever the job did.
-
-## What `taskJudge` is
-
-**A placeholder that predates the decision.** It records a verdict and a note on
-the task, refuses a verdict on a branch nothing arrived on, and refuses a
-rejection with no reason — "sent back to a worker that cannot ask what was
-wrong", which describes something that does not happen. It is the note this app
-left itself to complain about later, and it is where the complaint is.
-
-Nothing here says to delete it. It is the only way a verdict is recorded today,
-and it will be replaced by the thing above rather than removed first.
-
-## Why the checks are drafts
-
-Because the behaviour is not decided, and a check would assert an answer nobody
-chose. Each draft below carries what has to exist, what the check would be, and
-what has to be settled first — and becomes a real check the moment the answer
-is picked.
+Still there, and now genuinely vestigial: `judgementVerdict` is where a verdict
+is recorded. It is proven in `08` and in the guards, so it is doing real work
+today, and the check below says what has actually replaced it rather than
+assuming the old thing is gone.

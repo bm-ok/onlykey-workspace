@@ -125,11 +125,15 @@ it('and a task cannot ask to be run on one', async ({ okc, assert, log }) => {
 //
 // Two directions, two APIs, and the second one has nothing written yet.
 
-draft('and the jobs API a runner uses is proven end to end',
-  'IT IS EXERCISED AND NOT PROVEN, which are different. A job on a machine is handed a set of calls — fetch its task, post an artifact, hand back its session, report a run — and suite 08 uses several of them by running a real task through the queue with the api-tour job. ' +
-  'What is missing is a check of the API ITSELF: every call it offers, asked directly, with the answers and the refusals stated. Today a call that quietly stopped working would show up as a task that failed for some other-looking reason, twenty minutes into a drill that needs a machine. ' +
-  'THE CHECK: from a machine, exercise every endpoint the jobs API exposes — the ones that should answer, and the ones that should be REFUSED when asked by a machine that is not running that task. Suite 08 already posts to /artifact and /session exactly as machines/job-api.js does, so the pattern is written; what is missing is the list being complete rather than the two calls a drill happened to need. ' +
-  'AND IT IS THE MODEL FOR THE SUPERVISOR API BELOW, which is the other reason to write it first: the same drill shape, pointed at the other direction.')
+// THE JOBS API THAT WAS DRAFTED HERE IS PROVEN, and its checks are in suite 08:
+// "the jobs api call by call". The draft asked for every endpoint asked
+// directly, from a machine, with its refusals — which is what that file does,
+// including the ones a machine gets for asking about a task it is not running.
+//
+// It stayed here as a draft for a while after the thing it described was
+// written, which is its own small lesson: a draft is a debt, and the moment to
+// clear it is the moment the work lands, not the next time somebody reads the
+// list.
 
 // THE API THAT WAS DRAFTED HERE IS BUILT, and its checks are the file beside
 // this one: "driving the app". What it settled, since a draft is only worth

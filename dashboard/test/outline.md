@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 37 tests, 176 checks, 19 of them drafts -->
+<!-- 12 suites, 43 tests, 196 checks, 10 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -15,7 +15,7 @@
   A capability with no check here is one somebody will build again.
 -->
 
-## 19 drafts, not written yet
+## 10 drafts, not written yet
 
 - **the refusals / the ways round a refusal** — and the window cannot be driven while the drills are off
   THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. It matters more than it looks: windowClick and windowFill reach the SAME handlers a person's press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. WHY IT IS NOT A CHECK HERE: a drill runs only while testing mode is on, which is exactly when this is allowed. Proving the refusal means turning testing mode OFF, which stops the drills. HOW TO WRITE IT: from outside the kit — a script that turns testing mode off at the window, calls windowClick over the wire, sees the refusal, and turns it back on. That is a person-driven drill rather than one the harness can run, and it belongs in the same family as the sign-in that needs somebody to visit a page. WHAT CAN BE CHECKED FROM HERE AND IS NOT YET: that a press driven from outside carries the mark — press an APPROVE button through windowClick and watch it refused for being over the wire. That proves the anti-bypass property without turning anything off. See drivenFromTheWire in ui/base.js.
@@ -35,26 +35,8 @@
   THE REFUSAL EXISTS AND NOTHING ACTS ON IT. vmCredentialsPut throws when every guest is out, naming who holds what — which is right, and turns into a failed dispatch rather than a task that waits. Waiting for a credential is the same shape as waiting for a machine, and tasks/queue.js already knows how to do that: a task asking for a tag waits for a machine with that tag rather than taking any machine. THE CHECK: with one guest and two machines, dispatch two tasks — the second waits, and runs when the first gives its guest back, rather than failing. TO SETTLE FIRST: whether a guest is PINNED to a machine or drawn from a pool per job. Pinned wastes one per idle machine; pooled is the shape the machines themselves already have.
 - **a task on a machine / a task goes out and comes back** — and a task that pushed something can be accepted
   THE ACCEPT PATH, and no job here can reach it. api-tour hands back a FILE and never commits, so the branch is exactly as it was cut and taskJudge refuses — correctly. ask-a-worker would push, and needs a Claude credential, which makes it a different and slower drill. WHAT IT NEEDS: a job that makes a small change and pushes it, written and approved at the window, because approving a job over the wire is refused on purpose. THE CHECK: queue a task under that job, let the queue run it, and accept the delivery — the verdict is recorded, the task reads accepted, and the artifact it was judged on is named in the verdict. AND ACCEPTING MUST NOT MERGE. Landing work is a separate act with its own rules; a verdict that quietly merged would make reading the work and publishing it the same button.
-- **judging / a judgement is work of its own** — a judgement is a task whose subject is a PR cut
-  THE SHAPE, and none of it exists. Today taskJudge writes a verdict onto the task that produced the work — a field, set by a person at a command line. What is wanted is the same chain with one end changed: branch <- task <- job <- prompt <- contract is the work; PR CUT <- task <- job <- prompt <- contract is judging it. Work delivers onto a branch; a judgement delivers onto the cut — one pull request per repository that carries something, taken as one act — because that is what is actually being judged: the change as it is proposed for landing, not a commit and not a branch. IT TAKES NO BRANCH OF ITS OWN, which follows from that: it reads rather than writes, and a task claiming a branch it never pushes to would hold a machine on that branch for no reason. WHY IT MATTERS BEYOND TIDINESS: a task gets a machine, a run, a log and a record of what it saw. A field gets none of those, so "why was this accepted" is answerable only by asking whoever typed it. AND job <- prompt <- contract IS ALREADY BUILT, with a tab of its own and an approval per substance — so a judging job is a job, its prompt is a prompt, its contract is a contract, and nothing new appears in the library. The only new thing is the left-hand end. THE CHECK: judge an open cut, and a task exists whose subject is that cut, with its own job and its own run, holding no branch.
-- **judging / a judgement is work of its own** — and an open cut is what asks for one
-  THE TRIGGER, and it is not somebody deciding to judge a task. A cut is opened when work is proposed for landing — that is the moment the change stops being one machine's business and becomes something to be read — so an open cut is a thing WAITING to be judged, and the app should say so without being asked. WHICH IS WHY IT IS THE CUT AND NOT THE TASK: a cut may carry work from more than one task, and a task may deliver nothing worth landing. Judging follows the change, not the occasion that produced it. THE CHECK: open a cut, and it appears as awaiting a judgement — before anybody has typed anything. Land or close it, and it stops asking. NOT AUTOMATIC, AND THAT IS DECIDED. An open cut ASKS; it does not start anything. The judgement is begun by a button on the cut's own card, so the cut reads as unjudged until a person presses it. Automatic would make a queue of judgements running unattended against somebody's repository, reporting to GitHub, with nobody having chosen this cut or this chain — which is the same thing this app already refuses about approving a job down a pipe. Asking is free; acting is a decision. THE OTHER HALF OF THE CHECK: an open cut with nobody pressing anything stays unjudged for ever, and nothing runs.
-- **judging / a judgement is work of its own** — and the Judge tab, Judgements, lists what is waiting and what was decided
-  A TAB OF ITS OWN, CALLED JUDGE, and the first of its two sub-tabs is Judgements — two columns. THE HOME IT NEEDS. "Judge it" used to be a button on the task's own card, so the screen that asked for a decision showed the QUESTION and not the answer. It was removed rather than moved, and there is nowhere to do this today. WHAT IT LISTS: every open cut — which are waiting, which have a judgement in flight, which were decided and what the verdict was. That is the same shape as the task board one level up, and it is what makes judging something you can be BEHIND ON rather than something you remember to do. WHAT THE OTHER COLUMN IS FOR: the delivery. A verdict is somebody reading what came back, so the screen is built around it — the cut's commits, the diff, the files handed back, the run's log, and the buttons under all of it, including the one that starts a judgement. THE CHECK: with one cut open and one judged, both are listed under the right heading, and the judged one names its verdict and the run behind it.
-- **judging / a judgement is work of its own** — and the Judge tab, judges, lists the chains that can do the judging
-  THE SECOND SUB-TAB, CALLED JUDGES — three columns, one per rung: job <- prompt <- contract. A JUDGE IS A COMBINATION, and that is the word this needed. The library lists the three substances one at a time, because that is how each is written and approved; a judge is the whole chain — this job, giving these words, under these rules — and picking one from three separate lists asks somebody to recombine in their head what the app already knows. WHAT IT LISTS: every job whose prompt and contract are approved, as the chain it is, with the ones that cannot run naming the rung that is missing. THE DATA IS ALREADY THERE: `jobs` reports `runnable` and `whyNot`, and whyNot names the one rung rather than saying "not approved" about the thing that plainly is. Nothing shows it combined. THE CHECK: with one judge approved end to end and one whose contract is not, both are listed, the first as runnable and the second naming the contract. TO SETTLE: whether a judge is chosen per cut, or a cut has a default one — a repository where every cut is judged the same way should not be asked the same question every time.
-- **judging / a judgement is work of its own** — and it is done by either kind of supervisor
-  A person reading a diff and a worker running checks are the same act with a different body — which is what the spine already says about who supervises, and the reason judging should not be a special case bolted to a task. A judging job might run the tests, read the diff against the contract, or do nothing but wait for a person. THE CHECK: the same judgement, given to a worker and given to a person, produces the same kind of record — a verdict, a note, and what it was judged on. TO SETTLE: whether a person's judgement is a run at all, or a task that is completed without one. Every other kind of work here has a run behind it.
-- **judging / a judgement is work of its own** — and the verdict reaches the PR cut it is landing through
-  A verdict lives on a task and stops there. The work it is about is landing through a PR cut — one pull request per repository that carries something — and somebody reading that cut cannot see whether anything was judged. THE CHECK: judge the work on a branch that has a cut open, and the cut reports it — which repositories were judged, by what, and whether the verdict still describes what is there. The last part is the hard part: a judgement made before another push is a judgement of something else. `judgements` in actions/repos.js already reasons about exactly that and nothing calls it — see test/unused.md.
 - **judging / a judgement is work of its own** — and GitHub is told, beside the pull request
-  THE OUTWARD HALF. Anybody looking at the change on GitHub — which is where a reviewer looks — has no way to know this app checked it. A verdict belongs there: a status or a check beside the pull request, saying what was run and what it found. THE CHECK: after a judgement, the pull request on the parent carries a status naming this app and the verdict. TO SETTLE: whether that is a commit status, a check run, or a comment — a comment is the easiest and the least useful, since it cannot gate a merge. And whether a rejection blocks the merge button, which is a decision about somebody else's repository rather than about this app.
-- **judging / a judgement is work of its own** — and a rejection says what happens to the work
-  NOT A CHECK YET, BECAUSE THE BEHAVIOUR IS NOT DECIDED — and this is the sharpest example of why an undecided thing must not be written as one. taskJudge refuses a rejection with no reason, because "a rejection with no reason is sent back to a worker that cannot ask what was wrong". Nothing is sent anywhere. TO SETTLE: does a rejection re-queue the same task so a worker sees the note and tries again, write a NEW task carrying it, or is it only a record about work that is finished? The first keeps one identity and needs the attempts kept — they are, in `attempts`. The second makes "what happened to this piece of work" span two numbers. The third is what the code does today, and the wording says otherwise. One of those is true by accident. Deciding which is meant is the work, and a check written now would enshrine the accident.
-- **judging / a judgement is work of its own** — and taskJudge is replaced rather than removed
-  It is the placeholder this design grew around: a verdict recorded on a task, from before there was a shape for judging. It refuses a verdict on a branch nothing arrived on, and that refusal is proven in 08 and in the guards — so it is doing real work today. THE CHECK, when the rest of this suite is built: nothing calls taskJudge except the thing that replaces it, and the board shows a judgement where it used to show a field. Kept until then, because the alternative is a period with no way to record a verdict at all.
-- **the supervisor / a supervisor is not a runner** — and the jobs API a runner uses is proven end to end
-  IT IS EXERCISED AND NOT PROVEN, which are different. A job on a machine is handed a set of calls — fetch its task, post an artifact, hand back its session, report a run — and suite 08 uses several of them by running a real task through the queue with the api-tour job. What is missing is a check of the API ITSELF: every call it offers, asked directly, with the answers and the refusals stated. Today a call that quietly stopped working would show up as a task that failed for some other-looking reason, twenty minutes into a drill that needs a machine. THE CHECK: from a machine, exercise every endpoint the jobs API exposes — the ones that should answer, and the ones that should be REFUSED when asked by a machine that is not running that task. Suite 08 already posts to /artifact and /session exactly as machines/job-api.js does, so the pattern is written; what is missing is the list being complete rather than the two calls a drill happened to need. AND IT IS THE MODEL FOR THE SUPERVISOR API BELOW, which is the other reason to write it first: the same drill shape, pointed at the other direction.
+  THE OUTWARD HALF, and the only part of the original nine that is still true as a draft. Anybody looking at the change on GitHub — which is where a reviewer looks — has no way to know this app read it. A verdict belongs there: a status or a check beside the pull request, saying what was run and what it found. THE CHECK: after a judgement of a PR cut, the pull request on the parent carries a status naming this app and the verdict. TO SETTLE, AND STILL UNSETTLED: whether that is a commit status, a check run, or a comment — a comment is the easiest and the least useful, since it cannot gate a merge. And whether a rejection blocks the merge button, which is a decision about somebody else's repository rather than about this app. WHAT HAS CHANGED SINCE THIS WAS FIRST WRITTEN: everything inward. The verdict exists, it is the judge's own, it is current or stale against the tips it was made on, and prCutMake already refuses to send out work a judgement has rejected. So this is now the last mile rather than the whole road.
 
 # 00 — what this host has
 
@@ -240,6 +222,13 @@ The half of this app the other suites can only describe. Everything before this
   6. and a supervisor keeps the one tag that is not a label
   7. and a borrow can ask for a kind rather than whatever is idle
 
+## 03 — a machine lets this app in
+
+  1. this app has a key of its own, and knows which machines take it
+  2. and a machine that is dialled in can be given it
+  3. and giving it twice does not write it twice
+  4. and a machine that is not dialled in is refused, rather than half-done
+
 # 06 — provisioning
 
 What a machine is handed, and how a change to it reaches one.
@@ -321,29 +310,54 @@ The point of the whole tool, and the last part of it that nothing checked.
   3. and it cannot ask about a task that is not its own
   4. and a file handed over is filed under the task, not under a name it chose
 
+## 03 — watching it work
+
+  1. a run is asked for a stream, not one object at the end
+  2. and the reader takes the last result line, or a whole-file object
+  3. and the watcher it writes is node that runs
+  4. and whichever run is happening now has a name that does not change
+  5. and the supervisor takes its turn the same way
+
+## 04 — what a worker is handed
+
+  1. a run is given the three commands, and each is made executable
+  2. and none of them carries a credential
+  3. and okc-say never fails the work it was describing
+  4. and the skill is fetched per run, not installed once
+
 # 09 — judging
 
 Reading what came back and saying yes or no — and it is **work**, not a field.
 
-*stands on a task on a machine and the order*
+*stands on the order*
 
 ## 00 — a judgement is work of its own
 
-  1. **DRAFT** — a judgement is a task whose subject is a PR cut
-  2. **DRAFT** — and an open cut is what asks for one
-  3. **DRAFT** — and the Judge tab, Judgements, lists what is waiting and what was decided
-  4. **DRAFT** — and the Judge tab, judges, lists the chains that can do the judging
-  5. **DRAFT** — and it is done by either kind of supervisor
-  6. **DRAFT** — and the verdict reaches the PR cut it is landing through
-  7. **DRAFT** — and GitHub is told, beside the pull request
-  8. **DRAFT** — and a rejection says what happens to the work
-  9. **DRAFT** — and taskJudge is replaced rather than removed
+  1. a judgement is asked for against a branch cut, and gets a ref of its own
+  2. and the same subject is not judged twice at once
+  3. and a job for doing work cannot be run as a judge
+  4. and a judgement is filed against something that exists
+  5. and what it is reading cannot be changed while it reads it
+  6. **DRAFT** — and GitHub is told, beside the pull request
+
+## 01 — the judge is the gate
+
+  1. a task written over the wire without a judgement is refused
+  2. and naming a judgement that has not finished is not enough
+  3. and a judgement that does not exist is not a way round it
+  4. and the same task, written at the window, is allowed
+
+## 02 — two libraries one queue
+
+  1. a judge cannot be given to a task
+  2. and both kinds wait in one line, with judgements in front
+  3. and the order is written down once, where the queue reads it
 
 # 10 — the supervisor
 
 The machine that decides what work there is, rather than one doing it.
 
-*stands on the machines are built and what this host has*
+*stands on the machines are built and what this host has and a worker credential*
 
 ## 00 — a supervisor is not a runner
 
@@ -351,7 +365,6 @@ The machine that decides what work there is, rather than one doing it.
   2. and the tag that makes it one cannot be typed on
   3. and it cannot be typed off one that has it
   4. and a task cannot ask to be run on one
-  5. **DRAFT** — and the jobs API a runner uses is proven end to end
 
 ## 01 — driving the app
 
@@ -394,6 +407,13 @@ The machine that decides what work there is, rather than one doing it.
   4. and the sign-in desk holds nothing
   5. and only a supervisor machine has a desk at all
   6. and it holds no repositories, and got none of the project setup
+
+## 06 — the sign in it works with
+
+  1. which sign-in it uses is one answer, asked in one place
+  2. and "in use" is not the same question as "free to hand over"
+  3. and signing one in is idempotent, quiet, and never starts anything
+  4. and what it is signed in as is on its own state
 
 # 11 — cooling the host
 
