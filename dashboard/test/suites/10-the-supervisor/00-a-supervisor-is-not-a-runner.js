@@ -144,17 +144,20 @@ draft('and the jobs API a runner uses is proven end to end',
 //                  consequences outside this host, and they are the natural
 //                  next additions rather than part of the first one.
 
-draft('and a supervisor holds no repositories and gets no project setup',
-  'HALF BUILT AND UNPROVEN. first-boot.sh skips the project\'s extra.sh and extra-user.sh when OKC_SUPERVISOR is yes, and runs supervisor-user.sh instead — node, Claude Code, and a folder to think in. That is the intent; nothing has watched it happen. ' +
-  'THE CHECK: build a machine with the supervisor box ticked, and afterwards it has claude, has no clone of anything, and its first-boot log says the project setup was skipped. It is the same shape as the provisioning suite\'s checks and costs the same: one install. ' +
-  'WHY IT MATTERS BEYOND TIDINESS: the project\'s half is what knows about repositories and devices, and a supervisor that ran it would hold a copy of the work it is supposed to be handing out — which is the difference between deciding and doing.')
-
-draft('and a supervisor is signed in as a supervisor, not as a worker',
-  'THE LIST KNOWS THE DIFFERENCE AND NOTHING ACTS ON IT YET. core/guests.js keeps two roles: a guest is lent to a machine for a task, a supervisor is spent by this host, and lending a supervisor to a machine is refused outright — see the credential suite. ' +
-  'A supervisor MACHINE is the case that sits between those two: it is a machine, it needs a Claude sign-in, and the sign-in it needs is the supervising one. Today the refusal would stop it, correctly, because the refusal was written when the only machines were runners. ' +
-  'THE CHECK: a supervisor machine is handed a supervisor sign-in and no runner ever is; a runner asking for one is refused, and a supervisor asking for a guest is refused too. ' +
-  'TO SETTLE: whether it is lent at all or whether a supervisor machine holds one for as long as it exists. A runner is rolled back between tasks so its credential must leave; a supervisor is not rolled back, which is exactly why leaving one on it needs deciding rather than assuming.')
-
+// BOTH WRITTEN NOW, and neither needed what the draft assumed it would.
+//
+//   "holds no repositories and gets no project setup" — checked in "what its
+//   model may run", against the machine as it stands rather than by building a
+//   new one: nothing cloned, and its own first-boot log saying the project half
+//   was skipped. The second half matters — a machine that RAN the project setup
+//   and happened to clone nothing would pass the first on its own.
+//
+//   "signed in as a supervisor, not as a worker" — checked in the credential
+//   suite. The rule turned out to be about the PAIR rather than the sign-in: a
+//   supervisor identity belongs on a supervisor machine and nowhere else, and a
+//   worker's belongs on a runner. Refusing a supervisor sign-in outright, which
+//   is what the draft implied, would have left the one machine that needs one
+//   unable to have it.
 // ---- WHAT IT SAW ----------------------------------------------------------
 //
 // 16 August 2026, on a host with four runners and no supervisor machine yet.

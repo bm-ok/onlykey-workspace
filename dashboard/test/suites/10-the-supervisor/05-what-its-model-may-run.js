@@ -142,6 +142,36 @@ it('and only a supervisor machine has a desk at all', async ({ okc, assert, log 
   log(`${runner.name} is a runner, and asking it for a login URL is refused`)
 })
 
+it('and it holds no repositories, and got none of the project setup', async ({ okc, assert, state, log }) => {
+  // A DRAFT UNTIL NOW, and provable without an install: the machine is here, and
+  // what it was built with is still on it.
+  //
+  // A supervisor takes no tasks, so the project's half of provisioning — its
+  // repositories, its build inputs, its devices — is setup for work that will
+  // never happen there. Worse than waste: a supervisor holding a copy of the work
+  // it is handing out is the difference between deciding and doing.
+  const clones = await run(okc, state.boss,
+    'find ~ -maxdepth 3 -name .git -type d 2>/dev/null | grep -v "\.nvm" | head -5; echo "[end]"',
+    'looking for repositories on the supervisor')
+  assert.ok(!clones.replace('[end]', '').trim(),
+    `the supervisor is holding repositories: ${clones.slice(0, 200)}`)
+
+  // AND ITS OWN LOG SAYS THE PROJECT'S HALF WAS SKIPPED, which is the difference
+  // between "nothing was cloned" and "the skip actually happened". A machine that
+  // ran the project setup and happened to clone nothing would pass the check
+  // above and be wrong.
+  const boot = await run(okc, state.boss,
+    "grep -c 'this machine is a supervisor, so the project setup is skipped' /var/log/okc-provision.log || echo 0",
+    'reading what its first boot decided')
+  assert.ok(Number(boot.trim().split('\n').pop()) > 0,
+    'its first-boot log does not say the project setup was skipped, so it may have run and simply had nothing to clone')
+
+  // AND IT HAS THE ONE THING IT DOES NEED.
+  const claude = await run(okc, state.boss, "bash -lc 'claude --version' 2>&1 | tail -1", 'asking what it runs on')
+  assert.ok(/\d+\.\d+/.test(claude), `it has no Claude Code, which is the only thing it was given: ${claude.slice(0, 120)}`)
+  log(`no repositories, project setup skipped, and claude ${claude.trim()}`)
+})
+
 // ---- WHAT IT SAW ----------------------------------------------------------
 //
 // 17 August 2026, against supervisor-1. Five checks, ten seconds, no model and

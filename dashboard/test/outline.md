@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 32 tests, 164 checks, 27 of them drafts -->
+<!-- 12 suites, 34 tests, 168 checks, 23 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -15,7 +15,7 @@
   A capability with no check here is one somebody will build again.
 -->
 
-## 27 drafts, not written yet
+## 23 drafts, not written yet
 
 - **the refusals / the ways round a refusal** — and the window cannot be driven while the drills are off
   THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. It matters more than it looks: windowClick and windowFill reach the SAME handlers a person's press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. WHY IT IS NOT A CHECK HERE: a drill runs only while testing mode is on, which is exactly when this is allowed. Proving the refusal means turning testing mode OFF, which stops the drills. HOW TO WRITE IT: from outside the kit — a script that turns testing mode off at the window, calls windowClick over the wire, sees the refusal, and turns it back on. That is a person-driven drill rather than one the harness can run, and it belongs in the same family as the sign-in that needs somebody to visit a page. WHAT CAN BE CHECKED FROM HERE AND IS NOT YET: that a press driven from outside carries the mark — press an APPROVE button through windowClick and watch it refused for being over the wire. That proves the anti-bypass property without turning anything off. See drivenFromTheWire in ui/base.js.
@@ -29,14 +29,10 @@
   IT DOES TODAY. vmCredentialsPut opens the sealed file, base64s it, and sends `printf '%s' '<the whole credential>' | base64 -d > ~/.claude/.credentials.json` down the channel. Base64 is not encryption. TLS covers the wire and core/secret.js covers the file at rest; what neither covers is the middle — a plain string in this host's memory, a shell argument visible in `ps` on the guest, and a line in its history. WHAT IT NEEDS: a key exchange between host and guest, so the credential is sealed to that machine and the dashboard hands over a blob it cannot read. That carries the authorize URL up as well as the credential down. THE CHECK: what is sent to the machine contains no part of the credential, and the machine still authenticates afterwards. The second half is what makes it a check rather than a rule about strings.
 - **a worker credential / a worker can sign in** — and signing a worker in is a job, not a sequence written into this app
   credentialsBegin and credentialsFinish are guest commands hard-coded in actions/credentials.js and machines/auth.js — written before there was any other way to run a sequence of commands on a machine. There is one now: a job is a script that runs ON a machine, read and approved before it does. WHAT IT WOULD BUY: the flow becomes editable without a release, and the sign-in URL stays on the machine rather than being logged here. THE STICKING POINT, which is why this is a draft and not a task: a credential is NOT an artifact and must not be handed back like one. A job hands files back; this one would have to hand back something the host stores sealed and never shows, which is a hole in the job API rather than a thing to write around. THE CHECK: the sign-in runs as an approved job, the credential arrives sealed on this host, and no URL or token appears in the log.
-- **a worker credential / a worker can sign in** — and what is taken back is what the worker refreshed
-  IT IS DELETED TODAY. vmCredentialsForget removes ~/.claude/.credentials.json from the machine and this host keeps its original copy — so every refresh the CLI does during a run is thrown away at the end of it, and the next machine is handed a token that is one or more rotations behind. vmCredentialsGrab already does the taking-back half; nothing calls it when work ends. THE CHECK: run a task, and afterwards the credential this host holds is the one the machine finished with. Compared by a FINGERPRINT of it rather than by reading it — the rule is that this app may know something changed in the Keys tab without knowing what. AND IT SETTLES A QUESTION ON ITS OWN: if the fingerprint moves, the refresh token rotates, and one credential shared between machines is not a tidiness problem but a broken design. If it never moves, sharing is survivable and multi-credential is about throughput instead.
 - **a worker credential / a worker can sign in** — and each machine keeps its own credential across a rollback
   A MACHINE IS ROLLED BACK TO BASE WHEN ITS WORK ENDS, which wipes the disk — so a credential on a machine cannot survive by staying there, and the base snapshot must never contain one (a snapshot of a machine holding one keeps a copy for as long as the snapshot exists, which is why vmBaseSnapshot refuses it). So per-machine means kept HERE, sealed, one per machine: handed over when it starts work, taken back — refreshed — when the work ends, and handed to the same machine next time. THE CHECK: give a machine work twice with a stop in between, and both runs use that machine's own credential, with no machine ever holding another's. TO SETTLE: what happens when there are more machines than credentials — a machine waits, or work waits. Waiting for a credential is the same shape as waiting for a machine, which the queue already knows how to do.
 - **a worker credential / a worker can sign in** — and the .claude folder can be thrown away without losing the token
   THE GAP TO BRIDGE, and half of it is already built. `machines/job-api.js` archives ~/.claude per task and excludes .credentials.json on purpose — that folder is the worker's MEMORY and is kept for a long time, so an unsealed token riding along would be filed for ever. The consequence is that memory and credential are two different things with two different lifetimes, and only one of them has somewhere to live. WHAT IT WOULD MEAN: the token is set up and kept through the same path the memory uses — captured when the run ends, sealed here, per machine — so ~/.claude on the guest becomes disposable. Trash it, restore the memory, hand back the token, and the machine is where it was. THE CHECK: delete ~/.claude on a machine entirely, start its next task, and it both remembers what it was doing and authenticates.
-- **a worker credential / a worker can sign in** — and the Keys tab lists every Claude credential, by machine
-  ONE TODAY, AND THE TAB IS BUILT FOR ONE. credentialsHeld answers about a single file: held, from where, taken when, and the two clocks. With one per machine that becomes a list — a row per credential, which machine holds it now, when it was last refreshed, and whether the last attempt to USE it worked. NEVER A VALUE. The rule for this tab is that a model may know something was done in there and not what: a count, a holder, a date, a fingerprint. THE CHECK: with two credentials held, the tab lists two rows naming their machines, and nothing in the answer contains a token. AND THE COLUMN NOTHING HAS TODAY: whether the last USE failed. credentialsHeld reported a refresh token good until September while a worker was being refused with it — the sentence came back from claude() and was thrown away.
 - **a worker credential / more than one sign in** — and what comes back off a machine is what the worker refreshed
   HALF BUILT, AND THE HALF THAT IS MISSING IS THE PROOF. vmCredentialsForget and guestBack now READ the credential off the machine before clearing it, and core/guests.js keeps it when the fingerprint differs — so a rotation during a run is no longer deleted. What has not happened is a run that demonstrates it. THE CHECK: lend a guest to a machine, give that machine real work that uses Claude, take the guest back, and the fingerprint this host holds is the one the machine finished with. Compared by fingerprint and never by value. AND IT SETTLES A QUESTION ON ITS OWN: if the fingerprint moves, the refresh rotates and one sign-in shared between machines is a broken design rather than an untidy one. If it never moves, sharing is survivable and one-per-machine is about throughput instead. IT COSTS A WORKER RUN, which is why it is here rather than in the checks above — those need no machine at all.
 - **a worker credential / more than one sign in** — and two machines work at once, each as its own identity
@@ -67,10 +63,6 @@
   It is the placeholder this design grew around: a verdict recorded on a task, from before there was a shape for judging. It refuses a verdict on a branch nothing arrived on, and that refusal is proven in 08 and in the guards — so it is doing real work today. THE CHECK, when the rest of this suite is built: nothing calls taskJudge except the thing that replaces it, and the board shows a judgement where it used to show a field. Kept until then, because the alternative is a period with no way to record a verdict at all.
 - **the supervisor / a supervisor is not a runner** — and the jobs API a runner uses is proven end to end
   IT IS EXERCISED AND NOT PROVEN, which are different. A job on a machine is handed a set of calls — fetch its task, post an artifact, hand back its session, report a run — and suite 08 uses several of them by running a real task through the queue with the api-tour job. What is missing is a check of the API ITSELF: every call it offers, asked directly, with the answers and the refusals stated. Today a call that quietly stopped working would show up as a task that failed for some other-looking reason, twenty minutes into a drill that needs a machine. THE CHECK: from a machine, exercise every endpoint the jobs API exposes — the ones that should answer, and the ones that should be REFUSED when asked by a machine that is not running that task. Suite 08 already posts to /artifact and /session exactly as machines/job-api.js does, so the pattern is written; what is missing is the list being complete rather than the two calls a drill happened to need. AND IT IS THE MODEL FOR THE SUPERVISOR API BELOW, which is the other reason to write it first: the same drill shape, pointed at the other direction.
-- **the supervisor / a supervisor is not a runner** — and a supervisor holds no repositories and gets no project setup
-  HALF BUILT AND UNPROVEN. first-boot.sh skips the project's extra.sh and extra-user.sh when OKC_SUPERVISOR is yes, and runs supervisor-user.sh instead — node, Claude Code, and a folder to think in. That is the intent; nothing has watched it happen. THE CHECK: build a machine with the supervisor box ticked, and afterwards it has claude, has no clone of anything, and its first-boot log says the project setup was skipped. It is the same shape as the provisioning suite's checks and costs the same: one install. WHY IT MATTERS BEYOND TIDINESS: the project's half is what knows about repositories and devices, and a supervisor that ran it would hold a copy of the work it is supposed to be handing out — which is the difference between deciding and doing.
-- **the supervisor / a supervisor is not a runner** — and a supervisor is signed in as a supervisor, not as a worker
-  THE LIST KNOWS THE DIFFERENCE AND NOTHING ACTS ON IT YET. core/guests.js keeps two roles: a guest is lent to a machine for a task, a supervisor is spent by this host, and lending a supervisor to a machine is refused outright — see the credential suite. A supervisor MACHINE is the case that sits between those two: it is a machine, it needs a Claude sign-in, and the sign-in it needs is the supervising one. Today the refusal would stop it, correctly, because the refusal was written when the only machines were runners. THE CHECK: a supervisor machine is handed a supervisor sign-in and no runner ever is; a runner asking for one is refused, and a supervisor asking for a guest is refused too. TO SETTLE: whether it is lent at all or whether a supervisor machine holds one for as long as it exists. A runner is rolled back between tasks so its credential must leave; a supervisor is not rolled back, which is exactly why leaving one on it needs deciding rather than assuming.
 
 # 00 — what this host has
 
@@ -186,10 +178,8 @@ The second door a person has to open, and it is deliberately not beside the
   5. **DRAFT** — and two machines can work at once, each with a credential of its own
   6. **DRAFT** — and the credential never travels as cleartext in a shell command
   7. **DRAFT** — and signing a worker in is a job, not a sequence written into this app
-  8. **DRAFT** — and what is taken back is what the worker refreshed
-  9. **DRAFT** — and each machine keeps its own credential across a rollback
-  10. **DRAFT** — and the .claude folder can be thrown away without losing the token
-  11. **DRAFT** — and the Keys tab lists every Claude credential, by machine
+  8. **DRAFT** — and each machine keeps its own credential across a rollback
+  9. **DRAFT** — and the .claude folder can be thrown away without losing the token
 
 ## 01 — more than one sign in
 
@@ -200,6 +190,19 @@ The second door a person has to open, and it is deliberately not beside the
   5. **DRAFT** — and what comes back off a machine is what the worker refreshed
   6. **DRAFT** — and two machines work at once, each as its own identity
   7. **DRAFT** — and a machine that can be given no identity waits rather than borrowing one
+
+## 02 — what comes back
+
+  1. a throwaway identity can be lent to a machine
+  2. and a change made on the machine is what comes back
+  3. and nothing is left on the machine
+
+## 03 — one list and who may hold what
+
+  1. every credential this host holds is in one list, with a holder
+  2. and nothing in the answer is a token
+  3. and a supervisor sign-in belongs on a supervisor machine
+  4. and a worker sign-in never goes to the supervisor
 
 # 05 — the machines
 
@@ -340,8 +343,6 @@ The machine that decides what work there is, rather than one doing it.
   3. and it cannot be typed off one that has it
   4. and a task cannot ask to be run on one
   5. **DRAFT** — and the jobs API a runner uses is proven end to end
-  6. **DRAFT** — and a supervisor holds no repositories and gets no project setup
-  7. **DRAFT** — and a supervisor is signed in as a supervisor, not as a worker
 
 ## 01 — driving the app
 
@@ -383,6 +384,7 @@ The machine that decides what work there is, rather than one doing it.
   3. and the gate denies everything that is not one of them
   4. and the sign-in desk holds nothing
   5. and only a supervisor machine has a desk at all
+  6. and it holds no repositories, and got none of the project setup
 
 # 11 — cooling the host
 

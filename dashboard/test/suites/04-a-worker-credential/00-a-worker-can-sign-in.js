@@ -129,12 +129,10 @@ draft('and signing a worker in is a job, not a sequence written into this app',
 // rotates has to be kept per machine, taken back rather than thrown away, and
 // survive the rollback that wipes the disk between tasks.
 
-draft('and what is taken back is what the worker refreshed',
-  'IT IS DELETED TODAY. vmCredentialsForget removes ~/.claude/.credentials.json from the machine and this host keeps its original copy — so every refresh the CLI does during a run is thrown away at the end of it, and the next machine is handed a token that is one or more rotations behind. ' +
-  'vmCredentialsGrab already does the taking-back half; nothing calls it when work ends. ' +
-  'THE CHECK: run a task, and afterwards the credential this host holds is the one the machine finished with. Compared by a FINGERPRINT of it rather than by reading it — the rule is that this app may know something changed in the Keys tab without knowing what. ' +
-  'AND IT SETTLES A QUESTION ON ITS OWN: if the fingerprint moves, the refresh token rotates, and one credential shared between machines is not a tidiness problem but a broken design. If it never moves, sharing is survivable and multi-credential is about throughput instead.')
-
+// WRITTEN NOW — see "what comes back" beside this file. What it took to make
+// it checkable was noticing that the CLI rotating is not the thing to prove:
+// what has to be true is that a CHANGE on the machine arrives here, which a
+// throwaway identity can demonstrate in seconds without a worker run.
 draft('and each machine keeps its own credential across a rollback',
   'A MACHINE IS ROLLED BACK TO BASE WHEN ITS WORK ENDS, which wipes the disk — so a credential on a machine cannot survive by staying there, and the base snapshot must never contain one (a snapshot of a machine holding one keeps a copy for as long as the snapshot exists, which is why vmBaseSnapshot refuses it). ' +
   'So per-machine means kept HERE, sealed, one per machine: handed over when it starts work, taken back — refreshed — when the work ends, and handed to the same machine next time. ' +
@@ -147,8 +145,7 @@ draft('and the .claude folder can be thrown away without losing the token',
   'WHAT IT WOULD MEAN: the token is set up and kept through the same path the memory uses — captured when the run ends, sealed here, per machine — so ~/.claude on the guest becomes disposable. Trash it, restore the memory, hand back the token, and the machine is where it was. ' +
   'THE CHECK: delete ~/.claude on a machine entirely, start its next task, and it both remembers what it was doing and authenticates.')
 
-draft('and the Keys tab lists every Claude credential, by machine',
-  'ONE TODAY, AND THE TAB IS BUILT FOR ONE. credentialsHeld answers about a single file: held, from where, taken when, and the two clocks. With one per machine that becomes a list — a row per credential, which machine holds it now, when it was last refreshed, and whether the last attempt to USE it worked. ' +
-  'NEVER A VALUE. The rule for this tab is that a model may know something was done in there and not what: a count, a holder, a date, a fingerprint. ' +
-  'THE CHECK: with two credentials held, the tab lists two rows naming their machines, and nothing in the answer contains a token. ' +
-  'AND THE COLUMN NOTHING HAS TODAY: whether the last USE failed. credentialsHeld reported a refresh token good until September while a worker was being refused with it — the sentence came back from claude() and was thrown away.')
+// WRITTEN NOW — see "one list and who may hold what" beside this file. The tab
+// itself moved rather than grew a list: sign-ins live under Virtual machines →
+// Claude guest, and credentialsHeld answers about all of them with a holder, a
+// fingerprint and a clock each.
