@@ -460,7 +460,17 @@ module.exports = {
       const name = state.name
 
       const started = []
-      const was = vms.read().find(v => v.name === name) || {}
+      // FROM THE LIVE STATE, WHICH IS THE ONLY ONE THERE IS. The stored record
+      // has no `state` field at all — whether a machine is running is asked of
+      // VirtualBox every time, deliberately, because a second opinion about it
+      // is the bug this app's machine layer exists to prevent. Reading
+      // `vms.read().state` gets `undefined`, and every comparison against it is
+      // quietly wrong: this said "not running" about a running machine, and its
+      // opposite number below said "not running" about one that was, so
+      // supervisorDown never stopped anything.
+      //
+      // supervisorState already asked, up there. Use its answer.
+      const was = (state.supervisors || []).find(r => r.name === name) || {}
       if (was.state !== 'running') {
         // supervisorMachine starts it AND waits for it to dial in, which is
         // the part a person doing this by hand forgets — a credential cannot be
@@ -520,7 +530,10 @@ module.exports = {
           : `took "${held.name}" back unchanged`)
       }
 
-      const was = vms.read().find(v => v.name === name) || {}
+      // THE LIVE STATE, as above. This is the half that failed silently: it
+      // took the credential back, said so, and left the machine running —
+      // reporting success for half a job.
+      const was = (state.supervisors || []).find(r => r.name === name) || {}
       if (was.state === 'running') {
         await actions.vmStop.run({ name })
         did.push('stopped it')

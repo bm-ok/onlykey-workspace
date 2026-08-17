@@ -686,6 +686,15 @@
   <section class="view" id="view-chat">
     <div class="sync-head">
       <h2>Supervisor <span class="muted" id="chat-context"></span></h2>
+      <!-- WHETHER IT CAN ACTUALLY RUN, in the header row rather than above the
+           conversation. It was a card of its own and took the top third of the
+           tab to say three short things — on a screen whose subject is the
+           thread underneath it.
+
+           It goes HERE because .sync-controls carries margin-left:auto, so
+           anything between the title and it sits inline beside the title and the
+           controls stay hard right. -->
+      <div id="supervisor-state" class="head-state"></div>
       <div class="sync-controls">
         <!-- ANSWERING BY ITSELF IS A MACHINE STARTING AND A MODEL SPENDING, on
              its own initiative, because somebody typed a sentence. That is the
@@ -696,12 +705,6 @@
         <button class="btn" id="chat-clear">Clear</button>
       </div>
     </div>
-    <!-- WHETHER IT CAN ACTUALLY RUN, before anything else on the screen.
-         A supervisor machine that is running, dialled in, and holding no
-         credential looks identical to a working one from every other panel —
-         and a wake against it does nothing at all. That cost an afternoon here,
-         so it is the first thing this tab says. -->
-    <div id="supervisor-state" class="panel"></div>
     <p class="note" id="chat-note"></p>
     <div id="chat-thread" class="stack"></div>
     <!-- PINNED UNDER THE THREAD, never scrolling with it. A composer that walks
@@ -710,10 +713,18 @@
 
          A textarea rather than an input: a brief for a supervisor is often a
          paragraph, and Enter sends while Shift+Enter makes a line. -->
-    <div class="chat-composer">
+    <div class="chat-composer" id="chat-composer">
       <textarea id="chat-text" rows="1" placeholder="say something to the supervisor — Enter to send, Shift+Enter for a new line"></textarea>
       <button class="btn ok" id="chat-send">Say it</button>
     </div>
+
+    <!-- WHAT STANDS WHERE THE COMPOSER IS WHEN NOTHING CAN READ IT.
+         Typing into a box that goes nowhere is worse than having no box: the
+         message IS kept and IS delivered eventually, so it looks like it worked
+         and then nothing answers — which is exactly the afternoon that led here.
+         So the box is replaced, in the same place, by the one thing that would
+         actually help: pick a supervisor and start it. -->
+    <div class="chat-offline hidden" id="chat-offline"></div>
   </section>
 
   <!-- ---------------- Live ----------------

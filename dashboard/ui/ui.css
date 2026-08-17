@@ -525,6 +525,31 @@ main { padding: 16px; }
 .sync-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .sync-head h2 { margin: 0; }
 .sync-controls { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+/* The supervisor's state, inline in its header row: what it is, whether it can
+   run, and the one button that changes that. Deliberately not a card — it was
+   one, and three short facts took the top third of a tab whose subject is the
+   conversation below them. */
+.head-state { display: flex; align-items: center; flex-wrap: wrap; }
+
+/* WHERE THE COMPOSER WOULD BE, WHEN THERE IS NOBODY TO READ IT. The same
+   pinned position and the same room, so the page does not jump when a
+   supervisor comes up — only the contents change. Centred, because it is one
+   decision rather than a form: which supervisor, and start it. */
+.chat-offline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  /* THE WHOLE BODY, because that is what it replaces. The header above it stays
+     and says why; everything else on this tab is a conversation with something
+     that is not there. Not a fixed height: it takes what the view has, so the
+     one decision on the screen sits in the middle of it. */
+  min-height: 55vh;
+  text-align: center;
+}
+.chat-offline .why { color: var(--text); margin: 0; }
+.chat-offline .why.muted { color: var(--muted); font-size: 12px; }
 .sync-controls input {
   background: #0d1117;
   border: 1px solid var(--line);

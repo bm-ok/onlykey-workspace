@@ -126,55 +126,127 @@ function paintSupervisorState () {
     if (!changed('supervisor-state', st)) return
 
     if (!st.there) {
-      return fill($('supervisor-state'), el('p', { className: 'empty', textContent: st.note }))
+      fill($('supervisor-state'), el('span', { className: 'muted', textContent: 'no supervisor machine', title: st.note }))
+      return standIn(st, [])
     }
 
     const one = (st.supervisors || [])[0] || {}
     const busy = !!st.thinking
 
-    fill($('supervisor-state'), el('div', { className: 'card' },
-      el('div', { className: 'card-title' },
-        el('span', { textContent: one.name }),
-        el('span', {
-          className: `badge ${busy ? 'run' : st.ready ? 'ok' : 'warn'}`,
-          textContent: busy ? 'thinking' : st.ready ? 'ready' : 'cannot run'
-        })),
-
-      // THE THREE FACTS IT TURNS ON, each said plainly rather than left to be
-      // inferred from a badge. "Signed in as" is a NAME and a fingerprint and
-      // never a value — the same rule the Keys tab is built to.
-      el('table', { className: 'kv' },
-        el('tr', {}, el('th', { textContent: 'machine' }), el('td', {},
-          el('span', { className: `badge ${one.state === 'running' ? 'ok' : 'muted'}`, textContent: one.state || 'unknown' }),
-          el('span', { className: 'muted', style: 'margin-left:6px', textContent: one.connected ? 'dialled in' : one.state === 'running' ? 'not dialled in yet' : '' }))),
-        el('tr', {}, el('th', { textContent: 'signed in as' }), el('td', {}, one.signedInAs
-          ? el('span', {}, el('span', { className: 'mono', textContent: one.signedInAs }), el('span', { className: 'muted', style: 'margin-left:6px', textContent: one.fingerprint || '' }))
-          : el('span', { className: 'warn', textContent: 'nothing — a worker on it cannot authenticate' })))),
-
-      one.why ? el('div', { className: 'card-sub warn', textContent: one.why }) : null,
-
-      el('div', { style: 'margin-top:10px; display:flex; gap:8px; flex-wrap:wrap' },
-        st.ready
-          ? el('button', {
-            className: 'btn danger',
-            textContent: 'Put it away',
-            title: 'Takes its credential back first, then stops it',
-            onclick: () => press('supervisorDown', 'Putting it away — taking the credential back first.')
-          })
-          : el('button', {
-            className: 'btn ok',
-            textContent: 'Start it',
-            title: 'Starts the machine, waits for it to dial in, and signs it in',
-            onclick: () => press('supervisorUp', 'Starting it and signing it in — this takes a minute.')
-          }),
-        el('button', {
+    // ONE LINE, AND ONLY WHAT DECIDES SOMETHING. The name, whether it can run,
+    // what it is signed in as, and the one button that changes that. Everything
+    // else this knows — the machine's state, the reason it cannot run — is on
+    // the hover, because it is what somebody wants only once it is wrong.
+    //
+    // NO "WAKE IT" HERE: the header already has one, six pixels to the right,
+    // and two buttons doing the same thing in one row is a row somebody has to
+    // read twice.
+    fill($('supervisor-state'),
+      el('span', { className: 'mono', textContent: one.name }),
+      el('span', {
+        className: `badge ${busy ? 'run' : st.ready ? 'ok' : 'warn'}`,
+        style: 'margin-left:6px',
+        // The whole story, on the hover. A badge that says "cannot run" and
+        // nothing else is a badge that sends somebody looking through tabs.
+        title: one.why || st.note || '',
+        textContent: busy ? 'thinking' : st.ready ? 'ready' : 'cannot run'
+      }),
+      // WHAT IT IS SIGNED IN AS, which is the fact that was invisible everywhere
+      // else and cost an afternoon. A name and a fingerprint, never a value.
+      one.signedInAs
+        ? el('span', { className: 'muted', style: 'margin-left:8px', title: `fingerprint ${one.fingerprint || ''}`, textContent: one.signedInAs })
+        : el('span', { className: 'warn', style: 'margin-left:8px', title: 'A worker on it cannot authenticate, so waking it does nothing.', textContent: 'no credential' }),
+      st.ready
+        ? el('button', {
           className: 'btn',
-          textContent: 'Wake it',
-          disabled: !st.ready || busy,
-          title: st.ready ? 'One turn: it reads what changed and answers' : 'It cannot run yet',
-          onclick: () => press('supervisorWake', 'Waking it.')
-        }))))
+          style: 'margin-left:10px',
+          textContent: 'Put it away',
+          title: 'Takes its credential back first, then stops it',
+          onclick: () => press('supervisorDown', 'Putting it away — taking the credential back first.')
+        })
+        : el('button', {
+          className: 'btn ok',
+          style: 'margin-left:10px',
+          textContent: 'Start it',
+          title: 'Starts the machine, waits for it to dial in, and signs it in',
+          onclick: () => press('supervisorUp', 'Starting it and signing it in — this takes a minute.')
+        }))
+
+    // AND THE BOX YOU TYPE INTO GOES WITH IT.
+    standIn(st, st.supervisors || [])
   }).catch(() => { /* the chrome says when the dashboard is unreachable */ })
+}
+
+
+// ---- WHAT YOU CAN DO, WHERE THE COMPOSER IS ---------------------------------
+//
+// A message to a supervisor that cannot run is KEPT and delivered whenever one
+// next wakes — which is the worst of both: the box accepts it, the send works,
+// and nothing answers for as long as the machine stays down. That is the exact
+// shape of the afternoon this came out of.
+//
+// So when nothing can read it, the composer is replaced in place by the decision
+// that would actually help: which supervisor, and start it. Same position, same
+// height, so the page does not jump when one comes up.
+function standIn (st, rows) {
+  const ready = !!(st && st.ready)
+
+  // THE WHOLE BODY GOES, not only the composer. A thread nothing can answer is
+  // not useful context — it is a record of a conversation with something that is
+  // not there, sitting above a box that accepts messages nobody will read. The
+  // one useful thing on this tab while the machine is down is the way to bring
+  // it up, so that is the only thing on it.
+  //
+  // THE HEADER STAYS, because it says WHY: the name, "cannot run", and what it
+  // is signed in as. That line is the answer to the question this screen raises.
+  for (const id of ['chat-note', 'chat-thread', 'chat-composer']) {
+    $(id).classList.toggle('hidden', !ready)
+  }
+  $('chat-offline').classList.toggle('hidden', ready)
+
+  // AND THE HEADER'S OWN WAKE BUTTON, which is not this panel's but is the one
+  // thing on the screen that would still do nothing if pressed. A control that
+  // is offered and has no effect is the fault this whole tab exists to end.
+  $('chat-wake').disabled = !ready
+  $('chat-wake').title = ready ? 'One turn: it reads what changed and answers' : 'It cannot run yet — start it first'
+  if (ready) return
+
+  if (!changed('chat-offline', [rows.map(r => `${r.name}${r.state}${r.signedInAs || ''}`), !!(st && st.there)])) return
+
+  const instead = $('chat-offline')
+  if (!st || !st.there) {
+    return fill(instead,
+      el('p', { className: 'why', textContent: 'This host has no supervisor machine.' }),
+      el('p', { className: 'why muted', textContent: 'Make one on the Runners tab — tick "supervisor machine?" when you create it.' }))
+  }
+
+  // ONE IS THE ORDINARY CASE, and a picker with one entry asks a question with
+  // one answer. Shown only when there is a real choice — and only one may run at
+  // a time anyway, so picking is picking WHICH.
+  const pick = rows.length > 1
+    ? el('select', { id: 'chat-which' }, ...rows.map(r => el('option', { value: r.name, textContent: `${r.name} — ${r.state}` })))
+    : null
+
+  fill(instead,
+    el('p', { className: 'why', textContent: rows.length === 1 ? `${rows[0].name} is not running.` : 'No supervisor is running.' }),
+    rows.length === 1 && rows[0].why
+      ? el('p', { className: 'why muted', textContent: rows[0].why })
+      : null,
+    el('div', { style: 'display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center' },
+      pick,
+      el('button', {
+        className: 'btn ok',
+        textContent: rows.length > 1 ? 'Start the one you picked' : `Start ${rows[0] ? rows[0].name : 'it'}`,
+        title: 'Starts the machine, waits for it to dial in, and signs it in',
+        onclick: () => {
+          const chose = pick ? pick.value : (rows[0] || {}).name
+          press('supervisorUp', `Starting ${chose} and signing it in — this takes a minute.`)
+        }
+      })),
+    // SAID PLAINLY, because a message typed while it is down is not lost — it is
+    // kept and delivered whenever one next wakes, which is the behaviour that
+    // makes an accepting composer worse than none at all.
+    el('p', { className: 'why muted', textContent: 'Anything said while it is down would wait unread until one is up, so there is nowhere to type until then.' }))
 }
 
 // A press that takes a while, said before it starts rather than after: starting
