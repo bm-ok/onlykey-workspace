@@ -32,6 +32,7 @@
 // host's decision rather than the guest's good manners.
 
 const { it, requires } = require('../../../tasks/harness')
+const { aConnectedMachine } = require('../../helpers')
 
 requires('the machines are built')
 
@@ -55,11 +56,18 @@ it('a runner and a supervisor are both up, and this host knows which is which', 
 
   const boss = machines.find(m => m.supervisor && m.connected)
   assert.needs(boss, 'no supervisor machine is dialled in — this drill asks from both sides, so it needs both')
-  const worker = machines.find(m => !m.supervisor && m.connected)
-  assert.needs(worker, 'no ordinary runner is dialled in. Start one — kit-1 is what this kit uses — and run this again')
+
+  // FROM THE TEST POOL, which is what `test` tags. The first version took the
+  // first connected machine that was not a supervisor and got runner4 — one of
+  // the host's own working machines. Nothing here harms it, and it is still not
+  // this kit's to use: the tags exist so work can ask for a KIND of machine, and
+  // a drill is a kind of work.
+  const worker = await aConnectedMachine(okc, assert,
+    'no ordinary machine is dialled in. Start one from the test pool — the kit tags its own "test" — and run this again')
 
   state.boss = boss.name
   state.worker = worker.name
+  if (!worker.fromThePool) log(`no machine tagged "test" is up, so this borrowed ${worker.name} instead`)
 
   // WHERE THE MACHINES REACH THIS HOST, taken from what this host would serve
   // them rather than guessed: the address changes with the network, and a drill

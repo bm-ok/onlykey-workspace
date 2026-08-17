@@ -22,7 +22,7 @@
 // is on a branch, and at rest there is none. This is the series that has one.
 
 const { it, cleanup } = require('../../../tasks/harness')
-const { scratch, aLine } = require('../../helpers')
+const { scratch, aLine, POOL_TAG } = require('../../helpers')
 
 // WHAT IT SAW LAST TIME is recorded at the bottom of this file, and this is the
 // file where the numbers are worth having: how long a machine takes to dial in
@@ -61,7 +61,12 @@ it('it is borrowed, and it dials in', async ({ okc, assert, state, log }) => {
   // Minutes, not seconds: a base snapshot is restored, the machine boots, the
   // agent starts and connects back here. Two is usual and five is not alarming.
   const began = Date.now()
-  const got = await okc('vmBorrow', { why: 'a drill proving a machine comes up and goes away' })
+  // FROM THE TEST POOL. Unnamed and untagged, this took whichever machine was
+  // free — which on this host means one of the operator's runners as readily as
+  // one of the kit's, and a drill that borrows a working machine gives it back
+  // rolled to its base snapshot. The tag is how work asks for a KIND of machine,
+  // and a drill is a kind of work.
+  const got = await okc('vmBorrow', { tag: POOL_TAG, why: 'a drill proving a machine comes up and goes away' })
   state.machine = got.name
 
   await okc('vmAwait', { name: state.machine, for: 'connected', seconds: 300 })

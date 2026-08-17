@@ -1130,9 +1130,9 @@ module.exports = {
   // bite -- a machine that will not answer its power button, a double rollback
   // racing VirtualBox. A second copy would be a second set of those lessons.
   vmBorrow: {
-    about: 'Take a machine out of the pool and bring it up clean, for a person to use',
-    takes: ['name', 'why'],
-    run: async ({ name, why }) => {
+    about: 'Take a machine out of the pool and bring it up clean, for a person to use. A tag asks for a kind of machine',
+    takes: ['name', 'why', 'tag'],
+    run: async ({ name, why, tag }) => {
       const reason = String(why || '').trim() || 'somebody is using it'
       const { vms: all } = await actions.vmList.run({})
 
@@ -1146,11 +1146,28 @@ module.exports = {
         if (!said) throw new Error(`There is no machine called "${pick}".`)
         if (!said.free) throw new Error(`"${pick}" ${said.why}.`)
       } else {
-        const first = free.find(a => a.free)
-        if (!first) {
-          throw new Error(`No machine is free. ${free.map(a => `${a.name} ${a.why}`).join('; ')}.`)
+        // OR A KIND OF MACHINE, WHICH IS WHAT A TAG IS FOR.
+        //
+        // "The first free machine" reaches whatever is idle, and on a host where
+        // somebody keeps working runners beside a test kit that is the wrong
+        // answer more often than the right one: the drills borrowed a runner
+        // because it happened to be free, gave it back rolled to its base
+        // snapshot, and looked like the queue behaving oddly.
+        //
+        // The queue already matches work to machines this way and waits rather
+        // than falling back — see tasks/queue.js — so this refuses rather than
+        // quietly handing over an untagged machine. A borrow that silently
+        // ignores the kind asked for is the fault being fixed.
+        const want = String(tag || '').trim().toLowerCase()
+        const kinds = new Map(all.map(v => [v.name, (v.tags || []).map(t => String(t).toLowerCase())]))
+        const could = free.filter(a => a.free && (!want || (kinds.get(a.name) || []).includes(want)))
+
+        if (!could.length) {
+          throw new Error(want
+            ? `No machine tagged "${want}" is free. ${free.map(a => `${a.name}${(kinds.get(a.name) || []).length ? ` [${kinds.get(a.name).join(', ')}]` : ''} ${a.free ? 'is free' : a.why}`).join('; ')}.`
+            : `No machine is free. ${free.map(a => `${a.name} ${a.why}`).join('; ')}.`)
         }
-        pick = first.name
+        pick = could[0].name
       }
 
       // Claimed BEFORE it is brought up, so the queue's next tick -- which is at
