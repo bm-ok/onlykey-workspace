@@ -14,8 +14,11 @@
 
 const guests = require('../core/guests')
 const handover = require('../core/handover')
+// A secret sealed to a passphrase rather than to this Windows account, so a
+// backup can be restored somewhere else. See core/portable.js.
+const portable = require('../core/portable')
 const s = require('./shared')
-const { log, vms, channel } = s
+const { log, vms, channel, fs, path } = s
 
 module.exports = {
   guests: {
@@ -150,6 +153,149 @@ module.exports = {
       vms.update(machine, { holdsCredential: true, guest: name })
       log.on('vm', machine).warn(`${machine} is holding the Claude guest "${name}" — it cannot be snapshotted until that is taken back`)
       return { name, machine, note: `${machine} is signed in as "${name}". Take it back with guestBack before the machine is snapshotted or put away.` }
+    }
+  },
+
+  // ---- KEEPING THEM ---------------------------------------------------------
+  //
+  // WHY A BACKUP IS NOT OPTIONAL HERE. A Claude sign-in is not reproducible: it
+  // comes from a person at a login page, and once the refresh token is gone the
+  // only way back is to do that again. This host has now had one credential die
+  // outright, and the way it was discovered was a judge failing on a machine
+  // twenty minutes into a run.
+  //
+  // AND WHAT IS BACKED UP IS THE LATEST, WHICH IS THE HARD PART. The CLI rotates
+  // its refresh token as a worker runs, so the freshest copy of a credential
+  // that is OUT lives on the machine, not here. Backing up while one is lent is
+  // backing up a token that may already have been superseded — so this says so
+  // rather than quietly writing a stale one.
+  guestBackup: {
+    about: 'Write every Claude sign-in to one file, sealed with a passphrase, so they survive this computer',
+    takes: ['to', 'passphrase'],
+    run: ({ to, passphrase }) => {
+      const where = String(to || '').trim()
+      if (!where) throw new Error('Say where to write it — a path to a file. It holds credentials, so put it somewhere you would put a password.')
+
+      const all = guests.all()
+      if (!all.length) throw new Error('There is nothing to back up: this host holds no Clau'+'de sign-in.')
+
+      // OUT ON A MACHINE MEANS THE NEWEST IS NOT HERE. Named rather than
+      // refused: a backup of a slightly older token is worth having, and being
+      // told which ones is what lets somebody take them back first and run this
+      // again.
+      const lent = all.filter(g => g.holder)
+
+      const kept = []
+      for (const g of all) {
+        if (!g.has) continue
+        kept.push({
+          name: g.name,
+          role: g.role,
+          note: g.note || null,
+          added: g.added,
+          from: g.from || null,
+          // THE FINGERPRINT TRAVELS IN THE CLEAR, deliberately: it is sixteen
+          // characters of sha256 and useless for anything except saying "this is
+          // the same token" — which is exactly what somebody restoring needs to
+          // check without opening anything.
+          fingerprint: g.fingerprint,
+          sealed: portable.seal(passphrase, guests.token(g.name))
+        })
+      }
+
+      const file = {
+        v: 'okc-guests-1',
+        at: new Date().toISOString(),
+        count: kept.length,
+        // No host name, no account, no paths. A backup that says where it came
+        // from is a backup that tells whoever finds it where to go next.
+        guests: kept
+      }
+
+      fs.mkdirSync(path.dirname(where), { recursive: true })
+      fs.writeFileSync(where, JSON.stringify(file, null, 2))
+
+      log.on('keys').good(`backed up ${kept.length} Cla`+`ude sign-in(s)`)
+      return {
+        to: where,
+        count: kept.length,
+        names: kept.map(k => k.name),
+        // Said back so somebody can check the file against the list without
+        // opening it.
+        fingerprints: Object.fromEntries(kept.map(k => [k.name, k.fingerprint])),
+        lentOut: lent.map(g => `${g.name} is on ${g.holder}`),
+        note: lent.length
+          ? `Written. ${lent.length} of them ${lent.length === 1 ? 'is' : 'are'} out on a machine right now — the CLI rotates a token as a worker runs, so what was saved for ${lent.map(g => g.name).join(', ')} may be one rotation behind. Take them back and run this again to be sure.`
+          : 'Written. Nothing is out on a machine, so every token in it is the newest this host has.'
+      }
+    }
+  },
+
+  guestRestore: {
+    about: 'Put Clau'+'de sign-ins back from a backup file, sealed to this computer again',
+    takes: ['from', 'passphrase', 'replace'],
+    run: ({ from, passphrase, replace }) => {
+      const where = String(from || '').trim()
+      if (!where) throw new Error('Say which file to read.')
+      if (!fs.existsSync(where)) throw new Error(`There is no file at "${where}".`)
+
+      let file = null
+      try { file = JSON.parse(fs.readFileSync(where, 'utf8')) } catch (e) { throw new Error(`That file is not readable as a backup: ${e.message}`) }
+      if (!file || file.v !== 'okc-guests-1' || !Array.isArray(file.guests)) {
+        throw new Error('That is not a sign-in backup written by this app.')
+      }
+
+      const here = new Map(guests.all().map(g => [g.name, g]))
+      const put = []
+      const skipped = []
+
+      for (const one of file.guests) {
+        const already = here.get(one.name)
+        if (already && !replace) {
+          // NOT OVERWRITTEN BY DEFAULT, because the one here may be NEWER: it
+          // has been out on machines since the backup was taken, and each of
+          // those runs may have rotated it. Restoring over it would replace a
+          // working token with an older one, which is the exact failure this
+          // whole area keeps producing.
+          skipped.push(`${one.name} is already here (${already.fingerprint}) — pass replace to put the backup's copy over it`)
+          continue
+        }
+
+        // Opened one at a time, so a wrong passphrase fails on the first rather
+        // than after writing half of them.
+        const token = portable.open(passphrase, one.sealed)
+
+        if (already) {
+          try { guests.forget(one.name) } catch (e) { skipped.push(`${one.name} could not be replaced: ${e.message}`); continue }
+        }
+        const made = guests.add({
+          name: one.name,
+          token,
+          role: one.role,
+          from: one.from || 'a backup',
+          note: one.note || null
+        })
+        put.push({
+          name: made.name,
+          role: made.role,
+          fingerprint: made.fingerprint,
+          // SAID WHEN IT DOES NOT MATCH, which would mean the file was written
+          // by something else or has been altered. The fingerprint is the only
+          // check available that does not involve showing anybody a token.
+          asBackedUp: one.fingerprint,
+          same: made.fingerprint === one.fingerprint
+        })
+      }
+
+      log.on('keys').good(`restored ${put.length} sign-in(s) from a backup`)
+      return {
+        from: where,
+        restored: put,
+        skipped,
+        note: put.length
+          ? `${put.length} restored and sealed to this computer.${skipped.length ? ` ${skipped.length} left alone.` : ''}`
+          : 'Nothing was restored — everything in that file is already here. Pass replace to put the backup over what is here.'
+      }
     }
   },
 

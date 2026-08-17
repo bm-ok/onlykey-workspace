@@ -98,7 +98,7 @@ module.exports = {
     about: 'Ask for a judgement of a branch cut or a PR cut: what is read, which job reads it, and what question it is being asked',
     needs: 'workspace',
     takes: ['kind', 'branch', 'source', 'target', 'job', 'by', 'tag', 'question'],
-    run: async ({ kind, branch, source, target, job, by, tag, question }) => {
+    run: async ({ kind, branch, source, target, job, by, tag, question, _overTheWire }) => {
       // WHAT IS BEING READ, resolved before anything is written, so a judgement
       // is never filed against a cut that does not exist. `subjectFrom` is where
       // the two shapes are understood, and it refuses anything else.
@@ -122,6 +122,33 @@ module.exports = {
         const found = (branches || []).some(b => b.name === subject.branch)
         if (!found) {
           throw new Error(`There is no branch cut "${subject.branch}" in this workspace. Ask branchBoard for what has been cut — a judgement reads what is there, and one written against a name nothing matches would send a machine to read nothing.`)
+        }
+      }
+
+      // ---- A MACHINE DOES NOT MARK A PERSON'S HOMEWORK ------------------
+      //
+      // A judgement's subject is a change, never another judgement, so nothing
+      // can literally judge a verdict. What a supervisor CAN do is ask for a
+      // second reading of the same change after a person has read it — which is
+      // second-guessing by another route, and the operator's words for it were
+      // "it could run another judgement process to check my judgement".
+      //
+      // REFUSED OVER THE WIRE ONLY, and only while the person's reading still
+      // describes what is there. If the code has moved since, judging again is
+      // not second-guessing — it is judging something else, which is exactly
+      // what a judgement going stale means.
+      //
+      // A PERSON MAY ALWAYS ASK FOR ANOTHER, including one that disagrees with
+      // their own: the record is a sequence of opinions and two that disagree is
+      // the most useful thing in it. This is about who may commission the
+      // second one, not about whether it may exist.
+      if (_overTheWire) {
+        const mine = judging.all()
+          .filter(j => j.state === 'done' && j.by === 'person' && j.verdict && j.subject && j.subject.name === subject.name)
+        const current = mine.filter(j => !judgements.staleAgainst(j, tipsFor(subject)))
+        const last = current[current.length - 1]
+        if (last) {
+          throw new Error(`${last.ref} is a person's own reading of ${subject.name}, they recorded "${last.verdict}", and nothing has changed there since. Asking for another judgement of it would be checking their work — which is not yours to commission. If the change moves, judge it then; if you think they are wrong, say so and let them decide.`)
         }
       }
 
@@ -157,6 +184,24 @@ module.exports = {
         // not its text, quite rightly — so the first version of this copied a
         // field that does not exist and produced a judgement with no brief,
         // which fails at the machine rather than here.
+        // A JUDGE WITH NO PROMPT SAYS NOTHING TO A WORKER, and this is where that
+        // has to be refused.
+        //
+        // It cost a real run: all three judging jobs were quietly unbound from
+        // their prompts by a save that never mentioned prompts (fixed in
+        // tasks/jobs.js), and nothing said so. The judgement was written, queued,
+        // and dispatched; a machine rolled back, booted, took a credential and
+        // cloned three repositories before the job refused with "no brief, so
+        // there is nothing to give the job" — forty seconds of machine for a
+        // fault that was visible the moment the judgement was asked for.
+        //
+        // Every panel had said "can judge" throughout, because a job with no
+        // prompt is not broken — it is a job with no prompt. It is only a judge
+        // that is broken, and this is the door where the difference is known.
+        if (!which.promptId) {
+          throw new Error(`The judge "${which.id}" has no prompt, so there would be nothing to tell the worker to look for. Give it one under Judge → Judges before asking it to read anything.`)
+        }
+
         const words = which.promptId ? (prompts.all() || []).find(p => p.id === which.promptId) : null
         if (which.promptId && !words) {
           throw new Error(`The job "${which.id}" runs the prompt "${which.promptId}", and there is no such prompt. A judgement copies the words it will be read under when it is written, so this is refused now rather than on a machine.`)
@@ -194,7 +239,23 @@ module.exports = {
       // half that says what a judge may not do.
       const asked = String(question || '').trim()
       if (asked && !chain.brief) {
-        throw new Error('A question needs a judge to ask it. Give this a job as well — the question is added to what that job\'s prompt says, and on its own it is words with no rules around them.')
+        // NAMING WHAT TO PASS, because "give this a job as well" was not enough.
+        //
+        // A supervisor met this four times in a row bootstrapping a survey. Each
+        // refusal was correct and each was useless: it said what was missing and
+        // not what would fix it, so there was nothing to do but guess again. A
+        // refusal that cannot be acted on is a refusal that gets retried.
+        //
+        // The ids are read fresh rather than described, so this cannot go stale
+        // as the library changes — and only the ones that can actually run are
+        // offered, since suggesting an unapproved chain would move the refusal
+        // one step later.
+        const can = ((await actions.jobs.run({ kind: 'judge' })).jobs || []).filter(j => j.runnable)
+        throw new Error(
+          'A question needs a judge to ask it: pass "job" as well, and the question is added to what that job\'s prompt says. ' +
+          (can.length
+            ? `The judges that can run are: ${can.map(j => j.id).join(', ')}. For example job: "${can[0].id}".`
+            : 'No judging chain is approved yet, so nothing can run one — see the Judge tab.'))
       }
       if (asked) {
         chain.brief = `${chain.brief}\n\n---\n\n## What you are being asked about, specifically\n\n${asked}`

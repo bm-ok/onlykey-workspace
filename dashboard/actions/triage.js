@@ -27,8 +27,19 @@ const { log, triage, tasks, judging } = s
 function whereIsIt (about) {
   const what = String(about || '').trim()
 
-  const asJudgement = /^J\d+$/i.test(what)
-  if (asJudgement) {
+  // BY WHATEVER IT IS CALLED, because a supervisor writes down the name it was
+  // just handed. It asked for a judgement and got back an id —
+  // "judge-survey-codebase-1" — so that is what it wrote in its notebook, and a
+  // resolver that only understood "J5" answered "this is just a note" about the
+  // one thing it was actually waiting for.
+  //
+  // Both stores already accept any of their names: judging.get takes a ref, an
+  // id or a uid, and tasks.get takes a number, a slug or a uid. So this asks
+  // them rather than pattern-matching what a name looks like — the only shape
+  // decided here is that a bare number means a task, because a judgement's
+  // number is written J5 and never 5.
+  const looksLikeATask = /^#?\d+$/.test(what)
+  if (!looksLikeATask) {
     try {
       const j = judging.get(what)
       return {
@@ -44,11 +55,19 @@ function whereIsIt (about) {
           ? `${j.ref} has finished — read it with judgementFindings`
           : `${j.ref} is ${j.state}`
       }
-    } catch { return { kind: 'judgement', state: 'gone', landed: false, how: `${what} is not on this host any more` } }
+    } catch {
+      // NOT A JUDGEMENT, WHICH IS NOT THE SAME AS A JUDGEMENT THAT IS GONE.
+      // Anything can be written in this notebook — an issue, a line, a sentence
+      // — so failing to find one here falls through to the note below rather
+      // than reporting a thing that never existed as having vanished.
+      //
+      // A judgement that really WAS there and was removed is indistinguishable
+      // from that, and deliberately: either way there is nothing to wait for,
+      // and the supervisor's own note says what it was expecting.
+    }
   }
 
-  const asTask = /^#?\d+$/.test(what)
-  if (asTask) {
+  if (looksLikeATask) {
     try {
       const t = tasks.get(what.replace(/^#/, ''))
       return {

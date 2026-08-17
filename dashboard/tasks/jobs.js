@@ -166,7 +166,21 @@ function save (fields, by = 'the window') {
     // A job may name the prompt it is usually run with. It is a default, not a
     // binding: the same job pointed at a different prompt is the point of
     // separating them.
-    promptId: String(fields.promptId || '').trim() || null,
+    //
+    // LEFT ALONE WHEN NOTHING WAS SENT, exactly like the code above and the tags
+    // below — and this did not, which cost a real run. A save that means "change
+    // the script" arrived without a promptId, so all three judging jobs were
+    // quietly unbound from their prompts. Every panel still said "can judge",
+    // because a job with no prompt is a job with no prompt rather than a broken
+    // one; the fault only appeared as a machine booting, taking a credential,
+    // cloning three repositories and then refusing with "no brief, so there is
+    // nothing to give the job".
+    //
+    // The prompt library already had this right — see contractId in
+    // tasks/prompts.js, with the same reasoning in the comment beside it.
+    promptId: fields.promptId === undefined
+      ? (at === -1 ? null : list[at].promptId || null)
+      : (String(fields.promptId || '').trim() || null),
     // Left alone when nothing was sent, for the same reason as the code above:
     // a save that means "rename this" must not quietly empty the other fields.
     tags: fields.tags === undefined
