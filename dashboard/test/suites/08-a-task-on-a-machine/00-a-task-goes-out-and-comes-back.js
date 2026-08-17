@@ -342,9 +342,7 @@ draft('and a task that pushed something can be accepted',
 // proving the API: a call that quietly stopped answering shows up here as a task
 // that failed for some other-looking reason, twenty minutes in, on a machine.
 
-draft('and every call the jobs API offers is proven, one at a time',
-  'EXERCISED, NOT PROVEN. A job running on a machine is handed a set of calls — read its task, post an artifact, hand back and fetch its session, report what happened — and this suite uses whichever of them api-tour happens to need. ' +
-  'The ones nothing uses are the ones that break quietly, and the failure arrives disguised as a task that did not work. ' +
-  'THE CHECK: from a machine, ask every endpoint machines/job-api.js exposes, one at a time, and state both halves — what it answers, and what it REFUSES. The refusals are the half worth the drill: a machine asking for another machine\'s task, for a session that is not its own, or posting an artifact while running nothing at all. ' +
-  'THE PATTERN IS ALREADY WRITTEN. "what survives the machine" posts to /artifact and /session from a machine exactly as job-api.js does, without spending a worker run — this is that, made complete rather than made of the two calls a drill needed. ' +
-  'AND IT IS THE MODEL FOR THE OTHER DIRECTION: a supervisor asking this host for work needs the same drill pointed the opposite way. See the supervisor suite.')
+// WRITTEN NOW — see "the jobs api call by call" beside this file. Each endpoint
+// asked directly from a machine with its own token, plus the two refusals that
+// matter: a machine cannot ask about another machine's task, and a file named
+// as a path is refused.

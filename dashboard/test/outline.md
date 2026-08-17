@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 34 tests, 168 checks, 23 of them drafts -->
+<!-- 12 suites, 36 tests, 173 checks, 20 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -15,16 +15,12 @@
   A capability with no check here is one somebody will build again.
 -->
 
-## 23 drafts, not written yet
+## 20 drafts, not written yet
 
 - **the refusals / the ways round a refusal** — and the window cannot be driven while the drills are off
   THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. It matters more than it looks: windowClick and windowFill reach the SAME handlers a person's press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. WHY IT IS NOT A CHECK HERE: a drill runs only while testing mode is on, which is exactly when this is allowed. Proving the refusal means turning testing mode OFF, which stops the drills. HOW TO WRITE IT: from outside the kit — a script that turns testing mode off at the window, calls windowClick over the wire, sees the refusal, and turns it back on. That is a person-driven drill rather than one the harness can run, and it belongs in the same family as the sign-in that needs somebody to visit a page. WHAT CAN BE CHECKED FROM HERE AND IS NOT YET: that a press driven from outside carries the mark — press an APPROVE button through windowClick and watch it refused for being over the wire. That proves the anti-bypass property without turning anything off. See drivenFromTheWire in ui/base.js.
 - **the refusals / the ways round a refusal** — and a change cannot be landed from outside the window while the drills are off
   THE REFUSAL: "Landing a cut from outside the window is only done while testing mode is on for this workspace… this is a model merging into somebody's repository, and that needs to have been said out loud first." — actions/repos.js. It is the one act in this app with consequences outside this host: everything before a merge is reversible from GitHub and a merge is not. WHY IT IS NOT A CHECK HERE: same as above — the drills run with testing mode on, which is the state in which this is permitted. THE CHECK, WHEN THERE IS A WAY TO WRITE IT: with testing mode off, prCutLand over the wire is refused and names the window; with it on, the refusal is not what stops it — a cut that is not ready still is. AND THE RELATED ONE WORTH HAVING EITHER WAY: a supervisor is refused prCutLand whatever testing mode says, because it is not on its list at all. That one IS checked — see the supervisor suite.
-- **a worker credential / a worker can sign in** — and no two machines hold the same credential at once
-  THE LOCK, and it can be written today. There is one credentials/claude.json, lent to whoever is working. vmCredentialsPut checks the machine is dialled in and that the credential is not dead, and says nothing about who else is holding it — so two machines working at once would run as the same worker against the same session. The check is "at most one machine reports holdsCredential", asked while work is in flight. It would fail right now if two tasks were dispatched at once, which is the honest way to start: a guard that would catch the thing nobody has hit yet. The queue serialises most work, which is why it has not bitten.
-- **a worker credential / a worker can sign in** — and two machines can work at once, each with a credential of its own
-  THE FEATURE, and it needs building before this can pass. Multi-credential logic: a SET of worker credentials kept here rather than one file, one handed to each machine while it works and taken back after, and a machine that cannot be given one waiting rather than borrowing somebody else's. Until that exists the check above is the whole story and two machines cannot both work — which is the point of kit-1 and kit-2 and is not reachable today. THE CHECK: dispatch two tasks at once, both run, and the two machines report different credentials. WHAT TO SETTLE FIRST, because these change the shape rather than the code. (1) Where does a second sign-in come from — credentialsBegin on another machine, a different account, or the same account signed in twice? (2) Is a credential PINNED to a machine or drawn from a pool per job? Pinned is simpler to reason about and wastes one per idle machine; pooled is the same shape as the machines themselves, which the queue already knows how to do. (3) What does the Keys tab show — one row per credential, with who holds it now? A count and a holder, never a value: the rule that a model may know something was done in there and not what still holds.
 - **a worker credential / a worker can sign in** — and the credential never travels as cleartext in a shell command
   IT DOES TODAY. vmCredentialsPut opens the sealed file, base64s it, and sends `printf '%s' '<the whole credential>' | base64 -d > ~/.claude/.credentials.json` down the channel. Base64 is not encryption. TLS covers the wire and core/secret.js covers the file at rest; what neither covers is the middle — a plain string in this host's memory, a shell argument visible in `ps` on the guest, and a line in its history. WHAT IT NEEDS: a key exchange between host and guest, so the credential is sealed to that machine and the dashboard hands over a blob it cannot read. That carries the authorize URL up as well as the credential down. THE CHECK: what is sent to the machine contains no part of the credential, and the machine still authenticates afterwards. The second half is what makes it a check rather than a rule about strings.
 - **a worker credential / a worker can sign in** — and signing a worker in is a job, not a sequence written into this app
@@ -41,8 +37,6 @@
   THE REFUSAL EXISTS AND NOTHING ACTS ON IT. vmCredentialsPut throws when every guest is out, naming who holds what — which is right, and turns into a failed dispatch rather than a task that waits. Waiting for a credential is the same shape as waiting for a machine, and tasks/queue.js already knows how to do that: a task asking for a tag waits for a machine with that tag rather than taking any machine. THE CHECK: with one guest and two machines, dispatch two tasks — the second waits, and runs when the first gives its guest back, rather than failing. TO SETTLE FIRST: whether a guest is PINNED to a machine or drawn from a pool per job. Pinned wastes one per idle machine; pooled is the shape the machines themselves already have.
 - **a task on a machine / a task goes out and comes back** — and a task that pushed something can be accepted
   THE ACCEPT PATH, and no job here can reach it. api-tour hands back a FILE and never commits, so the branch is exactly as it was cut and taskJudge refuses — correctly. ask-a-worker would push, and needs a Claude credential, which makes it a different and slower drill. WHAT IT NEEDS: a job that makes a small change and pushes it, written and approved at the window, because approving a job over the wire is refused on purpose. THE CHECK: queue a task under that job, let the queue run it, and accept the delivery — the verdict is recorded, the task reads accepted, and the artifact it was judged on is named in the verdict. AND ACCEPTING MUST NOT MERGE. Landing work is a separate act with its own rules; a verdict that quietly merged would make reading the work and publishing it the same button.
-- **a task on a machine / a task goes out and comes back** — and every call the jobs API offers is proven, one at a time
-  EXERCISED, NOT PROVEN. A job running on a machine is handed a set of calls — read its task, post an artifact, hand back and fetch its session, report what happened — and this suite uses whichever of them api-tour happens to need. The ones nothing uses are the ones that break quietly, and the failure arrives disguised as a task that did not work. THE CHECK: from a machine, ask every endpoint machines/job-api.js exposes, one at a time, and state both halves — what it answers, and what it REFUSES. The refusals are the half worth the drill: a machine asking for another machine's task, for a session that is not its own, or posting an artifact while running nothing at all. THE PATTERN IS ALREADY WRITTEN. "what survives the machine" posts to /artifact and /session from a machine exactly as job-api.js does, without spending a worker run — this is that, made complete rather than made of the two calls a drill needed. AND IT IS THE MODEL FOR THE OTHER DIRECTION: a supervisor asking this host for work needs the same drill pointed the opposite way. See the supervisor suite.
 - **judging / a judgement is work of its own** — a judgement is a task whose subject is a PR cut
   THE SHAPE, and none of it exists. Today taskJudge writes a verdict onto the task that produced the work — a field, set by a person at a command line. What is wanted is the same chain with one end changed: branch <- task <- job <- prompt <- contract is the work; PR CUT <- task <- job <- prompt <- contract is judging it. Work delivers onto a branch; a judgement delivers onto the cut — one pull request per repository that carries something, taken as one act — because that is what is actually being judged: the change as it is proposed for landing, not a commit and not a branch. IT TAKES NO BRANCH OF ITS OWN, which follows from that: it reads rather than writes, and a task claiming a branch it never pushes to would hold a machine on that branch for no reason. WHY IT MATTERS BEYOND TIDINESS: a task gets a machine, a run, a log and a record of what it saw. A field gets none of those, so "why was this accepted" is answerable only by asking whoever typed it. AND job <- prompt <- contract IS ALREADY BUILT, with a tab of its own and an approval per substance — so a judging job is a job, its prompt is a prompt, its contract is a contract, and nothing new appears in the library. The only new thing is the left-hand end. THE CHECK: judge an open cut, and a task exists whose subject is that cut, with its own job and its own run, holding no branch.
 - **judging / a judgement is work of its own** — and an open cut is what asks for one
@@ -174,12 +168,10 @@ The second door a person has to open, and it is deliberately not beside the
   1. this host holds a worker credential
   2. and it has not expired past refreshing
   3. and a machine can really sign in with it
-  4. **DRAFT** — and no two machines hold the same credential at once
-  5. **DRAFT** — and two machines can work at once, each with a credential of its own
-  6. **DRAFT** — and the credential never travels as cleartext in a shell command
-  7. **DRAFT** — and signing a worker in is a job, not a sequence written into this app
-  8. **DRAFT** — and each machine keeps its own credential across a rollback
-  9. **DRAFT** — and the .claude folder can be thrown away without losing the token
+  4. **DRAFT** — and the credential never travels as cleartext in a shell command
+  5. **DRAFT** — and signing a worker in is a job, not a sequence written into this app
+  6. **DRAFT** — and each machine keeps its own credential across a rollback
+  7. **DRAFT** — and the .claude folder can be thrown away without losing the token
 
 ## 01 — more than one sign in
 
@@ -203,6 +195,13 @@ The second door a person has to open, and it is deliberately not beside the
   2. and nothing in the answer is a token
   3. and a supervisor sign-in belongs on a supervisor machine
   4. and a worker sign-in never goes to the supervisor
+
+## 04 — two machines two identities
+
+  1. two machines are up, and this host holds two identities
+  2. and each machine can hold its own at the same time
+  3. and one identity cannot be on two machines
+  4. and a machine with nothing free to hand it is refused, not given somebody else's
 
 # 05 — the machines
 
@@ -290,7 +289,7 @@ The rules that stop work being lost — a task written wrong, a verdict about no
 
 The point of the whole tool, and the last part of it that nothing checked.
 
-*stands on the machines and the order*
+*stands on the machines and the order and the machines are built*
 
 ## 00 — a task goes out and comes back
 
@@ -303,7 +302,6 @@ The point of the whole tool, and the last part of it that nothing checked.
   7. and the machine was put away clean
   8. and judging it is refused, because this worker pushed nothing
   9. **DRAFT** — and a task that pushed something can be accepted
-  10. **DRAFT** — and every call the jobs API offers is proven, one at a time
 
 ## 01 — what survives the machine
 
@@ -311,6 +309,13 @@ The point of the whole tool, and the last part of it that nothing checked.
   2. a file the machine hands over is kept here
   3. and the memory a worker keeps goes back and comes forward again
   4. and the token that went up comes back the same
+
+## 02 — the jobs api call by call
+
+  1. a machine is running a task, which is what most of this surface answers
+  2. and every call it offers answers
+  3. and it cannot ask about a task that is not its own
+  4. and a file handed over is filed under the task, not under a name it chose
 
 # 09 — judging
 

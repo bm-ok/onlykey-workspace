@@ -75,23 +75,18 @@ it('and a machine can really sign in with it', async ({ okc, assert, state, log 
 // start and is a real check; it is not the feature, and a to-do list where the
 // constraint has a line and the capability does not is a list that quietly
 // argues for never building it.
-draft('and no two machines hold the same credential at once',
-  'THE LOCK, and it can be written today. There is one credentials/claude.json, lent to whoever is working. ' +
-  'vmCredentialsPut checks the machine is dialled in and that the credential is not dead, and says nothing about who else is holding it — so two machines working at once would run as the same worker against the same session. ' +
-  'The check is "at most one machine reports holdsCredential", asked while work is in flight. ' +
-  'It would fail right now if two tasks were dispatched at once, which is the honest way to start: a guard that would catch the thing nobody has hit yet. ' +
-  'The queue serialises most work, which is why it has not bitten.')
-
-draft('and two machines can work at once, each with a credential of its own',
-  'THE FEATURE, and it needs building before this can pass. ' +
-  'Multi-credential logic: a SET of worker credentials kept here rather than one file, one handed to each machine while it works and taken back after, and a machine that cannot be given one waiting rather than borrowing somebody else\'s. ' +
-  'Until that exists the check above is the whole story and two machines cannot both work — which is the point of kit-1 and kit-2 and is not reachable today. ' +
-  'THE CHECK: dispatch two tasks at once, both run, and the two machines report different credentials. ' +
-  'WHAT TO SETTLE FIRST, because these change the shape rather than the code. ' +
-  '(1) Where does a second sign-in come from — credentialsBegin on another machine, a different account, or the same account signed in twice? ' +
-  '(2) Is a credential PINNED to a machine or drawn from a pool per job? Pinned is simpler to reason about and wastes one per idle machine; pooled is the same shape as the machines themselves, which the queue already knows how to do. ' +
-  '(3) What does the Keys tab show — one row per credential, with who holds it now? A count and a holder, never a value: the rule that a model may know something was done in there and not what still holds.')
-
+// BOTH WRITTEN NOW — see "two machines two identities" beside this file.
+//
+// The lock and the feature were two drafts and are one check: two identities
+// out on two machines at the same moment, each holding its own, and every way
+// of getting one onto both refused.
+//
+// WHAT THE DRAFT ASKED FOR IS NOT WHAT WAS WRITTEN, deliberately. It said
+// dispatch two tasks at once and compare what the machines report — which
+// would cost two worker runs and turn on whether the queue happened to overlap
+// them. Machines start one at a time here, so a short job can finish before the
+// second has booted, and that drill would pass while proving nothing. Asked at
+// the credential level it is deterministic.
 // ---- what the roadmap wants from this suite -------------------------------
 //
 // Two of the roadmap's items are claims about what this app does with a
