@@ -1015,6 +1015,14 @@ function start ({ port: wanted = Number(process.env.PORT || 7373), host = proces
       //
       // Not awaited: it is a handful of VBoxManage calls and the dashboard has no
       // reason to wait for them before answering anything.
+      // Every machine is in a pool, including the ones that predate the idea.
+      try {
+        const named = provisioner.makeSurePoolsAreNamed()
+        if (named.given.length) log.on('machines').good(`${named.given.join(', ')} had no tag and are in the "default" pool now — every machine is in one`)
+      } catch (e) {
+        log.on('machines').warn(`could not put every machine in a pool — ${e.message}`)
+      }
+
       provisioner.makeSureConsolesAreCaptured()
         .then(r => { if (r.given.length) log.on('machines').good(`${r.given.join(', ')} now write their console here — every machine has one`) })
         .catch(e => log.on('machines').warn(`could not check every machine has a console — ${e.message}`))

@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 30 tests, 151 checks, 25 of them drafts -->
+<!-- 12 suites, 30 tests, 153 checks, 25 of them drafts -->
 
 ## 25 drafts, not written yet
 
@@ -199,9 +199,11 @@ The half of this app the other suites can only describe. Everything before this
 
   1. every machine writes its console somewhere
   2. and it cannot be turned off
-  3. and a machine keeps the tags it was made with
-  4. and a supervisor keeps the one tag that is not a label
-  5. and a borrow can ask for a kind rather than whatever is idle
+  3. and every machine is in a pool
+  4. and clearing a machine's tags puts it back in the default one
+  5. and a machine keeps the tags it was made with
+  6. and a supervisor keeps the one tag that is not a label
+  7. and a borrow can ask for a kind rather than whatever is idle
 
 # 06 — provisioning
 

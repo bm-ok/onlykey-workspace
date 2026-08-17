@@ -275,24 +275,26 @@ module.exports = {
         for (const tag of vm.tags || []) note(String(tag).toLowerCase(), vm)
       }
 
-      // AND THE ONES WITH NO TAG AT ALL, which is not a pool but is the answer to
-      // "what takes a task that asks for nothing in particular" — which is most
-      // tasks. Named rather than left out: a supervisor reading only the tagged
-      // kinds would think this host had two machines.
-      const untagged = workers.filter(v => !(v.tags || []).length)
+      // NO "UNTAGGED" ANY MORE. There was a bucket here for machines carrying no
+      // tag, which was the ordinary kind with no name — so "which pool is this
+      // machine in" had two sorts of answer, a tag or a shrug, and anything
+      // checking that work went where it was meant to had to special-case the
+      // shrug. Every machine is in a pool now, and one with no kind of its own is
+      // in "default". See POOL in machines/vms.js.
+      //
+      // A machine that somehow has none is still counted, because a report that
+      // silently drops a machine is worse than one that shows an odd row.
+      const homeless = workers.filter(v => !(v.tags || []).length)
 
       return {
         pools: [...kinds.values()].sort((a, b) => a.tag.localeCompare(b.tag)),
-        untagged: {
-          machines: untagged.map(v => ({ name: v.name, free: !!(free.get(v.name) || {}).free, why: (free.get(v.name) || {}).why || null })),
-          free: untagged.filter(v => (free.get(v.name) || {}).free).length
-        },
+        inNoPool: homeless.map(v => v.name),
         // Any free machine at all takes an untagged task, tagged or not.
         anyFree: workers.filter(v => (free.get(v.name) || {}).free).length,
         supervisors: supervisors.map(v => v.name),
         note: kinds.size
-          ? `${kinds.size} kind(s) of machine: ${[...kinds.values()].map(k => `"${k.tag}" (${k.free} of ${k.machines.length} free)`).join(', ')}. A task with no tag takes any free machine.`
-          : 'No machine carries a tag, so every task takes any free machine. Tag one to be able to ask for a kind.'
+          ? `${kinds.size} pool(s): ${[...kinds.values()].map(k => `"${k.tag}" (${k.free} of ${k.machines.length} free)`).join(', ')}. A task with no tag takes any free machine; a tagged one takes only its own kind, and waits.`
+          : 'There are no machines to put in a pool.'
       }
     }
   },
@@ -334,10 +336,15 @@ module.exports = {
         throw new Error(`"${name}" is a supervisor machine, so it keeps the "${vms.SUPERVISOR}" tag. Taking it off would put it in the queue's pool, and the first queued task would roll it back to its base snapshot while it was working.`)
       }
 
-      const now = vms.update(name, { tags: want })
+      // CLEARING THEM PUTS IT BACK IN THE ORDINARY POOL, rather than leaving it
+      // in none. Every machine is in a pool — see POOL in machines/vms.js — so
+      // "no tags" is not a state a machine can be in, and asking for it means
+      // asking for the default one.
+      const settled = want.length ? want : [vms.POOL]
+      const now = vms.update(name, { tags: settled })
       log.on('vm', name).info(want.length
-        ? `tagged ${want.map(t => `"${t}"`).join(', ')} — a task asking for one of those can be given this machine`
-        : 'no longer tagged, so only work that asks for no particular kind of machine will come here')
+        ? `tagged ${settled.map(t => `"${t}"`).join(', ')} — a task asking for one of those can be given this machine`
+        : `back in the "${vms.POOL}" pool — every machine is in one`)
       return {
         name,
         tags: now.tags,
@@ -347,7 +354,7 @@ module.exports = {
         // is out of the pool for good, and its other tags are labels for people
         // rather than a way for work to reach it.
         note: !want.length
-          ? `"${name}" carries no tags.`
+          ? `"${name}" is back in the "${vms.POOL}" pool. Every machine is in one, so clearing its tags means the ordinary one rather than none.`
           : isSupervisor
             ? `"${name}" is tagged ${want.join(', ')}. It is a supervisor machine, so no task reaches it whatever it carries — the other tags are for reading, not for routing.`
             : `"${name}" is tagged ${want.join(', ')}. A task with no tag still takes it — a tag adds a way to be asked for, it does not hold a machine back. Use vmForTasks for that.`

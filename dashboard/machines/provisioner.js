@@ -23,7 +23,7 @@ const keys = require('../core/keys')
 const data = require('../core/data')
 // The one tag with a meaning, taken from the registry rather than spelled again
 // here. See vms.js.
-const { SUPERVISOR } = vms
+const { SUPERVISOR, POOL } = vms
 
 // What a VM is, with everything optional filled in. One place, so a spec read
 // back later means the same thing as when it was made.
@@ -92,12 +92,20 @@ function fill (input = {}) {
     // what the queue reads — see tasks/queue.js. Written in here rather than
     // checked in three places later: the tag and the flag cannot disagree if
     // there is only one moment where either is set.
-    tags: [...new Set([
-      ...(Array.isArray(input.tags) ? input.tags : String(input.tags || '').split(','))
-        .map(t => String(t).trim().toLowerCase())
-        .filter(Boolean),
-      ...(input.supervisor === true || input.supervisor === 'true' ? [SUPERVISOR] : [])
-    ])],
+    tags: (() => {
+      const asked = [...new Set([
+        ...(Array.isArray(input.tags) ? input.tags : String(input.tags || '').split(','))
+          .map(t => String(t).trim().toLowerCase())
+          .filter(Boolean),
+        ...(input.supervisor === true || input.supervisor === 'true' ? [SUPERVISOR] : [])
+      ])]
+      // EVERY MACHINE IS IN A POOL. One that was given no kind is in the ordinary
+      // one, and it says so — see POOL in vms.js. A supervisor is not: it takes
+      // no work at all, so putting it in the pool work is drawn from would be a
+      // name for something that can never happen.
+      if (!asked.length) return [POOL]
+      return asked
+    })(),
     // Bridged, because a guest has to be able to reach this app to fetch its
     // setup, and on NAT it cannot see the host at all without more plumbing.
     network: input.network === 'nat' ? 'nat' : 'bridged',
@@ -767,4 +775,25 @@ async function makeSureConsolesAreCaptured () {
   return { checked: vms.read().length, given, later }
 }
 
-module.exports = { fill, create, install, report, base, firstSnapshotIfItNeedsOne, resolveISO, pickBridge, makeSureConsolesAreCaptured }
+// ---- and every machine is in a pool ---------------------------------------
+//
+// The ones built from now on are put in one by fill(); this is for the machines
+// that already existed when the idea arrived. Same shape as the console sweep
+// above and for the same reason: a rule that only applies to new machines is a
+// rule with a growing list of exceptions.
+//
+// A SUPERVISOR IS LEFT ALONE. It takes no work, so the pool work is drawn from
+// is not a thing it can be in.
+function makeSurePoolsAreNamed () {
+  const given = []
+  for (const vm of vms.read()) {
+    if ((vm.tags || []).length) continue
+    if ((vm.tags || []).some(t => String(t).toLowerCase() === SUPERVISOR)) continue
+    vms.update(vm.name, { tags: [POOL] })
+    given.push(vm.name)
+    log.on('vm', vm.name).info(`it carried no tag, so it is in the "${POOL}" pool — every machine is in one`)
+  }
+  return { given }
+}
+
+module.exports = { fill, create, install, report, base, firstSnapshotIfItNeedsOne, resolveISO, pickBridge, makeSureConsolesAreCaptured, makeSurePoolsAreNamed }

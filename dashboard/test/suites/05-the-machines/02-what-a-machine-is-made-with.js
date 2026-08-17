@@ -51,6 +51,48 @@ it('and it cannot be turned off', async ({ okc, assert, state, log }) => {
   log(`turning ${one.name}'s console off is refused`)
 })
 
+it('and every machine is in a pool', async ({ okc, assert, state, log }) => {
+  // WHICH POOL A MACHINE IS IN NOW ALWAYS HAS AN ANSWER, and that is the point of
+  // naming the ordinary one. Machines with no tag were a kind too — the default
+  // kind — and it had no name, so anything checking that work went where it was
+  // meant to had to special-case a shrug.
+  //
+  // Written onto the machine rather than inferred by whatever is reading, so the
+  // register says it: built into one, and given to the ones that predate the idea
+  // at startup. See POOL in machines/vms.js.
+  const machines = state.machines || []
+  const homeless = machines.filter(m => !(m.tags || []).length)
+  assert.ok(!homeless.length,
+    `${homeless.map(m => m.name).join(', ')} belong to no pool at all. Every machine carries a tag — "default" when nobody chose one — so that "which pool is this" is always answerable`)
+
+  // AND THE POOLS REPORT SAYS THE SAME. Two places knowing the same thing and
+  // disagreeing is the fault this window keeps finding.
+  const pools = await okc('pools')
+  assert.ok(!(pools.inNoPool || []).length, `pools reports ${pools.inNoPool.join(', ')} as belonging to nothing`)
+  const named = new Set((pools.pools || []).flatMap(p => p.machines.map(m => m.name)))
+  for (const m of machines.filter(x => !x.supervisor)) {
+    assert.ok(named.has(m.name), `${m.name} is a machine work can go to and is in none of the pools`)
+  }
+  log(`${(pools.pools || []).map(p => `${p.tag} (${p.machines.length})`).join(', ')}`)
+})
+
+it('and clearing a machine\'s tags puts it back in the default one', async ({ okc, assert, state, log }) => {
+  // NOT INTO NONE, because "no pool" is not a state a machine can be in. Asking
+  // for no tags is asking for the ordinary kind — which is what somebody means by
+  // it, and it keeps the invariant above true by construction rather than by a
+  // sweep noticing later.
+  //
+  // Done to a machine that is already in the default pool, so this changes
+  // nothing about the host even if it is interrupted.
+  const plain = (state.machines || []).find(m => !m.supervisor && (m.tags || []).join() === 'default')
+  assert.needs(plain, 'no machine is in the default pool alone, and this must not disturb a machine somebody tagged on purpose')
+
+  const said = await okc('vmTags', { name: plain.name, tags: [] })
+  assert.ok((said.tags || []).includes('default'),
+    `clearing ${plain.name}'s tags left it carrying ${JSON.stringify(said.tags)} — every machine is in a pool`)
+  log(`${plain.name}: cleared, and back in "${said.tags.join(', ')}"`)
+})
+
 it('and a machine keeps the tags it was made with', async ({ okc, assert, state, log }) => {
   // Read from the TOP of the record, which is where everything that acts on a tag
   // reads: vmTags writes there, the queue matches there, the card draws from

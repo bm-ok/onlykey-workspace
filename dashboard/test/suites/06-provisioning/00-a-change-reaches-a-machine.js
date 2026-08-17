@@ -18,6 +18,7 @@
 // that matters — this host asking itself proves nothing about a guest's token.
 
 const { it, cleanup, requires } = require('../../../tasks/harness')
+const { aMachine } = require('../../helpers')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -77,9 +78,11 @@ it('and a live machine fetching it gets the same thing', async ({ okc, assert, s
   // asking itself; a guest fetches over TLS, with its own name and token, from
   // an address it was told at install time. Any of those can be wrong while the
   // three checks above pass.
-  const { vms } = await okc('vmList')
-  const free = vms.find(v => v.stage === 'ready' && v.state !== 'running' && !v.branch && !v.borrowed && v.forTasks !== false)
-  assert.needs(free, 'no machine is free to ask, so the fetch cannot be proved from the side that matters')
+  // FROM THE TEST POOL. Picked by hand here once — "the first machine that is
+  // free" — which reaches the operator's runners as readily as the kit's, and
+  // gives one back rolled to its base snapshot. aMachine asks by tag.
+  const free = await aMachine(okc, assert, 'no machine is free to ask, so the fetch cannot be proved from the side that matters')
+  if (!free.fromThePool) log(`no machine tagged "test" is free, so this borrowed ${free.name} instead`)
 
   await okc('vmBorrow', { name: free.name, why: 'a drill proving a machine fetches what this host serves' })
   state.machine = free.name

@@ -146,6 +146,22 @@ const STAGES = ['defined', 'created', 'installing', 'online', 'ready', 'connecte
 // — because a guarantee somebody can type away is not a guarantee.
 const SUPERVISOR = 'supervisor'
 
+// AND THE POOL EVERY OTHER MACHINE IS IN.
+//
+// A tag is how work asks for a KIND of machine. Machines with no tag were a kind
+// too — the ordinary one — and it had no name, which meant "which pool is this
+// machine in" had two sorts of answer: a tag, or a shrug. Anything checking that
+// work went where it was meant to had to special-case the shrug.
+//
+// So an untagged machine carries "default" instead: written onto it when it is
+// built and given to the ones that already existed at startup, so the register
+// says it rather than a reader inferring it. A task can then ask for "default"
+// and mean it, and every machine answers "which pool" with a name.
+//
+// A TASK WITH NO TAG STILL TAKES ANY FREE MACHINE. That is the ordinary case and
+// it has not changed: this names the machines, not the work.
+const POOL = 'default'
+
 // The list the UI shows: ours only, with live state attached.
 async function all () {
   const mine = read()
@@ -198,4 +214,4 @@ async function all () {
   return { available: true, vms }
 }
 
-module.exports = { all, read, get, add, update, forget, stageOf, STAGES, SUPERVISOR }
+module.exports = { all, read, get, add, update, forget, stageOf, STAGES, SUPERVISOR, POOL }

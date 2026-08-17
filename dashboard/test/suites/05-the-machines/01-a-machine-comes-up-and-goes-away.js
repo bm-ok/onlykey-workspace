@@ -120,8 +120,17 @@ it('and a second machine, dialled in, is not handed the same branch', async ({ o
   // So the second machine is borrowed and brought up like the first, and if
   // there is not one to borrow this says so rather than making do.
   const { vms } = await okc('vmList')
-  const other = vms.find(v => v.name !== state.machine && v.stage === 'ready' && !v.borrowed && !v.branch && v.forTasks !== false)
+  // FROM THE TEST POOL, LIKE THE FIRST ONE. This picked "a second machine that is
+  // free" and got runner4 — one of the operator's — brought it up, and gave it
+  // back rolled to its base snapshot two minutes later. Nothing was harmed and it
+  // was still not this kit's to touch: the first borrow in this file was moved to
+  // the pool and this one was left behind, which is exactly how a rule with two
+  // call sites goes wrong.
+  const free = vms.filter(v => v.name !== state.machine && v.stage === 'ready' && !v.borrowed && !v.branch && v.forTasks !== false && !v.supervisor)
+  const ours = free.filter(v => (v.tags || []).some(t => String(t).toLowerCase() === POOL_TAG))
+  const other = ours[0] || free[0]
   assert.needs(other, 'there is no second machine free here — one branch, one machine cannot be shown with one machine')
+  if (!ours.length) log(`no second machine tagged "${POOL_TAG}" is free, so this borrowed ${other.name} instead`)
 
   await okc('vmBorrow', { name: other.name, why: 'a drill proving one branch is only ever handed to one machine' })
   state.second = other.name
