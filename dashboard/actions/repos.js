@@ -451,13 +451,57 @@ module.exports = {
         }
       }
 
-      const said = String(title || '').trim() || pair.source.name
+      // The title, decided after the draft is read below so a saved one can be
+      // used -- see draftTitle. A pull request named after the LINE is what a
+      // dropped draft looks like from GitHub.
+      let said = String(title || '').trim() || pair.source.name
       // WHAT SOMEBODY TYPED, PLUS WHAT THIS APP ALREADY KNOWS. The blocks that
       // are on are written from facts nobody should have to look up -- why the
       // branch was cut, what the task asked for, which commit each repository
       // ends at. See repos/prtemplate.js.
       const context = prtemplate.about(pair.source.name, pair.target.name)
-      const typed = String(body || '').trim()
+
+      // WHAT SOMEBODY WROTE, FROM THE ARGUMENT OR FROM THE DRAFT THEY SAVED.
+      //
+      // THE DRAFT WAS WRITTEN AND THROWN AWAY. `prDraftSave` keeps what a pull
+      // request will say, the window's form pre-fills from it, and this read
+      // only the `body` argument — so anything saved and not passed again was
+      // silently dropped. The supervisor's skill says, in order: prDraftSave,
+      // then prCutMake. It did exactly that, and the pull request went out with
+      // none of its words in it, including the issue URL it had been asked to
+      // carry. Nothing failed and nothing said anything.
+      //
+      // The argument still wins when there is one: passing a body means "say
+      // this", and a draft is what was meant when nothing else is said.
+      let typed = String(body || '').trim()
+      let fromDraft = false
+      if (!typed) {
+        const kept = drafts.read(pair.source.name, pair.target.name)
+        if (kept && String(kept.body || '').trim()) {
+          typed = String(kept.body).trim()
+          fromDraft = true
+        }
+      }
+
+      // AND THE TITLE THE SAME WAY, for the same reason: a draft that carries a
+      // title and is cut without one produced a pull request named after the
+      // line, which is what happened here -- "csvstat lockfile ignore" rather
+      // than "Ignore package-lock.json in csvstat".
+      const draftTitle = (() => {
+        if (String(title || '').trim()) return null
+        const kept = drafts.read(pair.source.name, pair.target.name)
+        return kept && String(kept.title || '').trim() ? String(kept.title).trim() : null
+      })()
+
+      if (draftTitle) said = draftTitle
+
+      // SAID OUT LOUD, because the failure this replaces was silent. A cut that
+      // takes its words from a draft nobody passed should leave a line saying
+      // so, or the next person to wonder where the text came from has the same
+      // afternoon.
+      if (fromDraft || draftTitle) {
+        log.on('git').info(`the pull request text came from the draft kept for "${pair.source.name}" into "${pair.target.name}"`)
+      }
 
       const done = []
       for (const c of carrying) {
