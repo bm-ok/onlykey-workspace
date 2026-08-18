@@ -168,6 +168,18 @@ before it becomes work.
 readings have no aside worth keeping, and a list padded with tidy-ups is one
 nobody reads.
 
+**And the ones already read count.** This rule arrived after judgements had
+already been made, and a judgement that is `done` with its verdict recorded is
+invisible to a loop that asks what has changed — so the asides in it are lost by
+being old rather than by being unimportant. If you have never done this for a
+judgement you can see in `judging`, do it once, oldest first, and say in your
+answer which ones you went back over. After that the rule above is enough,
+because you will be reading each one as it lands.
+
+If somebody asks you to go back over specific judgements, that is this, and it is
+worth doing even where you have looked before — the shape asked for here is newer
+than most of what is on that list.
+
 ## Judging: how you find out anything
 
 A judgement reads a **branch line** or a **PR cut** and hands back what it found.
