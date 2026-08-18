@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 46 tests, 219 checks, 22 of them drafts -->
+<!-- 12 suites, 47 tests, 224 checks, 23 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -15,7 +15,7 @@
   A capability with no check here is one somebody will build again.
 -->
 
-## 22 drafts, not written yet
+## 23 drafts, not written yet
 
 - **the refusals / the ways round a refusal** — and the window cannot be driven while the drills are off
   THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. It matters more than it looks: windowClick and windowFill reach the SAME handlers a person's press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. WHY IT IS NOT A CHECK HERE: a drill runs only while testing mode is on, which is exactly when this is allowed. Proving the refusal means turning testing mode OFF, which stops the drills. HOW TO WRITE IT: from outside the kit — a script that turns testing mode off at the window, calls windowClick over the wire, sees the refusal, and turns it back on. That is a person-driven drill rather than one the harness can run, and it belongs in the same family as the sign-in that needs somebody to visit a page. WHAT CAN BE CHECKED FROM HERE AND IS NOT YET: that a press driven from outside carries the mark — press an APPROVE button through windowClick and watch it refused for being over the wire. That proves the anti-bypass property without turning anything off. See drivenFromTheWire in ui/base.js.
@@ -45,6 +45,8 @@
   RAN 2026-08-13 AS A TIMER RATHER THAN A WORKER, so what was proven was the waiting and not the work. THE PROPERTY: a task is as long as the work is. Five minutes and two hours are both ordinary, so nothing may decide a run has stalled by how long it has taken — what can be said is how long it HAS been, which is what somebody deciding whether to go and look actually needs. See ticking in tasks/queue.js. THE BOUND THAT DOES EXIST is the hours a task declares, and the default is six. A soak deliberately left overnight must SAY it is long, or it is abandoned at hour six while running perfectly and its machine is put away underneath it. THE CHECK: a run that outlives its declared hours is abandoned and says why; one that declares enough hours is not; and neither is ever reported as finished.
 - **judging / a judgement is work of its own** — and GitHub is told, beside the pull request
   THE OUTWARD HALF, and the only part of the original nine that is still true as a draft. Anybody looking at the change on GitHub — which is where a reviewer looks — has no way to know this app read it. A verdict belongs there: a status or a check beside the pull request, saying what was run and what it found. THE CHECK: after a judgement of a PR cut, the pull request on the parent carries a status naming this app and the verdict. TO SETTLE, AND STILL UNSETTLED: whether that is a commit status, a check run, or a comment — a comment is the easiest and the least useful, since it cannot gate a merge. And whether a rejection blocks the merge button, which is a decision about somebody else's repository rather than about this app. WHAT HAS CHANGED SINCE THIS WAS FIRST WRITTEN: everything inward. The verdict exists, it is the judge's own, it is current or stale against the tips it was made on, and prCutMake already refuses to send out work a judgement has rejected. So this is now the last mile rather than the whole road.
+- **judging / what a restart strands** — and a real run survives a real restart
+  THE OTHER HALF, and it needs somebody. A run is detached on purpose — nohup, its own session — so this app is not the work, and restarting it must interrupt only the WATCHING. What adoption owes is to wait on a run that is still alive, keep its log, put the machine away, and re-queue anything that had not dispatched.  WHY IT IS NOT HERE: `adopt` runs once at startup, so proving this means stopping and starting the app around a machine that is genuinely mid-run. That is a person-driven drill, in the same family as the sign-in that needs somebody to visit a page.  WHAT IS ALREADY COVERED WITHOUT IT: the rule that decides what is stranded, above, which is the half that was actually wrong.
 - **the supervisor / an issue becomes a pull request** — a person opens an issue and the supervisor reads it
   THE TRIGGER, AND IT IS THE PART THAT IS NOT BUILT. `whatsNew` carries what was said, tasks, machines, cuts and what happened — and NOT issues or pull requests. So a supervisor waking on a quiet host is never told that an issue arrived; it can ASK (`issues` is on its list, and it did) but only because the wake reason named it. Without that it would wake, see nothing new, and go back to sleep with an open issue sitting there. WHAT HAS TO EXIST FIRST: `whatsNew` reporting open issues and incoming pull requests, and something that wakes the supervisor when one arrives. This app deliberately never asks GitHub on a timer, so that is a decision rather than a line of code — poll on a slow cadence, or check on every wake and rely on other things waking it. THE CHECK: with an issue open that the supervisor has not been told about, wake it for an unrelated reason, and it still finds the issue. Today it does not, and the run above only worked because the wake reason said "a new issue arrived on local-repo-c: #2".
 - **the supervisor / an issue becomes a pull request** — and a judge decides whether the claim is real before any work is written
@@ -387,6 +389,14 @@ Reading what came back and saying yes or no — and it is **work**, not a field.
   1. allowing one is refused down the pipe, and refused to a driven click
   2. a pull request nobody has allowed cannot be judged, whichever name it is called
   3. the list of judgements is small enough to read, and one of them is not
+
+## 04 — what a restart strands
+
+  1. work that was being set up when this stopped goes back in the queue
+  2. and the same rule holds for a judgement, which says it differently
+  3. and a person's work is left where it is, whichever kind it is
+  4. and an empty board is not something to recover
+  5. **DRAFT** — and a real run survives a real restart
 
 # 10 — the supervisor
 

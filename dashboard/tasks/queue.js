@@ -1259,6 +1259,33 @@ async function waitForRun (actions, to, machine, runId, hours = 6) {
 // Not resumed, because the worker itself is still going or already gone and
 // neither can be re-entered from here. What happens is honest: the run is waited
 // on if it is still alive, and the machine is put away either way.
+// WHAT WAS STRANDED BY THIS APP STOPPING, AS A QUESTION ABOUT DATA.
+//
+// `adopt` below is the only caller, and it does the acting. This is only the
+// deciding, and they are separated for one reason: the deciding is the part
+// that was wrong, twice, and there was no way to ask it anything. `adopt` runs
+// once at startup against the real board, so proving its rule meant restarting
+// the app and arranging for a restart to land inside a twenty-second window --
+// which is how the fault was found in the first place, by accident.
+//
+// THE RULE. Work sitting in `given` with no run was being SET UP when this
+// stopped and never started. Nothing was dispatched, so nothing happened and
+// there is nothing to judge; putting it back in the queue loses nothing.
+//
+// EXCEPT A PERSON'S, and this is the whole reason the rule needs a name. A
+// task somebody took by hand has no run for as long as they are working in it
+// -- there is no run because there is no worker process. Re-queueing one hands
+// it to a machine while somebody has an editor open on that branch.
+//
+// `whose` rather than a field name, because the two kinds of work say it
+// differently -- a task has `worker`, a judgement has `by` -- and a rule that
+// reads one field would silently stop applying to whichever kind was added
+// next. That is exactly how judging came to be missed: everything here was
+// written when tasks were the only work there was.
+function stranded (rows, whose) {
+  return (rows || []).filter(x => x && x.state === 'given' && !x.run && whose(x) !== 'person')
+}
+
 async function adopt (actions, log) {
   // Nothing was in flight in a workspace nobody is serving -- and asking would
   // read an empty board and "recover" it, which is adoption doing the one thing
@@ -1304,7 +1331,7 @@ async function adopt (actions, log) {
   // that has to be right every time, about a machine that may have been reverted
   // by hand while the dashboard was not running. Asking the machine cannot be
   // stale, because the machine is the thing being asked about.
-  for (const t of tasks.filter(x => x.state === 'given' && !x.run && x.worker !== 'person')) {
+  for (const t of stranded(tasks, x => x.worker)) {
     log.on('queue').warn(`#${t.number} was being set up when this stopped, and never started — back in the queue${
       t.machine ? `. If ${t.machine} still has it, it will say so when it dials in` : ''}`)
     await actions.taskUpdate.run({ id: t.id, task: { state: 'queued', machine: null } }).catch(() => {})
@@ -1329,7 +1356,7 @@ async function adopt (actions, log) {
   // A PERSON'S IS LEFT ALONE, for the same reason as a task's — see above. A
   // judgement somebody is reading themselves has no run because there is no
   // worker process, and re-queueing it would hand their reading to a machine.
-  for (const j of judging.read().filter(x => x.state === 'given' && !x.run && x.by !== 'person')) {
+  for (const j of stranded(judging.read(), x => x.by)) {
     const ref = j.ref || judging.refOf(j.number)
     log.on('queue').warn(`${ref} was being set up when this stopped, and never started — back in the queue${
       j.machine ? `. ${j.machine} was rolled back with nothing on it` : ''}`)
@@ -1503,4 +1530,4 @@ const order = entries => [...(entries || [])].sort((a, b) => rank(a) - rank(b) |
 // the rule so it cannot describe an order that is not this one.
 const ORDER = 'Judgements first, then tasks; oldest first within each. A judgement reads work that is already waiting to land, so it goes ahead of work that makes more.'
 
-module.exports = { begin, stop, tick, redial, availability, state, busyWith, bringUp, putAway, order, takes, ORDER, TICK }
+module.exports = { begin, stop, tick, redial, availability, state, busyWith, bringUp, putAway, order, takes, stranded, ORDER, TICK }

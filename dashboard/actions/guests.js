@@ -143,13 +143,25 @@ module.exports = {
       // different halves of this app into different directories, and each has
       // its own link to whatever is current.
       const box = isSupervisor ? dispatch.SUPERVISOR : dispatch.RUNS
-      const log = isSupervisor ? `${box}/current.log` : `${box}/current/out.log`
+      // NOT `log`, WHICH IS THE LOGGER THIS FILE ALREADY HAS.
+      //
+      // It was called that, and it shadowed `log` from the top of the file for
+      // the rest of the function -- so twenty lines further down, the line that
+      // records the machine as holding a sign-in threw `log.on is not a
+      // function` and took the whole lending with it. A drill found it; nothing
+      // else would have, because the throw is after the credential has already
+      // landed on the machine and been checked.
+      //
+      // `node --check` passes on this and so does every reading of the line in
+      // isolation: it is not an undeclared name, it is a declared one meaning
+      // something else. The only defence is not to reuse the word.
+      const logFile = isSupervisor ? `${box}/current.log` : `${box}/current/out.log`
 
       const done = await handover.deliver({
         run: (command, opts) => channel.run(machine, command, opts),
         text,
         what: `lending it the Claude guest "${name}"`,
-        andThen: dispatch.watcherFor(box, log)
+        andThen: dispatch.watcherFor(box, logFile)
       })
 
       // AND WHAT LANDED IS WHAT WAS SENT, asked by fingerprint — the same sixteen
