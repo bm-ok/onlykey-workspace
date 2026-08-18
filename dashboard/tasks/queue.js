@@ -1144,6 +1144,18 @@ async function keepForLooking (actions, log, machine, why) {
 
   to.bad(`${machine} is kept as it is: ${why} ${where}. It has NOT been rolled back, so its log and anything it never handed over are still on it${shot ? `, and its screen is photographed at ${shot}` : ''}. It still holds a sign-in until it is given back with vmReturn.`)
 
+  // AND WHAT TO ACTUALLY DO WITH IT, because a machine held with no idea how to
+  // read it is worse than one rolled back: it costs a machine AND answers
+  // nothing, which is the strongest argument for the old behaviour.
+  //
+  // THERE IS NO GUARANTEE OF AN ANSWER. A guest that stopped dialling out may
+  // have left nothing legible anywhere, and if the screen is blank and the log
+  // stops mid-sentence then the honest end of this is `vmReturn` and a shrug.
+  // What is claimed here is narrower: three things can be looked at that could
+  // not be looked at before, and the machine is not thrown away before somebody
+  // has had the chance.
+  to.info(`to read it: the screenshot above shows what its console said — a panic or an out-of-memory kill is legible there when nothing else is. It is still RUNNING, so its window can be opened in VirtualBox directly. When you have seen enough, "vmReturn --name ${machine}" rolls it back and puts it in the pool; nothing else will touch it until you do.`)
+
   return { kept: true, machine, why, shot, alone, answering: answering.map(v => v.name) }
 }
 
