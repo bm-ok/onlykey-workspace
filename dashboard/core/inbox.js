@@ -36,6 +36,9 @@ const contracts = require('../tasks/contracts')
 const judging = require('../tasks/judging')
 const landings = require('../repos/landings')
 const remotes = require('../repos/remotes')
+// The machines, for the one item here that is about a thing rather than a
+// decision: a machine the queue is holding because it lost sight of it.
+const vms = require('../machines/vms')
 
 // ---- PUT AWAY, WHICH IS NOT THE SAME AS DEALT WITH ----------------------
 //
@@ -233,6 +236,38 @@ function all () {
       `It is a fork and nothing has been picked, so issues and pull requests both stay on ${target.self} and nothing upstream is watched. Walk the fork chain and say where work goes.`,
       at('repos', 'repos', r.repo),
       { since: null, id: r.repo }
+    ))
+  }
+
+  // ---- a machine being kept because this app lost sight of it -------------
+  //
+  // THE ONE ITEM HERE THAT IS ABOUT A THING RATHER THAN A DECISION, and it earns
+  // its place by what happens if it is missed.
+  //
+  // When a run goes out of touch the queue keeps its machine as it is rather
+  // than rolling it back, because that disk is the only account of what went
+  // wrong — see keepForLooking in tasks/queue.js. The machine is marked borrowed
+  // so nothing takes it, which is correct and is also EXACTLY WHAT A DRAINED
+  // POOL LOOKS LIKE: work stops being picked up, every machine reads as "not
+  // free", and nothing anywhere says why. This app already warns about that
+  // shape in its own notes — a machine that still claims a branch is correctly
+  // never picked up, and the failure looks like a queue that has gone quiet.
+  //
+  // So the thing that holds a machine back has to be the thing that says so.
+  // Without this the change that keeps evidence would trade one silent failure
+  // for another.
+  for (const v of vms.read()) {
+    const held = v.borrowed
+    if (!held || held.keptBy !== 'the queue') continue
+    out.push(item(
+      'a machine is being kept for you to look at',
+      v.name,
+      `${held.why || 'this app lost sight of it'}. It has not been rolled back, so its log and anything it never handed over are still on it — and it holds a sign-in until it is given back. Look at it, then give it back with vmReturn; nothing else will touch it until you do.`,
+      at('runners', 'machines', v.name),
+      // A PERSON'S, because only a person can decide whether there is anything
+      // left to learn from it. Nothing in this app will ever clear this by
+      // itself: that is the whole point of keeping the machine.
+      { since: held.at || null, mine: true, id: v.name }
     ))
   }
 
