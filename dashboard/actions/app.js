@@ -209,7 +209,18 @@ module.exports = {
 
       return {
         actions: forTasks.length,
-        judge: mine.length + mute.length + forJudges.length,
+        // READINGS WITHOUT A VERDICT ARE NOT COUNTED HERE ANY MORE.
+        //
+        // This was mine + mute + forJudges, and the first two are judgements
+        // that finished and were never decided about. They are history rather
+        // than errands -- nothing is blocked by one -- and there were eight of
+        // them, so this badge read 8 all day while the two things that did need
+        // somebody were a smaller number on another tab. A count that is never
+        // zero is a count nobody reads.
+        //
+        // What is left is what is genuinely owed on that tab: a judging job,
+        // prompt or contract that nothing may run until a person reads it.
+        judge: forJudges.length,
         repos: out.length + arrived.length,
         supervisor: said + beyond,
         // Apart as well as together, so the hover can say which is which and the

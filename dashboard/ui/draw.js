@@ -108,19 +108,27 @@ async function drawOnce () {
   nudge('prompts-badge', of(forTasks, 'prompt').length, says(of(forTasks, 'prompt')), true)
   nudge('contracts-badge', of(forTasks, 'contract').length, says(of(forTasks, 'contract')), true)
 
-  // The Judge tab owes two different things and says so in one number: verdicts
-  // nobody has recorded, and judging chains nobody has read. Both are a person's
-  // alone, so it is amber whenever either is outstanding.
-  const judgeSays = [
-    ...(owed.verdicts || []).map(v => `${v.ref} read ${v.reads} — yours to decide`),
-    ...(owed.silent || []).map(v => `${v.ref} read ${v.reads} and ended without a verdict`),
-    ...forJudges.map(a => `${a.kind} "${a.name || a.id}" is written and waiting for you to read it`)
-  ].join('\n')
-  const judgeMine = (owed.verdicts || []).length > 0 || forJudges.length > 0
-  nudge('judge-badge', owed.judge, judgeSays, judgeMine)
-  // The verdicts belong to Judgement; the chains to Judges. Split, so a number
-  // on the tab does not make somebody look in both.
-  nudge('judgements-badge', (owed.verdicts || []).length + (owed.silent || []).length, judgeSays, (owed.verdicts || []).length > 0)
+  // THE JUDGE TAB OWES ONE THING, and it used to say two.
+  //
+  // It counted verdicts nobody had recorded and readings that ended without
+  // one, alongside the judging chains waiting to be approved. The first two are
+  // history: a judgement that finished and was never decided about blocks
+  // nothing — the change can still go out, another reading can still be asked
+  // for, and what it found is on the tab whenever anybody wants it.
+  //
+  // There were eight of them, so this badge read 8 all day while the two things
+  // that genuinely needed somebody sat behind a smaller number elsewhere. A
+  // count that is never zero is a count nobody reads, which is the whole reason
+  // these badges exist.
+  //
+  // What is left is what is actually owed: a judging job, prompt or contract
+  // that nothing may run until a person has read it.
+  const judgeSays = says(forJudges)
+  nudge('judge-badge', owed.judge, judgeSays, forJudges.length > 0)
+  // The Judgement pane owes nothing now — the chains are what waits, and they
+  // are on Judges. Set rather than left alone, so a number from before this
+  // change does not sit there for ever.
+  nudge('judgements-badge', 0, '')
   nudge('judges-badge', forJudges.length, says(forJudges), true)
 
   // WORK THAT IS OUT AND NOT IN, on the tab and on the pane that shows it.

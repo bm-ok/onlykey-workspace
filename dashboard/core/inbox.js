@@ -140,20 +140,28 @@ function all () {
     ))
   }
 
-  // ---- readings that reached no verdict -----------------------------------
-  const judged = judging.read()
-  for (const j of judged.filter(x => x.state === 'done' && !x.verdict)) {
-    const ref = j.ref || judging.refOf(j.number)
-    out.push(item(
-      j.by === 'person' ? 'verdict to record' : 'judgement with no verdict',
-      `${ref} — ${(j.subject && j.subject.name) || j.title || 'a change'}`,
-      j.by === 'person'
-        ? 'You asked for this reading and nothing has been decided about it.'
-        : 'It read something and ended without saying whether it holds. That is a fact about the judgement rather than a gap on the screen.',
-      at('judge', 'judgements', ref),
-      { since: j.read || j.decided || null, mine: j.by === 'person', id: j.id }
-    ))
-  }
+  // ---- READINGS WITHOUT A VERDICT ARE NOT HERE, DELIBERATELY ---------------
+  //
+  // They were, and they were eight of the first fourteen items — every one of
+  // them a judgement that finished days ago and had never been decided about.
+  //
+  // A JUDGEMENT THAT ENDED WITHOUT A VERDICT IS HISTORY, not an errand. Nothing
+  // is blocked by it: the change it read can still be sent, another reading can
+  // still be asked for, and the finding it handed back is on the Judge tab
+  // whenever anybody wants it. Recording a verdict is worth doing and it is not
+  // a thing that goes stale, which is exactly the test for belonging here —
+  // "would this sit for a week if nobody read it" has to mean "and that would
+  // be a problem".
+  //
+  // AND A COUNT THAT IS NEVER ZERO IS A COUNT NOBODY READS. The Judge badge sat
+  // at eight all day while the two things that genuinely needed somebody — a
+  // repository pointing nowhere, an arrived pull request — were a smaller
+  // number beside it. That is the failure this list was built to fix, arriving
+  // through this list.
+  //
+  // The Judge tab still badges what is actually owed there: a judging job,
+  // prompt or contract that nothing may run until it is read. See `waiting` in
+  // actions/app.js.
 
   // ---- somebody else's pull request, waiting to be allowed ----------------
   //
