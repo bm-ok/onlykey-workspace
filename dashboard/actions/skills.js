@@ -20,14 +20,28 @@
 // permission list, and the reasons are prose somebody has to write. It changes
 // in a checkout, in a commit, with a message.
 //
-// AND NEITHER MAY BE WRITTEN OVER THE WIRE. A supervisor that can edit its own
-// instructions is not supervised, and that is the whole of the argument. Reading
-// is open — it is already told all of this.
+// THE SUPERVISOR MAY WRITE NEITHER, and the thing that stops it is its
+// allowlist: neither `skillSave` nor anything else here is on it, so it cannot
+// call them at all. That is where "it may not rewrite its own instructions"
+// lives. This file used to carry a second copy of that rule as "refused over the
+// wire", which caught the command line — a person with a checkout who can
+// already edit the file directly — and never caught the supervisor, which was
+// never coming through this door. Reading is open to everything; it is already
+// told all of this.
+//
+// WHAT IS REFUSED HERE INSTEAD is overwriting somebody mid-sentence. See
+// skillHolding below.
 
 const fs = require('node:fs')
 const path = require('node:path')
 const s = require('./shared')
 const { log, scripts, supervisor } = s
+
+// WHICH SKILLS THE WINDOW IS HOLDING UNSAVED EDITS IN.
+//
+// In memory on purpose. A restart means no window is open and nothing is being
+// held, and a file kept on disk would go on claiming otherwise.
+const held = new Map()
 
 // The two documents this app will show and edit. Named rather than "any file in
 // provision/", because the point of this pane is the supervisor's instructions
@@ -92,15 +106,68 @@ module.exports = {
     }
   },
 
-  skillSave: {
-    about: 'Rewrite a skill. Done in the window, by a person — a supervisor may not edit its own instructions',
-    takes: ['which', 'text'],
-    run: ({ which = 'supervisor', text, _overTheWire, _driven }) => {
+  // WHICH SKILL SOMEBODY HAS OPEN AND HAS TYPED IN, and nothing more than that.
+  //
+  // Held in memory rather than on disk, deliberately: a restart means no window
+  // is open, so nothing is being held, and a file left behind would claim
+  // otherwise for ever. The window sets this when the editor stops matching the
+  // file and clears it when they match again.
+  skillHolding: {
+    about: 'Say that a skill is open in the window with unsaved edits, so a save from elsewhere does not quietly overwrite them',
+    takes: ['which', 'holding'],
+    run: ({ which = 'supervisor', holding = false, _overTheWire, _driven }) => {
       if (_overTheWire || _driven) {
-        throw new Error('A skill is edited in the window, by a person. Something that can rewrite its own instructions is not being supervised — which is the whole of the argument, and it applies to the command line as well as to the supervisor.')
+        throw new Error('Only the window can say what the window is holding.')
+      }
+      const key = String(which)
+      if (holding === false || holding === 'false') held.delete(key)
+      else held.set(key, new Date().toISOString())
+      return { which: key, holding: held.has(key) }
+    }
+  },
+
+  skillSave: {
+    about: 'Rewrite a skill. Refused while the window has unsaved edits in it, unless force is passed',
+    takes: ['which', 'text', 'from', 'force'],
+    run: ({ which = 'supervisor', text, from = null, force = false, _overTheWire, _driven }) => {
+      const one = fileOf(which)
+
+      // FROM A FILE, BECAUSE A SKILL DOES NOT FIT ON A COMMAND LINE.
+      //
+      // Two reasons, and the second is the one that actually bit. A skill is
+      // twenty-six thousand characters, which is a silly thing to pass as an
+      // argument. And it STARTS WITH `---`: the CLI reads that as the beginning
+      // of a flag, so `--text` arrived empty and the save was refused for having
+      // no frontmatter — an error about the content of a file that had never
+      // been read.
+      //
+      // The window still passes `text`, because it has the string in hand and
+      // no shell between them.
+      if (from && (text == null || text === '')) {
+        try { text = fs.readFileSync(String(from), 'utf8') } catch (e) {
+          throw new Error(`Could not read "${from}": ${e.message}`)
+        }
       }
 
-      const one = fileOf(which)
+      // NOT REFUSED FOR BEING THE COMMAND LINE, which it used to be, and which
+      // protected nothing: this file is an ordinary file in a checkout and
+      // anything with a shell can already write it. The refusal made the action
+      // useless to the one caller that could not reach around it, and left the
+      // real one untouched.
+      //
+      // THE SUPERVISOR IS STILL SHUT OUT, by the thing that actually shuts it
+      // out: `skillSave` is not on its allowlist, so it cannot call this at all.
+      // That is where "it may not rewrite its own instructions" lives, and it
+      // does not need a second copy here that catches the wrong callers.
+      //
+      // WHAT IS WORTH REFUSING is overwriting somebody mid-sentence. The window
+      // says when it is holding unsaved edits; a save from anywhere else is
+      // then refused until whoever is typing decides, or until somebody passes
+      // force having decided for them.
+      const holding = held.get(String(which))
+      if (holding && !(force === true || force === 'true')) {
+        throw new Error(`The window has "${one.title}" open with unsaved edits (since ${holding}). Saving now would overwrite them without them ever being seen. Save or undo in the window, or pass force to overwrite anyway — the window will reload and say that its edits were dropped.`)
+      }
       const body = String(text == null ? '' : text)
       if (!body.trim()) throw new Error('A skill with nothing in it would leave the next waking with no instructions at all. To stop using one, empty its content deliberately in a checkout.')
 
@@ -123,13 +190,22 @@ module.exports = {
         throw new Error(`Could not write ${one.title}: ${e.message}`)
       }
 
-      log.on('supervisor').good(`${one.title} was rewritten — ${was.length} to ${body.length} characters`)
+      // FORCED OVER SOMEBODY'S EDITS IS A DIFFERENT EVENT, and is recorded as
+      // one. The window drops what it was holding when it notices the file
+      // moved, so this line is the only place that says what was lost.
+      const trampled = !!holding
+      held.delete(String(which))
+      log.on('supervisor')[trampled ? 'warn' : 'good'](
+        `${one.title} was rewritten — ${was.length} to ${body.length} characters${trampled ? ', forced over unsaved edits open in the window' : ''}`)
       return {
         which: String(which),
         saved: true,
         was: was.length,
         characters: body.length,
-        note: 'Saved. The next waking fetches it — nothing needs restarting, and no machine is touched.'
+        forced: trampled,
+        note: trampled
+          ? 'Saved, over unsaved edits that were open in the window. Those are gone, and the window will reload and say so. The next waking fetches this — nothing needs restarting.'
+          : 'Saved. The next waking fetches it — nothing needs restarting, and no machine is touched.'
       }
     }
   },

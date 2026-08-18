@@ -687,7 +687,31 @@ function askToRemoveTodo (t) {
 // alone until they save or press undo. Everything else in this window redraws
 // on a signature; this one must not.
 let skillWhich = been.get('skill-which', 'supervisor')
+// WHAT IS OPEN, AND WHAT IT WAS WHEN IT OPENED.
+//
+// Three things rather than one, because "should this reload" has three answers
+// and a single "which skill is open" could only give one. `text` is what was
+// loaded, so what is in the editor now can be compared against it to tell an
+// untouched panel from one somebody is typing in; `edited` is the file's own
+// timestamp, so a change made anywhere else — a commit, a script, another
+// window — is noticed.
 let skillLoaded = null
+
+// WHAT THIS WINDOW HAS TYPED IN AND NOT SAVED, told to the host so a save from
+// anywhere else is refused rather than landing on top of it. Sent only when it
+// CHANGES: this is on the draw loop, and an action call every few seconds to
+// repeat a boolean is the kind of thing that ends up at the top of a profile.
+let skillHeldNow = false
+const skillHolding = holding => {
+  if (holding === skillHeldNow) return
+  skillHeldNow = holding
+  api('skillHolding', { which: skillWhich, holding }).catch(() => {
+    // Not fatal and not worth a banner: the consequence of this not landing is
+    // that a forced save is not needed to overwrite, which is the behaviour
+    // this app had until today.
+    skillHeldNow = !holding
+  })
+}
 let skillEditor = null
 
 function paintSkill () {
@@ -708,12 +732,65 @@ function paintSkill () {
       }
     }
 
-    // ALREADY OPEN AND POSSIBLY EDITED — leave it entirely alone.
-    if (skillLoaded === skillWhich) return
+    // ---- ALREADY OPEN: reload, warn, or leave alone ---------------------
+    //
+    // This used to be "if it is open, do nothing", which is right about the
+    // thing it was protecting — the draw loop must not wipe a paragraph
+    // somebody is halfway through — and wrong about everything else. A skill
+    // edited on disk, by a commit or a script or the other half of this
+    // session, left the window showing a version that no longer exists, with
+    // Save it sitting there ready to write the stale copy back over it.
+    //
+    // So the two cases are told apart, which needs both halves of what was
+    // loaded:
+    //
+    //   nothing typed      the editor still holds exactly what was loaded, so
+    //                      there is nothing to lose. Reload, silently.
+    //   edits in progress  say so and do not touch it. The person decides
+    //                      whether their version or the file's is the one to
+    //                      keep, and neither is a choice this window should
+    //                      make for them.
+    // SAID EVERY DRAW, SENT ONLY ON A CHANGE. What is in the editor now against
+    // what was loaded is the whole definition of "unsaved edits", and it is a
+    // string compare on something already in hand.
+    if (skillLoaded && skillLoaded.which === skillWhich && skillEditor) {
+      skillHolding(skillEditor.getValue() !== skillLoaded.text)
+    }
+
+    if (skillLoaded && skillLoaded.which === skillWhich) {
+      const row = rows.find(r => r.which === skillWhich)
+      const moved = row && String(row.edited) !== String(skillLoaded.edited)
+      if (!moved) return
+
+      const inHand = skillEditor ? skillEditor.getValue() : skillLoaded.text
+      if (inHand === skillLoaded.text) {
+        skillLoaded = null
+        $('skill-stale').classList.add('hidden')
+        // Falls through to the fetch below, which redraws it as it now is.
+      } else {
+        // FORCED OVER, AND THE EDITOR HAS TO SAY SO RATHER THAN SIT ON A COPY
+        // THAT NO LONGER EXISTS.
+        //
+        // A save from the command line is refused while this window is holding
+        // unsaved edits -- see skillHolding -- so reaching here means somebody
+        // passed force, having been told exactly what it would cost. Their
+        // decision, made knowingly, and the worst thing this window could do
+        // with it is keep showing the version they overruled and leave "Save
+        // it" ready to put it back.
+        //
+        // So it reloads, and says what was lost. Loudly, because something did
+        // go: unsaved words, which nothing anywhere has a copy of.
+        setText($('skill-stale'), `This was overwritten from the command line at ${ago(row.edited)}, with force, over the unsaved edits that were here. They are gone — nothing kept a copy. What is below is what is on disk now.`)
+        $('skill-stale').classList.remove('hidden')
+        skillLoaded = null
+        skillHolding(false)
+      }
+    }
 
     api('skills', { which: skillWhich }).then(one => {
       if (!chatPaneIs('skill') || skillWhich !== one.which) return
-      skillLoaded = one.which
+      skillLoaded = { which: one.which, edited: one.edited, text: one.text }
+      $('skill-stale').classList.add('hidden')
 
       setText($('skill-context'), `— ${one.lines} lines, ${one.characters.toLocaleString()} characters`)
       setText($('skill-note'), `${one.about} Saving changes the next waking: it is fetched from this host at the head of every turn, so nothing is installed and no machine is touched.`)
@@ -741,6 +818,7 @@ const saveSkill = () => {
     onYes: () => api('skillSave', { which: skillWhich, text })
       .then(r => {
         skillLoaded = null
+        skillHolding(false)
         paintSkill()
         say(r.saved ? r.note : r.note, r.saved ? 'ok' : 'warn')
       })
@@ -783,6 +861,13 @@ $('skill-save').onclick = saveSkill
 // UNDO IS A RELOAD, deliberately: there is no draft kept anywhere, so the way
 // back is the file on disk. Said plainly on the button rather than called
 // "revert", which reads as undoing the SAVE.
-$('skill-revert').onclick = () => { skillLoaded = null; forget('skill-body'); paintSkill(); say('Back to what is saved.') }
+$('skill-revert').onclick = () => {
+  skillLoaded = null
+  skillHolding(false)
+  $('skill-stale').classList.add('hidden')
+  forget('skill-body')
+  paintSkill()
+  say('Back to what is saved.')
+}
 
 $('todo-add').onclick = askToAddTodo
