@@ -381,11 +381,17 @@ function askToSayIt (j) {
 
     // APPENDED AFTER THE DIALOG IS UP, the way every other dialog carrying text
     // does it: `ask` builds FIELDS, and the comment about to be posted is not a
-    // field. The whole of it, with no lid on the height -- this is the one
-    // thing in this window that MUST be read before the button under it is
-    // pressed, so it is not something to scroll past three lines of.
+    // field.
+    //
+    // RENDERED AND SOURCE, BOTH, which `markdownBlock` already is. Rendered is
+    // how the author will actually see it on GitHub — headings, the diff block,
+    // the file:line references — and reading twelve thousand characters of raw
+    // markdown to approve what somebody else will read as a page is checking
+    // the wrong artefact. Source stays one press away because what is POSTED is
+    // the source, and a renderer that quietly drops something is exactly the
+    // kind of difference this dialog exists to catch.
     const box = document.querySelector('.dlg-body')
-    if (box) box.append(codeBlock(v.body, 'markdown'))
+    if (box) box.append(markdownBlock(v.body))
   }).catch(oops)
 }
 
