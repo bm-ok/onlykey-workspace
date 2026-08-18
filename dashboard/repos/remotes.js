@@ -548,6 +548,32 @@ async function openPull (repo, { branch, base, title, body, into = null, draft =
   const crossing = target !== `${remote.owner}/${remote.repo}`
   const head = crossing ? `${remote.owner}:${branch}` : branch
 
+  // DOES THE BASE EVEN EXIST THERE, asked before anything is sent.
+  //
+  // GitHub answers this with `PullRequest base invalid` in a 422, which is
+  // accurate and says nothing a person can act on -- it does not name the base,
+  // the repository, or the reason there is no such branch. A drill hit it and
+  // the answer was "Validation Failed" until the error reader was fixed, and
+  // then "base invalid", and neither pointed at what had actually happened:
+  // the repository had been pointed at a different remote, so the line it was
+  // cut from was a branch on somewhere else entirely.
+  //
+  // ONE REQUEST, and only when the answer would otherwise be a refusal from
+  // somebody else's server that this app then has to translate. Asking first
+  // means the sentence can name the target, the base, and whether anybody chose
+  // that target -- which is the difference between "invalid" and "you have not
+  // said where this goes".
+  const there = await github.call('GET', `/repos/${owner}/${name}/branches/${encodeURIComponent(base)}`)
+  if (there.status === 404) {
+    const now = targetOf(repo)
+    throw new Error(
+      `${target} has no branch called "${base}", so a pull request cannot be opened against it. ` +
+      (now.chosen
+        ? `That is where "${repo}" sends work, picked on ${String(now.at).slice(0, 10)}.`
+        : `Nothing has been picked for "${repo}", so work stays on your own remote (${now.self}) — which is why the base is being looked for there. Walk the fork chain and say where work goes.`)
+    )
+  }
+
   const r = await github.call('POST', `/repos/${owner}/${name}/pulls`, {
     title,
     body,
