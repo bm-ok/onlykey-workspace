@@ -829,7 +829,18 @@ if (app) app.onDrive(async want => {
   // MARKED BEFORE ANYTHING IS TOUCHED, and left marked. Everything this press
   // sets off is the command line's doing, however long it takes to finish. See
   // drivenFromTheWire in ui/base.js for why a person's touch is what clears it.
-  drivingNow(true)
+  //
+  // EXCEPT READING, WHICH IS NOT DRIVING. `windowControls` only lists what is
+  // on screen — it presses nothing — and it marked the window as driven anyway,
+  // for as long as it took somebody to touch it again. Everything that person
+  // then did was recorded as the command line's: a job, a prompt or a contract
+  // SAVED at the window came back "waiting to be approved", because writing one
+  // at the window is what approves it and this was no longer the window.
+  //
+  // That is what "I approved it and it never changed" was. Not the badge, not
+  // the pane, not the save — a photograph of the screen, taken to help, that
+  // quietly made the next person's press count as a model's.
+  if (want.do !== 'controls') drivingNow(true)
 
   const region = drivingRegion()
   // BUTTONS, AND THE CARDS THAT ARE ALSO BUTTONS.
@@ -881,6 +892,11 @@ if (app) app.onDrive(async want => {
     return {
       on: region.where,
       dialog: region.dialog,
+      // WHETHER THIS WINDOW THINKS IT IS BEING DRIVEN, which decides whether a
+      // press counts as a person's. It was invisible, and a stuck flag turned
+      // every save at the window into "waiting to be approved" with nothing
+      // saying why — the answer looked like a broken button for an hour.
+      driven: drivenNow(),
       // The title too, because a dialog is a question and the question is the
       // point. Reading back "there is a dialog with a Throw it away button" and
       // not what it is about is how the wrong thing gets confirmed.

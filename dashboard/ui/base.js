@@ -84,6 +84,10 @@ const liveLog = app
 // alternative is describing a model's action as a person's.
 let drivenFromTheWire = false
 const drivingNow = on => { drivenFromTheWire = !!on }
+// Readable, so the window can be ASKED whether it thinks it is being driven.
+// Without this the only way to find out was to watch what an approval did,
+// which is how a stuck flag went unnoticed for an evening.
+const drivenNow = () => drivenFromTheWire
 for (const kind of ['mousedown', 'keydown', 'wheel']) {
   document.addEventListener(kind, e => { if (e.isTrusted) drivenFromTheWire = false }, true)
 }
