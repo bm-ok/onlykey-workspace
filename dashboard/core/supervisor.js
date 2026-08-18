@@ -123,6 +123,13 @@ const MAY = {
   // gap to route around.
   judging: 'every judgement: what is waiting to be read, what is being read, and what was decided',
   judgementFindings: 'what a judgement handed back, and one of those files in full — the only way it learns anything about the code',
+  // AND WHY THERE IS NOTHING TO READ, when there is nothing. A judgement that
+  // failed hands nothing back, and `judgementFindings` can only say so -- it
+  // cannot say why. This is the transcript of the run, which is where the reason
+  // is, and it exists because a supervisor went looking for one and had nowhere
+  // to look: it asked `taskLog` three times and was refused three times, because
+  // a judgement is not a task.
+  judgementLog: "the output of a judgement's run, kept on this host — the only thing that says WHY one came back empty",
   // WHAT KINDS OF MACHINE THERE ARE, which is what a task's tag names. Without
   // this it could put a tag on a task and had no way to know which tags exist —
   // and the queue WAITS for a tagged machine rather than falling back, so a

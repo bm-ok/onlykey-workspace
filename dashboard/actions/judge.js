@@ -24,7 +24,7 @@ const s = require('./shared')
 // No `tasks` here, and that is the point of the file: a judgement is about a
 // change, and the task that produced it is a fact about where the change came
 // from rather than the thing being read.
-const { log, judging, jobs, prompts, contracts, judgements, prtemplate, branches, repos, files, allowed , remotes } = s
+const { archive, log, judging, jobs, prompts, contracts, judgements, prtemplate, branches, repos, files, allowed , remotes } = s
 
 // WHAT EACH REPOSITORY WAS AT WHEN IT WAS READ, for either kind of subject.
 //
@@ -523,6 +523,48 @@ module.exports = {
       const it = judging.get(id)
       if (it.state !== 'queued') throw new Error(`${it.ref} is "${it.state}", not queued. One already given out is not called back by this — the machine is reading and would have to be stopped on it.`)
       return judging.update(id, { state: 'draft' })
+    }
+  },
+
+  // WHAT A JUDGEMENT'S RUN SAID, which is a different question from what it
+  // HANDED BACK.
+  //
+  // `judgementFindings` is the answer: the files a judge wrote deliberately,
+  // for somebody to read. This is the transcript of the run that produced them —
+  // and the only thing that answers "why is there no answer", which is the
+  // question asked about every judgement that fails.
+  //
+  // IT EXISTS BECAUSE ITS ABSENCE WAS EXPENSIVE. The supervisor, looking for why
+  // J41 came back empty, asked `taskLog` three times and was refused three
+  // times: a judgement is not a task, and `taskLog` was the only log-reading
+  // tool in the app. Same shape as the queue not adopting judgements and the
+  // conclusion reader not knowing the third lane — written for tasks, judging
+  // added later, and the second kind left out of a rule that already existed.
+  judgementLog: {
+    about: "One attempt's output from a judgement, kept on this host so it survives the machine",
+    needs: 'workspace',
+    takes: ['id', 'run', 'lines'],
+    run: ({ id, run, lines }) => {
+      const it = judging.get(id)
+      if (!it) throw new Error(`There is no judgement "${id}". Ask for "judging" to see what there is.`)
+      const ref = it.ref || judging.refOf(it.number)
+
+      const kept = archive.list(it.uid)
+      if (!run) {
+        return {
+          judgement: it.id,
+          ref,
+          attempts: kept,
+          // A JUDGEMENT WITH NO KEPT LOG IS NOT THE SAME AS ONE THAT SAID
+          // NOTHING, and the difference is worth a sentence: every judgement
+          // read before this existed has no transcript at all, and no amount of
+          // asking will produce one.
+          note: kept.length
+            ? 'Ask for one by run id.'
+            : `Nothing was kept for ${ref}. Judgements read before this app started keeping their logs have none — the machine was rolled back and the output went with it.`
+        }
+      }
+      return { judgement: it.id, ref, ...archive.read(it.uid, run, { lines }) }
     }
   },
 

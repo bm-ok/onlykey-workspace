@@ -54,6 +54,8 @@ const judging = require('./judging')
 // What a judgement hands back, which is the only way it can say anything: it may
 // not push to what it is reading.
 const files = require('./files')
+// What a run said, kept on this host so it outlives the machine it said it on.
+const archive = require('./archive')
 // What a judgement was read against, for the record it leaves behind.
 const judgements = require('../repos/judgements')
 // The two things that arrive on their own: an issue somebody filed and a pull
@@ -457,6 +459,42 @@ async function runJudgement (actions, log, judgement, machine) {
 
     // Before anything else touches the machine — see meterRun.
     await meterRun(actions, to, machine, started.run, { kind: 'judgement', about: subject.name || judgement.title || null, ref })
+
+    // ---- AND THE WHOLE LOG, WHICH NOTHING KEPT --------------------------
+    //
+    // A task's output is archived under its uid the first time somebody opens
+    // the task -- see taskProgress -- and a judgement's was archived by nothing
+    // at all. So it lived on the machine, and the machine is restored to its
+    // base snapshot a few lines below: what survived was an exit code on this
+    // host and a thirty-line tail in the event log, and only when it failed.
+    //
+    // THAT COST A DIAGNOSIS. J41 exited 1 having read for 154 seconds and handed
+    // nothing back. The supervisor went looking for the reason and asked
+    // `taskLog` three times -- the only log-reading tool there is -- and was
+    // refused three times, because a judgement is not a task. It ended up
+    // inferring from a stack line that happened to be in the events. The reason
+    // was a real bug worth finding, and the thing built to find it could not.
+    //
+    // KEPT WHETHER OR NOT IT WENT WRONG. A successful reading's log is how
+    // somebody answers "why did it take four minutes" or "did it actually run
+    // the tests", and that question arrives later, when the machine is long
+    // since rolled back. One round trip per run, not on a timer.
+    //
+    // Under the JUDGEMENT's uid, so it is found the same way its findings are.
+    try {
+      if (!archive.has(judgement.uid, started.run)) {
+        const out = await actions.vmRunOutput.run({ name: machine, run: started.run, lines: 2000 })
+        archive.keep(judgement.uid, started.run, {
+          output: out.output || out.text || '',
+          machine,
+          state: outcome.state || null,
+          exit: outcome.exit === undefined ? null : outcome.exit
+        })
+        to.info(`kept the log of ${started.run}, so it survives the machine`)
+      }
+    } catch (e) {
+      to.warn(`could not keep the log of ${started.run}: ${e.message}`)
+    }
 
     // ---- WHY, IF IT WENT WRONG, WHILE THE MACHINE IS STILL UP ------------
     //
