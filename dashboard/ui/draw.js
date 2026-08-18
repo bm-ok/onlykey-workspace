@@ -1311,14 +1311,22 @@ const kindTint = (kind, { solid = false, off = false } = {}) => {
   const h = kindHue(kind)
   if (off) return 'border-color: var(--line); color: var(--muted); background: transparent'
 
-  // The tone step, small enough that everything still sits in one register and
-  // large enough that two near hues are told apart. Pastel by construction
-  // rather than from a palette: the hue varies, these do not, so no kind shouts
-  // louder than the rest.
-  const lift = kindStep(h) * 6
+  // PAINTED LIGHT ON DARK, which is what makes it read as a pastel at all.
+  //
+  // The first version tinted a dark chip — a deep fill with light text — and
+  // that is a dark theme's own palette wearing a hue, not a pastel. An easter
+  // egg is chalky: a pale, low-saturation fill with the writing dark ON it, and
+  // on this background that also makes each one a small bright object rather
+  // than a slightly different shade of the page.
+  //
+  // The tone step is small on purpose. It is here to separate two hues that
+  // landed close together, not to make one kind louder than another — every
+  // chip has to sit in the same register or the brightest becomes a priority
+  // nobody assigned.
+  const lift = kindStep(h) * 5
   return solid
-    ? `border-color: hsl(${h} 55% ${46 + lift}%); color: hsl(${h} 85% 88%); background: hsl(${h} 45% ${20 + lift}%)`
-    : `border-color: hsl(${h} 45% ${36 + lift}%); color: hsl(${h} 65% ${72 + lift / 2}%); background: hsl(${h} 40% ${12 + lift / 2}%)`
+    ? `border-color: hsl(${h} 52% ${72 - lift}%); color: hsl(${h} 60% 18%); background: hsl(${h} 62% ${84 - lift}%)`
+    : `border-color: hsl(${h} 45% ${62 - lift}%); color: hsl(${h} 55% ${80 - lift}%); background: hsl(${h} 35% ${18 - lift / 2}%)`
 }
 
 const inboxOff = new Set(been.get('inbox-off', []))
