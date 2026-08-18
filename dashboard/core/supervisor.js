@@ -233,7 +233,8 @@ const MAY = {
   lineSync: 'fetch and fast-forward every branch a line names, as one act',
   repoForkSync: "pull each fork's default branch up from its parent on GitHub, so a change is cut from what is current",
   branchAsLine: 'make a line out of a branch, which is what a change has to be before it can be compared or sent',
-  prCutMake: 'push a line onward and open a pull request per repository, tracked together as one change — it may SEND work out, and may not land it'
+  prCutMake: 'push a line onward and open a pull request per repository, tracked together as one change — it may SEND work out, and may not land it',
+  prComment: 'say what a judge found on a pull request, ending in whether it is recommended for pulling — it may REPORT, and may not merge',
 }
 
 // Whether an action is on the list. The name is compared exactly: a supervisor

@@ -198,6 +198,52 @@ module.exports = {
     }
   },
 
+  // WHAT WAS FOUND, SAID WHERE THE AUTHOR WILL SEE IT.
+  //
+  // A judge reads an arrived pull request and reaches a verdict, and until
+  // now that verdict could only ever be seen on this host. Half a review: the
+  // person who proposed the change is the one waiting for it.
+  //
+  // THE RECOMMENDATION IS A FIXED LINE, not something composed by whoever
+  // calls this. "Recommend pulling: YES" and "Recommend pulling: NO" are the
+  // two things it can end with, in those words, every time -- so a person
+  // scanning a tracker sees the same sentence in the same place, and anything
+  // reading these later can find the answer without parsing prose.
+  //
+  // AND IT SAYS WHAT WROTE IT. A comment from an automated reader that does
+  // not admit to being one is the sort of thing that gets a project distrusted
+  // once somebody works it out.
+  prComment: {
+    about: "Say something on a pull request in this workspace: a summary, and whether it is recommended for pulling",
+    needs: 'workspace',
+    takes: ['repo', 'number', 'body', 'recommend'],
+    run: async ({ repo, number, body, recommend }) => {
+      const row = remotes.read().find(x => x.repo === String(repo))
+      if (!row) throw new Error(`There is no repository called "${repo}" in this workspace. A comment is only made on a repository this host holds — reading is allowed anywhere and saying something is not.`)
+
+      const said = String(body || '').trim()
+      if (!said) throw new Error('Say something. A comment with no body is a notification with nothing in it, on somebody else\'s pull request.')
+
+      const call = String(recommend || '').trim().toLowerCase()
+      if (call !== 'yes' && call !== 'no') {
+        throw new Error('Say whether it is recommended for pulling: "yes" or "no". A review that does not end in one of those is a report somebody else has to turn into a decision, which is the work it was meant to do.')
+      }
+
+      const text = [
+        said,
+        '',
+        `**Recommend pulling: ${call.toUpperCase()}**`,
+        '',
+        '<sub>Read by the okc dashboard on the operator\'s machine. Nothing here was merged, edited or pushed by it.</sub>'
+      ].join('\n')
+
+      const done = await remotes.comment(row.repo, Number(number), text)
+      if (!done.ok) throw new Error(`GitHub would not take the comment on ${row.repo}#${number}: ${done.why}`)
+      log.on('github', row.repo).good(`said something on #${number} — recommend pulling: ${call.toUpperCase()}`)
+      return { ...done, recommend: call, note: `Said on ${done.on}#${number}. The author can read it; nothing was merged or changed.` }
+    }
+  },
+
   prJudging: {
     about: 'Pull requests that have arrived, who wrote them, and whether a judge may read them',
     needs: 'workspace',

@@ -415,6 +415,37 @@ async function openPull (repo, { branch, base, title, body, into = null, draft =
 // `state` is here too, because closing a change means closing all of it. Closing
 // two of three leaves a change that is neither in nor withdrawn, and the one
 // still open is the one somebody merges by accident a month later.
+// SAYING SOMETHING ON A PULL REQUEST, which is the one way anything here
+// reaches the person who wrote it.
+//
+// A judgement of an arrived change is worth nothing to its author if it only
+// exists on this host: they proposed something and are waiting to hear. This
+// is that, and it is the only write this app makes that another person reads
+// as words rather than as a merge.
+//
+// ON THE PARENT, like everything else here. A pull request lives where it was
+// opened, which is the repository this workspace forked from -- commenting on
+// the fork would be talking to nobody.
+//
+// TAKES A REPOSITORY THIS WORKSPACE HOLDS, never an owner/name. Reading is
+// allowed anywhere and writing is not: an action that took a full name would
+// let anything that can call it say something on any repository on GitHub
+// this token can reach, which is a wider door than the one the operator
+// opened.
+async function comment (repo, number, body) {
+  const note = seen()[repo] || {}
+  const remote = remoteOf(repo)
+  if (!remote) throw new Error(`"${repo}" has no remote.`)
+  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
+
+  // The issues endpoint, which is where a pull request's conversation lives --
+  // a pull request IS an issue on GitHub, and the pulls endpoint only carries
+  // review comments, which are a different thing attached to lines of a diff.
+  const r = await github.call('POST', `/repos/${into[0]}/${into[1]}/issues/${number}/comments`, { body })
+  if (r.status === 201) return { repo, number, ok: true, url: r.body.html_url, on: `${into[0]}/${into[1]}` }
+  return { repo, number, ok: false, why: (r.body && r.body.message) || `GitHub answered ${r.status}` }
+}
+
 async function updatePull (repo, number, fields) {
   const note = seen()[repo] || {}
   const remote = remoteOf(repo)
@@ -952,4 +983,4 @@ const syncDefault = repo => {
   return syncBranch(repo, branch)
 }
 
-module.exports = { read, check, gather, fetchPull, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }
+module.exports = { read, check, gather, fetchPull, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, comment, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }
