@@ -127,8 +127,32 @@ module.exports = {
       // A draft is a title and a body somebody wrote for a pair of lines and
       // did not cut. It is the state the supervisor parks in, deliberately, and
       // it was invisible.
-      const drafted = Object.values(drafts.all()).map(d => ({ source: d.source, target: d.target, title: d.title || null }))
-      count(drafted.length, 'change drafted and not sent', 'changes drafted and not sent')
+      // ---- WORK THAT IS OUT AND NOT IN ------------------------------------
+      //
+      // A DRAFT IS NOT THIS. The first version counted PR drafts -- a title
+      // and a body somebody wrote and did not cut -- and a draft is a note
+      // you left yourself, not a thing that has stopped. It also outlives
+      // its subject: one sat here for four days after its work had landed,
+      // pointing at a pane where pressing anything would be refused with
+      // "carries nothing that default does not already have". A badge that
+      // sends somebody to a refusal spends attention and returns nothing.
+      //
+      // What is genuinely outstanding is a CUT that went out and has not
+      // landed: pull requests open on somebody else's repository, waiting
+      // on a merge. That is work in the world with this host's name on it.
+      //
+      // AS LAST READ FROM GITHUB, and the hover says so. This is local --
+      // the draw loop must not reach the network -- so a cut merged since
+      // the last "Read them again" still counts. Saying "as last read" is
+      // the difference between a stale number and a lying one.
+      // FROM THE LAST READING, NOT FROM THE RECORD. What was written down
+      // when a cut was made says the pull requests were open, because they
+      // were -- and it never learns that they merged, deliberately: see the
+      // note at the top of repos/landings.js. So this counts what the last
+      // "Read them again" actually found, and a pair nobody has read is not
+      // counted at all, because unknown is not the same as none.
+      const out = landings.readings().filter(r => !r.landed && (r.pulls || []).some(p => p.number))
+      count(out.length, 'change out and not merged', 'changes out and not merged')
 
       // ---- and what the supervisor said ------------------------------------
       //
@@ -148,9 +172,9 @@ module.exports = {
       return {
         actions: forTasks.length,
         judge: mine.length + mute.length + forJudges.length,
-        repos: drafted.length,
+        repos: out.length,
         supervisor: said,
-        total: unapproved.length + mine.length + mute.length + drafted.length + said,
+        total: unapproved.length + mine.length + mute.length + out.length + said,
         // What each of them IS, so a badge can carry it on its hover rather than
         // being a number somebody has to go and interpret.
         approvals: unapproved,
@@ -160,7 +184,13 @@ module.exports = {
         approvalsForJudges: forJudges,
         verdicts: mine.map(j => ({ ref: judging.refOf(j.number), reads: j.subject && j.subject.name })),
         silent: mute.map(j => ({ ref: judging.refOf(j.number), reads: j.subject && j.subject.name })),
-        drafted,
+        // Each one as a row, so the hover can name it rather than being a
+        // number to go and interpret.
+        out: out.map(c => ({
+          source: c.source,
+          target: c.target,
+          pulls: (c.pulls || []).map(p => ({ repo: p.repo, number: p.number, state: p.merged ? 'merged' : p.state }))
+        })),
         note: why.length ? why.join(', ') : 'nothing is waiting on you'
       }
     }

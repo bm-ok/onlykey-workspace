@@ -73,6 +73,25 @@ function forget (source, target) {
 // One landing, with each pull request's state read from GitHub rather than from
 // the file. `landed` is the whole point: every repository that carries work has
 // a pull request, and every one of them is merged.
+// WHAT THE LAST READING SAID, WHICH IS NOT THE SAME AS REMEMBERING IT.
+//
+// The rule at the top of this file holds: the RECORD is what was done, and
+// whether a pull request is open or merged is a fact about GitHub that is
+// re-read rather than stored. This does not store it -- it remembers the
+// last ANSWER, with the time it was given, which is a different kind of
+// thing and is labelled as one everywhere it is used.
+//
+// It exists because a badge cannot ask GitHub. The window redraws every few
+// seconds and reaching the network on a timer is the fault this codebase has
+// paid for three times -- so "how many changes are still out" is answered
+// from the last time somebody looked, and says so.
+//
+// A pair never read is ABSENT rather than zero. Unknown and none are
+// different answers, and a badge that reports "nothing outstanding" because
+// nobody has asked is the quiet kind of wrong.
+const lastRead = new Map()
+const readings = () => [...lastRead.entries()].map(([id, v]) => ({ id, ...v }))
+
 async function state (source, target) {
   const rec = all()[key(source, target)]
   if (!rec) return null
@@ -90,6 +109,16 @@ async function state (source, target) {
   }
 
   const opened = now.filter(p => p.number)
+  // Kept as a READING, with its time, for anything that cannot ask GitHub
+  // itself -- see lastRead above.
+  lastRead.set(key(source, target), {
+    source,
+    target,
+    at: new Date().toISOString(),
+    landed: opened.length > 0 && opened.every(p => p.merged),
+    pulls: now.map(p => ({ repo: p.repo, number: p.number, state: p.merged ? 'merged' : p.state }))
+  })
+
   return {
     ...rec,
     pulls: now,
@@ -102,4 +131,4 @@ async function state (source, target) {
   }
 }
 
-module.exports = { record, describe, forget, state, all, key }
+module.exports = { record, describe, forget, state, readings, all, key }

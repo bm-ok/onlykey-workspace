@@ -123,9 +123,17 @@ async function drawOnce () {
   nudge('judgements-badge', (owed.verdicts || []).length + (owed.silent || []).length, judgeSays, (owed.verdicts || []).length > 0)
   nudge('judges-badge', forJudges.length, says(forJudges), true)
 
-  const drafted = (owed.drafted || []).map(d => `"${d.title || d.source}" is drafted against ${d.target} and has not been sent`).join('\n')
-  nudge('repos-badge', owed.repos, drafted)
-  nudge('templates-badge', owed.repos, drafted)
+  // WORK THAT IS OUT AND NOT IN, on the tab and on the pane that shows it.
+  //
+  // Not drafts, and not "New PR Cut". A draft is a note somebody left
+  // themselves; this is pull requests open on somebody else's repository
+  // with this host's name on them. Blue rather than amber: it is waiting on
+  // a reviewer or a merge, which is somebody else's move as often as yours.
+  const outstanding = (owed.out || []).map(c =>
+    `"${c.source}" into "${c.target}" — ${(c.pulls || []).map(p => `${p.repo} #${p.number} ${p.state}`).join(', ')}`
+  ).join('\n')
+  nudge('repos-badge', owed.repos, outstanding ? `as last read from GitHub:\n${outstanding}` : '')
+  nudge('cuts-badge', owed.repos, outstanding)
 
   nudge('chat-badge', owed.supervisor,
     owed.supervisor ? `${owed.supervisor} message(s) since you last moved your bookmark` : '')
