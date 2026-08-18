@@ -409,11 +409,36 @@ module.exports = {
         for (const p of r.pulls || []) {
           const key = partOf.get(`${r.repo}#${p.number}`)
           if (!key) {
+            // WHOSE IT IS, AND WHETHER ANYBODY HAS SAID IT MAY BE READ.
+            //
+            // A pull request this host cut is its own work arriving back. One
+            // from anywhere else is a stranger's code, and judging it means
+            // fetching it onto a machine that holds a credential -- so it waits
+            // on a person. `prJudging` answers the same question by ASKING
+            // GITHUB; this answers it from the last gathering, because this list
+            // is drawn every few seconds and the draw loop must not reach the
+            // network.
+            //
+            // The consequence of reading it locally: an author who pushed since
+            // the last "Ask GitHub" shows as allowed here and is refused at the
+            // gate, which is the safe direction to be wrong in. The gate reads
+            // the live commit; see actions/judge.js.
+            const from = String(p.headRepo || '').trim()
+            const ours = rows.some(x => x.remote && `${x.remote.owner}/${x.remote.repo}` === from)
+            const may = allowed.check(r.parent || r.repo, p.number, p.headSha)
+
             items.push({
               kind: 'pull', id: `${r.repo}#${p.number}`, repo: r.repo, repos: [r.repo],
               title: p.title, number: p.number, url: p.url,
               state: p.merged ? 'merged' : p.state, draft: !!p.draft,
-              at: p.updated || p.at || null, on: r.parent || r.repo, parts: null
+              at: p.updated || p.at || null, on: r.parent || r.repo, parts: null,
+              by: p.by || null, association: p.association || null,
+              headRepo: from || null, headSha: p.headSha || null,
+              ours,
+              mayBeJudged: ours ? true : may.allowed,
+              staleAllowance: ours ? false : may.stale,
+              whyNot: ours ? null : may.why,
+              allowedBy: may.said || null
             })
             continue
           }
@@ -463,7 +488,9 @@ module.exports = {
           open: all.filter(x => x.state === 'open').length,
           issues: all.filter(x => x.kind === 'issue').length,
           pulls: all.filter(x => x.kind === 'pull').length,
-          cuts: all.filter(x => x.kind === 'cut').length
+          cuts: all.filter(x => x.kind === 'cut').length,
+          // Arrived from outside, open, and nobody has said it may be read.
+          toAllow: all.filter(x => x.kind === 'pull' && x.state === 'open' && !x.ours && !x.mayBeJudged).length
         },
         note: gathered.length
           ? 'As of the last time GitHub was asked. Ask again for anything newer.'

@@ -24,7 +24,7 @@ const s = require('./shared')
 // No `tasks` here, and that is the point of the file: a judgement is about a
 // change, and the task that produced it is a fact about where the change came
 // from rather than the thing being read.
-const { log, judging, jobs, prompts, contracts, judgements, prtemplate, branches, repos, files, allowed } = s
+const { log, judging, jobs, prompts, contracts, judgements, prtemplate, branches, repos, files, allowed , remotes } = s
 
 // WHAT EACH REPOSITORY WAS AT WHEN IT WAS READ, for either kind of subject.
 //
@@ -102,7 +102,32 @@ module.exports = {
       // WHAT IS BEING READ, resolved before anything is written, so a judgement
       // is never filed against a cut that does not exist. `subjectFrom` is where
       // the two shapes are understood, and it refuses anything else.
-      const subject = judging.subjectFrom({ kind, branch, source, target, on, number, sha })
+      // A REPOSITORY MAY BE NAMED EITHER WAY, AND ONE OF THEM WAS WRONG.
+      //
+      // An allowance is filed under the repository as GitHub knows it --
+      // owner/name, the parent, because that is where a pull request lives. A
+      // supervisor naturally says the name it sees everywhere else in this
+      // app, which is the WORKSPACE name: "local-repo-a". Those are different
+      // strings, so the allowance was looked up under a key nothing had ever
+      // written, and the refusal said "nobody has allowed this" about a pull
+      // request somebody had just allowed.
+      //
+      // Found the first time a supervisor tried it unprompted, which is the
+      // only way a mismatch between two names for one thing ever shows up.
+      //
+      // Resolved rather than refused: both are the right name from where each
+      // caller is standing.
+      let onWhat = on
+      if (String(kind || '').trim().toLowerCase() === 'pull' && onWhat && !String(onWhat).includes('/')) {
+        const row = remotes.read().find(x => x.repo === String(onWhat))
+        const full = row && (row.issuesOn || (row.remote && row.remote.owner ? row.remote.owner + '/' + row.remote.repo : null))
+        if (!full) {
+          throw new Error(`"${onWhat}" is not a repository in this workspace, and it is not an owner/name either. A pull request is named by the repository it is on — either the workspace name or owner/name.`)
+        }
+        onWhat = full
+      }
+
+      const subject = judging.subjectFrom({ kind, branch, source, target, on: onWhat, number, sha })
 
       // AND IT HAS TO BE THERE. A judgement of something this host cannot find is
       // a machine booted to read nothing, twenty minutes from now, and a verdict

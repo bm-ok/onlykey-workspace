@@ -120,6 +120,17 @@ function todoCard (x) {
       x.number ? el('span', { className: 'mono muted', textContent: `#${x.number}` }) : null,
       el('span', { className: 'grow', textContent: x.title }),
       x.draft ? el('span', { className: 'badge muted', textContent: 'draft' }) : null,
+      // WHETHER A JUDGE MAY READ IT, on the one kind of row where that is a
+      // question. A pull request this host cut is its own work; anything else
+      // arrived from outside, and reading it is a decision with a person's name
+      // on it. Nothing is said on a row where there is nothing to decide.
+      x.kind === 'pull' && x.state === 'open' && !x.ours
+        ? el('span', {
+            className: `badge ${x.mayBeJudged ? 'ok' : x.staleAllowance ? 'bad' : 'warn'}`,
+            title: x.whyNot || (x.allowedBy ? `allowed by ${x.allowedBy}` : ''),
+            textContent: x.mayBeJudged ? 'may be judged' : x.staleAllowance ? 'pushed since you allowed it' : 'waiting on you'
+          })
+        : null,
       el('span', { className: `badge ${badge}`, textContent: x.summary || x.state })),
 
     el('div', { className: 'card-sub muted', textContent: sub }),
@@ -151,6 +162,25 @@ function todoCard (x) {
             onclick: () => newTaskFromIssue(x)
           })
         : null,
+      // ARRIVED FROM OUTSIDE, SO IT WAITS HERE.
+      //
+      // This is the only control in this window that cannot be pressed by
+      // anything but a person: `prAllowJudging` refuses the command line and
+      // refuses a driven click, because the whole point of it is that somebody
+      // looked at a stranger's code before a judge fetched it onto a machine
+      // holding a credential.
+      //
+      // IT NAMES THE COMMIT. Allowing is not a standing permission for the pull
+      // request -- it is a yes to what is there now, and a push by the author
+      // ends it. That is why the badge above can read "pushed since you allowed
+      // it" and why this button comes back when it does.
+      x.kind === 'pull' && x.state === 'open' && !x.ours
+        ? el('button', {
+            className: `btn small ${x.mayBeJudged ? '' : 'ok'}`,
+            textContent: x.mayBeJudged ? 'Take the allowance back' : 'Allow it to be judged',
+            onclick: () => (x.mayBeJudged ? askToForbidJudging(x) : askToAllowJudging(x))
+          })
+        : null,
       x.kind === 'cut'
         ? el('button', {
             className: 'btn small',
@@ -163,6 +193,46 @@ function todoCard (x) {
             }
           })
         : null))
+}
+
+// SAYING YES TO SOMEBODY ELSE'S CODE, which is a short dialog on purpose.
+//
+// What it has to make clear is the two things people get wrong about it: that
+// this is not a merge, and that it is about ONE COMMIT rather than about the
+// pull request. Everything else is on GitHub, one press away, and this says so
+// rather than trying to summarise a change it has not read.
+function askToAllowJudging (x) {
+  ask({
+    title: `Allow #${x.number} to be judged?`,
+    // No link here: `externalLink` labels itself "Open the sign-in page", and
+    // the card this was pressed from already carries "Read it on GitHub".
+    plain: [
+      `${x.by ? x.by + ' opened it' : 'It was opened'} on ${x.on}${x.association ? ` — GitHub calls them ${x.association}` : ''}, from ${x.headRepo || 'a repository this host does not own'}.`,
+      'It lets a judge FETCH and READ this change on a machine here. Nothing is merged, nothing is pushed, and no task is created.',
+      x.headSha ? `It applies to commit ${String(x.headSha).slice(0, 7)} only. If they push again it stops applying and you will be asked once more.` : null,
+      x.staleAllowance ? 'You allowed an earlier commit on this one. That allowance no longer applies.' : null
+    ].filter(Boolean),
+    fields: [{ name: 'note', label: 'Why (optional)', placeholder: 'read it and it looks like what it says' }],
+    confirm: 'Allow it',
+    onYes: v => api('prAllowJudging', { repo: x.repo, number: x.number, note: v.note || null })
+      .then(r => { forget('todo-list'); forget('todo-chrome'); paintTodo(); say(r.note) })
+      .catch(oops)
+  })
+}
+
+function askToForbidJudging (x) {
+  ask({
+    title: `Stop #${x.number} being judged?`,
+    plain: [
+      `${x.on}#${x.number} would go back to waiting on somebody.`,
+      'A judgement already running is not stopped by this — it stops the next one being asked for.'
+    ],
+    confirm: 'Take it back',
+    danger: true,
+    onYes: () => api('prForbidJudging', { repo: x.repo, number: x.number })
+      .then(r => { forget('todo-list'); forget('todo-chrome'); paintTodo(); say(r.note, 'warn') })
+      .catch(oops)
+  })
 }
 
 // ---- the repositories --------------------------------------------------

@@ -132,8 +132,25 @@ async function drawOnce () {
   const outstanding = (owed.out || []).map(c =>
     `"${c.source}" into "${c.target}" — ${(c.pulls || []).map(p => `${p.repo} #${p.number} ${p.state}`).join(', ')}`
   ).join('\n')
-  nudge('repos-badge', owed.repos, outstanding ? `as last read from GitHub:\n${outstanding}` : '')
-  nudge('cuts-badge', owed.repos, outstanding)
+  // AND WORK THAT ARRIVED AND IS WAITING ON A PERSON, which is a different
+  // number on a different pane.
+  //
+  // These were one badge, because for a while there was only one thing a
+  // repository could be waiting for. They are not the same kind of waiting: a
+  // cut that is out is somebody else's move, and an arrived pull request that
+  // nobody has allowed is YOURS -- nothing happens to it until you look. So the
+  // sub-tab badges split, and only this one is marked as yours.
+  const toAllow = (owed.arrived || [])
+  const asking = toAllow.map(p =>
+    `${p.on}#${p.number} — ${p.title}${p.by ? ` (${p.by})` : ''}${p.stale ? ' — they pushed since you allowed it' : ''}`
+  ).join('\n')
+
+  nudge('repos-badge', owed.repos, [
+    outstanding ? `as last read from GitHub:\n${outstanding}` : '',
+    asking ? `waiting on you:\n${asking}` : ''
+  ].filter(Boolean).join('\n\n'), toAllow.length > 0)
+  nudge('cuts-badge', (owed.out || []).length, outstanding)
+  nudge('todo-badge', toAllow.length, asking ? `waiting on you:\n${asking}` : '', true)
 
   nudge('chat-badge', owed.supervisor,
     owed.supervisor ? `${owed.supervisor} message(s) since you last moved your bookmark` : '')

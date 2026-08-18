@@ -24,7 +24,7 @@ const s = require('./shared')
 const chat = require('../core/chat')
 
 const {
-  log, events, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, judgements,
+  log, events, keys, ssh, data, secret, settings, github, remotes, allowed, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
   archive, files, prompts, jobs, contracts, judging, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
@@ -154,6 +154,29 @@ module.exports = {
       const out = landings.readings().filter(r => !r.landed && (r.pulls || []).some(p => p.number))
       count(out.length, 'change out and not merged', 'changes out and not merged')
 
+      // ---- AND WORK THAT ARRIVED AND IS WAITING ON A PERSON -----------------
+      //
+      // A pull request from somebody else cannot be judged until somebody says
+      // so, at the commit it is on. That decision is the one thing in this app
+      // a model may not make for itself -- so it has to be visible, or it is a
+      // request sitting in a list nobody opened.
+      //
+      // Counted from the last gathering rather than from GitHub, like everything
+      // else here: this runs on the draw loop.
+      const arrived = []
+      for (const r of remotes.read()) {
+        const where = r.parent || r.repo
+        for (const p of r.pulls || []) {
+          if (p.state !== 'open' || p.merged) continue
+          const from = String(p.headRepo || '').trim()
+          if (remotes.read().some(x => x.remote && `${x.remote.owner}/${x.remote.repo}` === from)) continue
+          const may = allowed.check(where, p.number, p.headSha)
+          if (may.allowed) continue
+          arrived.push({ repo: r.repo, on: where, number: p.number, title: p.title, by: p.by || null, stale: !!may.stale })
+        }
+      }
+      count(arrived.length, 'arrived pull request to allow', 'arrived pull requests to allow')
+
       // ---- and what the supervisor said ------------------------------------
       //
       // Since the bookmark rather than since for ever: "start reading from here"
@@ -172,9 +195,9 @@ module.exports = {
       return {
         actions: forTasks.length,
         judge: mine.length + mute.length + forJudges.length,
-        repos: out.length,
+        repos: out.length + arrived.length,
         supervisor: said,
-        total: unapproved.length + mine.length + mute.length + out.length + said,
+        total: unapproved.length + mine.length + mute.length + out.length + arrived.length + said,
         // What each of them IS, so a badge can carry it on its hover rather than
         // being a number somebody has to go and interpret.
         approvals: unapproved,
@@ -186,6 +209,9 @@ module.exports = {
         silent: mute.map(j => ({ ref: judging.refOf(j.number), reads: j.subject && j.subject.name })),
         // Each one as a row, so the hover can name it rather than being a
         // number to go and interpret.
+        // Each arrived pull request as a row, so a badge can name what it is
+        // asking for rather than being a number to go and interpret.
+        arrived,
         out: out.map(c => ({
           source: c.source,
           target: c.target,
