@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 46 tests, 213 checks, 18 of them drafts -->
+<!-- 12 suites, 46 tests, 215 checks, 18 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -420,7 +420,9 @@ The machine that decides what work there is, rather than one doing it.
   3. and what it says is signed with the machine that said it
   4. and a message is not read until it has been handed over
   5. and a receipt never goes backwards
-  6. and two supervisors are never running at once
+  6. and asking twice in one turn gives the same answer twice
+  7. and the receipt is still written, which is a different thing
+  8. and two supervisors are never running at once
 
 ## 05 — what its model may run
 

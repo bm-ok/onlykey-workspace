@@ -109,6 +109,53 @@ it('and a receipt never goes backwards', async ({ okc, assert, state, log }) => 
   log(`it re-read from the beginning and the receipt stayed at ${now.n}`)
 })
 
+it('and asking twice in one turn gives the same answer twice', async ({ okc, assert, log }) => {
+  // THE READ MUST NOT ERASE WHAT IT RETURNED, and for a long time it did.
+  //
+  // `whatsNew` writes the receipt on the way out, and the supervisor's skill
+  // tells it to keep the bookmark and pass it. It calls `whatsNew` two to four
+  // times in a single turn — so the first call returned the message and moved
+  // the mark, and the second, made with that fresh bookmark, was handed an empty
+  // conversation. Whichever look it happened to compose its answer from decided
+  // whether the person had said anything at all.
+  //
+  // FOUR MESSAGES WENT THIS WAY, each delivered, each marked read, each answered
+  // with "nothing to do" — including one that said "you have twice not answered
+  // me, tell me which it was". From outside it was indistinguishable from a model
+  // ignoring somebody, and two hours went into the wrong explanation.
+  //
+  // The floor is now the last thing the supervisor itself SAID: everything after
+  // that is by definition unanswered, and no bookmark it can pass will hide it.
+  // This is the check that would have caught it, and it needs no machine.
+  const said = await okc('chatSay', { text: 'asked once, and it must still be here on the second look', about: 'a drill' })
+
+  const first = await okc('whatsNew', { since: 0, events: false, _fromMachine: 'drill-machine' })
+  const sawIt = (first.said || []).some(m => Number(m.n) === Number(said.n))
+  assert.ok(sawIt, `the first look did not include the message that was just said (n${said.n})`)
+
+  // Exactly what a supervisor does next: pass back the bookmark it was handed.
+  const again = await okc('whatsNew', { since: first.bookmark, events: false, _fromMachine: 'drill-machine' })
+  const stillThere = (again.said || []).some(m => Number(m.n) === Number(said.n))
+  assert.ok(stillThere,
+    `the second look in the same turn lost it. Asked with the bookmark the first look handed back (${first.bookmark}) and the conversation came back with ${(again.said || []).length} message(s) — this is the bug that made four messages in a row read as "nothing to do"`)
+
+  log(`n${said.n} survived a second look asked with bookmark ${first.bookmark}`)
+})
+
+it('and the receipt is still written, which is a different thing', async ({ okc, assert, log }) => {
+  // The fix above must not have been made by moving the receipt. "It looked and
+  // said nothing" has to stay different from "it has not looked yet" — that
+  // distinction is what the Chat tab shows a person, and it is the reason the
+  // receipt is written when words are HANDED OVER rather than when a reply
+  // arrives. A reply may never arrive.
+  const said = await okc('chatSay', { text: 'read me and do not reply', about: 'a drill' })
+  await okc('whatsNew', { since: 0, events: false, _fromMachine: 'drill-machine' })
+  const mark = (await okc('chat')).read || {}
+  assert.ok(Number(mark.n) >= Number(said.n),
+    `it was handed over and the receipt reads ${mark.n}, behind n${said.n} — the idempotent read must not have cost the receipt`)
+  log(`handed over and marked read to ${mark.n} without any reply being written`)
+})
+
 it('and two supervisors are never running at once', async ({ okc, assert, state, log }) => {
   // TWO OF THEM DECIDE WHAT WORK THERE IS WITH NO IDEA OF EACH OTHER: the same
   // issue picked up twice, two branches cut for one piece of work, two tasks
