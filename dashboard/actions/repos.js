@@ -464,7 +464,40 @@ module.exports = {
               mayBeJudged: ours ? true : may.allowed,
               staleAllowance: ours ? false : may.stale,
               whyNot: ours ? null : may.why,
-              allowedBy: may.said || null
+              allowedBy: may.said || null,
+
+              // AND WHAT HAS BEEN READ ABOUT IT, on the row where somebody
+              // allowed it in the first place.
+              //
+              // The judgement lives on the Judge tab and so did everything a
+              // person could do with it — so allowing a pull request here sent
+              // them somewhere else to find out what came of it, and somewhere
+              // else again to answer the author. A loop that starts on one
+              // screen and finishes on another is a loop people lose track of.
+              //
+              // The LATEST one, because asking again is how a pull request is
+              // re-read after a push, and the answer that matters is the one
+              // about the commit it is on now.
+              judged: (() => {
+                const name = `${r.parent || r.repo}#${p.number}`
+                const mine = judging.all().filter(j => j.subject && j.subject.kind === 'pull' &&
+                  `${j.subject.on}#${j.subject.number}` === name)
+                const last = mine[mine.length - 1]
+                if (!last) return null
+                return {
+                  ref: last.ref,
+                  id: last.id,
+                  state: last.state,
+                  sha: (last.subject && last.subject.sha) || null,
+                  // WHETHER IT IS ABOUT THIS COMMIT. A judgement of what was
+                  // there yesterday is not a reading of what is there now, and
+                  // the row must not present it as one.
+                  current: !!(last.subject && p.headSha && last.subject.sha === p.headSha),
+                  concluded: last.concluded || null,
+                  verdict: last.verdict || null,
+                  said: last.saidOn || null
+                }
+              })()
             })
             continue
           }

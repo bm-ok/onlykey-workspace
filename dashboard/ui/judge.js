@@ -226,7 +226,19 @@ function paintJudgementDetail (j) {
           el('span', { className: 'badge warn', textContent: j.concluded }),
           el('span', { className: 'muted', style: 'margin-left:6px', textContent: 'read it — the record and the report do not agree' })))
         : null,
-      j.note ? el('tr', {}, el('th', { textContent: 'because' }), el('td', { style: 'user-select:text', textContent: j.note })) : null,
+      // CAPPED, BECAUSE A VERDICT NOTE IS NOT ALWAYS A SENTENCE.
+      //
+      // A person writing one types a line. A JUDGE writing one can put its whole
+      // review in here — twelve thousand characters on the first pull request
+      // this read — and an uncapped cell then pushes every button in this panel
+      // a hundred and fifty thousand characters of markup below the fold. The
+      // buttons were all present, all enabled and all unreachable, which is
+      // worse than missing: nothing looks broken, so nobody reports it.
+      //
+      // "console short" is the class this window already uses for text that gets
+      // room without taking the panel over. The whole of it is one column to the
+      // right, which is where what a judgement handed back is read.
+      j.note ? el('tr', {}, el('th', { textContent: 'because' }), el('td', {}, el('div', { className: 'console short', style: 'user-select:text', textContent: j.note }))) : null,
       el('tr', {}, el('th', { textContent: 'judged by' }), el('td', {}, el('span', {
         className: j.by === 'person' ? 'badge warn' : 'badge muted',
         textContent: j.by === 'person' ? 'a person' : 'a worker'

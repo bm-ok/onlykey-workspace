@@ -124,6 +124,30 @@ function todoCard (x) {
       // question. A pull request this host cut is its own work; anything else
       // arrived from outside, and reading it is a decision with a person's name
       // on it. Nothing is said on a row where there is nothing to decide.
+      // WHAT A JUDGE MADE OF IT, in the row's own words. `concluded` is what the
+      // judge recommended and `verdict` is what was recorded; they are kept
+      // apart everywhere else in this app and there is no reason to merge them
+      // here, so this shows the recommendation and says whose it is on hover.
+      x.kind === 'pull' && x.judged
+        ? el('span', {
+            className: `badge ${x.judged.state !== 'done' ? 'run' : !x.judged.current ? 'muted' : x.judged.concluded === 'reject' ? 'bad' : x.judged.concluded === 'accept' ? 'ok' : 'warn'}`,
+            title: [
+              `${x.judged.ref} — ${x.judged.state}`,
+              x.judged.sha ? `read at ${String(x.judged.sha).slice(0, 7)}` : null,
+              x.judged.current ? null : 'they have pushed since, so this reads an older commit',
+              x.judged.said ? `said on GitHub at ${x.judged.said.at}` : null
+            ].filter(Boolean).join('\n'),
+            textContent: x.judged.state !== 'done'
+              ? `${x.judged.ref} reading`
+              : !x.judged.current
+                  ? `${x.judged.ref} — of an older commit`
+                  : x.judged.concluded === 'reject'
+                    ? 'recommend pulling: NO'
+                    : x.judged.concluded === 'accept'
+                      ? 'recommend pulling: YES'
+                      : `${x.judged.ref} read it`
+          })
+        : null,
       x.kind === 'pull' && x.state === 'open' && !x.ours
         ? el('span', {
             className: `badge ${x.mayBeJudged ? 'ok' : x.staleAllowance ? 'bad' : 'warn'}`,
@@ -174,6 +198,23 @@ function todoCard (x) {
       // request -- it is a yes to what is there now, and a push by the author
       // ends it. That is why the badge above can read "pushed since you allowed
       // it" and why this button comes back when it does.
+      // WHAT CAME OF IT, AND THE ONE THING LEFT TO DO ABOUT IT.
+      //
+      // This row is where a person allowed the reading; it is where they should
+      // find out what was read and where they should be able to answer the
+      // author. Only when there is a finished reading OF THIS COMMIT: an older
+      // one is about a change that has since moved, and offering to post it
+      // would be posting a review of something else.
+      x.kind === 'pull' && x.judged && x.judged.state === 'done' && x.judged.current
+        ? el('button', {
+            className: `btn small ${x.judged.said ? '' : 'ok'}`,
+            textContent: x.judged.said ? 'Say it again on GitHub' : 'Say it on GitHub',
+            title: x.judged.said
+              ? `${x.judged.ref} was said at ${x.judged.said.at} — recommend pulling: ${x.judged.said.recommend}`
+              : `${x.judged.ref} read this and has not been posted`,
+            onclick: () => askToSayIt({ id: x.judged.id, ref: x.judged.ref, saidOn: x.judged.said })
+          })
+        : null,
       x.kind === 'pull' && x.state === 'open' && !x.ours
         ? el('button', {
             className: `btn small ${x.mayBeJudged ? '' : 'ok'}`,
