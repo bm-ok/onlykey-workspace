@@ -2,7 +2,7 @@
 
 // Running this app against itself.
 //
-// The drills in TEST-PLAN.md are prose: a person reads them and types the
+// The drills were prose once: a person read them and typed the
 // commands. Prose cannot report a status, cannot be listed in a window, and rots
 // against the code it describes without anybody noticing. Declared with
 // describe/it they become things this app can enumerate, run, and report on one

@@ -20,12 +20,7 @@ should do. Two other documents sit beside it and are deliberately not this one:
                  look odd. Archaeology, not instructions
     TODO.md      what is outstanding right now, and where the machines were
                  last left. Working state, and the first thing to distrust
-    TEST-PLAN.md the end-to-end drills, what each proves, and when it last ran.
                  Half of them pass by being REFUSED
-    GAPS.md      what the older design projected that this does not do yet, and
-                 what of it was one ecosystem rather than a tool. Read against
-                 this one's spine: branches hold work, tasks produce it, a
-                 supervisor drives
     ROADMAP.md   the order to build in, and why that order. Step 0 is not a
                  feature: no real repository has been through this loop yet
 

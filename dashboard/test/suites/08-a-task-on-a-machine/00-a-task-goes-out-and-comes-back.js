@@ -346,3 +346,46 @@ draft('and a task that pushed something can be accepted',
 // asked directly from a machine with its own token, plus the two refusals that
 // matter: a machine cannot ask about another machine's task, and a file named
 // as a path is refused.
+
+// ---- WHAT SURVIVES THE WORLD GOING WRONG UNDERNEATH A RUN ----------------
+//
+// These four were written as prose in TEST-PLAN.md, which was deleted once the
+// kit existed. Three of them had been RUN by hand and passed; none had a check.
+// Kept here as drafts rather than lost with the file, because between them they
+// are the whole of "the work is detached and the dashboard is not the work" —
+// the property everything else about the queue assumes.
+//
+// The fourth is not hypothetical: the dashboard WAS restarted mid-setup on 18
+// August, by accident, and it found a real fault — the queue re-queues a
+// stranded TASK on restart and had never learned to do the same for a
+// judgement, so one sat in "given" with no run, invisible to everything, while
+// its machine was rolled back underneath it. Three other rules turned out to
+// have the same shape that day. That is what these drills are for, and it is
+// the argument for writing them rather than trusting the code.
+
+draft('and a run survives the dashboard being restarted under it',
+  'RAN BY ACCIDENT ON 18 AUGUST AND FOUND A REAL FAULT, which is the best argument there is for having it. ' +
+  'THE PROPERTY: a run is detached on purpose — nohup, its own session — so the dashboard is not the work. Restarting this app must interrupt only the WATCHING. ' +
+  'WHAT ADOPTION OWES: on start the queue waits on a run that is still alive, keeps its log, puts the machine away, and re-queues anything that had not dispatched. ' +
+  'THE ACCIDENT: a restart landed in the twenty seconds between the workspace being set up and the run starting, and the judgement sat in "given" with no run — invisible to the queue, which only looks at queued, and to the recovery loop, which only looks for a run to wait on. Its machine was rolled back underneath it. Adoption had that rule for tasks and had never been extended to judgements. ' +
+  'THE CHECK, AND WHY IT IS HARD: adopt is not exported and runs once at startup, so proving it needs the app stopped and started rather than a call. It is a person-driven drill, or a check against a fake board handed to an exported adopt. ' +
+  'WHAT CAN BE CHECKED FROM HERE WITHOUT A RESTART: that a judgement in "given" with no run is re-queued and a PERSON\'s is left alone — the same exception tasks have, and for the same reason: there is no run because there is no worker process.')
+
+draft('and a run survives the network going away',
+  'RAN 2026-08-13 AND PASSED, as prose, with no check since. ' +
+  'THE FAULT IT GUARDS: this waited by polling, and a failed poll threw — out of the wait, out of the task, into the finally that puts a machine away. So fifteen seconds of no network powered the machine off and rolled it back MID-RUN while the work itself was fine: detached, still going, and about to be destroyed by the thing supervising it. Pulling the cable for one minute cost the whole task. ' +
+  'WHAT IT SHOULD DO: an outage is something happening to the DASHBOARD, not to the work, so being unable to see a run is a reason to look again rather than to end it. See OUT_OF_TOUCH in tasks/queue.js — bounded patience, ten minutes, then abandoned. ' +
+  'THE CHECK: take the channel away from a machine mid-run, watch the queue keep waiting and say it is out of touch, give it back, and see the run finish and be reported normally. ' +
+  'AND THE OTHER HALF: past the bound it reads "abandoned" rather than "done", because "we stopped being able to see it" is not "it finished".')
+
+draft('and a run that fills the disk fails as a run rather than as a host',
+  'NEVER RUN. THE QUESTION: a worker that writes until the guest disk is full — a log, a build, a runaway loop. ' +
+  'WHAT MUST NOT HAPPEN: the host takes the blame. A guest out of space must read as that run failing, with the reason legible, and must not corrupt what this host keeps about it — the archive, the artifacts, the record of what was given out. ' +
+  'THE CHECK: fill the guest, let the run end, and read what came back: a failed attempt with the reason in its kept log, a machine put away, the branch untouched, and this host still able to say what happened. ' +
+  'WHY IT IS WORTH IT: every other failure here is fast and loud. This one is slow, and the interesting part is what the record looks like afterwards rather than whether the run died.')
+
+draft('and a long run is not mistaken for a stuck one',
+  'RAN 2026-08-13 AS A TIMER RATHER THAN A WORKER, so what was proven was the waiting and not the work. ' +
+  'THE PROPERTY: a task is as long as the work is. Five minutes and two hours are both ordinary, so nothing may decide a run has stalled by how long it has taken — what can be said is how long it HAS been, which is what somebody deciding whether to go and look actually needs. See ticking in tasks/queue.js. ' +
+  'THE BOUND THAT DOES EXIST is the hours a task declares, and the default is six. A soak deliberately left overnight must SAY it is long, or it is abandoned at hour six while running perfectly and its machine is put away underneath it. ' +
+  'THE CHECK: a run that outlives its declared hours is abandoned and says why; one that declares enough hours is not; and neither is ever reported as finished.')

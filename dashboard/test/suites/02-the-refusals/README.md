@@ -2,7 +2,7 @@
 
 What this app will not do, proved by asking it to do each thing and reading what it says back.
 
-**Half of `TEST-PLAN.md` passes by being refused**, and that half is the part
+**Half of this kit passes by being refused**, and that half is the part
 worth having a machine check: a capability that stops working is noticed within
 the hour, and a refusal that stops refusing is noticed when it costs something.
 

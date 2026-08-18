@@ -105,7 +105,7 @@ function testCard (t, asked) {
               plain: [
                 `They will run against ${t.openDir}.`,
                 'One writes a task on a branch cut and removes it again. One takes the worker credential off a machine, proves that a signed-out machine is refused work, and puts it back.',
-                'They never touch a machine the queue is driving, and the two long round-trip drills are not among them — those stay as prose in TEST-PLAN.md.'
+                'They never touch a machine the queue is driving, and the two long round-trip drills are not among them — those are drafts, run by a person who has decided to spend the time.'
               ],
               cost: 'If a guard has already stopped working, the thing it was guarding against happens here, in this folder. That is what a drill is: an attempt to do the wrong thing.',
               confirm: 'Turn them on here',

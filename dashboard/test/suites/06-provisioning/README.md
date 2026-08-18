@@ -14,7 +14,7 @@ half-hour loop.
 exactly the file on disk, with the header it promises to prepend, and that a live
 machine fetching it gets the same bytes. What a script *does* to a guest is
 proven by the guest afterwards — and the expensive half of that, a fresh install,
-stays in `TEST-PLAN.md` where a person decides to spend twenty-five minutes.
+is a drill a person decides to spend twenty-five minutes on, not a check.
 
 **Nothing here re-bases a machine.** A change applied to a live machine is
 discarded by the next rollback, which is correct and is why these drills leave no

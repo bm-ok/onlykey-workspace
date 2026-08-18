@@ -810,7 +810,7 @@ module.exports = {
 
   // ---- pre-defined work, declared the way tests are declared -------------
   //
-  // The drills used to be prose in TEST-PLAN.md, which a person read and typed
+  // The drills used to be prose a person read and typed
   // out. Prose cannot report a status, cannot be listed in a window, and rots
   // against the code it describes. Declared with describe/it they can be
   // enumerated, chosen, run one at a time, and watched.

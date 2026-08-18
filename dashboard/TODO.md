@@ -8,8 +8,9 @@ was probably never going to be done.
 
 Something that needs *exercising* rather than building belongs in
 `test/suites/` — a folder is a suite, a numbered file in it is a test, an it()
-is a check, and `test/outline.md` is the whole list in order. `TEST-PLAN.md` is
-the prose that came before it and is kept as history. Something that is not
+is a check, and `test/outline.md` is the whole list in order. Something that is
+not written yet is a `draft()` in the suite where it would happen, which is how
+it appears in that list rather than in here. Something that is not
 built yet because it is not its turn belongs in `ROADMAP.md`.
 
 
@@ -90,8 +91,6 @@ different shape:
 
     ROADMAP.md   the order to build in, from here to the vision. Step 0 is not a
                  feature: no real repository has ever been through this loop
-    GAPS.md      what the older design projected, what of it was one ecosystem
-                 rather than a tool, and where this is already ahead of it
 
 What stays below is the near ground: things half-done, things that bit and were
 not fixed, and the state of the machines.
@@ -306,7 +305,7 @@ Unproven, and unexplained
 -------------------------
 
 Not missing work — things that have been reasoned about rather than seen. The
-drills themselves live in `TEST-PLAN.md`, and all of them now pass, including
+drills themselves are in `test/suites/`, and all of them now pass, including
 the four that only have anything to look at while a machine is mid-work.
 
 * **A machine sometimes sits at the Ubuntu splash for ten minutes or more after
@@ -367,8 +366,8 @@ What is finished is not here
 The round trip, dispatch, the credential end to end, two machines at once, a
 machine built from nothing, and the push enforcement proven against a guest --
 all done, all checked by running them rather than reading them, and all recorded
-where they will stay true: the drills with their dates in `TEST-PLAN.md`, what
-each one taught in `LEARNED.md`, and how the thing works in `README.md`.
+where they will stay true: the checks themselves in `test/suites/`, what each
+one taught in `LEARNED.md`, and how the thing works in `README.md`.
 
 What has never been TRIED, as opposed to what is half-built, is the "Honest gaps"
 section of `README.md`. That is a different list and it is kept there.

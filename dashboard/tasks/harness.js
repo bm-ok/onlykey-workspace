@@ -11,7 +11,7 @@
 // and drifting from it would make the two versions diverge for no reason. What
 // changed is noted where it changed, and nothing else.
 //
-// WHY THIS IS HERE AT ALL. The drills in TEST-PLAN.md were prose: a person read
+// WHY THIS IS HERE AT ALL. The drills were prose once: a person read
 // them and typed the commands. Prose cannot report a status, cannot be listed in
 // a window, and quietly rots against the code it describes. Declared with
 // describe/it they become things this app can enumerate, offer as a pre-defined

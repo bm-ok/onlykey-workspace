@@ -19,7 +19,7 @@ that has gone quiet.
 **What is here needs a machine that is already installed.** Making one is
 `vmCreate` then `vmInstall`, twenty-five minutes, and it fetches its scripts from
 this host at the very end — which is why nothing here restarts the dashboard and
-why `TEST-PLAN.md` keeps the install as prose a person decides to run.
+why the install is a drill a person decides to run rather than a check.
 
 **Anything started here is put back.** A machine borrowed by a drill is returned
 in `cleanup()`, and `cleanup` runs even when the series stopped early. What it

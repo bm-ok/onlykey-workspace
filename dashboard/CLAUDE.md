@@ -16,8 +16,7 @@ and the one that keeps getting skipped is the third.
 | `LEARNED.md` | **what went wrong before and what it cost.** Read it BEFORE simplifying anything or adding a panel. Most of what looks redundant here is load-bearing and this says why. |
 | `test/outline.md` | **the kit**: every suite, test and check, in the order a person sets this app up — warm the host, do the work, cool it down. Generated; `npm test` fails when it goes stale. Half the checks pass by being REFUSED. Add one when a change makes a claim code review cannot settle. |
 | `test/unused.md` | what nothing appears to use, and comments that name a caller which is not there. Suspects, not verdicts. |
-| `TEST-PLAN.md` | the prose drills that came before the kit, kept as history and marked as such at the top. |
-| `GAPS.md`, `ROADMAP.md` | what is missing on purpose, and what is next |
+| `ROADMAP.md` | what is next, and what was decided against |
 
 ## The rules that get broken
 

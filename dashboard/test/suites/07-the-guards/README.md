@@ -18,7 +18,7 @@ only true once something had been refused by them.
 
 The two **round trips** are deliberately not here. They create a task, give it to
 a machine and wait ten minutes for a worker, which is the part that made the old
-file dangerous to have one click away. They stay as prose in `TEST-PLAN.md`,
+file dangerous to have one click away. They stay drills a person runs,
 where a person decides to run them.
 
 The comments are the originals wherever the reasoning still holds. That was the
