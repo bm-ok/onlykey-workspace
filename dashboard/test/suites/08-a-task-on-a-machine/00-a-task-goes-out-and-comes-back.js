@@ -371,12 +371,11 @@ draft('and a run survives the dashboard being restarted under it',
   'THE CHECK, AND WHY IT IS HARD: adopt is not exported and runs once at startup, so proving it needs the app stopped and started rather than a call. It is a person-driven drill, or a check against a fake board handed to an exported adopt. ' +
   'WHAT CAN BE CHECKED FROM HERE WITHOUT A RESTART: that a judgement in "given" with no run is re-queued and a PERSON\'s is left alone — the same exception tasks have, and for the same reason: there is no run because there is no worker process.')
 
-draft('and a run survives the network going away',
-  'RAN 2026-08-13 AND PASSED, as prose, with no check since. ' +
-  'THE FAULT IT GUARDS: this waited by polling, and a failed poll threw — out of the wait, out of the task, into the finally that puts a machine away. So fifteen seconds of no network powered the machine off and rolled it back MID-RUN while the work itself was fine: detached, still going, and about to be destroyed by the thing supervising it. Pulling the cable for one minute cost the whole task. ' +
-  'WHAT IT SHOULD DO: an outage is something happening to the DASHBOARD, not to the work, so being unable to see a run is a reason to look again rather than to end it. See OUT_OF_TOUCH in tasks/queue.js — bounded patience, ten minutes, then abandoned. ' +
-  'THE CHECK: take the channel away from a machine mid-run, watch the queue keep waiting and say it is out of touch, give it back, and see the run finish and be reported normally. ' +
-  'AND THE OTHER HALF: past the bound it reads "abandoned" rather than "done", because "we stopped being able to see it" is not "it finished".')
+// WRITTEN NOW, next door: see 07-a-run-that-loses-the-network.js. It pulls the
+// cable with vmNetwork while a run is in flight, watches the queue say it cannot
+// see the machine rather than giving up on it, plugs it back in, and sees the
+// run finish and deliver. The other half -- what it says PAST the ten-minute
+// bound -- is a draft in that file.
 
 // WRITTEN NOW, next door: see 06-a-run-that-runs-out-of-space.js. It fills a
 // small filesystem mounted for the purpose rather than the machine's real disk,
