@@ -35,6 +35,130 @@ const keep = all => {
   try { fs.writeFileSync(FILE(), JSON.stringify(all, null, 2)) } catch { /* the answer still stands for this call */ }
 }
 
+// ---- WHERE WORK GOES, WHICH IS A CHOICE AND NOT A FACT -------------------
+//
+// THE SHAPE OF THE PROBLEM:
+//
+//     my fork  <->  somebody else's fork  <->  the project
+//
+// A change belongs in the fork you FORKED FROM, and the reason is decisive: if
+// the project itself were the destination, you would have forked the project
+// directly. Forking somebody else's fork is choosing to work with them, and
+// their fork's job is to reach the project. So the whole chain above them is
+// none of this app's business -- not watched, not counted, not shown.
+//
+// GITHUB CANNOT ANSWER THIS. It reports `parent`, one level up, and `source`,
+// the root, and nothing at all about the middle of a longer chain: in
+// A <- B <- C <- D it names B and D and never C. So the middle has to be walked
+// for, one request per link, which is what `chainOf` does.
+//
+// AND THE DEFAULT IS YOURSELF. Nothing is targeted until somebody picks it:
+// issues are read from your own remote, pull requests open into your own
+// remote, and nothing upstream is watched. That is exactly right when you ARE
+// the project rather than a fork of one, and when you are a fork it is inert --
+// the worst a misconfiguration can then do is open a pull request against
+// yourself, which is visible and harmless.
+//
+// WHAT IT REPLACED was `note.parent`, used directly wherever a target was
+// needed. That is an inference presented as a fact, which is the same failure
+// as an allowance filed under one name and looked up under another: derived
+// silently, then acted on. A name nobody chose must never decide where a change
+// is pushed.
+function targetOf (repo) {
+  const remote = remoteOf(repo)
+  const self = remote && remote.owner ? remote.owner + '/' + remote.repo : null
+  const note = seen()[repo] || {}
+  const picked = note.target && note.target.on ? String(note.target.on) : null
+
+  return {
+    // WHERE, and it is never null while there is a remote at all.
+    on: picked || self,
+    self,
+    // WHETHER SOMEBODY CHOSE IT. Every surface that shows the name has to be
+    // able to say this, because "the fork you picked" and "your own repository
+    // because nothing was picked" are the same string in different situations.
+    chosen: !!picked,
+    at: (note.target && note.target.at) || null,
+    by: (note.target && note.target.by) || null,
+    why: (note.target && note.target.why) || null,
+    // Whether anything upstream is this app's business at all.
+    upstream: !!picked && picked !== self
+  }
+}
+
+// ONE CHOICE, WRITTEN DOWN. Not two -- issues and pull requests go to the same
+// place, because the reason for choosing a fork is that it is who you are
+// working with, and a second lever for the same decision is how two of them
+// come to disagree.
+function setTarget (repo, on, { by = null, why = null } = {}) {
+  const all = seen()
+  const note = all[repo] || {}
+  const want = String(on || '').trim()
+
+  if (!want) {
+    delete note.target
+  } else {
+    if (!/^[^/\s]+\/[^/\s]+$/.test(want)) throw new Error('A target is owner/name -- the repository work should go to.')
+    note.target = { on: want, at: new Date().toISOString(), by: by || null, why: why || null }
+  }
+  all[repo] = note
+  keep(all)
+  return targetOf(repo)
+}
+
+// THE CHAIN, WALKED RATHER THAN GUESSED.
+//
+// One request per link, following `parent` until a repository that is not a
+// fork -- which is the project, and is where a chain ends. Done when somebody
+// asks, never on a timer: it is N requests and the answer only changes when
+// somebody forks something.
+//
+// A LINK THAT CANNOT BE READ ENDS THE WALK AND SAYS SO. A token granted one
+// repository and not the next is the ordinary case in a chain, not bad luck,
+// and a list that stopped early must not read as a chain that stopped there.
+async function chainOf (repo) {
+  const remote = remoteOf(repo)
+  if (!remote || remote.kind !== 'github') throw new Error(`"${repo}" has no GitHub remote, so there is no chain to walk.`)
+
+  const links = []
+  let at = remote.owner + '/' + remote.repo
+  let stopped = null
+  const seenAlready = new Set()
+
+  // Bounded, because a cycle here would be somebody else's bug becoming an
+  // infinite loop in this app.
+  for (let step = 0; step < 12; step++) {
+    if (seenAlready.has(at)) { stopped = `"${at}" appears twice, so the walk stopped rather than going round.`; break }
+    seenAlready.add(at)
+
+    const [owner, name] = at.split('/')
+    const r = await github.call('GET', `/repos/${owner}/${name}`)
+    if (r.status !== 200) {
+      stopped = `${at} could not be read (${r.status}), so anything above it is unknown.`
+      break
+    }
+
+    links.push({
+      on: at,
+      fork: !!r.body.fork,
+      private: !!r.body.private,
+      defaultBranch: r.body.default_branch || null,
+      openIssues: r.body.open_issues_count == null ? null : r.body.open_issues_count,
+      // WHETHER THIS HOST MAY OPEN A PULL REQUEST THERE, which is the whole
+      // point of picking one and is a different question from reachability.
+      mayPush: !!(r.body.permissions && r.body.permissions.push),
+      // Only the immediate parent can be synced from with one call -- see
+      // syncFork. Marked here so a dropdown can say which levels are cheap.
+      immediate: links.length === 1
+    })
+
+    if (!r.body.fork || !r.body.parent) break
+    at = r.body.parent.full_name
+  }
+
+  return { repo, links, deep: links.length, stopped, walked: new Date().toISOString() }
+}
+
 const git = (dir, args) => execFileSync('git', ['--git-dir', dir, ...args], {
   encoding: 'utf8', timeout: 30000, windowsHide: true
 }).trim()
@@ -144,7 +268,10 @@ function read () {
       pulls: note.pulls || null,
       issues: note.issues || null,
       openIssues: note.issues ? note.issues.length : null,
-      issuesOn: note.parent || null,
+      // WHERE ISSUES ARE READ FROM, which is the target and not the parent.
+      // See targetOf: unset means your own remote, and nothing upstream.
+      issuesOn: targetOf(name).on,
+      target: targetOf(name),
       gathered: note.gathered || null,
       // Computed here rather than stored, so it is right even when the local
       // branch moved after the last check.
@@ -363,7 +490,11 @@ async function openPull (repo, { branch, base, title, body, into = null, draft =
   // Given, or the immediate parent, or itself. A fork of a fork of a fork makes
   // this a choice and not a fact — see `check`, which reports both the parent
   // one level up and the root of the network.
-  const target = into || note.parent || `${remote.owner}/${remote.repo}`
+  // `into` is still honoured, for a caller that has already decided; otherwise
+  // it is the chosen target, and unset means your own remote. A pull request
+  // against yourself is a visible no-op, which is the right worst case for a
+  // repository nobody has pointed anywhere.
+  const target = into || targetOf(repo).on
   const [owner, name] = target.split('/')
   const crossing = target !== `${remote.owner}/${remote.repo}`
   const head = crossing ? `${remote.owner}:${branch}` : branch
@@ -436,7 +567,9 @@ async function comment (repo, number, body) {
   const note = seen()[repo] || {}
   const remote = remoteOf(repo)
   if (!remote) throw new Error(`"${repo}" has no remote.`)
-  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
+  // WHERE THIS GOES, asked rather than inferred. See targetOf: unset is your own
+  // remote, and a fork somebody picked is that fork.
+  const into = (targetOf(repo).on || `${remote.owner}/${remote.repo}`).split('/')
 
   // The issues endpoint, which is where a pull request's conversation lives --
   // a pull request IS an issue on GitHub, and the pulls endpoint only carries
@@ -450,7 +583,9 @@ async function updatePull (repo, number, fields) {
   const note = seen()[repo] || {}
   const remote = remoteOf(repo)
   if (!remote) throw new Error(`"${repo}" has no remote.`)
-  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
+  // WHERE THIS GOES, asked rather than inferred. See targetOf: unset is your own
+  // remote, and a fork somebody picked is that fork.
+  const into = (targetOf(repo).on || `${remote.owner}/${remote.repo}`).split('/')
 
   const r = await github.call('PATCH', `/repos/${into[0]}/${into[1]}/pulls/${number}`, fields)
   if (r.status === 200) return { repo, number, ok: true, state: r.body.state, url: r.body.html_url }
@@ -477,7 +612,9 @@ async function mergePull (repo, number, { how = 'merge', title = null, message =
   const note = seen()[repo] || {}
   const remote = remoteOf(repo)
   if (!remote) throw new Error(`"${repo}" has no remote.`)
-  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
+  // WHERE THIS GOES, asked rather than inferred. See targetOf: unset is your own
+  // remote, and a fork somebody picked is that fork.
+  const into = (targetOf(repo).on || `${remote.owner}/${remote.repo}`).split('/')
 
   const r = await github.call('PUT', `/repos/${into[0]}/${into[1]}/pulls/${number}/merge`, {
     merge_method: how,
@@ -543,7 +680,24 @@ async function syncFork (repo, branch = null) {
   const remote = remoteOf(repo)
   if (!remote || remote.kind !== 'github') throw new Error(`"${repo}" has no GitHub remote to sync.`)
   const note = seen()[repo] || {}
+  // THIS ONE CANNOT FOLLOW THE TARGET, and that is GitHub rather than a
+  // decision here. `merge-upstream` takes no destination: it pulls a fork from
+  // ITS OWN immediate parent, which is why this posts to the fork and not to
+  // anything upstream.
+  //
+  // So when the chosen target IS the immediate parent -- the ordinary case, and
+  // the whole point of picking the fork you forked from -- this is one call and
+  // costs nothing. When somebody has picked further up the chain, skipping a
+  // level, the two disagree and this refuses rather than quietly syncing from
+  // somewhere they are not sending work. Fetching and merging through this host
+  // would do it; that is a different and slower thing, and it should be asked
+  // for rather than substituted.
   if (!note.parent) throw new Error(`"${repo}" is not a fork of anything this app knows about, so there is nothing upstream to pull from.`)
+
+  const sends = targetOf(repo)
+  if (sends.chosen && sends.on !== note.parent) {
+    throw new Error(`"${repo}" sends work to ${sends.on}, and GitHub can only sync a fork from its own immediate parent, which is ${note.parent}. Syncing from ${sends.on} means fetching and merging through this host — a different act, and one to ask for rather than have substituted.`)
+  }
 
   const want = branch || note.default || branches.defaultOf(repo)
   if (!want) throw new Error(`Nothing says which branch of "${repo}" to sync.`)
@@ -576,7 +730,9 @@ async function pullsOn (repo) {
   const note = seen()[repo] || {}
   const remote = remoteOf(repo)
   if (!remote) return []
-  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
+  // WHERE THIS GOES, asked rather than inferred. See targetOf: unset is your own
+  // remote, and a fork somebody picked is that fork.
+  const into = (targetOf(repo).on || `${remote.owner}/${remote.repo}`).split('/')
   const r = await github.call('GET', `/repos/${into[0]}/${into[1]}/pulls?state=all&per_page=100`)
   if (r.status !== 200 || !Array.isArray(r.body)) return []
   // ONE MAPPER, and this used to be a second one that quietly carried fewer
@@ -603,7 +759,9 @@ async function issuesOn (repo) {
   const note = seen()[repo] || {}
   const remote = remoteOf(repo)
   if (!remote) return []
-  const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
+  // WHERE THIS GOES, asked rather than inferred. See targetOf: unset is your own
+  // remote, and a fork somebody picked is that fork.
+  const into = (targetOf(repo).on || `${remote.owner}/${remote.repo}`).split('/')
   const r = await github.call('GET', `/repos/${into[0]}/${into[1]}/issues?state=open&per_page=100`)
   if (r.status !== 200 || !Array.isArray(r.body)) return []
   return r.body
@@ -877,7 +1035,9 @@ function fetchPull (repo, number) {
   const helper = path.join(__dirname, '..', 'tools', 'git-credential-okc.js')
   const note = seen()[repo] || {}
   const remote = remoteOf(repo)
-  const parent = note.parent || (remote ? `${remote.owner}/${remote.repo}` : null)
+  // The pull request lives on the repository it was opened against, which is
+  // the target rather than the git parent.
+  const parent = targetOf(repo).on || (remote ? `${remote.owner}/${remote.repo}` : null)
   if (!parent) throw new Error(`"${repo}" has no GitHub remote this host can read pull requests from.`)
 
   let token = null
@@ -983,4 +1143,4 @@ const syncDefault = repo => {
   return syncBranch(repo, branch)
 }
 
-module.exports = { read, check, gather, fetchPull, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, comment, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }
+module.exports = { read, check, gather, targetOf, setTarget, chainOf, fetchPull, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, comment, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }

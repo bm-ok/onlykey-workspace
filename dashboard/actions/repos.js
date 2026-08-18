@@ -103,6 +103,121 @@ module.exports = {
   // on a timer — and this codebase has already paid twice for forgetting that
   // with git processes. Doing it with somebody else's service would be the same
   // fault with rate limits attached.
+  // ---- WHERE WORK GOES, AND WHO DECIDED -----------------------------------
+  //
+  // See the head of targetOf in repos/remotes.js for the reasoning. The short
+  // form: a change belongs in the fork you forked FROM, because if the project
+  // itself were the destination you would have forked the project. GitHub cannot
+  // answer this -- it reports one level up and the root, never the middle of a
+  // longer chain -- so the chain is walked, and a person picks.
+  repoChain: {
+    about: "The fork chain above a repository, walked one link at a time — where work could go, and which of them this host may push to",
+    needs: 'workspace',
+    takes: ['repo'],
+    run: async ({ repo }) => {
+      if (!repo) throw new Error('Say which repository to walk from.')
+      const walked = await remotes.chainOf(repo)
+      const now = remotes.targetOf(repo)
+
+      // WHICH LINK IS THE ONE IN USE, marked on the walk rather than left for
+      // the reader to match strings.
+      const links = walked.links.map(l => ({
+        ...l,
+        self: l.on === now.self,
+        target: l.on === now.on,
+        // Only the immediate parent syncs with one call -- see syncFork.
+        syncsCheaply: !!l.immediate
+      }))
+
+      log.on('github', repo).info(`walked ${walked.deep} link(s) above ${repo}`)
+      return {
+        ...walked,
+        links,
+        target: now,
+        note: walked.stopped
+          ? `The walk stopped: ${walked.stopped}`
+          : (links.length > 1
+              ? `${links.length - 1} repositor${links.length === 2 ? 'y' : 'ies'} above this one. Work goes to ${now.on}${now.chosen ? ', which you picked' : ' — your own remote, because nothing has been picked'}.`
+              : 'Nothing above this one: it is not a fork, so it is the project and work belongs here.')
+      }
+    }
+  },
+
+  repoTarget: {
+    about: 'Where a repository sends work: which fork issues are read from and pull requests open into',
+    needs: 'workspace',
+    takes: ['repo'],
+    run: ({ repo }) => {
+      const rows = repo ? [String(repo)] : remotes.read().map(r => r.repo)
+      const targets = rows.map(name => {
+        const now = remotes.targetOf(name)
+        return {
+          repo: name,
+          ...now,
+          // SAID IN A SENTENCE, because a bare name cannot carry whether
+          // anybody chose it, and that is the whole distinction.
+          says: now.chosen
+            ? `Issues are read from ${now.on} and pull requests open into it. You picked that${now.at ? ' on ' + now.at.slice(0, 10) : ''}.`
+            : `Nothing has been picked, so this is self-contained: issues and pull requests both stay on ${now.on}, your own remote. Nothing upstream is watched.`
+        }
+      })
+      return {
+        targets,
+        note: targets.some(x => !x.chosen)
+          ? 'A repository nobody has pointed anywhere keeps to itself, which is right when it IS the project and inert when it is a fork — the worst a misconfiguration can do is open a pull request against yourself. repoChain walks what is above one.'
+          : null
+      }
+    }
+  },
+
+  repoTargetSet: {
+    about: 'Point a repository at the fork it sends work to. A person, in the window',
+    needs: 'workspace',
+    takes: ['repo', 'on', 'why'],
+    run: async ({ repo, on, why = null, _overTheWire, _driven }) => {
+      // WHICH REPOSITORY A CHANGE IS PUSHED INTO IS A DECISION WITH A NAME ON
+      // IT. The same argument as allowing a stranger's pull request to be
+      // judged: a model may not decide whose repository this host opens work
+      // against, and a driven click is not a person either.
+      if (_overTheWire || _driven) {
+        throw new Error('Where work goes is picked in the window, by a person. It decides whose repository this host opens pull requests against and whose issues it acts on, which is not a decision to take down a pipe.')
+      }
+      const row = remotes.read().find(x => x.repo === String(repo))
+      if (!row) throw new Error(`There is no repository called "${repo}" in this workspace.`)
+
+      const want = String(on || '').trim()
+      if (!want) {
+        const cleared = remotes.setTarget(repo, null, { by: whoAsked({ _overTheWire, _driven }) })
+        log.on('github', repo).warn('no longer points anywhere — it keeps to itself')
+        return { ...cleared, repo, note: `"${repo}" keeps to itself now: issues and pull requests both stay on ${cleared.on}, and nothing upstream is watched.` }
+      }
+
+      // IT HAS TO BE IN THE CHAIN, and this is what makes the setting a choice
+      // between real places rather than a text field. A name that is not above
+      // this repository is either a typo or a different arrangement entirely,
+      // and both want saying rather than accepting.
+      const walked = await remotes.chainOf(repo)
+      const found = walked.links.find(l => l.on === want)
+      if (!found) {
+        throw new Error(`${want} is not this repository or anything above it. The chain is ${walked.links.map(l => l.on).join(' <- ')}${walked.stopped ? ` (the walk stopped: ${walked.stopped})` : ''}.`)
+      }
+      if (!found.mayPush) {
+        throw new Error(`This host cannot open a pull request on ${want} — the token has no push there. Pointing work at it would fail at the moment of sending, on a machine, twenty minutes in.`)
+      }
+
+      const now = remotes.setTarget(repo, want, { by: whoAsked({ _overTheWire, _driven }), why })
+      log.on('github', repo).good(`sends work to ${want} — picked by ${now.by}`)
+      return {
+        ...now,
+        repo,
+        immediate: !!found.immediate,
+        note: found.on === now.self
+          ? `"${repo}" points at itself, which is the same as picking nothing except that it is now recorded as a decision.`
+          : `"${repo}" sends work to ${want}. Issues are read from there, pull requests open into it, and nothing above it is watched.${found.immediate ? '' : ' It is not the immediate parent, so syncing the fork cannot use GitHub\'s one-call merge-upstream — see repoForkSync.'}`
+      }
+    }
+  },
+
   repositories: {
     about: 'Every repository in this workspace: where it is, its default branch, its remote, and what was last learnt about it',
     needs: 'workspace',
