@@ -9,6 +9,11 @@
   --ok: #3fb950;
   --fail: #f85149;
   --warn: #d29922;
+  /* THE DRILLS ARE ACTUALLY RUNNING. Its own colour on purpose: amber is
+     "testing mode is on", which is a standing state, and this is "something
+     is happening right now", which is a moment. Two different questions
+     wearing one colour is how somebody stops reading either. */
+  --running: #a371f7;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -220,6 +225,50 @@ h2:first-child { margin-top: 0; }
   overflow: hidden;
 }
 .testing-banner span { overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- the drills are running ----------
+
+   ON WHILE A RUN IS GOING AND OFF WHEN IT IS NOT. Nothing subtler: the
+   question it answers is "is it running", asked from across a room.
+
+   ITS OWN ELEMENT, ABOVE TESTING MODE, for the same reason testing mode has
+   one -- the shared banner below is a list, and a thing that has to be true
+   at a glance cannot be the fourth entry in a list.
+
+   IT CANNOT LIE AFTER A RESTART. A run in flight when this app stops is
+   marked `running: false, interrupted: true` on the way back up (see
+   core/testruns.js), so the banner goes out with it rather than sitting
+   purple for ever over nothing. */
+.running-banner {
+  background: linear-gradient(180deg, #2a1b45, #1b1230);
+  border-bottom: 1px solid var(--running);
+  padding: 5px 16px;
+  font-size: 12px;
+  line-height: 1.4;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  /* THE MOVEMENT IS THE POINT, and it is why the text can stay still. A
+     banner that counted seconds would be rewritten every three seconds --
+     which flickers, and takes somebody's selection with it mid-copy. So the
+     words are fixed and the border breathes: the same "it is alive" without
+     touching a character of text. */
+  animation: running-pulse 1.6s ease-in-out infinite;
+}
+@keyframes running-pulse {
+  0%, 100% { border-bottom-color: var(--running); box-shadow: none; }
+  50% { border-bottom-color: #d0b3ff; box-shadow: 0 1px 10px rgba(163, 113, 247, 0.45); }
+}
+/* Somebody who does not want a moving thing on their screen still gets the
+   colour, which carries the whole message on its own. */
+@media (prefers-reduced-motion: reduce) {
+  .running-banner { animation: none; }
+}
+.running-banner span { overflow: hidden; text-overflow: ellipsis; }
+.running-banner strong { color: var(--running); }
+.running-banner .linky { color: var(--running); text-decoration: underline; margin-left: auto; white-space: nowrap; }
 .testing-banner strong { color: var(--warn); }
 /* Readable against amber rather than the accent blue, which on this ground is
    the one thing on the line somebody cannot read. */

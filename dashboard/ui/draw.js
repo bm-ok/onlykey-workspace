@@ -465,6 +465,47 @@ async function drawOnce () {
   // it — this is deliberate, it survives restarts by design, it is invisible
   // from every tab, and it means this app may write a task and take a credential
   // off a machine in THIS folder. Nothing else may push it out of the way.
+  // THE DRILLS ARE RUNNING. On while a run is going, off the moment it is
+  // not -- the whole question is "is it running", and it is asked from across
+  // a room, so it is the loudest thing in the window while it is true.
+  //
+  // The text does not tick. A banner counting seconds would be rewritten on
+  // every draw, which flickers and takes a selection with it; the border
+  // pulses instead, which says the same thing and touches no text. See
+  // .running-banner in ui.css.
+  const going = status.drillsRunning
+  $('running-banner').classList.toggle('hidden', !going)
+  if (going) {
+    // THE CHECK IN FLIGHT. The stored key is already "suite / test / check" --
+    // see keyOf in core/testruns.js -- so it is shown as it is rather than taken
+    // apart and put back together differently.
+    const doing = String(going.doing || '')
+    const score = [
+      going.passed ? `${going.passed} passed` : null,
+      going.failed ? `${going.failed} failed` : null
+    ].filter(Boolean).join(', ')
+
+    // REDRAWN ONLY WHEN THE WORDS CHANGE, which is once per check rather than
+    // once per draw. That is the difference between a banner somebody can read
+    // and one that flickers -- and rewriting identical text takes a person's
+    // selection with it. The signature is the words themselves.
+    const words = `${doing}|${score}`
+    if (changed('running-banner', words)) {
+      fill($('running-banner'),
+        el('strong', { textContent: 'Drills running' }),
+        el('span', {
+          textContent: doing
+            ? ` — ${doing}${score ? ` · ${score}` : ''}`
+            : ` — starting${score ? ` · ${score}` : ''}`
+        }),
+        el('button', {
+          className: 'linky',
+          textContent: 'Stop it',
+          onclick: () => fixIt('suiteStop', {}, 'Stopping the run — the step in flight finishes, and the ones after it are not tried.')
+        }))
+    }
+  }
+
   $('testing-banner').classList.toggle('hidden', !status.testingHere)
   if (status.testingHere && changed('testing-banner', ws && ws.name)) {
     // ONE SLIM LINE. It is permanent while testing is on, and a permanent thing

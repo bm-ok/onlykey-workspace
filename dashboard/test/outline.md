@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 49 tests, 234 checks, 23 of them drafts -->
+<!-- 12 suites, 50 tests, 236 checks, 23 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -74,6 +74,11 @@ The first thing, and the only suite whose job is to **stop**.
   2. and drills are allowed to run here
   3. and a GitHub token that still works
   4. and every machine that is not the kit's is kept back while it runs
+
+## 01 — a run says whose it is
+
+  1. a process that is running reads as running, and one that is not does not
+  2. and the run happening right now says which process it belongs to
 
 # 01 — the order
 

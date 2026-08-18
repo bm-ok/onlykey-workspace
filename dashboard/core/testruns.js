@@ -76,8 +76,28 @@ function write () {
 // may well still be doing what that drill asked it to, which is exactly the
 // state somebody needs to be told about rather than left to infer from a board
 // that says nothing.
+// IS THAT PROCESS STILL THERE? Signal 0 asks the operating system whether a
+// pid exists without sending it anything, and it is in node itself -- no
+// binary, which this project does not have and does not want.
+//
+// A pid could in principle have been reused by something unrelated. The
+// consequence of believing that is a stale run left marked running, which
+// the next `suiteRun` reports plainly; the consequence of the old behaviour
+// was a LIVE run marked interrupted, which corrupts the board it is writing.
+// Between those two the choice is not close.
+function stillThere (pid) {
+  if (!pid) return false
+  try { process.kill(pid, 0); return true } catch { return false }
+}
+
 function tookOver () {
   const held = read()
+  // A run whose process is still alive is not one to take over -- it is one
+  // somebody else is in the middle of. A record with no pid at all is from
+  // before this was written down, and the old answer is the right one for it.
+  if (held.run && held.run.running && held.run.pid && stillThere(held.run.pid) && held.run.pid !== process.pid) {
+    return false
+  }
   if (held.run && held.run.running) {
     held.run = { ...held.run, running: false, interrupted: true }
     for (const key of Object.keys(held.checks)) {
@@ -255,7 +275,19 @@ function forgetState (group, test) {
 
 function began (asked) {
   const held = read()
-  held.run = { at: new Date().toISOString(), asked: asked || null, running: true, interrupted: false }
+  // WHOSE RUN IT IS, and it has to be written down.
+  //
+  // `tookOver` below decides whether a run recorded as running belongs to a
+  // process that is gone. It used to answer that with "am I starting? then
+  // it does", which is true of the dashboard starting and FALSE of every
+  // other process that loads these modules -- and `node -e
+  // "require('./server.js')"` is a verification step this project tells
+  // people to run. Running it while the drills were going marked the live
+  // run interrupted and flipped every check in flight to `interrupted`.
+  //
+  // Caught by building a banner that lights while a run is going: it stayed
+  // dark through a run that was plainly happening.
+  held.run = { at: new Date().toISOString(), asked: asked || null, running: true, interrupted: false, pid: process.pid }
   write()
 }
 
@@ -266,6 +298,49 @@ function ended (counts) {
 }
 
 const lastRun = () => read().run
+
+// HOW FAR THE RUN THAT IS GOING HAS GOT, counted off the same records the
+// board is drawn from rather than kept a second time. Only the checks
+// belonging to THIS run count: `at` is compared against when the run began,
+// so a board full of yesterday's passes does not report as progress.
+//
+// Cheap on purpose. This is read on every draw for the banner, so it is one
+// memoised file read and a loop over a few hundred small objects -- no
+// process, no network, nothing that grows with the size of the workspace.
+function progress () {
+  const held = read()
+  const run = held.run
+  if (!run || !run.running) return null
+
+  const since = Date.parse(run.at || 0) || 0
+  let passed = 0
+  let failed = 0
+  let other = 0
+  let doing = null
+  // AND WHAT IT WAS DOING A MOMENT AGO, for the gap between checks.
+  //
+  // A check is written down as `running` when it starts and overwritten when
+  // it ends, so between two of them nothing is running -- which is true, and
+  // useless to say. Sampled during a suite of sub-second refusals the answer
+  // was "nothing" more often than not, and the banner read "starting" after
+  // ten checks had already passed.
+  //
+  // So the most recent one stands in. The banner is answering "what is this
+  // busy with", and the check that finished forty milliseconds ago is a better
+  // answer to that than silence.
+  let latest = null
+  let latestAt = 0
+  for (const [key, c] of Object.entries(held.checks || {})) {
+    if (c.state === 'running') { doing = key; continue }
+    const when = Date.parse(c.at || 0) || 0
+    if (when < since) continue
+    if (when >= latestAt) { latestAt = when; latest = key }
+    if (c.state === 'passed') passed++
+    else if (c.state === 'failed') failed++
+    else other++
+  }
+  return { doing: doing || latest, passed, failed, other, done: passed + failed + other }
+}
 
 // ---- forgetting -----------------------------------------------------------
 //
@@ -313,5 +388,5 @@ module.exports = {
   FILE, keyOf, wholeOf, tookOver, forWorkspace, claim,
   remember, recall, ranWhole, dirty, wholeState,
   saveState, loadState, forgetState, disprove,
-  began, ended, lastRun, forget
+  began, ended, lastRun, progress, stillThere, forget
 }

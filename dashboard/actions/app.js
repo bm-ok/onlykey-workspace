@@ -22,6 +22,8 @@ const s = require('./shared')
 // The conversation, for counting what the supervisor has said since the
 // person's own bookmark — see  below.
 const chat = require('../core/chat')
+// Whether the drills are running, for the banner that says so. See status.
+const testruns = require('../core/testruns')
 
 const {
   log, events, keys, ssh, data, secret, settings, github, remotes, allowed, landings, prtemplate, drafts, judgements,
@@ -314,6 +316,38 @@ module.exports = {
       // from every tab, and it stays on across restarts by design.
       testingHere: (() => {
         try { return settings.testsAllowed(workspaces.dir() || null).allowed } catch { return false }
+      })(),
+      // AND WHETHER A RUN IS GOING RIGHT NOW, which is a different question
+      // from the one above and gets a different banner.
+      //
+      // Carried on the poll rather than behind `suites`, which builds the
+      // whole board out of every remembered result: the banner is drawn on
+      // every draw, and a paint function that calls something expensive is
+      // how this window has twice ended up spending its time on work nobody
+      // asked for. This is one small file read.
+      //
+      // FROM THE FILE, NOT FROM A VARIABLE, because that is the copy that
+      // survives a restart -- and survives it HONESTLY: a run in flight when
+      // this app stops is marked not-running and interrupted on the way back
+      // up, so the banner goes out rather than sitting on over nothing.
+      drillsRunning: (() => {
+        try {
+          const r = testruns.lastRun()
+          if (!r || !r.running) return null
+          // WHAT IT IS DOING AND HOW FAR IN, so the banner says something
+          // rather than only shining. A run is fifteen minutes of nothing
+          // visible happening, and "it is running" answered once stops being
+          // an answer about ten minutes in.
+          const on = testruns.progress() || {}
+          return {
+            since: r.at || null,
+            asked: r.asked || null,
+            doing: on.doing || null,
+            passed: on.passed || 0,
+            failed: on.failed || 0,
+            done: on.done || 0
+          }
+        } catch { return null }
       })(),
       // A REQUEST WAITING TO BE ANSWERED, carried on the poll the window already
       // makes rather than behind a call somebody has to remember. It is a
