@@ -558,10 +558,10 @@ module.exports = {
   },
 
   suiteRun: {
-    about: 'Run everything, one suite, one test in it, or one check of that test. Pass slow for the drills that build a machine, or continue to carry what has already passed',
+    about: 'Run everything, one suite, one test in it, or one check of that test. A failure stops the run — pass keepGoing for the whole picture. Pass slow for the drills that build a machine, or continue to carry what has already passed',
     needs: 'testing',
-    takes: ['suite', 'test', 'check', 'slow', 'continue', 'teardown'],
-    run: async ({ suite, test, check, slow, continue: carryOn, teardown }) => {
+    takes: ['suite', 'test', 'check', 'slow', 'continue', 'teardown', 'keepGoing'],
+    run: async ({ suite, test, check, slow, continue: carryOn, teardown, keepGoing }) => {
       // REFUSED HERE, at the only door that runs a test. The window disables the
       // buttons too, and that is a courtesy — this is the boundary, and it is
       // the one a drill reached from the command line meets as well.
@@ -689,6 +689,7 @@ module.exports = {
           // Asked between checks, so a run can be called off without killing
           // the app. See `stopping` above for what it can and cannot interrupt.
           shouldStop: () => stopping,
+          keepGoing: keepGoing === true || keepGoing === 'true',
 
           // WHERE A KEEPING DRILL KEEPS ITS NOTE. Only files that called keep()
           // are ever asked for, so nothing else pays for this.

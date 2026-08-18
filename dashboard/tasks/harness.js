@@ -284,8 +284,34 @@ async function run (context = {}) {
     timeoutMs = 0,
     testFilter,
     onTestStart,
-    onTestEnd
+    onTestEnd,
+    // ---- A FAILURE STOPS THE RUN, and that is the default ----------------
+    //
+    // A check that fails has usually left the world somewhere the checks after
+    // it did not expect: a branch half made, a machine holding something, a
+    // record written and not undone. Carrying on then produces failures ABOUT
+    // that state rather than about the app, and the reader has to work out
+    // which of forty results is the real one.
+    //
+    // It already stopped WITHIN a file — the steps of one drill are a series,
+    // and step four means nothing if step three did not happen. This carries the
+    // same reasoning across the whole run, which is what somebody watching one
+    // failure scroll past forty more actually wants.
+    //
+    // A REFUSAL IS NOT A FAILURE. Half the checks here pass by being refused;
+    // those are passes and nothing about this touches them. Only a check that
+    // expected something and did not get it stops the run.
+    //
+    // `keepGoing` is for when the whole picture is what is wanted — a sweep
+    // after a big change, where five failures in five suites is the useful
+    // answer rather than the first one.
+    keepGoing = false
   } = context
+
+  // Set the moment something fails, and read by the per-test guard below. Not a
+  // count: one failure is enough, and what stopped the run is named in the
+  // result so nothing has to guess afterwards.
+  let halted = null
 
   const log = (context.log && typeof context.log === 'function')
     ? context.log
@@ -398,6 +424,13 @@ async function run (context = {}) {
       if (!stoppedBy && typeof context.shouldStop === 'function' && context.shouldStop()) {
         stoppedBy = `the run was stopped — "${t.name}" and the steps after it were not tried`
       }
+      // A FAILURE SOMEWHERE EARLIER, which is a different sentence from the two
+      // above: nothing is wrong with this check and nobody pressed anything.
+      // Saying which failure did it matters, because otherwise a run reads as
+      // forty things that could not be tried and no reason among them.
+      if (!stoppedBy && halted) {
+        stoppedBy = `the run stopped at ${halted}`
+      }
 
       // A step after one that failed. Not tried, and said as what it is — the
       // step above is the thing to read, and this one has nothing to add.
@@ -494,6 +527,8 @@ async function run (context = {}) {
         results.failed++
         stoppedBy = t.name
         log(`  FAIL ${t.name} -> ${e && (e.message || e)}`)
+        // AND THE REST OF THE RUN, unless somebody asked for the whole picture.
+        if (!keepGoing && !halted) halted = `${suite.group} / ${suite.name} — "${t.name}"`
       }
 
       // AFTER EVERY CHECK, not at the end of the file. A drill that keeps its
@@ -530,6 +565,10 @@ async function run (context = {}) {
     if (suiteRes.tests.length) results.suites.push(suiteRes)
   }
 
+  // A STOPPED RUN MUST NOT LOOK LIKE A PASSING ONE. Everything after the
+  // failure counts as could-not-be-tried, which is honest, and reads exactly
+  // like a host with no machine on it unless something says otherwise.
+  if (halted) results.stoppedAt = halted
   return results
 }
 

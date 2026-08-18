@@ -218,6 +218,55 @@ function remoteOf (repo) {
   })
 }
 
+// WHERE A REPOSITORY PUSHES, changed deliberately.
+//
+// `origin` is not a detail: it is where every branch this host cuts ends up,
+// and it is the bottom of the fork chain that everything else is measured
+// against. Moving it moves what the walk finds, what the target can be, and
+// where work lands.
+//
+// THE OLD ONE IS HANDED BACK, so whoever asked can put it back without going
+// to look for it. There is no undo here beyond that.
+function setRemote (repo, url) {
+  const dir = serve.gitDirOf(repo)
+  if (!dir) throw new Error(`There is no repository called "${repo}" in this workspace.`)
+
+  const was = remoteOf(repo)
+  const parsed = parse(String(url || '').trim())
+  if (!parsed || !parsed.owner || !parsed.repo) throw new Error(`"${url}" is not a remote this app can read. Give it as a URL, like https://github.com/owner/name.git`)
+
+  try {
+    git(dir, ['remote', 'set-url', 'origin', String(url).trim()])
+  } catch (e) {
+    // A repository with no origin at all needs `add` rather than `set-url`,
+    // and that is a real state: a clone made from a path, or one made here.
+    try { git(dir, ['remote', 'add', 'origin', String(url).trim()]) } catch { throw new Error(`Could not point "${repo}" at ${url}: ${e.message}`) }
+  }
+
+  // WHAT WAS KNOWN ABOUT THE OLD ONE IS NOT TRUE OF THE NEW ONE. The parent,
+  // the chain, whether it is a fork, what the token may do there -- all of it
+  // was read about a different repository, and leaving it would be this app
+  // stating facts about somewhere it has never asked about.
+  //
+  // The TARGET goes too. It was picked from a chain that no longer applies, and
+  // a target left pointing into an old network is the exact fault this whole
+  // arrangement exists to prevent.
+  const all = seen()
+  const note = all[repo] || {}
+  const kept = { pulls: note.pulls, issues: note.issues, gathered: note.gathered }
+  all[repo] = { movedFrom: was ? `${was.owner}/${was.repo}` : null, movedAt: new Date().toISOString() }
+  keep(all)
+
+  return {
+    repo,
+    was: was ? `${was.owner}/${was.repo}` : null,
+    wasUrl: was ? was.url : null,
+    now: `${parsed.owner}/${parsed.repo}`,
+    url: String(url).trim(),
+    forgot: Object.keys(kept).filter(k => kept[k] != null)
+  }
+}
+
 // ---- the local half: instant, no network -------------------------------
 function read () {
   const notes = seen()
@@ -530,7 +579,15 @@ async function openPull (repo, { branch, base, title, body, into = null, draft =
   // GitHub answers 422 for "already exists" and for "no commits between", and
   // they mean opposite things: one is done, the other is nothing to do. Both are
   // reported as themselves rather than as a failure to open.
-  const said = (r.body && r.body.errors && r.body.errors.map(e => e.message).filter(Boolean).join('; ')) ||
+  // AND WHAT IT SAID, WHEN IT DID NOT SAY IT IN A SENTENCE.
+  //
+  // A 422 on pulls usually carries errors like { resource, field, code } with no
+  //  at all -- so reading only  reduced everything GitHub knew
+  // to "Validation Failed", which is the least useful two words available and is
+  // what a drill reported for twenty minutes while the real answer was in the
+  // response the whole time.
+  const detail = e => e.message || [e.resource, e.field, e.code].filter(Boolean).join(' ')
+  const said = (r.body && r.body.errors && r.body.errors.map(detail).filter(Boolean).join('; ')) ||
     (r.body && r.body.message) || `GitHub answered ${r.status}`
   const already = /already exists/i.test(said)
   return { repo, opened: false, already, why: said, into: target, head, base }
@@ -1143,4 +1200,4 @@ const syncDefault = repo => {
   return syncBranch(repo, branch)
 }
 
-module.exports = { read, check, gather, targetOf, setTarget, chainOf, fetchPull, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, comment, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }
+module.exports = { read, check, gather, targetOf, setTarget, chainOf, setRemote, fetchPull, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, comment, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }

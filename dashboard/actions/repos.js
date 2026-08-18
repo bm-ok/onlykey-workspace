@@ -110,6 +110,37 @@ module.exports = {
   // itself were the destination you would have forked the project. GitHub cannot
   // answer this -- it reports one level up and the root, never the middle of a
   // longer chain -- so the chain is walked, and a person picks.
+  // POINTING A REPOSITORY SOMEWHERE ELSE, which is a bigger act than it looks:
+  // origin is where every branch this host cuts ends up, and it is the bottom
+  // of the chain everything else is measured from.
+  //
+  // NOT REFUSED TO THE COMMAND LINE, for the same reason skillSave is not: this
+  // is a git remote in a checkout, and anything with a shell can already change
+  // it. A refusal here would catch the one caller that cannot reach around it.
+  // The supervisor is shut out by not being on its allowlist, which is where
+  // that rule lives.
+  repoRemoteSet: {
+    about: 'Point a repository at a different remote. Everything learnt about the old one is forgotten, including where work was going',
+    needs: 'workspace',
+    takes: ['repo', 'url'],
+    run: async ({ repo, url }) => {
+      const moved = remotes.setRemote(repo, url)
+      log.on('git', repo).warn(`origin moved from ${moved.was || '(none)'} to ${moved.now}`)
+
+      // ASKED ABOUT IMMEDIATELY, because everything this app knows about the
+      // repository was just thrown away and a panel showing nothing reads the
+      // same as a repository that cannot be reached.
+      let checked = null
+      try { checked = await actions.repositoriesCheck.run({ repo }) } catch (e) { checked = { note: `it could not be checked yet: ${e.message}` } }
+
+      return {
+        ...moved,
+        checked: checked && checked.note ? checked.note : null,
+        note: `"${repo}" points at ${moved.now} now. Everything learnt about ${moved.was || 'the old remote'} was forgotten, including where work was going — walk the chain and pick that again.`
+      }
+    }
+  },
+
   repoChain: {
     about: "The fork chain above a repository, walked one link at a time — where work could go, and which of them this host may push to",
     needs: 'workspace',
