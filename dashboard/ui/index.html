@@ -606,8 +606,16 @@
         <h2>Meter <span class="muted" id="meter-context"></span></h2>
       </div>
       <p class="note">What each sign-in has spent. A supervisor waking and a worker run each write one row when they finish, read off the machine before it is rolled back — so what is here is what was actually spent, not an estimate.</p>
-      <div id="meter-total"></div>
-      <div id="meter-keys" class="stack"></div>
+      <!-- BOTH IN ONE STACK, so the gap between the total and the first key is
+           the same 8px as between the keys themselves. They were siblings of
+           the pane instead, and .stack only spaces its OWN children — so the
+           total card sat flush against the one under it while everything below
+           was evenly spaced, which reads as the first key belonging to the
+           total rather than being one of the list. -->
+      <div class="stack">
+        <div id="meter-total"></div>
+        <div id="meter-keys" class="stack"></div>
+      </div>
       <h2 class="titlerow" style="margin-top:18px">Runs <span class="muted" id="meter-rows-context"></span></h2>
       <div id="meter-rows" class="stack"></div>
     </div>
