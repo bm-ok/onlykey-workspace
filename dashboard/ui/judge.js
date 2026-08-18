@@ -365,8 +365,17 @@ function askToSayIt (j) {
       ].filter(Boolean),
       cost: 'A comment cannot be unsent. Editing it later leaves the original in the history, and the author has already been notified.',
       confirm: `Say it on ${v.on}#${v.number}`,
+      // BOTH PLACES IT CAN BE PRESSED FROM. This lives here because the
+      // judgement does, and it is reached from the Overview row as well —
+      // repainting only this tab would leave the row that was pressed still
+      // offering to say something that has just been said. Each paint guards on
+      // its own view, so calling both costs the one that is not open nothing.
       onYes: () => api('judgementSay', { id: j.id })
-        .then(r => { forget('judge-detail'); paintJudge(); say(r.note) })
+        .then(r => {
+          forget('judge-detail'); forget('todo-list')
+          paintJudge(); paintTodo()
+          say(r.note)
+        })
         .catch(oops)
     })
 
