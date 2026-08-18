@@ -38,8 +38,24 @@ const whichRepo = ({ repo, on }) => {
   const named = String(on || '').trim()
   if (named) return named
   if (!repo) throw new Error('Say which repository: "repo" for one in this workspace, or "on" as owner/name for any other.')
+
+  // EITHER NAME IN EITHER FIELD, because the distinction is this app's and not
+  // anybody else's.
+  //
+  // `repo` is meant to be the workspace name and `on` the owner/name — and a
+  // caller holding "bmatusiak/local-repo-a" has no way to know which field this
+  // app files that under, so it puts it in `repo` and is told the repository
+  // does not exist. Which is false, and is the last thing that helps: it is the
+  // one repository the caller was most sure about.
+  //
+  // Refused three times before this was fixed, always by the supervisor, always
+  // recovered from by guessing the other field. The same shape as the allowance
+  // key that could not be looked up — an internal distinction leaking out as an
+  // error about the world.
+  if (String(repo).includes('/')) return String(repo).trim()
+
   const row = remotes.read().find(r => r.repo === String(repo))
-  if (!row) throw new Error(`There is no repository called "${repo}" in this workspace.`)
+  if (!row) throw new Error(`There is no repository called "${repo}" in this workspace. If you meant a repository on GitHub, its owner/name works here too.`)
   const where = row.issuesOn || (row.remote && row.remote.owner ? `${row.remote.owner}/${row.remote.repo}` : '')
   if (!where) throw new Error(`"${repo}" has no GitHub remote this host can read from.`)
   return where
