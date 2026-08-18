@@ -186,6 +186,46 @@ function approve (id, note = null) {
   return get(id)
 }
 
+// IN PLAY, OR KEPT AND OUT OF THE WAY.
+//
+// A library only grows. Every prompt ever written stays, because what a worker
+// was held to six weeks ago has to remain readable -- and the cost of that is a
+// list where the two that are current sit among six that are not. A supervisor
+// choosing from the whole of it is choosing from history.
+//
+// So this is not deleting. `forget` deletes; this sets aside. The text, the
+// approval and the record are all untouched, and the only thing that changes is
+// whether anything is offered it.
+//
+// ABSENT MEANS IN USE. Everything written before this existed carries no flag
+// and must keep working, so the question asked everywhere is "has it been set
+// aside", never "has it been marked usable".
+//
+// BRINGING ONE BACK OVER THE WIRE COSTS ITS APPROVAL, and that is the whole
+// safety of it. Setting aside is harmless from anywhere -- it takes something
+// out of play. Putting it BACK is the direction that matters: without this,
+// anything that could set aside and restore could take an approved prompt,
+// park it, and bring it back whenever it liked, which is the approval gate with
+// a door beside it. At the window it is a person doing it and the approval
+// stands; over the wire it waits to be read again, exactly like a rewrite.
+function use (id, on, { by = 'the window' } = {}) {
+  const list = read()
+  const at = list.findIndex(x => x.id === id)
+  if (at === -1) throw new Error(`There is no prompt called "${id}".`)
+
+  const wanted = on !== false && on !== 'false'
+  const wasAside = list[at].setAside === true
+  const next = { ...list[at], setAside: wanted ? false : true }
+
+  if (wanted && wasAside && by !== 'the window') {
+    next.approval = null
+  }
+
+  list[at] = next
+  write(list)
+  return get(id)
+}
+
 function withdraw (id) {
   const list = read()
   const at = list.findIndex(p => p.id === id)
@@ -195,4 +235,4 @@ function withdraw (id) {
   return get(id)
 }
 
-module.exports = { all, get, save, approve, withdraw, forget, hash, idFor, FILE }
+module.exports = { all, get, save, approve, use, withdraw, forget, hash, idFor, FILE }

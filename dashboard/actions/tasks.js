@@ -21,7 +21,7 @@ const {
   archive, files, sessions, prompts, contracts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,
-  guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
+  guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines, whoAsked
 } = s
 
 // THE CUT COMES FIRST, and this is where that stops being a habit.
@@ -68,6 +68,26 @@ function whoseSession (id) {
   if (sessions.get(key)) return { task: null, uid: key }
   throw new Error(`There is nothing kept under "${key}" — no task by that name, and no session either. Ask for "sessions" to see what is there.`)
 }
+
+// WHAT A MACHINE IS OFFERED, as opposed to what exists.
+//
+// A library only grows and every rung ever written stays readable — so the
+// window and the command line see all of it, always, with each row saying
+// whether it is in play. A SUPERVISOR sees only what is in play, because it is
+// choosing rather than curating: a list of six chains where two are current is
+// a list where the wrong pick is available and looks identical to the right one.
+//
+// `_fromMachine` is stamped by server.js from the token that authenticated the
+// call, so it cannot be claimed by the caller — see the note there. A person at
+// the window and a person at the CLI are both people; a machine is the thing
+// this narrows for.
+//
+// NOT A SECOND SET OF RULES. Nothing here refuses anything: a set-aside job named
+// directly still runs if something has its id. This is about what is OFFERED,
+// and the refusals that matter — approval, the judge gate — are where they were.
+const offeredTo = (rows, asked) => (asked && asked._fromMachine
+  ? rows.filter(r => r.setAside !== true)
+  : rows)
 
 module.exports = {
   tasks: {
@@ -1029,7 +1049,7 @@ module.exports = {
     about: 'The jobs this workspace has: scripts that take a prompt and do something with it. "kind" is task or judge',
     needs: 'workspace',
     takes: ['tag', 'kind'],
-    run: ({ tag, kind }) => {
+    run: ({ tag, kind, _fromMachine }) => {
       // The prompts as the prompt library itself reports them, so a prompt's own
       // contract is already resolved and this does not work it out a second time
       // with a second chance of getting it wrong.
@@ -1080,7 +1100,7 @@ module.exports = {
         })
 
       return {
-        jobs: rows,
+        jobs: offeredTo(rows, { _fromMachine }),
         tags: jobs.tags(),
         prompts: library.map(p => ({ id: p.id, name: p.name, approved: p.approved })),
         where: jobs.DIR(),
@@ -1099,6 +1119,93 @@ module.exports = {
       const one = jobs.get(id)
       if (!one) throw new Error(`There is no job called "${id}".`)
       return one
+    }
+  },
+
+  // IN PLAY, OR KEPT AND OUT OF THE WAY. See `use` in tasks/jobs.js for
+  // what this is and why bringing one back over the wire costs its approval.
+  jobUse: {
+    about: 'Jobs a supervisor may pick from. Setting one aside keeps it and stops it being offered; bringing it back over the wire makes it wait to be read again',
+    takes: ['id', 'use'],
+    run: ({ id, use = false, _overTheWire, _driven }) => {
+      const by = whoAsked({ _overTheWire, _driven })
+      const was = jobs.get(id)
+      if (!was) throw new Error(`There is no job called "${id}".`)
+
+      const one = jobs.use(id, use, { by })
+      const now = one.setAside === true ? 'set aside' : 'in use'
+      log.on('library').info(`job "${one.name || one.id}" is ${now} — by ${by}`)
+
+      return {
+        ...one,
+        inUse: one.setAside !== true,
+        // SAID WHEN IT HAPPENED, because losing an approval by pressing
+        // something called "use it again" is exactly the surprise this app is
+        // written against.
+        note: one.setAside === true
+          ? `"${one.name || one.id}" is set aside. It is kept in full and nothing is offered it until you bring it back.`
+          : (was.setAside === true && by !== 'the window'
+              ? `"${one.name || one.id}" is in use again, and its approval was withdrawn because it was brought back from down the pipe — read it and approve it before anything can run it.`
+              : `"${one.name || one.id}" is in use.`)
+      }
+    }
+  },
+
+  // IN PLAY, OR KEPT AND OUT OF THE WAY. See `use` in tasks/prompts.js for
+  // what this is and why bringing one back over the wire costs its approval.
+  promptUse: {
+    about: 'Prompts a supervisor may pick from. Setting one aside keeps it and stops it being offered; bringing it back over the wire makes it wait to be read again',
+    takes: ['id', 'use'],
+    run: ({ id, use = false, _overTheWire, _driven }) => {
+      const by = whoAsked({ _overTheWire, _driven })
+      const was = prompts.get(id)
+      if (!was) throw new Error(`There is no prompt called "${id}".`)
+
+      const one = prompts.use(id, use, { by })
+      const now = one.setAside === true ? 'set aside' : 'in use'
+      log.on('library').info(`prompt "${one.name || one.id}" is ${now} — by ${by}`)
+
+      return {
+        ...one,
+        inUse: one.setAside !== true,
+        // SAID WHEN IT HAPPENED, because losing an approval by pressing
+        // something called "use it again" is exactly the surprise this app is
+        // written against.
+        note: one.setAside === true
+          ? `"${one.name || one.id}" is set aside. It is kept in full and nothing is offered it until you bring it back.`
+          : (was.setAside === true && by !== 'the window'
+              ? `"${one.name || one.id}" is in use again, and its approval was withdrawn because it was brought back from down the pipe — read it and approve it before anything can run it.`
+              : `"${one.name || one.id}" is in use.`)
+      }
+    }
+  },
+
+  // IN PLAY, OR KEPT AND OUT OF THE WAY. See `use` in tasks/contracts.js for
+  // what this is and why bringing one back over the wire costs its approval.
+  contractUse: {
+    about: 'Contracts a supervisor may pick from. Setting one aside keeps it and stops it being offered; bringing it back over the wire makes it wait to be read again',
+    takes: ['id', 'use'],
+    run: ({ id, use = false, _overTheWire, _driven }) => {
+      const by = whoAsked({ _overTheWire, _driven })
+      const was = contracts.get(id)
+      if (!was) throw new Error(`There is no contract called "${id}".`)
+
+      const one = contracts.use(id, use, { by })
+      const now = one.setAside === true ? 'set aside' : 'in use'
+      log.on('library').info(`contract "${one.name || one.id}" is ${now} — by ${by}`)
+
+      return {
+        ...one,
+        inUse: one.setAside !== true,
+        // SAID WHEN IT HAPPENED, because losing an approval by pressing
+        // something called "use it again" is exactly the surprise this app is
+        // written against.
+        note: one.setAside === true
+          ? `"${one.name || one.id}" is set aside. It is kept in full and nothing is offered it until you bring it back.`
+          : (was.setAside === true && by !== 'the window'
+              ? `"${one.name || one.id}" is in use again, and its approval was withdrawn because it was brought back from down the pipe — read it and approve it before anything can run it.`
+              : `"${one.name || one.id}" is in use.`)
+      }
     }
   },
 
@@ -1261,7 +1368,7 @@ module.exports = {
   prompts: {
     about: 'The prompt library: what a worker can be told, written once and kept. "kind" is task or judge',
     takes: ['kind'],
-    run: ({ kind } = {}) => {
+    run: ({ kind, _fromMachine } = {}) => {
       const rules = contracts.all()
       // Two libraries, asked for by name — see the jobs action above. Everything
       // comes back when nothing is said, and every row carries its own kind.
@@ -1288,8 +1395,8 @@ module.exports = {
         }
       })
       return {
-        prompts: want ? list.filter(p => p.kind === want) : list,
-        contracts: want ? rules.filter(c => c.kind === want) : rules,
+        prompts: offeredTo(want ? list.filter(p => p.kind === want) : list, { _fromMachine }),
+        contracts: offeredTo(want ? rules.filter(c => c.kind === want) : rules, { _fromMachine }),
         where: prompts.FILE(),
         note: list.length
           ? 'A task copies the text it was given rather than pointing at it, so editing one here never rewrites a task that already went out.'
@@ -1357,12 +1464,12 @@ module.exports = {
   contracts: {
     about: 'The contract library: the rules a worker is given, written once and kept. "kind" is task or judge',
     takes: ['kind'],
-    run: ({ kind } = {}) => {
+    run: ({ kind, _fromMachine } = {}) => {
       const want = kind === undefined ? null : (String(kind) === 'judge' ? 'judge' : 'task')
       const list = contracts.all().filter(c => !want || c.kind === want)
       const waiting = list.filter(c => !c.approved).length
       return {
-        contracts: list,
+        contracts: offeredTo(list, { _fromMachine }),
         where: contracts.FILE(),
         note: list.length
           ? `${list.length} kept${waiting ? `, ${waiting} waiting to be approved` : ''}. A task copies the rules it was given rather than pointing at them, so editing one here never changes what a task already went out under.`

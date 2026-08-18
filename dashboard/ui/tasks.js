@@ -1766,6 +1766,38 @@ async function paintAddTaskNow () {
 // beside a name is a button that gets pressed without anybody having looked. So
 // the source of what will actually run is here, and the button is underneath it.
 //
+// IN PLAY, OR KEPT AND OUT OF THE WAY.
+//
+// Not deleting: the text, the approval and the record all stay. What changes is
+// whether a supervisor is offered it — the window and the command line always
+// see everything, because a library nobody can see the whole of is one where
+// somebody rewrites what already exists.
+//
+// AT THE WINDOW THE APPROVAL SURVIVES, and down the pipe it does not. Setting
+// aside is harmless either way; bringing something BACK is the direction that
+// matters, because otherwise anything that could park an approved thing and
+// restore it has a door beside the approval gate. This is the window, so it
+// keeps its approval — the dialog says so, since "use it again" quietly costing
+// an approval elsewhere is the kind of asymmetry somebody has to be told about.
+function setAsideButton (kind, x, after) {
+  const aside = x.setAside === true
+  return el('button', {
+    className: `btn small${aside ? ' ok' : ''}`,
+    textContent: aside ? 'Use it again' : 'Set it aside',
+    title: aside
+      ? 'The supervisor is offered it again. Approved here, so it keeps its approval.'
+      : 'Kept in full, and not offered to the supervisor until you bring it back',
+    onclick: async () => {
+      try {
+        const r = await api(`${kind}Use`, { id: x.id, use: aside })
+        say(r.note, aside ? 'ok' : 'warn')
+        after()
+        return draw()
+      } catch (e) { oops(e) }
+    }
+  })
+}
+
 // Only in the window. `jobApprove` refuses over the socket, because that is
 // the socket a supervising model drives — and a model approving a definition it
 // wrote is the one path nothing reviews.
@@ -1918,6 +1950,7 @@ function paintPrompt (x, used = []) {
           : el('span', { className: 'muted', textContent: 'no job — a prompt is worth keeping on its own, and a task can be written from it directly' })))),
 
     el('div', { className: 'row', style: 'margin-top:8px' },
+      setAsideButton('prompt', x, () => { forget('prompts'); forget('prompt-detail') }),
       // APPROVING IT IS DONE HERE OR NOWHERE. The action refuses over the wire
       // on purpose — a model may write a prompt and may not approve its own —
       // and for a while there was no button either, so a prompt written by a
@@ -2141,6 +2174,7 @@ function paintContract (c, under = []) {
           : el('span', { className: 'muted', textContent: 'none yet — rules with nothing under them govern nothing' })))),
 
     el('div', { className: 'row', style: 'margin-top:8px' },
+      setAsideButton('contract', c, () => { forget('contracts'); forget('contract-detail') }),
       c.approved && !c.lapsed
         ? el('button', {
             className: 'btn small',
@@ -2409,6 +2443,7 @@ function paintJob (j) {
             : el('span', { className: 'muted', textContent: j.promptId ? `${j.promptId} — gone` : 'none, it is chosen when you run it' })))),
 
       el('div', { className: 'row', style: 'margin-top:10px' },
+        setAsideButton('job', j, () => { forget('jobs'); forget('job-detail') }),
         el('button', {
           className: 'btn small ok',
           textContent: 'Run it',
