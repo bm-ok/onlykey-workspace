@@ -91,26 +91,37 @@ async function drawOnce () {
     el.className = `tab-badge${n && mine ? ' warn' : ''}${n ? '' : ' hidden'}`
     el.title = title || ''
   }
-  const approvals = owed.approvals || []
-  const of = kind => approvals.filter(a => a.kind === kind)
+  // TWO LIBRARIES, TWO TABS. A job, a prompt or a contract for WORK is under
+  // Actions; the judging ones are under Judge → Judges. Counting them together
+  // put a badge on a tab the things were not on, and sent the banner's button
+  // to a pane where they are not — which reads as a button that does not work.
+  const forTasks = owed.approvalsForTasks || []
+  const forJudges = owed.approvalsForJudges || []
+  const of = (list, kind) => list.filter(a => a.kind === kind)
   const says = list => list.map(a => `${a.kind} "${a.name || a.id}" is written and waiting for you to read it`).join('\n')
 
-  nudge('actions-badge', owed.actions, says(approvals), true)
+  nudge('actions-badge', forTasks.length, says(forTasks), true)
   // AND WHICH LIBRARY, because "Actions 3" still makes somebody open three
   // panes to find them. A sub-tab badge is the difference between being told
   // there is something and being taken to it.
-  nudge('jobs-badge', of('job').length, says(of('job')), true)
-  nudge('prompts-badge', of('prompt').length, says(of('prompt')), true)
-  nudge('contracts-badge', of('contract').length, says(of('contract')), true)
+  nudge('jobs-badge', of(forTasks, 'job').length, says(of(forTasks, 'job')), true)
+  nudge('prompts-badge', of(forTasks, 'prompt').length, says(of(forTasks, 'prompt')), true)
+  nudge('contracts-badge', of(forTasks, 'contract').length, says(of(forTasks, 'contract')), true)
 
-  nudge('judge-badge', owed.judge, [
+  // The Judge tab owes two different things and says so in one number: verdicts
+  // nobody has recorded, and judging chains nobody has read. Both are a person's
+  // alone, so it is amber whenever either is outstanding.
+  const judgeSays = [
     ...(owed.verdicts || []).map(v => `${v.ref} read ${v.reads} — yours to decide`),
-    ...(owed.silent || []).map(v => `${v.ref} read ${v.reads} and ended without a verdict`)
-  ].join('\n'), (owed.verdicts || []).length > 0)
-  nudge('judgements-badge', owed.judge, [
-    ...(owed.verdicts || []).map(v => `${v.ref} read ${v.reads} — yours to decide`),
-    ...(owed.silent || []).map(v => `${v.ref} read ${v.reads} and ended without a verdict`)
-  ].join('\n'), (owed.verdicts || []).length > 0)
+    ...(owed.silent || []).map(v => `${v.ref} read ${v.reads} and ended without a verdict`),
+    ...forJudges.map(a => `${a.kind} "${a.name || a.id}" is written and waiting for you to read it`)
+  ].join('\n')
+  const judgeMine = (owed.verdicts || []).length > 0 || forJudges.length > 0
+  nudge('judge-badge', owed.judge, judgeSays, judgeMine)
+  // The verdicts belong to Judgement; the chains to Judges. Split, so a number
+  // on the tab does not make somebody look in both.
+  nudge('judgements-badge', (owed.verdicts || []).length + (owed.silent || []).length, judgeSays, (owed.verdicts || []).length > 0)
+  nudge('judges-badge', forJudges.length, says(forJudges), true)
 
   const drafted = (owed.drafted || []).map(d => `"${d.title || d.source}" is drafted against ${d.target} and has not been sent`).join('\n')
   nudge('repos-badge', owed.repos, drafted)
@@ -252,9 +263,19 @@ async function drawOnce () {
           {
             label: 'Read them',
             onClick: () => {
+              // WHERE THE THING ACTUALLY IS. This went to Actions always, and
+              // a judging job, prompt or contract is under Judge → Judges — so
+              // pressing it opened a pane with nothing in it, which reads as a
+              // button that does not switch tabs.
               const first = (waiting.approvals || [])[0]
-              showTab('actions')
-              if (first) showPane(`${first.kind}s`, 'actions')
+              if (!first) return showTab('actions')
+              if (first.of === 'judge') {
+                showTab('judge')
+                showPane('judges', 'judge')
+              } else {
+                showTab('actions')
+                showPane(`${first.kind}s`, 'actions')
+              }
             }
           }]
       : null,

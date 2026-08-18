@@ -271,7 +271,11 @@ function paintTasks (queued) {
     // window is approved by whoever wrote it, so the count is exactly "what
     // arrived down the pipe and is waiting on you", which is the case worth a
     // card rather than a number in a corner.
-    const unread = (work.jobs || []).filter(j => !j.approved)
+    // JOBS FOR WORK, NOT FOR JUDGING. There are two libraries and this board is
+    // about one of them — a judging job waiting to be read is the Judge tab's
+    // business, and counting it here put "1 job waiting for you" on the task
+    // board for a chain that judges pull requests.
+    const unread = (work.jobs || []).filter(j => !j.approved && String(j.kind || 'task') !== 'judge')
     const lapsed = unread.filter(j => j.lapsed).length
     const waiting = unread.length
     if (changed('approvals', [waiting, lapsed])) {
@@ -291,10 +295,13 @@ function paintTasks (queued) {
               className: 'btn ok',
               style: 'margin-top:8px',
               textContent: 'Read them',
-              onclick: () => {
-                const t = document.querySelector('#view-tasks .subtab[data-pane="jobs"]')
-                if (t) t.click()
-              }
+              // AND IT GOES WHERE THEY ARE NOW. This clicked a sub-tab inside
+              // the Tasks view — `#view-tasks .subtab[data-pane="jobs"]` — and
+              // the library moved to a tab of its own, so the selector matched
+              // nothing and the button silently did nothing at all. Reported as
+              // a button that fails to switch, which is precisely what it was:
+              // querySelector returned null and the handler shrugged.
+              onclick: () => { showTab('actions'); showPane('jobs', 'actions') }
             }))
         : null)
       $('approvals').classList.toggle('hidden', !waiting)

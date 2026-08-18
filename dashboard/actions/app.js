@@ -98,10 +98,20 @@ module.exports = {
       const count = (n, one, many) => { if (n) why.push(`${n} ${n === 1 ? one : many}`) }
 
       // ---- approvals ------------------------------------------------------
+      // AND WHERE EACH ONE IS, because there are two libraries and they live on
+      // two different tabs.
+      //
+      // A job, a prompt or a contract carries `kind`: "task" ones are under
+      // Actions, "judge" ones under Judge → Judges. The first version of this
+      // counted them together and put the number on Actions — so three judging
+      // artifacts waiting to be read lit a badge on a tab they are not on, and
+      // the banner's "Read them" opened a pane where they are not. Reported as
+      // a button that fails to switch, which is exactly what it looked like.
+      const forWhom = it => (String(it.kind || 'task') === 'judge' ? 'judge' : 'task')
       const unapproved = [
-        ...jobs.all().filter(j => !j.approved).map(j => ({ kind: 'job', id: j.id, name: j.name })),
-        ...prompts.all().filter(p => !p.approved).map(p => ({ kind: 'prompt', id: p.id, name: p.name })),
-        ...contracts.all().filter(c => !c.approved).map(c => ({ kind: 'contract', id: c.id, name: c.name }))
+        ...jobs.all().filter(j => !j.approved).map(j => ({ kind: 'job', of: forWhom(j), id: j.id, name: j.name })),
+        ...prompts.all().filter(p => !p.approved).map(p => ({ kind: 'prompt', of: forWhom(p), id: p.id, name: p.name })),
+        ...contracts.all().filter(c => !c.approved).map(c => ({ kind: 'contract', of: forWhom(c), id: c.id, name: c.name }))
       ]
       count(unapproved.length, 'thing to approve', 'things to approve')
 
@@ -129,15 +139,25 @@ module.exports = {
       const said = chat.all().filter(m => m.who === 'supervisor' && Number(m.n) > Number(from || 0)).length
       count(said, 'message from the supervisor', 'messages from the supervisor')
 
+      // SPLIT BY WHICH LIBRARY THEY ARE IN, so each badge counts what is on its
+      // own tab. `actions` is the working library; a judging one belongs to the
+      // Judge tab, beside the verdicts that are also owed there.
+      const forTasks = unapproved.filter(a => a.of === 'task')
+      const forJudges = unapproved.filter(a => a.of === 'judge')
+
       return {
-        actions: unapproved.length,
-        judge: mine.length + mute.length,
+        actions: forTasks.length,
+        judge: mine.length + mute.length + forJudges.length,
         repos: drafted.length,
         supervisor: said,
         total: unapproved.length + mine.length + mute.length + drafted.length + said,
         // What each of them IS, so a badge can carry it on its hover rather than
         // being a number somebody has to go and interpret.
         approvals: unapproved,
+        // The same list, already divided, so the window does not have to know
+        // the rule about which library lives on which tab.
+        approvalsForTasks: forTasks,
+        approvalsForJudges: forJudges,
         verdicts: mine.map(j => ({ ref: judging.refOf(j.number), reads: j.subject && j.subject.name })),
         silent: mute.map(j => ({ ref: judging.refOf(j.number), reads: j.subject && j.subject.name })),
         drafted,
