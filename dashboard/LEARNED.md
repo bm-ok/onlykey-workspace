@@ -1086,3 +1086,51 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
   place. **Close what you open, even where the parser forgives you** — the
   forgiveness is not inherited by the next person's markup.
 
+## "Local" stopped meaning "free"
+
+The window felt sluggish. A trace of 85,076 events over 33.6 seconds put
+`spawn` at the top of the profile with individual samples over three seconds.
+Three consecutive draws measured warm, in one process, said why:
+
+```
+draw 1:  1479ms   12x git=501ms   2x powershell=469ms
+draw 2:   952ms   12x git=496ms
+draw 3:   940ms   12x git=479ms
+```
+
+A third of the time busy, for ever, on a three-second timer.
+
+Nine of the twelve were `remotes.read()`, called by `waiting` for the badges.
+`read()` adds a default branch, a head commit and a branch count to each
+repository, and every one of those is a git process. **`waiting` uses none of
+them.** It wants pull requests, a parent and a target -- facts only GitHub
+knows, already written down in a file. It was paying nine processes every
+three seconds for three fields it never read, and an inner `remotes.read()`
+inside the per-pull-request loop made it eighteen. `core/inbox.js` did the
+same thing three more times over.
+
+The fix was not a cache. It was `notesOnly()` -- the same reading with the git
+left out -- and hoisting the calls that were inside loops. Steady-state draws
+went from 950ms and twelve processes to **20ms and none**.
+
+THE HEADER OF `repos/remotes.js` ALREADY STATED THIS RULE, one level up:
+network calls are never on a timer, `read()` is local and instant. That was
+written when the alternative was GitHub, and it was true then. "Local and
+instant" is a comparison, not a property, and it quietly stopped holding the
+moment `read()` ran twenty times a minute -- process startup on Windows is
+tens of milliseconds each and they contend.
+
+So the rule is not "cache the expensive thing". It is:
+
+* **Count what a function starts, not what it returns.** Multiply by twenty an
+  hour. `inbox` composes nine kinds of waiting work and measured 9ms; the one
+  line inside it asking for a branch count cost fifty times that.
+* **A reading that answers more than the caller asked is not free generosity.**
+  Give the cheap half its own name so a caller on a timer can take it.
+* **A comparison in a comment expires.** "Instant compared to X" is a fact
+  about X. When the caller changes, re-measure rather than re-reading.
+
+This is the third time a paint path has been given something that spawns --
+twice before at 70% and 25% of the window's samples. The guard at the top of
+CLAUDE.md is right; it keeps being applied to the panel that was just built
+and not to the one built next.

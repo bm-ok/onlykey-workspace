@@ -167,12 +167,18 @@ function all () {
   //
   // The one decision in this app a model may not make for itself, so it is the
   // one most worth surfacing: nothing happens to it at all until a person looks.
-  for (const r of remotes.read()) {
+  // ONE READING, NO GIT. Same reason as `waiting`: nothing below asks
+  // about a branch or a head, and this is composed every time the window
+  // draws to put a number on the Dashboard button.
+  const rows = remotes.notesOnly()
+  const ourRemotes = new Set(rows.filter(x => x.remote).map(x => `${x.remote.owner}/${x.remote.repo}`))
+
+  for (const r of rows) {
     const target = remotes.targetOf(r.repo)
     for (const p of r.pulls || []) {
       if (p.state !== 'open' || p.merged) continue
       const from = String(p.headRepo || '').trim()
-      const ours = remotes.read().some(x => x.remote && `${x.remote.owner}/${x.remote.repo}` === from)
+      const ours = ourRemotes.has(from)
       if (ours) continue
       out.push(item(
         'pull request to allow',
@@ -189,7 +195,7 @@ function all () {
   // NOT AN ERROR, and that is exactly why it belongs here: keeping to itself is
   // a valid and safe state, so nothing refuses and nothing goes red — which is
   // how it sits for a week while somebody wonders why no issue ever arrives.
-  for (const r of remotes.read()) {
+  for (const r of rows) {
     if (!r.remote || r.remote.kind !== 'github') continue
 
     // NOTHING KNOWN, OR NOTHING KNOWN ABOUT *THIS* REMOTE.

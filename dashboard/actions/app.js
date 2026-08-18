@@ -163,13 +163,21 @@ module.exports = {
       //
       // Counted from the last gathering rather than from GitHub, like everything
       // else here: this runs on the draw loop.
+      // NOTES ONLY, AND READ ONCE. `read()` starts a git process per
+      // repository for a default branch, a head and a branch count, and
+      // not one of them is used below -- this wants pull requests and a
+      // parent, which only GitHub knows and which are already written
+      // down. It was nine git processes every three seconds for three
+      // fields nothing here looks at, and the inner call made it eighteen.
+      const rows = remotes.notesOnly()
+      const ourRemotes = new Set(rows.filter(x => x.remote).map(x => `${x.remote.owner}/${x.remote.repo}`))
       const arrived = []
-      for (const r of remotes.read()) {
+      for (const r of rows) {
         const where = r.parent || r.repo
         for (const p of r.pulls || []) {
           if (p.state !== 'open' || p.merged) continue
           const from = String(p.headRepo || '').trim()
-          if (remotes.read().some(x => x.remote && `${x.remote.owner}/${x.remote.repo}` === from)) continue
+          if (ourRemotes.has(from)) continue
           const may = allowed.check(where, p.number, p.headSha)
           if (may.allowed) continue
           arrived.push({ repo: r.repo, on: where, number: p.number, title: p.title, by: p.by || null, stale: !!may.stale })

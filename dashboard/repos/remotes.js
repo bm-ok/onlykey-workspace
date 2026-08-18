@@ -296,6 +296,53 @@ function setRemote (repo, url) {
 }
 
 // ---- the local half: instant, no network -------------------------------
+// WHAT IS KNOWN ABOUT A REMOTE, WITHOUT ASKING GIT ANYTHING.
+//
+// `read()` below answers a bigger question: it adds the default branch, the
+// head commit and how many branches there are, and each of those is a git
+// process per repository. That is right for the Repositories tab, which shows
+// all of it.
+//
+// IT IS WRONG FOR EVERY CALLER THAT ONLY WANTS THE NOTES. `waiting` runs on
+// the draw loop for the badges and uses `pulls`, `fork` and the target -- none
+// of which git knows -- and was paying nine git processes every three seconds
+// for three fields it never reads. A trace put `spawn` at the top of the
+// profile with individual samples over three seconds, which is process startup
+// on Windows under load rather than git being slow.
+//
+// This is the same rule the file already states about the network, one level
+// down: read() is local and instant COMPARED TO GITHUB, and "local" stopped
+// meaning "free" the moment it ran twenty times a minute.
+function notesOnly () {
+  const notes = seen()
+  return serve.list().map(({ name }) => {
+    const remote = remoteOf(name)
+    const note = notes[name] || {}
+    return {
+      repo: name,
+      remote,
+      // Every field below is read from the note or computed from it. Nothing
+      // here starts a process.
+      checked: note.checked || null,
+      reachable: note.reachable == null ? null : note.reachable,
+      why: note.why || null,
+      parent: note.parent || null,
+      source: note.source || null,
+      chained: !!note.chained,
+      fork: note.fork == null ? null : note.fork,
+      privateRepo: note.privateRepo == null ? null : note.privateRepo,
+      about: note.about || null,
+      stale: !!(note.checked && note.about && remote && note.about !== `${remote.owner}/${remote.repo}`),
+      pulls: note.pulls || null,
+      issues: note.issues || null,
+      openIssues: note.issues ? note.issues.length : null,
+      issuesOn: targetOf(name).on,
+      target: targetOf(name),
+      gathered: note.gathered || null
+    }
+  })
+}
+
 function read () {
   const notes = seen()
   return serve.list().map(({ name }) => {
@@ -1266,4 +1313,4 @@ const syncDefault = repo => {
   return syncBranch(repo, branch)
 }
 
-module.exports = { read, check, gather, targetOf, setTarget, chainOf, setRemote, fetchPull, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, comment, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }
+module.exports = { read, notesOnly, check, gather, targetOf, setTarget, chainOf, setRemote, fetchPull, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, comment, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }
