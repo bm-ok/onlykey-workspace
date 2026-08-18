@@ -429,14 +429,65 @@ async function check (only = null) {
   for (const name of list) {
     const remote = remoteOf(name)
     const at = new Date().toISOString()
+    const before = notes[name] || {}
+
+    // WHAT THIS CHECK MAY NOT DELETE, BECAUSE IT DID NOT PUT IT THERE.
+    //
+    // Every branch below used to write `notes[name] = { ... }` -- a whole-
+    // object replacement -- so asking GitHub anything threw away everything
+    // in the note that GitHub had not just answered. Two of those matter and
+    // one of them is serious:
+    //
+    //   target    WHERE WORK GOES, WHICH IS A PERSON'S DECISION AND NOT A
+    //             FACT ABOUT GITHUB AT ALL. One 403 -- a rate limit, an
+    //             expired token, a closed laptop -- and "send work to
+    //             bm-sandbox-b" silently became "send it to yourself",
+    //             because unset means self and nothing about that is loud.
+    //             The next pull request opens against your own remote and
+    //             looks perfectly normal. Measured, not reasoned about: a
+    //             probe made one call answer 403 and watched the target
+    //             revert.
+    //
+    //   pulls,    WHAT `gather` FOUND, which is a different action's work.
+    //   issues    A check clobbering it is how a board goes empty for no
+    //             reason anybody can see.
+    //
+    // The rule underneath: an action writes what it learnt and leaves alone
+    // what it did not ask about. A shared file is not a scratchpad.
+    const kept = {
+      ...(before.target ? { target: before.target } : {}),
+      ...(before.pulls ? { pulls: before.pulls } : {}),
+      ...(before.issues ? { issues: before.issues } : {}),
+      ...(before.gathered ? { gathered: before.gathered } : {})
+    }
+
+    // AND UNREACHABLE IS NOT GONE.
+    //
+    // A repository that cannot be reached today was a fork yesterday and
+    // still is. Forgetting takes a workspace from "unreachable, and here is
+    // what was last known" to "nothing is known", which reads identically to
+    // never having asked -- and sends somebody to set up what is already set
+    // up.
+    //
+    // WHAT KEEPS IT HONEST IS THE SECOND TIMESTAMP. `checked` is when this
+    // last ASKED; `learned` is when an answer last came back. Keeping the
+    // facts while stamping them as freshly checked would be worse than
+    // forgetting them, because then a failure would look like a success.
+    const asFailure = (why, reachable) => ({
+      ...(before.reachable === true ? { ...before, learned: before.learned || before.checked } : kept),
+      about: aboutNow(remote),
+      checked: at,
+      reachable,
+      why
+    })
 
     if (!remote) {
-      notes[name] = { about: aboutNow(remote), checked: at, reachable: false, why: 'no remote called origin' }
+      notes[name] = asFailure('no remote called origin', false)
       out.push({ repo: name, ...notes[name] })
       continue
     }
     if (remote.kind !== 'github') {
-      notes[name] = { about: aboutNow(remote), checked: at, reachable: null, why: `origin is ${remote.host || 'somewhere'}, which this cannot ask about — only github.com is understood so far` }
+      notes[name] = asFailure(`origin is ${remote.host || 'somewhere'}, which this cannot ask about — only github.com is understood so far`, null)
       out.push({ repo: name, remote, ...notes[name] })
       continue
     }
@@ -447,11 +498,11 @@ async function check (only = null) {
         // A FINE-GRAINED TOKEN GRANTS PER REPOSITORY, so 404 here usually means
         // "not in this token's list" rather than "does not exist" — and saying
         // the first is what stops somebody hunting for a typo in the URL.
-        notes[name] = { about: aboutNow(remote), checked: at, reachable: false, why: 'GitHub says 404 — either it does not exist, or this token was not granted it' }
+        notes[name] = asFailure('GitHub says 404 — either it does not exist, or this token was not granted it', false)
       } else if (r.status === 401 || r.status === 403) {
-        notes[name] = { about: aboutNow(remote), checked: at, reachable: false, why: (r.body && r.body.message) || `GitHub answered ${r.status}` }
+        notes[name] = asFailure((r.body && r.body.message) || `GitHub answered ${r.status}`, false)
       } else if (r.status !== 200) {
-        notes[name] = { about: aboutNow(remote), checked: at, reachable: false, why: (r.body && r.body.message) || `GitHub answered ${r.status}` }
+        notes[name] = asFailure((r.body && r.body.message) || `GitHub answered ${r.status}`, false)
       } else {
         const upstreamDefault = r.body.default_branch || null
 
@@ -537,7 +588,15 @@ async function check (only = null) {
         }
 
         notes[name] = {
+          ...kept,
+          // RECORDED ON THE WAY OUT, and it was not before. `stale` compares
+          // this against the remote origin points at now, to catch a note
+          // full of confident facts about a repository this one no longer
+          // is. A successful check that forgot to say what it was about left
+          // that guard blind from the moment it mattered most.
+          about: aboutNow(remote),
           checked: at,
+          learned: at,
           reachable: true,
           parent,
           source,
@@ -563,7 +622,7 @@ async function check (only = null) {
         }
       }
     } catch (e) {
-      notes[name] = { about: aboutNow(remote), checked: at, reachable: false, why: e.message }
+      notes[name] = asFailure(e.message, false)
     }
     out.push({ repo: name, remote, ...notes[name] })
   }

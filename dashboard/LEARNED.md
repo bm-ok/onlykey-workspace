@@ -1134,3 +1134,62 @@ This is the third time a paint path has been given something that spawns --
 twice before at 70% and 25% of the window's samples. The guard at the top of
 CLAUDE.md is right; it keeps being applied to the panel that was just built
 and not to the one built next.
+
+## An action deleted a decision it had never made
+
+`check()` asks GitHub about a repository and writes down what it learnt. It
+did that with `notes[repo] = { ... }` on every branch -- a whole-object
+replacement -- so it threw away everything in the note GitHub had not just
+answered. What lived in that note included **where work goes**: the fork a
+person chose to send pull requests to.
+
+Measured rather than reasoned about. A probe made one call answer 403:
+
+```
+BEFORE                                  AFTER ONE FAILED CHECK
+  target : bm-sandbox-b/local-repo-a      target : bm-sandbox-c/local-repo-a
+           (chosen)                                (default = self)
+  fork   : true                           fork   : null
+  parent : bm-sandbox-b/local-repo-a      parent : null
+```
+
+One rate limit, one expired token, one laptop shut mid-sweep, and "send work
+to the fork you are working with" became "send it to yourself". Nothing goes
+red, because **unset means your own remote** and a pull request opened
+against yourself is a visible no-op rather than an error. The next change
+lands somewhere nobody is watching and looks exactly like working.
+
+THE SUCCESS PATH DID IT TOO, which is worse than the failure path. The inbox
+invites somebody to "ask GitHub about this one"; doing precisely what it asked
+would unset where their work goes. That path also never recorded `about`, so
+the guard that catches a note full of confident facts about a repository this
+one no longer is went blind immediately after the check that makes it matter.
+
+THE RULE: **an action writes what it learnt and leaves alone what it did not
+ask about.** A shared file is not a scratchpad. Two kinds of thing were being
+deleted by an action with no business touching either:
+
+* a **decision**, which is not a fact about a remote at all -- nothing GitHub
+  says can confirm or refute it, so nothing GitHub says should be able to
+  erase it,
+* **another action's findings** -- `gather` writes `pulls` and `issues`, and a
+  check clobbering them is how a board goes empty for no reason anybody can
+  see.
+
+AND UNREACHABLE IS NOT GONE. A repository that cannot be reached today was a
+fork yesterday and still is. Forgetting turns "unreachable, and here is what
+was last known" into "nothing is known", which reads identically to never
+having asked -- and sends somebody to set up what is already set up.
+
+WHAT KEEPS THAT HONEST IS A SECOND TIMESTAMP. `checked` is when this last
+ASKED; `learned` is when an answer last came back. Keeping the facts while
+stamping them as freshly checked would be worse than forgetting them, because
+then a failure would look like a success.
+
+HOW IT WAS FOUND, AND WHY READING WOULD NOT HAVE. Every individual line is
+reasonable. The fault is in which fields each branch does not mention, across
+six branches, and that is not a thing anybody holds in their head -- it breaks
+when a seventh is added. So the drill for it does not ask "is the rule right",
+it makes GitHub answer 403 for the length of one call and asks "does this
+branch still obey it". Waiting for a real failure means a drill that passes
+for months and then cannot be trusted the one time it matters.

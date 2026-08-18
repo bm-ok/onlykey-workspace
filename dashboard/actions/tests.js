@@ -684,7 +684,22 @@ module.exports = {
             // the table in process just as the window does. It was worked around
             // by starting every drill message with "drill:", which is a
             // convention living in somebody's text.
-            return Promise.resolve(found.run({ ...args, _fromTest: true }))
+            // AND A THROW IS A REJECTION, WHICH IS THE OTHER HALF OF THE
+            // PROMISE ABOVE AND WAS MISSING. `Promise.resolve(x)` wraps a
+            // RETURNED value; it never runs, and cannot help, when the call
+            // that produces the value throws first. Half these actions are
+            // sync, so half of every refusal in this app came out of `okc()`
+            // synchronously -- straight past `.catch()`, straight past
+            // `.then(ok, no)`, and into the harness as a failed check.
+            //
+            // Which made the comment above true for successes and false for
+            // exactly the case a drill writes it for. A suite author should
+            // not have to know which half they are on, and now does not.
+            try {
+              return Promise.resolve(found.run({ ...args, _fromTest: true }))
+            } catch (e) {
+              return Promise.reject(e)
+            }
           },
           // Asked between checks, so a run can be called off without killing
           // the app. See `stopping` above for what it can and cannot interrupt.

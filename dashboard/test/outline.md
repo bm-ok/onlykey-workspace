@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 47 tests, 224 checks, 23 of them drafts -->
+<!-- 12 suites, 49 tests, 233 checks, 23 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -110,6 +110,12 @@ The order every piece of work goes through here, stated as a series and checked 
   8. and this host follows, with the change on its default branch
   9. and the branch it came from is taken off the fork
   10. and nothing is left behind here
+
+## 04 — what asking github must not forget
+
+  1. a repository has somewhere it sends work
+  2. and a check that cannot reach GitHub does not unset it
+  3. and what was already known is still known, marked as older
 
 # 02 — the refusals
 
@@ -480,6 +486,15 @@ The machine that decides what work there is, rather than one doing it.
   6. **DRAFT** — a judge investigates an arrived pull request
   7. **DRAFT** — and what it found is reported back on the pull request
   8. **DRAFT** — and a merge somewhere else does not leave what is out unmergeable
+
+## 09 — changing its instructions
+
+  1. its instructions can be read, and they are a skill
+  2. and a skill with no frontmatter is refused, because the CLI would ignore it
+  3. and an empty one is refused rather than quietly disarming it
+  4. and a save is refused while somebody has it open with unsaved edits
+  5. and force writes anyway, and says that it trampled something
+  6. and putting it back is an ordinary save
 
 # 11 — cooling the host
 
