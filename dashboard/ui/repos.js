@@ -414,6 +414,118 @@ async function paintReposNow () {
   }).catch(() => { /* the board says when the dashboard is unreachable */ })
 }
 
+// ---- WHERE WORK GOES, WHICH IS THE ONE THING HERE THAT REACHES SOMEBODY
+//      ELSE'S REPOSITORY -----------------------------------------------------
+//
+//     my fork  <->  somebody else's fork  <->  the project
+//
+// A change belongs in the fork you forked FROM: if the project itself were the
+// destination you would have forked the project. So picking a link in the chain
+// is picking who you are working with, and everything above them stops being
+// this app's business — not watched, not counted, not shown.
+//
+// THE WALK IS ON A BUTTON, NEVER ON THE DRAW LOOP. It is one request per link
+// and the answer only changes when somebody forks something, so a panel that
+// walked it on every paint would be a handful of requests every few seconds for
+// a fact that is stable for months.
+let chainOf = null
+
+function whereWorkGoes (r) {
+  const now = r.target || { on: null, chosen: false }
+  const walked = chainOf && chainOf.repo === r.repo ? chainOf : null
+
+  return el('div', { className: 'card', style: 'margin-top:10px' },
+    el('div', { className: 'card-title' },
+      el('span', { textContent: 'Where work goes' }),
+      el('span', { className: 'grow' }),
+      el('span', { className: `badge ${now.chosen ? 'ok' : 'warn'}`, textContent: now.chosen ? 'picked' : 'not picked' })),
+
+    // SAID IN A SENTENCE. A bare name cannot carry whether anybody chose it,
+    // and that is the whole distinction this panel exists to make.
+    el('p', { className: 'note' }, now.chosen
+      ? el('span', { textContent: `Issues are read from ${now.on} and pull requests open into it. You picked that${now.at ? ' on ' + String(now.at).slice(0, 10) : ''}, and nothing above it is watched.` })
+      : el('span', {},
+          el('strong', { textContent: 'Nothing has been picked, so this keeps to itself. ' }),
+          el('span', { textContent: `Issues and pull requests both stay on ${now.on || 'this repository'} — your own remote — and nothing upstream is watched. That is right if this IS the project. If it is a fork and work belongs with whoever you forked from, walk the chain and say so.` }))),
+
+    el('div', { className: 'row' },
+      el('button', {
+        className: 'btn small',
+        textContent: walked ? 'Walk it again' : 'Walk the fork chain',
+        title: 'One request per link, following each parent until a repository that is not a fork',
+        onclick: () => api('repoChain', { repo: r.repo })
+          .then(c => { chainOf = c; forget('repo-detail'); paintRepos(); say(c.note) })
+          .catch(oops)
+      }),
+      now.chosen
+        ? el('button', {
+            className: 'btn small',
+            textContent: 'Keep to itself',
+            title: 'Forget the choice: back to your own remote, and nothing upstream watched',
+            onclick: () => askToKeepToItself(r)
+          })
+        : null),
+
+    // THE CHAIN, ONCE IT HAS BEEN WALKED. Each link is a place work could go,
+    // with the two facts that decide whether it can: may this host push there,
+    // and does syncing stay cheap.
+    walked
+      ? el('div', { style: 'margin-top:10px' },
+          walked.stopped ? el('p', { className: 'note bad', textContent: walked.stopped }) : null,
+          ...walked.links.map(l => el('div', { className: 'group-part' },
+            el('span', {},
+              el('span', { className: 'mono', textContent: l.on }),
+              l.self ? el('span', { className: 'badge muted', style: 'margin-left:6px', textContent: 'yours' }) : null,
+              l.target ? el('span', { className: 'badge ok', style: 'margin-left:6px', textContent: 'work goes here' }) : null,
+              !l.fork ? el('span', { className: 'badge muted', style: 'margin-left:6px', textContent: 'the project' }) : null),
+            el('span', {},
+              el('span', { className: l.mayPush ? 'muted' : 'bad', textContent: l.mayPush ? `${l.openIssues == null ? '' : l.openIssues + ' open issue(s)'}` : 'this token cannot push here' }),
+              l.target || !l.mayPush
+                ? null
+                : el('button', {
+                    className: 'btn small ok',
+                    style: 'margin-left:10px',
+                    textContent: 'Send work here',
+                    onclick: () => askToSendWorkHere(r, l)
+                  }))))) 
+      : null)
+}
+
+function askToSendWorkHere (r, link) {
+  ask({
+    title: `Send ${r.repo}'s work to ${link.on}?`,
+    plain: [
+      `Issues would be read from ${link.on}, and pull requests from this repository would open into it.`,
+      'Nothing above it is watched after this — which is the point: if the project itself were the destination, you would have forked the project.',
+      link.immediate
+        ? 'It is the immediate parent, so syncing the fork stays one call to GitHub.'
+        : 'It is NOT the immediate parent, so syncing the fork cannot use GitHub\'s one-call merge-upstream — that would need fetching and merging through this host, and is refused rather than substituted.',
+      link.self ? 'This is your own remote, which is the same as picking nothing — except that it is recorded as a decision.' : null
+    ].filter(Boolean),
+    fields: [{ name: 'why', label: 'Why (optional)', placeholder: 'the fork I am collaborating through' }],
+    confirm: `Send work to ${link.on}`,
+    onYes: v => api('repoTargetSet', { repo: r.repo, on: link.on, why: v.why || null })
+      .then(x => { chainOf = null; forget('repos'); forget('repo-detail'); paintRepos(); say(x.note); return draw() })
+      .catch(oops)
+  })
+}
+
+function askToKeepToItself (r) {
+  const now = r.target || {}
+  ask({
+    title: `Stop sending ${r.repo}'s work anywhere?`,
+    danger: true,
+    plain: [
+      `It sends work to ${now.on} now. Afterwards, issues and pull requests both stay on your own remote and nothing upstream is watched.`,
+      'Nothing already open is closed or moved by this. It changes where the next one goes.'
+    ],
+    confirm: 'Keep to itself',
+    onYes: () => api('repoTargetSet', { repo: r.repo, on: '' })
+      .then(x => { chainOf = null; forget('repos'); forget('repo-detail'); paintRepos(); say(x.note, 'warn'); return draw() })
+      .catch(oops)
+  })
+}
+
 function paintRepoDetail (r) {
   if (!r) return fill($('repo-detail'), el('p', { className: 'empty', textContent: 'Pick a repository on the left.' }))
   const rem = r.remote
@@ -460,22 +572,44 @@ function paintRepoDetail (r) {
                 : el('span', { className: 'muted', textContent: '  its head could not be read' })))
         : null,
       asked && r.intoParent
-        ? el('tr', {}, el('th', { textContent: 'a pull request goes to' }),
+        ? // WHAT IS ABOVE THIS ONE, WHICH IS NOT WHERE WORK GOES.
+      //
+      // This row said "a pull request goes to" and named the parent, which was
+      // true while the target was inferred from the parent and became false the
+      // moment it became a choice. It then sat two rows above "work goes to"
+      // saying something different about the same thing -- two places knowing one
+      // fact and disagreeing, which is the fault this window keeps finding.
+      //
+      // Kept, renamed, because what it carries is still worth having: whether
+      // this token could push to the parent at all. That is a fact about GitHub
+      // rather than a decision about where work goes.
+      el('tr', {}, el('th', { textContent: 'one level up' }),
             el('td', {},
               el('span', { className: 'mono', textContent: r.intoParent.repo }),
               el('span', { textContent: '  ' }),
-              el('span', { className: r.intoParent.mayOpen ? 'ok' : 'bad', textContent: r.intoParent.mayOpen ? 'this token may open one there' : 'this token may NOT open one there' }),
+              el('span', { className: r.intoParent.mayOpen ? 'ok' : 'bad', textContent: r.intoParent.mayOpen ? 'this token could open a pull request there' : 'this token could NOT open a pull request there' }),
               r.intoParent.why ? el('div', { className: 'muted', textContent: r.intoParent.why }) : null,
               r.chained
                 ? el('div', { className: 'note', style: 'margin-top:4px' },
                     el('strong', { textContent: 'This is a fork of a fork. ' }),
-                    el('span', { textContent: `One level up is ${r.parent}; the root of the network is ${r.source}. Work goes one step up by default, which is how a chain is normally worked — sending it to the root instead is a choice, not a correction.` }))
+                    el('span', { textContent: `One level up is ${r.parent}; the root of the network is ${r.source}. GitHub reports those two and never the middle of a longer chain, so if work belongs somewhere between them, walk the chain below and say so.` }))
                 : null))
         : null,
+      // WHERE WORK GOES, above the timestamp because it is the thing on this
+      // panel that decides what happens to somebody else's repository.
+      el('tr', {}, el('th', { textContent: 'work goes to' }),
+        el('td', {},
+          el('span', { className: 'mono', textContent: (r.target && r.target.on) || '(nowhere — no remote)' }),
+          el('span', { textContent: '  ' }),
+          r.target && r.target.chosen
+            ? el('span', { className: 'badge ok', textContent: 'you picked this' })
+            : el('span', { className: 'badge warn', textContent: 'nothing picked — it keeps to itself' }))),
       el('tr', {}, el('th', { textContent: 'asked GitHub' }),
         el('td', { className: 'muted', textContent: asked ? ago(r.checked) : 'never' }))),
 
     r.why ? el('p', { className: 'note' }, el('strong', { className: r.reachable === false ? 'bad' : '', textContent: r.reachable === false ? 'Cannot be reached. ' : 'Reachable, but not usable yet. ' }), el('span', { textContent: r.why })) : null,
+
+    whereWorkGoes(r),
 
     el('div', { className: 'row', style: 'margin-top:8px' },
       el('button', {
