@@ -384,8 +384,8 @@ draft('and a run that fills the disk fails as a run rather than as a host',
   'THE CHECK: fill the guest, let the run end, and read what came back: a failed attempt with the reason in its kept log, a machine put away, the branch untouched, and this host still able to say what happened. ' +
   'WHY IT IS WORTH IT: every other failure here is fast and loud. This one is slow, and the interesting part is what the record looks like afterwards rather than whether the run died.')
 
-draft('and a long run is not mistaken for a stuck one',
-  'RAN 2026-08-13 AS A TIMER RATHER THAN A WORKER, so what was proven was the waiting and not the work. ' +
-  'THE PROPERTY: a task is as long as the work is. Five minutes and two hours are both ordinary, so nothing may decide a run has stalled by how long it has taken — what can be said is how long it HAS been, which is what somebody deciding whether to go and look actually needs. See ticking in tasks/queue.js. ' +
-  'THE BOUND THAT DOES EXIST is the hours a task declares, and the default is six. A soak deliberately left overnight must SAY it is long, or it is abandoned at hour six while running perfectly and its machine is put away underneath it. ' +
-  'THE CHECK: a run that outlives its declared hours is abandoned and says why; one that declares enough hours is not; and neither is ever reported as finished.')
+// WRITTEN NOW, next door: see 05-a-run-that-outlives-its-hours.js. It declares
+// a number of hours so small that the deadline has passed before the queue first
+// looks, which reaches the same decision the six-hour case makes by the same
+// line of code -- at a moment a drill can be present for. Waiting for the real
+// thing would mean a six-hour drill, which is how this stayed a draft.

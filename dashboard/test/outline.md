@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 50 tests, 237 checks, 23 of them drafts -->
+<!-- 12 suites, 51 tests, 240 checks, 22 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -15,7 +15,7 @@
   A capability with no check here is one somebody will build again.
 -->
 
-## 23 drafts, not written yet
+## 22 drafts, not written yet
 
 - **the refusals / the ways round a refusal** — and the window cannot be driven while the drills are off
   THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. It matters more than it looks: windowClick and windowFill reach the SAME handlers a person's press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. WHY IT IS NOT A CHECK HERE: a drill runs only while testing mode is on, which is exactly when this is allowed. Proving the refusal means turning testing mode OFF, which stops the drills. HOW TO WRITE IT: from outside the kit — a script that turns testing mode off at the window, calls windowClick over the wire, sees the refusal, and turns it back on. That is a person-driven drill rather than one the harness can run, and it belongs in the same family as the sign-in that needs somebody to visit a page. THE HALF THAT COULD BE CHECKED FROM HERE NOW IS — see "and the whole way round it, from outside, ends where it started" below: a prompt written down the pipe, the window driven to it, Approve pressed and confirmed, and the thing still unapproved. What is left in this draft is only the part that needs testing mode OFF.
@@ -41,8 +41,6 @@
   RAN 2026-08-13 AND PASSED, as prose, with no check since. THE FAULT IT GUARDS: this waited by polling, and a failed poll threw — out of the wait, out of the task, into the finally that puts a machine away. So fifteen seconds of no network powered the machine off and rolled it back MID-RUN while the work itself was fine: detached, still going, and about to be destroyed by the thing supervising it. Pulling the cable for one minute cost the whole task. WHAT IT SHOULD DO: an outage is something happening to the DASHBOARD, not to the work, so being unable to see a run is a reason to look again rather than to end it. See OUT_OF_TOUCH in tasks/queue.js — bounded patience, ten minutes, then abandoned. THE CHECK: take the channel away from a machine mid-run, watch the queue keep waiting and say it is out of touch, give it back, and see the run finish and be reported normally. AND THE OTHER HALF: past the bound it reads "abandoned" rather than "done", because "we stopped being able to see it" is not "it finished".
 - **a task on a machine / a task goes out and comes back** — and a run that fills the disk fails as a run rather than as a host
   NEVER RUN. THE QUESTION: a worker that writes until the guest disk is full — a log, a build, a runaway loop. WHAT MUST NOT HAPPEN: the host takes the blame. A guest out of space must read as that run failing, with the reason legible, and must not corrupt what this host keeps about it — the archive, the artifacts, the record of what was given out. THE CHECK: fill the guest, let the run end, and read what came back: a failed attempt with the reason in its kept log, a machine put away, the branch untouched, and this host still able to say what happened. WHY IT IS WORTH IT: every other failure here is fast and loud. This one is slow, and the interesting part is what the record looks like afterwards rather than whether the run died.
-- **a task on a machine / a task goes out and comes back** — and a long run is not mistaken for a stuck one
-  RAN 2026-08-13 AS A TIMER RATHER THAN A WORKER, so what was proven was the waiting and not the work. THE PROPERTY: a task is as long as the work is. Five minutes and two hours are both ordinary, so nothing may decide a run has stalled by how long it has taken — what can be said is how long it HAS been, which is what somebody deciding whether to go and look actually needs. See ticking in tasks/queue.js. THE BOUND THAT DOES EXIST is the hours a task declares, and the default is six. A soak deliberately left overnight must SAY it is long, or it is abandoned at hour six while running perfectly and its machine is put away underneath it. THE CHECK: a run that outlives its declared hours is abandoned and says why; one that declares enough hours is not; and neither is ever reported as finished.
 - **judging / a judgement is work of its own** — and GitHub is told, beside the pull request
   THE OUTWARD HALF, and the only part of the original nine that is still true as a draft. Anybody looking at the change on GitHub — which is where a reviewer looks — has no way to know this app read it. A verdict belongs there: a status or a check beside the pull request, saying what was run and what it found. THE CHECK: after a judgement of a PR cut, the pull request on the parent carries a status naming this app and the verdict. TO SETTLE, AND STILL UNSETTLED: whether that is a commit status, a check run, or a comment — a comment is the easiest and the least useful, since it cannot gate a merge. And whether a rejection blocks the merge button, which is a decision about somebody else's repository rather than about this app. WHAT HAS CHANGED SINCE THIS WAS FIRST WRITTEN: everything inward. The verdict exists, it is the judge's own, it is current or stale against the tips it was made on, and prCutMake already refuses to send out work a judgement has rejected. So this is now the last mile rather than the whole road.
 - **judging / what a restart strands** — and a real run survives a real restart
@@ -338,7 +336,6 @@ The point of the whole tool, and the last part of it that nothing checked.
   10. **DRAFT** — and a run survives the dashboard being restarted under it
   11. **DRAFT** — and a run survives the network going away
   12. **DRAFT** — and a run that fills the disk fails as a run rather than as a host
-  13. **DRAFT** — and a long run is not mistaken for a stuck one
 
 ## 01 — what survives the machine
 
@@ -368,6 +365,13 @@ The point of the whole tool, and the last part of it that nothing checked.
   2. and none of them carries a credential
   3. and okc-say never fails the work it was describing
   4. and the skill is fetched per run, not installed once
+
+## 05 — a run that outlives its hours
+
+  1. a machine, a job, and a task that says it has no time
+  2. the queue gives it out, waits, and gives up on it
+  3. and it says it gave up, rather than saying it finished
+  4. and the machine it was on came back clean
 
 # 09 — judging
 
