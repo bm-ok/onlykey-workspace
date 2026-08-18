@@ -354,10 +354,28 @@ function twoLines (source, target) {
 // it -- testing the approve button means being able to press it -- but the
 // record must not say "the window" about something a model did, because "a
 // person read this and approved it" is the entire claim that record makes.
-const whoAsked = ({ _driven, _overTheWire } = {}) =>
-  _driven ? 'the command line, driving the window'
-    : _overTheWire ? 'the command line'
-      : 'the window'
+// WHO ASKED, IN THE WORDS A PERSON WOULD USE READING IT BACK.
+//
+// A MACHINE IS NAMED, and it was not. Everything a supervisor does arrives over
+// the wire, so it was recorded as "the command line" — identical to a person
+// typing, and identical to me. That was survivable while nothing shared a store
+// with it, and stopped being so the moment the todo list existed: a list two
+// ends write to is one where "who wrote this" is the first question asked, the
+// card shows it, and the answer was wrong for one of the two ends.
+//
+// `_fromMachine` is stamped by server.js from the token that authenticated the
+// call, so it cannot be claimed — see the note there. It is checked FIRST
+// because a machine's call is also over the wire, and the more specific fact is
+// the one worth recording.
+//
+// NOTHING ELSE CHANGES. The approval rules compare against 'the window' and a
+// machine was never that, so a name it could not have had before cannot open a
+// door it could not open before.
+const whoAsked = ({ _driven, _overTheWire, _fromMachine } = {}) =>
+  _fromMachine ? String(_fromMachine)
+    : _driven ? 'the command line, driving the window'
+      : _overTheWire ? 'the command line'
+        : 'the window'
 
 // WHICH SUPERVISOR MACHINE, AND UP, which two different things now need: the
 // sign-in desk lives on one, and waking the supervisor runs a turn on one.

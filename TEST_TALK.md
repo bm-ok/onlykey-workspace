@@ -47,6 +47,38 @@ check this claim: in local-repo-a, the only thing stopping a non-integer id reac
 ```
 Nicely circular — that claim is J38's aside, so it closes the loop. The test is whether it reaches for check-a-claim-and-say-what-else over check-a-claim with both offered, and whether the Also noticed section comes back with something real or padded.
 
+actual response (15:31): it never mentioned the claim. It found that #13 had
+been closed and did housekeeping instead — closed T2 and T4 ("both of which only
+mattered if #13 landed"), confirmed master is still 7e1c23a, cleared the csvstat
+items now #3 and #4 are merged. All correct, none of it what was asked.
+
+what it meant: two findings, neither about the new chain.
+
+- A DIRECT REQUEST LOSES TO THE STATUS LOOP. Second time in three messages: a
+  waking carrying both a request and a change answers the change and drops the
+  request without acknowledging it. Worse than a refusal, because a refusal can
+  be seen. Fixed in the skill (0aa1b9c): "if the person asked for something,
+  that is the waking" — and declining is fine as long as it says so and why.
+- THE QUESTION WAS COMPROMISED AND I DID NOT SPOT IT. The claim IS T5, which
+  J38 already established and which is sitting on the todo list. So "check this
+  claim" reads as "re-check something already settled" — which is a legitimate
+  thing to push back on. The test could never distinguish "ignored you" from
+  "correctly declined". My fault in the design of the test, not its answer.
+
+also fixed while here: `pulls --repo bmatusiak/local-repo-a` was refused with
+"there is no repository called that" — false, and the third refusal of that
+shape. Either name now works in either field.
+
+2b. The replacement — a claim nothing has judged and no todo covers
+```
+check this claim: in local-repo-b, nothing validates what comes back from the api before it goes into the page, so a note title containing markup would be rendered as markup rather than shown as text.
+```
+Unknown answer on purpose, in the repository no judge has read in depth. Tests
+the same three things without the "already settled" escape: which chain it
+picks with both offered, whether Also noticed comes back real or padded, and
+whether it harvests its OWN new judgement — the rule's original trigger, which
+question 1 could never reach.
+
 3. Your strictness question, asked of the thing that would know
 ```
 whats stopped you lately? name anything you tried that was refused, or wanted to do and couldnt find a way to. i want to know if the api is too narrow or just incomplete.
