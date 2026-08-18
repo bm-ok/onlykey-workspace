@@ -110,6 +110,29 @@ async function look () {
   // act on — but it stops being remembered, or this file grows for ever.
   const now = {}
   for (const one of found) now[one.id] = { ...one, first: (seen[one.id] && seen[one.id].first) || at, seen: at }
+
+  // A REPOSITORY THAT COULD NOT BE READ IS NOT A REPOSITORY WHOSE WORK IS GONE,
+  // and rebuilding the record from `found` alone said it was.
+  //
+  // GitHub was unreachable for ten minutes overnight — ENOTFOUND, three looks in
+  // a row — and every issue and pull request on all three repositories dropped
+  // out of this file, because none of them was in `found`. The next look that
+  // succeeded therefore saw all of them as NEW: it reported a four-hour-old pull
+  // request as "arrived", woke the supervisor, and cost a turn to establish that
+  // nothing had happened. The supervisor worked that out itself and said so,
+  // which is the only reason it was noticed at all.
+  //
+  // On a repository with fifty open pull requests, one dropped connection is
+  // fifty arrivals.
+  //
+  // So what was seen on a repository this look could not read is carried forward
+  // exactly as it was, `seen` date included — because it was NOT seen. Only a
+  // repository that answered gets to say what has gone from it.
+  for (const [id, had] of Object.entries(seen)) {
+    if (now[id]) continue
+    if (trouble.some(t => t.on === had.on && t.kind === had.kind)) now[id] = had
+  }
+
   write(now)
 
   return { at, open: found, fresh, moved, trouble, watched: Object.keys(now).length }
