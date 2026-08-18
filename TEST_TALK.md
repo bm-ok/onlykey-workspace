@@ -1,6 +1,6 @@
 Each of these costs one waking — the meter says ~$0.83–0.98 a turn — so pick rather than run them all. Ordered by what they'd teach per pound.
 
-1. The harvest rule — no machine, tests the thing I just built
+# 1. The harvest rule — no machine, tests the thing I just built
 ```
 you have a new instruction about findings a judge made that nobody asked for. go back through J37, J38 and J39, read what they handed back, and put anything worth keeping on the todo list naming the judgement it came from. dont queue any work off them.
 ```
@@ -41,7 +41,7 @@ response 2
 I under-answered you at 15:18 — I reported the board instead of doing what you asked, so I've now read all three findings in full and put the unasked-for parts on the list, each naming its judgement, with nothing queued off them. T4 (J37): if #13 lands as written the store's three id methods disagree — update goes through get so it changes too, remove still compares raw, so remove('3') silently 404s, and no test covers any of it. T5 (J38's own "worth writing down for whoever reads this next"): the strict === is protected solely by local-repo-a/src/server.js:96-102 — local-repo-b's Number() at public/app.js:78 is thrown away by URL interpolation a line later — so anyone dropping that guard breaks every id lookup from the UI at once. T6 (J39, explicitly "not filed"): csvstat's toRecords omits the problems key on empty input, harmless today because bin/csvstat.js:67 writes problems || [], but a trap for any second caller. One thing I deliberately did not file: J39 also noticed the stale README example in local-repo-c — that is already fixed and sitting in open PR #3, so it needs merging rather than listing.
 ```
 
-2. Which chain it picks — costs a machine boot
+# 2. Which chain it picks — costs a machine boot
 ```
 check this claim: in local-repo-a, the only thing stopping a non-integer id reaching Store is the check in src/server.js around lines 96-102. if that check went, everything downstream would silently look up nothing.
 ```
@@ -79,19 +79,19 @@ picks with both offered, whether Also noticed comes back real or padded, and
 whether it harvests its OWN new judgement — the rule's original trigger, which
 question 1 could never reach.
 
-3. Your strictness question, asked of the thing that would know
+# 3. Your strictness question, asked of the thing that would know
 ```
 whats stopped you lately? name anything you tried that was refused, or wanted to do and couldnt find a way to. i want to know if the api is too narrow or just incomplete.
 ```
 It has real material — the gate refusal, the judging --ref local-repo-a#13 refusal at 07:45, the two-names problem.
 
-4. The memory hole, measured rather than argued
+# 4. The memory hole, measured rather than argued
 ```
 without looking anything up: what standing instructions do you think ive given you? things i said once that still apply.
 ```
 Whatever it lists is what survived; whatever it misses is behind the bookmark. That's the pinned-messages question answered with evidence instead of my reasoning.
 
-5. Housekeeping, cheap — SPENT: #13 was closed by hand on 18 Aug, so ask it
+# 5. Housekeeping, cheap — SPENT: #13 was closed by hand on 18 Aug, so ask it
    what is outstanding instead of naming that one.
 ```
 anything outstanding you want off your plate before i pick the next thing? i closed #13.

@@ -224,7 +224,33 @@ module.exports = {
     about: 'Everything that changed since a bookmark: what was said, what finished, what is waiting',
     takes: ['since', 'events'],
     run: ({ since = null, events: wantEvents = true, _fromMachine = null } = {}) => {
-      const talk = chat.since(since == null ? 0 : since)
+      // NEVER LESS THAN WHAT HAS NOT BEEN ANSWERED, whatever bookmark is passed.
+      //
+      // THIS ACTION USED TO ERASE WHAT IT RETURNED. It marks read on the way
+      // out, and the skill tells a supervisor to keep the bookmark and pass it
+      // — so the FIRST call in a turn returned the message and moved the mark,
+      // and the SECOND call, made with that fresh bookmark, returned an empty
+      // conversation. It calls this two to four times a turn, every turn.
+      //
+      // Four messages in a row were read and answered with "nothing to do",
+      // including one that said "you have twice not answered me". The bookmark
+      // proved they were delivered; the second look is what decided the reply.
+      // From the outside it was indistinguishable from a model ignoring
+      // somebody, which is where two hours went.
+      //
+      // So the floor is the last thing the supervisor ITSELF said. Everything
+      // after that is, by definition, something it has not replied to, and no
+      // bookmark it can pass will hide it. Asking twice in one turn now gives
+      // the same answer twice, which is what "what is new" has to mean if a
+      // model is allowed to ask it more than once.
+      //
+      // THE RECEIPT IS UNCHANGED and is still written below. "It looked and
+      // said nothing" stays different from "it has not looked yet" — see the
+      // note there, which is right and is not what this is about.
+      const spoke = chat.all().filter(m => m.who === 'supervisor').map(m => Number(m.n))
+      const lastSaid = spoke.length ? Math.max(...spoke) : 0
+      const asked = since == null ? 0 : Number(since) || 0
+      const talk = chat.since(Math.min(asked, lastSaid))
 
       // THE RECEIPT, WRITTEN HERE BECAUSE HERE IS WHERE THE WORDS ARRIVE. Not
       // when the message was stored, which says only that this host took it, and
