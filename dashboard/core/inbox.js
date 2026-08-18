@@ -191,6 +191,31 @@ function all () {
   // how it sits for a week while somebody wonders why no issue ever arrives.
   for (const r of remotes.read()) {
     if (!r.remote || r.remote.kind !== 'github') continue
+
+    // NOTHING KNOWN, OR NOTHING KNOWN ABOUT *THIS* REMOTE.
+    //
+    // This block used to require `fork === true`, which silently excluded the
+    // one state that matters most: a repository just pointed somewhere new,
+    // where nothing has been asked yet and so nothing is a fork as far as this
+    // app can tell. Two of three repositories were in exactly that state and
+    // the list said nothing about either.
+    //
+    // `stale` is the sharper half — asked, answered, and the remote has moved
+    // since, so everything known describes somewhere else. A full panel of
+    // confident facts about the wrong repository is worse than an empty one.
+    if (!r.checked || r.stale) {
+      out.push(item(
+        'ask GitHub about this one',
+        r.repo,
+        r.stale
+          ? `What is known about "${r.repo}" was learnt about ${r.about}, and it points at ${r.remote.owner}/${r.remote.repo} now — so its parent, its chain and what the token may do all describe somewhere else.`
+          : `Nothing has been asked about "${r.repo}" yet, so nothing here knows whether it is a fork, what is above it, or whether this token may push to it.`,
+        at('repos', 'repos', r.repo),
+        { since: r.checked || null, id: r.repo }
+      ))
+      continue
+    }
+
     const target = remotes.targetOf(r.repo)
     if (target.chosen) continue
     // Only worth raising for a fork. A repository that is nobody's fork IS the

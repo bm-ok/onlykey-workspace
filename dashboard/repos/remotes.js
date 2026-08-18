@@ -159,6 +159,21 @@ async function chainOf (repo) {
   return { repo, links, deep: links.length, stopped, walked: new Date().toISOString() }
 }
 
+// WHICH REMOTE A NOTE IS ABOUT.
+//
+// Everything `check()` writes — reachable, fork, parent, what the token may do
+// — is about one repository on GitHub, and until now nothing recorded WHICH.
+// That was survivable while a workspace clone never moved. It stopped being so
+// the moment origin could be pointed somewhere else: the facts stayed, the
+// remote changed underneath them, and the app went on stating them.
+//
+// It happened immediately. `repoRemoteSet` re-checks straight after moving the
+// remote, the one-second memo on `remoteOf` answered with the OLD one, and two
+// repositories recorded "not a fork" about repositories GitHub calls forks of a
+// fork. The memo is fixed; this is what makes the mismatch VISIBLE rather than
+// trusting that it cannot happen again.
+const aboutNow = remote => (remote && remote.owner ? `${remote.owner}/${remote.repo}` : null)
+
 const git = (dir, args) => execFileSync('git', ['--git-dir', dir, ...args], {
   encoding: 'utf8', timeout: 30000, windowsHide: true
 }).trim()
@@ -304,6 +319,18 @@ function read () {
       // shown with WHEN, because a fact about a remote is only as true as the
       // moment it was read, and this one can be hours old.
       checked: note.checked || null,
+      // AND WHETHER WHAT IS KNOWN IS ABOUT THE REMOTE IT IS POINTED AT NOW.
+      //
+      // Everything below `checked` was learnt about one repository on GitHub. If
+      // origin has moved since, all of it describes somewhere else — and the
+      // dangerous shape is not an empty panel, it is a full one saying confident
+      // things about the wrong place. `about` is null on notes written before
+      // this existed, which reads as "unknown" rather than as "matching".
+      about: note.about || null,
+      knownFor: note.about && remote
+        ? (note.about === `${remote.owner}/${remote.repo}` ? 'this remote' : note.about)
+        : null,
+      stale: !!(note.checked && note.about && remote && note.about !== `${remote.owner}/${remote.repo}`),
       reachable: note.reachable == null ? null : note.reachable,
       why: note.why || null,
       may: note.may || null,
@@ -357,12 +384,12 @@ async function check (only = null) {
     const at = new Date().toISOString()
 
     if (!remote) {
-      notes[name] = { checked: at, reachable: false, why: 'no remote called origin' }
+      notes[name] = { about: aboutNow(remote), checked: at, reachable: false, why: 'no remote called origin' }
       out.push({ repo: name, ...notes[name] })
       continue
     }
     if (remote.kind !== 'github') {
-      notes[name] = { checked: at, reachable: null, why: `origin is ${remote.host || 'somewhere'}, which this cannot ask about — only github.com is understood so far` }
+      notes[name] = { about: aboutNow(remote), checked: at, reachable: null, why: `origin is ${remote.host || 'somewhere'}, which this cannot ask about — only github.com is understood so far` }
       out.push({ repo: name, remote, ...notes[name] })
       continue
     }
@@ -373,11 +400,11 @@ async function check (only = null) {
         // A FINE-GRAINED TOKEN GRANTS PER REPOSITORY, so 404 here usually means
         // "not in this token's list" rather than "does not exist" — and saying
         // the first is what stops somebody hunting for a typo in the URL.
-        notes[name] = { checked: at, reachable: false, why: 'GitHub says 404 — either it does not exist, or this token was not granted it' }
+        notes[name] = { about: aboutNow(remote), checked: at, reachable: false, why: 'GitHub says 404 — either it does not exist, or this token was not granted it' }
       } else if (r.status === 401 || r.status === 403) {
-        notes[name] = { checked: at, reachable: false, why: (r.body && r.body.message) || `GitHub answered ${r.status}` }
+        notes[name] = { about: aboutNow(remote), checked: at, reachable: false, why: (r.body && r.body.message) || `GitHub answered ${r.status}` }
       } else if (r.status !== 200) {
-        notes[name] = { checked: at, reachable: false, why: (r.body && r.body.message) || `GitHub answered ${r.status}` }
+        notes[name] = { about: aboutNow(remote), checked: at, reachable: false, why: (r.body && r.body.message) || `GitHub answered ${r.status}` }
       } else {
         const upstreamDefault = r.body.default_branch || null
 
@@ -489,7 +516,7 @@ async function check (only = null) {
         }
       }
     } catch (e) {
-      notes[name] = { checked: at, reachable: false, why: e.message }
+      notes[name] = { about: aboutNow(remote), checked: at, reachable: false, why: e.message }
     }
     out.push({ repo: name, remote, ...notes[name] })
   }

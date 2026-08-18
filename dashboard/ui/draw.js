@@ -1265,21 +1265,56 @@ draw().then(sync).catch(e => say(e.message, 'bad'))
 // a thing somebody does for a minute.
 let inboxAway = false
 
+// WHICH KINDS ARE SWITCHED OFF, remembered, because a filter somebody set is a
+// statement about what they care about and resetting it every restart teaches
+// them not to bother. Stored as a list of what is OFF rather than what is on:
+// a kind invented next week is then visible by default, which is the right way
+// round for a list whose whole job is that nothing goes unnoticed.
+const inboxOff = new Set(been.get('inbox-off', []))
+let inboxFind = ''
+
 function paintInbox () {
   if (view !== 'inbox') return
 
   api('inbox', { hidden: inboxAway }).then(v => {
     if (view !== 'inbox') return
-    const items = v.items || []
+    const all = v.items || []
+
+    // COUNTED BEFORE FILTERING, so a chip says how many there ARE rather than
+    // how many survive the filter that is hiding them.
+    const counts = new Map()
+    for (const i of all) counts.set(i.kind, (counts.get(i.kind) || 0) + 1)
+    const ordered = [...counts.entries()].sort((a, b) => b[1] - a[1])
+
+    const want = inboxFind
+    const items = all.filter(i =>
+      !inboxOff.has(i.kind) &&
+      (!want || `${i.kind} ${i.what} ${i.why}`.toLowerCase().includes(want)))
 
     setText($('inbox-context'), inboxAway
       ? `— ${v.away} put away`
-      : (items.length ? `— ${v.mine} yours alone, ${items.length} altogether` : ''))
+      : (all.length
+          ? `— ${v.mine} yours alone, ${all.length} altogether${items.length === all.length ? '' : `, ${items.length} shown`}`
+          : ''))
     setText($('inbox-away'), inboxAway ? `Back to what is waiting (${v.live})` : `Put away (${v.away})`)
     $('inbox-away').classList.toggle('hidden', !v.away && !inboxAway)
     setText($('inbox-note'), v.note || 'Each of these needs a person. The ones marked yours cannot be cleared by anything else — an approval, a verdict, a choice about where work goes.')
 
-    if (!changed('inbox', [inboxAway, items.map(i => `${i.kind}${i.what}${i.since}`)])) return
+    // THE CHIPS REDRAW ON THEIR OWN SIGNATURE, so switching one off does not
+    // rebuild the whole list underneath the pointer.
+    if (changed('inbox-tags', [ordered, [...inboxOff].sort()])) {
+      fill($('inbox-tags'), ordered.map(([kind, n]) => el('button', {
+        className: 'chip' + (inboxOff.has(kind) ? '' : ' on'),
+        onclick: () => {
+          inboxOff.has(kind) ? inboxOff.delete(kind) : inboxOff.add(kind)
+          been.set('inbox-off', [...inboxOff])
+          forget('inbox')
+          paintInbox()
+        }
+      }, kind, el('b', { textContent: String(n) }))))
+    }
+
+    if (!changed('inbox', [inboxAway, inboxFind, [...inboxOff].sort(), items.map(i => `${i.kind}${i.what}${i.since}`)])) return
 
     fill($('inbox-list'), items.length
       ? items.map(i => el('div', { className: 'card' },
@@ -1315,8 +1350,16 @@ function paintInbox () {
                 .then(r => { forget('inbox'); paintInbox(); say(r.note) })
                 .catch(oops)
             }))))
-      : el('p', { className: 'empty', textContent: v.note || 'Nothing is waiting on you.' }))
+      : el('p', { className: 'empty', textContent: all.length
+          ? 'Nothing matches. Switch a chip back on, or clear the search.'
+          : (v.note || 'Nothing is waiting on you.') }))
   }).catch(() => { /* the chrome says when the dashboard itself is unreachable */ })
+}
+
+$('inbox-find').oninput = e => {
+  inboxFind = e.target.value.trim().toLowerCase()
+  forget('inbox')
+  paintInbox()
 }
 
 $('inbox-away').onclick = () => {

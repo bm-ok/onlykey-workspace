@@ -137,10 +137,16 @@
         <!-- PUT AWAY IS NOT DELETED, so there is always a way back to it. A
              list that can hide things and cannot show them has made them
              disappear, whatever the button said. -->
+        <input id="inbox-find" placeholder="find text">
         <button class="btn" id="inbox-away">Put away</button>
       </div>
     </div>
     <p class="note" id="inbox-note"></p>
+    <!-- ONE CHIP PER KIND, on the Live tab's pattern: what there is, how many,
+         and pressing one takes it out. Built from what is actually in the list
+         rather than from a fixed set, so a kind added later needs nothing here
+         and a kind with none of it does not sit there saying zero. -->
+    <div id="inbox-tags" class="chips"></div>
     <div id="inbox-list" class="stack"></div>
   </section>
 
