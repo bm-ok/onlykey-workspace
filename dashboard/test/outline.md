@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 45 tests, 210 checks, 18 of them drafts -->
+<!-- 12 suites, 46 tests, 213 checks, 18 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -369,6 +369,12 @@ Reading what came back and saying yes or no — and it is **work**, not a field.
   1. a judge cannot be given to a task
   2. and both kinds wait in one line, with judgements in front
   3. and the order is written down once, where the queue reads it
+
+## 03 — an arrived pull request
+
+  1. allowing one is refused down the pipe, and refused to a driven click
+  2. a pull request nobody has allowed cannot be judged, whichever name it is called
+  3. the list of judgements is small enough to read, and one of them is not
 
 # 10 — the supervisor
 
