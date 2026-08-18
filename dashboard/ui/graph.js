@@ -77,7 +77,9 @@ function Card () {
   this.bgcolor = '#0e1116'
   // What this node is about, filled in when it is made. Never null by the time
   // anything draws: see cardFor.
-  this.about = { kind: null, lines: [] }
+  // What this node is about, filled in when it is made. `where` is the tab it
+  // came from, which is what the right-click menu acts on.
+  this.about = { kind: null, lines: [], where: null }
 }
 
 Card.prototype.onDrawBackground = function (ctx) {
@@ -103,6 +105,45 @@ function registerOnce () {
   // which is noise in the console that means nothing is wrong.
   if (typeof LiteGraph === 'undefined') return
   LiteGraph.registerNodeType('okc/card', Card)
+
+  // ---- THE WHEEL PANS. IT DOES NOT ZOOM. ---------------------------------
+  //
+  // Zooming is the wrong verb for this picture. It is a timeline of cards with
+  // words on them, and the two things somebody wants from a wheel here are
+  // "further along" and "further down" -- not "smaller, and now I cannot read
+  // it". Zoom also fights the view reset in drawGraph: a picture that rebuilds
+  // at scale 1 while somebody has zoomed out jumps under them.
+  //
+  //   wheel          up and down
+  //   shift + wheel  left and right, which is along the timeline
+  //
+  // ON THE PROTOTYPE, AND BEFORE ANY CANVAS EXISTS. This is the whole reason
+  // this sits here rather than beside the other canvas settings below.
+  // `bindEvents` -- which the constructor calls -- does
+  //
+  //     this._mousewheel_callback = this.processMouseWheel.bind(this)
+  //
+  // so the listener holds whatever the method was AT CONSTRUCTION. Replacing it
+  // on the instance afterwards changes nothing, silently.
+  //
+  // AND UNBINDING DOES NOT RESCUE IT, which is the trap worth writing down:
+  // `unbindEvents` removes "mousewheel" and "DOMMouseScroll", while the newer
+  // path adds "wheel". Override-then-rebind therefore leaves the original zoom
+  // listener attached AND adds a second one, so a wheel turn would zoom and pan
+  // at once -- which reads as "my override did not work" rather than as "it
+  // worked twice".
+  LGraphCanvas.prototype.processMouseWheel = function (e) {
+    const roll = e.deltaY || -(e.wheelDeltaY || 0) || 0
+    if (!roll) return
+    // The offset is in graph space, and scale stays 1 because nothing zooms.
+    if (e.shiftKey) this.ds.offset[0] -= roll
+    else this.ds.offset[1] -= roll
+    this.setDirty(true, true)
+    e.preventDefault()
+    e.stopPropagation()
+    return false
+  }
+
   registered = true
 }
 
@@ -155,6 +196,33 @@ function canvasFor (which, canvasId) {
   // being looked at. See showing() below, which the paints call both ways.
   canvas.stopRendering()
 
+  // ---- AND THE RIGHT-CLICK MENU IS NOT AN EDITOR'S ---------------------
+  //
+  // LiteGraph offers Inputs, Outputs, Properties, Title, Mode, Resize,
+  // Collapse, Pin, Colors, Shapes, Clone and Remove. Every one of those is
+  // about the DRAWING, and half of them imply this picture is a thing you
+  // build: Clone and Remove especially, on a card that stands for a task that
+  // really ran on a machine. Removing the card removes nothing.
+  //
+  // So the whole menu goes, and what replaces it is the one thing somebody
+  // actually wants from a card: the tab it came from.
+  canvas.getNodeMenuOptions = node => {
+    const where = node && node.about && node.about.where
+    if (!where || !where.view) {
+      return [{ content: 'nowhere to go from this one', disabled: true }]
+    }
+    return [{
+      content: 'Take me to it',
+      callback: () => {
+        if (where.pane) showPane(where.pane, where.view)
+        else show(where.view)
+      }
+    }]
+  }
+  // Right-clicking the background offers Add Node, Add Group and the rest.
+  // Nothing may be added to a picture of what happened.
+  canvas.getCanvasMenuOptions = () => []
+
   const made = { graph, canvas, holder, signature: null }
   built.set(which, made)
   resize(made)
@@ -192,7 +260,7 @@ function cardFor (made, node, column, row) {
   const made1 = LiteGraph.createNode('okc/card')
   made1.pos = [40 + column * COLUMN, 30 + row * ROW]
   made1.title = String(node.title || node.id || '').slice(0, 34)
-  made1.about = { kind: node.kind || null, lines: node.lines || [] }
+  made1.about = { kind: node.kind || null, lines: node.lines || [], where: node.where || null }
   if (TONE[node.kind]) made1.boxcolor = TONE[node.kind]
   made.graph.add(made1)
   return made1

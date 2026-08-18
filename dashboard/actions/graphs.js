@@ -22,13 +22,22 @@ const { judging, events, vms, supervisor } = s
 
 // A picture is nodes and wires. Columns are left-to-right in the order things
 // happen; rows keep separate stories apart.
-const node = (id, kind, title, lines, column, row) => ({
+// WHERE A CARD CAME FROM, so right-clicking it can go back there.
+//
+// The same shape the inbox uses for the same purpose -- `{ view, pane, pick }`
+// -- rather than a second vocabulary for "which tab". See `at` in
+// core/inbox.js: a picture and a to-do list both end in somebody wanting the
+// thing itself, and they should not disagree about how to say where it is.
+const at = (view, pane, pick) => ({ view, pane: pane || null, pick: pick || null })
+
+const node = (id, kind, title, lines, column, row, where) => ({
   id,
   kind,
   title,
   lines: (lines || []).filter(Boolean),
   column,
-  row
+  row,
+  where: where || null
 })
 
 // HOW MANY STORIES AT ONCE. A picture of everything that ever happened is not a
@@ -138,6 +147,9 @@ module.exports = {
           at: null,
           first: true,
           kind: arrived ? 'pull' : 'branch',
+          // An arrived change is read on Pull requests; a branch of this
+          // workspace is on Branches Cut.
+          where: arrived ? at('repos', 'pulls', name) : at('repos', 'branchcuts', name),
           title: name,
           lines: [
             { text: story.live ? 'in flight' : 'at rest', tone: story.live ? '#3fb950' : '#7d8998' },
@@ -153,6 +165,7 @@ module.exports = {
           steps.push({
             at: task.created || task.updated,
             kind: 'task',
+            where: at('tasks', 'board', task.id),
             title: `#${task.number} ${task.title || ''}`.trim(),
             lines: [
               { text: task.state, tone: task.state === 'done' ? '#3fb950' : '#d29922' },
@@ -170,6 +183,7 @@ module.exports = {
               // order by, and not claimed as more than that on the card.
               at: task.updated || task.created,
               kind: 'machine',
+              where: at('runners', 'machines', task.machine),
               title: task.machine,
               lines: [
                 { text: v ? v.stage || 'made' : 'no longer here', tone: v ? '#3fb950' : '#f85149' },
@@ -188,6 +202,7 @@ module.exports = {
           steps.push({
             at: reading.written || reading.touched,
             kind: 'judgement',
+            where: at('judge', 'judgements', reading.id || reading.ref),
             title: `${reading.ref || ''} ${reading.title || ''}`.trim(),
             lines: [
               { text: reading.state, tone: reading.state === 'done' ? '#3fb950' : '#d29922' },
@@ -218,7 +233,7 @@ module.exports = {
           nodes.push(node(id, step.kind, step.title, [
             ...step.lines,
             stamp ? { text: stamp, tone: '#7d8998' } : null
-          ], column, row))
+          ], column, row, step.where))
           wire(before, id)
           before = id
         })
@@ -284,9 +299,12 @@ module.exports = {
       // about 1240, so the fifth was cut in half by the right edge -- which
       // reads as a broken canvas rather than as a picture that is too wide.
       const ACROSS = 4
-      const add = (kind, title, lines) => {
+      // WHERE A TURN GOES BACK TO. What it said is on the Chat tab; everything
+      // else it did is a line in the log, which is where the sentence this was
+      // built from actually lives.
+      const add = (kind, title, lines, where) => {
         const id = `n${nodes.length}`
-        nodes.push(node(id, kind, title, lines, column % ACROSS, Math.floor(column / ACROSS)))
+        nodes.push(node(id, kind, title, lines, column % ACROSS, Math.floor(column / ACROSS), where))
         column++
         if (last) links.push({ from: last, to: id })
         last = id
@@ -295,7 +313,7 @@ module.exports = {
 
       const woke = turn[0]
       add('woke', 'woken', [{ text: String(woke.text || '').replace(/^waking it\s*—?\s*/, '').slice(0, 30) || 'no reason given' },
-        { text: String(woke.at || '').slice(11, 19) }])
+        { text: String(woke.at || '').slice(11, 19) }], at('chat', 'chat', null))
 
       for (const e of turn.slice(1)) {
         const text = String(e.text || '')
@@ -323,7 +341,7 @@ module.exports = {
           // asks what it may do.
           const what = did[1]
           const why = (supervisor.MAY || {})[what] || null
-          add('read', what, [{ text: why ? String(why).slice(0, 30) : 'not on its list — see the log' }])
+          add('read', what, [{ text: why ? String(why).slice(0, 30) : 'not on its list — see the log' }], at('live', null, null))
           continue
         }
 
@@ -332,13 +350,13 @@ module.exports = {
           add('refused', no[1], [
             { text: 'refused', tone: '#f85149' },
             { text: no[2].slice(0, 30) }
-          ])
+          ], at('live', null, null))
           continue
         }
 
         const said = text.match(/^it said: (.*)$/)
         if (said) {
-          add('said', 'it answered', [{ text: said[1].slice(0, 30) }])
+          add('said', 'it answered', [{ text: said[1].slice(0, 30) }], at('chat', 'chat', null))
           continue
         }
       }
