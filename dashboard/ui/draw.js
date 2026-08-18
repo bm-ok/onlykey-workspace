@@ -510,6 +510,10 @@ async function drawOnce () {
   // Guards on its own pane, so this costs nothing while the conversation is
   // what is open.
   paintTodoList()
+  // Both guard on their own pane. The skill panel also refuses to reload while
+  // it is open, because somebody may be typing in it — see paintSkill.
+  paintSkill()
+  paintMay()
   // Guards on its own pane, so it costs nothing while the machines are what is
   // open. See paintMeter in ui/machines.js.
   paintMeter()

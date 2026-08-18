@@ -34,6 +34,8 @@ const vbox = require('../machines/vbox')
 const vms = require('../machines/vms')
 const provisioner = require('../machines/provisioner')
 const scripts = require('../machines/scripts')
+// The supervisor's allowlist, read for the pane that shows what it may do.
+const supervisor = require('../core/supervisor')
 const channel = require('../machines/channel')
 const tasks = require('../tasks/store')
 // Judging, as work rather than as a field. The WORK is here; the verdicts it
@@ -431,7 +433,7 @@ async function supervisorMachine (name) {
 module.exports = {
   whoAsked, supervisorMachine,
   log, events, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, allowed, judgements,
-  vbox, vms, provisioner, scripts, channel, tasks, judging, triage, todo, meter, guests, artifact,
+  vbox, vms, provisioner, scripts, channel, tasks, judging, triage, todo, meter, guests, supervisor, artifact,
   archive, files, sessions, prompts, contracts, jobs, jobrun, harness, suites, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace,
   fs, path, https,

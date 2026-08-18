@@ -1272,6 +1272,32 @@ async function adopt (actions, log) {
     await actions.taskUpdate.run({ id: t.id, task: { state: 'queued', machine: null } }).catch(() => {})
   }
 
+  // AND THE SAME FOR A JUDGEMENT, which this did not do.
+  //
+  // Everything above is written about tasks because tasks were the only kind of
+  // work when it was written. Judging arrived later, shares this queue, is
+  // dispatched by the same tick and is set up on a machine exactly the same way
+  // — and adoption never learned about it. So a restart during the twenty
+  // seconds between "the workspace is set up" and "the run has started" left a
+  // judgement in `given` with no run: invisible to the queue, which only looks
+  // at `queued`, and invisible to the loop below, which only looks for a run to
+  // wait on. Exactly the two-in-one-afternoon failure described above, arriving
+  // through the door that was left open when the second kind of work was added.
+  //
+  // Found by doing it: the dashboard was restarted while kit-1 was being set up
+  // for J41, and J41 sat `given` with no run and no attempts while its machine
+  // was rolled back underneath it.
+  //
+  // A PERSON'S IS LEFT ALONE, for the same reason as a task's — see above. A
+  // judgement somebody is reading themselves has no run because there is no
+  // worker process, and re-queueing it would hand their reading to a machine.
+  for (const j of judging.read().filter(x => x.state === 'given' && !x.run && x.by !== 'person')) {
+    const ref = j.ref || judging.refOf(j.number)
+    log.on('queue').warn(`${ref} was being set up when this stopped, and never started — back in the queue${
+      j.machine ? `. ${j.machine} was rolled back with nothing on it` : ''}`)
+    try { judging.update(j.id, { state: 'queued', machine: null }) } catch { /* said by the warning above */ }
+  }
+
   const midFlight = tasks.filter(t => t.state === 'given' && t.machine && t.run)
   for (const task of midFlight) {
     if (busyWith.has(task.machine)) continue

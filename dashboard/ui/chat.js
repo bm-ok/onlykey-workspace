@@ -675,12 +675,114 @@ function askToRemoveTodo (t) {
   })
 }
 
+// ---- the instructions the supervisor works from ---------------------------
+//
+// EDITED HERE, AND NOWHERE ELSE. `skillSave` refuses the command line and a
+// driven click, for the reason the pane says: something that can rewrite its own
+// instructions is not being supervised.
+//
+// WHAT IS ON SCREEN IS NOT RELOADED WHILE IT IS BEING TYPED IN. The draw loop
+// runs every few seconds and this panel holds an editor somebody may be halfway
+// through a paragraph in — so the text is fetched once per skill and then left
+// alone until they save or press undo. Everything else in this window redraws
+// on a signature; this one must not.
+let skillWhich = been.get('skill-which', 'supervisor')
+let skillLoaded = null
+let skillEditor = null
+
+function paintSkill () {
+  if (!chatPaneIs('skill')) return
+
+  api('skills').then(list => {
+    if (!chatPaneIs('skill')) return
+    const rows = list.skills || []
+
+    if (changed('skill-which', rows.map(r => r.which))) {
+      fill($('skill-which'), ...rows.map(r => el('option', { value: r.which, textContent: r.title, selected: r.which === skillWhich })))
+      $('skill-which').onchange = () => {
+        skillWhich = $('skill-which').value
+        been.set('skill-which', skillWhich)
+        skillLoaded = null
+        forget('skill-body')
+        paintSkill()
+      }
+    }
+
+    // ALREADY OPEN AND POSSIBLY EDITED — leave it entirely alone.
+    if (skillLoaded === skillWhich) return
+
+    api('skills', { which: skillWhich }).then(one => {
+      if (!chatPaneIs('skill') || skillWhich !== one.which) return
+      skillLoaded = one.which
+
+      setText($('skill-context'), `— ${one.lines} lines, ${one.characters.toLocaleString()} characters`)
+      setText($('skill-note'), `${one.about} Saving changes the next waking: it is fetched from this host at the head of every turn, so nothing is installed and no machine is touched.`)
+
+      fill($('skill-editor'), editorBlock(one.text, 'markdown', {
+        edit: true,
+        min: 20,
+        onReady: ed => { skillEditor = ed }
+      }))
+    }).catch(oops)
+  }).catch(() => { /* the chrome says when the dashboard itself is unreachable */ })
+}
+
+const saveSkill = () => {
+  if (!skillEditor) return say('The editor is not ready yet.', 'warn')
+  const text = skillEditor.getValue()
+  ask({
+    title: `Save ${skillWhich === 'worker' ? "a worker's skill" : "the supervisor's skill"}?`,
+    plain: [
+      'It takes effect at the head of the next turn — the machine fetches it fresh every time, so nothing is installed and nothing needs restarting.',
+      'A turn running right now finishes on the copy it already has.',
+      `${text.length.toLocaleString()} characters.`
+    ],
+    confirm: 'Save it',
+    onYes: () => api('skillSave', { which: skillWhich, text })
+      .then(r => {
+        skillLoaded = null
+        paintSkill()
+        say(r.saved ? r.note : r.note, r.saved ? 'ok' : 'warn')
+      })
+      .catch(oops)
+  })
+}
+
+// ---- and what it is allowed to call ----------------------------------------
+function paintMay () {
+  if (!chatPaneIs('may')) return
+
+  api('supervisorMay').then(v => {
+    if (!chatPaneIs('may')) return
+    const rows = v.may || []
+    setText($('may-context'), `— ${v.count} action(s)`)
+    setText($('may-note'), v.note)
+
+    if (!changed('may-list', rows.map(r => r.action))) return
+    fill($('may-list'), rows.map(r => el('div', { className: 'card' },
+      el('div', { className: 'card-title' },
+        el('span', { className: 'mono', textContent: r.action })),
+      // THE REASON, WHICH IS THE POINT OF THE LIST. A permission with no reason
+      // beside it is one nobody can argue with later — and these same words are
+      // what the supervisor is shown when it asks what it may do.
+      el('div', { className: 'card-sub muted', style: 'user-select:text', textContent: r.why }))))
+  }).catch(() => { /* the chrome says when the dashboard is unreachable */ })
+}
+
 // THE SUB-TAB BAR. Last in the file, because paneSwitcher calls back into the
 // paints and a switcher wired above them would name functions that do not exist
 // yet at load time. See ui/load.js for the order these files are read in.
 paneSwitcher('view-chat', () => chatPane, p => { chatPane = p; been.set('chat-pane', p) }, () => {
   paintChat()
   paintTodoList()
+  paintSkill()
+  paintMay()
 })
+
+$('skill-save').onclick = saveSkill
+// UNDO IS A RELOAD, deliberately: there is no draft kept anywhere, so the way
+// back is the file on disk. Said plainly on the button rather than called
+// "revert", which reads as undoing the SAVE.
+$('skill-revert').onclick = () => { skillLoaded = null; forget('skill-body'); paintSkill(); say('Back to what is saved.') }
 
 $('todo-add').onclick = askToAddTodo

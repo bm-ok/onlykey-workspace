@@ -1,3 +1,31 @@
+> **READ THIS FIRST — everything below question 1 was measured through a broken
+> pipe, and most of the conclusions in it are wrong.**
+>
+> `whatsNew` marked messages read on the way out, and the skill tells the
+> supervisor to keep that bookmark and pass it. It calls `whatsNew` two to four
+> times a turn. So the first call returned the message and moved the mark, and
+> the second — mid-turn, with the fresh bookmark — returned an empty
+> conversation. Whichever look it composed its answer from decided whether the
+> person existed.
+>
+> Fixed in d6c21e9: the floor is now the last thing the supervisor itself SAID,
+> so anything unanswered cannot be hidden by any bookmark it passes.
+>
+> WHAT THAT INVALIDATES:
+> - "a direct request loses to the status loop" — no. The request was erased
+>   before it decided anything.
+> - the skill clause at 0aa1b9c ("the request is the waking") — untested, and
+>   possibly unnecessary. Left in; it is true either way.
+> - question 1's first miss, and BOTH question 2 attempts — all suspect.
+> - the harvest that worked probably worked because that turn happened to use
+>   the first look.
+>
+> HOW IT WAS CAUGHT: it took asking the supervisor about its own behaviour and
+> getting "nothing to do" back to make the pattern undeniable. A less complete
+> failure would have read as a flaky model and been tuned around for ever.
+>
+> Anything below is kept as it was written. Re-run before believing it.
+
 Each of these costs one waking — the meter says ~$0.83–0.98 a turn — so pick rather than run them all. Ordered by what they'd teach per pound.
 
 # 1. The harvest rule — no machine, tests the thing I just built

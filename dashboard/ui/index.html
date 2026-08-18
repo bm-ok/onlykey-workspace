@@ -734,6 +734,12 @@
     <div class="subtabs">
       <button class="subtab active" data-pane="chat">Chat <span class="tab-badge hidden" id="chat-badge-pane"></span></button>
       <button class="subtab" data-pane="todo">Todo <span class="tab-badge hidden" id="todo-list-badge"></span></button>
+      <!-- WHAT IT IS TOLD, AND WHAT IT MAY DO. The two halves of controlling a
+           supervisor, and they are not the same kind of thing: one is a
+           document this host serves it, the other is a list in code. So one is
+           editable here and the other is shown and explained. -->
+      <button class="subtab" data-pane="skill">Skill</button>
+      <button class="subtab" data-pane="may">What it may do</button>
     </div>
 
     <div class="pane active" id="pane-chat">
@@ -815,6 +821,41 @@
       </div>
       <p class="note">What there is to do, written by you or by the supervisor. It may add to this, change it and mark things done; it may not delete — that is yours, and "done" stays on the list where it can be read.</p>
       <div id="todo-list" class="stack"></div>
+    </div>
+
+    <!-- ---------------- Skill ----------------
+         The document the supervisor works from. It is fetched from this host at
+         the head of EVERY turn and written to ~/.claude/skills/supervising on
+         the machine — so saving here changes the next waking and nothing else.
+         No restart, no reinstall, no machine work.
+
+         Editable in the window and refused everywhere else: something that can
+         rewrite its own instructions is not being supervised. -->
+    <div class="pane" id="pane-skill">
+      <div class="sync-head">
+        <h2>Skill <span class="muted" id="skill-context"></span></h2>
+        <div class="sync-controls">
+          <select id="skill-which"></select>
+          <button class="btn" id="skill-revert">Undo my edits</button>
+          <button class="btn ok" id="skill-save">Save it</button>
+        </div>
+      </div>
+      <p class="note" id="skill-note"></p>
+      <div id="skill-editor"></div>
+    </div>
+
+    <!-- ---------------- What it may do ----------------
+         The allowlist, with the reason each entry is on it. Read only, and the
+         pane says why: a permission list anything reaching this app could edit
+         is not a permission list. It changes in a checkout, in a commit, with a
+         message — and the reasons are shown to the supervisor itself when it
+         asks what it may do. -->
+    <div class="pane" id="pane-may">
+      <div class="sync-head">
+        <h2>What it may do <span class="muted" id="may-context"></span></h2>
+      </div>
+      <p class="note" id="may-note"></p>
+      <div id="may-list" class="stack"></div>
     </div>
   </section>
 
