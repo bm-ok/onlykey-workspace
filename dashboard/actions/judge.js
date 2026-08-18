@@ -74,13 +74,44 @@ const whose = it => ({
 // A judgement reads; it does not write. So every one of these refuses to take a
 // branch to work ON, and the one thing a caller names is what is to be read.
 module.exports = {
+  // A LIST, AND THEN ONE OF THEM. Two answers from one action, because they
+  // are the same question asked at two depths.
+  //
+  // WHY IT HAD TO SPLIT: every judgement carries the words it was given and
+  // the rules it was held to, in full, on purpose — a reference proves nothing
+  // about what a worker was actually held to six weeks later, so the text is
+  // copied. That is right for one judgement and wrong for eleven: this action
+  // returned seventy-five thousand characters, which the window did not need
+  // and which a supervisor cannot read at all. It spills to a file, and the
+  // file is on a host the supervisor has no filesystem access to.
+  //
+  // So the list carries what a list is for — what it reads, whose it is, what
+  // state it is in, what it decided. `ref` asks for one in full. Nothing was
+  // taken away; it moved one press further in, which is where the difference
+  // between a list and a record belongs.
   judging: {
-    about: 'Every judgement: what is waiting to be read, what is being read, and what was decided',
+    about: 'Every judgement: what is waiting to be read, what is being read, and what was decided. One ref reads that one in full',
     needs: 'workspace',
-    run: () => {
+    takes: ['ref'],
+    run: ({ ref = null }) => {
       const all = judging.all()
+
+      if (ref) {
+        const want = String(ref).trim().toUpperCase()
+        const one = all.find(j => String(j.ref).toUpperCase() === want || String(j.number) === String(ref))
+        if (!one) {
+          throw new Error(`There is no judgement called "${ref}". The list has ${all.length}: ${all.map(j => j.ref).join(', ') || 'none'}.`)
+        }
+        return { judgement: one, note: `${one.ref} in full, including the words it was given and the rules it was held to. judgementFindings is what it handed back.` }
+      }
+
+      // WHAT A LIST IS FOR. `brief` and `rules` are the two long ones and are
+      // the two nothing reading a list wants; `attempts` is where it ran and
+      // belongs with the rest of the record.
+      const short = all.map(({ brief, rules, attempts, ...rest }) => rest)
+
       return {
-        judgements: all,
+        judgements: short,
         // Counted by state, because "eleven judgements" says nothing about
         // whether this host is behind. What somebody wants is how many are
         // still to happen.
@@ -88,7 +119,7 @@ module.exports = {
         running: all.filter(j => j.state === 'given').length,
         decided: all.filter(j => j.state === 'done').length,
         note: all.length
-          ? null
+          ? 'The words each one was given and the rules it was held to are left out here — ask for one by ref to read those.'
           : 'Nothing has been asked for yet. A judgement reads a branch cut or a PR cut — judgementCreate says which.'
       }
     }
