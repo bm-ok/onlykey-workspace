@@ -59,6 +59,7 @@
     'guests',    // the Claude identities kept here, lent to a machine while it works
     'machines',  // the virtual machines this app made
     'chat',      // talking to the supervisor, and it talking back
+    'graph',     // the two pictures: a branch's journey, and a supervisor's turn
     'live',      // the log, and every action there is
     'tests',     // this app run against itself, for developing it
     'settings',  // what this app is set to, as opposed to what a workspace holds

@@ -356,6 +356,12 @@ paneSwitcher('view-repos', () => repoPane, p => { repoPane = p; been.set('repo-p
   paintBranches()
   paintCuts()
   paintTemplates()
+  // GUARDED ON THE NAME, not on taste. This switcher runs once as the file
+  // is read -- see the note below about the chrome -- and ui/graph.js is
+  // read after this one, so at that moment the function does not exist yet.
+  // Without this the whole switcher throws and every pane in this tab stops
+  // being painted, which looks nothing like a missing graph.
+  if (typeof paintFlow === 'function') paintFlow()
 })
 // Applied before the first draw rather than only on a click, or the window
 // opens on whichever pane was remembered with the chrome of whichever pane the

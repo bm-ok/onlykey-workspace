@@ -226,6 +226,27 @@ h2:first-child { margin-top: 0; }
 }
 .testing-banner span { overflow: hidden; text-overflow: ellipsis; }
 
+/* ---------- a graph ----------
+
+   A canvas has no natural size and does not grow with its contents, so it is
+   given one by its holder and resized in code when the pane is shown. A
+   canvas sized by CSS alone is drawn at one resolution and stretched to
+   another, which looks like a blurry mistake rather than a deliberate one. */
+.graph-holder {
+  position: relative;
+  width: 100%;
+  /* Tall enough to be worth drawing, and bounded so the pane does not run
+     past the bottom of the window -- the mistake this file has made before
+     with a branch list and with a dialog. */
+  height: calc(100vh - 220px);
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.graph-holder canvas { display: block; }
+
 /* ---------- the drills are running ----------
 
    ON WHILE A RUN IS GOING AND OFF WHEN IT IS NOT. Nothing subtler: the

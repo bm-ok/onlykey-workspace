@@ -7,6 +7,7 @@
      title goes on saying the wrong thing later. -->
 <title>Dashboard</title>
 <link rel="stylesheet" href="../vendors/xterm/xterm.css">
+<link rel="stylesheet" href="../vendors/litegraph/litegraph.css">
 <link rel="stylesheet" href="ui.css">
 </head>
 <body>
@@ -192,6 +193,12 @@
       <button class="subtab" data-pane="protected">Protected</button>
       <button class="subtab" data-pane="cuts">PR cuts <span class="tab-badge hidden" id="cuts-badge"></span></button>
       <button class="subtab" data-pane="templates">New PR Cut</button>
+      <!-- THE SAME FACTS AS THE PANES BESIDE IT, DRAWN RATHER THAN LISTED.
+           A branch, the task cut from it, the machine that ran it, the
+           judgement, the pull request -- five tables today, and the one
+           thing none of them shows is that they are the same thing at
+           different points. Read-only: nothing here starts work. -->
+      <button class="subtab" data-pane="flow">Graph</button>
     </div>
 
     <!-- WHAT THE OPEN PANE IS, in the same place for all eleven of them.
@@ -450,6 +457,13 @@
          chosen, not from placeholders: a preview of a layout says whether it
          is pretty, and a preview of the actual sentences says whether they
          are worth saying. -->
+    <div class="pane" id="pane-flow">
+      <div class="sync-head">
+        <h2>Graph <span class="muted" id="flow-context"></span></h2>
+      </div>
+      <div class="graph-holder"><canvas id="flow-canvas"></canvas></div>
+    </div>
+
     <div class="pane" id="pane-templates">
       <div class="cols">
         <div class="col narrow">
@@ -775,6 +789,13 @@
            editable here and the other is shown and explained. -->
       <button class="subtab" data-pane="skill">Skill</button>
       <button class="subtab" data-pane="may">What it may do</button>
+      <!-- WHAT IT ACTUALLY DID, which is a different question from either of
+           the two above: the skill is what it was told and the list is what
+           it may do, and neither says what it reached for. Every call it
+           makes is already recorded -- see the supervisor endpoint in
+           server.js -- so this is drawn from what happened rather than from
+           anything new being kept. -->
+      <button class="subtab" data-pane="turn">Graph</button>
     </div>
 
     <div class="pane active" id="pane-chat">
@@ -889,6 +910,13 @@
          is not a permission list. It changes in a checkout, in a commit, with a
          message — and the reasons are shown to the supervisor itself when it
          asks what it may do. -->
+    <div class="pane" id="pane-turn">
+      <div class="sync-head">
+        <h2>What it did <span class="muted" id="turn-context"></span></h2>
+      </div>
+      <div class="graph-holder"><canvas id="turn-canvas"></canvas></div>
+    </div>
+
     <div class="pane" id="pane-may">
       <div class="sync-head">
         <h2>What it may do <span class="muted" id="may-context"></span></h2>
@@ -1369,6 +1397,7 @@
 <script src="../vendors/xterm/xterm.js"></script>
 <script src="../vendors/xterm/addon-fit.js"></script>
 <script src="../vendors/marked/marked.js"></script>
+<script src="../vendors/litegraph/litegraph.js"></script>
 <!-- The window itself, which is a list of files rather than one file. `load.js`
      holds the list and the reason the order matters; index.html should not have
      to be edited to add a panel. -->

@@ -123,3 +123,33 @@ Node ABI NW.js was built against, and that is exactly the kind of thing this
 project does not have. It is not needed here: `ssh -tt` allocates the pty on the
 machine at the far end, which is where the shell actually is. This side only
 moves bytes.
+
+litegraph/ — litegraph.js 0.7.3
+--------------------------------
+
+Draws a graph of nodes with pins and wires between them, on a canvas, and lets
+somebody drag it about. Used for the picture of what this app is DOING — a
+branch, the task cut from it, the machine that ran it, the judgement, the pull
+request — and for the one of what a supervisor did in a turn.
+
+MIT licensed; `litegraph/LICENSE` is the copy from the project.
+
+    litegraph.js    the minified build, from
+                    https://cdn.jsdelivr.net/npm/litegraph.js@0.7.3/build/litegraph.min.js
+    litegraph.css   from
+                    https://cdn.jsdelivr.net/npm/litegraph.js@0.7.3/css/litegraph.css
+
+IT IS A NODE EDITOR AND THIS USES IT AS A DIAGRAM. LiteGraph is built to run
+graphs — nodes have an `onExecute`, the canvas has a play button, and a graph
+can be `start()`ed. None of that is used. What is drawn here is a picture of
+something that already happened or is happening somewhere else, and a picture
+that could be executed would be a second place where work can start.
+
+So the graph is never started, no node has an onExecute, and the canvas is set
+read-only. What that leaves is a good layout engine, wires that route
+themselves, and dragging and zooming for free.
+
+THE MOCKUP THAT ASKED FOR IT loaded this from a CDN, which is the one thing
+this project does not do — see the top of this file. Vendoring it is the whole
+difference between a picture that works in a year and one that works until
+somebody is offline.

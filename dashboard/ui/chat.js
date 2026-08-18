@@ -855,6 +855,8 @@ paneSwitcher('view-chat', () => chatPane, p => { chatPane = p; been.set('chat-pa
   paintTodoList()
   paintSkill()
   paintMay()
+  // See the same guard in ui/repos.js: graph.js is read after this file.
+  if (typeof paintTurn === 'function') paintTurn()
 })
 
 $('skill-save').onclick = saveSkill
