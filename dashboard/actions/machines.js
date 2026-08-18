@@ -1602,9 +1602,58 @@ module.exports = {
   vmWorkspace: {
     about: "Set up a machine's workspace: every repository, on one branch, pointed back here",
     needs: 'workspace',
-    takes: ['name', 'branch', 'folder', 'task'],
-    run: async ({ name, branch, folder, task }) => {
+    takes: ['name', 'branch', 'reading', 'folder', 'task'],
+    run: async ({ name, branch, reading = null, folder, task }) => {
       const vm = vms.get(name)
+
+      // ---- SET UP TO READ, WHICH IS NOT SET UP TO WORK ------------------
+      //
+      // Everything below this point is written for a machine that is going to
+      // CHANGE something: one branch across every repository the work is about,
+      // claimed by this machine so two of them cannot race for the same ref,
+      // and recorded so a push can be checked against it.
+      //
+      // Judging an arrived pull request is none of that. The change is on one
+      // branch in ONE repository — the pull request's — and the reason the
+      // others come along is the question a single-repository view cannot
+      // answer: does anything else need a change this pull request is missing.
+      // Nothing here will be pushed from either, so there is nothing to claim
+      // and nothing to race for.
+      //
+      // `reading` is { repo, branch }: which repository carries the change and
+      // what it is called there. Every other repository is put on its own
+      // default, and the whole machine is read-only.
+      //
+      // WHY THE INVARIANTS BELOW ARE SKIPPED RATHER THAN SATISFIED:
+      //
+      //   the branch exists everywhere   it does not, and cannot. Extending it
+      //                                  would mean cutting somebody else's
+      //                                  branch name into repositories their
+      //                                  change never touched.
+      //   one machine per branch         nothing is claimed, so there is no ref
+      //                                  for two machines to race for.
+      //   the host steps off the branch  that exists so a push to a checked-out
+      //                                  branch is not refused. There is no
+      //                                  push, and the defaults are exactly
+      //                                  what the host normally sits on — so
+      //                                  applying it here would try to move
+      //                                  somebody's own checkouts out of the
+      //                                  way of a machine that is only reading.
+      //
+      // The refusal to push is NOT one of the things being skipped. It is on
+      // the host, in the git route, where no guest can edit it.
+      const reads = reading
+        ? (() => {
+            const where = String(reading.repo || '').trim()
+            const what = String(reading.branch || '').trim()
+            if (!where || !what) throw new Error('Reading takes both a repository and the branch in it that carries the change.')
+            const found = repos.list().find(r => r.name === where)
+            if (!found) throw new Error(`There is no repository called "${where}" in this workspace.`)
+            const heads = branches.headsIn(repos.gitDirOf(where)) || {}
+            if (!heads[what]) throw new Error(`"${where}" has no branch called "${what}", so there is nothing on it to read. Bring the pull request here first — prFetch.`)
+            return { repo: where, branch: what, head: heads[what] }
+          })()
+        : null
 
       // WHAT IS KNOWABLE WITHOUT A MACHINE IS CHECKED WITHOUT ONE.
       //
@@ -1612,10 +1661,10 @@ module.exports = {
       // running, and it used to be discovered after starting one and waiting for
       // it to dial in -- so the answer to a typo was five minutes away, and
       // arrived as though the machine were the problem.
-      const wanted = String(branch || vm.branch || '').trim()
+      const wanted = reads ? reads.branch : String(branch || vm.branch || '').trim()
       if (!wanted) throw new Error(`Say which branch "${name}" is to work on.`)
-      const known = branches.all().branches.find(b => b.name === wanted)
-      if (!known) {
+      const known = reads ? null : branches.all().branches.find(b => b.name === wanted)
+      if (!reads && !known) {
         throw new Error(`There is no branch called "${wanted}". Make it first, with a reason — branchCreate --branch ${wanted} --reason "..." --group "..." — so what it is for and what it starts from are both recorded before anything is built on it. If that name is a typo, this is the refusal that catches it.`)
       }
 
@@ -1629,7 +1678,7 @@ module.exports = {
       // git's own words about a pathspec. Said here instead, where the fix is one
       // command -- branchCreate cuts it in whatever is missing it and leaves the
       // reason it already has alone.
-      if (known.missing.length) {
+      if (known && known.missing.length) {
         throw new Error(`"${wanted}" is not in ${known.missing.join(', ')}, and a machine checks it out in every repository. Extend it first — branchCreate --branch ${wanted} --reason "..." --group "..." cuts it wherever it is missing and keeps the reason it already has.`)
       }
 
@@ -1647,14 +1696,14 @@ module.exports = {
       //
       // Refused HERE and not only on the button, because the button is a
       // courtesy and this is the boundary.
-      const asked = (branch || '').trim()
-      if (vm.branch && asked && asked !== vm.branch) {
+      const asked = reads ? '' : (branch || '').trim()
+      if (!reads && vm.branch && asked && asked !== vm.branch) {
         throw new Error(`"${name}" is set up on ${vm.branch} and stays there until it is clean. To work on something else, go back to a snapshot taken before that branch — "Go back to it" says what it discards — or use another machine.`)
       }
 
-      const why = branches.nameIsOk(asked || vm.branch)
+      const why = branches.nameIsOk(reads ? reads.branch : (asked || vm.branch))
       if (why) throw new Error(why)
-      const on = (asked || vm.branch).trim()
+      const on = reads ? reads.branch : (asked || vm.branch).trim()
 
       // One machine per branch.
       //
@@ -1669,7 +1718,7 @@ module.exports = {
       // when that machine is rolled back to a point before it. Two runners on
       // one task deliberately is a real thing to want, but it wants two branch
       // names, not one branch and a race.
-      const held = vms.read().find(v => v.name !== name && v.branch === on)
+      const held = reads ? null : vms.read().find(v => v.name !== name && v.branch === on)
       if (held) {
         throw new Error(`"${on}" is already being worked on by "${held.name}". Two machines on one branch race for the same ref and the loser's commits strand. Pick another branch, or roll "${held.name}" back to a point before it.`)
       }
@@ -1682,7 +1731,7 @@ module.exports = {
       // tree is clean -- otherwise it says whose work is in the way and stops,
       // rather than this app deciding that a machine matters more than whatever
       // somebody left half-done.
-      for (const f of branches.freeEverywhere(on)) {
+      for (const f of (reads ? [] : branches.freeEverywhere(on))) {
         if (f.busy) throw new Error(f.why)
         if (f.freed) log.on('vm', name).info(`${f.repo} was on ${f.from} here; moved it back to ${f.to} so ${name} can use it`)
       }
@@ -1691,9 +1740,10 @@ module.exports = {
       // place they were born, as a side effect, from whatever string a task
       // carried -- so a mistyped name did not fail, it made a branch. Refused
       // above, before the machine is even asked to be running.
-      const here = branches.all().branches.find(b => b.name === on)
+      const here = reads ? null : branches.all().branches.find(b => b.name === on)
       const to = log.on('vm', name)
-      to.info(`"${on}" exists in ${here.in.join(', ')}${here.missing.length ? `, not in ${here.missing.join(', ')}` : ''}`)
+      if (here) to.info(`"${on}" exists in ${here.in.join(', ')}${here.missing.length ? `, not in ${here.missing.join(', ')}` : ''}`)
+      else to.info(`reading "${reads.branch}" in ${reads.repo} at ${String(reads.head).slice(0, 7)}; everything else on its default`)
 
       // ONLY THE REPOSITORIES THIS BRANCH IS ABOUT.
       //
@@ -1706,7 +1756,11 @@ module.exports = {
       // The branch's baseline group is what says which. A group naming three of
       // four repositories is not incomplete; it is a line of work that never
       // reached the fourth, and the fourth has no business being on the machine.
-      const scope = branches.scopeOf(on)
+      // EVERY REPOSITORY WHEN READING, and only the ones a line is about when
+      // working. The reason they differ is the reason reading exists: a judge
+      // that can only see the repository a change is in cannot say whether
+      // another one needed changing too.
+      const scope = reads ? { group: null, repos: found.map(r => r.name), whole: true, gone: [] } : branches.scopeOf(on)
       const mine = found.filter(r => scope.repos.includes(r.name))
       if (!mine.length) {
         throw new Error(`"${on}" is about ${scope.repos.join(', ')}, and none of those are in ${repos.DIR}.`)
@@ -1717,9 +1771,17 @@ module.exports = {
 
       const host = await vbox.hostAddress()
       const tls = keys.ensure()
+      // WHICH BRANCH IN WHICH REPOSITORY. Only when reading: the pull request's
+      // branch where it lives, and every other repository on its own default,
+      // which is what "the rest of the workspace as it stands" means.
+      const perRepo = reads
+        ? Object.fromEntries(mine.map(r => [r.name, r.name === reads.repo ? reads.branch : (branches.defaultOf(r.name) || on)]))
+        : null
+
       const script = workspace.script({
         repos: mine.map(r => r.name),
         branch: on,
+        on: perRepo,
         folder: folder || workspace.folderFor(vm.spec),
         origin: `https://${host}:${net.port}`,
         machine: name,
@@ -1730,7 +1792,10 @@ module.exports = {
         // push back. The host's hook is what actually stops that — this puts a
         // pre-push hook in the guest so a worker finds out where it is working
         // rather than in a rejection an hour later.
-        readOnly: branches.isProtected(on),
+        // ALWAYS WHEN READING. A judge may not push anywhere, and the host's
+        // route is what enforces it — this is the sign in the checkout so a
+        // worker finds out where it is rather than in a rejection later.
+        readOnly: reads ? true : branches.isProtected(on),
         // WHAT THIS MACHINE IS FOR, left on the machine. Every path that puts a
         // task on a machine comes through here — the queue, a hand-over, taking
         // one by hand — so this is the one place that knows, and the one place
@@ -1746,17 +1811,26 @@ module.exports = {
       // thing the rule is about is exactly what disqualifies it as the source.
       // Written after the setup rather than before: a machine that never got its
       // workspace has not been given permission to push anything.
-      vms.update(name, { branch: on })
-      log.on('vm', name).good(`${name} may now push ${on}, and nothing else`)
+      // A READING MACHINE CLAIMS NOTHING, and that is the record saying so.
+      // Being set up on a branch is what every other machine's permission to
+      // push is MADE of, so writing it here would hand a judge the right to
+      // write to the very thing it is judging.
+      if (reads) {
+        log.on('vm', name).good(`${name} is set up to read ${reads.repo}/${reads.branch}; it claims nothing and may push nothing`)
+      } else {
+        vms.update(name, { branch: on })
+        log.on('vm', name).good(`${name} may now push ${on}, and nothing else`)
+      }
 
       // `cut` was here, from when this action created the branch. It does not
       // any more -- a branch is made deliberately, with a reason -- so what it
       // reports is where the branch already was, not what it just made.
       return {
         branch: on,
+        reading: reads ? { ...reads, everyRepo: mine.map(r => r.name) } : null,
         folder: folder || workspace.folderFor(vm.spec),
         repos: found.map(r => r.name),
-        in: here.in,
+        in: here ? here.in : [reads.repo],
         output: r.output
       }
     }

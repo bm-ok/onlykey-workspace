@@ -26,7 +26,7 @@ const q = s => `'${String(s).replace(/'/g, `'\\''`)}'`
 // machine's business and not this app's.
 const FOLDER = '$HOME/workspace'
 
-function script ({ repos, branch, folder = FOLDER, origin, machine, token, ca, caFile = '/etc/okc/ca.pem', readOnly = false, task = null }) {
+function script ({ repos, branch, on = null, folder = FOLDER, origin, machine, token, ca, caFile = '/etc/okc/ca.pem', readOnly = false, task = null }) {
   const dir = folder || FOLDER
 
   // A real loop over the names, rather than the same block written out once per
@@ -34,10 +34,36 @@ function script ({ repos, branch, folder = FOLDER, origin, machine, token, ca, c
   // failed, which is only meaningful inside a loop -- outside one the shell
   // refuses it, so a single failure derailed the whole script instead of
   // reporting one repository and carrying on.
+  // NOT EVERY REPOSITORY ON THE SAME BRANCH, when it is being read rather than
+  // worked in.
+  //
+  // A machine set up to WORK is on one branch everywhere: that is what a line of
+  // work is, and it is what the machine is allowed to push. A machine set up to
+  // READ an arrived pull request is not that. The change lives on one branch in
+  // ONE repository -- `pull/13` in local-repo-a and nowhere else -- and the
+  // other repositories are there so a judge can answer the question a
+  // single-repository view cannot: does anything else need a change this pull
+  // request is missing.
+  //
+  // `on` is that map, repository to branch. Without it this emits NOTHING and
+  // the loop is exactly what it was, which is deliberate: every existing path
+  // through here is a working setup and none of them should change shape
+  // because reading became possible.
+  //
+  // A `case` rather than a second loop over pairs, because repository names and
+  // branch names both go through `q` and neither can then be split on a
+  // separator that turns out to be legal in one of them.
+  const perRepo = on && Object.keys(on).length
+    ? `  case "$repo" in
+${Object.entries(on).map(([r, b]) => `  ${q(r)}) branch=${q(b)} ;;`).join('\n')}
+  esac`
+    : ''
+
   const each = `
 for repo in ${repos.map(q).join(' ')}; do
   url="$ORIGIN/git/$repo"
   cd "$WS" || { failed=1; continue; }
+${perRepo}
 
   if [ -d "$repo/.git" ]; then
     cd "$repo" || { failed=1; continue; }

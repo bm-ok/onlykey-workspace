@@ -59,6 +59,10 @@ const judgements = require('../repos/judgements')
 // The two things that arrive on their own: an issue somebody filed and a pull
 // request somebody proposed. See repos/watching.js.
 const watching = require('../repos/watching')
+// Which repository in this workspace a name GitHub uses refers to. A pull
+// request is named owner/name and a repository here is called something
+// shorter, and reading one means knowing which is which.
+const remotes = require('../repos/remotes')
 const channel = require('../machines/channel')
 // One machine coming up at a time, across the whole host — see bringUp below.
 const busy = require('../machines/busy')
@@ -357,10 +361,65 @@ async function runJudgement (actions, log, judgement, machine) {
   // WHICH BRANCH CARRIES THE CHANGE. A judgement's subject is never a branch it
   // owns — this is where the code it must read happens to live.
   const subject = judgement.subject || {}
-  const branch = subject.kind === 'cut' ? subject.source : subject.branch
-  if (!branch) throw new Error(`${ref} does not say what it is reading, so there is nothing to set a machine up on.`)
 
+  // INSIDE THE TRY, AND THAT IS THE WHOLE POINT OF MOVING IT.
+  //
+  // This resolution used to sit above, where a throw skipped the `finally` that
+  // puts the machine away and takes it out of `busyWith` — so the FIRST failure
+  // any judgement can have was also the one failure that leaked a machine. It
+  // was found the first time a subject this could not resolve reached the queue:
+  // kit-1 read "doing J36" with nothing on it and nothing coming, and the queue
+  // would not have touched it again until a restart.
+  //
+  // Nothing had started yet, so nothing was left running and no credential was
+  // out — but that is luck about WHERE the throw was, not a property of the
+  // code. Anything that fails between here and `bringUp` has the same shape.
   try {
+    // AN ARRIVED PULL REQUEST IS NOT A BRANCH IN THIS WORKSPACE UNTIL IT IS
+    // BROUGHT HERE.
+    //
+    // A branch cut and a PR cut are both this host's own work and are already
+    // in the repositories. A pull request from outside is on GitHub and nowhere
+    // else, so the first step of reading one is fetching `refs/pull/<n>/head`
+    // into a local branch — which `prFetch` does, and which CHECKS THE
+    // ALLOWANCE AGAIN as it goes.
+    //
+    // Checked twice on purpose. The first check is at judgementCreate, minutes
+    // or hours ago; this one is now, against the commit GitHub has now. In
+    // between, the author may have pushed — and what a person allowed was a
+    // commit, not a pull request number.
+    let reading = null
+    let branch = null
+
+    if (subject.kind === 'pull') {
+      // WHICH REPOSITORY HERE, from the name GitHub uses. The subject carries
+      // owner/name because that is where a pull request lives; a repository in
+      // this workspace is called something shorter.
+      const row = remotes.read().find(x =>
+        x.repo === subject.on ||
+        x.issuesOn === subject.on ||
+        (x.remote && `${x.remote.owner}/${x.remote.repo}` === subject.on))
+      if (!row) throw new Error(`${ref} reads ${subject.on}, and no repository in this workspace is that.`)
+
+      const got = await phase('fetching', () => actions.prFetch.run({ repo: row.repo, number: subject.number }))
+      to.info(`${ref}: ${subject.on}#${subject.number} is here as "${got.branch}" at ${String(got.head).slice(0, 7)}`)
+
+      // AND IT IS THE COMMIT THAT WAS JUDGED. `prFetch` proves somebody allowed
+      // what is on GitHub now; this proves what is on GitHub now is what this
+      // judgement was written about. A judgement of a different commit filed
+      // under this one's name is the thing every "current" question downstream
+      // would then be answering wrongly.
+      if (subject.sha && got.head && String(got.head) !== String(subject.sha)) {
+        throw new Error(`${ref} was written about ${String(subject.sha).slice(0, 7)} and ${subject.on}#${subject.number} is now at ${String(got.head).slice(0, 7)}. Ask for a judgement of the commit it is on.`)
+      }
+
+      reading = { repo: row.repo, branch: got.branch }
+      branch = got.branch
+    } else {
+      branch = subject.kind === 'cut' ? subject.source : subject.branch
+      if (!branch) throw new Error(`${ref} does not say what it is reading, so there is nothing to set a machine up on.`)
+    }
+
     to.info(`${ref} "${judgement.title}" -> ${machine}`)
     judging.update(id, { state: 'given', machine })
 
@@ -369,10 +428,16 @@ async function runJudgement (actions, log, judgement, machine) {
     await phase('workspace', () => actions.vmWorkspace.run({
       name: machine,
       branch,
+      // Only set when what is being read arrived from outside: the pull
+      // request's branch in its own repository, every other repository on its
+      // default, and nothing claimed anywhere. See vmWorkspace.
+      reading,
       // What this machine is for, left on it so it can say so if it dials back
       // in. A judgement says what it is READING, which is the honest sentence
       // for a machine that will not be delivering anything.
-      task: `${ref}: reading ${subject.name} — a judgement. Hand findings back as files; this machine may not push.`
+      task: subject.kind === 'pull'
+        ? `${ref}: reading ${subject.name} — a pull request that arrived from outside this workspace. The change is on "${branch}" in ${reading.repo}; every other repository is on its default so you can say whether any of them needed changing too. Hand findings back as files; this machine may not push anywhere.`
+        : `${ref}: reading ${subject.name} — a judgement. Hand findings back as files; this machine may not push.`
     }))
 
     const started = await actions.jobRun.run({
