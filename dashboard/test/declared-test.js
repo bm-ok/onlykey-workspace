@@ -190,6 +190,33 @@ function declaredIn (src, into = new Set()) {
 }
 
 // Used as `x.y`, `x(`, or interpolated bare into a template.
+// WHAT THIS DOES NOT CATCH, WRITTEN DOWN SO NOBODY TRUSTS IT FURTHER THAN IT
+// GOES.
+//
+// A name counts as USED here only when it is lowercase and followed by a dot
+// or an open bracket -- `foo.bar` or `foo(...)`. That is deliberate: it is
+// what makes the rule quiet enough to leave switched on without a parser.
+//
+// It means two real faults walk straight past it:
+//
+//   a bare value        `{ id: ID }` -- used, never called, never dotted.
+//   a SHOUTING name     `ID`, `MOST`, `POOL_TAG` -- excluded by the first
+//                       character, whatever they are used for.
+//
+// BOTH AT ONCE IS WHAT HAPPENED. A drill was written with `id: ID` and no
+// declaration of ID; node --check passed, this passed, and it died on the
+// first line of the run with "ID is not defined" -- exactly the failure this
+// file was written to prevent, in the one shape it cannot see.
+//
+// WIDENING IT WAS TRIED AND PUT BACK. A rule flagging every undeclared
+// SHOUTING name raised 175 across this codebase, nearly all of them `JSON` and
+// environment variables inside template strings -- because telling a name in
+// code from a name in a string needs a parser, and this project has no
+// dependencies on purpose. A check that cries wolf 175 times is worse than the
+// gap it closes.
+//
+// SO THE ANSWER IS THE KIT, NOT THIS. The drill that hit it reported it in
+// seconds, by name and line. This file is the cheap first pass, not the net.
 function usedIn (src, declared, into = new Map()) {
   const note = n => {
     if (GLOBALS.has(n) || declared.has(n)) return

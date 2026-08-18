@@ -29,7 +29,7 @@
 // like somebody clicking a button. Both guards count a drill as the pipe now,
 // which is what makes the two checks below honest rather than decorative.
 
-const { it, draft, requires } = require('../../../tasks/harness')
+const { it, draft, cleanup, requires } = require('../../../tasks/harness')
 
 requires('what this host has')
 
@@ -113,12 +113,91 @@ it('a press driven from the command line is still the command line', async ({ ac
   log('four approvals, none of them reachable by driving the window')
 })
 
+// The prompt this drill writes and throws away. Named once: it is used by the
+// check, by its assertions and by the cleanup, and three copies of a string is
+// how a cleanup ends up tidying something that was never made.
+const ID = 'drill-approve-me'
+
+it('and the whole way round it, from outside, ends where it started', async ({ okc, assert, state, log }) => {
+  // THE SAME PROPERTY AS THE CHECK ABOVE, WALKED RATHER THAN ASSERTED.
+  //
+  // That one calls `jobApprove({ _driven: true })` and watches it refused,
+  // which proves the guard is there. It cannot prove the mark ARRIVES: if
+  // `windowClick` never set `_driven`, that check would still pass and the
+  // command line could approve anything by pressing the button. The guard and
+  // the mark are two separate pieces of code and only one of them was checked.
+  //
+  // So this does what somebody trying it would do: write a prompt down the
+  // pipe, drive the window to it, and press Approve.
+  //
+  // OVER THE WIRE ON PURPOSE. A prompt written at the window is approved by
+  // the writing -- that IS the reading -- so a drill that saved one normally
+  // would have nothing to press. `_overTheWire` is how a drill says "pretend
+  // this came down the pipe", the same way the checks above say it.
+  await okc('promptSave', {
+    id: ID,
+    name: 'drill: press approve on me',
+    text: 'A drill wrote this over the wire so that there would be an Approve button to press. It is thrown away again below.',
+    about: 'written by a drill, and removed by it',
+    _overTheWire: true
+  })
+  state.prompt = ID
+
+  const before = ((await okc('prompts')).prompts || []).find(p => p.id === ID)
+  assert.ok(before && !before.approved, 'the prompt this is about was approved as it was written, so there is nothing here to press')
+
+  // ---- drive the window to it ----------------------------------------
+  await okc('windowClick', { text: 'Actions' })
+  await okc('windowClick', { text: 'Prompts' })
+  await okc('windowClick', { text: 'drill: press approve on me' })
+
+  // AND THE WINDOW KNOWS IT IS BEING DRIVEN, which is the half that was never
+  // checked. Everything below rests on this being true.
+  const now = await okc('windowControls')
+  assert.ok(now.driven, 'the window does not think it is being driven after three presses from out here — so nothing it does next carries the mark, and every approval guard that reads it is looking at the wrong thing')
+  assert.ok((now.buttons || []).some(b => /approve/i.test(b.label)), `there is no Approve button on ${now.on}, so this proves nothing`)
+
+  // ---- press it ------------------------------------------------------
+  //
+  // TWICE, AND THE FIRST ONE PROVES NOTHING. Approving asks a question first,
+  // and the original hole was found by stopping here: one press opened the
+  // dialog and went no further, which looks exactly like a guard working. It
+  // was the dialog. A check that stopped here would have passed against an app
+  // with no guard at all.
+  const asked = await okc('windowClick', { text: 'Approve it' })
+  assert.ok(asked.asking, `pressing Approve went straight through without asking anything — expected the confirm dialog, got ${JSON.stringify(asked.now)}`)
+
+  await okc('windowClick', { text: 'I have read it' })
+
+  // ---- and it is still not approved ----------------------------------
+  //
+  // THE REFUSAL LEAVES NO LINE IN THE LOG, so the evidence is the state: the
+  // prompt is unapproved and the dialog is still open, because the action threw
+  // rather than returning and nothing closed it.
+  const after = ((await okc('prompts')).prompts || []).find(p => p.id === ID)
+  assert.ok(after && !after.approved, `a press driven from the command line approved a prompt. That is the whole bypass: two clicks instead of one, and approved by ${after && after.approvedBy}`)
+
+  const still = await okc('windowControls')
+  assert.ok(still.dialog, 'the dialog closed, which is what happens when the approval went through — the check above should have caught that first')
+
+  await okc('windowClick', { text: 'Never mind' })
+  log('wrote a prompt down the pipe, drove the window to it, pressed Approve and confirmed — still unapproved')
+})
+
+cleanup(async ({ okc, state }) => {
+  // The dialog first: a drill that leaves one open leaves every check after it
+  // pressing buttons it cannot see past.
+  await okc('windowClick', { text: 'Never mind' }).catch(() => { /* it is already shut */ })
+  if (state.prompt) await okc('promptForget', { id: state.prompt }).catch(() => { /* it was never written */ })
+  state.prompt = null
+})
+
 draft('and the window cannot be driven while the drills are off',
   'THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. ' +
   'It matters more than it looks: windowClick and windowFill reach the SAME handlers a person\'s press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. ' +
   'WHY IT IS NOT A CHECK HERE: a drill runs only while testing mode is on, which is exactly when this is allowed. Proving the refusal means turning testing mode OFF, which stops the drills. ' +
   'HOW TO WRITE IT: from outside the kit — a script that turns testing mode off at the window, calls windowClick over the wire, sees the refusal, and turns it back on. That is a person-driven drill rather than one the harness can run, and it belongs in the same family as the sign-in that needs somebody to visit a page. ' +
-  'WHAT CAN BE CHECKED FROM HERE AND IS NOT YET: that a press driven from outside carries the mark — press an APPROVE button through windowClick and watch it refused for being over the wire. That proves the anti-bypass property without turning anything off. See drivenFromTheWire in ui/base.js.')
+  'THE HALF THAT COULD BE CHECKED FROM HERE NOW IS — see "and the whole way round it, from outside, ends where it started" below: a prompt written down the pipe, the window driven to it, Approve pressed and confirmed, and the thing still unapproved. What is left in this draft is only the part that needs testing mode OFF.')
 
 draft('and a change cannot be landed from outside the window while the drills are off',
   'THE REFUSAL: "Landing a cut from outside the window is only done while testing mode is on for this workspace… this is a model merging into somebody\'s repository, and that needs to have been said out loud first." — actions/repos.js. ' +
