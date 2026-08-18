@@ -1789,7 +1789,14 @@ function setAsideButton (kind, x, after) {
       : 'Kept in full, and not offered to the supervisor until you bring it back',
     onclick: async () => {
       try {
-        const r = await api(`${kind}Use`, { id: x.id, use: aside })
+        // NAMED IN FULL, not built out of `kind`. It was `api(\`${kind}Use\`)`,
+        // which works and makes three actions ungreppable: `test/unused.js`
+        // reported jobUse, promptUse and contractUse as having no caller
+        // anywhere, and it was right about the text and wrong about the app.
+        // Somebody searching for why a button stopped working would have found
+        // the action and nothing calling it.
+        const call = kind === 'job' ? 'jobUse' : kind === 'prompt' ? 'promptUse' : 'contractUse'
+        const r = await api(call, { id: x.id, use: aside })
         say(r.note, aside ? 'ok' : 'warn')
         after()
         return draw()

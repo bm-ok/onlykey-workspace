@@ -16,8 +16,14 @@ built yet because it is not its turn belongs in `ROADMAP.md`.
 What the test kit is owed
 -------------------------
 
-The suites run green — 76 passed, 0 failed, 7 could not be tried, in nine
-minutes — and the seven say what they needed rather than what went wrong.
+The kit is **12 suites, 46 tests, 215 checks**, and `npm test` keeps that count
+honest — it fails when `test/outline.md` goes stale.
+
+**The last full sequential run was 76 passed, 0 failed, 7 could not be tried, in
+nine minutes, and that was a smaller kit.** It is left here as the last thing
+actually measured rather than updated to a guess: a number in this file that
+nobody ran is worse than an old one that somebody did. Re-run it and replace
+this paragraph with what happened.
 
 **What is outstanding about the app itself is not here any more.** A thing the
 app should do and does not is a DRAFT check, declared in the suite where it
@@ -36,10 +42,23 @@ in a circle:
   stands on has passed. That is the difference between describing the order and
   enforcing it.
 
-* **`test/unused.md` is the hardening queue.** 8 actions named only in comments,
-  24 with no caller, 12 with neither a button nor a drill, 52 exports nothing
+* **`test/unused.md` is the hardening queue.** 5 actions named only in comments,
+  26 with no caller, 13 with neither a button nor a drill, 54 exports nothing
   outside their file uses. Some are legitimately command-line tools; the list
   stops crying wolf once an action can say it is one on purpose.
+
+  **Copying those numbers into here is the mistake this bullet keeps making.**
+  They were 8 / 24 / 12 / 52 and were wrong in both directions — two had
+  improved and two had got worse while this file said otherwise. `unused.md` is
+  generated; read it there. What belongs here is the sentence about what the
+  list is FOR, and `node test/unused.js --write` is how to see where it stands.
+
+  Worth knowing what the scanner cannot see: it matches names in text, so an
+  action called through a template literal reads as having no caller. Three did
+  — `jobUse`, `promptUse`, `contractUse`, reached from one helper that built
+  the name out of a variable — and the scanner was right about the text and
+  wrong about the app. Naming them in full fixed both the report and the
+  greppability, which was the more valuable half.
 
 * **Three checks can only run in flight**, and one wants a contract nobody has
   approved. They report what they needed, which is honest, but they are the
