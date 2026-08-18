@@ -378,11 +378,11 @@ draft('and a run survives the network going away',
   'THE CHECK: take the channel away from a machine mid-run, watch the queue keep waiting and say it is out of touch, give it back, and see the run finish and be reported normally. ' +
   'AND THE OTHER HALF: past the bound it reads "abandoned" rather than "done", because "we stopped being able to see it" is not "it finished".')
 
-draft('and a run that fills the disk fails as a run rather than as a host',
-  'NEVER RUN. THE QUESTION: a worker that writes until the guest disk is full — a log, a build, a runaway loop. ' +
-  'WHAT MUST NOT HAPPEN: the host takes the blame. A guest out of space must read as that run failing, with the reason legible, and must not corrupt what this host keeps about it — the archive, the artifacts, the record of what was given out. ' +
-  'THE CHECK: fill the guest, let the run end, and read what came back: a failed attempt with the reason in its kept log, a machine put away, the branch untouched, and this host still able to say what happened. ' +
-  'WHY IT IS WORTH IT: every other failure here is fast and loud. This one is slow, and the interesting part is what the record looks like afterwards rather than whether the run died.')
+// WRITTEN NOW, next door: see 06-a-run-that-runs-out-of-space.js. It fills a
+// small filesystem mounted for the purpose rather than the machine's real disk,
+// because a VirtualBox dynamic disk expands as it is written and never shrinks
+// -- filling a guest for real costs the host tens of gigabytes permanently. What
+// that leaves untested, the ROOT filesystem being full, is a draft in that file.
 
 // WRITTEN NOW, next door: see 05-a-run-that-outlives-its-hours.js. It declares
 // a number of hours so small that the deadline has passed before the queue first

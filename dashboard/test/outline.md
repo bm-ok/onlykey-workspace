@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 51 tests, 240 checks, 22 of them drafts -->
+<!-- 12 suites, 52 tests, 244 checks, 22 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -39,8 +39,8 @@
   RAN BY ACCIDENT ON 18 AUGUST AND FOUND A REAL FAULT, which is the best argument there is for having it. THE PROPERTY: a run is detached on purpose — nohup, its own session — so the dashboard is not the work. Restarting this app must interrupt only the WATCHING. WHAT ADOPTION OWES: on start the queue waits on a run that is still alive, keeps its log, puts the machine away, and re-queues anything that had not dispatched. THE ACCIDENT: a restart landed in the twenty seconds between the workspace being set up and the run starting, and the judgement sat in "given" with no run — invisible to the queue, which only looks at queued, and to the recovery loop, which only looks for a run to wait on. Its machine was rolled back underneath it. Adoption had that rule for tasks and had never been extended to judgements. THE CHECK, AND WHY IT IS HARD: adopt is not exported and runs once at startup, so proving it needs the app stopped and started rather than a call. It is a person-driven drill, or a check against a fake board handed to an exported adopt. WHAT CAN BE CHECKED FROM HERE WITHOUT A RESTART: that a judgement in "given" with no run is re-queued and a PERSON's is left alone — the same exception tasks have, and for the same reason: there is no run because there is no worker process.
 - **a task on a machine / a task goes out and comes back** — and a run survives the network going away
   RAN 2026-08-13 AND PASSED, as prose, with no check since. THE FAULT IT GUARDS: this waited by polling, and a failed poll threw — out of the wait, out of the task, into the finally that puts a machine away. So fifteen seconds of no network powered the machine off and rolled it back MID-RUN while the work itself was fine: detached, still going, and about to be destroyed by the thing supervising it. Pulling the cable for one minute cost the whole task. WHAT IT SHOULD DO: an outage is something happening to the DASHBOARD, not to the work, so being unable to see a run is a reason to look again rather than to end it. See OUT_OF_TOUCH in tasks/queue.js — bounded patience, ten minutes, then abandoned. THE CHECK: take the channel away from a machine mid-run, watch the queue keep waiting and say it is out of touch, give it back, and see the run finish and be reported normally. AND THE OTHER HALF: past the bound it reads "abandoned" rather than "done", because "we stopped being able to see it" is not "it finished".
-- **a task on a machine / a task goes out and comes back** — and a run that fills the disk fails as a run rather than as a host
-  NEVER RUN. THE QUESTION: a worker that writes until the guest disk is full — a log, a build, a runaway loop. WHAT MUST NOT HAPPEN: the host takes the blame. A guest out of space must read as that run failing, with the reason legible, and must not corrupt what this host keeps about it — the archive, the artifacts, the record of what was given out. THE CHECK: fill the guest, let the run end, and read what came back: a failed attempt with the reason in its kept log, a machine put away, the branch untouched, and this host still able to say what happened. WHY IT IS WORTH IT: every other failure here is fast and loud. This one is slow, and the interesting part is what the record looks like afterwards rather than whether the run died.
+- **a task on a machine / a run that runs out of space** — and the same when it is the root filesystem that is full
+  WHAT THE CHECK ABOVE DOES NOT COVER, and it is the harder half. It fills a filesystem mounted for the purpose, so the run fails cleanly while everything around it — the agent, its log, the channel back to this host — has all the room it needs. With the ROOT filesystem full, the agent may not be able to write the log that says why, and "this host can still say what happened" stops being free. WHY IT IS NOT DONE HERE: a VirtualBox dynamic disk expands as it is written and never shrinks. Filling a 40 GB guest grows a file on the host by 40 GB, permanently — rolling the machine back does not give it back. That is a real cost to somebody's disk for one drill, and it is their decision rather than a checkbox. HOW IT COULD BE DONE CHEAPLY: build a machine with a small FIXED disk for exactly this, tagged so nothing else takes it. Then filling it is bounded by the disk rather than by how much of the host it is willing to eat.
 - **judging / a judgement is work of its own** — and GitHub is told, beside the pull request
   THE OUTWARD HALF, and the only part of the original nine that is still true as a draft. Anybody looking at the change on GitHub — which is where a reviewer looks — has no way to know this app read it. A verdict belongs there: a status or a check beside the pull request, saying what was run and what it found. THE CHECK: after a judgement of a PR cut, the pull request on the parent carries a status naming this app and the verdict. TO SETTLE, AND STILL UNSETTLED: whether that is a commit status, a check run, or a comment — a comment is the easiest and the least useful, since it cannot gate a merge. And whether a rejection blocks the merge button, which is a decision about somebody else's repository rather than about this app. WHAT HAS CHANGED SINCE THIS WAS FIRST WRITTEN: everything inward. The verdict exists, it is the judge's own, it is current or stale against the tips it was made on, and prCutMake already refuses to send out work a judgement has rejected. So this is now the last mile rather than the whole road.
 - **judging / what a restart strands** — and a real run survives a real restart
@@ -335,7 +335,6 @@ The point of the whole tool, and the last part of it that nothing checked.
   9. **DRAFT** — and a task that pushed something can be accepted
   10. **DRAFT** — and a run survives the dashboard being restarted under it
   11. **DRAFT** — and a run survives the network going away
-  12. **DRAFT** — and a run that fills the disk fails as a run rather than as a host
 
 ## 01 — what survives the machine
 
@@ -372,6 +371,14 @@ The point of the whole tool, and the last part of it that nothing checked.
   2. the queue gives it out, waits, and gives up on it
   3. and it says it gave up, rather than saying it finished
   4. and the machine it was on came back clean
+
+## 06 — a run that runs out of space
+
+  1. a machine, and a job that writes until there is no room
+  2. the run fails, and the machine comes back
+  3. and this host can still say why
+  4. and nothing arrived on the branch
+  5. **DRAFT** — and the same when it is the root filesystem that is full
 
 # 09 — judging
 
