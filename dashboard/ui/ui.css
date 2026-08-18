@@ -421,7 +421,13 @@ main { padding: 16px; }
   border-radius: 8px;
   padding: 12px;
 }
-.panel .row { display: flex; flex-wrap: wrap; gap: 6px; }
+/* A ROW OF BUTTONS, WHEREVER IT IS.
+   This was .panel .row only, so the same markup inside a .card laid out as
+   plain inline elements with no gap: "Take me therePut it away", on every card
+   row added since. The class EXISTS, which is why the check in npm test passed
+   -- it can tell a class that is defined from one that is not, and cannot tell
+   one that applies here from one that applies somewhere else. */
+.panel .row, .card .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .empty { color: var(--muted); font-size: 12px; }
 .note {
   color: var(--muted);

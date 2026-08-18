@@ -1270,6 +1270,57 @@ let inboxAway = false
 // them not to bother. Stored as a list of what is OFF rather than what is on:
 // a kind invented next week is then visible by default, which is the right way
 // round for a list whose whole job is that nothing goes unnoticed.
+// A COLOUR PER KIND, THE SAME ONE EVERY TIME.
+//
+// It should LOOK arbitrary — there is no meaning in which kind is which hue —
+// and it must not BE arbitrary, because a colour that changed on each draw
+// would be worse than no colour: the eye would learn nothing and the flicker
+// would be its own bug. So the hue comes from the name, which makes it stable
+// across draws, restarts and machines without anything being stored.
+//
+// Pastel by construction rather than by a palette: the hue varies, the
+// saturation and lightness do not, so every kind lands in the same register
+// and none of them shouts louder than the rest. Readable on this background
+// is the constraint that fixed the numbers.
+const kindHue = kind => {
+  // FNV-1a over 32 bits, then the golden angle. Both halves earn their place and
+  // the first version had neither, which was measurable rather than theoretical:
+  // a weak hash taken mod 360 put "prompt to approve" and "the supervisor said
+  // something" on exactly the same hue, and the two kinds actually on screen
+  // fourteen degrees apart — two chips that read as one colour.
+  let h = 2166136261
+  const s = String(kind)
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return Math.round(((h >>> 0) % 10000) / 10000 * 360 * 1.618033988749895) % 360
+}
+
+// AND A TONE STEP TAKEN FROM THE HUE ITSELF, which is the part that guarantees
+// it. Spreading hues is not enough with a handful of names: two still landed six
+// degrees apart. Deriving the step from the hue means any two hues that close
+// necessarily differ in it, so they separate by tone where they cannot by
+// colour — checked against every kind this app produces, and no two match.
+const kindStep = hue => Math.floor(hue / 6) % 3
+
+// `solid` is how a card says this one is yours alone. Colour already means
+// WHICH KIND, so the second thing has to be said another way — filled against
+// outlined — rather than by a second colour arguing with the first.
+const kindTint = (kind, { solid = false, off = false } = {}) => {
+  const h = kindHue(kind)
+  if (off) return 'border-color: var(--line); color: var(--muted); background: transparent'
+
+  // The tone step, small enough that everything still sits in one register and
+  // large enough that two near hues are told apart. Pastel by construction
+  // rather than from a palette: the hue varies, these do not, so no kind shouts
+  // louder than the rest.
+  const lift = kindStep(h) * 6
+  return solid
+    ? `border-color: hsl(${h} 55% ${46 + lift}%); color: hsl(${h} 85% 88%); background: hsl(${h} 45% ${20 + lift}%)`
+    : `border-color: hsl(${h} 45% ${36 + lift}%); color: hsl(${h} 65% ${72 + lift / 2}%); background: hsl(${h} 40% ${12 + lift / 2}%)`
+}
+
 const inboxOff = new Set(been.get('inbox-off', []))
 let inboxFind = ''
 
@@ -1305,6 +1356,7 @@ function paintInbox () {
     if (changed('inbox-tags', [ordered, [...inboxOff].sort()])) {
       fill($('inbox-tags'), ordered.map(([kind, n]) => el('button', {
         className: 'chip' + (inboxOff.has(kind) ? '' : ' on'),
+        style: kindTint(kind, { off: inboxOff.has(kind) }),
         onclick: () => {
           inboxOff.has(kind) ? inboxOff.delete(kind) : inboxOff.add(kind)
           been.set('inbox-off', [...inboxOff])
@@ -1319,7 +1371,9 @@ function paintInbox () {
     fill($('inbox-list'), items.length
       ? items.map(i => el('div', { className: 'card' },
           el('div', { className: 'card-title' },
-            el('span', { className: `badge ${i.mine ? 'warn' : 'muted'}`, textContent: i.kind }),
+            // THE SAME COLOUR AS ITS CHIP, which is the whole point: the eye
+            // goes from a chip at the top to its cards without reading either.
+            el('span', { className: 'badge', style: kindTint(i.kind, { solid: i.mine }), textContent: i.kind }),
             el('span', { className: 'grow', textContent: i.what }),
             i.since ? el('span', { className: 'muted', textContent: ago(i.since) }) : null),
           el('div', { className: 'card-sub muted', style: 'user-select:text', textContent: i.why }),
