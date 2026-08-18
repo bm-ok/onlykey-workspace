@@ -529,6 +529,89 @@ script, so a worker a job starts and a worker the queue starts are the same
 worker.
 
 
+What the supervisor is told, and what it may do
+----------------------------------------------
+
+Two halves of controlling it, and they are not the same kind of thing, so they
+are not changed the same way. Both are under **Supervisor**.
+
+**Skill** is a document. `provision/supervisor-skill.md` is fetched from this
+host at the head of *every* turn and written to
+`~/.claude/skills/supervising/SKILL.md` on the machine — so editing it changes
+the next waking and nothing else. No restart, no reinstall, no machine work. It
+is a real skill, so it needs frontmatter carrying `name:` and `description:`;
+without both the CLI never loads it and the machine works from the wake brief
+alone, which reads exactly like a model that has stopped following instructions.
+`skillSave` checks for them.
+
+The editor tracks the file. If it changes on disk while the pane is open and
+nothing has been typed, it reloads silently. If there ARE unsaved edits, the
+window says it is holding them and a save from anywhere else is **refused**;
+pass `force` to overwrite, and the window then reloads and says plainly that
+what it was holding is gone. The supervisor cannot call any of this — not
+because the action refuses the wire, but because `skillSave` is not on its
+allowlist, which is where that rule belongs.
+
+**What it may do** is the allowlist, with the reason each entry is on it — the
+same words the supervisor is given when it asks. Read only, and the pane says
+why: a permission list anything reaching this app could edit is not a permission
+list. It changes in a checkout, in a commit, with a message.
+
+**Todo** is a list of things to do, written from both ends. Not the task board —
+a task is a machine booting to run a job on a branch — and not `triage`, which
+says where something that *already exists* has got to. This is for what exists
+nowhere else: a doubt worth raising before recommending anything, a check that
+needs a person's eyes, a decision taken at three in the morning. The supervisor
+may add, change and finish; **only a person may delete.** "Done" and "gone" are
+different claims, and a list the worker can empty is one nobody can use to see
+what it has been doing.
+
+Its first real use was harvesting: asked to read three finished judgements and
+keep what nobody had asked for, it filed three entries each naming the judgement
+it came from — including one saying that a guard in `server.js` is the only
+thing protecting id lookups, which was an aside in a judgement about something
+else entirely and would otherwise have been lost.
+
+Kept and set aside
+------------------
+
+A library only grows: every job, prompt and contract ever written stays, because
+what a worker was held to six weeks ago has to remain readable. The cost is a
+list where the two chains that are current sit among six that are not.
+
+So a rung can be **set aside** — kept in full, with its approval and its record,
+and not offered. The window and the command line always see everything, each row
+saying whether it is in play; a MACHINE sees only what is in play, because it is
+choosing rather than curating. Which caller is which comes from the token that
+authenticated the request, so it cannot be claimed.
+
+**Bringing one back over the wire costs its approval.** Setting aside is harmless
+from anywhere; putting something back is the direction that matters, because
+otherwise anything that can park an approved thing and restore it has a door
+beside the approval gate. At the window a person is doing it and the approval
+stands — the same rule as writing one, said the same way.
+
+What every sign-in has spent
+----------------------------
+
+Under **Runners → Meter**. The CLI ends each run with a line carrying the turns,
+the duration, the tokens and the cost; this host reads it off the machine before
+the machine is rolled back, and files a row against the sign-in that ran it.
+
+Per sign-in because that is the question worth answering: "how much has this app
+spent" is mildly interesting, "which account is this billed to, and how much" is
+the reason the supervisor's key is picked deliberately rather than taken as
+whichever is free. Sign-ins with nothing against them are listed too — *has not
+been used* and *is not here* look identical in a list built from the spending
+alone.
+
+A row per run and never a running total; totals are computed on the way out, so a
+row recorded wrongly can be removed and the totals are then simply right. Nothing
+here prices anything: cost is what the model's own result line said, carried
+through, and null when it did not say. Tokens are kept as four numbers, because
+cached reads are charged differently from fresh input and their sum is comparable
+to nothing.
+
 Judging: the third role
 -----------------------
 
@@ -1863,14 +1946,25 @@ ordinary user. What follows is what is still not proven.
   that has produced anything took minutes. Nothing here has been tested against a
   worker that thinks for a long time, fills a transcript, and has to be watched
   while it does.
-* **A judgement has never actually read anything.** The whole lane is built —
-  its own store, actions, library, queue place, Judge tab, the push refusal, and
-  a judge that sends its own verdict — and two attempts have run on a machine.
-  Neither produced a finding. The first died on a chain fault since fixed; the
-  second reached the worker with a complete 3,435-character brief and came back
-  "Failed to authenticate: OAuth session expired and could not be refreshed".
-  So every part has been exercised except the one that matters: a judge reading
-  a change and handing back what it found.
+* **The "Also noticed" contract has never run.** Judging itself is no longer a
+  gap: judges have read branch cuts, an arrived pull request and two claims, and
+  each handed a file back that the supervisor read through `judgementFindings`
+  and nowhere else. What is unproven is the newer chain —
+  `check-a-claim-and-say-what-else`, and the contract requiring a section for
+  findings nobody asked about. It is approved and in use and has been chosen zero
+  times: with both claim-checkers offered and no steer, every claim so far went
+  to the older one. So the asides section is a claim about a contract rather than
+  about a judgement.
+* **A judgement read before today has no transcript.** Its run output is kept now
+  — under the judgement's uid, when the run ends, pass or fail — and everything
+  judged before that kept nothing: the log lived on the machine and the machine
+  is rolled back seconds later. `judgementLog` says so plainly rather than
+  answering with an empty list, but the old ones cannot be recovered.
+* **The supervisor is not told what it costs.** Every run is metered per sign-in
+  and shown under Runners → Meter, and the supervisor cannot see any of it. Its
+  own cached context grew from 325k to 686k tokens across three turns of being
+  asked to read findings, which is the number that will eventually decide how
+  much a brief can hold, and nothing surfaces it to the thing spending it.
 * **A job's artifacts are only findable through a task.** A job run on its own is
   filed under its run id, and no pane shows those — only `taskFiles` reads them,
   and only for a task.

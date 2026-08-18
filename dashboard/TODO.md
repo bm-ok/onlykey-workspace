@@ -81,14 +81,47 @@ not fixed, and the state of the machines.
 Outstanding
 -----------
 
-* **A judge has never actually read anything.** The lane is built and two runs
-  have reached a machine; neither produced a finding. The first died on a chain
-  fault (since fixed and guarded); the second got the whole brief to the worker
-  and came back "Failed to authenticate: OAuth session expired and could not be
-  refreshed". **The next thing to do here is one survey that works** — queue
-  `investigate the codebase` on a branch cut with a live worker credential and
-  read the `CODEBASE.md` that comes back. Until that has happened, every claim
-  about judging is a claim about code rather than about a judgement.
+* **Three of today's fixes have no check, and each is a claim code review cannot
+  settle.** The conversation suite has one for the destructive read, proved by
+  putting the bug back and watching it fail. These three do not:
+
+  - **set aside and force.** A set-aside job is hidden from a machine and still
+    visible to the window; bringing one back OVER THE WIRE withdraws its
+    approval and at the window does not; `skillSave` is refused while the window
+    holds unsaved edits and goes through with `force`. Four claims, no machine
+    needed, and the whole point of the feature is the asymmetry.
+  - **"unreachable is not gone".** The watcher carries forward what it could not
+    read. Needs a simulated failure rather than a real outage, so it is a check
+    on the carry-forward rather than on the network.
+  - **a stranded judgement is adopted.** Hardest of the three: `adopt` is not
+    exported and only runs at startup, so this may have to be a draft.
+
+* **The supervisor has no way to know what it is spending.** The meter records
+  every run per sign-in and it is the app's number, not the supervisor's — and
+  its own context grew 325k to 686k cached tokens across three turns while it was
+  being asked to read findings files. Nothing tells it that, and nothing stops
+  it. Worth deciding whether that is a number it should see.
+
+* **Eight judgements ended without a verdict.** They are on the Judge tab and
+  each is a real answer nobody recorded a decision about. Not a fault; a backlog,
+  and the badge counts it correctly.
+
+* **Judging works, and the lane has been round several times.** Done, and left
+  here for one waking only because what replaced it is the useful part. Judges
+  have read branch cuts, an arrived pull request and two claims: J37 wrote a
+  twelve-thousand-character review of somebody else's pull request ending
+  RECOMMEND: NO, J38 and J39 settled claims, J42 answered one with a
+  ten-thousand-character CLAIM.md. Every one of those handed a file back and the
+  supervisor read it through `judgementFindings` and nowhere else, which is the
+  design working rather than being described.
+
+  **What is not proven is the newer half.** `check-a-claim-and-say-what-else`
+  and its contract — the one that requires an "Also noticed" section for
+  findings nobody asked about — are approved, in use, and have run ZERO times:
+  every claim so far went to the older `check-a-claim`, with both offered and no
+  steer. Setting the old one aside would force it, which is one press and is what
+  set-aside was built for. Until that has happened, the asides section is a claim
+  about a contract rather than about a judgement.
 
 * **The supervisor has one triage entry pointing at a judgement that is gone.**
   It wrote `judge-survey-codebase-1` down as "waiting on a judge" and that

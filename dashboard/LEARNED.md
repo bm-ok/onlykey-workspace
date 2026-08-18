@@ -966,3 +966,123 @@ One thing they nearly all share, and it is the pattern worth carrying forward:
 
   It also cost nothing to find and would have cost everything to miss: the
   machinery was correct, the message was fluent, and the fact was wrong.
+
+* **A read that erased what it returned, and it read as a model ignoring
+  somebody.** `whatsNew` marks the conversation read on the way out, and the
+  supervisor's skill tells it to keep the bookmark and pass it. It calls
+  `whatsNew` two to four times in a single turn. So the first call returned the
+  message and moved the mark, and the second — made with that fresh bookmark,
+  mid-turn — was handed an empty conversation. Whichever look it happened to
+  compose its answer from decided whether the person had said anything at all.
+
+  Four messages went that way: each delivered, each stamped read by
+  `supervisor-1`, each answered with a tidy status report. One of them said "you
+  have twice not answered me, tell me which it was", and the reply was "nothing
+  to do".
+
+  **Two hours went into the wrong explanation.** Every hypothesis was about the
+  model — instruction-following, a rule buried too deep in a 24,000-character
+  skill, a request losing to the status loop — and a section was added to the
+  skill to fix a symptom that was never there. The bookmark proved delivery, so
+  delivery was assumed correct and never questioned.
+
+  The lesson is not "check delivery". It is that **when a model appears to ignore
+  something, suspect the pipe before the mind** — a destructive read is
+  indistinguishable from inattention from the outside, and the mind is the more
+  interesting explanation, which is exactly why it gets reached for first.
+
+  The floor is now the last thing the supervisor itself SAID: anything after that
+  is by definition unanswered and no bookmark it passes can hide it. There is a
+  check that fails without the fix, in the conversation suite, proved by putting
+  the bug back and watching it fail.
+
+* **A rule written for tasks, and a second kind of work added later. Four times
+  in one day.** Judging shares the queue with tasks, is dispatched by the same
+  tick, and is set up on a machine the same way — and four separate rules that
+  already existed had never been extended to it:
+
+  - **The queue's adoption.** A task stranded in `given` with no run is
+    re-queued on restart, and the comment above it describes finding exactly that
+    twice in one afternoon. A judgement in the same state was invisible to
+    everything: the queue only looks at `queued`, the recovery loop only looks
+    for a run to wait on. Found by restarting the dashboard during the twenty
+    seconds between "the workspace is set up" and "the run has started".
+  - **The conclusion reader.** It knew `RECOMMENDATION: accept|reject` and
+    `CLAIM: true|false|unclear`, and the prompt for reading an arrived pull
+    request asks for `RECOMMEND: YES|NO`. A judge read for three and a half
+    minutes, wrote twelve thousand characters, ended exactly as instructed, and
+    was recorded as having reached no conclusion.
+  - **The run log.** A task's is archived under its uid; a judgement's was kept by
+    nothing at all, so it died with the machine a few lines later. When one
+    failed, the supervisor asked `taskLog` three times and was refused three
+    times — a judgement is not a task — and had to infer the reason from a stack
+    line that happened to be in the event stream.
+  - **The detail panel.** "Which is a" was an either/or written when there were
+    two kinds, so the first judgement of an arrived pull request was described as
+    "branch cut — the work as it stands". Not empty, not obviously broken: the
+    wrong one, stated confidently.
+
+  **Adding a second kind of anything means auditing every rule about the first.**
+  `tasks.read()` without a matching `judging.read()` nearby is the shape to
+  grep for, and each of these four looked like a new bug rather than the same one.
+
+* **Validating a worker's answer before handing it back destroys the work.** The
+  claim-checking job wrote `CLAIM.md`, then checked its heading, its sections and
+  its last line, and *then* handed it over as an artifact. A judge read three
+  repositories for 154 seconds, wrote a full answer, got the last line slightly
+  wrong, and the job threw — so the file existed on a machine that was rolled
+  back seconds later and nothing came back at all. 0.77 USD and the entire
+  reading, lost to a formatting slip.
+
+  **Hand the work over first, then judge its shape.** A malformed answer should
+  cost its conclusion, which is right, and not the reading, which is the
+  expensive part and is still perfectly readable by a person.
+
+* **An internal distinction, leaking out as a statement about the world.** This
+  app calls a repository by its workspace name; GitHub calls it `owner/name`.
+  That difference is nobody else's business, and it escaped three times:
+
+  - an allowance was filed under `bmatusiak/local-repo-a#13` and looked up under
+    `local-repo-a#13`, so the gate said "nobody has allowed this" about a pull
+    request somebody had just allowed;
+  - `pulls --repo bmatusiak/local-repo-a` was refused with "there is no
+    repository called that", which is false, and is the least useful thing that
+    could be said about the one repository the caller was surest of;
+  - `judgementCreate` accepted only one of the two names for the same thing.
+
+  **Accept every name the thing can honestly be called**, and never phrase an
+  internal mismatch as a fact about what exists. The first cost a supervisor a
+  whole turn and a refusal that was flatly untrue.
+
+* **"Unreachable" is not "gone".** The GitHub watcher rebuilds its record from
+  what it FOUND, and treats anything absent as closed. Ten minutes of no DNS
+  therefore dropped every issue and pull request on all three repositories, and
+  the next successful look reported a four-hour-old pull request as *arrived* —
+  waking the supervisor to spend a turn establishing that nothing had happened.
+  On a repository with fifty open pull requests, one dropped connection is fifty
+  arrivals.
+
+  It was noticed only because the supervisor diagnosed it in its own reply. **A
+  source that could not be read must not be allowed to speak about what has
+  changed in it.**
+
+* **A button that is present, enabled and unreachable.** A verdict note is a line
+  when a person writes one and can be a whole review when a judge does. Twelve
+  thousand characters in an uncapped table cell pushed every button in the panel
+  a hundred and fifty thousand characters of markup below the fold. Nothing
+  looked broken, so nothing was reported — the answer to "where is that button"
+  was "scroll for a minute".
+
+  **A cell whose content comes from somewhere else needs a lid.** And the deeper
+  one: the honest answer to "where is it" was that it should not have been there
+  at all. It now sits on the row where the person started the work, which is
+  where they went looking.
+
+* **An unclosed `</div>` that only bites when something is added after it.** A
+  pane relied on the browser closing it at `</section>`. Adding a pane after it
+  put the new one INSIDE the old: it was given `.active` correctly, the DOM said
+  `class="pane active"`, and the screen showed nothing, because its parent is
+  `display: none`. Two screenshots of an empty tab and a long look in the wrong
+  place. **Close what you open, even where the parser forgives you** — the
+  forgiveness is not inherited by the next person's markup.
+
