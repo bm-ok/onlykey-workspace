@@ -14,7 +14,12 @@
 <header class="topbar">
   <div class="brand">
     <span class="dot" id="link-dot" title="live log stream"></span>
-    <strong>Dashboard</strong>
+    <!-- THE TITLE IS THE WAY IN, because it was the one thing in this chrome
+         that did nothing. What is behind it is the answer to "what is waiting
+         on me" — which is the question somebody asks after finding out the
+         hard way that something sat for a day. Every other badge in this window
+         is one corner of it. -->
+    <button class="tab brand-tab" data-view="inbox" id="inbox-tab"><strong>Dashboard</strong> <span class="tab-badge hidden" id="inbox-badge"></span></button>
     <!-- WHICH REPOSITORIES THIS IS ABOUT, and a tab in its own right.
          It sits beside the title rather than in the row of tabs because it is
          not one more thing to look at -- it is the subject of all of them. A
@@ -119,6 +124,25 @@
 <div id="trouble" class="stale-banner hidden"></div>
 
 <main>
+
+  <!-- ---------------- Inbox ----------------
+       EVERYTHING WAITING ON A PERSON, computed rather than kept — see
+       core/inbox.js. An item disappears the moment the thing it is about is
+       dealt with, whoever dealt with it and however, which is the property a
+       stored list cannot have. -->
+  <section class="view" id="view-inbox">
+    <div class="sync-head">
+      <h2>Waiting on you <span class="muted" id="inbox-context"></span></h2>
+      <div class="sync-controls">
+        <!-- PUT AWAY IS NOT DELETED, so there is always a way back to it. A
+             list that can hide things and cannot show them has made them
+             disappear, whatever the button said. -->
+        <button class="btn" id="inbox-away">Put away</button>
+      </div>
+    </div>
+    <p class="note" id="inbox-note"></p>
+    <div id="inbox-list" class="stack"></div>
+  </section>
 
   <!-- ---------------- Repositories ----------------
        What this workspace is made of, and whether the far end of each one can

@@ -145,6 +145,13 @@ async function drawOnce () {
     `${p.on}#${p.number} — ${p.title}${p.by ? ` (${p.by})` : ''}${p.stale ? ' — they pushed since you allowed it' : ''}`
   ).join('\n')
 
+  // THE INBOX BADGE, from the same list the tab shows. Counted as the ones a
+  // person alone can clear: a change waiting on somebody else's merge is worth
+  // seeing and is not somebody standing still.
+  api('inbox').then(v => nudge('inbox-badge', v.mine, v.mine
+    ? `${v.mine} thing(s) only you can clear, of ${v.count} waiting`
+    : '', true)).catch(() => {})
+
   nudge('repos-badge', owed.repos, [
     outstanding ? `as last read from GitHub:\n${outstanding}` : '',
     asking ? `waiting on you:\n${asking}` : ''
@@ -510,6 +517,7 @@ async function drawOnce () {
   // Guards on its own pane, so this costs nothing while the conversation is
   // what is open.
   paintTodoList()
+  paintInbox()
   // Both guard on their own pane. The skill panel also refuses to reload while
   // it is open, because somebody may be typing in it — see paintSkill.
   paintSkill()
@@ -1233,3 +1241,78 @@ async function sync () {
 // that describes the one it replaces, beside the button that tests it.
 paintActions().catch(oops)
 draw().then(sync).catch(e => say(e.message, 'bad'))
+
+// ---- everything waiting on a person ---------------------------------------
+//
+// ONE LIST, AND THE BADGES ARE FILTERS OF IT. Every other number in this chrome
+// is one corner: an approval on Actions, a verdict on Judge, an arrival on
+// Repositories. None of them answers "what is waiting on me", which is the
+// question somebody asks after something has sat unnoticed for a day.
+//
+// SORTED BY WHAT IT IS, not by age. A list that reorders itself as things age
+// is one somebody loses their place in, and the grouping is what makes six
+// items readable as three kinds.
+// WHICH HALF IS ON SCREEN. Kept here rather than remembered across restarts:
+// what was put away is a lasting decision, and LOOKING at what was put away is
+// a thing somebody does for a minute.
+let inboxAway = false
+
+function paintInbox () {
+  if (view !== 'inbox') return
+
+  api('inbox', { hidden: inboxAway }).then(v => {
+    if (view !== 'inbox') return
+    const items = v.items || []
+
+    setText($('inbox-context'), inboxAway
+      ? `— ${v.away} put away`
+      : (items.length ? `— ${v.mine} yours alone, ${items.length} altogether` : ''))
+    setText($('inbox-away'), inboxAway ? `Back to what is waiting (${v.live})` : `Put away (${v.away})`)
+    $('inbox-away').classList.toggle('hidden', !v.away && !inboxAway)
+    setText($('inbox-note'), v.note || 'Each of these needs a person. The ones marked yours cannot be cleared by anything else — an approval, a verdict, a choice about where work goes.')
+
+    if (!changed('inbox', [inboxAway, items.map(i => `${i.kind}${i.what}${i.since}`)])) return
+
+    fill($('inbox-list'), items.length
+      ? items.map(i => el('div', { className: 'card' },
+          el('div', { className: 'card-title' },
+            el('span', { className: `badge ${i.mine ? 'warn' : 'muted'}`, textContent: i.kind }),
+            el('span', { className: 'grow', textContent: i.what }),
+            i.since ? el('span', { className: 'muted', textContent: ago(i.since) }) : null),
+          el('div', { className: 'card-sub muted', style: 'user-select:text', textContent: i.why }),
+          // THE WAY TO IT, because a list that tells you something is waiting
+          // and not where is a list that costs a search each time.
+          el('div', { className: 'row', style: 'margin-top:8px' },
+            i.where && i.where.view
+              ? el('button', {
+                  className: 'btn small',
+                  textContent: 'Take me there',
+                  onclick: () => {
+                    if (i.where.pane) showPane(i.where.pane, i.where.view)
+                    else show(i.where.view)
+                  }
+                })
+              : null,
+            // PUT AWAY, OR BACK. The wording is deliberate on both: nothing here
+            // is deleted and nothing is marked done, because this list does not
+            // own any of the things in it — clearing an item for real means
+            // going and doing the thing.
+            el('button', {
+              className: 'btn small',
+              textContent: i.hidden ? 'Put it back' : 'Put it away',
+              title: i.hidden
+                ? 'Count it again'
+                : 'Stop counting it. It stays true, and comes back if what it is about changes',
+              onclick: () => api(i.hidden ? 'inboxShow' : 'inboxHide', { key: i.key })
+                .then(r => { forget('inbox'); paintInbox(); say(r.note) })
+                .catch(oops)
+            }))))
+      : el('p', { className: 'empty', textContent: v.note || 'Nothing is waiting on you.' }))
+  }).catch(() => { /* the chrome says when the dashboard itself is unreachable */ })
+}
+
+$('inbox-away').onclick = () => {
+  inboxAway = !inboxAway
+  forget('inbox')
+  paintInbox()
+}

@@ -251,6 +251,19 @@ function setRemote (repo, url) {
   // The TARGET goes too. It was picked from a chain that no longer applies, and
   // a target left pointing into an old network is the exact fault this whole
   // arrangement exists to prevent.
+  // AND THE ONE-SECOND CACHE HAS TO GO WITH IT.
+  //
+  // remoteOf is memoised for a second, which is right for a value read from git
+  // on every draw and wrong for the one moment it CHANGES. Anything that asked
+  // within that second -- including the check this action runs immediately
+  // afterwards -- was answered about the repository that had just been replaced,
+  // and recorded what it found as the truth about the new one.
+  //
+  // Found by watching it: the check said fork:false about a repository GitHub
+  // calls a fork of a fork, and the inbox then had nothing to say about a
+  // repository that had nowhere to send work.
+  brief.delete(`remote ${repo}`)
+
   const all = seen()
   const note = all[repo] || {}
   const kept = { pulls: note.pulls, issues: note.issues, gathered: note.gathered }

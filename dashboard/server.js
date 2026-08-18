@@ -86,6 +86,7 @@ Object.assign(actions,
   require('./actions/todo'),
   require('./actions/meter'),
   require('./actions/skills'),
+  require('./actions/inbox'),
   require('./actions/repos'),
   // Talking to the supervisor, and it talking back. See core/chat.js.
   require('./actions/chat'),
