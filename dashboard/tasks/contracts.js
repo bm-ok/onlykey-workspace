@@ -115,7 +115,13 @@ function save ({ id, name, text, about, kind }, by = 'the window') {
       text: body,
       kind: which,
       edited: changed ? now : was.edited,
-      approval: changed ? stamp : was.approval
+      // OR TAKES ONE, if it had none and a person is the one saving. See the
+      // note in tasks/prompts.js: this stamped only on a CHANGE, so reading an
+      // unapproved contract and pressing Save left it unapproved, while the
+      // dialog said saving it at the window is what approves it. Reading it and
+      // pressing Save is the approval; `stamp` is null when the save did not
+      // come from the window, so nothing approves itself down the pipe.
+      approval: changed ? stamp : (was.approval || stamp)
     }
   }
 

@@ -897,6 +897,10 @@ if (app) app.onDrive(async want => {
       // every save at the window into "waiting to be approved" with nothing
       // saying why — the answer looked like a broken button for an hour.
       driven: drivenNow(),
+      // AND WHICH HOST THIS PAGE HAS, because it decides how every call it makes
+      // is marked: an app page calls the actions in this process, a page served
+      // over http is a client and everything it asks is over the wire.
+      host: host && host.name,
       // The title too, because a dialog is a question and the question is the
       // point. Reading back "there is a dialog with a Throw it away button" and
       // not what it is about is how the wrong thing gets confirmed.

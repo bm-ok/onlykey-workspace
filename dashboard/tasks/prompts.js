@@ -140,9 +140,28 @@ function save ({ id, name, text, about, contractId, kind }, by = 'the window') {
       contractId: rules,
       kind: which,
       edited: changed ? now : was.edited,
-      // An unchanged save keeps whatever approval it had; a changed one is
-      // re-approved only if a person is the one saving it.
-      approval: changed ? stamp : was.approval
+      // A changed save is re-approved only if a person is the one saving it. An
+      // unchanged one keeps whatever approval it had — OR TAKES ONE, if it had
+      // none and a person is the one saving.
+      //
+      // THAT LAST CLAUSE IS THE WHOLE OF A BUG THAT COST AN HOUR. The dialog
+      // for these says, truthfully, "saving it here approves it: writing it at
+      // the window IS the reading" — and this only stamped when something had
+      // CHANGED. So a person opening an unapproved prompt, reading it, and
+      // pressing Save left it unapproved for ever, with the window reporting
+      // "saved, and waiting to be read" exactly as designed. The only way
+      // through was to edit it first, which nobody would guess and which makes
+      // reading-then-approving impossible without altering what you read.
+      //
+      // Reading it and pressing Save IS the approval. `stamp` is null when the
+      // save did not come from the window, so nothing down the pipe approves
+      // itself by saving twice.
+      //
+      // jobs.js has always done it this way — `by === 'the window' ? stamp :
+      // null`, unconditionally — which is why a job approved from the same pane
+      // where a prompt and a contract would not. Three stores, two behaviours,
+      // and the odd one out was the one that matched what the screen said.
+      approval: changed ? stamp : (was.approval || stamp)
     }
   }
 

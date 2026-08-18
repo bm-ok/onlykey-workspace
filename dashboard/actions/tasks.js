@@ -1309,7 +1309,7 @@ module.exports = {
         throw new Error(`There is no contract called "${contractId}". Write it first — the rules a prompt runs under are not a name typed into a box.`)
       }
       const saved = prompts.save({ id, name, text, about, contractId, kind }, s.whoAsked(a))
-      log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the prompt "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
+      log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the prompt "${saved.name}", asked by ${s.whoAsked(a)}${saved.approved ? '' : ' — it is waiting to be approved'}`)
       return saved
     }
   },
@@ -1387,7 +1387,7 @@ module.exports = {
     run: a => {
       const { id, name, about, text, kind } = a
       const saved = contracts.save({ id, name, about, text, kind }, s.whoAsked(a))
-      log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the contract "${saved.name}"${saved.approved ? '' : ' — it is waiting to be approved'}`)
+      log.on('task').info(`${saved.created ? 'wrote' : 'rewrote'} the contract "${saved.name}", asked by ${s.whoAsked(a)}${saved.approved ? '' : ' — it is waiting to be approved'}`)
       return saved
     }
   },
