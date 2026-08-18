@@ -840,6 +840,7 @@ paneSwitcher('view-runners', () => runnerPane, p => { runnerPane = p; been.set('
   paintVms()
   paintGuests()
   paintSessions()
+  paintMeter()
 })
 
 function paintVms () {
@@ -1014,3 +1015,89 @@ $('add-vm-open').onclick = () => Promise.all([api('vmIsos'), api('hostKeys')]).t
     say(`${f.name} is installing and will set itself up. Watch it here.`)
   }
 })).catch(oops)
+
+// ---- what each sign-in has spent -------------------------------------------
+//
+// TOKENS ARE FOUR NUMBERS, NOT ONE. Cached reads are the bulk of a long brief
+// and are charged differently from fresh input, so adding them together would
+// produce something that looks like a context size and is comparable to nothing.
+// Shown apart, and the hover says which is which.
+const meterNum = n => (n == null ? '—' : Number(n).toLocaleString())
+const meterCost = n => (n == null ? '—' : '$' + Number(n).toFixed(n < 1 ? 4 : 2))
+
+function paintMeter () {
+  if (view !== 'runners' || runnerPane !== 'meter') return
+
+  api('meter').then(v => {
+    if (view !== 'runners' || runnerPane !== 'meter') return
+
+    const t = v.total || {}
+    setText($('meter-context'), t.runs ? `— ${t.runs} run(s) across ${(v.keys || []).filter(k => k.runs).length} sign-in(s)` : '')
+
+    if (changed('meter-total', [t, (v.keys || []).map(k => `${k.key}${k.runs}${k.cost}`)])) {
+      // THE TOTAL FIRST AND BIGGEST, because it is the question. Everything
+      // under it is the same number taken apart.
+      fill($('meter-total'), el('div', { className: 'card' },
+        el('div', { className: 'card-title' },
+          el('span', { textContent: 'Everything, all sign-ins' }),
+          el('span', { className: 'badge ok', textContent: meterCost(t.cost) })),
+        el('div', { className: 'card-sub muted', textContent: [
+          `${t.runs || 0} run(s)`,
+          t.turns == null ? null : `${meterNum(t.turns)} turns`,
+          t.first ? `since ${ago(t.first)}` : null,
+          t.trouble ? `${t.trouble} ended badly` : null
+        ].filter(Boolean).join(' · ') }),
+        el('div', { className: 'card-sub muted', title: 'fresh input / output / read from cache / written to cache', textContent:
+          `tokens — in ${meterNum(t.input)} · out ${meterNum(t.output)} · cache read ${meterNum(t.cacheRead)} · cache written ${meterNum(t.cacheWrite)}` }),
+        v.note ? el('p', { className: 'note muted', textContent: v.note }) : null))
+
+      fill($('meter-keys'), (v.keys || []).map(k => el('div', { className: `card${k.runs ? '' : ' muted'}` },
+        el('div', { className: 'card-title' },
+          el('span', { className: 'mono', textContent: k.key || 'not attributed' }),
+          el('span', { className: 'grow' }),
+          el('span', { className: `badge ${k.runs ? 'ok' : 'muted'}`, textContent: k.runs ? meterCost(k.cost) : 'nothing yet' })),
+        el('div', { className: 'card-sub muted', textContent: k.runs
+          ? [
+              `${k.runs} run(s)`,
+              k.turns == null ? null : `${meterNum(k.turns)} turns`,
+              k.last ? `last ${ago(k.last)}` : null,
+              k.trouble ? `${k.trouble} ended badly` : null
+            ].filter(Boolean).join(' · ')
+          : 'this sign-in has not run anything that was metered' }),
+        k.runs
+          ? el('div', { className: 'card-sub muted', title: 'fresh input / output / read from cache / written to cache', textContent:
+              `in ${meterNum(k.input)} · out ${meterNum(k.output)} · cache read ${meterNum(k.cacheRead)} · cache written ${meterNum(k.cacheWrite)}` })
+          : null,
+        // A KEY WITH NO NAME IS NOT A KEY. A run whose sign-in could not be
+        // worked out is recorded rather than dropped — losing the spend is worse
+        // than losing the attribution — and says so rather than being folded
+        // into somebody's total.
+        k.key === null && k.runs
+          ? el('p', { className: 'note muted', textContent: 'These ran on a machine that was holding no recorded sign-in, or one that had already been taken back before this was written down.' })
+          : null)))
+    }
+
+    const rows = v.rows || []
+    setText($('meter-rows-context'), rows.length ? `— newest ${v.showing} of ${v.of}` : '')
+    if (!changed('meter-rows', rows.map(r => `${r.at}${r.ref}${r.cost}`))) return
+
+    fill($('meter-rows'), rows.length
+      ? rows.map(r => el('div', { className: 'card' },
+        el('div', { className: 'card-title' },
+          el('span', { className: 'badge muted', textContent: r.kind }),
+          el('span', { className: 'mono muted', textContent: r.ref || '' }),
+          el('span', { className: 'grow', textContent: r.about || '' }),
+          r.trouble ? el('span', { className: 'badge bad', textContent: 'ended badly' }) : null,
+          el('span', { className: 'badge', textContent: meterCost(r.cost) })),
+        el('div', { className: 'card-sub muted', textContent: [
+          r.key || 'no sign-in recorded',
+          r.machine || null,
+          ago(r.at),
+          r.turns == null ? null : `${r.turns} turn(s)`,
+          r.ms == null ? null : `${Math.round(Number(r.ms) / 1000)}s`
+        ].filter(Boolean).join(' · ') }),
+        el('div', { className: 'card-sub muted', title: 'fresh input / output / read from cache / written to cache', textContent:
+          `in ${meterNum(r.input)} · out ${meterNum(r.output)} · cache read ${meterNum(r.cacheRead)} · cache written ${meterNum(r.cacheWrite)}` })))
+      : el('p', { className: 'empty', textContent: v.note || 'Nothing metered yet.' }))
+  }).catch(() => { /* the chrome says when the dashboard itself is unreachable */ })
+}

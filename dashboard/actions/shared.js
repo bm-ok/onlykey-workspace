@@ -45,6 +45,10 @@ const triage = require('../core/triage')
 // What there is to do, which is neither of the other two lists — the head of
 // core/todo.js says why it is not the task board and not triage.
 const todo = require('../core/todo')
+// What each sign-in has spent. See core/meter.js.
+const meter = require('../core/meter')
+// The sign-ins this host keeps, for attributing what was spent to one.
+const guests = require('../core/guests')
 const artifact = require('../tasks/artifact')
 const prompts = require('../tasks/prompts')
 const jobs = require('../tasks/jobs')
@@ -409,7 +413,7 @@ async function supervisorMachine (name) {
 module.exports = {
   whoAsked, supervisorMachine,
   log, events, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, allowed, judgements,
-  vbox, vms, provisioner, scripts, channel, tasks, judging, triage, todo, artifact,
+  vbox, vms, provisioner, scripts, channel, tasks, judging, triage, todo, meter, guests, artifact,
   archive, files, sessions, prompts, contracts, jobs, jobrun, harness, suites, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace,
   fs, path, https,

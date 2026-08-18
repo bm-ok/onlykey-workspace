@@ -59,6 +59,9 @@ const judgements = require('../repos/judgements')
 // The two things that arrive on their own: an issue somebody filed and a pull
 // request somebody proposed. See repos/watching.js.
 const watching = require('../repos/watching')
+// Whose sign-in a run was spent on, and where that is written down.
+const guests = require('../core/guests')
+const meter = require('../core/meter')
 // Which repository in this workspace a name GitHub uses refers to. A pull
 // request is named owner/name and a repository here is called something
 // shorter, and reading one means knowing which is which.
@@ -452,6 +455,9 @@ async function runJudgement (actions, log, judgement, machine) {
 
     const outcome = await phase('reading', () => waitForRun(actions, to, machine, started.run, Number(judgement.hours) || 6))
 
+    // Before anything else touches the machine — see meterRun.
+    await meterRun(actions, to, machine, started.run, { kind: 'judgement', about: subject.name || judgement.title || null, ref })
+
     // ---- WHY, IF IT WENT WRONG, WHILE THE MACHINE IS STILL UP ------------
     //
     // A job's own output lives ON THE MACHINE, and the machine is restored to
@@ -802,6 +808,9 @@ async function run (actions, log, task, machine) {
     // away underneath it. A task that knows it is long says so.
     const outcome = await phase('work', () => waitForRun(actions, to, machine, started.run, Number(task.hours) || 6))
 
+    // The same, for work rather than for a reading. See meterRun.
+    await meterRun(actions, to, machine, started.run, { kind: 'task', about: task.title || null, ref: `#${task.number}` })
+
     // Pulled across before the machine is touched again. taskProgress does this
     // too, but that only happens if somebody looks -- and this machine is about
     // to be shut down and rolled back, which is precisely when nobody is.
@@ -1073,6 +1082,60 @@ async function settle (actions, to, machine, ok, timeout, what, usual) {
 // result, and waiting for one would hold a machine out of service for as long as
 // the timeout -- which is the whole afternoon, on a task nobody is going to get
 // an answer to.
+// WHAT A RUN COST, READ BEFORE THE MACHINE IS PUT AWAY.
+//
+// A run's transcript lives ON THE MACHINE, and the machine is restored to its
+// base snapshot the moment the work around it ends. So this is the only window
+// in which the numbers exist at all -- afterwards there is an exit code on this
+// host and nothing else.
+//
+// THE LAST `result` LINE. The CLI ends a run with one, carrying the turns, the
+// duration, the tokens and what it cost. A run can print more than one and the
+// last is the one about the whole of it. Parsed line by line as whole JSON
+// rather than by regex over the file: half-reading somebody else's format is how
+// a number silently becomes the wrong number.
+//
+// ATTRIBUTED TO THE SIGN-IN THAT RAN IT, asked of the guests store rather than
+// assumed -- a machine holds whichever credential was lent to it, and that is
+// the account this is billed to.
+//
+// NEVER FATAL, AND NEVER IN THE WAY. A run that happened and was not metered is
+// a gap in a total; a run that FAILED because the metering did is work lost for
+// bookkeeping. One catch around the whole of it, and nothing downstream reads
+// what it returns.
+async function meterRun (actions, to, machine, runId, { kind, about, ref }) {
+  try {
+    const said = await actions.vmRunOutput.run({ name: machine, run: runId, lines: 60 })
+    const text = String((said && (said.output || said.tail)) || '')
+
+    let last = null
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('{') || !trimmed.includes('"result"')) continue
+      try {
+        const e = JSON.parse(trimmed)
+        if (e && e.type === 'result') last = e
+      } catch { /* a line the tail cut in half, which is expected */ }
+    }
+    if (!last) return null
+
+    const holder = guests.all().find(g => g.holder === machine)
+    const row = meter.record({
+      key: holder ? holder.name : null,
+      machine,
+      kind,
+      about,
+      ref,
+      ...meter.fromResult(last)
+    })
+    if (row.cost != null) to.info(`${ref} cost ${Number(row.cost).toFixed(4)} USD on ${row.key || 'an unrecorded sign-in'}`)
+    return row
+  } catch (e) {
+    to.warn(`could not read what ${runId} cost: ${e.message}`)
+    return null
+  }
+}
+
 async function waitForRun (actions, to, machine, runId, hours = 6) {
   const deadline = Date.now() + hours * 3600000
   // No `usual` here, and that is the honest answer: a task is as long as the

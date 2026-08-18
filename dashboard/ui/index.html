@@ -474,6 +474,12 @@
            taking it away would lose them from the window before the new pane
            carries them. -->
       <button class="subtab" data-pane="guest">old claude guest</button>
+      <!-- WHAT EACH SIGN-IN HAS SPENT. Here rather than on its own tab because
+           it is a fact about the identities in the panes beside it: which
+           account is being billed for what, which is the reason the supervisor's
+           sign-in is chosen deliberately rather than taken as whichever is
+           free. -->
+      <button class="subtab" data-pane="meter">Meter</button>
     </div>
 
     <!-- ---------------- Claude guests ----------------
@@ -579,7 +585,33 @@
           <div id="session-detail" class="panel"></div>
         </div>
       </div>
-  </section>
+    </div><!-- CLOSED EXPLICITLY, which it never was. This pane relied on the
+         browser closing it at </section>, which works right up until something
+         is added after it — the Meter pane below landed INSIDE this one, was
+         given .active correctly, and stayed invisible because its parent is
+         display:none. The DOM said "pane active" and the screen said nothing,
+         which is a long way to look for a missing </div>. -->
+
+    <!-- ---------------- Meter ----------------
+         A ROW PER RUN, NEVER A RUNNING TOTAL. Totals are computed on the way
+         out, so a row recorded wrongly can be removed and the totals are simply
+         right afterwards — a stored total is a number nothing can check.
+
+         Nothing here prices anything. Cost is what the model's own result line
+         said, carried through unchanged; this app does not know anybody's rates
+         and a number it invented would be indistinguishable from one it was
+         told. See core/meter.js. -->
+    <div class="pane" id="pane-meter">
+      <div class="sync-head">
+        <h2>Meter <span class="muted" id="meter-context"></span></h2>
+      </div>
+      <p class="note">What each sign-in has spent. A supervisor waking and a worker run each write one row when they finish, read off the machine before it is rolled back — so what is here is what was actually spent, not an estimate.</p>
+      <div id="meter-total"></div>
+      <div id="meter-keys" class="stack"></div>
+      <h2 class="titlerow" style="margin-top:18px">Runs <span class="muted" id="meter-rows-context"></span></h2>
+      <div id="meter-rows" class="stack"></div>
+    </div>
+</section>
 
   <!-- ---------------- Tasks ----------------
        The work half. A task is written here, given to a machine, and judged on

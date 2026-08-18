@@ -186,6 +186,21 @@ module.exports = {
       const said = chat.all().filter(m => m.who === 'supervisor' && Number(m.n) > Number(from || 0)).length
       count(said, 'message from the supervisor', 'messages from the supervisor')
 
+      // AND HOW MUCH OF THE CONVERSATION THE SUPERVISOR CAN NO LONGER REACH.
+      //
+      // It reads with a bookmark and gets the most recent 200; anything older
+      // than that is not "unread", it is unreadable — there is no call that
+      // hands it back. So a standing instruction given far enough up the thread
+      // stops applying without anything having happened, and the first sign is
+      // a supervisor asking something it was told months ago.
+      //
+      // COUNTED IN THE SAME BADGE, because both are "the Chat tab wants you",
+      // and told apart in the hover — a second badge on one tab is two numbers
+      // to interpret where there was one.
+      const readMark = chat.readMark ? chat.readMark() : null
+      const beyond = chat.since(Number(readMark && readMark.n) || 0).missed || 0
+      count(beyond, 'message the supervisor can no longer see', 'messages the supervisor can no longer see')
+
       // SPLIT BY WHICH LIBRARY THEY ARE IN, so each badge counts what is on its
       // own tab. `actions` is the working library; a judging one belongs to the
       // Judge tab, beside the verdicts that are also owed there.
@@ -196,7 +211,11 @@ module.exports = {
         actions: forTasks.length,
         judge: mine.length + mute.length + forJudges.length,
         repos: out.length + arrived.length,
-        supervisor: said,
+        supervisor: said + beyond,
+        // Apart as well as together, so the hover can say which is which and the
+        // window does not have to re-derive it.
+        supervisorSaid: said,
+        beyondReach: beyond,
         total: unapproved.length + mine.length + mute.length + out.length + arrived.length + said,
         // What each of them IS, so a badge can carry it on its hover rather than
         // being a number somebody has to go and interpret.

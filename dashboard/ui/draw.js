@@ -156,9 +156,10 @@ async function drawOnce () {
   // What the supervisor said is the Chat pane's business specifically, and once
   // that tab has more than one pane a number on the tab alone says "something
   // in here" without saying where.
-  const saidSince = owed.supervisor
-    ? `${owed.supervisor} message(s) since you last moved your bookmark`
-    : ''
+  const saidSince = [
+    owed.supervisorSaid ? `${owed.supervisorSaid} message(s) since you last moved your bookmark` : '',
+    owed.beyondReach ? `${owed.beyondReach} message(s) are past what the supervisor can read back — it reads the most recent 200 and there is no call that returns the rest` : ''
+  ].filter(Boolean).join('\n')
   nudge('chat-badge', owed.supervisor, saidSince)
   nudge('chat-badge-pane', owed.supervisor, saidSince)
 
@@ -509,6 +510,9 @@ async function drawOnce () {
   // Guards on its own pane, so this costs nothing while the conversation is
   // what is open.
   paintTodoList()
+  // Guards on its own pane, so it costs nothing while the machines are what is
+  // open. See paintMeter in ui/machines.js.
+  paintMeter()
   // On the loop, not only when the sub-tab is clicked. It was wired to the
   // switcher alone, so a window opened with this pane already remembered drew
   // nothing at all — an empty column that looks exactly like having no guests.

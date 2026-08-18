@@ -29,7 +29,7 @@ const actions = require('./table')
 // that could not run at all.
 const supervisor = require('../core/supervisor')
 const s = require('./shared')
-const { log, events, tasks, vms, landings, channel, settings } = s
+const { log, events, tasks, vms, landings, channel, settings, meter } = s
 
 // ---- waking it ------------------------------------------------------------
 //
@@ -81,10 +81,27 @@ module.exports = {
       // read TO. Both are pointers into this list and they mean opposite things
       // — see core/chat.js.
       const from = chat.fromMark()
+
+      // WHAT THE SUPERVISOR WOULD NOT SEE IF IT WOKE NOW.
+      //
+      // `missed` on this answer is always zero and always will be: the window
+      // asks with no bookmark and is handed everything, so the field describes
+      // the window's own reading rather than anybody's problem.
+      //
+      // The number worth showing is the OTHER end's. A supervisor reads with
+      // `whatsNew`, which trims to the most recent 200 and reports how many it
+      // dropped — and nothing has ever surfaced that, so the moment a
+      // conversation passes that length the far end silently stops being able
+      // to see the beginning of it. Asked here the same way it will be asked
+      // there, from the same bookmark, so this is a rehearsal rather than an
+      // estimate.
+      const beyond = chat.since(Number(read && read.n) || 0).missed || 0
+
       return {
         ...rows,
         read,
         from,
+        beyondReach: beyond,
         note: rows.messages.length
           ? `${rows.messages.length} message(s)${rows.missed ? `, and ${rows.missed} older ones not shown` : ''}.`
           : 'Nothing has been said yet. Type something and the supervisor will read it next time it looks.'
@@ -417,6 +434,63 @@ module.exports = {
         }
 
         const took = Math.round((Date.now() - began) / 1000)
+
+        // ---- WHAT IT COST, WHILE THE TURN'S LOG IS STILL THERE -------------
+        //
+        // The CLI ends a run with a `result` line carrying the turns, the
+        // duration, the tokens and what it cost. For a WORKER that line is read
+        // by machines/job-api.js; for a supervisor nothing read it at all, so a
+        // waking left "it thought for 38s" in the log and no record anywhere of
+        // what had been spent doing it.
+        //
+        // ATTRIBUTED TO THE SIGN-IN, which is the question worth answering. This
+        // host can hold several and the supervisor's is chosen deliberately —
+        // "which account is this billed to" is the reason that choice exists,
+        // and it could not be answered afterwards.
+        //
+        // BEST EFFORT, AND NEVER FATAL. A turn that happened and was not metered
+        // is a gap in a total; a turn that FAILED because the metering did is a
+        // supervisor this host cannot use. The first is worth having, the second
+        // is not, so every part of this is inside one catch and the turn's own
+        // result is untouched by it.
+        try {
+          const tail = await channel.run(on,
+            `tail -c 4000 ${s.dispatch.SUPERVISOR}/current.log 2>/dev/null || true`,
+            { what: 'reading what the turn cost', timeout: 20000, quiet: true })
+
+          // THE LAST `result` LINE, because a turn can print more than one and
+          // the last is the one that is about the whole of it. Read line by line
+          // rather than with a regex over the file: these are whole JSON objects
+          // and half-parsing somebody else's format is how a number silently
+          // becomes the wrong number.
+          let last = null
+          for (const line of String(tail.output || '').split('\n')) {
+            const trimmed = line.trim()
+            if (!trimmed.startsWith('{') || !trimmed.includes('"result"')) continue
+            try {
+              const e = JSON.parse(trimmed)
+              if (e && e.type === 'result') last = e
+            } catch { /* a line cut in half by the tail, which is expected */ }
+          }
+
+          if (last) {
+            // WHICH SIGN-IN IS ON THAT MACHINE, asked of the guests store rather
+            // than assumed from the setting: the setting says which one SHOULD
+            // be used and the holder is which one actually is, and a turn is
+            // billed to the one that ran it.
+            const holder = guests.all().find(g => g.holder === on)
+            meter.record({
+              key: holder ? holder.name : null,
+              machine: on,
+              kind: 'supervisor',
+              about: 'a waking',
+              ref: stamp,
+              ...meter.fromResult(last)
+            })
+          }
+        } catch (e) {
+          log.on('supervisor', on).warn(`could not read what that turn cost: ${e.message}`)
+        }
 
         // ---- DID ANYTHING ACTUALLY HAPPEN? ---------------------------------
         //

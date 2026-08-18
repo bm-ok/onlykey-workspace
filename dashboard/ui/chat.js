@@ -401,6 +401,23 @@ function paintChat () {
       ? 'The supervisor reads this when it next wakes, not this second — it is a note left for it, and it is switched off most of the time.'
       : 'Nothing said yet. What you type here is what the supervisor is asked to do; it reads it when it next looks, and answers here.')
 
+    // AND HOW MUCH OF IT IS PAST WHAT THE FAR END CAN REACH.
+    //
+    // Not "unread" — unreadABLE. A supervisor reads with a bookmark and is
+    // handed the most recent 200; there is no call that returns what is older,
+    // so a standing instruction given far enough up this thread quietly stops
+    // applying. Nothing said so until now, and the first sign of it is a
+    // supervisor asking about something it was told weeks ago.
+    //
+    // Said under the thread rather than in a banner: it is a fact about this
+    // conversation, and it is not urgent — what it wants is to be visible
+    // before somebody wonders why the far end forgot something.
+    const beyond = Number(said.beyondReach) || 0
+    if (beyond) {
+      $('chat-note').append(el('span', { className: 'bad', style: 'margin-left:6px', textContent:
+        ` ${beyond} earlier message${beyond === 1 ? ' is' : 's are'} past what the supervisor can read back.` }))
+    }
+
     // Whether it answers by itself, and whether it is thinking right now.
     // Asked here rather than in the draw loop, because this is the only tab that
     // shows either and a panel behind a tab must ask nothing.
