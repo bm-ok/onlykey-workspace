@@ -55,7 +55,7 @@ it('two branches to work on, and a machine to work on one', async ({ okc, assert
     'no machine is ready, off and free — this needs one it can borrow')
   log(`cut "${state.branch}" and "${state.other}" from line "${line}"`)
   log(`free to borrow: ${vms.filter(v => v.stage === 'ready' && v.state !== 'running' && !v.branch && !v.borrowed).map(v => v.name).join(', ')}`)
-})
+}, { gate: true })
 
 it('it is borrowed, and it dials in', async ({ okc, assert, state, log }) => {
   // Minutes, not seconds: a base snapshot is restored, the machine boots, the

@@ -45,7 +45,7 @@ it('a supervisor machine is up, with its tool server and its gate', async ({ okc
     assert.ok(there.includes(wanted), `${wanted} is not on ${boss.name}: ${there.slice(0, 300)}`)
   }
   log('the tool server, the gate, the two configs and the skill are all there')
-})
+}, { gate: true })
 
 it('and the tool server offers exactly what this host allows', async ({ okc, assert, state, log }) => {
   // ASKED OF THE SERVER ITSELF, over the protocol it speaks. It fetches the list

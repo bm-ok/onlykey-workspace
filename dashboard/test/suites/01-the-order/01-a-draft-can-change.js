@@ -26,7 +26,7 @@ it('a cut to work on, and a contract to be held to', async ({ okc, assert, state
   await okc('branchCreate', { branch: state.branch, reason: 'a drill proving a draft is editable', group: line })
   log(`contract "${state.contract.name}" is approved, ${String(state.contract.text || '').length} characters of rules`)
   log(`cut "${state.branch}" from line "${line}"`)
-})
+}, { gate: true })
 
 it('a task written on it is a draft, and a draft can be rewritten', async ({ okc, assert, state, log }) => {
   state.task = await okc('taskCreate', { task: { title: 'drill: editable', brief: 'first', branch: state.branch, contractId: state.contract.id } })

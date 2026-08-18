@@ -69,7 +69,7 @@ it('a judgement is asked for against a branch cut, and gets a ref of its own', a
   assert.ok(!made.branch, `${made.ref} has taken a branch ("${made.branch}"), and a judgement reads rather than writes`)
   assert.equal(made.state, 'draft', 'a judgement starts as a draft, like any other work nobody has queued')
   log(`${made.ref} reads ${made.subject.name}, with ${made.job}`)
-})
+}, { gate: true })
 
 it('and the same subject is not judged twice at once', async ({ okc, assert, state }) => {
   assert.needs(state.judgement, 'the first check did not make a judgement')

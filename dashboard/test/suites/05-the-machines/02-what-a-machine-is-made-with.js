@@ -37,7 +37,7 @@ it('every machine writes its console somewhere', async ({ okc, assert, state, lo
   assert.ok(!blind.length,
     `${blind.map(m => m.name).join(', ')} write their console nowhere, so a boot that never finishes cannot be read. It is attached when a machine is built and given to older ones at startup — see provisioner.makeSureConsolesAreCaptured`)
   log(`${machines.length} machine(s), all writing their console to this host`)
-})
+}, { gate: true })
 
 it('and it cannot be turned off', async ({ okc, assert, state, log }) => {
   // What vmSerial is FOR now is putting one back. Off was the default once, and

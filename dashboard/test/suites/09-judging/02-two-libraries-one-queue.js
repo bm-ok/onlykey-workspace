@@ -70,7 +70,7 @@ it('a judge cannot be given to a task', async ({ okc, assert, state }) => {
     'is a judge|reads a change|work library',
     'a judging job was accepted as the job of a task'
   )
-})
+}, { gate: true })
 
 it('and both kinds wait in one line, with judgements in front', async ({ okc, assert, state, log }) => {
   assert.needs(state.branch, 'the first check did not cut a branch')

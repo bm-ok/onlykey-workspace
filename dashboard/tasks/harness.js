@@ -510,6 +510,21 @@ async function run (context = {}) {
           // A DOOR THAT DID NOT OPEN CLOSES THE REST. Only for a check that
           // said it was one: everywhere else an unmet precondition is a fact
           // about the moment and the checks after it speak for themselves.
+          //
+          // WHICH MAKES NOT SAYING SO A REAL FAULT, and a quiet one. A first
+          // check that fills `state` for the ones below it IS a door, whether
+          // or not it was marked -- and unmarked, the next check runs against
+          // an empty state. "the two apis" did exactly that: its setup was
+          // skipped for want of a machine, the check after it ran anyway, and
+          // the run reported `"undefined" is not a virtual machine this app
+          // made`. A failure about a missing machine, which is true, filed
+          // under a check about whether a runner is refused the supervisor
+          // API, which was never asked. Thirteen files were shaped that way.
+          //
+          // THE TEST FOR IT is not "is this setup" but "does anything below
+          // read what this wrote". If it does, a skip here has to close the
+          // rest, because everything below was going to ask for the same
+          // missing thing and can only lie about why it could not.
           if (t.gate) stoppedBy = `${t.name} — ${testRes.unrunnable}`
           try { if (context.onTestUpdate) context.onTestUpdate({ groupName: suite.group, suiteName: suite.name, testName: t.name, status: 'unrunnable', error: testRes.unrunnable }) } catch {}
           log(`  SKIP ${t.name} -> ${testRes.unrunnable}`)

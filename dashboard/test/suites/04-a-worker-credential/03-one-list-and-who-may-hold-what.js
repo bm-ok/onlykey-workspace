@@ -64,7 +64,7 @@ it('every credential this host holds is in one list, with a holder', async ({ ok
     'the full list holds fewer identities than the handed-out list, which cannot be true of a subset')
 
   log(all.map(g => `${g.name} [${g.role}] ${g.fingerprint || 'no file'}${g.holder ? ` on ${g.holder}` : ''}`).join('; '))
-})
+}, { gate: true })
 
 it('and nothing in the answer is a token', async ({ okc, assert, log }) => {
   // ASKED OF THE WHOLE ANSWER rather than field by field, so a field added one

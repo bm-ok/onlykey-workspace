@@ -73,7 +73,7 @@ it('a supervisor machine is up, and it can ask what it may do', async ({ okc, as
   }
   state.may = answer.may.map(m => m.what)
   log(`${answer.may.length} things it may ask for: ${state.may.join(', ')}`)
-})
+}, { gate: true })
 
 it('and everything else does not exist for it', async ({ okc, assert, state, log }) => {
   // THE THREE THAT MATTER, one from each family that is deliberately absent:

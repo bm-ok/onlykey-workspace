@@ -49,7 +49,7 @@ it('a machine can be kept back from the queue', async ({ okc, assert, state, log
   assert.equal(how.free, false, `${mine.name} is kept back and the queue still counts it as free to be given work`)
   assert.ok(/kept back/i.test(String(how.why || '')), `the queue holds it back for the wrong reason: "${how.why}"`)
   log(`${mine.name}: ${how.why}`)
-})
+}, { gate: true })
 
 it('and a borrow will not take it either', async ({ okc, assert, state, log }) => {
   // THE OTHER WAY A MACHINE GETS TAKEN. The queue is not the only thing that

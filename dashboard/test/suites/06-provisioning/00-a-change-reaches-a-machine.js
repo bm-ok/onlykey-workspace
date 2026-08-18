@@ -49,7 +49,7 @@ it('the app serves the script that is on disk', async ({ okc, assert, state, log
   assert.ok(state.served.includes(here.trim().split('\n').slice(1).join('\n').slice(0, 400)),
     'What the app serves is not the file in provision/ — an edit here would not reach a machine')
   log(`rendered for ${state.vm}: ${state.served.split('\n').length} lines served, and provision/first-boot.sh is ${here.split('\n').length} lines on disk`)
-})
+}, { gate: true })
 
 it('and the header it promises is on the front of it', async ({ assert, state, log }) => {
   // Every script is written as though OKC_USER, say and report already exist.

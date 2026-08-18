@@ -36,7 +36,7 @@ it('every machine this app made is known to it', async ({ okc, assert, state, lo
     assert.ok(vm.stage, `"${vm.name}" has no stage — it is neither built, nor installing, nor ready`)
   }
   for (const vm of vms) log(`${vm.name}: ${vm.state}, stage ${vm.stage}, base ${vm.baseSnapshot || 'none'}, claims ${vm.branch || 'nothing'}`)
-})
+}, { gate: true })
 
 it('a machine that is not running claims no branch', async ({ assert, state, log }) => {
   // The one that matters. A claim is how a machine says "the work on this branch

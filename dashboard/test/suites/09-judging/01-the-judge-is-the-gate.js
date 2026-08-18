@@ -54,7 +54,7 @@ it('a task written over the wire without a judgement is refused', async ({ okc, 
     'judgement|becauseOf|rumour',
     'a task was written over the wire with no judgement behind it'
   )
-})
+}, { gate: true })
 
 it('and naming a judgement that has not finished is not enough', async ({ okc, actions, assert, state }) => {
   assert.needs(state.branch, 'the first check did not cut a branch')

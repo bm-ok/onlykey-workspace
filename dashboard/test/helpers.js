@@ -18,9 +18,31 @@ const scratch = what => `drill/${what}-${new Date().toISOString().replace(/[^0-9
 
 // The line everything is cut from. Read rather than named, because which lines
 // exist is a fact about the workspace and not something a drill decides.
+// THE DEFAULT LINE FIRST, AND NOT MERELY THE FIRST WHOLE ONE.
+//
+// This used to take whichever line came back first, which is the same idea
+// written carelessly: it depends on what else happens to be lying around. On
+// a host with leftover work lines it picked `csvstat lockfile ignore`, and a
+// drill cut from a branch somebody had been working on.
+//
+// THAT WAS HARMLESS UNTIL WORK HAD SOMEWHERE TO GO. While a repository sent
+// work to its own remote, any line was a base that existed at the far end,
+// because the far end was here. The moment a target was picked, the base had
+// to exist THERE -- and a line invented locally does not. "a change goes out
+// and comes back" failed with exactly that, and the refusal named it:
+// `bm-sandbox-b/local-repo-a has no branch called "fix/csvstat-lockfile-ignore"`.
+//
+// `default` is the answer for the same reason it is the answer in real use: it
+// is the line every repository has, it is the one a fork shares with what it
+// was forked from, and it is where a change goes home to. Every caller of this
+// wants "a line to cut from" and none of them wants a particular one.
+//
+// The fallback stays, because a host may name its lines differently, and a
+// drill that refuses to run is worse than one that cuts from somewhere odd.
 async function aLine (okc, assert) {
   const { groups } = await okc('lines')
-  const line = (groups || []).find(g => !g.broken.length)
+  const whole = (groups || []).filter(g => !g.broken.length)
+  const line = whole.find(g => g.name === 'default') || whole[0]
   assert.needs(line, 'no line is whole here — a cut has to start from one')
   return line.name
 }

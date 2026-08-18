@@ -77,7 +77,7 @@ it('a runner and a supervisor are both up, and this host knows which is which', 
   assert.ok(state.base, 'this host does not say where it listens in the script it serves a machine')
 
   log(`supervisor ${boss.name}, runner ${worker.name}, both talking to ${state.base}`)
-})
+}, { gate: true })
 
 it('and the runner is refused the supervisor API', async ({ okc, assert, state, log }) => {
   // ASKED WITH ITS OWN, REAL CREDENTIALS. It is a machine this app made and its
