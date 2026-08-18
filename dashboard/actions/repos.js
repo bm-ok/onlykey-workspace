@@ -334,6 +334,32 @@ module.exports = {
 
       const made = allowed.allow(on, number, one.headSha, { by: whoAsked({ _overTheWire, _driven }), note })
       log.on('github', row.repo).good(`#${number} on ${on} may be judged at ${one.headSha.slice(0, 7)} — allowed by ${made.by}`)
+
+      // AND SAYING YES IS ITSELF THE THING THAT HAPPENED.
+      //
+      // The watcher wakes a supervisor when a pull request ARRIVES or when its
+      // author pushes -- both facts about GitHub. Neither of them is this one.
+      // A pull request that arrived an hour ago, was refused at the gate, and
+      // has just been allowed is not fresh and has not moved, so on the day
+      // this was written nothing woke: a person pressed the button that
+      // unblocks the work and the work stayed exactly where it was, until the
+      // author happened to push.
+      //
+      // Found by pressing it. The gate was right, the badge was right, the
+      // allowance was written down correctly, and the whole thing still went
+      // nowhere -- which is the failure that no amount of reading the gate
+      // would have shown, because every part of the gate was working.
+      //
+      // NOT AWAITED, and it does not fail the allowance. The allowance is a
+      // fact recorded on this host; whether something can be woken to act on it
+      // is a separate question with its own failures -- a machine that will not
+      // start, a sign-in that has expired -- and none of those should read as
+      // "your yes did not go through".
+      if (settings.read().supervisorWakes === true) {
+        actions.supervisorWake.run({
+          why: `allowed by a person — ${on}#${number} "${String(one.title || '').slice(0, 80)}" may now be judged at ${one.headSha.slice(0, 7)}. It arrived from outside this workspace.`
+        }).catch(e => log.on('supervisor').warn(`it could not be woken about ${on}#${number}: ${e.message}`))
+      }
       return {
         ...made,
         title: one.title,
