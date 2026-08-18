@@ -75,6 +75,24 @@ const DEFAULTS = {
   // same allowlist either way.
   supervisorWakes: false,
 
+  // WHETHER THIS HOST WATCHES GITHUB FOR WORK ARRIVING, and it is off until
+  // somebody says otherwise.
+  //
+  // An issue and a pull request are the only two things in this whole app
+  // that turn up on their own. Everything else begins with somebody writing
+  // a task -- so without this, a supervisor wakes, sees nothing new, and
+  // goes back to sleep with an open issue sitting there.
+  //
+  // OFF BY DEFAULT because it is a standing network call against somebody
+  // else's service, and because what it leads to is a supervisor deciding
+  // there is work. Switching it on is saying "watch my repositories and act
+  // on what turns up", which is a sentence somebody should say out loud.
+  //
+  // It is slow on purpose -- minutes, not seconds. See LOOK_EVERY in
+  // tasks/queue.js and the note at the top of repos/watching.js for why this
+  // is not the "never on a timer" rule being quietly broken.
+  watchGitHub: false,
+
   // WHICH SIGN-IN THE SUPERVISOR USES, by name, until somebody switches it.
   //
   // A supervisor holds one identity for as long as it is up, and this host can

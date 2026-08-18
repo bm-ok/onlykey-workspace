@@ -18,6 +18,8 @@
 // means four bookmarks and a model keeping three of them correctly.
 
 const chat = require('../core/chat')
+// What arrived on GitHub at the last look — see repos/watching.js.
+const watching = require('../repos/watching')
 // The Claude identities this host holds — a supervisor is ready only when it is
 // holding one, which is the state that looks identical to working from outside.
 const guests = require('../core/guests')
@@ -236,7 +238,31 @@ module.exports = {
           waitingOnAVerdict: finished.map(t => ({ id: t.id, number: t.number, title: t.title, branch: t.branch }))
         },
         machines: vms.read().map(v => v.name).length,
-        cuts: Object.values(landings.all() || {}).length
+        cuts: Object.values(landings.all() || {}).length,
+
+        // WHAT ARRIVED FROM OUTSIDE, which is the only thing here that nobody
+        // wrote down first. An issue somebody filed and a pull request somebody
+        // proposed are the two things that turn up on their own -- and this had
+        // no way of saying so, so a supervisor woke, saw nothing new, and went
+        // back to sleep with an open issue sitting there. It could ASK (issues
+        // and pulls are on its list) and was never told there was anything to
+        // ask about.
+        //
+        // FROM THE LAST LOOK, NOT FROM GITHUB. This runs inside a wake, and a
+        // wake is not the moment to spend a round trip per repository; the
+        // watcher looks on its own slow cadence and this reports what it found.
+        // The time of that look is carried, because a list with no age is one
+        // whose staleness cannot be judged -- and it is null when nothing has
+        // ever looked, which is different from nothing being there.
+        arrived: (() => {
+          const seen = watching.lastLook()
+          return {
+            lookedAt: seen.at,
+            watching: settings.read().watchGitHub === true,
+            issues: seen.issues.map(o => ({ on: o.on, number: o.number, title: o.title, url: o.url, by: o.by, firstSeen: o.first })),
+            pulls: seen.pulls.map(o => ({ on: o.on, number: o.number, title: o.title, url: o.url, by: o.by, head: o.head, firstSeen: o.first }))
+          }
+        })()
       }
 
       // AND WHAT THIS HOST DID, when asked for. Off by default because it is the

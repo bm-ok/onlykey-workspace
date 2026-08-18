@@ -56,6 +56,9 @@ const judging = require('./judging')
 const files = require('./files')
 // What a judgement was read against, for the record it leaves behind.
 const judgements = require('../repos/judgements')
+// The two things that arrive on their own: an issue somebody filed and a pull
+// request somebody proposed. See repos/watching.js.
+const watching = require('../repos/watching')
 const channel = require('../machines/channel')
 // One machine coming up at a time, across the whole host — see bringUp below.
 const busy = require('../machines/busy')
@@ -121,6 +124,53 @@ function availability (vms) {
 
 // ---- the loop ----------------------------------------------------------
 
+// HOW OFTEN THIS HOST LOOKS AT GITHUB, when it is looking at all.
+//
+// Five minutes, and the number is a judgement rather than a tuning knob: an
+// issue that waits five minutes has lost nothing, and a rate limit spent on
+// looking is one not available for the work. The queue ticks every fifteen
+// seconds and this is checked on each of them -- checking a clock is free,
+// and asking GitHub is not.
+const LOOK_EVERY = 5 * 60 * 1000
+let lookedAt = 0
+let looking = false
+
+async function watchIfItIsTime (actions, log) {
+  if (looking) return
+  if (settings.read().watchGitHub !== true) return
+  if (Date.now() - lookedAt < LOOK_EVERY) return
+  looking = true
+  lookedAt = Date.now()
+  try {
+    const said = await watching.look()
+    for (const one of said.trouble) log.on('github').warn(`could not read the ${one.kind}s on ${one.on}: ${one.why}`)
+
+    // WHAT IS NEW, AND WHAT MOVED. A pull request pushed to since the last
+    // look is the same number and a different change, and anything decided
+    // about the old commit no longer describes it -- which is worth saying
+    // as loudly as a new one arriving.
+    const news = [
+      ...said.fresh.map(o => `${o.kind === 'issue' ? 'issue' : 'pull request'} ${o.on}#${o.number} "${String(o.title || '').slice(0, 60)}"`),
+      ...said.moved.map(o => `${o.on}#${o.number} has been pushed to since it was last read`)
+    ]
+    if (!news.length) return
+
+    for (const line of news) log.on('github').good(`arrived: ${line}`)
+
+    // AND THE SUPERVISOR IS TOLD, if it answers by itself at all. The same
+    // switch as everywhere else: this host may notice without anything being
+    // woken, which is the state somebody watching by hand wants.
+    if (settings.read().supervisorWakes === true) {
+      actions.supervisorWake.run({ why: `arrived on GitHub — ${news.join('; ')}` })
+        .catch(e => log.on('supervisor').warn(`it could not be woken about GitHub: ${e.message}`))
+    }
+  } catch (e) {
+    log.on('github').warn(`could not look at GitHub: ${e.message}`)
+  } finally {
+    looking = false
+  }
+}
+
 async function tick (actions, log) {
   if (running) return
 
@@ -140,6 +190,24 @@ async function tick (actions, log) {
 
   running = true
   try {
+    // ---- HAS ANYTHING ARRIVED FROM OUTSIDE ------------------------------
+    //
+    // The two things that turn up on their own: an issue somebody filed, and
+    // a pull request somebody proposed. Nothing else in this app arrives --
+    // every other piece of work starts with a person or a supervisor writing
+    // it down.
+    //
+    // ON THE QUEUE RATHER THAN THE DRAW LOOP, and every few minutes rather
+    // than every few seconds. The rule this respects is that a paint function
+    // must not reach the network; this is the queue, which already runs
+    // whether or not a window is open, and it is off until somebody switches
+    // it on. See repos/watching.js.
+    //
+    // NOT AWAITED INTO THE DISPATCH PATH. A slow GitHub is not a reason for
+    // the queue to stop giving out work, so this is fired and let go, exactly
+    // like waking the supervisor is.
+    watchIfItIsTime(actions, log)
+
     const { tasks } = await actions.tasks.run({})
     // Oldest first WITHIN A KIND, and judgements ahead of tasks — see `order`
     // at the foot of this file, which is the one place that rule is written and
