@@ -818,6 +818,66 @@ async function gather (only = null) {
 // the general thing because the panel that lists a repository's branches wants
 // to move any one of them, and two copies of "fetch and fast-forward" would be
 // two places for the refusals to stop matching.
+// ---- bringing somebody else's pull request here ------------------------
+//
+// A machine can only see what this host serves. An arrived pull request lives on
+// the contributor's fork, which this host has no remote for and should not add
+// one for -- so the change is fetched from the PARENT, where GitHub publishes
+// every pull request as a ref, and lands here as an ordinary local branch.
+//
+//     refs/pull/<n>/head   on the parent, read-only, kept by GitHub
+//     pull/<n>             here, a branch like any other
+//
+// WHY THIS RATHER THAN A REMOTE PER CONTRIBUTOR. The pull ref is the same change
+// without trusting, naming or configuring anything of theirs; there is nothing
+// to clean up afterwards and nothing that can push back. It is also what GitHub
+// itself uses, so it exists for every pull request including ones from forks
+// that have since been deleted.
+//
+// FETCHING IS NOT RUNNING. This brings bytes onto this host and nothing more --
+// no checkout, no hooks, no scripts. What it is fetched FOR is gated elsewhere,
+// per commit, by a person: see repos/allowed.js.
+//
+// FORCED, because a pull request moves: the author pushes and the same number
+// points somewhere else. The local branch follows it, and what a judgement read
+// is pinned by the sha it recorded rather than by this branch standing still.
+function fetchPull (repo, number) {
+  const at = path.join(serve.DIR, repo)
+  const helper = path.join(__dirname, '..', 'tools', 'git-credential-okc.js')
+  const note = seen()[repo] || {}
+  const remote = remoteOf(repo)
+  const parent = note.parent || (remote ? `${remote.owner}/${remote.repo}` : null)
+  if (!parent) throw new Error(`"${repo}" has no GitHub remote this host can read pull requests from.`)
+
+  let token = null
+  try { token = github.tokenForPush() } catch { /* a public parent needs none */ }
+
+  const n = Number(number)
+  if (!Number.isInteger(n) || n < 1) throw new Error(`"${number}" is not a pull request number.`)
+  const branch = `pull/${n}`
+
+  const said = execFileSync('git', [
+    '-C', at,
+    '-c', 'credential.helper=',
+    `-c`, `credential.helper=!node "${helper.split('\\').join('/')}"`,
+    'fetch', '--quiet', '--force',
+    `https://github.com/${parent}.git`,
+    `refs/pull/${n}/head:refs/heads/${branch}`
+  ], {
+    encoding: 'utf8',
+    timeout: 120000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      ...(token ? { OKC_GIT_USER: 'x-access-token', OKC_GIT_TOKEN: token } : {}),
+      GIT_TERMINAL_PROMPT: '0'
+    }
+  })
+
+  const head = String(execFileSync('git', ['-C', at, 'rev-parse', branch], { encoding: 'utf8', timeout: 30000, windowsHide: true })).trim()
+  return { repo, number: n, from: parent, branch, head, said: String(said || '').trim() || null }
+}
+
 function syncBranch (repo, branch) {
   const at = path.join(serve.DIR, repo)
   const helper = path.join(__dirname, '..', 'tools', 'git-credential-okc.js')
@@ -892,4 +952,4 @@ const syncDefault = repo => {
   return syncBranch(repo, branch)
 }
 
-module.exports = { read, check, gather, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }
+module.exports = { read, check, gather, fetchPull, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }

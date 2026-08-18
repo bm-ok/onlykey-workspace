@@ -157,6 +157,47 @@ module.exports = {
   // contract a judging job carries is the other half.
   //
   // So: a person allows one, at one commit, and nothing else can.
+  // BRING AN ARRIVED PULL REQUEST HERE, so a machine can be set up on it the
+  // ordinary way. It becomes the branch `pull/<n>` in that repository.
+  //
+  // ALLOWED FIRST. Fetching is only bytes and is harmless on its own -- but the
+  // only reason to fetch one is to read it on a machine, and doing that without
+  // the allowance would put a stranger's code one command away from a checkout.
+  // Refusing here keeps the gate in one place rather than at every door that
+  // leads to the same room.
+  prFetch: {
+    about: "Bring an arrived pull request into this workspace as the branch pull/<n>, so it can be read",
+    needs: 'workspace',
+    takes: ['repo', 'number'],
+    run: async ({ repo, number }) => {
+      const row = remotes.read().find(x => x.repo === String(repo))
+      if (!row) throw new Error(`There is no repository called "${repo}" in this workspace.`)
+      const on = row.issuesOn || (row.remote && row.remote.owner ? `${row.remote.owner}/${row.remote.repo}` : null)
+      if (!on) throw new Error(`"${repo}" has no GitHub remote this host can read from.`)
+
+      const said = await actions.pulls.run({ repo, state: 'all' })
+      const one = (said.pulls || []).find(p => Number(p.number) === Number(number))
+      if (!one) throw new Error(`${on} has no pull request #${number}.`)
+
+      const may = allowed.check(on, number, one.headSha)
+      if (!may.allowed) {
+        throw new Error(may.stale
+          ? `${on}#${number} was allowed at ${may.said.sha.slice(0, 7)} and is now at ${String(one.headSha || '?').slice(0, 7)}. Look at it again and allow the commit it is on before bringing it here.`
+          : `Nobody has allowed ${on}#${number} to be read here. Allow it at the commit it is on first — Repositories → Overview.`)
+      }
+
+      const got = remotes.fetchPull(repo, number)
+      log.on('git', repo).good(`${on}#${number} is here as "${got.branch}" at ${String(got.head).slice(0, 7)}`)
+      return {
+        ...got,
+        on,
+        title: one.title,
+        by: one.by,
+        note: `${on}#${number} is in this workspace as the branch "${got.branch}". It is a copy to READ: nothing has been checked out, and pushing to it would go nowhere the contributor sees.`
+      }
+    }
+  },
+
   prJudging: {
     about: 'Pull requests that have arrived, who wrote them, and whether a judge may read them',
     needs: 'workspace',
