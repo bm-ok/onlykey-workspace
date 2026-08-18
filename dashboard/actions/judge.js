@@ -24,7 +24,7 @@ const s = require('./shared')
 // No `tasks` here, and that is the point of the file: a judgement is about a
 // change, and the task that produced it is a fact about where the change came
 // from rather than the thing being read.
-const { log, judging, jobs, prompts, contracts, judgements, prtemplate, branches, repos, files } = s
+const { log, judging, jobs, prompts, contracts, judgements, prtemplate, branches, repos, files, allowed } = s
 
 // WHAT EACH REPOSITORY WAS AT WHEN IT WAS READ, for either kind of subject.
 //
@@ -97,17 +97,57 @@ module.exports = {
   judgementCreate: {
     about: 'Ask for a judgement of a branch cut or a PR cut: what is read, which job reads it, and what question it is being asked',
     needs: 'workspace',
-    takes: ['kind', 'branch', 'source', 'target', 'job', 'by', 'tag', 'question'],
-    run: async ({ kind, branch, source, target, job, by, tag, question, _overTheWire }) => {
+    takes: ['kind', 'branch', 'source', 'target', 'on', 'number', 'sha', 'job', 'by', 'tag', 'question'],
+    run: async ({ kind, branch, source, target, on, number, sha, job, by, tag, question, _overTheWire }) => {
       // WHAT IS BEING READ, resolved before anything is written, so a judgement
       // is never filed against a cut that does not exist. `subjectFrom` is where
       // the two shapes are understood, and it refuses anything else.
-      const subject = judging.subjectFrom({ kind, branch, source, target })
+      const subject = judging.subjectFrom({ kind, branch, source, target, on, number, sha })
 
       // AND IT HAS TO BE THERE. A judgement of something this host cannot find is
       // a machine booted to read nothing, twenty minutes from now, and a verdict
       // filed under a name that is nearly right.
-      if (subject.kind === 'cut') {
+      if (subject.kind === 'pull') {
+        // SOMEBODY ELSE'S CODE, SO A PERSON HAS TO HAVE SAID SO — and said so
+        // about THIS commit.
+        //
+        // This is the whole point of the kind existing separately. Judging an
+        // arrived pull request means fetching a stranger's change onto a machine
+        // holding a credential, and the judge is a model reading text that the
+        // author wrote. `repos/allowed.js` records one allowance per commit; if
+        // the author has pushed since, the allowance is stale and this refuses
+        // rather than reading something nobody approved.
+        const may = allowed.check(subject.on, subject.number, subject.sha)
+        if (!may.allowed) {
+          throw new Error(may.stale
+            ? `${subject.on}#${subject.number} was allowed at ${may.said.sha.slice(0, 7)} and is now at ${subject.sha.slice(0, 7)} — the author has pushed since, so what was approved is not what a judge would read. Look at it again and allow it at the commit it is on now.`
+            : `Nobody has allowed ${subject.on}#${subject.number} to be judged. Somebody else's code is only read here once a person has looked at it and said so, at the commit it is on — Repositories → Overview.`)
+        }
+
+        // AND IT HAS TO STILL BE THERE, AT THAT COMMIT. The allowance is this
+        // host's record; GitHub is the fact. They disagree when an author
+        // pushes between the allowance being given and the judgement being
+        // asked for, which is a race of seconds and is exactly the case the
+        // whole mechanism exists for.
+        let live = null
+        try {
+          const said = await actions.pulls.run({ on: subject.on, state: 'all' })
+          live = (said.pulls || []).find(p => Number(p.number) === Number(subject.number)) || null
+        } catch (e) {
+          throw new Error(`This host could not ask GitHub about ${subject.on}#${subject.number}, so it cannot tell whether the commit that was allowed is still the one there: ${e.message}`)
+        }
+        if (!live) throw new Error(`${subject.on} has no pull request #${subject.number}.`)
+        if (String(live.headSha || '') !== subject.sha) {
+          // SHOWN LONG ENOUGH TO DIFFER. Truncating both to seven characters
+          // produced "is at 6ee55a3 and names 6ee55a3" about two commits that
+          // are genuinely different — a refusal that reads as a bug in itself.
+          // Two commits sharing a short prefix is rare and is exactly when this
+          // sentence has to be readable.
+          const there = String(live.headSha || '?')
+          const short = there.slice(0, 7) !== subject.sha.slice(0, 7)
+          throw new Error(`${subject.on}#${subject.number} is at ${short ? there.slice(0, 7) : there} on GitHub and this judgement names ${short ? subject.sha.slice(0, 7) : subject.sha}. The author pushed while this was being arranged — allow the new commit if it is still worth reading.`)
+        }
+      } else if (subject.kind === 'cut') {
         const { cuts } = await actions.prCuts.run({})
         const found = (cuts || []).find(c => c.source === subject.source && c.target === subject.target)
         if (!found) {

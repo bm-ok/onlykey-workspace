@@ -123,7 +123,35 @@ function subjectFrom (input) {
     return { kind: 'branch', branch, name: branch }
   }
 
-  throw new Error(`"${kind}" is not something this app knows how to judge. A judgement reads a "branch" — the work as it stands — or a "cut", the change as it is proposed for landing.`)
+  // A PULL REQUEST THAT ARRIVED, which is the one kind this app does not own.
+  //
+  // The other two are its own work: a branch cut here, or a cut this host sent
+  // out. This is somebody else's change, proposed into a repository this
+  // workspace holds — and it is a different KIND rather than a variation,
+  // because everything downstream has to treat it differently: it may not be
+  // read at all until a person has allowed it, the allowance is against a
+  // COMMIT, and what comes back is reported to the author rather than only kept
+  // here.
+  //
+  // THE SHA IS PART OF THE SUBJECT, not a detail beside it. A pull request is a
+  // moving target: its author can push while a judge is reading. A judgement
+  // that recorded only the number would be a verdict about "whatever #7 was at
+  // some point", which is the shape that lies -- so the commit is in the
+  // subject, in the name, and in the record.
+  if (kind === 'pull') {
+    const on = String(input.on || '').trim()
+    const number = Number(input.number)
+    const sha = String(input.sha || '').trim()
+    if (!on || !number) {
+      throw new Error('A pull request is named by the repository it is on and its number — "on" as owner/name, and "number". Without both this would be filed against a change nobody can find.')
+    }
+    if (!sha) {
+      throw new Error('Say which commit the pull request is at. A judgement of a pull request without the commit it read is a verdict about whatever that pull request happened to be, which is worth nothing the moment the author pushes.')
+    }
+    return { kind: 'pull', on, number, sha, name: `${on}#${number}@${sha.slice(0, 7)}` }
+  }
+
+  throw new Error(`"${kind}" is not something this app knows how to judge. A judgement reads a "branch" — the work as it stands — a "cut", the change as it is proposed for landing, or a "pull", somebody else's change proposed into a repository here.`)
 }
 
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex')

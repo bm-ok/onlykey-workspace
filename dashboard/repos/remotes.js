@@ -548,32 +548,12 @@ async function pullsOn (repo) {
   const into = note.parent ? note.parent.split('/') : [remote.owner, remote.repo]
   const r = await github.call('GET', `/repos/${into[0]}/${into[1]}/pulls?state=all&per_page=100`)
   if (r.status !== 200 || !Array.isArray(r.body)) return []
-  return r.body.map(p => ({
-    number: p.number,
-    url: p.html_url,
-    state: p.state,
-    merged: !!p.merged_at,
-    draft: !!p.draft,
-    title: p.title,
-    head: p.head && p.head.label,
-    base: p.base && p.base.ref,
-
-    // WHOSE CODE, AND WHICH COMMIT. GitHub sends all three of these and this
-    // dropped them, which was fine while every pull request here was one this
-    // host had cut. It stops being fine the moment one ARRIVES: deciding
-    // whether a judge may read somebody else's change needs to know whose it
-    // is, and an allowance to read it has to name the commit or it carries
-    // silently onto whatever the author pushes next. See repos/allowed.js.
-    by: p.user && p.user.login,
-    headRepo: p.head && p.head.repo && p.head.repo.full_name,
-    headSha: p.head && p.head.sha,
-    // GitHub's own word for how close the author is to the repository: OWNER,
-    // MEMBER, COLLABORATOR, CONTRIBUTOR, NONE. Carried and never interpreted --
-    // "is this person trusted" is not a question this app should answer, and
-    // the answer it could give is somebody's permissions rather than their
-    // intentions.
-    association: p.author_association || null
-  }))
+  // ONE MAPPER, and this used to be a second one that quietly carried fewer
+  // fields. See onePull below: the author, the head repository and the head sha
+  // were added there for the pull-request gate, and a row built here arrived
+  // without them -- which reads as "this pull request is at no commit" rather
+  // than as two functions having drifted.
+  return r.body.map(p => onePull(p, `${into[0]}/${into[1]}`))
 }
 
 // What is being ASKED of a repository, as opposed to what is waiting to go into
@@ -701,6 +681,21 @@ const onePull = (p, where) => ({
   updated: p.updated_at,
   head: p.head && p.head.label,
   base: p.base && p.base.ref,
+
+  // WHOSE CODE, AND WHICH COMMIT. GitHub sends all three and this dropped them,
+  // which was fine while every pull request here was one this host had cut. It
+  // stops being fine the moment one ARRIVES: deciding whether a judge may read
+  // somebody else's change needs to know whose it is, and an allowance to read
+  // it names the commit or it carries onto whatever the author pushes next.
+  // See repos/allowed.js.
+  headRepo: p.head && p.head.repo && p.head.repo.full_name,
+  headSha: p.head && p.head.sha,
+  // GitHub's own word for how close the author is to the repository: OWNER,
+  // MEMBER, COLLABORATOR, CONTRIBUTOR, NONE. Carried and never interpreted --
+  // "is this person trusted" is not a question this app should answer, and the
+  // answer it could give is somebody's permissions rather than their intent.
+  association: p.author_association || null,
+
   labels: (p.labels || []).map(l => (typeof l === 'string' ? l : l.name)),
   on: where
 })
