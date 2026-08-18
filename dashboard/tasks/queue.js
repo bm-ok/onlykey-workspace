@@ -356,6 +356,12 @@ async function runJudgement (actions, log, judgement, machine) {
   const id = judgement.id
   const ref = judgement.ref || judging.refOf(judgement.number)
 
+  // WHY THIS READING ENDED WITHOUT BEING SEEN TO END, or null if it was seen.
+  // Read in the `finally`, which decides whether this machine is put away or
+  // kept as it is. The same two lines exist in the task path, deliberately: they
+  // are the same rule about the same machines.
+  let outOfTouch = null
+
   const spent = {}
   const began = Date.now()
   const phase = async (name, fn) => {
@@ -456,6 +462,19 @@ async function runJudgement (actions, log, judgement, machine) {
     })
 
     const outcome = await phase('reading', () => waitForRun(actions, to, machine, started.run, Number(judgement.hours) || 6))
+
+    // AND WHETHER THIS APP SAW IT END, exactly as for a task. See the same lines
+    // in the task path and keepForLooking.
+    //
+    // WRITTEN HERE BECAUSE IT WAS NEARLY NOT. Everything about keeping a machine
+    // was added to the task path, and this one calls the same waitForRun through
+    // the same queue on the same machines — so leaving it out would have made a
+    // judgement's evidence the one kind this app still destroys. That is the
+    // sixth time a rule written for tasks would have missed judging, and the
+    // only reason it did not is that the callers were counted.
+    if (outcome.state === 'unreachable') {
+      outOfTouch = `${started.run} was still reading when this host lost sight of ${machine}`
+    }
 
     // Before anything else touches the machine — see meterRun.
     await meterRun(actions, to, machine, started.run, { kind: 'judgement', about: subject.name || judgement.title || null, ref })
@@ -634,11 +653,16 @@ async function runJudgement (actions, log, judgement, machine) {
       log.on('supervisor').warn(`could not tell the supervisor about ${ref}: ${e.message}`)
     }
   } finally {
-    // ALWAYS, and for the same reason a task's machine is: a machine left on,
-    // holding a credential, is out of service until somebody notices, and the
-    // credential outlives the work in a snapshot. There is no handed-over case
-    // here — a judgement with no job never reaches the queue.
-    await putAway(actions, log, machine)
+    // For the same reason a task's machine is: a machine left on, holding a
+    // credential, is out of service until somebody notices, and the credential
+    // outlives the work in a snapshot. There is no handed-over case here — a
+    // judgement with no job never reaches the queue.
+    //
+    // EXCEPT WHEN THIS APP LOST SIGHT OF IT, which is the one ending where the
+    // machine's disk is the only account of what happened. Kept rather than
+    // rolled back, and said loudly. See keepForLooking.
+    if (outOfTouch) await keepForLooking(actions, log, machine, outOfTouch)
+    else await putAway(actions, log, machine)
     busyWith.delete(machine)
   }
 }
@@ -653,6 +677,15 @@ async function run (actions, log, task, machine) {
   // work on it. Declared here because the `finally` at the bottom reads it, and
   // it is the one thing that stops that putting the machine away. See below.
   let handedOver = false
+
+  // WHY THIS RUN ENDED WITHOUT BEING SEEN TO END, or null if it was seen.
+  //
+  // Set from the outcome and read in the `finally`, because the decision the
+  // finally makes — put this machine away, or keep it as it is — turns on
+  // whether this app watched the work finish or merely stopped being able to
+  // watch. Those two produce the same "the run is over" and mean opposite things
+  // about the disk.
+  let outOfTouch = null
 
   // How long each part took, kept with the attempt.
   //
@@ -846,6 +879,19 @@ async function run (actions, log, task, machine) {
     // away underneath it. A task that knows it is long says so.
     const outcome = await phase('work', () => waitForRun(actions, to, machine, started.run, Number(task.hours) || 6))
 
+    // AND WHETHER THIS APP SAW IT END. `unreachable` is the one outcome where
+    // the run's own account is still on the machine and nowhere else — see
+    // keepForLooking, and the `finally` at the bottom which acts on this.
+    //
+    // `gone` is NOT this: that means the machine is not running any more, which
+    // VirtualBox answered without the guest's help, and there is nothing on a
+    // stopped machine to keep warm. `abandoned` is not this either — the run
+    // outlived the hours it declared, which is a fact about the work rather than
+    // about being able to see it.
+    if (outcome.state === 'unreachable') {
+      outOfTouch = `${started.run} was still going when this host lost sight of ${machine}`
+    }
+
     // The same, for work rather than for a reading. See meterRun.
     await meterRun(actions, to, machine, started.run, { kind: 'task', about: task.title || null, ref: `#${task.number}` })
 
@@ -908,7 +954,22 @@ async function run (actions, log, task, machine) {
     // second after saying it was ready. It is not "left on" in the sense above:
     // it is borrowed, which the queue already understands and will not touch,
     // and giving it back is `vmReturn`, which takes the credential with it.
-    if (!handedOver) await putAway(actions, log, machine)
+    // WHICH OF THE THREE ENDINGS THIS WAS, and they are genuinely different.
+    //
+    //   handed over    a task with no job: left up and claimed for whoever wrote
+    //                  it. Putting it away would roll back the workspace it was
+    //                  given a second after saying it was ready.
+    //   out of touch   this app stopped being able to see the run. That disk is
+    //                  the only account of why, so it is kept — see
+    //                  keepForLooking.
+    //   anything else  off, clean, back in the pool.
+    if (handedOver) {
+      // Nothing to do: it is somebody's on purpose.
+    } else if (outOfTouch) {
+      await keepForLooking(actions, log, machine, outOfTouch)
+    } else {
+      await putAway(actions, log, machine)
+    }
     busyWith.delete(machine)
   }
 }
@@ -999,6 +1060,93 @@ async function startItUp (actions, to, machine) {
 // Never allowed to throw. It runs in a finally, and a failure to tidy up must
 // not replace the error that caused it -- losing the real reason is how a
 // machine ends up left on AND nobody knowing why.
+// KEPT FOR LOOKING AT, RATHER THAN PUT AWAY.
+//
+// Putting a machine away rolls it back to base, which is right after work that
+// ENDED — the disk is the last worker's leavings and the next task wants a known
+// one. It is exactly wrong after work this app STOPPED BEING ABLE TO SEE,
+// because then that disk is the only account of what went wrong.
+//
+// WHY BEING OUT OF TOUCH MEANS SOMETHING BROKE, ON THIS HOST. A guest reaches
+// this app over a network driven by the same machine the dashboard runs on. So
+// "the network went away" is not weather: ten minutes of a guest unable to reach
+// an address on its own host means something inside it stopped — a kernel panic,
+// memory exhausted, or the work itself taking the network down. The evidence is
+// on that disk and on that console, and rolling back destroys both.
+//
+// WHAT IS KEPT: the run's out.log, anything finished but never handed over, and
+// the system's own logs. AND A PHOTOGRAPH OF THE SCREEN, because that is the one
+// question still answerable when nothing inside will answer anything — a panic
+// is legible on a console long after a machine has stopped talking. vmScreenshot
+// is host-side and needs no cooperation from the guest.
+//
+// MARKED AS BORROWED, WHICH IS NOT A EUPHEMISM. Borrowed already means exactly
+// this to the rest of the app — "this one is somebody's, do not queue it" — so
+// the queue skips it, the window says why, and `vmReturn` is how it goes back
+// when somebody has finished looking. A second flag would be a second idea of
+// what "not free" means, which is how two of them come to disagree.
+//
+// IT COSTS A MACHINE UNTIL SOMEBODY LOOKS, which is the trade this file already
+// states: the cost of waiting too long is a machine held, the cost of giving up
+// too early is somebody's afternoon. A machine held is also the failure that
+// goes quiet — so this says so loudly rather than leaving a hole in the pool
+// that nothing explains.
+async function keepForLooking (actions, log, machine, why) {
+  const to = log.on('queue', machine)
+
+  // IS IT THIS MACHINE, OR IS IT THE ROOM? The one thing worth knowing before
+  // anybody goes looking, and it is cheap to ask.
+  //
+  // One machine falling silent while its neighbours answer means that machine.
+  // But if the thing handing out addresses dies, every guest loses its footing
+  // at once through no fault of its own — and sending somebody into a guest to
+  // find a fault that is in the room is a wasted afternoon.
+  //
+  // The answer changes nothing about what is DONE: the disk is kept either way,
+  // because it is evidence either way. It changes what this SAYS, and being told
+  // where to look is most of the value.
+  let others = []
+  try {
+    others = ((await actions.vmList.run({})).vms || []).filter(v => v.name !== machine && v.running)
+  } catch { /* if even this fails, say less rather than guess */ }
+  const answering = others.filter(v => v.connected)
+  const alone = others.length > 0 && answering.length === 0
+  const where = !others.length
+    ? 'nothing else was running, so there is nothing to compare it against'
+    : alone
+      ? `and nor is ${others.map(v => v.name).join(' or ')} — every machine that is up has gone quiet, so look at the network on this host before looking inside that guest`
+      : `while ${answering.map(v => v.name).join(' and ')} still answers, so it is that machine rather than the network here`
+
+  // THE PHOTOGRAPH, while whatever is on that screen is still on it.
+  let shot = null
+  try {
+    const got = await actions.vmScreenshot.run({ name: machine })
+    shot = got && (got.file || got.path || null)
+  } catch (e) {
+    to.info(`could not photograph its screen: ${e.message}`)
+  }
+
+  // NOT ROLLED BACK, NOT STOPPED, AND NOT ASKED FOR ITS CREDENTIAL BACK.
+  //
+  // Stopping it would be defensible — a disk survives a power off — and it is
+  // not done, because a machine that has stopped answering is one somebody may
+  // want to open a console on, and memory holds what the disk does not. Taking
+  // the credential back needs the guest to answer, which is the thing that is
+  // not happening; the rollback that would have removed it is precisely what is
+  // being skipped, so this is said out loud rather than quietly assumed.
+  vms.update(machine, {
+    borrowed: {
+      why: `kept for looking at — ${why}`,
+      at: new Date().toISOString(),
+      keptBy: 'the queue'
+    }
+  })
+
+  to.bad(`${machine} is kept as it is: ${why} ${where}. It has NOT been rolled back, so its log and anything it never handed over are still on it${shot ? `, and its screen is photographed at ${shot}` : ''}. It still holds a sign-in until it is given back with vmReturn.`)
+
+  return { kept: true, machine, why, shot, alone, answering: answering.map(v => v.name) }
+}
+
 async function putAway (actions, log, machine) {
   const to = log.on('queue', machine)
 
