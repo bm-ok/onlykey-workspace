@@ -1161,8 +1161,8 @@ module.exports = {
 
   vmSnapshotRestore: {
     about: 'Go back to a snapshot, discarding everything since',
-    takes: ['name', 'title'],
-    run: ({ name, title }) => busy.during(name, 'being restored', async () => {
+    takes: ['name', 'title', 'keepBorrow'],
+    run: ({ name, title, keepBorrow = false }) => busy.during(name, 'being restored', async () => {
       const vm = vms.get(name)
       if (!await vbox.isOff(name)) throw new Error('Shut the machine down first — VirtualBox will not restore a snapshot while it is running.')
       // Powered off is not unlocked. See waitUntilUnlocked: a restore issued
@@ -1224,8 +1224,38 @@ module.exports = {
       // explains — and `vmReturn --keep` already exists for releasing a borrow
       // without touching the disk, which is the case this must not be confused
       // with.
-      const gaveBack = vm.borrowed || null
-      vms.update(name, { branch, borrowed: null, holdsCredential: false, cleanSince: new Date().toISOString() })
+      // UNLESS THIS RESTORE IS WHAT MAKES THE MACHINE READY FOR THE BORROW.
+      //
+      // Everything above is about a rollback that ENDS work: the disk went
+      // back, so the reason the machine was taken is behind it. `bringUp`
+      // rolls back for the opposite reason -- to make a machine clean for
+      // work that has not started -- and `vmBorrow` marks the machine
+      // borrowed BEFORE calling it, deliberately, so the queue cannot take
+      // it while it boots. That borrow was five seconds old and this deleted
+      // it:
+      //
+      //   20:50:11  borrowed — a drill proving a machine comes up and goes away
+      //   20:50:12  shutting it down so it can be made clean
+      //   20:50:16  rolling back to "base"
+      //   20:50:16  no longer borrowed — it was "a drill proving a machine…"
+      //
+      // WHY IT HID FOR SO LONG: `bringUp` skips the rollback when a machine
+      // is already clean AND OFF, which is how machines usually sit. It only
+      // bites when one is borrowed while already running -- somebody left it
+      // on, or a drill started it -- and then the machine is in use and reads
+      // as free, so the queue may hand it a task. That is the exact thing a
+      // borrow exists to prevent, so it fails towards the harm.
+      //
+      // It was visible twice in one run before anything failed, as a swallowed
+      // `could not put it away after the test: "kit-1" is not borrowed`.
+      const serving = keepBorrow === true || keepBorrow === 'true'
+      const gaveBack = serving ? null : (vm.borrowed || null)
+      vms.update(name, {
+        branch,
+        ...(serving ? {} : { borrowed: null }),
+        holdsCredential: false,
+        cleanSince: new Date().toISOString()
+      })
 
       const to = log.on('vm', name)
       if (gaveBack) to.info(`no longer borrowed — it was "${gaveBack.why || 'taken by somebody'}", and the disk it was taken for has gone back`)
@@ -1326,7 +1356,25 @@ module.exports = {
     takes: ['name', 'keep'],
     run: async ({ name, keep = false }) => {
       const vm = vms.get(name)
-      if (!vm.borrowed) throw new Error(`"${name}" is not borrowed, so there is nothing to give back.`)
+      // "NOTHING TO GIVE BACK" IS ABOUT WHAT IT HOLDS, NOT ABOUT THE BORROW.
+      //
+      // This refused on `!vm.borrowed` alone, and that read as a tidy guard
+      // right up until a machine existed that was claiming a branch and was
+      // not borrowed. Then it was the only thing between that machine and the
+      // one button that puts it away -- so the recovery path for a stuck
+      // machine refused to run BECAUSE the machine was stuck.
+      //
+      // kit-1 sat exactly like that: running, claiming drill/machine-205009,
+      // borrowed by nobody, after a rollback deleted the borrow underneath a
+      // drill. Every drill cleanup that tried to tidy it was answered with
+      // "there is nothing to give back" about a machine plainly holding
+      // something.
+      //
+      // A claim is the thing that matters most here: it is a standing
+      // permission to push to a branch, and it outlives the borrow that
+      // created it. Refusing to clear one is refusing to revoke.
+      const holding = vm.borrowed || vm.branch || vm.holdsCredential
+      if (!holding) throw new Error(`"${name}" is not borrowed, claims no branch and holds no sign-in, so there is nothing to give back.`)
 
       // ASKED WHAT IT IS HOLDING FIRST, because putting it away rolls it back
       // and a person working by hand is exactly who has uncommitted work. The

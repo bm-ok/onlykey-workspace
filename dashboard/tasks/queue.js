@@ -983,7 +983,11 @@ async function startItUp (actions, to, machine) {
     to.info(`already clean at "${before.baseSnapshot}"`)
   } else {
     to.info(`rolling back to "${before.baseSnapshot}"`)
-    await actions.vmSnapshotRestore.run({ name: machine, title: before.baseSnapshot })
+    // KEEPING THE BORROW, because this rollback is the start of work rather
+    // than the end of it. See the note in vmSnapshotRestore: without this,
+    // borrowing a machine that happens to be RUNNING un-borrows it on the way
+    // up, and the queue then sees a machine somebody is using as free.
+    await actions.vmSnapshotRestore.run({ name: machine, title: before.baseSnapshot, keepBorrow: true })
   }
 
   to.info('starting it')

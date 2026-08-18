@@ -72,7 +72,22 @@ it('it is borrowed, and it dials in', async ({ okc, assert, state, log }) => {
   await okc('vmAwait', { name: state.machine, for: 'connected', seconds: 300 })
   const { agents } = await okc('vmAgents')
   assert.ok(agents.some(a => a.vm === state.machine), `"${state.machine}" was brought up and is not dialled in`)
-  log(`borrowed ${state.machine}; it dialled in ${Math.round((Date.now() - began) / 1000)}s after being asked for`)
+
+  // AND IT IS STILL BORROWED, WHICH IS NOT AS OBVIOUS AS IT LOOKS.
+  //
+  // Bringing a machine up makes it clean, and making a running machine clean
+  // means rolling it back -- which used to drop the borrow taken moments
+  // earlier. The machine then reads as free while a drill is working in it,
+  // and the queue may hand it a task.
+  //
+  // Asked here rather than left to "it goes away clean" five steps below,
+  // where it surfaced as `not borrowed, so there is nothing to give back` --
+  // a sentence about giving back, three minutes after the fault, pointing at
+  // the wrong end of it.
+  const held = (await okc('vmList')).vms.find(v => v.name === state.machine)
+  assert.ok(held && held.borrowed, `"${state.machine}" was borrowed and does not read as borrowed once it is up — the queue would treat a machine in use as free`)
+
+  log(`borrowed ${state.machine}; it dialled in ${Math.round((Date.now() - began) / 1000)}s after being asked for, and still reads as borrowed`)
 }, { minutes: 12 })
 
 it('and it answers', async ({ okc, assert, state, log }) => {
@@ -158,6 +173,39 @@ it('and it goes away clean', async ({ okc, assert, state, log }) => {
   assert.notEqual(mine.state, 'running', `"${state.machine}" was put away and is still running`)
   log(`${state.machine}: ${mine.state}, on "${mine.baseSnapshot}", claiming nothing, borrowed by nobody`)
 }, { minutes: 10 })
+
+it('and one that is already running can be borrowed without losing the borrow', async ({ okc, assert, state, log }) => {
+  // THE SAME PROPERTY AS ABOVE, MADE TO HAPPEN RATHER THAN WAITED FOR.
+  //
+  // The check in "it is borrowed, and it dials in" only bites when the machine
+  // it picked was already running, and machines are usually off -- `bringUp`
+  // skips the rollback when one is clean AND off, so the borrow survives by
+  // not being touched. A drill that only catches a fault when the host happens
+  // to be in the right state is a drill that passes for months and then cannot
+  // be trusted the one time it matters.
+  //
+  // So this puts the host in that state on purpose: start it, then borrow it.
+  // Bringing up a RUNNING machine has to stop it and roll it back to make it
+  // clean, and that rollback used to delete the borrow taken a second earlier
+  // -- leaving a machine somebody is using looking free to the queue.
+  //
+  // IT COSTS A BOOT, which is why it is at the end. What it buys is that the
+  // failing path runs every time rather than by luck.
+  assert.needs(state.machine, 'there is no machine from the steps above to start')
+
+  await okc('vmStart', { name: state.machine })
+  await okc('vmAwait', { name: state.machine, for: 'console', seconds: 300 })
+  const up = (await okc('vmList')).vms.find(v => v.name === state.machine)
+  assert.equal(up.state, 'running', `"${state.machine}" was started and reads as ${up.state} — the case this check exists for is not set up`)
+  assert.ok(!up.borrowed, 'it should be nobody\'s at this point, so that the borrow below is the only one there has been')
+
+  await okc('vmBorrow', { name: state.machine, why: 'a drill proving a borrow survives being brought up from running' })
+  state.returned = false
+
+  const now = (await okc('vmList')).vms.find(v => v.name === state.machine)
+  assert.ok(now.borrowed, `"${state.machine}" was borrowed while running and does not read as borrowed — the rollback that made it clean threw the borrow away, and the queue would hand a machine in use to a task`)
+  log(`started ${state.machine}, borrowed it while running, and it is still borrowed: ${now.borrowed.why}`)
+}, { minutes: 12 })
 
 cleanup(async ({ okc, state }) => {
   // The machine first: a branch that cannot be deleted because a machine claims

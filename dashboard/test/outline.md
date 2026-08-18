@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 49 tests, 233 checks, 23 of them drafts -->
+<!-- 12 suites, 49 tests, 234 checks, 23 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -244,6 +244,7 @@ The half of this app the other suites can only describe. Everything before this
   5. and it is not moved off the branch it is on
   6. and a second machine, dialled in, is not handed the same branch
   7. and it goes away clean
+  8. and one that is already running can be borrowed without losing the borrow
 
 ## 02 — what a machine is made with
 
