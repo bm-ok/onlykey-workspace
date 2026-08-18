@@ -37,6 +37,15 @@ let pickedJudgement = been.get('judgement', null)
 // A CLAIM IS THE INVERSE, and this is the trap: "CLAIM: true" means the reported
 // fault is real, which is a REJECTION of the code as it stands. Getting that
 // backwards would flag every honest claim-check as a contradiction.
+// WHAT EACH KIND OF SUBJECT IS, in one place. A judgement reads one of exactly
+// three things and they are not variations of each other: two are this host's
+// own work at different stages, and the third belongs to somebody else.
+const WHICH = {
+  branch: 'branch cut — the work as it stands',
+  cut: 'PR cut — a change proposed for landing',
+  pull: 'pull request — somebody else\'s change, which arrived'
+}
+
 const SAME = {
   accept: 'accepted',
   reject: 'rejected',
@@ -182,7 +191,15 @@ function paintJudgementDetail (j) {
       // WHAT IT READ, first, because a judgement is about a change and the
       // change is the thing somebody is holding in their head.
       el('tr', {}, el('th', { textContent: 'reads' }), el('td', { className: 'mono', style: 'user-select:text', textContent: j.subject ? j.subject.name : '' })),
-      el('tr', {}, el('th', { textContent: 'which is a' }), el('td', {}, el('span', { className: 'muted', textContent: j.subject && j.subject.kind === 'cut' ? 'PR cut — a change proposed for landing' : 'branch cut — the work as it stands' }))),
+      // THREE KINDS, AND THIS ASKED AN EITHER/OR.
+      //
+      // Written when there were two, so anything that was not a PR cut was
+      // described as a branch cut — and the first judgement of an arrived pull
+      // request read "branch cut — the work as it stands" about somebody
+      // else's change fetched from GitHub. The row was not empty or obviously
+      // broken, which is what makes an either/or over three things worse than
+      // no row: it states the wrong one confidently.
+      el('tr', {}, el('th', { textContent: 'which is a' }), el('td', {}, el('span', { className: 'muted', textContent: WHICH[(j.subject && j.subject.kind) || 'branch'] || 'something this window does not know about' }))),
       el('tr', {}, el('th', { textContent: 'state' }), el('td', {}, el('span', { className: `badge ${JUDGE_BADGE[j.state] || 'muted'}`, textContent: j.state }))),
       // THE VERDICT IS THE JUDGE'S OWN, and the row says so in whichever way is
       // true. "Nobody has decided yet" was the old model — a judge that
@@ -296,9 +313,59 @@ function paintJudgementDetail (j) {
           onclick: () => watchRun(j.machine, j.run, j.ref)
         })
         : null,
+      // ONLY WHERE THERE IS SOMEBODY TO ANSWER. A judgement of this host's own
+      // work is answered by landing it or not; a judgement of a pull request
+      // that ARRIVED has an author waiting, and nothing this app does reaches
+      // them until somebody presses this.
+      j.subject && j.subject.kind === 'pull' && j.state === 'done'
+        ? el('button', {
+            className: `btn ${j.saidOn ? '' : 'ok'}`,
+            textContent: j.saidOn ? 'Say it again' : 'Say it on GitHub',
+            title: j.saidOn
+              ? `Already said at ${j.saidOn.at} — recommend pulling: ${j.saidOn.recommend}`
+              : 'Shows you exactly what would be posted before anything is',
+            id: 'judge-say',
+            disabled: true,
+            onclick: () => askToSayIt(j)
+          })
+        : null,
       j.state !== 'given'
         ? el('button', { className: 'btn', textContent: 'Throw it away', onclick: () => thenSay(() => api('judgementRemove', { id: j.id }), `${j.ref} is gone. What it found stays on the cut.`) })
         : null))
+}
+
+// READ IT BEFORE IT IS PUBLIC, which is the entire reason this is a dialog and
+// not a button that posts.
+//
+// A comment on somebody else's repository cannot be unsent: an edit leaves the
+// original in the history and the notification has already gone. So the whole
+// body is fetched first and shown in an editor, exactly as it will appear, and
+// the confirm button says where it is going rather than "OK".
+function askToSayIt (j) {
+  api('judgementSay', { id: j.id, preview: true }).then(v => {
+    ask({
+      title: `Say ${j.ref} on ${v.on}#${v.number}?`,
+      plain: [
+        `It would appear under the account this host signs in as, in public, on somebody else's repository.`,
+        `${v.characters.toLocaleString()} characters, from ${v.from}. Recommend pulling: ${v.recommend}.`,
+        'Nothing is merged, changed or pushed by this. It is a comment.',
+        j.saidOn ? `${j.ref} was already said at ${j.saidOn.at}. Saying it again adds a second comment; it does not replace the first.` : null
+      ].filter(Boolean),
+      cost: 'A comment cannot be unsent. Editing it later leaves the original in the history, and the author has already been notified.',
+      confirm: `Say it on ${v.on}#${v.number}`,
+      onYes: () => api('judgementSay', { id: j.id })
+        .then(r => { forget('judge-detail'); paintJudge(); say(r.note) })
+        .catch(oops)
+    })
+
+    // APPENDED AFTER THE DIALOG IS UP, the way every other dialog carrying text
+    // does it: `ask` builds FIELDS, and the comment about to be posted is not a
+    // field. The whole of it, with no lid on the height -- this is the one
+    // thing in this window that MUST be read before the button under it is
+    // pressed, so it is not something to scroll past three lines of.
+    const box = document.querySelector('.dlg-body')
+    if (box) box.append(codeBlock(v.body, 'markdown'))
+  }).catch(oops)
 }
 
 // WHAT IT HANDED BACK. The third column, and the judging equivalent of the task
@@ -315,6 +382,16 @@ function paintHandedBack (j) {
     if (pickedJudgement !== j.ref) return
     const files = said.files || []
     setText($('judge-handed-context'), files.length ? `— ${files.length} file(s)` : '')
+
+    // AND THE BUTTON THAT NEEDS THIS ANSWER. It is drawn by the panel beside
+    // this one, which has no way of knowing whether anything came back.
+    const say = $('judge-say')
+    if (say) {
+      say.disabled = !files.length
+      say.title = files.length
+        ? 'Shows you exactly what would be posted before anything is'
+        : 'It handed nothing back, so there is no review to post.'
+    }
     fill($('judge-handed'), files.length
       ? el('div', {}, ...files.map(f => el('div', { className: 'card' },
         el('div', { className: 'card-title' },

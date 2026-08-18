@@ -499,8 +499,31 @@ async function runJudgement (actions, log, judgement, machine) {
     for (const f of handed) {
       let text = ''
       try { text = String((files.read(judgement.uid, f.file) || {}).text || '') } catch { continue }
-      const m = text.match(/^\s*(RECOMMENDATION|CLAIM):\s*(accept|reject|true|false|unclear)\s*$/mi)
-      if (m) { concluded = m[2].toLowerCase(); break }
+      // THREE LANES, THREE VOCABULARIES, AND THE READER HAS TO KNOW ALL OF
+      // THEM.
+      //
+      //   RECOMMENDATION: accept|reject   a change this host made, going out
+      //   CLAIM: true|false|unclear       a question somebody asked about code
+      //   RECOMMEND: YES|NO               a pull request that arrived
+      //
+      // The third is not a synonym invented here — it is what the prompt for
+      // reading an arrived pull request ASKS FOR, in those words, because "do
+      // you recommend pulling this" is the sentence a person wants under
+      // somebody else's pull request. This reader knew the first two, so a
+      // judge that followed its instructions exactly was recorded as having
+      // "reached no conclusion" after reading for three and a half minutes and
+      // writing twelve thousand characters ending in RECOMMEND: NO.
+      //
+      // MAPPED, NOT KEPT. Downstream asks one question of this field — is this
+      // judgement a rejection — and a lane whose values it does not recognise
+      // reads as "not a rejection", which is the wrong way round for the one
+      // lane that is about somebody else's code.
+      const m = text.match(/^\s*(RECOMMENDATION|CLAIM|RECOMMEND):\s*(accept|reject|true|false|unclear|yes|no)\s*$/mi)
+      if (m) {
+        const said = m[2].toLowerCase()
+        concluded = said === 'yes' ? 'accept' : said === 'no' ? 'reject' : said
+        break
+      }
     }
     const read = judgements.tipsFor(judgement.subject)
     if (concluded) to.info(`${ref} concluded: ${concluded}`)

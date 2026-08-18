@@ -125,6 +125,118 @@ module.exports = {
     }
   },
 
+  // WHAT A JUDGEMENT OF AN ARRIVED PULL REQUEST IS FOR, in the end.
+  //
+  // A judgement changes nothing and may not push — so a reading of somebody
+  // else's pull request that stays on this host has told nobody anything. The
+  // author cannot see it, and the whole point of judging an arrival is to
+  // answer the person who sent it.
+  //
+  // TWO CALLS, NOT ONE. `preview` composes exactly what would be posted and
+  // posts nothing; without it, it posts. A comment on somebody else's
+  // repository cannot be taken back in any way that matters — an edit leaves
+  // the original in the history and the notification has already gone — so
+  // what goes up is read first, in full, by the person whose account it will
+  // appear under.
+  //
+  // AND IT IS A PERSON, refused over the wire and refused to a driven click
+  // for the same reason allowing the judgement was. This is this host speaking
+  // in public, under somebody's name, about a stranger's work.
+  //
+  // THE WHOLE REVIEW, not a summary of it. Summarising twelve thousand
+  // considered characters into three sentences means a model deciding which of
+  // a judge's reservations the author gets to see — and the section a summary
+  // would drop first is "what I could not check", which is the section that
+  // makes the rest honest.
+  judgementSay: {
+    about: 'Put a judgement of an arrived pull request on GitHub as a comment: preview it, or say it',
+    needs: 'workspace',
+    takes: ['id', 'preview'],
+    run: async ({ id, preview = false, _overTheWire, _driven }) => {
+      const one = judging.get(id)
+      if (!one) throw new Error(`There is no judgement "${id}".`)
+      const ref = one.ref || judging.refOf(one.number)
+      const subject = one.subject || {}
+      if (subject.kind !== 'pull') {
+        throw new Error(`${ref} reads ${subject.name || 'something that is not a pull request'}. Only a judgement of an arrived pull request has somewhere to be said — a cut of this host's own work is answered by landing it or not.`)
+      }
+      if (one.state !== 'done') throw new Error(`${ref} has not finished reading yet.`)
+
+      const handed = files.list(one.uid) || []
+      if (!handed.length) throw new Error(`${ref} handed nothing back, so there is nothing to say. A judgement that read nothing is not a review.`)
+
+      // THE FILE THE PERSON WOULD READ, which is the same file this posts.
+      // Two accounts of one judgement is one too many — see the note on
+      // `concluded` in tasks/queue.js.
+      let body = ''
+      let from = null
+      for (const f of handed) {
+        let text = ''
+        try { text = String((files.read(one.uid, f.file) || {}).text || '') } catch { continue }
+        if (!text.trim()) continue
+        if (text.length > body.length) { body = text; from = f.file }
+      }
+      if (!body.trim()) throw new Error(`${ref} handed back ${handed.length} file(s) and none of them has anything in it.`)
+
+      // WHAT IT RECOMMENDED, IN THE WORDS THE PROMPT ASKED FOR. Read from the
+      // file rather than from the record, so this cannot say one thing while
+      // the review below it says another.
+      const said = body.match(/^\s*RECOMMEND(?:ATION)?:\s*(yes|no|accept|reject)\s*$/mi)
+      const yes = said ? /^(yes|accept)$/i.test(said[1]) : null
+      const call = yes === null ? 'UNSTATED' : (yes ? 'YES' : 'NO')
+
+      const head = [
+        `**Recommend Pulling: ${call}**`,
+        '',
+        `Read at ${String(subject.sha || '').slice(0, 7)} by an automated judge on the maintainer's host. It fetched this change and read it; it ran nothing from it, and changed nothing anywhere.`,
+        yes === null
+          ? 'It did not end with a recommendation in the form it was asked for, so the answer above is not its answer — read the review.'
+          : null,
+        '',
+        '---',
+        ''
+      ].filter(x => x !== null).join('\n')
+
+      const full = head + body.trim() + '\n'
+
+      if (preview || preview === 'true') {
+        return {
+          ref,
+          on: subject.on,
+          number: subject.number,
+          recommend: call,
+          from,
+          body: full,
+          characters: full.length,
+          posted: false,
+          note: `This is exactly what would appear on ${subject.on}#${subject.number}. Nothing has been posted.`
+        }
+      }
+
+      if (_overTheWire || _driven) {
+        throw new Error('Saying something on somebody else\'s pull request is done in the window, by a person who has read what is about to be posted. It appears under an account with a name on it and a comment cannot be unsent.')
+      }
+
+      const row = remotes.read().find(x =>
+        x.repo === subject.on || x.issuesOn === subject.on ||
+        (x.remote && `${x.remote.owner}/${x.remote.repo}` === subject.on))
+      if (!row) throw new Error(`${subject.on} is not a repository in this workspace.`)
+
+      const done = await remotes.comment(row.repo, Number(subject.number), full)
+      if (!done.ok) throw new Error(`GitHub would not take the comment on ${subject.on}#${subject.number}: ${done.why}`)
+
+      judging.update(one.id, { saidOn: { at: new Date().toISOString(), url: done.url || null, recommend: call } })
+      log.on('github', row.repo).good(`${ref} said on #${subject.number} — recommend pulling: ${call}`)
+      return {
+        ...done,
+        ref,
+        recommend: call,
+        posted: true,
+        note: `${ref} is on ${subject.on}#${subject.number}. The author can read it; nothing was merged, changed or pushed.`
+      }
+    }
+  },
+
   judgementCreate: {
     about: 'Ask for a judgement of a branch cut or a PR cut: what is read, which job reads it, and what question it is being asked',
     needs: 'workspace',
