@@ -152,8 +152,15 @@ async function drawOnce () {
   nudge('cuts-badge', (owed.out || []).length, outstanding)
   nudge('todo-badge', toAllow.length, asking ? `waiting on you:\n${asking}` : '', true)
 
-  nudge('chat-badge', owed.supervisor,
-    owed.supervisor ? `${owed.supervisor} message(s) since you last moved your bookmark` : '')
+  // ON THE TAB AND ON THE PANE THAT SHOWS IT, like every other sub-tab here.
+  // What the supervisor said is the Chat pane's business specifically, and once
+  // that tab has more than one pane a number on the tab alone says "something
+  // in here" without saying where.
+  const saidSince = owed.supervisor
+    ? `${owed.supervisor} message(s) since you last moved your bookmark`
+    : ''
+  nudge('chat-badge', owed.supervisor, saidSince)
+  nudge('chat-badge-pane', owed.supervisor, saidSince)
 
   // Reconcile the selection against what actually exists, every time, before
   // anything that depends on it is painted.

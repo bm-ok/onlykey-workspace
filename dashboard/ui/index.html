@@ -684,6 +684,18 @@
        window. So it is a file on this host rather than a connection — see
        core/chat.js — and neither end has to be present for the other to speak. -->
   <section class="view" id="view-chat">
+    <!-- SUB-TABS, because this tab is about to be about more than the
+         conversation. The thread is what a supervisor SAID; what it is, what it
+         may do and what it is working from are different questions about the
+         same thing, and each of them was going to end up either crammed above
+         the composer or on a tab of its own somewhere else in the window.
+
+         Chat is first and stays first: it is the reason to open this tab. -->
+    <div class="subtabs">
+      <button class="subtab active" data-pane="chat">Chat <span class="tab-badge hidden" id="chat-badge-pane"></span></button>
+    </div>
+
+    <div class="pane active" id="pane-chat">
     <div class="sync-head">
       <h2>Supervisor <span class="muted" id="chat-context"></span></h2>
       <!-- WHETHER IT CAN ACTUALLY RUN, in the header row rather than above the
@@ -740,6 +752,7 @@
          So the box is replaced, in the same place, by the one thing that would
          actually help: pick a supervisor and start it. -->
     <div class="chat-offline hidden" id="chat-offline"></div>
+    </div>
   </section>
 
   <!-- ---------------- Live ----------------

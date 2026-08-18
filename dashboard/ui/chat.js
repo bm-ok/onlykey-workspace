@@ -21,6 +21,19 @@
 // panel can do.
 let chatSeen = 0
 
+// WHICH SUB-TAB IS OPEN, remembered like every other one in this window.
+//
+// One pane today, and that is deliberate rather than unfinished: the bar exists
+// so what goes beside the conversation has somewhere to go, and every paint in
+// this file already guards on it — a panel added later that forgets the guard is
+// a panel asking questions on a timer behind a tab nobody is looking at, which
+// is the single most repeated mistake in this window's history.
+let chatPane = been.get('chat-pane', 'chat')
+
+// Declared here and wired at the foot of the file, after the paints it names
+// exist.
+const chatPaneIs = want => view === 'chat' && chatPane === want
+
 // WHICH SIDE, WHICH IS HOW A CONVERSATION SAYS WHO IS SPEAKING. Yours on the
 // right, the supervisor's on the left — the one convention every chat window
 // shares, which makes the label above a bubble a courtesy rather than the only
@@ -119,10 +132,10 @@ const oneMessage = (m, read) => {
 // more: the credential comes off BEFORE the machine goes down, or a sign-in is
 // left on a disk with nothing on this host recording it as out.
 function paintSupervisorState () {
-  if (view !== 'chat') return
+  if (!chatPaneIs('chat')) return
 
   api('supervisorState').then(st => {
-    if (view !== 'chat') return
+    if (!chatPaneIs('chat')) return
 
     // WHICH BODY IS SHOWING IS DECIDED FIRST, and outside the guard below.
     //
@@ -349,10 +362,10 @@ function paintChat () {
   // The state strip first: it is the thing that decides whether anything below
   // it can happen at all.
   paintSupervisorState()
-  if (view !== 'chat') return
+  if (!chatPaneIs('chat')) return
 
   api('chat').then(said => {
-    if (view !== 'chat') return
+    if (!chatPaneIs('chat')) return
 
     // FROM THE BOOKMARK ON. Everything before it is still there and still on
     // this host — see chatFrom — it is simply not what somebody asked to be
@@ -392,7 +405,7 @@ function paintChat () {
     // Asked here rather than in the draw loop, because this is the only tab that
     // shows either and a panel behind a tab must ask nothing.
     api('supervisorThinking').then(how => {
-      if (view !== 'chat') return
+      if (!chatPaneIs('chat')) return
       $('chat-wakes').checked = !!how.wakes
       $('chat-wake').disabled = !!how.thinking
       setText($('chat-wake'), how.thinking ? 'thinking…' : 'Wake it')
@@ -534,3 +547,8 @@ $('chat-close').onclick = () => {
   forget('chat-offline')
   paintSupervisorState()
 }
+
+// THE SUB-TAB BAR. Last in the file, because paneSwitcher calls back into the
+// paints and a switcher wired above them would name functions that do not exist
+// yet at load time. See ui/load.js for the order these files are read in.
+paneSwitcher('view-chat', () => chatPane, p => { chatPane = p; been.set('chat-pane', p) }, () => paintChat())
