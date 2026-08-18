@@ -1047,13 +1047,22 @@ table.kv td .ok { color: var(--ok); }
    the whole page scrolls, the box you type into walks off the bottom as the
    conversation grows, and the newest message — the one you are waiting for —
    ends up below the fold. */
-#view-chat.active {
+/* ON THE PANE, NOT THE VIEW, since the conversation stopped being the whole tab.
+   This was #view-chat.active, and adding a sub-tab bar put a display:block pane
+   between the column and #chat-thread — which is flex:1 1 auto and so had
+   nothing to be 1-of any more. The thread grew to its content, the page scrolled
+   as a whole, and the composer walked off the bottom: precisely the failure the
+   note above says this rule exists to prevent, reintroduced by moving the markup
+   one level down rather than by touching the CSS. */
+#view-chat.active { display: block; }
+#pane-chat.active {
   display: flex;
   flex-direction: column;
-  /* The window, less the header, the banners and this view's own padding.
-     A fixed height rather than a flex chain up to <body>, because the banners
-     above come and go and a chain would have to be right in every combination. */
-  height: calc(100vh - 150px);
+  /* The window, less the header, the banners, the sub-tab bar and this view's
+     own padding. A fixed height rather than a flex chain up to <body>, because
+     the banners above come and go and a chain would have to be right in every
+     combination. */
+  height: calc(100vh - 195px);
   min-height: 320px;
 }
 
