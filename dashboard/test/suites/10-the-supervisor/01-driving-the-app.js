@@ -112,17 +112,40 @@ it('and it may send a change out, and not land it', async ({ okc, assert, state,
     assert.ok(!may.has(land), `a supervisor may "${land}", which puts landing or undoing somebody's reading of a change in the hands of the thing that wrote it`)
   }
 
-  // AND PULL REQUESTS ONLY EVER AS CUTS. A change that lands in two repositories
-  // out of three is the failure the whole PR-cut idea exists to prevent, and
-  // something driving the flow unattended is exactly what would produce it. So
-  // everything on the list that touches a pull request is a prCut — asked of the
-  // list rather than assumed, because the day somebody adds a per-repository
-  // action is the day this matters.
+  // AND A PULL REQUEST IS CHANGED ONLY AS A CUT.
+  //
+  // A change that lands in two repositories out of three is the failure the
+  // whole PR-cut idea exists to prevent, and something driving the flow
+  // unattended is exactly what would produce it.
+  //
+  // BUT THE RULE WAS WRITTEN ABOUT ONE KIND OF PULL REQUEST AND THERE ARE TWO.
+  // A cut is this host's own work, one pull request per repository, opened and
+  // landed together. An ARRIVED pull request is somebody else's: one repository,
+  // one number, and it can never be a cut because this host did not make it.
+  // So "everything touching a pull request must be a prCut" is unsatisfiable for
+  // the second kind, and it failed on `prComment` — which is how a judge's
+  // findings get back to whoever sent the change, and the only way a supervisor
+  // can answer an arrival at all.
+  //
+  // THE LINE IS CHANGING ONE VERSUS SAYING SOMETHING ABOUT ONE. Landing,
+  // closing, retitling — those move a change and must be a cut or nothing.
+  // Commenting moves nothing: the worst it can do is be wrong in public, which
+  // is visible, answerable and the author's to judge. That is a different kind
+  // of risk from half a change landing, and collapsing them cost the supervisor
+  // its only way of replying.
+  const saysSomething = new Set(['prComment'])
   for (const what of may) {
     if (!/^pr/i.test(what)) continue
+    if (saysSomething.has(what)) continue
     assert.ok(/^prCut|^prDraft|^prTemplate|^prompt/.test(what),
-      `"${what}" is on the supervisor's list and touches a pull request without being a PR cut — a supervisor manages pull requests as one act across every repository, or not at all`)
+      `"${what}" is on the supervisor's list and CHANGES a pull request without being a PR cut — a supervisor moves pull requests as one act across every repository, or not at all. If it only says something about one, name it in saysSomething above and say why.`)
   }
+
+  // AND THE EXCEPTION IS NOT A HOLE. Whatever is excused above must not be able
+  // to move anything: this checks the list has not quietly grown a second
+  // entry, which is how an exception becomes a category.
+  assert.equal(saysSomething.size, 1,
+    `${saysSomething.size} actions are excused from the PR-cut rule. One is a judgement; several is a category, and a category wants the rule rewritten rather than extended.`)
 
   // AND ASKED FOR REAL, not only read off the list. prCutLand with a cut that
   // does not exist would be refused either way — what this proves is that it is
