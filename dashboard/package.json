@@ -8,8 +8,8 @@
   "node-main": "main.js",
   "window": {
     "title": "Dashboard",
-    "width": 1280,
-    "height": 860,
+    "width": 1640,
+    "height": 1040,
     "min_width": 900,
     "min_height": 600
   },

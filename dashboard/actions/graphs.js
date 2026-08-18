@@ -94,78 +94,134 @@ module.exports = {
       const links = []
       const wire = (from, to) => { if (from && to) links.push({ from, to }) }
 
+      // ---- A ROW IS A TIMELINE, NOT A SET OF COLUMNS ---------------------
+      //
+      // This first gave every KIND a fixed column: branch 0, task 1, machine 2,
+      // judgement 3. It reads well when a story has all four and badly the
+      // moment one is missing — a branch judged without a task here drew a card
+      // at 0, nothing at 1 or 2, and a card at 3 with a wire running the whole
+      // width of the window across two empty columns. The picture said "three
+      // steps are missing" when what happened is that there were only two.
+      //
+      // So position means WHEN, not WHAT. Each step carries the moment it
+      // happened, they are sorted, and they are laid down one after another.
+      // The kind is still visible — it is the colour of the dot and the shape of
+      // the words — and the axis is free to mean the one thing a reader already
+      // assumes it means when they see a row of cards joined left to right.
+      //
+      // WIRES GET SHORT AS A CONSEQUENCE rather than as a goal. Adjacent in time
+      // is adjacent on screen, so the long diagonals across empty space are not
+      // routed better, they stop existing.
       showing.forEach((story, row) => {
         const name = story.branch
-        const id = k => `${name}::${k}`
-
-        // ---- what the story is about ------------------------------------
         const arrived = story.kind === 'pull'
-        nodes.push(node(id('branch'), arrived ? 'pull' : 'branch', name, [
-          { text: story.live ? 'in flight' : 'at rest', tone: story.live ? '#3fb950' : '#7d8998' },
-          // SAID ON THE CARD, because everything about what may be done to it
-          // follows from this: an arrived change is somebody else's, waits on
-          // a person before it is read at all, and has no branch here.
-          arrived ? { text: "somebody else's, from outside", tone: '#f778ba' } : null
-        ], 0, row))
 
-        // ---- the task cut from it ---------------------------------------
-        //
-        // The most recent one. A branch worked twice is two tasks, and the older
-        // one is history rather than a picture of now -- said in the line rather
-        // than drawn, so the shape of the picture does not change with it.
+        // WHEN, SHOWN, because a timeline whose axis cannot be read is just a
+        // row. Time of day for something today, the date for anything older —
+        // a full ISO stamp on every card is thirty characters of noise where
+        // two facts were wanted.
+        const today = new Date().toISOString().slice(0, 10)
+        const when = at => {
+          const s = String(at || '')
+          if (!s) return null
+          return s.slice(0, 10) === today ? s.slice(11, 16) : s.slice(0, 10)
+        }
+
+        // ---- everything that happened to it, with its moment --------------
+        const steps = []
+
+        // THE SUBJECT IS FIRST AND HAS NO TIME OF ITS OWN. When a branch was cut
+        // is not recorded here — git knows, and asking git is a process per
+        // branch on a pane that redraws. It is the origin of the row rather
+        // than a moment in it, so it sorts first and says nothing about when.
+        steps.push({
+          at: null,
+          first: true,
+          kind: arrived ? 'pull' : 'branch',
+          title: name,
+          lines: [
+            { text: story.live ? 'in flight' : 'at rest', tone: story.live ? '#3fb950' : '#7d8998' },
+            arrived ? { text: "somebody else's, from outside", tone: '#f778ba' } : null
+          ]
+        })
+
         const mine = board
-          .filter(t => t.branch === name)
+          .filter(x => x.branch === name)
           .sort((a, b) => String(b.updated || b.created || '').localeCompare(String(a.updated || a.created || '')))
         const task = mine[0]
         if (task) {
-          nodes.push(node(id('task'), 'task', `#${task.number} ${task.title || ''}`.trim(), [
-            { text: task.state, tone: task.state === 'done' ? '#3fb950' : '#d29922' },
-            { text: `${task.worker || 'somebody'} · ${task.jobName || task.job || 'no job'}` },
-            mine.length > 1 ? { text: `${mine.length - 1} earlier on this branch` } : null
-          ], 1, row))
-          wire(id('branch'), id('task'))
+          steps.push({
+            at: task.created || task.updated,
+            kind: 'task',
+            title: `#${task.number} ${task.title || ''}`.trim(),
+            lines: [
+              { text: task.state, tone: task.state === 'done' ? '#3fb950' : '#d29922' },
+              { text: `${task.worker || 'somebody'} · ${task.jobName || task.job || 'no job'}` },
+              mine.length > 1 ? { text: `${mine.length - 1} earlier on this branch` } : null
+            ]
+          })
 
-          // ---- the machine it was given to ------------------------------
           if (task.machine) {
             const v = onMachine.get(task.machine)
-            // `stage`, NOT `state`. The registry knows what this app has done
-            // to a machine -- made, installed, dialled in -- and nothing about
-            // whether VirtualBox has it running this second, which is a
-            // question only VBoxManage answers and costs a process to ask.
-            // Written as `v.state` first, it drew an empty line on every
-            // machine card: undefined renders as nothing, so the fault looked
-            // like missing data rather than a wrong field name.
-            nodes.push(node(id('machine'), 'machine', task.machine, [
-              { text: v ? v.stage || 'made' : 'no longer here', tone: v ? '#3fb950' : '#f85149' },
-              // A MACHINE IS PUT BACK WHEN ITS WORK ENDS, so an empty claim here
-              // is the ordinary end state and not a fault. Said, because a blank
-              // line reads as missing data.
-              { text: v && v.branch ? `claims ${v.branch}` : 'claiming nothing' },
-              v && v.borrowed ? { text: 'borrowed', tone: '#d29922' } : null
-            ], 2, row))
-            wire(id('task'), id('machine'))
+            steps.push({
+              // WHEN IT WAS GIVEN TO A MACHINE, which is the closest moment
+              // recorded on the task itself. `updated` moves with the task, so
+              // this is "last touched" rather than "started" — near enough to
+              // order by, and not claimed as more than that on the card.
+              at: task.updated || task.created,
+              kind: 'machine',
+              title: task.machine,
+              lines: [
+                { text: v ? v.stage || 'made' : 'no longer here', tone: v ? '#3fb950' : '#f85149' },
+                { text: v && v.branch ? `claims ${v.branch}` : 'claiming nothing' },
+                v && v.borrowed ? { text: 'borrowed', tone: '#d29922' } : null
+              ]
+            })
           }
         }
 
-        // ---- what was made of it ----------------------------------------
         const readings = judged
           .filter(j => (j.subject && (j.subject.branch || j.subject.name)) === name)
           .sort((a, b) => String(b.touched || b.written || '').localeCompare(String(a.touched || a.written || '')))
         const reading = readings[0]
         if (reading) {
-          nodes.push(node(id('judge'), 'judgement', `${reading.ref || ''} ${reading.title || ''}`.trim(), [
-            { text: reading.state, tone: reading.state === 'done' ? '#3fb950' : '#d29922' },
-            // NO VERDICT IS NOT A BAD VERDICT. A judgement still being read has
-            // none, and showing that as a blank beside "accepted" invites the
-            // wrong reading.
-            {
-              text: reading.verdict ? `verdict: ${reading.verdict}` : 'not decided',
-              tone: reading.verdict === 'accepted' ? '#3fb950' : reading.verdict ? '#f85149' : '#7d8998'
-            },
-            { text: `by ${reading.by || 'somebody'}` }
-          ], 3, row))
-          wire(task ? id('task') : id('branch'), id('judge'))
+          steps.push({
+            at: reading.written || reading.touched,
+            kind: 'judgement',
+            title: `${reading.ref || ''} ${reading.title || ''}`.trim(),
+            lines: [
+              { text: reading.state, tone: reading.state === 'done' ? '#3fb950' : '#d29922' },
+              {
+                text: reading.verdict ? `verdict: ${reading.verdict}` : 'not decided',
+                tone: reading.verdict === 'accepted' ? '#3fb950' : reading.verdict ? '#f85149' : '#7d8998'
+              },
+              { text: `by ${reading.by || 'somebody'}` }
+            ]
+          })
         }
+
+        // ---- in the order they happened -----------------------------------
+        //
+        // Anything with no moment keeps its place rather than being dropped to
+        // one end: a step this app did not write a time for is still a step, and
+        // a picture that hides it is worse than one that puts it approximately.
+        steps.sort((a, b) => {
+          if (a.first) return -1
+          if (b.first) return 1
+          return String(a.at || '').localeCompare(String(b.at || ''))
+        })
+
+        let before = null
+        steps.forEach((step, column) => {
+          const id = `${name}::${column}`
+          const stamp = when(step.at)
+          nodes.push(node(id, step.kind, step.title, [
+            ...step.lines,
+            stamp ? { text: stamp, tone: '#7d8998' } : null
+          ], column, row))
+          wire(before, id)
+          before = id
+        })
       })
 
       const live = showing.filter(x => x.live).length

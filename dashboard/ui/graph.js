@@ -72,7 +72,7 @@ function Card () {
   this.addOutput('', 0)
   // Wider than it looks like it needs to be: a branch name with a slash in it
   // and a task title are both longer than any tidy number.
-  this.size = [250, 84]
+  this.size = [250, 100]
   this.color = '#1c232d'
   this.bgcolor = '#0e1116'
   // What this node is about, filled in when it is made. Never null by the time
@@ -85,7 +85,10 @@ Card.prototype.onDrawBackground = function (ctx) {
   const lines = (this.about && this.about.lines) || []
   ctx.font = '11px ui-monospace, Consolas, monospace'
   let y = 34
-  for (const line of lines.slice(0, 3)) {
+  // FOUR, because the last one is when it happened and a timeline whose axis
+  // cannot be read is just a row of cards. It was three, and the timestamp --
+  // added last so it reads as a footer -- was silently dropped by this slice.
+  for (const line of lines.slice(0, 4)) {
     ctx.fillStyle = line.tone || '#7d8998'
     ctx.fillText(String(line.text || '').slice(0, 34), 12, y)
     y += 15
