@@ -183,6 +183,24 @@ const MAY = {
   triageSet: 'write down what you are waiting on and why, so the next waking knows what you already asked for',
   triageForget: 'stop carrying something. Nothing about the task or judgement itself is touched',
 
+  // ---- and what there is to DO, which is neither of the above ---------------
+  //
+  // Triage says where something that already exists has got to. This is for the
+  // things that exist nowhere else: a decision taken at three in the morning
+  // that cannot be acted on until somebody is awake, a doubt worth raising
+  // before recommending anything, a check that needs a person's eyes. Without
+  // somewhere to put those, they go in the conversation and are gone the moment
+  // the conversation is long.
+  //
+  // ADD, CHANGE AND FINISH, AND NOT DELETE. `todoRemove` is deliberately absent
+  // from this list and refuses over the wire besides. "Done" and "gone" are
+  // different claims: done is kept and shown, gone leaves no trace anything was
+  // ever there — and a list the worker can empty is a list nobody can use to
+  // check up on the worker, which is most of why a person opens that tab.
+  todos: 'the list of things to do: what is open, what is being done, what is finished',
+  todoAdd: 'put something on that list — a line saying what is to be done, and why if the line is not enough on its own',
+  todoSet: 'change something on the list, or move it between open, doing and done. Finishing one is how you take it off — you may not delete',
+
   // ---- and what it may PROPOSE ---------------------------------------------
   //
   // A supervisor that can only write tasks under definitions somebody else wrote

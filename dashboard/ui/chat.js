@@ -548,7 +548,122 @@ $('chat-close').onclick = () => {
   paintSupervisorState()
 }
 
+// ---- the list of things to do ----------------------------------------------
+//
+// ONE CARD EACH, in the order they were written. Not grouped by state and not
+// sorted with the finished ones at the bottom: a list that rearranges itself
+// when you press something is a list you lose your place in, and the number is
+// what people refer to these by out loud.
+const TODO_BADGE = { open: 'warn', doing: 'run', done: 'ok' }
+
+function paintTodoList () {
+  if (!chatPaneIs('todo')) return
+
+  api('todos').then(v => {
+    if (!chatPaneIs('todo')) return
+    const rows = v.todos || []
+
+    setText($('todo-list-context'), rows.length
+      ? `— ${v.open} open, ${v.doing} being done, ${v.done} finished`
+      : '')
+
+    if (!changed('todo-list', rows.map(t => `${t.ref}${t.state}${t.touched}`))) return
+
+    fill($('todo-list'), rows.length
+      ? rows.map(todoCard)
+      : el('p', { className: 'empty', textContent: v.note || 'Nothing on the list.' }))
+  }).catch(() => { /* the chrome says when the dashboard itself is unreachable */ })
+}
+
+function todoCard (t) {
+  // THE NEXT STATE, AS ONE BUTTON. Three states in a row of three buttons means
+  // two of them are always the wrong thing to press; what somebody wants is to
+  // move this one along, and the way back is on the menu underneath.
+  const next = t.state === 'open' ? 'doing' : t.state === 'doing' ? 'done' : 'open'
+  const moveOn = t.state === 'open' ? 'Start it' : t.state === 'doing' ? 'Mark it done' : 'Put it back'
+
+  return el('div', { className: `card${t.state === 'done' ? ' muted' : ''}` },
+    el('div', { className: 'card-title' },
+      el('span', { className: 'mono muted', textContent: t.ref }),
+      el('span', { className: 'grow', textContent: t.what }),
+      el('span', { className: `badge ${TODO_BADGE[t.state] || 'muted'}`, textContent: t.state })),
+
+    // WHO WROTE IT, because a list two things write to is one where that is the
+    // first question. Never guessed: whoever called the action said so.
+    el('div', { className: 'card-sub muted', textContent: [
+      t.by ? `by ${t.by}` : null,
+      t.at ? ago(t.at) : null,
+      t.done ? `finished ${ago(t.done)}` : null
+    ].filter(Boolean).join(' · ') }),
+
+    t.why ? el('div', { className: 'console short', style: 'margin-top:8px; user-select:text', textContent: t.why }) : null,
+
+    el('div', { className: 'row', style: 'margin-top:8px' },
+      el('button', { className: `btn small ${t.state === 'doing' ? 'ok' : ''}`, textContent: moveOn, onclick: () => setTodo(t, next) }),
+      el('button', { className: 'btn small', textContent: 'Edit', onclick: () => askToEditTodo(t) }),
+      // A PERSON'S, AND ONLY HERE. The action refuses it down the pipe; this is
+      // the window it points at.
+      el('button', { className: 'btn small danger', textContent: 'Remove', onclick: () => askToRemoveTodo(t) })))
+}
+
+const setTodo = (t, state) => api('todoSet', { id: t.ref, state })
+  .then(r => { forget('todo-list'); paintTodoList(); say(`${r.ref} is ${r.state}.`) })
+  .catch(oops)
+
+function askToAddTodo () {
+  ask({
+    title: 'Put something on the list',
+    plain: [
+      'The supervisor reads this list and can change it, so write it as something anybody could pick up.',
+      'It is not a task: nothing boots a machine because this exists.'
+    ],
+    fields: [
+      { name: 'what', label: 'What is to be done', placeholder: 'one line — this is what shows in the list' },
+      { name: 'why', label: 'Why (optional)', multiline: true, rows: 6, placeholder: 'the paragraph that stops it being misread in a week' }
+    ],
+    confirm: 'Add it',
+    onYes: v => api('todoAdd', { what: v.what, why: v.why || null })
+      .then(r => { forget('todo-list'); paintTodoList(); say(r.note) })
+      .catch(oops)
+  })
+}
+
+function askToEditTodo (t) {
+  ask({
+    title: `Edit ${t.ref}`,
+    fields: [
+      { name: 'what', label: 'What is to be done', value: t.what },
+      { name: 'why', label: 'Why', multiline: true, rows: 6, value: t.why || '' }
+    ],
+    confirm: 'Save it',
+    onYes: v => api('todoSet', { id: t.ref, what: v.what, why: v.why || '' })
+      .then(r => { forget('todo-list'); paintTodoList(); say(`${r.ref} saved.`) })
+      .catch(oops)
+  })
+}
+
+function askToRemoveTodo (t) {
+  ask({
+    title: `Remove ${t.ref}?`,
+    danger: true,
+    plain: [
+      t.what,
+      'Marking it done keeps it on the list where it can be read. Removing it leaves no trace that it was ever there.'
+    ],
+    cost: 'The supervisor cannot do this and cannot undo it.',
+    confirm: 'Remove it',
+    onYes: () => api('todoRemove', { id: t.ref })
+      .then(r => { forget('todo-list'); paintTodoList(); say(r.note, 'warn') })
+      .catch(oops)
+  })
+}
+
 // THE SUB-TAB BAR. Last in the file, because paneSwitcher calls back into the
 // paints and a switcher wired above them would name functions that do not exist
 // yet at load time. See ui/load.js for the order these files are read in.
-paneSwitcher('view-chat', () => chatPane, p => { chatPane = p; been.set('chat-pane', p) }, () => paintChat())
+paneSwitcher('view-chat', () => chatPane, p => { chatPane = p; been.set('chat-pane', p) }, () => {
+  paintChat()
+  paintTodoList()
+})
+
+$('todo-add').onclick = askToAddTodo

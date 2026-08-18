@@ -83,6 +83,7 @@ Object.assign(actions,
   require('./actions/queue'),
   // What the supervisor is in the middle of, and what has finished since.
   require('./actions/triage'),
+  require('./actions/todo'),
   require('./actions/repos'),
   // Talking to the supervisor, and it talking back. See core/chat.js.
   require('./actions/chat'),

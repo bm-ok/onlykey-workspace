@@ -693,6 +693,7 @@
          Chat is first and stays first: it is the reason to open this tab. -->
     <div class="subtabs">
       <button class="subtab active" data-pane="chat">Chat <span class="tab-badge hidden" id="chat-badge-pane"></span></button>
+      <button class="subtab" data-pane="todo">Todo <span class="tab-badge hidden" id="todo-list-badge"></span></button>
     </div>
 
     <div class="pane active" id="pane-chat">
@@ -752,6 +753,28 @@
          So the box is replaced, in the same place, by the one thing that would
          actually help: pick a supervisor and start it. -->
     <div class="chat-offline hidden" id="chat-offline"></div>
+    </div>
+
+    <!-- ---------------- Todo ----------------
+         THINGS THAT EXIST NOWHERE ELSE. Not the task board — a task is a machine
+         booting to run a job on a branch — and not triage, which says where
+         something that already exists has got to. This is the doubt worth
+         raising, the check that needs a person's eyes, the decision taken at
+         three in the morning that cannot be acted on until somebody is awake.
+
+         BOTH ENDS WRITE TO IT, which is the point. The supervisor may add,
+         change and finish; only a person may delete, because "done" and "gone"
+         are different claims and a list the worker can empty is a list nobody
+         can check it against. See core/todo.js. -->
+    <div class="pane" id="pane-todo">
+      <div class="sync-head">
+        <h2>Todo <span class="muted" id="todo-list-context"></span></h2>
+        <div class="sync-controls">
+          <button class="btn ok" id="todo-add">Add one</button>
+        </div>
+      </div>
+      <p class="note">What there is to do, written by you or by the supervisor. It may add to this, change it and mark things done; it may not delete — that is yours, and "done" stays on the list where it can be read.</p>
+      <div id="todo-list" class="stack"></div>
     </div>
   </section>
 

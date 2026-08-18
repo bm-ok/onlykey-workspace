@@ -506,6 +506,9 @@ async function drawOnce () {
   paintJudge()
   paintSessions()
   paintChat()
+  // Guards on its own pane, so this costs nothing while the conversation is
+  // what is open.
+  paintTodoList()
   // On the loop, not only when the sub-tab is clicked. It was wired to the
   // switcher alone, so a window opened with this pane already remembered drew
   // nothing at all — an empty column that looks exactly like having no guests.

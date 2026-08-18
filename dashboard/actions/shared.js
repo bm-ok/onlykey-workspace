@@ -42,6 +42,9 @@ const tasks = require('../tasks/store')
 const judging = require('../tasks/judging')
 // What the supervisor is in the middle of, across wakings. See core/triage.js.
 const triage = require('../core/triage')
+// What there is to do, which is neither of the other two lists — the head of
+// core/todo.js says why it is not the task board and not triage.
+const todo = require('../core/todo')
 const artifact = require('../tasks/artifact')
 const prompts = require('../tasks/prompts')
 const jobs = require('../tasks/jobs')
@@ -406,7 +409,7 @@ async function supervisorMachine (name) {
 module.exports = {
   whoAsked, supervisorMachine,
   log, events, keys, ssh, data, secret, settings, github, remotes, landings, prtemplate, drafts, allowed, judgements,
-  vbox, vms, provisioner, scripts, channel, tasks, judging, triage, artifact,
+  vbox, vms, provisioner, scripts, channel, tasks, judging, triage, todo, artifact,
   archive, files, sessions, prompts, contracts, jobs, jobrun, harness, suites, workspaces, queue, machines, provision, reach, editor, repos,
   busy, session, dispatch, auth, branches, workspace,
   fs, path, https,
