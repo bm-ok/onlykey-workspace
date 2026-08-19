@@ -140,14 +140,65 @@ function markRead (n, by = null) {
 // Everything, or everything after a number. `since` is what the other end was
 // last told, so it is EXCLUSIVE: asking again with the same number twice must
 // not deliver the same message twice.
-function since (n = 0, { limit = 200 } = {}) {
+// A MESSAGE THAT IS TOO LONG TO SEND WHOLE. Trimmed from the front for the same
+// reason the list is: the end of a long message is what it concluded.
+const SHORTEN = (text, to) => {
+  const t = String(text || '')
+  return t.length <= to ? t : `…[${t.length - to} characters of the start not shown]…${t.slice(-to)}`
+}
+
+// Everything, or everything after a number. `since` is what the other end was
+// last told, so it is EXCLUSIVE: asking again with the same number twice must
+// not deliver the same message twice.
+//
+// ---- BOUNDED BY SIZE AS WELL AS BY COUNT, AND THE SIZE IS THE ONE THAT BIT --
+//
+// This capped at two hundred MESSAGES and nothing else, which is a sensible
+// number of things to read and says nothing about how much text they are. The
+// supervisor writes in paragraphs, so two hundred of them came to 82,000
+// characters -- 81% of `whatsNew`, which was 102,000 in total and over whatever
+// the reading end will accept.
+//
+// SO THE SUPERVISOR COULD NOT READ THE CHAT AT ALL. It said so on nine
+// consecutive wakings, filed it as a todo, and carried on answering from the
+// board because that was all it could see. Every message a person sent it in
+// that time went unread, and the one thing it needed to say about it was the one
+// thing it could not be told.
+//
+// TRIMMED FROM THE FRONT, keeping the most recent, and what was dropped is
+// COUNTED rather than quietly lost -- an end that reads a trimmed feed and
+// believes it saw everything is worse off than one told it missed six.
+function since (n = 0, { limit = 200, bytes = 0 } = {}) {
   const from = Number(n) || 0
   const all = read().filter(m => Number(m.n) > from)
   // The oldest first, because a conversation read newest-first is not a
   // conversation. Trimmed from the FRONT when there is too much, so what comes
   // back is the most recent — an end that has been away for a week wants what
   // was said last, not what was said first.
-  const rows = all.slice(-Math.max(1, Math.min(1000, Number(limit) || 200)))
+  let rows = all.slice(-Math.max(1, Math.min(1000, Number(limit) || 200)))
+
+  const budget = Math.max(0, Number(bytes) || 0)
+  if (budget) {
+    // NEWEST FIRST WHILE CHOOSING, oldest first when handing back. Working
+    // backwards is what makes "keep the most recent that fit" a single pass.
+    const kept = []
+    let used = 0
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const one = rows[i]
+      const size = JSON.stringify(one).length
+      if (used + size > budget) {
+        // ROOM FOR THE LAST ONE EVEN IF IT IS ENORMOUS. A feed that answers
+        // "nothing" because the newest message is long is the same failure in a
+        // smaller place, so the most recent is always sent, shortened.
+        if (!kept.length) kept.unshift({ ...one, text: SHORTEN(one.text, Math.max(400, budget - 200)) })
+        break
+      }
+      used += size
+      kept.unshift(one)
+    }
+    rows = kept
+  }
+
   return {
     messages: rows,
     // What to ask with next time. The last number SEEN rather than the last

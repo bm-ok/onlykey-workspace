@@ -250,7 +250,13 @@ module.exports = {
       const spoke = chat.all().filter(m => m.who === 'supervisor').map(m => Number(m.n))
       const lastSaid = spoke.length ? Math.max(...spoke) : 0
       const asked = since == null ? 0 : Number(since) || 0
-      const talk = chat.since(Math.min(asked, lastSaid))
+      // A BUDGET, BECAUSE THE READING END HAS ONE. `whatsNew` is answered into a
+      // tool result on a machine, and an answer too large to accept is an answer
+      // that does not arrive -- which is not a smaller version of arriving, it is
+      // the supervisor going blind to everything said to it. The chat was 81% of
+      // a 102,000-character reply; the rest of this answer is small and must not
+      // be crowded out by it.
+      const talk = chat.since(Math.min(asked, lastSaid), { bytes: 20000 })
 
       // THE RECEIPT, WRITTEN HERE BECAUSE HERE IS WHERE THE WORDS ARRIVE. Not
       // when the message was stored, which says only that this host took it, and
@@ -273,7 +279,14 @@ module.exports = {
       const out = {
         said: talk.messages,
         bookmark: talk.bookmark,
+        // HOW MANY WERE NOT SENT, which was already here and now has a second
+        // reason to be non-zero: too much text rather than too many messages.
+        // Either way it is the difference between "nobody said anything" and
+        // "you were not shown it", and only one of those is a reason to ask.
         missed: talk.missed,
+        saidNote: talk.missed
+          ? `${talk.missed} earlier message(s) are not in this answer — the newest that fit are. Ask "chat" for the whole conversation if what you need is older than this.`
+          : null,
         tasks: {
           queued: waiting.map(t => ({ id: t.id, number: t.number, title: t.title, branch: t.branch, tag: t.tag || null })),
           running: working.map(t => ({ id: t.id, number: t.number, title: t.title, machine: t.machine })),
