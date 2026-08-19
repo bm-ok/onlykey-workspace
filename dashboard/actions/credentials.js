@@ -975,6 +975,23 @@ grep -qxF '${String(ssh.publicKey() || '').trim()}' "$HOME/.ssh/authorized_keys"
     run: async ({ name }) => {
       const mine = vms.get(name)
 
+      // WHETHER THERE WAS ANYTHING TO TAKE, asked before anything is done and
+      // used only to decide whether to SAY so.
+      //
+      // This is called more than once for one machine -- a test takes the
+      // credential back, and putting the machine away takes it back again --
+      // and the second call is a no-op that announced itself anyway: "kit-2 no
+      // longer holds a credential", about a machine that had not been holding
+      // one for a second by then. Harmless and untrue, and it was invisible
+      // until the message started naming the sign-in, at which point the record
+      // showed the same machine giving up two different things.
+      //
+      // THE WORK IS NOT SKIPPED, only the sentence. The record saying a machine
+      // holds nothing is not proof that the file is gone -- drift is exactly
+      // what this call exists to clean up -- so it still goes through the
+      // removal and still refuses if it cannot reach the machine.
+      const hadSomething = !!(mine.guest || mine.holdsCredential)
+
       // READ BEFORE IT IS REMOVED, which this did not do and which cost the
       // credential this host was holding.
       //
@@ -1055,9 +1072,11 @@ grep -qxF '${String(ssh.publicKey() || '').trim()}' "$HOME/.ssh/authorized_keys"
       // credential had come off the wrong kind of machine. `mine.guest` is read
       // above and cleared on the line before, so it is taken while it is still
       // there.
-      log.on('vm', name).good(mine.guest
-        ? `${name} no longer holds the sign-in "${mine.guest}"`
-        : `${name} no longer holds a credential`)
+      if (hadSomething) {
+        log.on('vm', name).good(mine.guest
+          ? `${name} no longer holds the sign-in "${mine.guest}"`
+          : `${name} no longer holds a credential`)
+      }
       return { from: name, removed: true, guest: mine.guest || null, rotated, kept: text !== null }
     }
   },
