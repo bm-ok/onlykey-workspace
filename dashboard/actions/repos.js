@@ -895,8 +895,20 @@ module.exports = {
         // made of. A judgement of any of them is a judgement of this change,
         // because that is what the line IS.
         const names = new Set([pair.source.name, ...pair.on.map(p => p.head)])
+        // A CHECK-A-CLAIM IS NOT A REVIEW OF THE CHANGE, so it neither satisfies
+        // this gate nor blocks it. It reads a REPORT -- "is what somebody said
+        // about this code true" -- and answers true/false/unclear. Whether the
+        // change is fit to go out is a different question that nothing asked it.
+        //
+        // Both directions matter. Counting one as a review would let a change go
+        // out on the strength of a judgement that never assessed it; letting one
+        // block would stop a change because a reviewer's request was CONFIRMED,
+        // which is the opposite of what confirming it means. J68 was the second:
+        // a true claim, filed as "rejected", one stale judgement away from
+        // refusing the very cut it was asking to improve.
         const mine = judging.all().filter(j =>
-          j.state === 'done' && j.subject && j.subject.kind === 'branch' && names.has(j.subject.branch))
+          j.state === 'done' && j.job !== 'check-a-claim' &&
+          j.subject && j.subject.kind === 'branch' && names.has(j.subject.branch))
 
         if (!mine.length) {
           throw new Error(`Nothing has judged "${pair.source.name}" or the branch it is made of, so there is no reading of this change but your own — and you cannot see the code. Ask for a judgement of it, read what it handed back, and send it out when a judge has looked.`)

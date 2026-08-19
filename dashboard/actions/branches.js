@@ -385,7 +385,19 @@ module.exports = {
 
   // Turning a finished branch into a line, so it can be proposed.
   branchAsLine: {
-    about: 'Make a line out of a branch, so it can be compared and landed. Moves nothing',
+    // SAY WHAT IT COSTS. "Moves nothing" was true and was the whole description,
+    // and what it left out is that this is the call that PROTECTS the branch --
+    // after it, no machine may be set up to push there. A supervisor walked into
+    // exactly that: it made a line, cut a pull request, was asked for an
+    // adjustment, and could not deliver one, because the act that let it cut was
+    // the act that shut the door. It then reported "there is no tool to un-line a
+    // branch", which was true from where it stood -- `lineForget` exists and is
+    // not on its list, deliberately, because forgetting a line is how a guard
+    // gets removed and that is not a model's call.
+    //
+    // Nothing here is refused that was not refused before. The description now
+    // says what happens, which is what was missing.
+    about: 'Make a line out of a branch, so it can be compared and landed. Moves nothing, and protects the branch: no machine may push to it afterwards, except while it is out as an unmerged pull request',
     needs: 'workspace',
     takes: ['branch', 'name', 'why'],
     run: ({ branch, name, why }) => {
@@ -393,7 +405,10 @@ module.exports = {
       log.on('git').good(`"${made.name}" is a line now — ${made.on.map(p => `${p.repo}:${p.branch}`).join(', ')}`)
       return {
         ...made,
-        note: `"${made.name}" names ${made.on.map(p => p.repo).join(', ')} at "${branch}". Its branches are protected while it is a line. Nothing is counted from it until you say so.`
+        note: `"${made.name}" names ${made.on.map(p => p.repo).join(', ')} at "${branch}". Nothing is counted from it until you say so. ` +
+          `From now on "${branch}" is PROTECTED because it is a link in this line: no machine may push to it, so work does not go onto it — work is cut FROM it and merged back INTO it. ` +
+          `The one exception is while it is out as a pull request nobody has merged, which is the case where the branch is the thing being revised. ` +
+          `This does not undo itself: a person removes a line in the window, and it is not on a supervisor's list because forgetting a line is how the protection comes off.`
       }
     }
   },

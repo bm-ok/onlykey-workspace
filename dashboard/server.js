@@ -851,7 +851,34 @@ function handler (req, res) {
       return
     }
 
+    // ---- A CHECK-A-CLAIM DOES NOT REACH A VERDICT --------------------------
+    //
+    // TWO LANES THAT ANSWER DIFFERENT QUESTIONS. `verdict` is accepted/rejected
+    // and asks "is this change fit to go out". A check-a-claim asks "is this
+    // report about the code accurate", and answers true/false/unclear. They are
+    // not the same question and the mapping between them does not exist.
+    //
+    // J68 IS THE CASE. A reviewer asked for a change to a test; the claim was
+    // TRUE, meaning "yes, that is worth doing" -- and the judge filed it as
+    // `rejected`, which is a defensible reading of "there is something wrong
+    // here" and was then read by `prCutMake` as a failed review of the branch.
+    // A confirmed, worth-doing improvement registered as a reason the change
+    // could not go out. It did not bite only because a later push made that
+    // judgement stale before anything asked.
+    //
+    // So the reading is kept -- it is in the findings file, and the queue parses
+    // the CLAIM line into `concluded` -- and it does not go in the verdict lane.
+    // Nothing is lost and nothing downstream is asked to tell two vocabularies
+    // apart on the fly.
     try {
+      if (doing.job === 'check-a-claim') {
+        judging.update(doing.id, { note: why || null, claimed: asked, decidedBy: name })
+        log.on('judging', doing.id).info(
+          `${doing.ref} read the claim about ${doing.reads} and said "${asked}" — kept as its reading, not as a verdict on the change${why ? ` — ${why.slice(0, 120)}` : ''}`)
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(`${asked}\n`)
+        return
+      }
+
       judging.update(doing.id, { verdict: asked, note: why || null, decided: new Date().toISOString(), decidedBy: name })
       log.on('judging', doing.id)[asked === 'accepted' ? 'good' : asked === 'rejected' ? 'warn' : 'info'](
         `${doing.ref} judged ${doing.reads}: ${asked}${why ? ` — ${why.slice(0, 120)}` : ''}`)
