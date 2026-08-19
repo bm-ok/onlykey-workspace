@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 53 tests, 249 checks, 22 of them drafts -->
+<!-- 12 suites, 54 tests, 253 checks, 22 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -387,6 +387,13 @@ The point of the whole tool, and the last part of it that nothing checked.
   4. and when the cable goes back in, the run is found again and finishes
   5. and what it made came home
   6. **DRAFT** — and past the bound, a run that FINISHED is thrown away with the disk
+
+## 08 — a machine we lost sight of
+
+  1. the bound is ten minutes, and it can be asked without waiting ten minutes
+  2. a machine kept for looking at is not rolled back, and says so
+  3. and the person is told, rather than the pool quietly draining
+  4. and giving it back puts it in the pool again
 
 # 09 — judging
 

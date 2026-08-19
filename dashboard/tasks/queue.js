@@ -1060,6 +1060,30 @@ async function startItUp (actions, to, machine) {
 // Never allowed to throw. It runs in a finally, and a failure to tidy up must
 // not replace the error that caused it -- losing the real reason is how a
 // machine ends up left on AND nobody knowing why.
+// HOW LONG A MACHINE MAY BE OUT OF TOUCH BEFORE THIS APP STOPS WAITING.
+//
+// Generous on purpose, and the reasoning is in waitForRun: the cost of waiting
+// too long is a machine held, and the cost of giving up too early is somebody's
+// afternoon. Ten minutes is long enough that nothing ordinary reaches it.
+//
+// NAMED HERE, AND ASKED THROUGH A FUNCTION, so the rule can be checked without
+// waiting it out. A drill for a ten-minute bound is ten minutes of a machine
+// deliberately kept off the network, per run — which is a drill nobody runs,
+// which is how the property stays unchecked. This is the same separation that
+// took `stranded` out of `adopt` and turned a six-hour draft into a 49-second
+// check: the DECIDING is a question about numbers, and only the DOING needs a
+// machine and a clock.
+const HOW_LONG_OUT_OF_TOUCH = 10 * 60000
+
+// Whether a machine last heard from at `lostSince` has been quiet long enough to
+// give up on. `now` is a parameter rather than a call to Date.now() for exactly
+// one reason: it is what lets this be asked about eleven minutes ago without
+// eleven minutes passing.
+function outOfTouchTooLong (lostSince, now) {
+  if (!lostSince) return false
+  return (Number(now) || 0) - Number(lostSince) > HOW_LONG_OUT_OF_TOUCH
+}
+
 // KEPT FOR LOOKING AT, RATHER THAN PUT AWAY.
 //
 // Putting a machine away rolls it back to base, which is right after work that
@@ -1361,7 +1385,7 @@ async function waitForRun (actions, to, machine, runId, hours = 6) {
   // a machine that is really gone is noticed by the loop below eventually, and
   // the cost of waiting too long is a machine held; the cost of giving up too
   // early is somebody's afternoon.
-  const OUT_OF_TOUCH = 10 * 60000
+  const OUT_OF_TOUCH = HOW_LONG_OUT_OF_TOUCH
   let lostSince = 0
 
   try {
@@ -1391,7 +1415,7 @@ async function waitForRun (actions, to, machine, runId, hours = 6) {
         if (!lostSince) {
           lostSince = Date.now()
           to.warn(`cannot reach ${machine} (${e.message}) — the run is detached and carries on regardless; waiting for it to come back`)
-        } else if (Date.now() - lostSince > OUT_OF_TOUCH) {
+        } else if (outOfTouchTooLong(lostSince, Date.now())) {
           to.bad(`${machine} has been unreachable for ${Math.round((Date.now() - lostSince) / 60000)} minutes; giving up on ${runId}`)
           return { state: 'unreachable' }
         }
@@ -1694,4 +1718,4 @@ const order = entries => [...(entries || [])].sort((a, b) => rank(a) - rank(b) |
 // the rule so it cannot describe an order that is not this one.
 const ORDER = 'Judgements first, then tasks; oldest first within each. A judgement reads work that is already waiting to land, so it goes ahead of work that makes more.'
 
-module.exports = { begin, stop, tick, redial, availability, state, busyWith, bringUp, putAway, order, takes, stranded, ORDER, TICK }
+module.exports = { begin, stop, tick, redial, availability, state, busyWith, bringUp, putAway, keepForLooking, outOfTouchTooLong, order, takes, stranded, HOW_LONG_OUT_OF_TOUCH, ORDER, TICK }
