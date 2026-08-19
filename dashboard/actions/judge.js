@@ -108,7 +108,29 @@ module.exports = {
       // WHAT A LIST IS FOR. `brief` and `rules` are the two long ones and are
       // the two nothing reading a list wants; `attempts` is where it ran and
       // belongs with the rest of the record.
-      const short = all.map(({ brief, rules, attempts, ...rest }) => rest)
+      //
+      // AND THE TWO THAT GREW BACK. Taking those three out fixed this once, at
+      // seventy-five thousand characters. It is seventy-seven thousand again --
+      // `question` now carries the whole claim a check-a-claim was asked about,
+      // and `note` carries a finished judgement's findings in full. The drill
+      // that watches this said so before anybody noticed: "the list of
+      // judgements is a file rather than a list".
+      //
+      // TRUNCATED RATHER THAN DROPPED. A list of judgements with no hint of what
+      // any of them SAID is one nobody can triage from -- which is the same
+      // mistake in the other direction, and the reason the first fix left `note`
+      // alone. An ellipsis is the signal that there is more, and `ref` is how to
+      // get it.
+      const trim = (s, n) => {
+        const t = String(s || '').replace(/\s+/g, ' ').trim()
+        if (!t) return null
+        return t.length > n ? `${t.slice(0, n)}…` : t
+      }
+      const short = all.map(({ brief, rules, attempts, question, note, ...rest }) => ({
+        ...rest,
+        question: trim(question, 160),
+        note: trim(note, 240)
+      }))
 
       return {
         judgements: short,
@@ -119,7 +141,7 @@ module.exports = {
         running: all.filter(j => j.state === 'given').length,
         decided: all.filter(j => j.state === 'done').length,
         note: all.length
-          ? 'The words each one was given and the rules it was held to are left out here — ask for one by ref to read those.'
+          ? 'The words each one was given and the rules it was held to are left out here, and what it asked and what it found are cut short — an ellipsis means there is more. Ask for one by ref to read any of it in full.'
           : 'Nothing has been asked for yet. A judgement reads a branch cut or a PR cut — judgementCreate says which.'
       }
     }

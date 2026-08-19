@@ -104,9 +104,28 @@ it('the list of judgements is small enough to read, and one of them is not', asy
   assert.ok(size < 60000, `the list of judgements is ${size} characters, which is a file rather than a list`)
   log(`${(list.judgements || []).length} judgement(s), ${size} characters`)
 
+  // PER ROW AS WELL AS IN TOTAL, and the per-row bound is the one that will
+  // catch the next one. The total scales with how many judgements a host
+  // happens to have: this same list passed the size check for weeks on a host
+  // with a handful of them while each row was already carrying its whole text,
+  // and only tripped once there were twenty-nine. A host with five would still
+  // be under sixty thousand with rows of ten thousand characters each.
+  //
+  // Named fields are checked because they are the two that were taken out
+  // before; the SIZE is checked because the next one to grow will have a name
+  // nobody has thought of yet. `question` and `note` are exactly that — they
+  // grew back into the space `brief` and `rules` vacated, and no assertion here
+  // mentioned them.
   for (const j of list.judgements || []) {
     assert.ok(!('brief' in j), `${j.ref} carries the words it was given in the list`)
     assert.ok(!('rules' in j), `${j.ref} carries the rules it was held to in the list`)
+
+    const row = JSON.stringify(j).length
+    const worst = Object.entries(j)
+      .map(([k, v]) => [k, JSON.stringify(v == null ? '' : v).length])
+      .sort((a, b) => b[1] - a[1])[0]
+    assert.ok(row < 2500,
+      `${j.ref} is ${row} characters on its own — a row in a list, not a record. Its longest field is "${worst[0]}" at ${worst[1]}`)
   }
 
   // AND NOTHING WAS TAKEN AWAY — it moved one press further in. A list that
