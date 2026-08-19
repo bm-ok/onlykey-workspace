@@ -272,13 +272,22 @@ async function tick (actions, log) {
       // Taken from the free list by MATCH rather than by position, so a tagged
       // task waiting for a machine it cannot have does not hold up the ones
       // behind it that would take anything.
-      const at = free.findIndex(m => willTake(task, m))
-      if (at < 0) {
+      // NARROWED FIRST FOR A JUDGEMENT. See onlyJudgesJudge: when this host has
+      // judge machines, judging happens on those and nowhere else; when it has
+      // none, nothing changes. The narrowing is applied before the match rather
+      // than inside `takes`, because it is about which machines are ELIGIBLE
+      // rather than about a tag the work asked for.
+      const may = onlyJudgesJudge(task, free, tagsOf, log)
+      const pick = may.findIndex(m => willTake(task, m))
+      if (pick < 0) {
         if (String(task.tag || '').trim()) {
           log.on('queue').info(`${task.ref} wants a machine tagged "${task.tag}" and none is free — it waits`)
+        } else if (task.kind === 'judgement' && may !== free) {
+          log.on('queue').info(`${task.ref} is a judgement and every judge machine is busy — it waits rather than being read by a runner`)
         }
         continue
       }
+      const at = free.indexOf(may[pick])
       const next = free.splice(at, 1)[0]
       if (!next) break
       // Claimed synchronously, before any await, so two ticks cannot hand the
@@ -1705,6 +1714,40 @@ const takes = (entry, tags) => {
   const want = wants(entry)
   if (!want) return true
   return (tags || []).map(t => String(t).toLowerCase()).includes(want)
+}
+
+// ---- AND A JUDGEMENT GOES TO A JUDGE MACHINE, WHEN THERE IS ONE -------------
+//
+// A judge machine is lent a JUDGE's sign-in, and a runner a worker's — see
+// whyNotOn in core/guests.js. That is what keeps "who said this work holds"
+// separable from "who wrote it", and it is worth nothing if a judgement can land
+// on an ordinary runner and be signed by a worker.
+//
+// WHEN THERE IS ONE, and that condition is the whole design of this. Requiring
+// it outright would stop every judgement on a host that has not made a judge
+// machine yet — which is this one, today, and every host until somebody does.
+// A rule that breaks a working app the moment it is added is a rule that gets
+// reverted rather than adopted.
+//
+// So: if any machine carries the tag, judgements only go to those. If none does,
+// nothing changes and judging works exactly as it did. The separation switches
+// itself on when the machine to do it with exists.
+//
+// SAID OUT LOUD WHEN IT IS NOT ON, once, rather than silently doing the old
+// thing — an arrangement somebody believes is in force and is not is worse than
+// one they know they have not set up yet.
+let saidNoJudge = false
+function onlyJudgesJudge (entry, free, tagsOf, log) {
+  if (!entry || entry.kind !== 'judgement') return free
+  const judges = free.filter(m => (tagsOf(m.name) || []).map(t => String(t).toLowerCase()).includes(vms.JUDGE))
+  if (judges.length) return judges
+
+  const anyExists = vms.read().some(v => vms.kindOf(v) === 'judge')
+  if (!anyExists && !saidNoJudge && log) {
+    saidNoJudge = true
+    log.on('queue').info(`no machine is tagged "${vms.JUDGE}", so judgements go to ordinary runners and are signed by a worker's identity. Make a judge machine to keep reading and writing on separate accounts.`)
+  }
+  return free
 }
 
 const FIRST = { judgement: 0, task: 1 }

@@ -354,6 +354,26 @@ module.exports = {
         throw new Error(`"${name}" is a supervisor machine, so it keeps the "${vms.SUPERVISOR}" tag. Taking it off would put it in the queue's pool, and the first queued task would roll it back to its base snapshot while it was working.`)
       }
 
+      // AND THE SAME FOR A JUDGE, for a related reason rather than the same one.
+      //
+      // The supervisor tag is protected because losing it puts a machine in the
+      // pool. This one is protected because it decides WHICH SIGN-IN a machine
+      // may be lent: a judge machine takes a judge's identity, and that is what
+      // keeps "who said this work holds" separable from "who wrote it".
+      //
+      // A tag somebody can add is a boundary somebody can grant themselves. A
+      // tag somebody can remove is worse: a machine mid-judgement would become
+      // an ordinary runner, and the next thing lent to it would be a worker's
+      // sign-in — quietly making the reader and the writer one account again,
+      // which is exactly the property this exists to keep.
+      const isJudge = was.includes(vms.JUDGE)
+      if (!isJudge && want.includes(vms.JUDGE)) {
+        throw new Error(`"${vms.JUDGE}" is not a tag you can add. It decides which sign-in a machine may be lent — a judge's rather than a worker's — so it is chosen when the machine is made, not granted afterwards to a machine already in the pool.`)
+      }
+      if (isJudge && !want.includes(vms.JUDGE)) {
+        throw new Error(`"${name}" is a judge machine, so it keeps the "${vms.JUDGE}" tag. Taking it off would let it be lent a worker's sign-in, and the account that says whether work holds would become the account that wrote it.`)
+      }
+
       // CLEARING THEM PUTS IT BACK IN THE ORDINARY POOL, rather than leaving it
       // in none. Every machine is in a pool — see POOL in machines/vms.js — so
       // "no tags" is not a state a machine can be in, and asking for it means
