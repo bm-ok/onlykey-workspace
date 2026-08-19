@@ -18,7 +18,7 @@
 
 const actions = require('./table')
 const s = require('./shared')
-const { log, harness, suites, settings, workspaces, repos, branches } = s
+const { log, harness, suites, settings, workspaces, repos, branches, landings } = s
 
 // WHETHER THE DRILLS MAY RUN AT ALL, asked in one place.
 //
@@ -337,13 +337,45 @@ module.exports = {
       const madeUp = (await actions.vmList.run({})).vms
         .filter(v => /^drill-/.test(String(v.name || '')))
 
+      // ---- AND WHAT A DRILL LEFT OUTSIDE THIS HOST ------------------------
+      //
+      // THE SWEEP COUNTED EVERYTHING LOCAL AND NOTHING OUTWARD-FACING, which is
+      // backwards from what matters. A leftover branch is on somebody's disk; a
+      // leftover PULL REQUEST is on their GitHub account, with their name on it,
+      // where anyone can see it.
+      //
+      // Nine of them accumulated. The drill that opens them cleans up properly
+      // when it finishes and when it stops halfway — but not when the process is
+      // killed under it, which is what a dashboard restart mid-run does. And the
+      // last step of that drill asserts "a sweep found 0 things left by drills",
+      // so it passed, every time, while the pile grew.
+      //
+      // BY THE BRANCH NAME, because that is what makes a cut ours by
+      // construction. A cut somebody made by hand is not swept up because it
+      // happens to be old.
+      const cuts = Object.values(landings.all() || {})
+        .filter(c => String(c.source || '').startsWith('drill/'))
+        .map(c => ({
+          source: c.source,
+          target: c.target,
+          // NOT MERGED AND NOT CLOSED. The stored state is written when the pull
+          // request is opened and is not refreshed, so this is what this host
+          // last knew rather than what GitHub says now -- which is the right
+          // answer for a sweep: it reports what it has grounds to believe is
+          // outstanding, and "Read them again" on the PR cuts tab is what
+          // settles it.
+          open: (c.pulls || []).filter(p => p && p.state !== 'merged' && p.state !== 'closed')
+        }))
+        .filter(c => c.open.length)
+
       const found = {
         branches: branches.map(b => b.name),
         tasks: tasks.map(t => `#${t.number} ${t.title}`),
         remote,
-        machines: madeUp.map(v => `${v.name} (${v.state}${v.stage ? ', ' + v.stage : ''})`)
+        machines: madeUp.map(v => `${v.name} (${v.state}${v.stage ? ', ' + v.stage : ''})`),
+        cuts: cuts.map(c => `${c.source} — ${c.open.map(p => `${p.repo}#${p.number}`).join(', ')}`)
       }
-      const total = branches.length + tasks.length + remote.length + madeUp.length
+      const total = branches.length + tasks.length + remote.length + madeUp.length + cuts.length
 
       if (!doIt) {
         return {
@@ -356,7 +388,26 @@ module.exports = {
         }
       }
 
-      const gone = { tasks: [], branches: [], machines: [], failed: [] }
+      const gone = { tasks: [], branches: [], machines: [], cuts: [], failed: [] }
+
+      // ---- THE PULL REQUESTS FIRST, AND THEY ARE THE ONE OUTWARD ACT -------
+      //
+      // Closed rather than deleted, because a pull request cannot be deleted and
+      // should not be: it happened, and the record of it happening is somebody
+      // else's repository's business. Closing is the honest end.
+      //
+      // FIRST, BECAUSE THE BRANCH GOES NEXT. Deleting the branch a pull request
+      // is open on leaves GitHub showing a request whose head is gone, which is
+      // messier than either state on its own.
+      for (const c of cuts) {
+        try {
+          await actions.prCutUpdate.run({ source: c.source, target: c.target, state: 'closed' })
+          await actions.prCutForget.run({ source: c.source, target: c.target }).catch(() => { /* closed is the part that matters */ })
+          gone.cuts.push(`${c.source} (${c.open.map(p => `${p.repo}#${p.number}`).join(', ')})`)
+        } catch (e) {
+          gone.failed.push(`${c.source}: ${e.message}`)
+        }
+      }
 
       // Machines first, and on their own. Removing one deletes its disks, which
       // is the slowest and least reversible thing here — and a machine that is
