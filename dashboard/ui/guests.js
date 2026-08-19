@@ -23,6 +23,7 @@
 // Two selections, remembered apart: coming back to one pane should find what was
 // picked there, not whatever was picked in the other.
 let pickedGuest = been.get('guest', null)
+let pickedJudge = been.get('judgesign', null)
 let pickedSup = been.get('supervisor', null)
 
 // WHAT DIFFERS BETWEEN THE TWO, gathered in one place so the painter below reads
@@ -30,13 +31,32 @@ let pickedSup = been.get('supervisor', null)
 const IDENTITY_PANES = {
   guests: {
     pane: 'guests',
-    role: 'guest',
-    what: 'guest',
+    // `worker`, NOT `guest`. The role was renamed in core/guests.js — the word
+    // already meant the virtual machine in the machine-facing half of this app —
+    // and this asked for the old one, so the pane came back EMPTY on a host with
+    // two perfectly good worker sign-ins. A filter that asks for a value nothing
+    // has looks exactly like having none.
+    role: 'worker',
+    what: 'worker',
     lendable: true,
     ids: { note: 'guests-note', count: 'guests-context', list: 'guests-list', detail: 'guest-detail', picked: 'guest-context', sessions: 'guest-sessions', sessionsCount: 'guest-sessions-context' },
     get: () => pickedGuest,
     set: v => { pickedGuest = v; been.set('guest', v) },
     empty: 'No Claude guests yet. Add one with the + above — a name, and the token it signs in with.'
+  },
+  // A JUDGE MIRRORS A WORKER, not a supervisor. It is lent to a machine in the
+  // same way and for the same length of time; what differs is which machines may
+  // hold it. The supervisor pane is the odd one out because that identity is
+  // never lent anywhere at all.
+  judgesignins: {
+    pane: 'judgesignins',
+    role: 'judge',
+    what: 'judge',
+    lendable: true,
+    ids: { note: 'judgesigns-note', count: 'judgesigns-context', list: 'judgesigns-list', detail: 'judgesign-detail', picked: 'judgesign-context', sessions: 'judgesign-sessions', sessionsCount: 'judgesign-sessions-context' },
+    get: () => pickedJudge,
+    set: v => { pickedJudge = v; been.set('judgesign', v) },
+    empty: 'No judge sign-in yet. A judge machine is lent one of these and nothing else — which is what keeps "who said this work holds" separate from "who wrote it". Until there is one, a judge machine cannot be given work at all.'
   },
   supervisors: {
     pane: 'supervisors',
@@ -93,13 +113,13 @@ const identityCard = (g, pane, key = {}) => el('div', {
 function identityPanel (g, machines, pane, key = null) {
   if (!g) {
     return el('p', { className: 'empty', textContent: pane.lendable
-      ? 'Pick a guest on the left, or add one. A guest is a Claude sign-in kept here under a name.'
+      ? `Pick a ${pane.what} on the left, or add one. A ${pane.what} is a Claude sign-in kept here under a name and lent to a machine while it works.`
       : 'Pick a supervisor on the left, or add one. A supervisor is a Claude sign-in this host spends itself.' })
   }
 
   const rows = [
     ['name', g.name],
-    ['role', pane.lendable ? 'guest — lent to a machine while it works' : 'supervisor — spent by this host, never lent out'],
+    ['role', pane.lendable ? `${pane.what} — lent to a ${pane.what} machine while it works` : 'supervisor — spent by this host, never lent out'],
     ['fingerprint', g.fingerprint || 'none recorded'],
     ['added', g.added ? new Date(g.added).toLocaleString() : 'unknown'],
     ['token file', g.has ? 'here, sealed to this Windows account' : 'MISSING — it was removed by hand, or sealed by another account'],
@@ -235,6 +255,7 @@ function identityPanel (g, machines, pane, key = null) {
 // Two entry points, because the draw loop calls panels by name and a pane behind
 // a tab must ask nothing.
 const paintGuests = () => paintIdentities(IDENTITY_PANES.guests)
+const paintJudgeSignIns = () => paintIdentities(IDENTITY_PANES.judgesignins)
 const paintSupervisors = () => paintIdentities(IDENTITY_PANES.supervisors)
 
 function paintIdentities (pane) {
@@ -422,4 +443,5 @@ function askTheDeskForCode (machine, url, pane, f) {
 }
 
 $('add-guest-open').onclick = () => signInAtTheDesk(IDENTITY_PANES.guests)
+$('add-judgesign-open').onclick = () => signInAtTheDesk(IDENTITY_PANES.judgesignins)
 $('add-sup-open').onclick = () => signInAtTheDesk(IDENTITY_PANES.supervisors)

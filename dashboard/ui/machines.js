@@ -839,6 +839,11 @@ let runnerPane = been.get('runner-pane', 'machines')
 paneSwitcher('view-runners', () => runnerPane, p => { runnerPane = p; been.set('runner-pane', p) }, () => {
   paintVms()
   paintGuests()
+  // Guarded on the name, like the graph panes: ui/guests.js is read before this
+  // file, so this one is safe -- but the guard says which files may be reordered
+  // without silently losing a pane.
+  if (typeof paintJudgeSignIns === 'function') paintJudgeSignIns()
+  paintSupervisors()
   paintSessions()
   paintMeter()
 })

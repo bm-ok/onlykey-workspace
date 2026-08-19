@@ -36,13 +36,18 @@ module.exports = {
         lent: all.filter(g => g.holder).length,
         supervisors: sups,
         where: guests.ROOT(),
+        // SAID IN THE WORDS OF THE ROLE ASKED FOR. This answered "guest" whatever
+        // was asked, which was fine while there were two roles and one of them
+        // was called that. With three it told a judge pane about guests.
         note: !all.length
           ? (role === 'supervisor'
               ? 'No supervisor sign-in yet. A supervisor is the identity this host works with itself, rather than one lent to a machine.'
-              : 'None yet. A guest is a Claude sign-in kept here under a name — add one with its token, and a machine can be lent it.')
+              : role === 'judge'
+                ? 'No judge sign-in yet. A judge machine is lent one of these and nothing else, which is what keeps "who said this work holds" separate from "who wrote it".'
+                : 'No worker sign-in yet. A worker is a Claude sign-in kept here under a name — add one with its token, and a machine can be lent it.')
           : role === 'supervisor'
             ? `${all.length} supervisor sign-in${all.length === 1 ? '' : 's'}. A supervisor is spent by this host and never lent to a machine.`
-            : `${all.length} guest${all.length === 1 ? '' : 's'}. A guest is lent to a machine while it works and taken back after, so two machines never share one sign-in.`
+            : `${all.length} ${role || 'worker'} sign-in${all.length === 1 ? '' : 's'}. It is lent to a machine while it works and taken back after, so two machines never share one.`
       }
     }
   },

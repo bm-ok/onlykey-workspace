@@ -517,6 +517,7 @@
       <!-- The other end of the same list: the sign-in this host spends itself,
            rather than one lent to a machine. Same template, same store, one
            field apart — see core/guests.js. -->
+      <button class="subtab" data-pane="judgesignins">Claude Judge</button>
       <button class="subtab" data-pane="supervisors">Claude supervisor</button>
       <!-- What the sessions pane was called. Kept under its own name rather than
            removed, because it is where the remembered transcripts still live and
@@ -556,6 +557,40 @@
         <div class="col">
           <h2>Sessions <span class="muted" id="guest-sessions-context"></span></h2>
           <div id="guest-sessions" class="stack"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ---------------- Claude judges ----------------
+         THE SAME SHAPE AS THE WORKER PANE, and deliberately so: a judge sign-in
+         is lent to a machine exactly as a worker's is. The supervisor pane is
+         the odd one out, because that identity is never lent anywhere.
+
+         What a judge sign-in buys is separation of accounts. A judge says
+         whether work holds and a worker writes the work; on one identity those
+         are the same account, and "who said this is good" stops being separable
+         from "who wrote it". -->
+    <div class="pane" id="pane-judgesignins">
+      <p class="note" id="judgesigns-note"></p>
+      <div class="cols">
+
+        <div class="col narrow">
+          <h2 class="titlerow">
+            Judges <span class="muted" id="judgesigns-context"></span>
+            <button class="plus" id="add-judgesign-open" title="Keep a Claude token here under a name, for judging">+</button>
+          </h2>
+          <div id="judgesigns-list" class="stack"></div>
+        </div>
+
+        <div class="col">
+          <h2>Credential <span class="muted" id="judgesign-context">— nothing selected</span></h2>
+          <div id="judgesign-detail" class="panel"></div>
+        </div>
+
+        <div class="col">
+          <h2>Sessions <span class="muted" id="judgesign-sessions-context"></span></h2>
+          <div id="judgesign-sessions" class="stack"></div>
         </div>
 
       </div>
