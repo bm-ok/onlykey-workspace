@@ -61,9 +61,119 @@ const zlib = require('node:zlib')
 const data = require('../core/data')
 const { parseTar } = require('../vendors/nanotar/nanotar.js')
 
+// ---- WHETHER WORK REMEMBERS WHAT IT DID LAST TIME ON THE SAME SUBJECT ------
+//
+// CHANGED HERE, IN SOURCE, ON PURPOSE. There is no setting for this and no
+// button. It is a decision about how a model behaves, the difference is
+// impossible to see from outside, and the argument for each side is below —
+// which is the whole reason it is a constant somebody has to come and read
+// rather than a checkbox somebody can flick without meeting any of this.
+//
+// FALSE IS TODAY'S BEHAVIOUR. A session is filed under the uid of the one piece
+// of work, so a task resumed across three machines continues one conversation
+// and a different task starts cold. Nothing about the app changes while these
+// are false.
+//
+// TRUE FILES IT UNDER THE SUBJECT INSTEAD — the branch cut, or the pull request
+// being read. Then several tasks on one branch are one continuing conversation:
+// the worker is not re-told what it worked out last time, and does not spend the
+// first part of every run reading its way back to where it already was.
+//
+//   worker  Continuity is nearly free here. The risk is that a resumed
+//           conversation still contains the PREVIOUS task's brief and rules, so
+//           a new task on the same branch has to be told plainly that it is new
+//           and what it is held to NOW. A task carries the text of its contract
+//           precisely so that what a worker was held to can be proven later, and
+//           an unannounced continuation quietly muddies that.
+//
+//   judge   The same idea, and this is the one that can go badly wrong.
+//
+//           WHAT IT BUYS: a judge that remembers can say "you fixed two of the
+//           three things I raised", which is the actual review loop and cannot
+//           be asked cold. Without it, every round the person re-explains what
+//           the last round was about.
+//
+//           WHAT IT RISKS, PLAINLY: A JUDGE THAT REMEMBERS CAN GO MAD. Not
+//           break — go mad, which is worse, because a broken one is obvious and
+//           this one is not. It has already formed a view, and every later
+//           reading happens downstream of it. A conclusion it reached wrongly
+//           once is now a thing it KNOWS, and it will keep finding evidence for
+//           it, keep raising it, and keep rejecting work over it, in complete
+//           good faith and with perfect internal consistency. It stops reading
+//           the change and starts consulting itself.
+//
+//           A cold judge can be wrong. A remembering judge can be wrong FOR
+//           EVER, about one branch, in a way that reads exactly like rigour --
+//           and the more it repeats the finding, the more convincing the
+//           transcript looks to whoever reads it next.
+//
+//           That is the trade. It is not obviously the wrong trade -- a judge
+//           that cannot remember cannot review a revision -- but it is the one
+//           thing here that fails silently and gets more persuasive as it does.
+//
+//           If this is turned on, the judging PROMPT should carry the other half
+//           of the rule — that the change is re-read from the branch every time,
+//           and what the memory holds is what it ASKED, not what it found. That
+//           belongs in the prompt because a prompt is text a person approved,
+//           and this is a constant in a file.
+//
+// THE ONE THING THAT HOLDS EITHER WAY: the lanes never mix. A judge is never
+// handed a worker's session, whatever these are set to — see keyFor, where the
+// lane is part of the key, and the drill that proves it.
+// WHERE IT STANDS TODAY, and why it is not symmetrical.
+//
+// worker: true   — being tried. Several tasks on one branch continue one
+//                  conversation, so a second pass is not re-told what the first
+//                  worked out. This is the half with the smaller failure mode:
+//                  the worst case is a worker carrying stale instructions, which
+//                  shows up in what it DOES and is therefore visible.
+//
+// judge: false   — deliberately still off while the above is being tried. Two
+//                  experiments at once cannot be told apart, and of the two this
+//                  is the one whose failure is invisible and self-reinforcing.
+//                  Turn it on afterwards, on its own, with the prompt rule about
+//                  re-reading the change written first.
+const REMEMBERS = { worker: true, judge: false }
+
 const ROOT = () => data.sub('sessions')
 
 const safe = s => String(s || 'unknown').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120)
+
+// WHAT A PIECE OF WORK FILES ITS MEMORY UNDER.
+//
+// One function, asked by both ends — the handler that gives a machine what it
+// remembers and the handler that takes it back. Two places working out a key
+// separately is two places to get REMEMBERS wrong in opposite directions, and
+// the symptom would be work that is handed a conversation it then cannot save.
+//
+// THE LANE IS ALWAYS PART OF IT, whatever REMEMBERS says. That is what makes "a
+// judge is never handed a worker's session" a property of the key rather than a
+// thing the lookup has to remember to check: the two can only collide if they
+// agree on a lane, and a judgement is never in the worker lane.
+//
+// A SUBJECT THIS CANNOT NAME FALLS BACK TO THE UID, which is today's behaviour
+// and is always correct — the cost is only that the work starts cold. Guessing a
+// key would be the other kind of wrong: handing one conversation to work that
+// has nothing to do with it.
+function keyFor (doing) {
+  if (!doing || !doing.uid) return null
+  const lane = doing.kind === 'judgement' ? 'judge' : 'worker'
+  if (!REMEMBERS[lane]) return doing.uid
+
+  const item = doing.item || {}
+  const subject = item.subject || null
+
+  // A judgement reads a branch here, or a pull request somewhere else. A task
+  // works on a branch. Those are the only three, and an unrecognised shape takes
+  // the fallback rather than a guess.
+  const about = doing.kind === 'judgement'
+    ? (subject && subject.kind === 'pull'
+        ? (subject.on && subject.number ? `pull--${subject.on}--${subject.number}` : null)
+        : (subject && (subject.branch || subject.name)) ? `cut--${subject.branch || subject.name}` : null)
+    : (item.branch ? `cut--${item.branch}` : null)
+
+  return about ? `${lane}--${safe(about)}` : doing.uid
+}
 const dirFor = uid => path.join(ROOT(), safe(uid))
 // One name, because there is one per task. A second one would be the first one
 // plus what happened since, and two files where one is a prefix of the other is
@@ -252,4 +362,4 @@ function everything () {
     .sort((a, b) => String(b.kept || '').localeCompare(String(a.kept || '')))
 }
 
-module.exports = { keep, get, has, forget, everything, okId, dirFor, fileFor, ROOT, MOST }
+module.exports = { keep, get, has, forget, everything, okId, keyFor, dirFor, fileFor, ROOT, MOST, REMEMBERS }

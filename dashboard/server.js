@@ -669,7 +669,11 @@ function handler (req, res) {
       res.writeHead(204).end()
       return
     }
-    const kept = sessions.get(doing.uid)
+    // WHAT IT REMEMBERS IS LOOKED UP BY THE SAME RULE THAT FILED IT. See keyFor
+    // in tasks/sessions.js: normally the uid of this one piece of work, and --
+    // when REMEMBERS is on for its lane -- the subject it is about, so several
+    // tasks on one branch are one conversation.
+    const kept = sessions.get(sessions.keyFor(doing))
     if (!kept) { res.writeHead(204).end(); return }
     try {
       const body = require('node:fs').readFileSync(kept.path)
@@ -729,7 +733,11 @@ function handler (req, res) {
         const on = vms.read().find(v => v.name === name) || {}
 
         const work = doing.item
-        const kept = sessions.keep(doing.uid, Buffer.concat(chunks), {
+        // FILED BY THE SAME RULE IT WILL BE LOOKED UP BY. Asking keyFor on both
+        // sides is what stops work being handed a conversation it then cannot
+        // save back -- two places deciding this separately is two places to get
+        // REMEMBERS wrong in opposite directions.
+        const kept = sessions.keep(sessions.keyFor(doing), Buffer.concat(chunks), {
           id: id || null,
           run: work.run || null,
           machine: name,
