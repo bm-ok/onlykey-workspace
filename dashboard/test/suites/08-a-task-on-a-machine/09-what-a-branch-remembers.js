@@ -154,7 +154,12 @@ it('and the second pass knows what the flag says it should know', async ({ okc, 
     assert.ok(blank, `it started cold, correctly, and did not say so in the form asked for. It ended: ${text.slice(-400)}`)
     log('memory is off: pass two started cold and said so, which is what filing by uid means')
   }
-})
+  // MINUTES, LIKE THE CHECK ABOVE IT. Written without this first, and it gave up
+  // after the default sixty seconds while a Claude worker was halfway through —
+  // reported as "this check gave up", which is honest and says nothing about
+  // memory. A check that runs a worker has to say it runs a worker; the two
+  // halves of one drill do not inherit each other's patience.
+}, { minutes: 30 })
 
 cleanup(async ({ okc, state }) => {
   for (const t of state.tasks || []) await okc('taskRemove', { id: t.id }).catch(() => {})
