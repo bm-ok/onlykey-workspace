@@ -125,12 +125,23 @@ module.exports = {
             // two true statements: a done task that delivered nothing and a
             // done task that delivered are the same state and opposite
             // outcomes, and the board should say which.
+            // AND WHETHER THIS RUN PUT IT THERE. `art.delivered` says the
+            // BRANCH carries something, which stays true from the run before --
+            // so a task whose push was refused read as "delivered" beside the
+            // commit its predecessor had made. `arrived` is recorded by the
+            // queue from the branch either side of the run, and only the queue
+            // can know it, because only the queue saw the before.
+            //
+            // Undefined for every task written before this was recorded, which
+            // is why it is compared against false rather than trusted as a flag:
+            // "not known" must read as it always did.
             reads: t.verdict ? t.state
-              : art.delivered ? 'delivered'
-                : t.state === 'given' ? 'working'
-                  : t.state === 'queued' ? 'queued'
-                    : t.state === 'done' ? 'done, nothing delivered'
-                      : 'draft'
+              : t.arrived === false && t.state === 'done' ? 'done, nothing arrived'
+                : art.delivered ? 'delivered'
+                  : t.state === 'given' ? 'working'
+                    : t.state === 'queued' ? 'queued'
+                      : t.state === 'done' ? 'done, nothing delivered'
+                        : 'draft'
           }
         })
       }

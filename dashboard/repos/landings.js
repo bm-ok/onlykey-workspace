@@ -148,4 +148,37 @@ async function state (source, target) {
   }
 }
 
-module.exports = { record, describe, forget, state, readings, all, key }
+// ---- THE ONE BRANCH THAT IS MEANT TO CHANGE -------------------------------
+//
+// A branch becomes protected the moment `branchAsLine` makes a line of it, and
+// that rule is right for a landing target: a line is something work is built
+// FROM and merged back INTO, so nothing is built on it directly.
+//
+// IT IS EXACTLY WRONG FOR THE SOURCE OF AN OPEN PULL REQUEST, which is the one
+// branch in the world that exists to be revised. Cutting a change requires
+// `branchAsLine`, so cutting it is what locks it: a reviewer asks for an
+// adjustment, a worker is set up on that branch to make it, and the push is
+// refused by a rule meant for somewhere else. The whole "adjust what is out"
+// loop was impossible, and the run that found it lost the commit -- refused at
+// the push, then rolled back with the machine.
+//
+// READ FROM THE CUT RECORD, WHICH IS LOCAL. This is consulted on a push, so it
+// may not ask GitHub: the answer has to be here, and the record already carries
+// each pull request's head as "owner:branch".
+//
+// NOT ONE THAT HAS MERGED. Once it lands, the branch is history again and the
+// ordinary rule applies.
+function underRevision (branch) {
+  if (!branch) return false
+  for (const cut of Object.values(all())) {
+    for (const p of cut.pulls || []) {
+      if (p.merged === true) continue
+      const head = String(p.head || '')
+      const named = head.includes(':') ? head.slice(head.indexOf(':') + 1) : head
+      if (named && named === branch) return true
+    }
+  }
+  return false
+}
+
+module.exports = { record, describe, forget, state, readings, all, key, underRevision }

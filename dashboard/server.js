@@ -25,6 +25,7 @@ const provisioner = require('./machines/provisioner')
 const scripts = require('./machines/scripts')
 const repos = require('./repos/serve')
 const branches = require('./repos/branches')
+const landings = require('./repos/landings')
 const workspaces = require('./core/workspaces')
 // Read by `call` below, for the actions that only exist while the drills are
 // switched on. See `needs: 'testing'`.
@@ -386,7 +387,26 @@ function gitRoute (req, res, url) {
     // out on the host is enough. The recorded permission is therefore not
     // evidence on its own; it is re-read against the rule every time it is used.
     const guarded = branches.whyProtected(who.branch)
-    if (guarded) {
+
+    // ---- UNLESS IT IS A CHANGE THAT IS ALREADY OUT --------------------------
+    //
+    // A branch protected ONLY because it is a link in a line, which is also the
+    // source of a pull request this host opened and nobody has merged, is under
+    // revision. That is the one case where building on the line IS the work: a
+    // reviewer asked for something, the change is out, and the branch the pull
+    // request tracks is where the answer has to go.
+    //
+    // THE DEFAULT BRANCH IS NOT IN THIS DOOR. `asDefault` is checked separately
+    // and stays absolute -- a repository's default branch is protected because
+    // of what it IS, and no pull request anywhere makes master pushable by a
+    // machine. Only the line-link half of the rule bends, and only for a branch
+    // named by an open cut.
+    const entry = branches.protectedBranches().find(x => x.branch === who.branch)
+    const onlyALink = entry && !entry.asDefault.length && entry.asGroup.length > 0
+    const revising = onlyALink && landings.underRevision(who.branch)
+    if (revising) log.on('git', who.name).info(`${who.branch} is out as a pull request and not merged — ${who.name} may push to it`)
+
+    if (guarded && !revising) {
       log.on('git', who.name).warn(`${who.name} tried to push ${who.branch}, which is protected`)
       res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
         .end(`refused: ${who.branch} is protected and cannot be pushed to.\nnothing was taken - your commits are still on your own copy.\n`)

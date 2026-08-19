@@ -63,6 +63,30 @@ const files = require('./files')
 const archive = require('./archive')
 // What a judgement was read against, for the record it leaves behind.
 const judgements = require('../repos/judgements')
+const branches = require('../repos/branches')
+const serve = require('../repos/serve')
+
+// ---- WHERE A BRANCH STANDS, PER REPOSITORY --------------------------------
+//
+// Read either side of a run so "did this task deliver anything" can be answered
+// about THIS RUN rather than about the branch. Those are different questions and
+// the difference was invisible: a task whose push was refused by the protection
+// hook was reported as "1 commit(s) in local-repo-b" -- true of the branch,
+// which carried a commit from the task before it, and completely wrong about the
+// run that had just lost its work. The comment at the report site already
+// anticipated a worker "refused by the hook"; what was missing was a measurement
+// that could see it.
+//
+// Local ref reads against bare repositories, one process each, and only twice
+// per run.
+const headsOn = branch => {
+  const out = {}
+  if (!branch) return out
+  for (const { name } of serve.list()) {
+    try { out[name] = branches.headsIn(serve.gitDirOf(name))[branch] || null } catch { out[name] = null }
+  }
+  return out
+}
 // The two things that arrive on their own: an issue somebody filed and a pull
 // request somebody proposed. See repos/watching.js.
 const watching = require('../repos/watching')
@@ -1063,6 +1087,7 @@ async function run (actions, log, task, machine) {
     // and wrong for a soak deliberately left overnight -- which would be
     // abandoned at hour six while still running perfectly, and the machine put
     // away underneath it. A task that knows it is long says so.
+    const stoodAt = headsOn(task.branch)
     const outcome = await phase('work', () => waitForRun(actions, to, machine, started.run, Number(task.hours) || 6))
 
     // AND WHETHER THIS APP SAW IT END. `unreachable` is the one outcome where
@@ -1128,10 +1153,20 @@ async function run (actions, log, task, machine) {
     spent.total = Date.now() - began
     const latest = (await actions.tasks.run({})).tasks.find(t => t.id === id)
     const marked = (latest.attempts || []).map(a => a.run === started.run ? { ...a, spent } : a)
-    await actions.taskUpdate.run({ id, task: { state: 'done', attempts: marked } })
 
-    to[art.delivered ? 'good' : 'warn'](
-      `#${task.number} done — ${outcome.state}${outcome.exit === undefined ? '' : ` (exit ${outcome.exit})`} — ${art.summary}`)
+    // DID THE BRANCH MOVE. Not "does the branch carry anything", which is what
+    // the artifact answers and which stays true from the run before.
+    const nowAt = headsOn(task.branch)
+    const moved = Object.keys(nowAt).filter(r => nowAt[r] && nowAt[r] !== stoodAt[r])
+    const stuck = Object.entries(stoodAt).find(([r, sha]) => sha && !moved.includes(r))
+
+    await actions.taskUpdate.run({ id, task: { state: 'done', attempts: marked, arrived: moved.length > 0 } })
+
+    to[art.delivered && moved.length ? 'good' : 'warn'](
+      `#${task.number} done — ${outcome.state}${outcome.exit === undefined ? '' : ` (exit ${outcome.exit})`} — ${art.summary}${
+        moved.length
+          ? ''
+          : ` — and nothing new arrived: ${task.branch} is still at ${stuck ? stuck[1] : 'where it was'}, so whatever the run did is not here`}`)
     // Said as one line rather than left in the record, because the record is
     // read when somebody already suspects something; this is what tells them to.
     to.info(`#${task.number} took ${secs(spent.total)} — ${Object.entries(spent)
