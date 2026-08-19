@@ -54,17 +54,21 @@ heredoc (`cat > f <<'EOF'`) now preserves backticks, `${...}`, nested quotes,
 file that way is reliable, and the python-script detour it used to need is not
 required.
 
-**The one that still bites is a doubled backslash.** It collapses to a single
-one, so a source line written with two arrives with one. Regexes are fine — a
-single-backslash escape such as the digit class survives intact — and a
-JavaScript string that needs a literal backslash in it does not: a Windows path
-in quotes, or a regex whose subject IS the backslash character.
+**The one that still bites is a doubled backslash**, and it is not the shell
+doing it. Content loses one level of backslash before bash receives it at all —
+shown with a single-quoted string, which is where bash does no escape processing
+whatever, so it cannot be the culprit. Two typed arrive as one; four arrive as
+two; a lone one survives.
 
-**Use Edit or Write for those**, not the shell. This paragraph was first written
-through a script and the trap ate it while it was being described: every doubled
-backslash in the sentence explaining doubled backslashes came out single, which
-turned the examples into nonsense. If a passage is ABOUT escaping, it is the one
-passage that cannot be written through anything that escapes.
+**So double them.** A JavaScript string holding a Windows path, or a regex whose
+subject IS the backslash character, needs four typed for every two wanted.
+Ordinary escapes like a digit class need nothing. Writing the file through a
+helper does not help — the loss happens before anything on this machine sees it.
+
+**Use Edit or Write when the passage is ABOUT escaping.** This one ate itself
+three times in a single session: twice here and once in a memory file, each time
+turning the examples in the sentence explaining the rule into nonsense. The
+examples are exactly the part that cannot survive being processed.
 
 **Prefer plain, single-purpose shell commands.** Long `cd … && … && …` chains
 cannot match any permission pattern, so every one of them interrupts the user.
