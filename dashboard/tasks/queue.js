@@ -1882,6 +1882,74 @@ async function adopt (actions, log) {
       }
     })().catch(e => to.bad(e.message))
   }
+
+  // ---- AND A JUDGEMENT THAT WAS ALREADY RUNNING ---------------------------
+  //
+  // THE OTHER HALF OF THE SAME OMISSION. The loop above reads `tasks` and only
+  // tasks, so a judgement with a run was picked up by nothing: the pass before
+  // this one takes judgements that never STARTED, and this one took tasks that
+  // had. A judgement that had started fell between them.
+  //
+  // WHAT THAT COSTS, AND IT IS NOT THEORETICAL. J64 ran on kit-1, read the
+  // change, recommended accept, handed back a 2,798-byte JUDGEMENT.md and sent
+  // its verdict — all of which arrived here — and then sat in `given` for
+  // twenty minutes because this app had been restarted while it worked. The
+  // reading cost 0.67 USD and was complete; only the record was lost. And the
+  // machine stayed up holding a judge's credential, out of the pool, because the
+  // `finally` that puts it away died with the process that was watching.
+  //
+  // WORSE, IT COULD NOT BE FIXED BY HAND EITHER: `judgementUpdate` refuses any
+  // change to something in `given`, which is right for what it READS and made
+  // recording that it had finished impossible. A state nothing can leave is a
+  // state nothing should be able to enter.
+  //
+  // A PERSON'S IS LEFT ALONE, as everywhere else here: no run means no worker
+  // process, and a reading somebody is doing themselves is not this loop's.
+  const readingMidFlight = (judging.read() || [])
+    .filter(j => j.state === 'given' && j.machine && j.run && j.by !== 'person')
+
+  for (const j of readingMidFlight) {
+    if (busyWith.has(j.machine)) continue
+    const ref = j.ref || judging.refOf(j.number)
+    busyWith.set(j.machine, ref)
+    const to = log.on('queue', j.machine)
+    to.warn(`${ref} was being read when this restarted; picking it back up`)
+    ;(async () => {
+      let concluded = null
+      try {
+        const here = (await actions.vmList.run({})).vms
+        const vm = here.find(v => v.name === j.machine)
+        if (vm && vm.connected) {
+          // Waits if it is still going, returns at once if it finished while
+          // this app was down -- which is the case this exists for.
+          await waitForRun(actions, to, j.machine, j.run)
+
+          // WHAT IT DECIDED, off the machine, because the record here has no
+          // way to know. The run prints one `okc-result` line; the verdict and
+          // any file it handed back came through the API and are already here.
+          try {
+            const said = await actions.vmRunOutput.run({ name: j.machine, run: j.run, lines: 200 })
+            const line = String((said && (said.output || said.tail)) || '')
+              .split(String.fromCharCode(10))
+              .map(x => x.trim())
+              .filter(x => x.startsWith('okc-result'))
+              .pop()
+            if (line) concluded = (JSON.parse(line.slice('okc-result'.length).trim()) || {}).recommendation || null
+          } catch { /* the reading is recorded either way */ }
+        }
+
+        judging.update(j.id, {
+          state: 'done',
+          concluded: concluded || j.concluded || null,
+          read: new Date().toISOString()
+        })
+        to.good(`${ref} done — it finished while this app was not watching${concluded ? `, and it recommends: ${concluded}` : ''}`)
+      } finally {
+        await putAway(actions, log, j.machine)
+        busyWith.delete(j.machine)
+      }
+    })().catch(e => to.bad(`${ref} — ${e.message}`))
+  }
 }
 
 // A MACHINE DIALS IN AND SAYS WHAT IT IS STILL DOING.

@@ -486,7 +486,30 @@ module.exports = {
     takes: ['id', 'judgement'],
     run: ({ id, judgement }) => {
       const now = judging.get(id)
-      if (now.state === 'given') throw new Error(`${now.ref} is out on ${now.machine || 'a machine'}. Changing what it is reading while it reads it would make the record describe something that did not happen.`)
+
+      // ---- WHAT MAY NOT CHANGE WHILE IT IS OUT, AND WHAT MAY ---------------
+      //
+      // This refused EVERY change to a judgement in `given`, which is right
+      // about what it READS -- moving the subject or the job underneath a
+      // machine makes the record describe something that did not happen -- and
+      // was wrong about the outcome. A judgement whose app was restarted mid-run
+      // sits in `given` for ever: the queue only looks at `queued`, and this,
+      // the one door that could have recorded it, refused because it was in the
+      // state that needed recording. A state nothing can leave is a state
+      // nothing should be able to enter.
+      //
+      // Adoption is what SHOULD recover it and now does. This is the hand-worked
+      // way back for when it cannot -- a machine that is gone, a run whose
+      // output is unreadable -- and it is deliberately narrow: how it ended, and
+      // nothing about what it was.
+      const READING = ['subject', 'job', 'kind', 'branch', 'source', 'target', 'on', 'number', 'sha', 'question', 'tag', 'remembers', 'by']
+      if (now.state === 'given') {
+        const changing = Object.keys(typeof judgement === 'string' ? JSON.parse(judgement) : (judgement || {}))
+        const reading = changing.filter(k => READING.includes(k))
+        if (reading.length) {
+          throw new Error(`${now.ref} is out on ${now.machine || 'a machine'}, so ${reading.join(', ')} cannot be changed — changing what it is reading while it reads it would make the record describe something that did not happen. How it ENDED can still be recorded.`)
+        }
+      }
       if (now.state === 'done') throw new Error(`${now.ref} is decided. A judgement is a record of what somebody thought at a moment — edit it and it stops being that. Ask for another one.`)
       return judging.update(id, judgement || {})
     }
