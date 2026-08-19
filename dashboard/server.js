@@ -401,9 +401,7 @@ function gitRoute (req, res, url) {
     // of what it IS, and no pull request anywhere makes master pushable by a
     // machine. Only the line-link half of the rule bends, and only for a branch
     // named by an open cut.
-    const entry = branches.protectedBranches().find(x => x.branch === who.branch)
-    const onlyALink = entry && !entry.asDefault.length && entry.asGroup.length > 0
-    const revising = onlyALink && landings.underRevision(who.branch)
+    const revising = guarded && landings.mayRevise(who.branch)
     if (revising) log.on('git', who.name).info(`${who.branch} is out as a pull request and not merged — ${who.name} may push to it`)
 
     if (guarded && !revising) {

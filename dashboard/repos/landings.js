@@ -18,6 +18,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const workspaces = require('../core/workspaces')
 const remotes = require('./remotes')
+const branches = require('./branches')
 
 const FILE = () => path.join(workspaces.stateDir(), 'landings.json')
 const key = (source, target) => `${source} -> ${target}`
@@ -126,6 +127,27 @@ async function state (source, target) {
   }
 
   const opened = now.filter(p => p.number)
+
+  // ---- AND THE RECORD LEARNS WHAT BECAME OF ITS OWN PULL REQUESTS ---------
+  //
+  // The stored copy was written when the cut was made and never updated, so a
+  // pull request merged an hour ago still read `state: "open"` in the file. That
+  // was harmless while nothing but a human read it, and stopped being harmless
+  // the moment a PERMISSION started asking -- `mayRevise` lets a worker push to
+  // the branch of a cut that is still out, and with the record frozen at "open"
+  // a branch would have qualified for ever, long after it landed.
+  //
+  // ONLY WHAT WAS LEARNT, AND ONLY AS AN ADVANCE. `merged` is written when
+  // GitHub says so and never unwritten; "could not be found" and "could not be
+  // read" are facts about the asking and are not allowed anywhere near the file.
+  // A reading that failed must leave the record exactly as it was.
+  const learnt = rec.pulls.map(p => {
+    const fresh = now.find(x => x.number === p.number && x.repo === p.repo)
+    if (!fresh || fresh.merged !== true) return p
+    return { ...p, merged: true, state: 'closed' }
+  })
+  if (learnt.some((p, i) => p !== rec.pulls[i])) keep({ ...all(), [key(source, target)]: { ...rec, pulls: learnt } })
+
   // Kept as a READING, with its time, for anything that cannot ask GitHub
   // itself -- see lastRead above.
   lastRead.set(key(source, target), {
@@ -181,4 +203,29 @@ function underRevision (branch) {
   return false
 }
 
-module.exports = { record, describe, forget, state, readings, all, key, underRevision }
+// ---- AND THE WHOLE PERMISSION, IN ONE PLACE ------------------------------
+//
+// ASKED IN TWO PLACES, SO IT IS WRITTEN ONCE. The host's pre-receive hook is the
+// rule; a pre-push hook put in the guest's checkout is the sign that says the
+// same thing where a worker will meet it first. They are deliberately two
+// mechanisms -- one cannot be edited, the other can, and removing the sign does
+// not get the push through.
+//
+// THEY ARE NOT ALLOWED TO BE TWO OPINIONS. The first version of this exception
+// was written into the host's hook alone, and the sign went on refusing: the
+// push was granted by the rule and stopped by the notice, which made the new
+// exception dead code for the exact case it was written for. A run was lost
+// finding that out, after another run had been lost finding the first gate.
+//
+// A branch qualifies when it is protected ONLY as a link in a line -- never as
+// any repository's default branch, which is protected for what it is -- and is
+// the source of a pull request this host opened and nobody has merged.
+function mayRevise (branch) {
+  if (!branch) return false
+  const p = branches.protectedBranches().find(x => x.branch === branch)
+  if (!p) return true
+  if (p.asDefault.length) return false
+  return underRevision(branch)
+}
+
+module.exports = { record, describe, forget, state, readings, all, key, underRevision, mayRevise }

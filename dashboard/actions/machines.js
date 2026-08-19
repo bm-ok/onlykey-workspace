@@ -1875,7 +1875,12 @@ module.exports = {
         // ALWAYS WHEN READING. A judge may not push anywhere, and the host's
         // route is what enforces it — this is the sign in the checkout so a
         // worker finds out where it is rather than in a rejection later.
-        readOnly: reads ? true : branches.isProtected(on),
+        // AND THE SIGN AGREES WITH THE RULE. A judge is always read-only and
+        // that is not negotiable. Otherwise this asks the same question the
+        // host's hook asks -- see landings.mayRevise -- because a branch the
+        // hook would accept a push to must not carry a notice saying it will
+        // refuse one. It did, and the run that found out was thrown away.
+        readOnly: reads ? true : (branches.isProtected(on) && !landings.mayRevise(on)),
         // WHAT THIS MACHINE IS FOR, left on the machine. Every path that puts a
         // task on a machine comes through here — the queue, a hand-over, taking
         // one by hand — so this is the one place that knows, and the one place
