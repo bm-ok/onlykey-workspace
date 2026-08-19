@@ -969,6 +969,12 @@ module.exports = {
         log.on('git').info(`the pull request text came from the draft kept for "${pair.source.name}" into "${pair.target.name}"`)
       }
 
+      // WHAT THIS CUT ALREADY HAS, read once rather than per repository. A cut
+      // being made a second time is an adjustment reaching a pull request that
+      // is already out, and this is how that is told apart from a first cut
+      // running into somebody else's.
+      const knownPulls = ((landings.all() || {})[landings.key(pair.source.name, pair.target.name)] || {}).pulls || []
+
       const done = []
       for (const c of carrying) {
         // PUSHED FIRST, because a pull request needs a branch that is there. A
@@ -996,9 +1002,34 @@ module.exports = {
           // the local kind, which is the absence of one.
           draft: draft === true || draft === 'true'
         })
-        if (pr.opened) log.on('git', c.repo).good(`pull request #${pr.number} into ${pr.into} — ${pr.url}`)
-        else log.on('git', c.repo)[pr.already ? 'warn' : 'bad'](`no pull request opened: ${pr.why}`)
-        done.push(pr)
+        // ---- ALREADY OPEN IS THE SUCCESS, NOT THE FAILURE -----------------
+        //
+        // Re-cutting is how an adjustment reaches a pull request that is out:
+        // the branch is pushed a few lines above, and GitHub shows the new
+        // commits on the pull request that already exists. There is nothing to
+        // open, and that is the whole point.
+        //
+        // IT WAS RECORDED AS AN ERROR. GitHub answers 422 for "already exists",
+        // openPull turns that into { opened: false, why: "A pull request already
+        // exists for ..." }, and landings.record overlays it on the entry that
+        // had opened it -- so a cut that had just been updated correctly, and
+        // was then MERGED, carried a red failure line on the panel underneath
+        // its own "merged" badge.
+        //
+        // Only when this cut already knows a number for that repository. A first
+        // cut meeting a pull request somebody else opened is a different thing
+        // and still says so.
+        const had = knownPulls.find(x => x.repo === c.repo && x.number)
+        if (pr.opened) {
+          log.on('git', c.repo).good(`pull request #${pr.number} into ${pr.into} — ${pr.url}`)
+          done.push(pr)
+        } else if (pr.already && had) {
+          log.on('git', c.repo).good(`#${had.number} is already open for ${c.head} — what was just pushed is on it`)
+          done.push({ ...had, updated: true })
+        } else {
+          log.on('git', c.repo)[pr.already ? 'warn' : 'bad'](`no pull request opened: ${pr.why}`)
+          done.push(pr)
+        }
       }
 
       // THE SECOND PASS, and the reason a cut is worth being a thing.

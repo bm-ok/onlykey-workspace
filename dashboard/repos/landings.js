@@ -144,7 +144,12 @@ async function state (source, target) {
   const learnt = rec.pulls.map(p => {
     const fresh = now.find(x => x.number === p.number && x.repo === p.repo)
     if (!fresh || fresh.merged !== true) return p
-    return { ...p, merged: true, state: 'closed' }
+    // AND ANY STALE COMPLAINT GOES WITH IT. A pull request that merged was
+    // obviously opened, so a `why` left over from some later attempt -- "a pull
+    // request already exists", which is what a re-cut answers with -- is not a
+    // fact about it any more. It was rendering in red under the merged badge.
+    const { why, ...rest } = p
+    return { ...rest, opened: true, merged: true, state: 'closed' }
   })
   if (learnt.some((p, i) => p !== rec.pulls[i])) keep({ ...all(), [key(source, target)]: { ...rec, pulls: learnt } })
 
