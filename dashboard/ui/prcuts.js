@@ -267,10 +267,18 @@ function paintCutDetail (c) {
             ...composed.where.map(w => el('tr', {},
               el('th', { textContent: w.repo }),
               el('td', { className: 'mono' },
-                el('span', { textContent: `${w.from || 'this host\'s fork'} : ${w.branch}` }),
-                el('span', { className: 'muted', textContent: '  →  ' }),
-                el('span', { textContent: `${w.into || 'the target'} : ${w.base}` }),
-                el('span', { className: 'muted', textContent: `   ${w.ahead} commit${w.ahead === 1 ? '' : 's'}` })))))
+                // THE WHOLE ADDRESS ON BOTH SIDES. The owner is the half that
+                // matters and the half that looks alike: this host pushes to
+                // bm-sandbox-c and opens into bm-sandbox-b, which differ by one
+                // character in the middle of a word.
+                el('div', {},
+                  el('span', { className: 'muted', textContent: 'push to  ' }),
+                  el('span', { textContent: w.fromUrl || w.from || "this host's fork" }),
+                  el('span', { className: 'muted', textContent: `  as "${w.branch}", ${w.ahead} commit${w.ahead === 1 ? '' : 's'}` })),
+                el('div', {},
+                  el('span', { className: 'muted', textContent: 'open into  ' }),
+                  el('span', { textContent: w.intoUrl || w.into || 'the target' }),
+                  el('span', { className: 'muted', textContent: `  on "${w.base}"` }))))))
         : null,
 
       el('div', { className: 'row' },
@@ -744,14 +752,28 @@ function sendDraft (c) {
   // scrolled past it on the screen should not have to trust their memory of it
   // at the moment of pressing.
   const where = ((previewOf.get(key(c)) || {}).where || [])
-    .map(w => `${w.repo}: ${w.from || 'this fork'}:${w.branch} → ${w.into || 'the target'}:${w.base} (${w.ahead} commit${w.ahead === 1 ? '' : 's'})`)
+    // TWO LINES PER REPOSITORY, and a full address on each. `ask` draws every
+    // `plain` string as its own list item with textContent, so newlines inside
+    // one collapse -- which ran the destination together as
+    // "bm-sandbox-b/local-repo-cversion2" and made the one fact somebody is
+    // checking unreadable at the moment they check it.
+    //
+    // AND THE WHOLE URL, because "bm-sandbox-b" and "bm-sandbox-c" differ by
+    // one character in the middle of a word. Which of them receives this is the
+    // thing being checked; a fragment asks somebody to spot the difference and
+    // a full address does not.
+    .map(w => `${w.repo} — INTO ${w.intoUrl || w.into || 'the target'} on branch "${w.base}"`)
+  const pushing = ((previewOf.get(key(c)) || {}).where || [])
+    .map(w => `${w.repo} — pushing ${w.ahead} commit${w.ahead === 1 ? '' : 's'} to ${w.fromUrl || w.from || 'this fork'} as "${w.branch}"`)
 
   ask({
     title: `Send "${c.source}" into "${c.target}"?`,
     plain: [
       where.length
-        ? `${where.length} pull request${where.length === 1 ? '' : 's'} would be opened:\n${where.join('\n')}`
+        ? `${where.length} pull request${where.length === 1 ? '' : 's'} would be opened:`
         : 'One pull request in each repository that carries something, tracked together as one cut.',
+      ...where,
+      ...pushing,
       'Each branch is pushed onward from this host first. No machine is ever handed the token.',
       said.title ? `It goes out as: "${said.title}"` : 'It has no title of its own, so the template supplies one.'
     ],

@@ -1494,7 +1494,14 @@ module.exports = {
         base: r.base,
         ahead: r.ahead,
         from: owner(r.at),
-        into: owner(r.from)
+        into: owner(r.from),
+        // THE WHOLE ADDRESS, NOT ONLY THE OWNER AND NAME. "bm-sandbox-b" and
+        // "bm-sandbox-c" differ by one character in the middle of a word, and
+        // the thing being checked before publishing is which of them receives
+        // this. A full URL is unambiguous, and it is also the thing somebody
+        // pastes into a browser to look before they decide.
+        fromUrl: r.at || null,
+        intoUrl: r.from || null
       }))
 
       return {
