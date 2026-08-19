@@ -133,7 +133,13 @@ function identityPanel (g, machines, pane, key = null) {
     ['token file', g.has ? 'here, sealed to this Windows account' : 'MISSING — it was removed by hand, or sealed by another account'],
     pane.lendable ? ['where it is', g.holder ? `on ${g.holder}` : 'here, lent to nobody'] : null,
     pane.lendable ? ['last lent', g.lastGiven ? `${new Date(g.lastGiven).toLocaleString()}${g.lastGivenTo ? ` to ${g.lastGivenTo}` : ''}` : 'never'] : null,
-    g.refreshed ? ['last refreshed', new Date(g.refreshed).toLocaleString()] : null,
+    // ALWAYS SHOWN, INCLUDING WHEN IT HAS NEVER HAPPENED. Hidden-when-absent
+    // was indistinguishable from not being tracked, and "this token is the one
+    // that was pasted in" is a real answer to the question this row asks —
+    // particularly beside `added`, which otherwise looks like it means this.
+    ['token last changed', g.refreshed
+      ? `${new Date(g.refreshed).toLocaleString()} — a machine handed back a different token, and this is the newer one`
+      : 'never — this is still the token that was added, unchanged'],
     // WHAT A MACHINE FOUND OUT, which outranks every date above it: a refresh
     // rotates the token, so a copy can be within its stated life and already
     // superseded. This row is the only one here that is evidence rather than

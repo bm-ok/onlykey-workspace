@@ -108,6 +108,23 @@ function all () {
     // file has been removed by hand says so instead of claiming a token.
     has: fs.existsSync(fileFor(g.name)),
     fingerprint: g.fingerprint || null,
+    // ---- WHEN THE TOKEN ITSELF LAST CHANGED ------------------------------
+    //
+    // WRITTEN BY backFrom AND ONLY WHEN THE FINGERPRINT ACTUALLY DIFFERS, so
+    // this moves when the credential is a different credential and at no other
+    // time. Handing the same token out and taking it back does not touch it,
+    // and neither does being lent, checked, relabelled or renamed.
+    //
+    // IT WAS BEING RECORDED AND THEN DROPPED HERE. The window has had a row for
+    // it the whole time — `g.refreshed ? ['last refreshed', …]` — and this
+    // projection did not carry the field, so the row could never draw and the
+    // one date on the card was `added`, which is when somebody first pasted a
+    // token in. A credential that rotated on a machine yesterday read as
+    // untouched since the day it arrived.
+    //
+    // WHY IT IS WORTH A ROW AT ALL: `added` says how old the RECORD is and this
+    // says how old the SECRET is, and after a rotation those are months apart.
+    refreshed: g.refreshed || null,
     lastGiven: g.lastGiven || null,
     lastGivenTo: g.lastGivenTo || null,
     holder: g.holder || null,
