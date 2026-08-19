@@ -25,6 +25,11 @@ let cutsSeen = null
 
 let cutsAsking = false
 
+// WHAT WAS DRAWN BEFORE GITHUB WAS ASKED. Kept so a draft stays picked across a
+// redraw — the loop runs every few seconds and would otherwise throw the panel
+// away between one look and the next.
+let draftsSeen = null
+
 function paintCuts () {
   // THE PANE, NOT THE VIEW. This guarded on the view when PR cuts was a tab of
   // its own, where the two were the same question. It is one of eleven panes
@@ -55,8 +60,64 @@ function paintCuts () {
   setText($('prcuts-note'), rows ? cutsSeen.note : 'Not read yet. "Read them from GitHub" asks what became of each one.')
 
   if (!rows) {
-    if (changed('prcuts', 'unread')) {
-      fill($('prcuts'), el('p', { className: 'empty', textContent: 'Not read yet.' }))
+    // NOT READ YET IS ABOUT GITHUB, AND A DRAFT IS NOT ON GITHUB. The whole
+    // screen used to wait on the network before showing anything — including
+    // the one row that wants a person, which has never left this host and could
+    // have been drawn instantly.
+    api('prDrafts').then(async d => {
+      const listed = (d && d.drafts) || []
+      if (view !== 'repos' || repoPane !== 'cuts' || cutsSeen) return
+
+      // THE WHOLE TEXT, NOT ONLY THE TITLE, because a draft is picked in order
+      // to READ it — deciding whether to send something is done by reading what
+      // it says. `prDrafts` is a list and deliberately light; this asks for the
+      // body of each, which is still local and still costs no network.
+      const waiting = []
+      for (const w of listed) {
+        const one = await api('prDraft', { source: w.source, target: w.target }).catch(() => null)
+        const kept = (one && one.draft) || {}
+        waiting.push({
+          source: w.source,
+          target: w.target,
+          draft: true,
+          landed: false,
+          pulls: [],
+          summary: 'written, not sent',
+          said: { title: kept.title || w.title || null, body: kept.body || null }
+        })
+      }
+      draftsSeen = waiting
+      if (view !== 'repos' || repoPane !== 'cuts' || cutsSeen) return
+      if (!changed('prcuts', ['unread', waiting, pickedCut])) return
+
+      fill($('prcuts'),
+        // PICKABLE BEFORE THE NETWORK ANSWERS. They were drawn and not
+        // clickable, so the one row on the screen that wants a person could be
+        // seen and not opened until GitHub had been asked about seventeen other
+        // things that did not.
+        ...waiting.map(w => el('div', {
+          className: `card pick${key(w) === pickedCut ? ' on' : ''}`,
+          onclick: () => { pickedCut = key(w); been.set('prcut', pickedCut); forget('prcuts'); forget('prcut-detail'); paintCuts() }
+        },
+          el('div', { className: 'card-title' },
+            el('span', { className: 'grow', textContent: w.source }),
+            el('span', { className: 'badge warn', textContent: 'not sent' })),
+          el('div', { className: 'card-sub muted', textContent: `into ${w.target}` }),
+          el('div', { className: 'card-sub muted', textContent: (w.said && w.said.title) || 'written and waiting to be sent' }))),
+        el('p', { className: 'empty', textContent: waiting.length
+          ? 'What has been sent is not read yet — "Read them from GitHub" asks what became of each one.'
+          : 'Not read yet.' }))
+
+      const one = waiting.find(w => key(w) === pickedCut) || null
+      if (one) paintCutDetail(one)
+    }).catch(() => { /* the line below still says what to press */ })
+
+    // A DRAFT ALREADY PICKED KEEPS ITS PANEL through a redraw, rather than
+    // reverting to "read them from GitHub" every three seconds.
+    const already = (draftsSeen || []).find(w => key(w) === pickedCut) || null
+    if (already) { if (changed('prcut-detail', already)) paintCutDetail(already); return }
+
+    if (changed('prcut-detail', 'unread')) {
       fill($('prcut-detail'), el('p', { className: 'empty', textContent: 'Read them from GitHub to see what became of each cut.' }))
     }
     return
@@ -74,10 +135,18 @@ function paintCuts () {
           onclick: () => { pickedCut = key(r); been.set('prcut', pickedCut); forget('prcuts'); forget('prcut-detail'); paintCuts() }
         },
         el('div', { className: 'card-title' },
-          el('span', { textContent: r.source }),
-          el('span', { className: `badge ${r.landed ? 'ok' : 'run'}`, textContent: r.landed ? 'landed' : r.summary })),
+          el('span', { className: 'grow', textContent: r.source }),
+          // A DRAFT IS THE ONE ROW HERE THAT WANTS SOMETHING. Everything else on
+          // this screen has already happened; this has not been sent, and it is
+          // badged so it cannot be read as another green.
+          el('span', {
+            className: `badge ${r.draft ? 'warn' : r.landed ? 'ok' : 'run'}`,
+            textContent: r.draft ? 'not sent' : r.landed ? 'landed' : r.summary
+          })),
         el('div', { className: 'card-sub muted', textContent: `into ${r.target}` }),
-        el('div', { className: 'card-sub muted', textContent: ago(r.opened) })))
+        el('div', { className: 'card-sub muted', textContent: r.draft
+          ? 'written and waiting to be sent'
+          : ago(r.opened) })))
       : el('p', { className: 'empty', textContent: 'Nothing has been cut yet. Propose a line on the Lines tab, read it on Changes, then cut it with +.' }))
   }
 
@@ -90,6 +159,54 @@ const key = r => `${r.source} -> ${r.target}`
 
 function paintCutDetail (c) {
   if (!c) return fill($('prcut-detail'), el('p', { className: 'empty', textContent: 'Pick a cut on the left.' }))
+
+  // ---- A DRAFT IS NOT A CUT, AND THE PANEL BELOW IS ABOUT CUTS -------------
+  //
+  // Everything under this line reads pull requests: which are merged, which
+  // repository each is in, whether to sync the forks or reopen them. A draft has
+  // none of that — it has never been sent — so it was drawn as a cut with an
+  // empty list of pull requests and five buttons that could not do anything to
+  // it.
+  //
+  // WHAT IT NEEDS INSTEAD IS THE TEXT AND ONE BUTTON. Somebody looking at a
+  // draft is deciding whether to send it, and that decision is made by reading
+  // what it says.
+  if (c.draft) {
+    const said = c.said || {}
+    return fill($('prcut-detail'),
+      el('div', { className: 'card-title' },
+        el('span', { className: 'grow', textContent: said.title || c.source }),
+        el('span', { className: 'badge warn', textContent: 'not sent' })),
+      el('p', { className: 'note', textContent: `"${c.source}" into "${c.target}", written here and not sent. Nothing is on GitHub yet — this text lives in this workspace only, and sending it is one act: a branch pushed and a pull request opened for every repository that carries something.` }),
+      said.body
+        ? codeBlock('prcut-draft-body', said.body, { language: 'markdown' })
+        : el('p', { className: 'empty', textContent: 'No body was written — a pull request opened from this would carry the template alone.' }),
+      el('div', { className: 'row' },
+        // THE ONE ACT THIS SCREEN CAN DO ABOUT A DRAFT, and it is deliberately a
+        // person's press. See the supervisor: it may write the text and make the
+        // line, and sending it outward is not on its list at all.
+        el('button', {
+          className: 'good',
+          textContent: 'Send it',
+          onclick: () => sendDraft(c)
+        }),
+        el('button', {
+          textContent: 'Edit it',
+          onclick: () => {
+            // The writer is where this text was composed, so editing means going
+            // back to it with the same pair selected rather than a second dialog
+            // asking for the same two sentences.
+            tmplFrom = c.source
+            tmplInto = c.target
+            been.set('tmpl-from', tmplFrom)
+            been.set('tmpl-into', tmplInto)
+            tmplSeen = null
+            repoPane = 'templates'
+            been.set('repo-pane', repoPane)
+            paintTemplates()
+          }
+        })))
+  }
 
   const said = c.said || {}
   fill($('prcut-detail'),
@@ -477,6 +594,36 @@ async function paintTemplatesNow () {
 // WRITING A NEW ONE. The same act as + on the Overview pane, from the surface
 // where it was composed — so what was previewed is what is opened, rather than
 // a second dialog asking for the same two sentences again.
+// SENDING WHAT WAS ALREADY WRITTEN. The same act as the writer's, from the list
+// rather than from the editor — a draft on this screen is a thing somebody came
+// here to send, and making them open another tab to press it is the reason this
+// was not noticeable in the first place.
+function sendDraft (c) {
+  const said = c.said || {}
+  ask({
+    title: `Send "${c.source}" into "${c.target}"?`,
+    plain: [
+      'One pull request in each repository that carries something, tracked together as one cut.',
+      'Each branch is pushed onward from this host first. No machine is ever handed the token.',
+      said.title ? `It goes out as: "${said.title}"` : 'It has no title of its own, so the template supplies one.'
+    ],
+    cost: 'This pushes branches to GitHub and opens pull requests. Both are visible to anyone who can see those repositories.',
+    confirm: 'Push and open them',
+    onYes: async () => {
+      const r = await api('prCutMake', {
+        source: c.source,
+        target: c.target,
+        title: said.title || undefined,
+        body: said.body || undefined
+      })
+      pickedCut = `${c.source} -> ${c.target}`
+      been.set('prcut', pickedCut)
+      say(r.note, (r.pulls || []).some(x => !x.opened) ? 'bad' : undefined)
+      return refreshCuts()
+    }
+  })
+}
+
 function cutFromWriter (v) {
   ask({
     title: `Cut ${v.repos.length} pull request(s)?`,

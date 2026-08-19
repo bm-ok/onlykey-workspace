@@ -1240,10 +1240,45 @@ module.exports = {
         const at = await landings.state(all[k].source, all[k].target)
         if (at) rows.push(at)
       }
+
+      // ---- AND WHAT HAS BEEN WRITTEN AND NOT SENT -------------------------
+      //
+      // A DRAFT IS A CUT THAT HAS NOT LEFT YET, and it was invisible here. This
+      // screen listed seventeen landed cuts -- all of them history, none of them
+      // wanting anything -- while the one thing waiting for a person had no home
+      // in the window at all. It lived on the supervisor's todo list, which is
+      // not where somebody goes to look at pull requests.
+      //
+      // FIRST IN THE LIST, because a thing that is finished and a thing that is
+      // waiting for you should not be sorted together by date. Seventeen greens
+      // and one thing to do reads as seventeen greens.
+      //
+      // A DRAFT WHOSE PAIR HAS ALREADY BEEN CUT IS NOT ONE. The text was for that
+      // cut and the cut exists; showing it as outstanding would be asking for the
+      // same thing twice.
+      const cutAlready = new Set(Object.values(all).map(c => `${c.source} -> ${c.target}`))
+      const waiting = Object.values(drafts.all() || {})
+        .filter(d => !cutAlready.has(`${d.source} -> ${d.target}`))
+        .map(d => ({
+          source: d.source,
+          target: d.target,
+          // WHAT MAKES IT DIFFERENT FROM A CUT, and every reader has to notice:
+          // there are no pull requests, because nothing has been sent.
+          draft: true,
+          landed: false,
+          pulls: [],
+          summary: 'written, not sent',
+          said: { title: d.title || null, body: d.body || null },
+          opened: d.at || d.touched || null
+        }))
+
+      const both = [...waiting, ...rows]
       return {
-        cuts: rows,
-        note: rows.length
-          ? `${rows.filter(r => r.landed).length} of ${rows.length} landed.`
+        cuts: both,
+        waiting: waiting.length,
+        note: both.length
+          ? `${rows.filter(r => r.landed).length} of ${rows.length} landed.${
+              waiting.length ? ` ${waiting.length} written and not sent yet — ${waiting.map(d => `"${d.source}"`).join(', ')}.` : ''}`
           : 'Nothing has been cut yet. A PR cut is made from a proposed line on the Changes tab.'
       }
     }
@@ -1474,6 +1509,29 @@ module.exports = {
       draft: drafts.read(source, target),
       note: 'Kept in this workspace only. Nothing is pushed and nobody else can see it.'
     })
+  },
+
+  // ---- EVERYTHING WRITTEN AND NOT SENT, WITHOUT ASKING GITHUB -------------
+  //
+  // `prCuts` reads every cut from GitHub, which is right for cuts and wrong for
+  // this: a draft has never left this host, so nothing about it is knowable from
+  // out there. Answering both in one call meant the PR cuts screen showed "not
+  // read yet" until the network came back -- and the one row on it that wanted a
+  // person was the one row that needed no network.
+  //
+  // So the local half is its own answer, and the screen can draw it at once.
+  prDrafts: {
+    about: 'Every pull request written for a pair of lines and not sent yet. Local, and asks GitHub nothing',
+    needs: 'workspace',
+    run: () => {
+      const kept = Object.values(drafts.all() || {})
+      return {
+        drafts: kept.map(d => ({ source: d.source, target: d.target, title: d.title || null, at: d.at || d.touched || null })),
+        note: kept.length
+          ? `${kept.length} written and not sent.`
+          : 'Nothing written yet. A draft is the pull request text for a pair of lines, kept here until the cut is made.'
+      }
+    }
   },
 
   prDraftSave: {
