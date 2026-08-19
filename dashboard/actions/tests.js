@@ -885,6 +885,49 @@ module.exports = {
       } finally {
         lastRun.running = false
         if (remembered.lastRun() && remembered.lastRun().running) remembered.ended(null)
+
+        // ---- AND THE MACHINES THE KIT KEPT BACK ARE GIVEN BACK -----------
+        //
+        // WHOEVER BORROWS SOMETHING RETURNS IT, AND A RUN ENDS MANY WAYS. The
+        // warming stage takes every machine that is not the kit's own out of the
+        // queue's reach -- `forTasks: false` and a `kit-held` tag -- so a drill
+        // or a supervisor queuing untagged work cannot reach somebody's working
+        // runner while the kit is running. That is right, and it was only ever
+        // undone by the COOLING stage, which is off unless asked for.
+        //
+        // So the ordinary run took two machines and never gave them back. They
+        // sat out of the pool for a day: not broken, correctly never picked up,
+        // and indistinguishable from a queue that had gone quiet. It is the same
+        // shape as a machine still claiming a branch, which this app already
+        // knows to treat as a fault.
+        //
+        // IN THE `finally`, because the interesting endings are the ones that
+        // are not "everything passed": a failed gate, a stopped run, one suite
+        // asked for by name. Every one of those held the machines and none of
+        // them reached the cooling stage.
+        //
+        // EXACTLY WHAT IT TOOK, which is why warming marks them. A machine that
+        // was already out of the pool when the kit started was never tagged, so
+        // it is not touched here -- re-enabling one because it happens to be
+        // kept back would be undoing somebody's decision on the way past.
+        //
+        // BEST EFFORT AND SILENT WHEN THERE IS NOTHING TO DO. Failing to give a
+        // machine back must not turn a passing run into a failing one; it is
+        // said in the record instead, where the next person to wonder why the
+        // queue is quiet will find it.
+        try {
+          const here = (await actions.vmList.run({})).vms || []
+          const ours = here.filter(m => (m.tags || []).some(t => String(t) === 'kit-held'))
+          for (const m of ours) {
+            await actions.vmForTasks.run({ name: m.name, enabled: true }).catch(() => {})
+            await actions.vmTags.run({ name: m.name, tags: (m.tags || []).filter(t => String(t) !== 'kit-held').join(',') }).catch(() => {})
+          }
+          if (ours.length) {
+            log.on('test').good(`gave back ${ours.map(m => m.name).join(', ')} — the kit keeps machines out of the queue's reach while it runs and returns them when the run ends, however it ends`)
+          }
+        } catch (e) {
+          log.on('test').warn(`the machines the kit kept back could not all be given back: ${e.message}. They carry the "kit-held" tag and are out of the queue's pool until that is taken off`)
+        }
       }
     }
   }
