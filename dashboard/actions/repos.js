@@ -1482,6 +1482,23 @@ module.exports = {
     takes: ['source', 'target', 'title', 'body'],
     run: ({ source, target, title, body }) => {
       if (!source || !target) throw new Error('A draft is about a pair of lines. Say which two.')
+
+      // THE SAME TWO NAMES THE CUT WILL WANT, checked here rather than found out
+      // later. `prCutMake` takes LINE names and refuses anything else; this took
+      // whatever it was given, so a draft could be filed against a pair no cut
+      // can ever ask for -- written, kept, and unreadable by the one thing that
+      // reads drafts.
+      //
+      // It happened: a supervisor saved a body against "version2", which is a
+      // BRANCH inside the "default" line rather than a line. Cutting into
+      // "default" would not have found it and the pull request would have gone
+      // out as template text -- which is the silent version of this that already
+      // cost one pull request its issue link.
+      //
+      // Refused with the list, because the fix is picking the right name and the
+      // names are knowable.
+      twoLines(source, target)
+
       const kept = drafts.save(source, target, { title, body })
       return { draft: kept, note: kept ? 'Kept.' : 'Nothing in it, so nothing is kept.' }
     }
