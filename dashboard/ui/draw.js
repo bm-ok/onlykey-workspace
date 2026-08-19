@@ -164,7 +164,25 @@ async function drawOnce () {
     outstanding ? `as last read from GitHub:\n${outstanding}` : '',
     asking ? `waiting on you:\n${asking}` : ''
   ].filter(Boolean).join('\n\n'), toAllow.length > 0)
-  nudge('cuts-badge', (owed.out || []).length, outstanding)
+  // ---- THE PR CUTS SUB-TAB: BOTH KINDS OF WAITING ----------------------
+  //
+  // It counted only what had GONE OUT and not landed, which is somebody else's
+  // move -- so on a host where everything has merged it sat dark while two
+  // changes sat on that very tab waiting to be sent. The Repositories tab said
+  // 2 and the sub-tab it points at said nothing, which is worse than either
+  // number alone: it tells somebody the thing is not here.
+  //
+  // MARKED AS YOURS WHEN ANY OF IT IS. A cut that is out is waiting on a
+  // reviewer; a draft is waiting on you. When both are present the badge is
+  // yours, because the half that needs a person decides what colour it is.
+  const notSent = (owed.unsent || []).map(d =>
+    `"${d.source}" into "${d.target}"${d.title ? ` — ${d.title}` : ''}`
+  ).join('\n')
+
+  nudge('cuts-badge', (owed.out || []).length + (owed.unsent || []).length, [
+    notSent ? `written and not sent — yours to send:\n${notSent}` : '',
+    outstanding ? `out and not merged, as last read from GitHub:\n${outstanding}` : ''
+  ].filter(Boolean).join('\n\n'), (owed.unsent || []).length > 0)
 
   // A SIGN-IN A MACHINE COULD NOT AUTHENTICATE WITH. Red rather than quiet: it
   // is the one thing on that tab that silently costs an afternoon — work routes

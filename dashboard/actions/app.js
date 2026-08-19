@@ -301,6 +301,10 @@ module.exports = {
           target: c.target,
           pulls: (c.pulls || []).map(p => ({ repo: p.repo, number: p.number, state: p.merged ? 'merged' : p.state }))
         })),
+        // AS ROWS RATHER THAN A NUMBER, for the same reason `out` and `arrived`
+        // are: a badge that can name what it is asking for is one somebody can
+        // act on without opening the tab to find out what the number meant.
+        unsent: unsent.map(d => ({ source: d.source, target: d.target, title: d.title || null })),
         note: why.length ? why.join(', ') : 'nothing is waiting on you'
       }
     }
