@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 57 tests, 260 checks, 21 of them drafts -->
+<!-- 12 suites, 58 tests, 265 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -229,6 +229,14 @@ The second door a person has to open, and it is deliberately not beside the
   2. two tasks are queued, and nothing here touches them again
   3. and the queue runs both at once, each machine as a different identity
   4. and when both are done, both identities are back
+
+## 07 — three roles and three kinds
+
+  1. every sign-in goes on its own kind of machine, and nowhere else
+  2. and the old name for a worker still reads as one
+  3. and a machine says which kind it is, from its tags alone
+  4. and neither tag can be granted or taken away afterwards
+  5. and judging is routed by what this host actually has
 
 # 05 — the machines
 
