@@ -441,15 +441,56 @@ function whyNotOn (role, machineKind, name, machine) {
 // So it is kept here, against the one that was actually tried. A sign-in that a
 // machine reported signed out is known bad until a machine says otherwise, and
 // nothing has to spend a machine to find out again.
-function checked (name, { ready = null, on = null, at = null, why = null, code = null } = {}) {
+// ---- TWO KINDS OF EVIDENCE, AND THEY ARE NOT WORTH THE SAME ----------------
+//
+//   probe   the credential was placed and the worker was asked whether it is
+//           signed in. It reads a file and answers. It says the bytes arrived.
+//   run     the worker was given work and called the API. It says the ACCOUNT
+//           works, which is the only question anybody is actually asking.
+//
+// A PROBE SAID YES ABOUT A CREDENTIAL THAT WAS DEAD, three times, and each yes
+// erased a no that a real run had established. "runner1" failed a judgement at
+// 12:52 with `Failed to authenticate: OAuth session expired and could not be
+// refreshed`, was correctly paused, and was then un-paused ten minutes later by
+// the placement probe of the very next job -- which reported ready, because the
+// file was on the disk. The queue then spent another machine on it.
+//
+// So a probe may CONDEMN a credential and may not ABSOLVE one. Anything can
+// record a failure; only the stronger kind of evidence can clear a failure that
+// the stronger kind of evidence established.
+//
+// This is the same rule the rest of this app already follows about machines --
+// ask the thing itself, and prefer what actually happened to what was inferred.
+// It was simply never applied to the credential's own record.
+const STRENGTH = { probe: 1, run: 2 }
+
+function checked (name, { ready = null, on = null, at = null, why = null, code = null, how = 'probe' } = {}) {
   if (ready === null || ready === undefined) return get(name)
   const all = read()
   const i = all.findIndex(g => g.name === name)
   if (i < 0) return null
+
+  // WHAT IS ALREADY KNOWN, and whether this is allowed to overturn it.
+  const had = all[i].lastCheck || null
+  if (had && had.ready === false && ready === true) {
+    const wasWorth = STRENGTH[had.how || 'run'] || 2
+    const isWorth = STRENGTH[how] || 1
+    if (isWorth < wasWorth) {
+      // NOT RECORDED, and the failure stands. Nothing is thrown: placing a
+      // credential is allowed to succeed, and this is only about what the
+      // record is permitted to conclude from it.
+      return get(name)
+    }
+  }
+
   all[i] = {
     ...all[i],
     lastCheck: {
       ready: !!ready,
+      // WHICH KIND OF EVIDENCE THIS WAS. Defaulted to `run` when read from an
+      // older record, because everything written before this distinction came
+      // from the run path.
+      how,
       on: on || null,
       at: at || new Date().toISOString(),
       // WHAT THE MACHINE SAID, kept whole. "It failed" is a state; the sentence

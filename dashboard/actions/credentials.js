@@ -875,7 +875,9 @@ grep -qxF '${String(ssh.publicKey() || '').trim()}' "$HOME/.ssh/authorized_keys"
             .join(' ')
             .slice(0, 600) || null
         : null
-      if (ready !== null && chosen) guests.checked(chosen, { ready, on: name, why, code: r.code })
+      // A PROBE. It placed bytes and asked a worker to read them, which is worth
+      // recording and is not worth as much as a run -- see checked().
+      if (ready !== null && chosen) guests.checked(chosen, { ready, on: name, why, code: r.code, how: 'probe' })
 
       return {
         to: name,

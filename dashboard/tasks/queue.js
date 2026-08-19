@@ -1529,7 +1529,9 @@ async function meterRun (actions, to, machine, runId, { kind, about, ref }) {
       if (trouble) {
         const on = guests.all().find(g => g.holder === machine)
         if (on) {
-          guests.checked(on.name, { ready: false, on: machine, why: trouble })
+          // A RUN. The worker was given work and called the API, so this is the
+          // strong kind of evidence and a later probe may not clear it.
+          guests.checked(on.name, { ready: false, on: machine, why: trouble, how: 'run' })
           to.bad(`${ref} could not authenticate as "${on.name}" — that sign-in is paused, and nothing will spend a machine on it again until it is replaced: ${trouble.slice(0, 160)}`)
           failedAuthAs = on.name
         }
