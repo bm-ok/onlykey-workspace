@@ -1272,7 +1272,22 @@ module.exports = {
           opened: d.at || d.touched || null
         }))
 
-      const both = [...waiting, ...rows]
+      // ---- AND THE SAME RULE ONE STEP FURTHER -----------------------------
+      //
+      // WHAT IS STILL OPEN ABOVE WHAT HAS LANDED. There was no order here at
+      // all: `rows` came out in whatever order the record file happened to hold
+      // its keys, which is the order things were written and not a decision
+      // anybody made. So a cut sent a minute ago sat underneath seventeen finished
+      // ones from four days back, and the list opened on a wall of green.
+      //
+      // The split is the same one the drafts get, for the same reason: a thing
+      // that is finished and a thing that still wants something are not two
+      // points on one timeline. Nothing sorts WITHIN either group -- among the
+      // landed there is no more or less landed, and putting the newest first
+      // there would be inventing an order rather than fixing the lack of one.
+      const open = rows.filter(r => !r.landed)
+      const done = rows.filter(r => r.landed)
+      const both = [...waiting, ...open, ...done]
       return {
         cuts: both,
         waiting: waiting.length,
