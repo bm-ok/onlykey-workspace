@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 59 tests, 272 checks, 21 of them drafts -->
+<!-- 12 suites, 60 tests, 276 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -30,7 +30,7 @@
 - **a worker credential / more than one sign in** — and what comes back off a machine is what the worker refreshed
   HALF BUILT, AND THE HALF THAT IS MISSING IS THE PROOF. vmCredentialsForget and guestBack now READ the credential off the machine before clearing it, and core/guests.js keeps it when the fingerprint differs — so a rotation during a run is no longer deleted. What has not happened is a run that demonstrates it. THE CHECK: lend a guest to a machine, give that machine real work that uses Claude, take the guest back, and the fingerprint this host holds is the one the machine finished with. Compared by fingerprint and never by value. AND IT SETTLES A QUESTION ON ITS OWN: if the fingerprint moves, the refresh rotates and one sign-in shared between machines is a broken design rather than an untidy one. If it never moves, sharing is survivable and one-per-machine is about throughput instead. IT COSTS A WORKER RUN, which is why it is here rather than in the checks above — those need no machine at all.
 - **a worker credential / more than one sign in** — and a machine that can be given no identity waits rather than borrowing one
-  THE REFUSAL EXISTS AND NOTHING ACTS ON IT. vmCredentialsPut throws when every guest is out, naming who holds what — which is right, and turns into a failed dispatch rather than a task that waits. Waiting for a credential is the same shape as waiting for a machine, and tasks/queue.js already knows how to do that: a task asking for a tag waits for a machine with that tag rather than taking any machine. THE CHECK: with one guest and two machines, dispatch two tasks — the second waits, and runs when the first gives its guest back, rather than failing. TO SETTLE FIRST: whether a guest is PINNED to a machine or drawn from a pool per job. Pinned wastes one per idle machine; pooled is the shape the machines themselves already have.
+  HALF OF THIS IS DONE, AND THE HALF THAT IS LEFT IS THE ONE ABOUT SHARING. The queue asks whether there is a sign-in to give BEFORE it claims a machine now, so work that can be given no identity waits instead of booting one to find out — checked by "a dead key costs no machine" in this suite, which walks it against a genuinely paused credential. WHAT IS STILL A DRAFT is the case this was first written for: not a sign-in that is DEAD, but every sign-in already OUT on other machines. Both end in a wait; only one of them gets better on its own, and nothing has yet watched a task pick itself up when a guest comes back. THE CHECK: with one guest and two machines, dispatch two tasks — the second waits, and RUNS when the first gives its guest back, rather than failing or waiting for ever. The second half is the claim: a wait that never ends is a failure that has not said so. TO SETTLE FIRST: whether a guest is PINNED to a machine or drawn from a pool per job. Pinned wastes one per idle machine; pooled is the shape the machines themselves already have.
 - **a task on a machine / a task goes out and comes back** — and a task that pushed something can be accepted
   THE ACCEPT PATH, and no job here can reach it. api-tour hands back a FILE and never commits, so the branch is exactly as it was cut and taskJudge refuses — correctly. ask-a-worker would push, and needs a Claude credential, which makes it a different and slower drill. WHAT IT NEEDS: a job that makes a small change and pushes it, written and approved at the window, because approving a job over the wire is refused on purpose. THE CHECK: queue a task under that job, let the queue run it, and accept the delivery — the verdict is recorded, the task reads accepted, and the artifact it was judged on is named in the verdict. AND ACCEPTING MUST NOT MERGE. Landing work is a separate act with its own rules; a verdict that quietly merged would make reading the work and publishing it the same button.
 - **a task on a machine / a task goes out and comes back** — and a run survives the dashboard being restarted under it
@@ -247,6 +247,13 @@ The second door a person has to open, and it is deliberately not beside the
   3. and what a session is about is the line, not the task that started it
   4. and a piece of work may ask to remember, over the default
   5. and a credential can be relabelled without touching the token
+
+## 09 — a dead key costs no machine
+
+  1. this host has a paused sign-in to try it with
+  2. and a machine is standing free that it could have spent
+  3. so a task queued against it waits, and nothing boots
+  4. and it says so once, not four times a minute
 
 # 05 — the machines
 

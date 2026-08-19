@@ -158,7 +158,7 @@ draft('and what comes back off a machine is what the worker refreshed',
 // in the middle.
 
 draft('and a machine that can be given no identity waits rather than borrowing one',
-  'THE REFUSAL EXISTS AND NOTHING ACTS ON IT. vmCredentialsPut throws when every guest is out, naming who holds what — which is right, and turns into a failed dispatch rather than a task that waits. ' +
-  'Waiting for a credential is the same shape as waiting for a machine, and tasks/queue.js already knows how to do that: a task asking for a tag waits for a machine with that tag rather than taking any machine. ' +
-  'THE CHECK: with one guest and two machines, dispatch two tasks — the second waits, and runs when the first gives its guest back, rather than failing. ' +
+  'HALF OF THIS IS DONE, AND THE HALF THAT IS LEFT IS THE ONE ABOUT SHARING. The queue asks whether there is a sign-in to give BEFORE it claims a machine now, so work that can be given no identity waits instead of booting one to find out — checked by "a dead key costs no machine" in this suite, which walks it against a genuinely paused credential. ' +
+  'WHAT IS STILL A DRAFT is the case this was first written for: not a sign-in that is DEAD, but every sign-in already OUT on other machines. Both end in a wait; only one of them gets better on its own, and nothing has yet watched a task pick itself up when a guest comes back. ' +
+  'THE CHECK: with one guest and two machines, dispatch two tasks — the second waits, and RUNS when the first gives its guest back, rather than failing or waiting for ever. The second half is the claim: a wait that never ends is a failure that has not said so. ' +
   'TO SETTLE FIRST: whether a guest is PINNED to a machine or drawn from a pool per job. Pinned wastes one per idle machine; pooled is the shape the machines themselves already have.')
