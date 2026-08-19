@@ -452,7 +452,16 @@ async function drawOnce () {
     ...latest.vms
       .filter(v => !v.running && v.live && v.holdsCredential)
       .map(v => [
-        `${v.name} is powered off and still holding a worker credential. `,
+        // WHICH SIGN-IN, BY NAME AND BY KIND. This said "a worker credential"
+        // whatever it was holding, and the first machine it ever fired on was a
+        // SUPERVISOR holding a supervisor sign-in — so the one sentence somebody
+        // reads at the moment they least want a procedure named the wrong kind
+        // of credential on the wrong kind of machine. Left over from before
+        // there were three roles, and the machine has known its kind since.
+        //
+        // The name matters more than the kind: this host may hold several, and
+        // "a credential" does not say which one is stranded on a disk.
+        `${v.name} is powered off and still holding ${v.guest ? `the ${v.kind || 'worker'} sign-in "${v.guest}"` : `a ${v.kind || 'worker'} credential`}. `,
         'That cannot happen in the ordinary sequence — a credential is taken back before a machine is shut down — so it was stopped from outside it, which a host restart does. Until then it cannot be snapshotted.',
         // THE INSTRUCTION BECAME A BUTTON. This sentence used to end "start it,
         // take the credential back, and shut it down again" — three steps in an

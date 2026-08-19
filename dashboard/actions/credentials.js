@@ -944,7 +944,15 @@ grep -qxF '${String(ssh.publicKey() || '').trim()}' "$HOME/.ssh/authorized_keys"
       }
 
       vms.update(name, { holdsCredential: false, guest: null })
-      log.on('vm', name).good(`${name} no longer holds a worker credential`)
+      // NAMED, RATHER THAN CALLED A WORKER'S WHATEVER IT WAS. This said "a
+      // worker credential" for every machine including a supervisor holding a
+      // supervisor sign-in -- read afterwards, the record said the wrong kind of
+      // credential had come off the wrong kind of machine. `mine.guest` is read
+      // above and cleared on the line before, so it is taken while it is still
+      // there.
+      log.on('vm', name).good(mine.guest
+        ? `${name} no longer holds the sign-in "${mine.guest}"`
+        : `${name} no longer holds a credential`)
       return { from: name, removed: true, guest: mine.guest || null, rotated, kept: text !== null }
     }
   },
