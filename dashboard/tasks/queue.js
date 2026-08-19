@@ -300,7 +300,20 @@ async function tick (actions, log) {
       // none, nothing changes. The narrowing is applied before the match rather
       // than inside `takes`, because it is about which machines are ELIGIBLE
       // rather than about a tag the work asked for.
-      const may = ofItsOwnKind(task, free, log)
+      // ---- ONLY MACHINES THAT HAVE SAID WHAT THEY ARE ------------------
+      //
+      // THE QUEUE HANDS OVER A CREDENTIAL, and it chooses which one by the
+      // machine's kind. A machine with no role tag does not answer that
+      // question, so picking it up means guessing whose identity to put on it
+      // -- and the guess used to be made silently, in kindOf, which returned
+      // "worker" for anything unlabelled.
+      //
+      // So an unlabelled machine is not in the queue's reach at all. It is not
+      // broken and not hidden: it can be borrowed, started and worked on by
+      // hand, and everything about it is on the Machines tab. It simply never
+      // has work sent to it automatically, because automatic work is exactly
+      // where nobody is watching to catch the wrong identity going out.
+      const may = ofItsOwnKind(task, free.filter(m => vms.takesQueuedWork(vms.get(m.name))), log)
       const pick = may.findIndex(m => willTake(task, m))
       if (pick < 0) {
         if (String(task.tag || '').trim()) {

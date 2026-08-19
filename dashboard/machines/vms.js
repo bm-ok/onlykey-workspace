@@ -212,11 +212,32 @@ const WORKER = 'worker'
 const kindOf = vm => {
   const tags = (vm && vm.tags) || []
   const has = want => tags.some(t => String(t).toLowerCase() === want)
-  // UNTAGGED IS A WORKER, which is why the WORKER tag is optional rather than
-  // required: every machine made before this existed carries no role tag at all
-  // and is an ordinary runner, correctly. Requiring the tag would have made them
-  // all kindless on the day it was added.
-  return has(SUPERVISOR) ? 'supervisor' : has(JUDGE) ? 'judge' : 'worker'
+  // ---- SILENCE IS NOT AN ANSWER --------------------------------------------
+  //
+  // THIS USED TO SAY WORKER for a machine carrying no role tag, on the grounds
+  // that every machine made before the tag existed was an ordinary runner and
+  // requiring it would have made them all kindless overnight. That was true and
+  // it was a GUESS, and the thing it was guessing about is which credential to
+  // hand the machine.
+  //
+  // The queue picks a sign-in by the machine's kind. So "untagged means worker"
+  // is not a default, it is this host deciding on its own that an unlabelled box
+  // should be given a worker's identity -- and being right about that only for
+  // as long as nobody builds a machine for something else.
+  //
+  // NULL, AND EVERY CALLER HAS TO SAY WHAT IT DOES ABOUT IT. The queue skips it,
+  // lending refuses it and says which tag to add, and the register reports it
+  // plainly instead of dressing it as a runner. A machine with no role is
+  // perfectly usable by hand; it is only automatic work that must not guess.
+  return has(SUPERVISOR) ? 'supervisor' : has(JUDGE) ? 'judge' : has(WORKER) ? 'worker' : null
+}
+
+// WHETHER THE QUEUE MAY PICK THIS ONE UP. Asked in one place so the queue, the
+// pools panel and any drill give the same answer -- and so that "why is my
+// machine never taken" has a function to point at rather than a paragraph.
+const takesQueuedWork = vm => {
+  const kind = kindOf(vm)
+  return kind === 'worker' || kind === 'judge'
 }
 
 // AND THE POOL EVERY OTHER MACHINE IS IN.
@@ -291,4 +312,4 @@ async function all () {
   return { available: true, vms }
 }
 
-module.exports = { all, read, get, add, update, forget, stageOf, kindOf, STAGES, SUPERVISOR, JUDGE, WORKER, POOL }
+module.exports = { all, read, get, add, update, forget, stageOf, kindOf, takesQueuedWork, STAGES, SUPERVISOR, JUDGE, WORKER, POOL }

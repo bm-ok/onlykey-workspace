@@ -390,7 +390,21 @@ const MACHINE_SAYS = {
 
 function whyNotOn (role, machineKind, name, machine) {
   const want = role === 'supervisor' || role === 'judge' ? role : 'worker'
-  const is = machineKind === 'supervisor' || machineKind === 'judge' ? machineKind : 'worker'
+
+  // ---- A MACHINE THAT HAS NOT SAID WHAT IT IS GETS NOTHING -----------------
+  //
+  // `kindOf` answers null for a machine carrying no role tag, and null used to
+  // be read here as "worker" -- which handed a worker's identity to any box that
+  // had not been labelled. The tag is how a machine says which credential it may
+  // hold, so no tag is not a default, it is an unanswered question.
+  //
+  // REFUSED WITH THE ANSWER IN IT. "Not allowed" about a machine somebody just
+  // built is useless; what they need is the two words that fix it.
+  if (machineKind !== 'supervisor' && machineKind !== 'judge' && machineKind !== 'worker') {
+    return `${machine} has not been told what it is for, so nothing can be lent to it. A machine holds a worker's identity or a judge's, and the tag is how it says which — give it the "worker" tag or the "judge" tag with vmTags, and then "${name}" can go to it.`
+  }
+
+  const is = machineKind
   if (want === is) return null
 
   const why = want === 'supervisor'

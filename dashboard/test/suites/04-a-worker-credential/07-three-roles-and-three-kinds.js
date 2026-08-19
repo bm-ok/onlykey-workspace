@@ -78,18 +78,26 @@ it('and a machine says which kind it is, from its tags alone', ({ assert, log })
 
   for (const v of here) {
     const kind = vms.kindOf(v)
-    assert.ok(ROLES.includes(kind), `"${v.name}" reads as kind "${kind}"`)
+    // NULL IS A REAL ANSWER, and the one this rule exists to give. A machine
+    // that carries no role tag has not said which credential it may hold, and
+    // saying "worker" for it was a guess this host is not entitled to make.
+    assert.ok(kind === null || ROLES.includes(kind), `"${v.name}" reads as kind "${kind}"`)
 
     // FROM THE TAGS AND NOTHING ELSE, so the answer cannot drift from what the
     // queue matches on — which is the reason this is a tag rather than a flag.
     const tags = (v.tags || []).map(t => String(t).toLowerCase())
     if (kind === 'supervisor') assert.ok(tags.includes(vms.SUPERVISOR), `"${v.name}" reads as a supervisor without carrying the tag`)
     if (kind === 'judge') assert.ok(tags.includes(vms.JUDGE), `"${v.name}" reads as a judge without carrying the tag`)
-    if (kind === 'worker') {
-      assert.ok(!tags.includes(vms.SUPERVISOR) && !tags.includes(vms.JUDGE), `"${v.name}" reads as an ordinary runner while carrying a tag that says otherwise`)
+    if (kind === 'worker') assert.ok(tags.includes(vms.WORKER), `"${v.name}" reads as a worker without carrying the tag`)
+    if (kind === null) {
+      assert.ok(!tags.includes(vms.SUPERVISOR) && !tags.includes(vms.JUDGE) && !tags.includes(vms.WORKER),
+        `"${v.name}" reads as having no role while carrying a role tag`)
+      // AND THE CONSEQUENCE, checked rather than assumed: the queue does not
+      // reach it. This is the whole point of the answer being null.
+      assert.ok(!vms.takesQueuedWork(v), `"${v.name}" has said nothing about what it is for and the queue would still send it work`)
     }
   }
-  log(here.map(v => `${v.name}: ${vms.kindOf(v)}`).join(', '))
+  log(here.map(v => `${v.name}: ${vms.kindOf(v) || 'no role — the queue leaves it alone'}`).join(', '))
 })
 
 it('a role can be moved, and what was BUILT cannot', async ({ okc, assert, state, log }) => {
@@ -165,17 +173,37 @@ it('and work only ever goes to a machine of its own kind', ({ assert, log }) => 
   // machine is a judge. Requiring a judge for judgements CAN strand one, on any
   // host that has not made one.
   const machines = [
-    { name: 'a-runner', tags: ['test'] },
+    { name: 'unlabelled', tags: ['default'] },
+    { name: 'a-runner', tags: ['test', vms.WORKER] },
     { name: 'a-judge', tags: ['test', vms.JUDGE] }
   ]
   const kinds = machines.map(m => `${m.name}=${vms.kindOf(m)}`)
-  assert.equal(kinds.join(' '), 'a-runner=worker a-judge=judge', `kindOf disagrees: ${kinds.join(' ')}`)
+  assert.equal(kinds.join(' '), 'unlabelled=null a-runner=worker a-judge=judge', `kindOf disagrees: ${kinds.join(' ')}`)
+
+  // ---- AND WHICH OF THEM THE QUEUE MAY REACH -------------------------
+  //
+  // THE RULE THIS SUITE IS ABOUT, in the form the queue asks it. Sending work
+  // to a machine means handing it a credential, and which credential is chosen
+  // BY THE KIND — so a machine that has not said what it is cannot be given one
+  // without this host guessing whose identity to put on it.
+  //
+  // "default" IS A POOL, NOT A ROLE. Every machine built here carries it so
+  // that "which pool is this in" always has a name; it says where a machine
+  // sits, never what it may hold. Reading it as a role is the guess being
+  // removed.
+  const reachable = machines.filter(m => vms.takesQueuedWork(m)).map(m => m.name)
+  assert.equal(reachable.join(','), 'a-runner,a-judge',
+    `the queue would reach [${reachable.join(', ')}] — an unlabelled machine must not be sent work, because nothing knows which sign-in to hand it`)
+
+  // AND A SUPERVISOR IS OUT TOO, for a different reason: it is not a pool the
+  // queue draws from at all, and it holds its own identity permanently.
+  assert.ok(!vms.takesQueuedWork({ name: 's', tags: [vms.SUPERVISOR, 'test'] }), 'a supervisor machine is in the queue\'s pool')
 
   // The tag composes with any other, which is what makes a pool: "judge" and
   // "test" together is the kit's judge pool, and nothing has to know that.
-  assert.ok(machines[1].tags.includes('test'), 'a judge machine cannot also carry the tag that puts it in a pool')
+  assert.ok(machines[2].tags.includes('test'), 'a judge machine cannot also carry the tag that puts it in a pool')
 
-  log('a machine is a worker unless it says judge, and the tag composes with any other')
+  log('a machine says worker or judge or it gets no automatic work, and the tag composes with any other')
 })
 
 it('and judging is routed by what this host actually has', async ({ okc, assert, log }) => {
