@@ -1158,7 +1158,16 @@ async function run (actions, log, task, machine) {
     // the artifact answers and which stays true from the run before.
     const nowAt = headsOn(task.branch)
     const moved = Object.keys(nowAt).filter(r => nowAt[r] && nowAt[r] !== stoodAt[r])
-    const stuck = Object.entries(stoodAt).find(([r, sha]) => sha && !moved.includes(r))
+    // EVERY REPOSITORY THAT HAS THE BRANCH, NOT THE FIRST ONE FOUND. A line
+    // spans repositories and the first in the list is rarely the one the work
+    // was about: the run that proved this said "still at 0f586d0", which was
+    // local-repo-a sitting exactly where it had always been, while the repository
+    // being worked in was local-repo-b. A true number about the wrong repository
+    // reads as a fact and is worse than no number.
+    const stillAt = Object.entries(stoodAt)
+      .filter(([, sha]) => sha)
+      .map(([r, sha]) => `${r} ${sha}`)
+      .join(', ')
 
     await actions.taskUpdate.run({ id, task: { state: 'done', attempts: marked, arrived: moved.length > 0 } })
 
@@ -1166,7 +1175,7 @@ async function run (actions, log, task, machine) {
       `#${task.number} done — ${outcome.state}${outcome.exit === undefined ? '' : ` (exit ${outcome.exit})`} — ${art.summary}${
         moved.length
           ? ''
-          : ` — and nothing new arrived: ${task.branch} is still at ${stuck ? stuck[1] : 'where it was'}, so whatever the run did is not here`}`)
+          : ` — and nothing new arrived: ${task.branch} is unchanged${stillAt ? ` (${stillAt})` : ''}, so whatever the run did is not here`}`)
     // Said as one line rather than left in the record, because the record is
     // read when somebody already suspects something; this is what tells them to.
     to.info(`#${task.number} took ${secs(spent.total)} — ${Object.entries(spent)
