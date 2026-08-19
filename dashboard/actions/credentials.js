@@ -558,10 +558,30 @@ module.exports = {
       // Supervisors are not in the running: one is the sign-in this host decides
       // work with, and a machine holding it would be a worker able to spend the
       // identity that supervises workers. core/guests.js refuses it too.
-      const held = guests.all().filter(g => g.role !== 'supervisor')
+      // OF THE KIND THIS MACHINE IS, which is the half that was missing.
+      //
+      // core/guests.js REFUSES a mismatch — a worker's sign-in on a judge
+      // machine, and the rest — and refusing is worth nothing if the thing that
+      // CHOOSES does not know the rule. This picked any free non-supervisor
+      // sign-in, so the first judgement dispatched to a judge machine would be
+      // offered a worker's identity and then be refused it, minutes into a
+      // dispatch, for a reason that reads like a bug.
+      //
+      // Found by the operator tagging two machines: the moment a judge machine
+      // existed, judging was broken on a host whose only free sign-ins were
+      // workers. The refusal was right and the selection had never been taught.
+      const want = vms.kindOf(mine)
+      const held = guests.all().filter(g => g.role === want)
       const wanted = mine.guest
         ? held.find(g => g.name === mine.guest)
         : held.find(g => g.has && (!g.holder || g.holder === name))
+
+      // AND SAID PLAINLY WHEN THERE IS NONE OF THAT KIND AT ALL, because "every
+      // guest is out" below is the wrong sentence for it: nothing is out, there
+      // simply is not one, and the thing to do is add one rather than wait.
+      if (!wanted && !held.length) {
+        throw new Error(`"${name}" is ${want === 'judge' ? 'a judge machine' : want === 'supervisor' ? 'a supervisor machine' : 'a runner'} and this host holds no ${want} sign-in. A ${want} machine is lent a ${want}'s identity and nothing else — that is what keeps ${want === 'judge' ? 'reading a change and writing one on separate accounts' : 'the accounts separate'}. Add one on the Runners tab, or change what this machine is for with vmTags.`)
+      }
 
       const file = wanted ? guests.fileFor(wanted.name) : path.join(data.sub('credentials'), 'claude.json')
       const chosen = wanted ? wanted.name : null
