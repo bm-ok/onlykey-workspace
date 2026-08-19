@@ -633,7 +633,26 @@ module.exports = {
         }
       }
 
-      const one = handed.find(f => f.file === String(file))
+      // ---- BY THE NAME SOMEBODY WOULD USE, NOT ONLY THE ONE ON DISK -------
+      //
+      // A handed-back file is stored as `<run>--<name>`, so the run it came from
+      // is part of its identity and two runs of one judgement cannot overwrite
+      // each other. That prefix is this app's bookkeeping, and asking for
+      // "CLAIM.md" is what anybody reading the contract would do -- the
+      // supervisor did exactly that and was refused for naming the file the job
+      // was told to write.
+      //
+      // ONLY WHERE IT IS UNAMBIGUOUS. If two runs both handed back a CLAIM.md,
+      // the short name names two things and the refusal is right -- so it lists
+      // them and asks for the one that is meant, rather than picking the newer
+      // and being quietly wrong about which reading is being read.
+      const want = String(file)
+      const ends = handed.filter(f => f.file === want || String(f.file).endsWith(`--${want}`))
+      const one = ends.length === 1 ? ends[0] : handed.find(f => f.file === want)
+
+      if (!one && ends.length > 1) {
+        throw new Error(`${it.ref} handed back ${ends.length} files called "${want}", from different runs. Name the one that is meant: ${ends.map(f => f.file).join(', ')}.`)
+      }
       if (!one) {
         throw new Error(`${it.ref} handed back nothing called "${file}". It handed back: ${handed.map(f => f.file).join(', ') || 'nothing at all'}.`)
       }

@@ -137,6 +137,44 @@ picks with both offered, whether Also noticed comes back real or padded, and
 whether it harvests its OWN new judgement — the rule's original trigger, which
 question 1 could never reach.
 
+RUN 2026-08-19 15:56, and the FIRST question in this document measured through a
+pipe known to be open at both ends. J66, `check-a-claim`, 180s on kit-1 as
+runner4, 0.74 USD, CLAIM: false.
+
+**1. WHICH CHAIN — the old one, for the third time.** With both offered and no
+steer it took `check-a-claim`. `check-a-claim-and-say-what-else` has now been
+approved, in use, and chosen zero times across three chances. That is no longer
+explainable as a broken pipe, and it is the one clean fact this run bought.
+
+**2. ALSO NOTICED — real, and it did not need the contract.** This is the result
+that matters. The asides contract exists to REQUIRE a section for findings nobody
+asked about; the ordinary chain produced one anyway, and a good one. The claim
+itself was FALSE — it proved that by running the real `api.list()` against a fake
+fetch returning `<img src=x onerror=alert(1)>`, passing the result to the real
+`renderNotes`, and showing the hostile string arrive at the one markup sink
+escaped. Then, unasked, it found `note.id` genuinely unescaped at render.js:35
+and :40 — and beat a previous judgement on it: J42 wrote that off as unreachable
+because ids are server-assigned integers, and J66 found the way in J42 missed,
+`?api=` in README.md:21-22, which lets a substituted server supply an id of any
+shape for the price of a crafted link.
+
+So the behaviour the second contract was written to enforce happens without it.
+**Worth settling before writing any more contract**: whether that chain is
+solving a problem the judges do not have.
+
+**3. HARVESTING ITS OWN — reported, not filed.** It told the person about the
+aside and explicitly did not queue work off it: "a change to make rather than a
+claim to check, and you may reasonably decide a demo app's `?api=` is not a
+threat model. Say the word and I will write it as a task naming J66." Correct
+under the rules it has, and it means the harvest went to the conversation rather
+than to the todo list.
+
+AND ONE FRICTION, FIXED: it asked `judgementFindings` for "CLAIM.md" and was
+refused — files are stored as `<run>--<name>`, so the name the job was told to
+write is not the name on disk. It recovered, but the refusal was this app's
+bookkeeping leaking. A findings file can now be asked for by its short name where
+that is unambiguous, and refused with the list where two runs both wrote one.
+
 # 3. Your strictness question, asked of the thing that would know
 ```
 whats stopped you lately? name anything you tried that was refused, or wanted to do and couldnt find a way to. i want to know if the api is too narrow or just incomplete.

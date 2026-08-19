@@ -1961,15 +1961,23 @@ ordinary user. What follows is what is still not proven.
   that has produced anything took minutes. Nothing here has been tested against a
   worker that thinks for a long time, fills a transcript, and has to be watched
   while it does.
-* **The "Also noticed" contract has never run.** Judging itself is no longer a
-  gap: judges have read branch cuts, an arrived pull request and two claims, and
-  each handed a file back that the supervisor read through `judgementFindings`
-  and nowhere else. What is unproven is the newer chain —
-  `check-a-claim-and-say-what-else`, and the contract requiring a section for
-  findings nobody asked about. It is approved and in use and has been chosen zero
-  times: with both claim-checkers offered and no steer, every claim so far went
-  to the older one. So the asides section is a claim about a contract rather than
-  about a judgement.
+* **The "Also noticed" contract has never run, and may not be needed.** It is
+  approved, in use, and chosen zero times across three chances: with both
+  claim-checkers offered and no steer, every claim has gone to the older
+  `check-a-claim`. The first two of those were measured through a broken pipe;
+  the third, on 19 August, was not, so this is now a fact rather than a suspicion.
+
+  WHAT MAKES IT MORE INTERESTING THAN A GAP: on that third run the ordinary chain
+  produced an aside anyway, and a good one. Asked whether a claim about unescaped
+  API output was true, J66 proved it false BY RUNNING IT — the real `api.list()`
+  against a fake fetch returning a hostile string, through the real renderer — and
+  then, unasked, found `note.id` genuinely unescaped and beat a previous
+  judgement on it: J42 had written that off as unreachable because ids are
+  server-assigned integers, and J66 found the way in J42 missed.
+
+  So the behaviour the second contract was written to REQUIRE happens without it.
+  Worth settling before any more contract is written: whether that chain solves a
+  problem the judges do not have.
 * **A judgement read before today has no transcript.** Its run output is kept now
   — under the judgement's uid, when the run ends, pass or fail — and everything
   judged before that kept nothing: the log lived on the machine and the machine
