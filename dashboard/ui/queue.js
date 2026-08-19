@@ -75,14 +75,34 @@ function paintQueue (q) {
         ? el('table', { className: 'kv' },
           ...machines.map(m => el('tr', {},
             el('th', { textContent: m.name }),
-            el('td', {}, m.free
-              ? el('span', { className: 'badge ok', textContent: 'free' })
-              : el('span', { className: 'muted', textContent: m.why || 'not free' })))))
+            el('td', {},
+              // WHAT IT IS, BEFORE WHETHER IT IS FREE. "free" answers a question
+              // nobody asked on its own: a machine is free FOR something, and
+              // which something is now the thing that decides whether the queue
+              // can use it at all. A worker and a judge sitting idle are not
+              // interchangeable, and this row used to show them identically.
+              (m.kinds || []).length
+                ? el('span', { className: 'badge', textContent: m.kinds.join('+') })
+                : null,
+              m.free
+                ? el('span', { className: 'badge ok', textContent: 'free' })
+                // A MACHINE WITH NO ROLE IS CALLED OUT rather than greyed like a
+                // busy one. Busy passes on its own; this one waits for somebody,
+                // and the reason carries the two words that fix it.
+                : el('span', { className: m.roleless ? 'bad' : 'muted', textContent: m.why || 'not free' })))))
         : el('p', { className: 'empty', textContent: 'This host has no machines.' }),
       // SAID WHEN IT IS THE ANSWER. Work waiting with nothing that can take it is
       // the state somebody is staring at the screen about.
+      // AND THE SENTENCE FOR THE STATE SOMEBODY IS STARING AT. Work waiting with
+      // nothing able to take it has two very different causes, and telling them
+      // apart is the difference between waiting and doing something:
+      //
+      //   everything is busy      it will move on its own, given time
+      //   nothing has a role      it will never move until somebody tags one
       waiting.length && !machines.some(m => m.free)
-        ? el('p', { className: 'note bad', textContent: 'Nothing can take it. It stays queued until something can.' })
+        ? el('p', { className: 'note bad', textContent: machines.some(m => m.roleless)
+            ? `Nothing can take it. ${machines.filter(m => m.roleless).map(m => m.name).join(', ')} ${machines.filter(m => m.roleless).length === 1 ? 'is' : 'are'} idle and ${machines.filter(m => m.roleless).length === 1 ? 'has' : 'have'} not been told what ${machines.filter(m => m.roleless).length === 1 ? 'it is' : 'they are'} for — the queue chooses a sign-in by the machine's role, so it will not send work to one that has not said. Tag it "worker" or "judge" on the Runners tab and this goes out on the next look.`
+            : 'Nothing can take it. It stays queued until something can.' })
         : null)
 
     // The rule, in the app's own words rather than this file's, so it cannot

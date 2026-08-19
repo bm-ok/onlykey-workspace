@@ -535,7 +535,10 @@ module.exports = {
       let signedIn = null
       let signInNote = null
       try {
-        signedIn = (await actions.vmCredentialsPut.run({ name: on })).ready
+        // A PERSON TAKING A MACHINE TO WORK ON IT WANTS A WORKER'S IDENTITY.
+        // Said rather than inferred, because a machine tagged worker AND judge
+        // cannot answer it and would refuse the whole set-up as ambiguous.
+        signedIn = (await actions.vmCredentialsPut.run({ name: on, role: 'worker' })).ready
         if (signedIn === false) signInNote = 'this host\'s worker credential has expired'
       } catch (e) {
         signedIn = false

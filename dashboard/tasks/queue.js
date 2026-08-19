@@ -46,7 +46,7 @@ const settings = require('../core/settings')
 // cannot do it because it brings the machine up as part of borrowing it.
 const vms = require('../machines/vms')
 // The one tag this app gives a meaning to. See vms.js.
-const { SUPERVISOR, kindOf, takesQueuedWork } = vms
+const { SUPERVISOR, kindOf, kindsOf, takesQueuedWork } = vms
 
 // WHAT HAS ALREADY BEEN SAID ABOUT A TASK THAT IS WAITING. See sayWaiting.
 // Module-level because the dispatch loop is called afresh on every tick and a
@@ -132,7 +132,32 @@ function availability (vms) {
     if (!v.baseSnapshot) return { name: v.name, free: false, why: 'has no base snapshot to come back to, so it cannot be made clean' }
     if (v.branch) return { name: v.name, free: false, why: `still claims ${v.branch}` }
     if (v.stage && v.stage === 'installing') return { name: v.name, free: false, why: 'is being installed' }
-    return { name: v.name, free: true, why: null }
+
+    // ---- AND WHETHER IT HAS SAID WHAT IT IS FOR --------------------------
+    //
+    // LAST, SO THE MORE URGENT REASONS WIN. A machine mid-install with no role
+    // has two true answers and only one of them is worth acting on today.
+    //
+    // HERE RATHER THAN IN THE DISPATCH LOOP, because this function is what the
+    // Queue tab and the pools panel read. Filtering it in the loop alone left
+    // the window saying "free" about machines the queue would never touch —
+    // which is the same fault as a machine still claiming a branch: not broken,
+    // correctly never picked up, and looking exactly like a queue gone quiet.
+    //
+    // AND THE REASON CARRIES THE FIX, because "not free" about a machine
+    // somebody just built is a dead end without the two words that solve it.
+    const kinds = kindsOf(v)
+    if (!kinds.length) {
+      return {
+        name: v.name,
+        free: false,
+        roleless: true,
+        kinds,
+        why: 'has not been told what it is for — the queue picks which sign-in to hand over from a machine\'s role, so tag it "worker" or "judge" with vmTags'
+      }
+    }
+
+    return { name: v.name, free: true, why: null, kinds }
   })
 }
 
@@ -250,8 +275,14 @@ async function tick (actions, log) {
     ])
     if (!waiting.length) return
 
-    const { vms } = await actions.vmList.run({})
-    const free = availability(vms).filter(a => a.free)
+    // NAMED `here`, NOT `vms`, AND THAT IS NOT A STYLE CHOICE. Destructured as
+    // `vms` this shadowed the MODULE for the whole of this loop, so every
+    // `vms.something` inside it silently read a property off an Array:
+    // `vms.get` threw on every tick, `vms.kindOf` was undefined, and
+    // `vms.JUDGE` printed the word "undefined" into the sentence telling
+    // somebody which tag to add. Three separate faults from one name.
+    const here = (await actions.vmList.run({})).vms
+    const free = availability(here).filter(a => a.free)
     if (!free.length) return
 
     // WHICH MACHINES A TASK WILL ACCEPT.
@@ -267,7 +298,7 @@ async function tick (actions, log) {
     // one thing somebody who bothered to tag a machine was trying to prevent.
     // The board says a tagged task is waiting for a tagged machine; nothing
     // happens silently.
-    const tagsOf = name => (vms.find(v => v.name === name) || {}).tags || []
+    const tagsOf = name => (here.find(v => v.name === name) || {}).tags || []
 
     // WHY WAITING IS SAID ONCE AND NOT EVERY FIFTEEN SECONDS.
     //
@@ -313,13 +344,10 @@ async function tick (actions, log) {
       // hand, and everything about it is on the Machines tab. It simply never
       // has work sent to it automatically, because automatic work is exactly
       // where nobody is watching to catch the wrong identity going out.
-      // THE MODULE, NOT THE ARRAY. `vms` is the machine LIST inside this loop --
-      // `const { vms } = await actions.vmList.run({})` -- so `vms.get` here was a
-      // property of an Array and every tick threw "vms.get is not a function".
-      // The same shadow already caught kindOf; both are pulled out at module
-      // scope for exactly this reason, and an availability row carries a name
-      // rather than tags, which is what tagsOf is for.
-      const may = ofItsOwnKind(task, free.filter(m => takesQueuedWork({ name: m.name, tags: tagsOf(m.name) })), log)
+      // `free` HAS ALREADY EXCLUDED THEM. A machine with no role is reported
+      // not-free by `availability`, with the reason on it, so the queue and the
+      // window read one answer instead of two rules that can drift apart.
+      const may = ofItsOwnKind(task, free, log)
       const pick = may.findIndex(m => willTake(task, m))
       if (pick < 0) {
         // ---- WHY, AND IT HAS TO BE THE REAL WHY ---------------------------
@@ -336,7 +364,11 @@ async function tick (actions, log) {
         // on it: they go looking for the busy machine, or they add a `test` tag
         // that is already there. So the roleless case is asked FIRST, because it
         // is the one that explains a host where nothing can run at all.
-        const roleless = free.filter(m => !takesQueuedWork({ name: m.name, tags: tagsOf(m.name) }))
+        // FROM THE SAME ANSWER THE WINDOW SHOWS. `free` no longer holds these,
+        // so they are read off the full availability list rather than worked
+        // out again here -- two computations of "can this machine take work" is
+        // how the queue and the panel come to disagree.
+        const roleless = availability(here).filter(m => m.roleless)
 
         if (!may.length && roleless.length) {
           sayWaiting(task.ref, `${task.ref} waits: ${roleless.map(m => m.name).join(', ')} ${roleless.length === 1 ? 'is' : 'are'} free and ${roleless.length === 1 ? 'has' : 'have'} not been told what ${roleless.length === 1 ? 'it is' : 'they are'} for. The queue hands a machine a sign-in and picks which one by the machine's role, so it will not send work to a machine that has not said. Give one the "${task.kind === 'judgement' ? vms.JUDGE : vms.WORKER}" tag with vmTags and this goes straight out.`)
@@ -1528,45 +1560,62 @@ async function meterRun (actions, to, machine, runId, { kind, about, ref }) {
     // copies -- which is the mistake this arrangement has already made twice
     // today, in lentTo and in the announcement.
     try {
-      // ---- THE SENTENCE, NOT THE ENVELOPE AROUND IT --------------------
+      // ---- ONLY A LINE THAT IS ITSELF AN ERROR ------------------------
       //
-      // This took the first 600 characters of any line mentioning auth, which
-      // was right while a worker printed prose and wrong the moment it printed
-      // stream-JSON. What landed on the credential was 600 characters of
-      // `{"type":"assistant","message":{"diagnostics":null,"id":"eb29efff...`
-      // and not one word of why -- the reason was real, and further along the
-      // same line than the truncation reached.
+      // THIS CONDEMNED A WORKING CREDENTIAL THAT HAD JUST SPENT 0.74 USD. A
+      // judge read a README, wrote a report about how a CSV parser handles
+      // quoting, and somewhere in seven thousand characters of perfectly good
+      // prose it used one of the words this was scanning for. The credential was
+      // paused, the judgement was re-queued, and the reading was thrown away.
       //
-      // SO THE LINE IS OPENED FIRST. Claude Code writes one JSON object per
-      // line and the human sentence is inside it, under `content[].text` for a
-      // message and `result`/`error` for the end of a run. Unwrapping first and
-      // matching second means the keyword test is applied to the sentence
-      // rather than to the machinery carrying it.
+      // The fault was searching ALL output for words. It got worse when the
+      // matching was moved onto the unwrapped sentence, because that is exactly
+      // the half a worker writes -- a judge asked to read authentication code
+      // would condemn its own sign-in for describing it accurately.
       //
-      // AND A LINE THAT IS NOT JSON IS USED AS IT IS, because a crash before
-      // the CLI starts printing structure is exactly when this matters most.
-      const sentenceIn = line => {
-        if (!line.startsWith('{')) return line
+      // SO STRUCTURE FIRST, WORDS SECOND. Claude Code says when it has failed:
+      // `is_error`, `is_api_error_message`, an `error` string, or a result whose
+      // subtype is an execution error. A report is none of those, however it is
+      // worded. Only once a line IS an error is it read for what kind.
+      //
+      // A NON-JSON LINE STILL COUNTS, because a crash before the CLI prints any
+      // structure is when this matters most -- but only if it looks fatal, not
+      // merely because it mentions a token.
+      const authTrouble = line => {
+        const says = /failed to authenticate|oauth|invalid_grant|unauthor|api key|credit balance|401/i
+        // NAMED RATHER THAN INLINE: a regex literal in a `return` position reads
+        // as a division to the undeclared-name checker, which then reports the
+        // trailing flag as a bare identifier. That checker has caught two real
+        // startup crashes here, so it is worth not making it cry wolf.
+        const looksFatal = /^(error|fatal)/i
+        if (!line.startsWith('{')) {
+          return looksFatal.test(line) && says.test(line) ? line : null
+        }
         let o = null
-        try { o = JSON.parse(line) } catch { return line }
+        try { o = JSON.parse(line) } catch { return null }
+
+        const errored = o.is_error === true ||
+          o.is_api_error_message === true ||
+          (typeof o.error === 'string' && o.error.trim()) ||
+          (o.error && typeof o.error === 'object') ||
+          o.subtype === 'error_during_execution'
+        if (!errored) return null
+
         const bits = []
         const say = v => { if (typeof v === 'string' && v.trim()) bits.push(v.trim()) }
         say(o.result)
-        say(o.error && (o.error.message || o.error.type))
-        say(o.message && typeof o.message.content === 'string' ? o.message.content : null)
+        say(typeof o.error === 'string' ? o.error : (o.error && (o.error.message || o.error.type)))
         const content = o.message && Array.isArray(o.message.content) ? o.message.content : []
         for (const c of content) say(c && (c.text || c.content))
-        say(o.subtype)
-        // Nothing human in it: say so rather than handing back the envelope,
-        // which is what made the last one unreadable.
-        return bits.length ? bits.join(' ') : ''
+        const said = bits.join(' ')
+        return said && says.test(said) ? said : null
       }
 
       const trouble = String(text).split(String.fromCharCode(10))
         .map(x => x.trim())
         .filter(Boolean)
-        .map(sentenceIn)
-        .filter(x => x && /failed to authenticate|oauth|invalid_grant|unauthor|api key|credit balance|401/i.test(x))
+        .map(authTrouble)
+        .filter(Boolean)
         .slice(0, 3)
         .join(' ')
         .slice(0, 600)
@@ -1810,8 +1859,11 @@ async function adopt (actions, log) {
     to.warn(`#${task.number} was in flight when this restarted; picking it back up`)
     ;(async () => {
       try {
-        const { vms } = await actions.vmList.run({})
-        const vm = vms.find(v => v.name === task.machine)
+        // `here`, not `vms` — see the rename above. This scope only reads one
+        // machine out of the list, so nothing was broken by it yet; the name is
+        // the trap, and leaving one behind is how it gets set again.
+        const here = (await actions.vmList.run({})).vms
+        const vm = here.find(v => v.name === task.machine)
         if (vm && vm.connected) {
           await waitForRun(actions, to, task.machine, task.run)
           await actions.taskProgress.run({ id: task.id }).catch(() => {})

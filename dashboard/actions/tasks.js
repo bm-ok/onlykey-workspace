@@ -1318,9 +1318,14 @@ module.exports = {
       // work that does not need it -- `claude()` will say the same thing far
       // more precisely if it turns out to matter.
       try {
-        await actions.vmCredentialsPut.run({ name })
+        // WHICH SIGN-IN, FROM THE JOB. A judge job wants a judge's identity and
+        // a task job a worker's -- and on a machine tagged as both, nothing else
+        // can answer it. Without this the placement was refused for being
+        // ambiguous and the machine was reported as having no credential at all,
+        // on a run that was about to be given one correctly by the queue.
+        await actions.vmCredentialsPut.run({ name, role: (one && one.kind) === 'judge' ? 'judge' : 'worker' })
       } catch (e) {
-        to.warn(`${name} has no worker credential — a job that starts one will be refused: ${e.message}`)
+        to.warn(`${name} has no ${(one && one.kind) === 'judge' ? 'judge' : 'worker'} credential — a job that starts one will be refused: ${e.message}`)
       }
 
       // Where artifacts go. The guest knows its own token and this app's
