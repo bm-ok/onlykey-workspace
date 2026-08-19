@@ -157,6 +157,9 @@ function all () {
     // WHY IT IS WORTH A ROW AT ALL: `added` says how old the RECORD is and this
     // says how old the SECRET is, and after a rotation those are months apart.
     refreshed: g.refreshed || null,
+    // WHO IT IS, never what it can do. See accountOf.
+    account: g.account || null,
+    plan: g.plan || null,
     lastGiven: g.lastGiven || null,
     lastGivenTo: g.lastGivenTo || null,
     holder: g.holder || null,
@@ -170,9 +173,96 @@ function all () {
 
 const get = name => all().find(g => g.name === name) || null
 
+// ---- FILLING IN WHAT WAS NOT RECORDED AT THE TIME --------------------------
+//
+// The plan is in every sealed token this host holds, including the ones written
+// before anything read it. Recorded once, here, rather than left blank until
+// somebody signs in again -- a card reading "not recorded" about a fact sitting
+// in a file two directories away is a card that makes this app look like it
+// cannot answer a question it can.
+//
+// GUARDED, AND THEN FREE. It does its work once and afterwards is a `some()`
+// over a handful of records, which matters because the caller is reached from a
+// paint function. Nothing is decrypted on a host where every record already
+// says what it is.
+//
+// THE ACCOUNT IS NOT FILLED IN THE SAME WAY and cannot be: it was never in the
+// credential, it was on a machine that has since been rolled back, and inventing
+// it is not available. Those stay null and say so.
+function ensurePlans () {
+  const rows = read()
+  const missing = rows.filter(g => g.plan === undefined && fs.existsSync(fileFor(g.name)))
+  if (!missing.length) return 0
+
+  let done = 0
+  for (const g of rows) {
+    if (g.plan !== undefined) continue
+    let text = null
+    try { text = secret.read(fileFor(g.name)).toString('utf8') } catch { text = null }
+    // `null` where it could not be read, which is a recorded answer -- so this
+    // does not try again on every call for a file that is gone.
+    g.plan = text ? planOf(text) : null
+    done++
+  }
+  write(rows)
+  return done
+}
+
 // ---- adding and removing --------------------------------------------------
 
-function add ({ name, token, from = null, note = null, role = 'worker' }) {
+// ---- WHO A SIGN-IN BELONGS TO ---------------------------------------------
+//
+// NOT IN THE CREDENTIAL, AND NOT DERIVABLE FROM IT. `.credentials.json` holds
+// seven fields -- two tokens, two dates, scopes, plan, rate limit tier -- and
+// none of them names an account. The access token is an opaque `sk-a...` string
+// rather than a JWT, so there is no payload to read either. Looking for the
+// email in the credential is looking in the one place it certainly is not.
+//
+// WHERE IT ACTUALLY IS: Claude Code writes `~/.claude.json` beside the
+// credential, and after a sign-in that file holds the account -- email address,
+// account uuid, organisation. This app has been reading that file for a while,
+// to DELETE it, on the grounds that account details sitting on a machine's disk
+// are a thing this host is not otherwise recording. That reasoning still holds.
+// What was wrong was throwing away the answer on the way past.
+//
+// NON-SECRET, AND KEPT SEPARATELY FOR THAT REASON. An email address is not a
+// credential: it identifies rather than authenticates, it goes in the list that
+// everything reads, and it is the one fact that answers "are these two sign-ins
+// the same account" -- which decides whether two of them can be used at once,
+// because two sign-ins of one account rotate each other's refresh token.
+// WHAT THE ACCOUNT IS BILLED AS, which unlike the email IS in the credential:
+// `claudeAiOauth.subscriptionType`, beside the tokens. So this needs nothing
+// from a machine and is knowable for every sign-in this host has ever held.
+//
+// RECORDED AT WRITE TIME RATHER THAN READ ON DEMAND, exactly as the fingerprint
+// is. The alternative is decrypting a sealed token every time somebody looks at
+// the list -- and the list is drawn by a paint function, so "every time somebody
+// looks" means every few seconds for as long as the window is open.
+const planOf = text => {
+  try {
+    const o = JSON.parse(String(text))
+    const c = o.claudeAiOauth || o
+    return String(c.subscriptionType || '').trim() || null
+  } catch {
+    return null
+  }
+}
+
+const accountOf = raw => {
+  try {
+    const o = JSON.parse(String(raw))
+    const a = o.oauthAccount || o.account || null
+    if (!a) return null
+    const email = String(a.emailAddress || a.email || '').trim() || null
+    const uuid = String(a.accountUuid || a.uuid || '').trim() || null
+    if (!email && !uuid) return null
+    return { email, uuid, organization: String(a.organizationName || '').trim() || null }
+  } catch {
+    return null
+  }
+}
+
+function add ({ name, token, from = null, note = null, role = 'worker', account = null }) {
   if (!okName(name)) {
     throw new Error(`"${name}" is not a name for a guest. Letters, digits, dash, dot and underscore, up to 64 — it is a filename and a label in a list, so it is refused rather than changed into something you would not recognise.`)
   }
@@ -207,6 +297,11 @@ function add ({ name, token, from = null, note = null, role = 'worker' }) {
     from,
     note,
     fingerprint: fingerprint(text),
+    // Whoever this turned out to be, when the sign-in said. Null for every
+    // sign-in made before this was kept, which reads as "not recorded" rather
+    // than as "no account" -- see the card.
+    account: account || null,
+    plan: planOf(text),
     sealed,
     lastGiven: null,
     lastGivenTo: null,
@@ -450,7 +545,10 @@ function backFrom (name, { token } = {}) {
         refused = `"${name}" was handed back a credential with no access token and no refresh token in it — the machine appears to have cleared its own sign-in rather than refreshed it. The working one here was KEPT and nothing was overwritten.`
       } else {
         secret.write(fileFor(name), Buffer.from(String(token), 'utf8'))
-        all[i] = { ...all[i], fingerprint: print, refreshed: new Date().toISOString() }
+        // The plan travels with the token, so it is re-read whenever the token
+        // is replaced -- somebody who changes what they pay for gets a new
+        // credential saying so, and a stale label is worse than none.
+        all[i] = { ...all[i], fingerprint: print, plan: planOf(token), refreshed: new Date().toISOString() }
         rotated = true
       }
     }
@@ -589,4 +687,4 @@ const freeFor = (role, machine = null) =>
 const pausedFor = role => all().filter(g => g.role === role && g.has && paused(g))
 
 module.exports = {
-  roleOf, checked, all, get, add, forget, lentTo, backFrom, token, fingerprint, usable, okName, adoptTheOldOne, whyNotOn, supervisorKey, paused, freeFor, pausedFor, ROOT, fileFor }
+  roleOf, checked, all, get, add, forget, lentTo, backFrom, token, fingerprint, usable, accountOf, planOf, ensurePlans, okName, adoptTheOldOne, whyNotOn, supervisorKey, paused, freeFor, pausedFor, ROOT, fileFor }

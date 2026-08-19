@@ -128,6 +128,17 @@ function identityPanel (g, machines, pane, key = null) {
   const rows = [
     ['name', g.name],
     ['role', pane.lendable ? `${pane.what} — lent to a ${pane.what} machine while it works` : 'supervisor — spent by this host, never lent out'],
+    // WHOSE IT IS, ABOVE THE FINGERPRINT, because a fingerprint tells two
+    // sign-ins apart and this says what they ARE. Kept for sign-ins made since
+    // this was recorded; the ones before it say so rather than reading as an
+    // account with no address.
+    ['signed in as', g.account && g.account.email
+      ? `${g.account.email}${g.account.organization ? ` — ${g.account.organization}` : ''}`
+      : 'not recorded — this one was signed in before the account was kept, and the credential itself does not carry it'],
+    // WHAT IT IS BILLED AS. In the credential rather than on a machine, so this
+    // is known for every sign-in here including the oldest -- and it is the
+    // other half of "whose is this": an account and what that account can do.
+    ['plan', g.plan || 'not recorded — the credential does not say'],
     ['fingerprint', g.fingerprint || 'none recorded'],
     ['added', g.added ? new Date(g.added).toLocaleString() : 'unknown'],
     ['token file', g.has ? 'here, sealed to this Windows account' : 'MISSING — it was removed by hand, or sealed by another account'],

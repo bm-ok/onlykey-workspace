@@ -120,12 +120,38 @@ module.exports = {
         throw new Error(`The code was accepted and the desk on ${on} has no credential to take. The sign-in did not finish — start it again.`)
       }
 
+      // ---- AND WHO THAT TURNED OUT TO BE ---------------------------------
+      //
+      // READ HERE BECAUSE HERE IS THE ONLY PLACE IT EXISTS. The desk is cleared
+      // a few lines below -- deliberately, and `.claude.json` goes with it --
+      // so this is the last moment anything on this host can find out which
+      // account was just signed in. Read afterwards it is gone; read from the
+      // credential it was never there.
+      //
+      // BEST EFFORT, AND NEVER A REASON TO FAIL A SIGN-IN. A credential that
+      // works and does not say whose it is beats no credential: this is a label,
+      // and the token is the thing somebody was waiting for.
+      //
+      // `quiet` for the same reason the credential above is. This file is not a
+      // credential, but it is somebody's account sitting in a live log, and
+      // nothing here needs it in there -- what is kept is the three fields
+      // accountOf takes and no more.
+      let account = null
+      try {
+        const who = await channel.run(on,
+          `sudo -n -u ${DESK} -H bash -c 'base64 -w0 "$HOME/.claude.json" 2>/dev/null || echo OKC_NO_ACCOUNT'`,
+          { what: 'reading which account signed in', timeout: 30000, quiet: true })
+        const raw = String(who.output || '').split('\n').map(x => x.trim()).filter(Boolean).pop() || ''
+        if (raw && raw !== 'OKC_NO_ACCOUNT') account = guests.accountOf(Buffer.from(raw, 'base64').toString('utf8'))
+      } catch { /* a sign-in without a name on it is still a sign-in */ }
+
       const made = guests.add({
         name: called,
         token: Buffer.from(b64, 'base64').toString('utf8'),
         role: kind,
         from: `signed in at the desk on ${on}`,
-        note
+        note,
+        account
       })
 
       // AND THE DESK IS LEFT EMPTY. It exists to hold a conversation, not a
@@ -148,7 +174,21 @@ module.exports = {
         `sudo -n -u ${DESK} -H bash -c 'rm -rf "$HOME/.claude" "$HOME/.claude.json" "$HOME/.okc-auth"' && echo okc-desk-clear`,
         { what: 'clearing the sign-in desk', timeout: 60000 }).catch(e => log.on('vm', on).warn(`the desk was not cleared: ${e.message}`))
 
-      log.on('keys').good(`a Claude ${kind} called "${called}" was signed in at the desk on ${on} — ${made.fingerprint}`)
+      // THE EMAIL IN THE RECORD, because "which account did I just sign in" is
+      // the question somebody asks about a list of these, and the fingerprint
+      // answers a different one.
+      log.on('keys').good(`a Claude ${kind} called "${called}" was signed in at the desk on ${on}${account && account.email ? ` as ${account.email}` : ''} — ${made.fingerprint}`)
+
+      // AND WHETHER THIS HOST NOW HOLDS THE SAME ACCOUNT TWICE, which is not a
+      // refusal and is worth knowing at the moment it becomes true: two sign-ins
+      // of one Claude account rotate each other's refresh token, so using both
+      // is how one of them stops working for reasons nothing here can see.
+      if (account && account.email) {
+        const twins = guests.all().filter(g => g.name !== called && g.account && g.account.email === account.email)
+        if (twins.length) {
+          log.on('keys').warn(`"${called}" is the same Claude account as ${twins.map(g => `"${g.name}"`).join(', ')} (${account.email}). Two sign-ins of one account refresh the same token, so using both means whichever ran last invalidates the other — keep one per account, or expect one of them to start reporting itself signed out.`)
+        }
+      }
 
       // A SUPERVISOR SIGN-IN GOES STRAIGHT ONTO THE MACHINE THAT ASKED, because
       // that is the only place it may go and the only reason it exists. A
@@ -682,12 +722,42 @@ module.exports = {
       // IN THE SAME ROUND TRIP AS THE HANDOVER, which is why it is passed as
       // `andThen` rather than sent on its own: the sealing costs one extra trip
       // already, and this call runs before every queued dispatch.
+      // ---- AND WHO THE MACHINE IS WORKING AS -----------------------------
+      //
+      // SENT DOWN WITH THE FLAG, in the same file and the same round trip.
+      // `~/.claude.json` is where Claude Code keeps the account, and a machine
+      // rolled back to base has none -- so a worker knows it is authenticated
+      // and not who as. That gap is exactly the one that made "claude doesn't
+      // work with the auth key" so hard to read: two answers to one question,
+      // from the same program, because they read different files.
+      //
+      // WHAT GOES DOWN IS WHAT CAME OFF THE DESK: an email address, an account
+      // uuid, an organisation name. Identity, not authority -- nothing here lets
+      // a machine do anything it could not do with the token alone, and the
+      // token is already on it by this point.
+      //
+      // NULL FOR EVERY SIGN-IN MADE BEFORE THIS WAS KEPT, and then this is
+      // simply not sent. A machine that is not told stays exactly as it was.
+      // `chosen` rather than `wanted`, which is null on the path that falls back
+      // to the single credential this host used to keep -- and a null there
+      // would throw on the line that reads its name, inside the call that hands
+      // every queued task its identity.
+      const who = chosen ? ((guests.get(chosen) || {}).account || null) : null
+      const sendWho = who && (who.email || who.uuid)
+        ? `j.oauthAccount = Object.assign({}, j.oauthAccount, ${JSON.stringify({
+            emailAddress: who.email || undefined,
+            accountUuid: who.uuid || undefined,
+            organizationName: who.organization || undefined
+          })})`
+        : '/* this host does not know whose sign-in this is */'
+
       const alsoDo = `node - <<'OKC_READY_EOF'
 const fs = require('fs'), os = require('os')
 const p = os.homedir() + '/.claude.json'
 let j = {}
 try { j = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { /* absent or unreadable: one key is the whole file */ }
 j.hasCompletedOnboarding = true
+${sendWho}
 fs.writeFileSync(p, JSON.stringify(j))
 OKC_READY_EOF
 # AND THEN ASKED WHETHER IT ACTUALLY WORKS, in the same breath.

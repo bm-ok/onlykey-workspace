@@ -28,6 +28,13 @@ module.exports = {
     // The two panes ask for one role each. See core/guests.js.
     takes: ['role'],
     run: ({ role = null } = {}) => {
+      // ONCE, AND THEN NEVER AGAIN. See ensurePlans: it writes the plan into any
+      // record made before that was kept and is a cheap no-op afterwards. Here
+      // because this is the one door every list goes through, and a fact filled
+      // in on the way out cannot be forgotten by a caller that did not know to
+      // ask for it.
+      try { guests.ensurePlans() } catch { /* a missing label is not worth failing a list for */ }
+
       const all = role ? guests.all().filter(g => g.role === role) : guests.all()
       const sups = all.filter(g => g.role === 'supervisor').length
       return {
