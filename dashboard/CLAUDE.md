@@ -60,10 +60,17 @@ shown with a single-quoted string, which is where bash does no escape processing
 whatever, so it cannot be the culprit. Two typed arrive as one; four arrive as
 two; a lone one survives.
 
-**So double them.** A JavaScript string holding a Windows path, or a regex whose
-subject IS the backslash character, needs four typed for every two wanted.
-Ordinary escapes like a digit class need nothing. Writing the file through a
-helper does not help — the loss happens before anything on this machine sees it.
+**Write single backslashes.** They survive every path. Doubling is right only
+when the FILE must hold two adjacent backslash characters — a JavaScript string
+literal for a Windows path — and then four typed give the two wanted. Doubling
+an escape for a downstream interpreter is the thing that breaks: the doubling is
+destroyed in transit and the interpreter reads what survives as live. Writing
+through a byte-exact helper does not help; the loss is upstream of everything on
+this machine.
+
+**And the failure is usually silent** — a corrupted escape lands as a real
+control character, the file still parses, and a regex quietly stops matching. To
+find one, scan for bytes below 0x20 other than tab, LF and CR.
 
 **Use Edit or Write when the passage is ABOUT escaping.** This one ate itself
 three times in a single session: twice here and once in a memory file, each time
