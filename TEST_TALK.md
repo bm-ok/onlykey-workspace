@@ -26,6 +26,36 @@
 >
 > Anything below is kept as it was written. Re-run before believing it.
 
+> **AND THERE WAS A SECOND PIPE FAULT, FOUND 19 AUGUST — so results measured
+> between the two fixes are suspect as well.**
+>
+> `whatsNew` had grown to 102,179 characters and the chat feed was 82,590 of
+> them. The feed capped at two hundred MESSAGES and nothing else, which is a
+> sensible number of things to read and says nothing about how much text they
+> are — and the supervisor writes in paragraphs. The whole reply went past what
+> the reading end accepts, so the supervisor could not read the chat AT ALL.
+>
+> It said so on nine consecutive wakings, filed it as T11, and carried on
+> answering from the board — competently, which is what made it survivable and
+> what made it invisible. Every message a person sent it in that window went
+> unread, and the one thing it needed to say about that was the one thing it
+> could not be told.
+>
+> Fixed by bounding the feed by size as well as count, newest kept, and SAYING
+> how many were dropped: 102,179 characters down to 34,839.
+>
+> WHAT THAT MEANS FOR THIS DOCUMENT. The first fix made the message arrive; this
+> one made it arrive READABLE. Both faults were in the same pipe and neither was
+> visible from the supervisor's answers, which were always plausible. So the
+> honest position is that **nothing below has ever been measured through a pipe
+> known to be open at both ends** — including the re-runs done after the first
+> fix.
+>
+> THE PATTERN WORTH CARRYING, because it has now happened twice: when a
+> supervisor answers something other than what was asked, suspect the delivery
+> before the model. Both times the model was doing exactly the right thing with
+> what it could see.
+
 Each of these costs one waking — the meter says ~$0.83–0.98 a turn — so pick rather than run them all. Ordered by what they'd teach per pound.
 
 # 1. The harvest rule — no machine, tests the thing I just built
