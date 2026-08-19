@@ -262,24 +262,7 @@ function paintCutDetail (c) {
       // fork this host pushes to, INTO a repository somebody else owns — on this
       // host those are two different accounts, and which one receives it is the
       // single fact somebody most wants confirmed before publishing anything.
-      composed && composed.can && composed.where.length
-        ? el('table', { className: 'kv' },
-            ...composed.where.map(w => el('tr', {},
-              el('th', { textContent: w.repo }),
-              el('td', { className: 'mono' },
-                // THE WHOLE ADDRESS ON BOTH SIDES. The owner is the half that
-                // matters and the half that looks alike: this host pushes to
-                // bm-sandbox-c and opens into bm-sandbox-b, which differ by one
-                // character in the middle of a word.
-                el('div', {},
-                  el('span', { className: 'muted', textContent: 'push to  ' }),
-                  el('span', { textContent: w.fromUrl || w.from || "this host's fork" }),
-                  el('span', { className: 'muted', textContent: `  as "${w.branch}", ${w.ahead} commit${w.ahead === 1 ? '' : 's'}` })),
-                el('div', {},
-                  el('span', { className: 'muted', textContent: 'open into  ' }),
-                  el('span', { textContent: w.intoUrl || w.into || 'the target' }),
-                  el('span', { className: 'muted', textContent: `  on "${w.base}"` }))))))
-        : null,
+      composed && composed.can ? whereTable(composed.where) : null,
 
       el('div', { className: 'row' },
         // THE ONE ACT THIS SCREEN CAN DO ABOUT A DRAFT, and it is deliberately a
@@ -745,37 +728,60 @@ async function paintTemplatesNow () {
 // rather than from the editor — a draft on this screen is a thing somebody came
 // here to send, and making them open another tab to press it is the reason this
 // was not noticeable in the first place.
+// ---- WHERE IT WOULD GO ----------------------------------------------------
+//
+// ONE RENDERER, TWO PLACES. This is drawn on the panel and again in the dialog
+// that asks whether to press, and those must not be two descriptions of one
+// fact -- the dialog's own attempt was written three times and was wrong in a
+// different way each time.
+//
+// IN THE ORDER THE ACTS HAPPEN. The branch is pushed to a fork first and the
+// pull request is opened second, so `push` is the top line. It read the other
+// way round, which describes the same events backwards and made the fork -- the
+// half that is this host's own doing -- look like an afterthought.
+//
+// THE WHOLE ADDRESS ON BOTH SIDES. This host pushes to bm-sandbox-c and opens
+// into bm-sandbox-b: one character apart, in the middle of a word, and which of
+// them receives this is the single thing somebody is checking before pressing.
+// A fragment asks them to spot the difference; a full address does not.
+function whereTable (where) {
+  if (!where || !where.length) return null
+  return el('table', { className: 'kv where' },
+    ...where.map(w => el('tr', {},
+      el('th', { textContent: w.repo }),
+      el('td', {},
+        // THE ADDRESS AND THE BRANCH ON SEPARATE LINES. Both are read character
+        // by character and neither survives being broken: on one line the
+        // branch wrapped at its own hyphen, as "fix/csvstat- / empty-problems-
+        // key", which is the shape of a typo rather than a name.
+        el('div', {},
+          el('span', { className: 'verb', textContent: 'push' }),
+          el('span', { className: 'mono', textContent: w.fromUrl || w.from || "this host's fork" })),
+        el('div', { className: 'sub' },
+          el('span', { className: 'mono', textContent: w.branch }),
+          el('span', { className: 'muted', textContent: ` · ${w.ahead} commit${w.ahead === 1 ? '' : 's'}` })),
+        el('div', {},
+          el('span', { className: 'verb', textContent: 'open' }),
+          el('span', { className: 'mono', textContent: w.intoUrl || w.into || 'the target' })),
+        el('div', { className: 'sub' },
+          el('span', { className: 'mono', textContent: w.base }))))))
+}
+
 function sendDraft (c) {
   const said = c.said || {}
-  // THE DESTINATIONS, IN THE DIALOG AS WELL. The panel behind it says the same,
-  // and this is the last thing read before anything is published — a person who
-  // scrolled past it on the screen should not have to trust their memory of it
-  // at the moment of pressing.
-  const where = ((previewOf.get(key(c)) || {}).where || [])
-    // TWO LINES PER REPOSITORY, and a full address on each. `ask` draws every
-    // `plain` string as its own list item with textContent, so newlines inside
-    // one collapse -- which ran the destination together as
-    // "bm-sandbox-b/local-repo-cversion2" and made the one fact somebody is
-    // checking unreadable at the moment they check it.
-    //
-    // AND THE WHOLE URL, because "bm-sandbox-b" and "bm-sandbox-c" differ by
-    // one character in the middle of a word. Which of them receives this is the
-    // thing being checked; a fragment asks somebody to spot the difference and
-    // a full address does not.
-    .map(w => `${w.repo} — INTO ${w.intoUrl || w.into || 'the target'} on branch "${w.base}"`)
-  const pushing = ((previewOf.get(key(c)) || {}).where || [])
-    .map(w => `${w.repo} — pushing ${w.ahead} commit${w.ahead === 1 ? '' : 's'} to ${w.fromUrl || w.from || 'this fork'} as "${w.branch}"`)
+  // THE SAME TABLE THE PANEL DRAWS, rather than a second telling of it. The
+  // dialog is the last thing read before anything is published, and somebody
+  // who scrolled past the destinations on the screen should not have to trust
+  // their memory of them at the moment of pressing.
+  const going = ((previewOf.get(key(c)) || {}).where || [])
 
   ask({
     title: `Send "${c.source}" into "${c.target}"?`,
     plain: [
-      where.length
-        ? `${where.length} pull request${where.length === 1 ? '' : 's'} would be opened:`
-        : 'One pull request in each repository that carries something, tracked together as one cut.',
-      ...where,
-      ...pushing,
-      'Each branch is pushed onward from this host first. No machine is ever handed the token.',
-      said.title ? `It goes out as: "${said.title}"` : 'It has no title of its own, so the template supplies one.'
+      whereTable(going) ||
+        'One pull request in each repository that carries something, tracked together as one cut.',
+      said.title ? `Titled "${said.title}"` : 'It has no title of its own, so the template supplies one.',
+      'Nothing is pushed from a machine. This host holds the token and does both steps itself.'
     ],
     // GITHUB'S KIND OF DRAFT, WHICH IS NOT THIS APP'S KIND. This app's draft has
     // not been sent; GitHub's has been opened and is marked not ready for

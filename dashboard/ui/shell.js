@@ -335,7 +335,17 @@ function ask ({ title, plain, cost, link, fields = [], confirm, danger, onYes, o
     plain && plain.length
       ? el('div', {},
           el('div', { className: 'dlg-heading', textContent: 'What this does' }),
-          el('ul', {}, ...plain.map(p => el('li', { textContent: p }))))
+          // A NODE IS ALLOWED WHERE A SENTENCE IS. Some of what a dialog has to
+          // say is a table -- two addresses and two branch names per repository,
+          // which is a grid however it is worded. Written as strings it was
+          // mangled three times running: newlines inside one `plain` entry
+          // collapse, so a destination ran together as one word; split across
+          // entries, the repository name repeated on every line and the order
+          // read backwards. The screen behind the dialog already draws it
+          // properly, and this lets the dialog use THAT rather than a second
+          // attempt at saying the same thing in prose.
+          el('ul', {}, ...plain.filter(Boolean).map(p =>
+            p instanceof Node ? el('li', { className: 'wide' }, p) : el('li', { textContent: p }))))
       : null,
     cost ? el('div', { className: 'dlg-cost' }, el('strong', { textContent: 'Cannot be undone: ' }), cost) : null,
     link ? externalLink(link) : null)

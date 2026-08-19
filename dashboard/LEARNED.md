@@ -1315,3 +1315,34 @@ machines sat out of the pool for a day -- not broken, correctly never picked up,
 and indistinguishable from a queue that had gone quiet. That one was not a wrong
 answer, it was a right answer nobody was told. **Whoever borrows something
 returns it, and a run ends many more ways than "everything passed".**
+
+## A dialog was asked to say in prose what it should have been handed as a table
+
+`ask()` drew each `plain` entry as a list item with `textContent`, so anything
+that was really a grid had to be flattened into sentences first. The one that
+mattered is where a pull request would go: a branch pushed to a fork, a request
+opened into somebody else's repository, four values per repository and two of
+the addresses one character apart. It was written three times and was wrong in a
+different way each time.
+
+* **As one string with newlines in it**, which collapse — so the destination ran
+  together and read as `bm-sandbox-b/local-repo-cversion2`.
+* **As one entry per fact**, which repeated the repository name on every line
+  and listed the pull request before the push that has to happen first: the
+  right events, described backwards.
+* **As full addresses**, which was the correct content and had nowhere to break
+  inside a 560px card, so it overflowed.
+
+THE FIX WAS NOT A FOURTH WORDING. The panel behind the dialog already drew this
+properly as a table. A `plain` entry may now be a node, and both call one
+renderer — so there is one description of where a thing goes, not two that can
+disagree. **When a dialog keeps needing to be reworded, check whether what it is
+trying to say is a table.**
+
+AND UNDERNEATH IT, THE THING THAT ACTUALLY LOOKED BROKEN: the checkbox label
+wrapped into "Open them as / drafts on / GitHub" down three lines. The label was
+fine. `.dlg input` sets `width: 100%` with padding and a margin, to dress a text
+field — and a checkbox is an input, so it drew as a wide empty rectangle with a
+small square in it and squeezed everything beside it. **A rule that styles
+"every input" is a rule about text fields; the tick and the radio are wearing it
+too.**

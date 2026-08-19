@@ -413,6 +413,19 @@ h2:first-child { margin-top: 0; }
   font-size: 12px;
   margin-bottom: 10px;
 }
+/* A TICK IS NOT A BOX TO TYPE IN. The rule above dresses every input in a
+   dialog as a text field -- full width, padded, a margin beneath it -- and a
+   checkbox was taking it: it drew as a wide empty rectangle with a small square
+   inside, and the label beside it was squeezed into "Open them as / drafts on /
+   GitHub" down three lines. The label looked like the broken thing; the box
+   next to it was. */
+.dlg input[type="checkbox"], .form input[type="checkbox"] {
+  width: auto;
+  flex: none;
+  margin: 0;
+  padding: 0;
+}
+label.inline > span { flex: 1 1 auto; }
 .dlg label, .form label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
 
 /* ---------- layout ---------- */
@@ -1227,3 +1240,35 @@ table.kv td .ok { color: var(--ok); }
    is a fenced block with a horizontal scrollbar. */
 .msg:has(iframe) { width: 92%; max-width: 92%; }
 .msg-body:has(iframe) { width: 100%; }
+
+/* ---- WHERE A PULL REQUEST WOULD GO ---------------------------------------
+   Two acts per repository -- push a branch to a fork, open a request into
+   somebody else's repository -- and the addresses differ by one character in
+   the middle of a word. The verb is a column of its own so the two addresses
+   line up under each other and can be read as a pair, which is the only way the
+   difference between them is visible at a glance. */
+table.kv.where td { padding: 4px 0 8px; line-height: 1.5; }
+table.kv.where th { padding-top: 4px; color: var(--text); }
+.verb {
+  display: inline-block;
+  width: 42px;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+/* A DIALOG LIST ITEM THAT IS A BUILT THING rather than a sentence: no bullet,
+   and the full width, because what goes in one is a table. */
+.dlg li.wide { list-style: none; margin-left: -18px; }
+/* A URL IN A DIALOG HAS NOWHERE TO BREAK. Left to itself it runs past the edge
+   of a 560px card, and the overflow squeezed the checkbox beneath it until its
+   label wrapped into three words on three lines. */
+/* BREAK ANYWHERE ONLY IN THE ADDRESS. Applied to the whole item it broke the
+   branch name too -- "fix/csvstat- / empty-problems-key" -- when there was a
+   space in front of it to break at instead. */
+.dlg li { overflow-wrap: break-word; }
+table.kv.where .mono { overflow-wrap: anywhere; }
+/* The branch, under the address it belongs to and indented past the verb, so
+   the four lines read as two pairs rather than four facts. */
+table.kv.where .sub { padding-left: 42px; margin-bottom: 4px; }
+table.kv.where .sub:last-child { margin-bottom: 0; }
