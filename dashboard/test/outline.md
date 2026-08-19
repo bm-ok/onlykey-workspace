@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 61 tests, 279 checks, 21 of them drafts -->
+<!-- 12 suites, 61 tests, 280 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -260,6 +260,7 @@ The second door a person has to open, and it is deliberately not beside the
   1. the rule knows a credential from the shape of one
   2. and a machine that clears its sign-in does not take the host copy with it
   3. and a real rotation still comes home
+  4. and a sign-in that failed is never CHOSEN, however many are kept
 
 # 05 — the machines
 

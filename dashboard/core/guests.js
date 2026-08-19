@@ -713,14 +713,24 @@ function supervisorKey () {
 // counted separately and said differently, rather than collapsed into "none".
 const paused = g => !!(g.lastCheck && g.lastCheck.ready === false)
 
+// WHICH OF A GIVEN LIST COULD GO TO A MACHINE OF THIS ROLE RIGHT NOW.
+//
+// TAKES THE ROWS RATHER THAN READING THEM, so the rule can be asked about a list
+// somebody wrote down. The alternative for a drill is to add real sign-ins to
+// this host to see how they are treated -- and a throwaway worker sign-in
+// carrying an invented token is one the QUEUE can pick up fifteen seconds later
+// and hand to a machine. The decision is separated from the doing for exactly
+// that reason; see how `stranded` and `outOfTouchTooLong` are arranged.
+const choosable = (rows, role, machine = null) =>
+  (rows || []).filter(g => g.role === role && g.has && !paused(g) && (!g.holder || g.holder === machine))
+
 // The ones that could go to a machine of this role right now. `machine` names a
 // machine already holding one, which is not a reason to refuse it its own.
-const freeFor = (role, machine = null) =>
-  all().filter(g => g.role === role && g.has && !paused(g) && (!g.holder || g.holder === machine))
+const freeFor = (role, machine = null) => choosable(all(), role, machine)
 
 // The ones that would be free but for having failed. Named so a refusal can say
 // WHICH sign-in to replace rather than that there is none.
 const pausedFor = role => all().filter(g => g.role === role && g.has && paused(g))
 
 module.exports = {
-  roleOf, checked, all, get, add, forget, lentTo, backFrom, token, fingerprint, usable, accountOf, planOf, ensurePlans, noteAccount, okName, adoptTheOldOne, whyNotOn, supervisorKey, paused, freeFor, pausedFor, ROOT, fileFor }
+  roleOf, checked, all, get, add, forget, lentTo, backFrom, token, fingerprint, usable, accountOf, planOf, ensurePlans, noteAccount, choosable, okName, adoptTheOldOne, whyNotOn, supervisorKey, paused, freeFor, pausedFor, ROOT, fileFor }

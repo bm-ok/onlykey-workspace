@@ -159,6 +159,27 @@ module.exports = {
       vms.get(machine)
 
       if (!guest.has) throw new Error(`"${name}" has no token file any more. It was removed by hand, or sealed by another account.`)
+
+      // ---- A PAUSED SIGN-IN IS LENT, AND SAID OUT LOUD --------------------
+      //
+      // NOT REFUSED, DELIBERATELY. A sign-in that failed on a machine is skipped
+      // by everything that CHOOSES one -- the queue will not spend a machine on
+      // it, and vmCredentialsPut passes over it -- and that is where the flag
+      // belongs, because those are the paths where nobody is watching.
+      //
+      // This one is somebody naming it. A credential known to be dead is a
+      // useful thing to keep and move around on purpose: it is the only way to
+      // exercise what happens to work that cannot be given an identity without
+      // breaking a working credential to arrange it. Refusing here would take
+      // that away to prevent a mistake the automatic paths already prevent.
+      //
+      // SO IT IS ANNOUNCED INSTEAD, which serves both readings: somebody testing
+      // with it sees their intent confirmed, and somebody who reached for the
+      // wrong name finds out now rather than from a worker reporting itself
+      // signed out four minutes into a run.
+      if (guests.paused(guest)) {
+        log.on('keys').warn(`"${name}" is being lent to ${machine} and it is a sign-in that has already failed on a machine — ${(guest.lastCheck && guest.lastCheck.on) || 'a machine'} took it and the worker reported itself signed out. Nothing that CHOOSES a sign-in would pick this one; lending it by name is allowed on purpose, so this is a test unless it was a mistake.`)
+      }
       if (!channel.connected(machine)) throw new Error(`"${machine}" is not dialled in. Start it and wait for it to connect.`)
 
       // ONE MACHINE AT A TIME, which is the whole reason this list exists. A

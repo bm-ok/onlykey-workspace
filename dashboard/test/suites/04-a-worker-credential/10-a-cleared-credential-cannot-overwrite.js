@@ -131,6 +131,55 @@ it('and a real rotation still comes home', ({ assert, state, log }) => {
   log(`rotated ${before} to ${guests.get(WHO).fingerprint}, and the change is dated`)
 })
 
+it('and a sign-in that failed is never CHOSEN, however many are kept', ({ assert, log }) => {
+  // THE FLAG DOING ITS JOB, ASKED PERMANENTLY. The drill next door walks this on
+  // a host that has no working sign-in at all, so it goes quiet the moment one
+  // is added -- and a dead key is worth KEEPING as a fixture: it is the only way
+  // to exercise what happens to work that cannot be given an identity, without
+  // breaking a working credential to arrange it.
+  //
+  // So the interesting arrangement is not "everything is paused". It is a host
+  // holding a dead one and a good one at once, which is the ordinary state after
+  // somebody replaces a key and keeps the old one, and where being chosen by
+  // accident would actually cost a run.
+  //
+  // ASKED OF A LIST THIS FILE WRITES DOWN. Adding real sign-ins to find out how
+  // they are treated means a throwaway with an invented token sitting in the
+  // list, and the queue picks one up fifteen seconds later.
+  const failed = at => ({ ready: false, on: 'a-machine', at: at || '2026-01-01T00:00:00.000Z' })
+  const rows = [
+    { name: 'good', role: 'worker', has: true, holder: null, lastCheck: null },
+    { name: 'dead', role: 'worker', has: true, holder: null, lastCheck: failed() },
+    { name: 'out', role: 'worker', has: true, holder: 'someone-else', lastCheck: null },
+    { name: 'gone', role: 'worker', has: false, holder: null, lastCheck: null },
+    { name: 'a-judge', role: 'judge', has: true, holder: null, lastCheck: null }
+  ]
+
+  const picked = guests.choosable(rows, 'worker').map(g => g.name)
+  assert.equal(picked.join(','), 'good',
+    `choosing a worker sign-in offered [${picked.join(', ')}] — it must offer the one that has not failed, is not out on another machine, and still has a token`)
+
+  // AND THE ORDER OF THE LIST MUST NOT DECIDE IT. A dead one first was how one
+  // could starve a host that had a working sign-in all along: picked because it
+  // was first, failed minutes later, and picked again next time.
+  const backwards = guests.choosable([...rows].reverse(), 'worker').map(g => g.name)
+  assert.equal(backwards.join(','), 'good', `reversing the list changed which sign-in is chosen: [${backwards.join(', ')}]`)
+
+  // A MACHINE IS NOT REFUSED THE ONE IT IS ALREADY HOLDING, which is what the
+  // second argument is for -- otherwise handing a machine its own credential
+  // again reads as "every sign-in is out".
+  const its = guests.choosable(rows, 'worker', 'someone-else').map(g => g.name)
+  assert.ok(its.includes('out'), `a machine was refused the sign-in it is already holding: [${its.join(', ')}]`)
+
+  // AND NOTHING AT ALL WHEN THE ONLY ONE OF THAT ROLE HAS FAILED, which is the
+  // state this host is in and the reason work waits rather than being given a
+  // credential known not to work.
+  const onlyDead = guests.choosable([{ name: 'dead', role: 'worker', has: true, holder: null, lastCheck: failed() }], 'worker')
+  assert.ok(!onlyDead.length, 'a sign-in that has already failed was offered as the only candidate')
+
+  log('a failed sign-in is never chosen, whatever order it is in and however many others are kept')
+})
+
 cleanup(({ state }) => {
   // A THROWAWAY THROWN AWAY. It holds an invented token and nothing else, and
   // leaving it would put a sign-in in the list that no machine can ever use.
