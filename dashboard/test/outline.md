@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 61 tests, 282 checks, 21 of them drafts -->
+<!-- 12 suites, 62 tests, 287 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -263,6 +263,14 @@ The second door a person has to open, and it is deliberately not beside the
   4. and a rotation is dated, while an unchanged token is not
   5. and what this host holds is consistent with what it recorded
   6. and a sign-in that failed is never CHOSEN, however many are kept
+
+## 11 — what a real run does to the key
+
+  1. this host can sign a worker in, and has a machine to do it on
+  2. and what it holds before the run is written down
+  3. a task is written and queued, and nothing here touches it again
+  4. the queue runs it, and gives the sign-in back
+  5. and the key came home whole — rotated or not
 
 # 05 — the machines
 
