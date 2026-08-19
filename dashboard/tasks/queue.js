@@ -102,13 +102,19 @@ const stop = () => { if (timer) { clearInterval(timer); timer = null } }
 // can take it" look identical from outside and want opposite responses.
 function availability (vms) {
   return vms.map(v => {
+    // WHAT IT MAY DO, CARRIED ON EVERY ANSWER. Added only to the last two
+    // returns at first, so a machine that was busy — or claiming a branch, or
+    // mid-install — came back with no roles on it and vanished from the panel
+    // that lists the pool. A machine does not stop being a worker because it is
+    // busy being one.
+    const kinds = kindsOf(v)
     // BORROWED BY A PERSON, which is not the same as kept back. Kept back is a
     // standing decision about a machine; borrowed is somebody using it right
     // now -- signing a worker in, or sitting in it with an editor open -- and it
     // ends when they say so. Checked first because it is the most specific and
     // the most temporary: a machine somebody is inside is the one the queue must
     // not roll back, whatever else is true of it.
-    if (v.borrowed) return { name: v.name, free: false, why: `borrowed — ${v.borrowed.why || 'somebody is using it'}` }
+    if (v.borrowed) return { name: v.name, kinds, free: false, why: `borrowed — ${v.borrowed.why || 'somebody is using it'}` }
 
     // A SUPERVISOR IS NOT IN THE POOL AT ALL, and this is not a preference.
     //
@@ -121,17 +127,17 @@ function availability (vms) {
     // Checked before `forTasks`, which is a decision that can be changed: this
     // one cannot, and reporting it as "kept back" would suggest a button exists.
     if ((v.tags || []).some(t => String(t).toLowerCase() === SUPERVISOR)) {
-      return { name: v.name, free: false, why: 'is a supervisor machine, so it is never given task work' }
+      return { name: v.name, kinds, free: false, why: 'is a supervisor machine, so it is never given task work' }
     }
 
     // A decision, checked before any of the facts. Someone has said keep this
     // one back, and that outranks it merely looking idle -- which is exactly
     // what a machine somebody is about to use looks like.
-    if (v.forTasks === false) return { name: v.name, free: false, why: 'is kept back from the queue' }
-    if (busyWith.has(v.name)) return { name: v.name, free: false, why: `doing ${busyWith.get(v.name)}` }
-    if (!v.baseSnapshot) return { name: v.name, free: false, why: 'has no base snapshot to come back to, so it cannot be made clean' }
-    if (v.branch) return { name: v.name, free: false, why: `still claims ${v.branch}` }
-    if (v.stage && v.stage === 'installing') return { name: v.name, free: false, why: 'is being installed' }
+    if (v.forTasks === false) return { name: v.name, kinds, free: false, why: 'is kept back from the queue' }
+    if (busyWith.has(v.name)) return { name: v.name, kinds, free: false, why: `doing ${busyWith.get(v.name)}` }
+    if (!v.baseSnapshot) return { name: v.name, kinds, free: false, why: 'has no base snapshot to come back to, so it cannot be made clean' }
+    if (v.branch) return { name: v.name, kinds, free: false, why: `still claims ${v.branch}` }
+    if (v.stage && v.stage === 'installing') return { name: v.name, kinds, free: false, why: 'is being installed' }
 
     // ---- AND WHETHER IT HAS SAID WHAT IT IS FOR --------------------------
     //
@@ -146,7 +152,6 @@ function availability (vms) {
     //
     // AND THE REASON CARRIES THE FIX, because "not free" about a machine
     // somebody just built is a dead end without the two words that solve it.
-    const kinds = kindsOf(v)
     if (!kinds.length) {
       return {
         name: v.name,

@@ -1083,18 +1083,31 @@
     <div class="sync-head">
       <h2>Queue <span class="muted" id="queue-context"></span></h2>
     </div>
+    <!-- THE RULE, UNDER THE TITLE. It sat beneath the machines panel, where it
+         read as a footnote about machines rather than as the thing that decides
+         what goes out next. It is about the QUEUE, so it belongs under the
+         queue's own heading and above both columns. -->
+    <p class="note" id="queue-order"></p>
     <div class="cols">
       <div class="col">
         <h2>Waiting</h2>
         <div id="queue-waiting" class="stack"></div>
+        <!-- AND WHAT HAS ALREADY GONE THROUGH. A queue with nothing in it is
+             indistinguishable from a queue nothing has ever used, and the two
+             want very different responses from somebody looking at it. -->
+        <h2>History</h2>
+        <div id="queue-history" class="stack"></div>
       </div>
       <div class="col">
         <h2>Machines</h2>
-        <!-- Every machine and why each cannot take work, rather than only the
-             free ones: "why has nothing picked this up" is the question this
-             screen exists to answer. -->
-        <div id="queue-machines" class="panel"></div>
-        <p class="note" id="queue-order"></p>
+        <!-- ONLY THE ONES THAT CAN TAKE WORK. This listed every machine with a
+             reason beside each, which answered "why has nothing picked this up"
+             and turned into a wall of red on a host where most machines are not
+             for the queue at all — a supervisor never is, and one without a role
+             is somebody's to label. What is left is the pool, as cards; the
+             machines that are missing from it are accounted for underneath. -->
+        <div id="queue-machines" class="stack"></div>
+        <p class="note" id="queue-machines-note"></p>
       </div>
     </div>
   </section>

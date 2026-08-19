@@ -85,9 +85,64 @@ module.exports = {
 
       const waiting = queue.order([...toJudge, ...toDo])
 
+      // ---- AND WHAT HAS ALREADY BEEN THROUGH -----------------------------
+      //
+      // A QUEUE WITH NOTHING IN IT LOOKS THE SAME AS ONE NOTHING HAS EVER USED,
+      // and those want opposite responses: one is a host keeping up, the other
+      // is a host where something is wrong upstream and no work is arriving.
+      // "Nothing is waiting and nothing is running" was the whole screen on an
+      // idle host, and it said neither.
+      //
+      // FROM THE SAME TWO STORES the waiting list is read from, and ended by the
+      // same words the rest of this app uses. A run that never started is in
+      // here too -- it went through the queue, and "it was given a machine and
+      // produced nothing" is exactly the history somebody is looking for.
+      const ENDED = new Set(['done', 'accepted', 'rejected', 'failed'])
+      const when = r => r.read || r.updated || r.created || ''
+
+      const past = [
+        ...(judging.read() || []).filter(j => ENDED.has(j.state)).map(j => ({
+          kind: 'judgement',
+          ref: judging.refOf(j.number),
+          id: j.id,
+          title: j.title,
+          on: j.subject && j.subject.name,
+          machine: j.machine || null,
+          at: when(j),
+          state: j.state,
+          // A JUDGEMENT ENDING IS NOT A VERDICT. `done` means somebody read it;
+          // what they decided is recorded separately and is often not decided
+          // at all, which is a real state and worth showing as one.
+          verdict: j.verdict || null,
+          concluded: j.concluded || null
+        })),
+        ...tasks.read().filter(t => ENDED.has(t.state)).map(t => ({
+          kind: 'task',
+          ref: `#${t.number}`,
+          id: t.id,
+          title: t.title,
+          on: t.branch,
+          machine: t.machine || null,
+          at: when(t),
+          state: t.state,
+          verdict: t.verdict || null,
+          // WHETHER IT RAN AT ALL. A task can be `done` having never been given
+          // a machine -- see what the queue does when it can be given no
+          // identity -- and a history that showed those the same as a real run
+          // would be the most misleading list on the screen.
+          tries: (t.attempts || []).length
+        }))
+      ]
+        .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+        // ENOUGH TO SEE THE SHAPE OF THE DAY, not an archive. The Tasks and
+        // Judge tabs are where everything lives; this is the last few things
+        // this queue did, beside what it is about to do.
+        .slice(0, 12)
+
       return {
         ...queue.state(),
         waiting,
+        history: past,
         // Counted per kind, because "four waiting" says nothing about whether
         // this host is behind on reading work or behind on doing it.
         counts: waiting.reduce((n, e) => ({ ...n, [e.kind]: (n[e.kind] || 0) + 1 }), {}),
