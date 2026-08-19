@@ -144,11 +144,10 @@ cleanup(async ({ okc }) => {
 // ---- what still needs a real worker to prove -------------------------------
 
 draft('and what comes back off a machine is what the worker refreshed',
-  'HALF BUILT, AND THE HALF THAT IS MISSING IS THE PROOF. vmCredentialsForget and guestBack now READ the credential off the machine before clearing it, and core/guests.js keeps it when the fingerprint differs — so a rotation during a run is no longer deleted. ' +
-  'What has not happened is a run that demonstrates it. ' +
-  'THE CHECK: lend a guest to a machine, give that machine real work that uses Claude, take the guest back, and the fingerprint this host holds is the one the machine finished with. Compared by fingerprint and never by value. ' +
-  'AND IT SETTLES A QUESTION ON ITS OWN: if the fingerprint moves, the refresh rotates and one sign-in shared between machines is a broken design rather than an untidy one. If it never moves, sharing is survivable and one-per-machine is about throughput instead. ' +
-  'IT COSTS A WORKER RUN, which is why it is here rather than in the checks above — those need no machine at all.')
+  'THE QUESTION THIS EXISTED TO SETTLE IS ANSWERED, and the answer is on the record rather than in this note. Rotation is REAL: "supervisor1" was taken off a machine on 19 August and came back with a different fingerprint, which is a worker refreshing a token mid-run and the host catching it. ' +
+  'AND SHARING IS SURVIVABLE, which this note guessed the other way. Two sign-ins of ONE Claude account ran at the same time on two machines that afternoon and both were still good afterwards, so one-per-machine is about throughput and tidiness rather than about credentials rotating each other away. ' +
+  'WHAT IS BUILT SINCE: `refreshed` is recorded when and only when the fingerprint differs, it is on the card beside `added` so the age of the SECRET is readable next to the age of the RECORD, and a credential that comes back with no tokens in it cannot overwrite a working one — that path destroyed a sign-in here before it was guarded. See "a cleared credential cannot overwrite a working one" in this suite, which checks all of that in milliseconds, plus this host\'s own records for consistency. ' +
+  'WHAT IS STILL A DRAFT is only the end-to-end half: lend a guest, give the machine real work that uses Claude, take the guest back, and assert the fingerprint this host holds is the one the machine finished with — compared by fingerprint and never by value. It costs a worker run, which is why it is here rather than beside the arithmetic.')
 
 // WRITTEN NOW, next door: see 06-two-tasks-at-once-each-as-itself.js. Two tasks
 // are queued and nothing touches them again; the queue picks the machines, lends

@@ -131,6 +131,98 @@ it('and a real rotation still comes home', ({ assert, state, log }) => {
   log(`rotated ${before} to ${guests.get(WHO).fingerprint}, and the change is dated`)
 })
 
+it('and a rotation is dated, while an unchanged token is not', ({ assert, state, log }) => {
+  // ---- DETECTING THAT A KEY MOVED, WHICH IS NOT THE SAME AS STORING IT -----
+  //
+  // The check above proves a real rotation is KEPT. This one proves this host
+  // can tell that it happened -- because the two questions have different
+  // answers and only one of them is on the card.
+  //
+  // `added` says how old the RECORD is. `refreshed` says how old the SECRET is,
+  // and after a rotation those are months apart. It was being written and then
+  // dropped by the projection that lists sign-ins, so every card showed a token
+  // rotated an hour ago as untouched since the day it arrived.
+  //
+  // THE PROPERTY THAT MAKES IT WORTH ANYTHING: it moves when the credential is a
+  // DIFFERENT credential and at no other time. Being lent, checked, relabelled,
+  // or handed out and taken back unchanged must not touch it -- otherwise it is
+  // a "last seen" date wearing the name of something more useful.
+  assert.needs(state.made, 'the throwaway identity was not made, so there is nothing to rotate')
+
+  const dated = () => guests.get(WHO).refreshed || null
+  const first = dated()
+  assert.ok(first, 'the rotation in the check above recorded no date, so nothing can say how old this secret is')
+
+  // THE SAME TOKEN BACK. This is what every ordinary run does -- a worker that
+  // did not need to refresh hands back exactly what it was given -- and it must
+  // read as "nothing happened", not as a rotation with the same fingerprint.
+  const same = guests.token(WHO)
+  const back = guests.backFrom(WHO, { token: same })
+  assert.ok(!back.rotated, 'handing back the identical token was recorded as a rotation')
+  assert.equal(dated(), first, 'the date moved for a token that did not change, which makes it a "last seen" stamp rather than a rotation')
+
+  // AND A CLEARED ONE MUST NOT DATE IT EITHER. The guard already refuses to
+  // store it; this says the refusal is complete rather than half-done — a
+  // refused write that still stamped the date would leave the card claiming the
+  // secret is newer than it is.
+  const refused = guests.backFrom(WHO, { token: CLEARED })
+  assert.ok(refused.refused, 'the cleared credential was not refused, so this check is testing the wrong thing')
+  assert.equal(dated(), first, 'a credential that was REFUSED still moved the date, so the card would say the secret is newer than it is')
+
+  log(`dated once at ${String(first).slice(11, 19)}, and unmoved by an identical token and by a refused one`)
+})
+
+it('and what this host holds is consistent with what it recorded', ({ assert, log }) => {
+  // AGAINST THE REAL RECORD, because the checks above are about invented tokens
+  // and this is the one that would notice detection quietly not working. It
+  // reads shapes and dates, never values.
+  //
+  // WHAT IT WOULD CATCH: a sign-in whose stored fingerprint no longer matches
+  // its stored token means something wrote one without the other -- which is the
+  // shape of the bug that destroyed a credential here, seen from the other side.
+  const all = guests.all()
+  assert.ok(all.length, 'this host holds no sign-ins, so there is nothing to check')
+
+  let everRotated = 0
+  const broken = []
+  for (const g of all) {
+    if (!g.has) continue
+
+    // THE FINGERPRINT IS OF THE TOKEN THAT IS THERE. Cheap, and it is the one
+    // relationship every path through this file can break.
+    const text = guests.token(g.name)
+    assert.equal(guests.fingerprint(text), g.fingerprint,
+      `"${g.name}" is recorded with fingerprint ${g.fingerprint} and its sealed token hashes to something else — the record and the secret were written apart`)
+
+    // ---- AN UNUSABLE TOKEN MUST BE MARKED AS ONE ------------------------
+    //
+    // NOT "every token is usable", which is the check this started as and which
+    // failed on the sign-in the bug already destroyed. `runner2` holds 280 bytes
+    // of empty with a rotation date on it, from the morning before the guard
+    // existed, and it is KEPT on purpose as a fixture. A check that fails for
+    // ever on a known casualty is one somebody learns to ignore.
+    //
+    // The invariant worth having is not that nothing is broken -- something is,
+    // and deliberately -- it is that nothing broken is still on offer. A sign-in
+    // this host cannot authenticate with must be paused, because paused is what
+    // keeps the queue from spending a machine on it.
+    if (!guests.usable(text)) {
+      assert.ok(guests.paused(g),
+        `"${g.name}" holds a credential with no tokens in it and is NOT paused, so the queue would hand it to a machine. Either something wrote an unusable token where the guard should have refused it, or a failure was never recorded`)
+      broken.push(g.name)
+    }
+
+    if (g.refreshed) {
+      everRotated++
+      assert.ok(String(g.refreshed) >= String(g.added),
+        `"${g.name}" was refreshed (${g.refreshed}) before it was added (${g.added})`)
+    }
+  }
+
+  log(`${all.length} sign-in(s), ${everRotated} with a rotation recorded, every fingerprint matching the token it names${
+    broken.length ? `; ${broken.join(', ')} cannot authenticate and ${broken.length === 1 ? 'is' : 'are'} paused, so nothing will be spent on ${broken.length === 1 ? 'it' : 'them'}` : ''}`)
+})
+
 it('and a sign-in that failed is never CHOSEN, however many are kept', ({ assert, log }) => {
   // THE FLAG DOING ITS JOB, ASKED PERMANENTLY. The drill next door walks this on
   // a host that has no working sign-in at all, so it goes quiet the moment one
