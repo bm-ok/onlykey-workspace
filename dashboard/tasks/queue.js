@@ -1484,9 +1484,45 @@ async function meterRun (actions, to, machine, runId, { kind, about, ref }) {
     // copies -- which is the mistake this arrangement has already made twice
     // today, in lentTo and in the announcement.
     try {
+      // ---- THE SENTENCE, NOT THE ENVELOPE AROUND IT --------------------
+      //
+      // This took the first 600 characters of any line mentioning auth, which
+      // was right while a worker printed prose and wrong the moment it printed
+      // stream-JSON. What landed on the credential was 600 characters of
+      // `{"type":"assistant","message":{"diagnostics":null,"id":"eb29efff...`
+      // and not one word of why -- the reason was real, and further along the
+      // same line than the truncation reached.
+      //
+      // SO THE LINE IS OPENED FIRST. Claude Code writes one JSON object per
+      // line and the human sentence is inside it, under `content[].text` for a
+      // message and `result`/`error` for the end of a run. Unwrapping first and
+      // matching second means the keyword test is applied to the sentence
+      // rather than to the machinery carrying it.
+      //
+      // AND A LINE THAT IS NOT JSON IS USED AS IT IS, because a crash before
+      // the CLI starts printing structure is exactly when this matters most.
+      const sentenceIn = line => {
+        if (!line.startsWith('{')) return line
+        let o = null
+        try { o = JSON.parse(line) } catch { return line }
+        const bits = []
+        const say = v => { if (typeof v === 'string' && v.trim()) bits.push(v.trim()) }
+        say(o.result)
+        say(o.error && (o.error.message || o.error.type))
+        say(o.message && typeof o.message.content === 'string' ? o.message.content : null)
+        const content = o.message && Array.isArray(o.message.content) ? o.message.content : []
+        for (const c of content) say(c && (c.text || c.content))
+        say(o.subtype)
+        // Nothing human in it: say so rather than handing back the envelope,
+        // which is what made the last one unreadable.
+        return bits.length ? bits.join(' ') : ''
+      }
+
       const trouble = String(text).split(String.fromCharCode(10))
         .map(x => x.trim())
-        .filter(x => /failed to authenticate|oauth|invalid_grant|unauthor/i.test(x))
+        .filter(Boolean)
+        .map(sentenceIn)
+        .filter(x => x && /failed to authenticate|oauth|invalid_grant|unauthor|api key|credit balance|401/i.test(x))
         .slice(0, 3)
         .join(' ')
         .slice(0, 600)
