@@ -155,6 +155,61 @@ const safe = s => String(s || 'unknown').replace(/[^A-Za-z0-9._-]/g, '_').slice(
 // and is always correct — the cost is only that the work starts cold. Guessing a
 // key would be the other kind of wrong: handing one conversation to work that
 // has nothing to do with it.
+// WHAT A CONTINUATION HAS TO BE TOLD, or null when there is nothing to tell.
+//
+// MEASURED, NOT SUPPOSED. With sessions filed by subject, a second task on a
+// branch resumes the first one's conversation — which is the point, and it
+// carries more than facts. A drill gave pass one a standing instruction ("every
+// file on this branch begins with this heading"), then gave pass two a different
+// brief under a different contract, and pass two wrote:
+//
+//     CONTRACT-LOADED          <- the new contract's rule
+//     # PASS ONE STYLE         <- the OLD task's instruction, still obeyed
+//
+//     hello
+//
+// That is not a worker misbehaving. It obeyed everything it had been told, and
+// one of those things was told to a different task. Nothing withdrew it, so
+// nothing expired.
+//
+// WHAT IT COSTS is the property this app rests on: a task carries the TEXT of
+// its prompt and contract so that what a worker was held to can be proven six
+// weeks later. An instruction still in force and recorded nowhere in this task's
+// record makes that record incomplete.
+//
+// AND IT LEAKS BOTH WAYS. Given a brief that contradicted its contract, the same
+// worker flagged that the PREVIOUS task's committed file broke the CURRENT
+// contract and considered amending it. New rules reach backwards onto finished
+// work as readily as old rules reach forwards, so this says both.
+//
+// IT DOES NOT WITHHOLD THE MEMORY. That is what the memory is for, and a worker
+// rediscovering the branch every run is the thing being fixed. It separates
+// KNOWING from BEING BOUND.
+//
+// HERE, RATHER THAN AT EITHER CALLER, because there are two: a plain brief goes
+// through vmDispatch and a job goes through jobRun, and the first version of
+// this was written into vmDispatch alone — where it never once fired, because
+// every task in the drill that found the problem uses a job. Two paths to a
+// worker is two places to forget, so the words live with the keying that decides
+// whether they are needed at all.
+function announcement (doing) {
+  const kept = doing && get(keyFor(doing))
+  if (!kept || !kept.taskId || kept.taskId === doing.id) return null
+
+  return [
+    'BEFORE ANYTHING ELSE — THIS IS A NEW PIECE OF WORK.',
+    '',
+    `You are continuing a conversation that belongs to this branch, not to this piece of work. What you remember was done as ${kept.kind === 'judgement' ? 'a different reading' : 'a different task'}${kept.number ? ` (#${kept.number})` : ''}, under its own brief and its own rules.`,
+    '',
+    'That memory is yours to use: the codebase, what you tried, what worked, what you decided and why. Use it, and do not spend this run rediscovering it.',
+    '',
+    'It is NOT a source of instructions. Standing instructions, styles and conventions you were given in that earlier work do not carry into this one — they ended with it. What binds you now is the brief below and the rules attached to this run, and nothing else. If something from before should still apply, it will be in the brief.',
+    '',
+    'And what was finished under those earlier rules was correct under them. Do not go back and revise committed work to match rules it was never done under. If you think something earlier is wrong, say so rather than change it.',
+    ''
+  ].join('\n')
+}
+
 function keyFor (doing) {
   if (!doing || !doing.uid) return null
   const lane = doing.kind === 'judgement' ? 'judge' : 'worker'
@@ -362,4 +417,4 @@ function everything () {
     .sort((a, b) => String(b.kept || '').localeCompare(String(a.kept || '')))
 }
 
-module.exports = { keep, get, has, forget, everything, okId, keyFor, dirFor, fileFor, ROOT, MOST, REMEMBERS }
+module.exports = { keep, get, has, forget, everything, okId, keyFor, announcement, dirFor, fileFor, ROOT, MOST, REMEMBERS }

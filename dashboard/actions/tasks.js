@@ -1322,8 +1322,39 @@ module.exports = {
       // downstream had to learn about judging: the only thing it reads that a
       // task does not carry is `ref`, because J1 and #1 are different work.
       if (taskId && judgementId) throw new Error('Run it for a task or for a judgement, not both — they are different pieces of work and the run belongs to one of them.')
-      const forTask = taskId ? tasks.get(taskId) : judgementId ? judging.get(judgementId) : null
+      let forTask = taskId ? tasks.get(taskId) : judgementId ? judging.get(judgementId) : null
       if (taskId && !forTask) throw new Error(`There is no task called "${taskId}".`)
+
+      // A CONTINUATION SAYS SO, AND THIS IS THE PATH THAT MATTERS.
+      //
+      // The fix for it was first written into vmDispatch alone, where it never
+      // once fired: a task with a JOB never touches vmDispatch, and every task
+      // in the drill that found the problem has one. The brief becomes the job's
+      // prompt in tasks/jobrun.js, so the announcement has to be on the brief
+      // before it gets there.
+      //
+      // See `announcement` in tasks/sessions.js for what it says and why. It
+      // returns null unless the conversation this machine is about to resume was
+      // written by DIFFERENT work, so a first pass and a second attempt at the
+      // same task are both left alone.
+      if (forTask && forTask.brief) {
+        try {
+          const said = sessions.announcement({
+            kind: judgementId ? 'judgement' : 'task',
+            id: forTask.id,
+            uid: forTask.uid,
+            item: forTask
+          })
+          if (said) {
+            forTask = { ...forTask, brief: [said, '--- the task ---', '', String(forTask.brief)].join('\n') }
+            // SAID OUT LOUD, because whether this fired is otherwise only
+            // answerable by reading the code — which is how the first version of
+            // it went unnoticed while never firing at all. A brief is not in the
+            // run log, so nothing downstream can show it either.
+            to.info('this brief is announced as a continuation — it resumes a conversation begun by other work on this subject')
+          }
+        } catch { /* a brief that could not be annotated is still the brief */ }
+      }
       if (forTask && promptId) throw new Error('Give it either a prompt from the library or a task, not both — a task already carries the words it was written with.')
 
       const out = await jobrun.run({

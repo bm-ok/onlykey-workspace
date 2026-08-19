@@ -172,7 +172,13 @@ it('and the second pass does the new job, not the old one', async ({ okc, assert
       ? `PASS-TWO.md carries the PREVIOUS task's heading. The conversation continued and the older instruction is still in force, so a new task on a remembered branch is being done under the last one's rules. The fix is not here: continuations have to be ANNOUNCED at dispatch, with the worker told plainly that this is new work and what it is held to now. It wrote: ${body.slice(0, 300)}`
       : `PASS-TWO.md carries the previous task's heading even though memory is OFF, so it reached the worker some other way — through the branch itself, or through something this drill does not know about: ${body.slice(0, 300)}`)
 
-  assert.ok(/hello/.test(body), `the second pass wrote PASS-TWO.md without the line it was asked for: ${body.slice(0, 300)}`)
+  // CASE-INSENSITIVE, because the brief asks for "a line saying hello" and the
+  // worker wrote "Hello." — which is that. This assertion failed on the run that
+  // proved the fix worked, which is the sharpest possible reminder that a check
+  // testing a WORDING rather than a PROPERTY fails on prose it never thought of.
+  // What matters is that the line is there; the two assertions above are the
+  // ones with a rule behind them.
+  assert.ok(/hello/i.test(body), `the second pass wrote PASS-TWO.md without the line it was asked for: ${body.slice(0, 300)}`)
 
   log(remembers
     ? 'memory is on, and the new contract owns line one — the old standing instruction did not survive into the new task'
