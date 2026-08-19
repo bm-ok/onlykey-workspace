@@ -353,27 +353,59 @@ module.exports = {
       // BY THE BRANCH NAME, because that is what makes a cut ours by
       // construction. A cut somebody made by hand is not swept up because it
       // happens to be old.
-      const cuts = Object.values(landings.all() || {})
+      // ASKED OF GITHUB, NOT OF THE RECORD HERE. The stored `state` is written
+      // when a pull request is opened and never refreshed, so every cut this
+      // host has ever made reads "open" for ever.
+      //
+      // The first version of this trusted it and reported fifteen outstanding
+      // pull requests across two accounts. Every one had been merged days
+      // earlier. That is the same fault as a credential check that fires on a
+      // known-dead fixture: a sweep that cries wolf is one somebody stops
+      // reading, and the whole point of it is to be believed the one time it has
+      // something.
+      //
+      // FIFTEEN CALLS IS FINE HERE and would not be on a timer. This app never
+      // asks GitHub on a schedule; a sweep is somebody deciding to look.
+      //
+      // AND UNREACHABLE IS NOT OUTSTANDING. If GitHub cannot be asked, the cut
+      // is reported as UNKNOWN rather than counted as left behind — the network
+      // being down is not a drill leaving a mess, and treating it as one is how
+      // a red total stops meaning anything.
+      const drillCuts = Object.values(landings.all() || {})
         .filter(c => String(c.source || '').startsWith('drill/'))
-        .map(c => ({
-          source: c.source,
-          target: c.target,
-          // NOT MERGED AND NOT CLOSED. The stored state is written when the pull
-          // request is opened and is not refreshed, so this is what this host
-          // last knew rather than what GitHub says now -- which is the right
-          // answer for a sweep: it reports what it has grounds to believe is
-          // outstanding, and "Read them again" on the PR cuts tab is what
-          // settles it.
-          open: (c.pulls || []).filter(p => p && p.state !== 'merged' && p.state !== 'closed')
-        }))
-        .filter(c => c.open.length)
+
+      const cuts = []
+      const unchecked = []
+      for (const c of drillCuts) {
+        let fresh = null
+        try {
+          fresh = await actions.prCutState.run({ source: c.source, target: c.target })
+        } catch (e) {
+          unchecked.push(`${c.source} — ${e.message}`)
+          continue
+        }
+        // ONLY WHAT GITHUB AFFIRMATIVELY CALLS OPEN. Written first as "not
+        // merged and not closed", which counted six pull requests that GitHub
+        // reports as `gone from GitHub` -- the repositories had moved to another
+        // account, so asking the old owner finds nothing. Absence is not an open
+        // pull request, and the comment above this loop said exactly that one
+        // edit before the code did the opposite.
+        const open = (fresh.pulls || []).filter(p => p && !p.merged && p.state === 'open')
+        const missing = (fresh.pulls || []).filter(p => p && p.state && /gone|not found|unknown/i.test(String(p.state)))
+        if (missing.length) unchecked.push(`${c.source} — ${missing.map(p => `${p.url || p.repo} is ${p.state}`).join(', ')}`)
+        if (open.length) cuts.push({ source: c.source, target: c.target, open })
+      }
 
       const found = {
         branches: branches.map(b => b.name),
         tasks: tasks.map(t => `#${t.number} ${t.title}`),
         remote,
         machines: madeUp.map(v => `${v.name} (${v.state}${v.stage ? ', ' + v.stage : ''})`),
-        cuts: cuts.map(c => `${c.source} — ${c.open.map(p => `${p.repo}#${p.number}`).join(', ')}`)
+        cuts: cuts.map(c => `${c.source} — ${c.open.map(p => `${p.repo}#${p.number}`).join(', ')}`),
+        // SAID, NEVER COUNTED. Something that could not be looked at is a
+        // sentence for whoever is reading, not a number in a total that means
+        // "a drill left this".
+        unchecked
       }
       const total = branches.length + tasks.length + remote.length + madeUp.length + cuts.length
 
@@ -382,9 +414,10 @@ module.exports = {
           ...found,
           total,
           removed: false,
-          note: total
+          note: `${total
             ? `${total} thing(s) left by drills. Nothing has been touched — pass remove to take them away.`
-            : 'Nothing left behind. Every drill that writes removes what it wrote.'
+            : 'Nothing left behind. Every drill that writes removes what it wrote.'}${
+            unchecked.length ? ` ${unchecked.length} cut(s) could not be read from GitHub, so nothing is claimed about them: ${unchecked.join('; ')}` : ''}`
         }
       }
 
