@@ -206,8 +206,13 @@ function paintCutDetail (c) {
     if (!previewOf.has(at) && !asking.has(at)) {
       asking.add(at)
       api('prTemplatePreview', { source: c.source, target: c.target, title: said.title || undefined, body: said.body || undefined })
-        .then(v => { previewOf.set(at, (v && v.text) || (v && v.note) || '') })
-        .catch(e => { previewOf.set(at, `Could not compose it: ${e.message}`) })
+        // WHETHER ANYTHING WOULD OPEN IS NOT THE SAME QUESTION AS WHAT IT SAYS,
+        // and folding them into one string lost the answer that matters: a pair
+        // carrying nothing composes an empty body and a `note` explaining why,
+        // and the note rendered in a code editor as though it were the pull
+        // request.
+        .then(v => previewOf.set(at, { text: (v && v.text) || '', why: (v && v.note) || '', can: !!(v && (v.repos || []).length) }))
+        .catch(e => previewOf.set(at, { text: '', why: `Could not compose it: ${e.message}`, can: false }))
         .finally(() => {
           asking.delete(at)
           if (pickedCut === at) { forget('prcut-detail'); paintCuts() }
@@ -224,9 +229,9 @@ function paintCutDetail (c) {
       el('p', { className: 'note muted', textContent: 'What a pull request would say — what was written, and everything the blocks on "New PR Cut" add to it.' }),
       composed === undefined
         ? el('p', { className: 'empty', textContent: 'Composing what it would say…' })
-        : composed
-          ? codeBlock(composed, 'markdown', { max: 30 })
-          : el('p', { className: 'empty', textContent: 'Nothing would be opened for this pair — the source carries nothing the target does not already have.' }),
+        : composed.text
+          ? codeBlock(composed.text, 'markdown', { max: 30 })
+          : el('p', { className: 'empty bad', textContent: composed.why || 'Nothing would be opened for this pair.' }),
       // ---- WHAT THE BUTTON DOES, BESIDE THE BUTTON --------------------
       //
       // "Send it" is the only thing on this screen that reaches outside this
@@ -237,7 +242,14 @@ function paintCutDetail (c) {
       // dialog is read once and clicked through afterwards -- so it is on the
       // screen as well, where somebody deciding can read it without committing
       // to a press first.
-      el('p', { className: 'note muted', textContent: `Send it pushes ${c.source} to the fork in every repository that carries something, opens one pull request each, and then writes them again with links to one another — those numbers do not exist until all of them are open. They are tracked here as one cut. Merging them is a separate act, and also yours.` }),
+      // WHAT WOULD HAPPEN, OR WHY NOTHING WOULD. A draft outlives its subject:
+      // this one was written on 14 August as an explicit test and its line has
+      // carried nothing since the work landed, so "Send it" could only ever have
+      // been refused. Disable what must not be clicked, in the action AND the
+      // button -- the action already refused; the button did not know.
+      composed && !composed.can
+        ? el('p', { className: 'note bad', textContent: `This cannot be sent: ${composed.why} A draft outlives the work it was written for — throw it away, or point it at a line that carries something.` })
+        : el('p', { className: 'note muted', textContent: `Send it pushes ${c.source} to the fork in every repository that carries something, opens one pull request each, and then writes them again with links to one another — those numbers do not exist until all of them are open. They are tracked here as one cut. Merging them is a separate act, and also yours.` }),
 
       el('div', { className: 'row' },
         // THE ONE ACT THIS SCREEN CAN DO ABOUT A DRAFT, and it is deliberately a
@@ -251,8 +263,37 @@ function paintCutDetail (c) {
         el('button', {
           className: 'btn ok',
           textContent: 'Send it',
-          title: 'Pushes the branches and opens the pull requests. This is the step that reaches GitHub',
+          // Undefined while it is still composing, because "cannot" and "not
+          // known yet" are different and only one of them is a dead end.
+          disabled: !!(composed && !composed.can),
+          title: composed && !composed.can
+            ? composed.why
+            : 'Pushes the branches and opens the pull requests. This is the step that reaches GitHub',
           onclick: () => sendDraft(c)
+        }),
+        el('button', {
+          className: 'btn danger',
+          textContent: 'Throw it away',
+          title: 'Forgets this text. Nothing on GitHub is touched, because nothing has been sent',
+          onclick: () => ask({
+            title: `Throw away the draft for "${c.source}"?`,
+            plain: [
+              'Only the text goes. No branch, no line and nothing on GitHub is touched — this has never been sent.',
+              'It can be written again from "New PR Cut" at any time.'
+            ],
+            confirm: 'Throw it away',
+            onYes: async () => {
+              await api('prDraftForget', { source: c.source, target: c.target })
+              previewOf.delete(at)
+              pickedCut = null
+              been.set('prcut', null)
+              cutsSeen = null
+              draftsSeen = null
+              forget('prcuts')
+              forget('prcut-detail')
+              say(`The draft for "${c.source}" is gone. Nothing was sent, so nothing on GitHub changed.`)
+            }
+          })
         }),
         el('button', {
           className: 'btn',
