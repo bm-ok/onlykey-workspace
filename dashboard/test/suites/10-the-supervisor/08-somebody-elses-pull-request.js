@@ -10,8 +10,11 @@
 // ran. And the judge is a model reading attacker-controlled TEXT — a diff can
 // say "ignore your instructions" as easily as it can say anything else.
 //
-// So the gate is checked here as real checks, because it exists, and the
-// judging that follows is drafted, because it does not.
+// So the gate is checked here as real checks, and the judging that follows is
+// drafted — no longer because the machinery is missing, which is what this said
+// when it was written. A subject of kind "pull" exists and is gated at the sha
+// the allowance names. What has never happened is a judge being pointed at
+// somebody else's pull request and asked, which is a run rather than a build.
 
 const { it, requires, draft } = require('../../../tasks/harness')
 const allowed = require('../../../repos/allowed')
@@ -87,8 +90,9 @@ it('and it is not on the supervisor\'s list at all', async ({ assert, log }) => 
 // ---- what the judging itself has to do, once it exists ----------------------
 
 draft('a judge investigates an arrived pull request',
-  'NOT BUILT: a judgement\'s subject is a branch in this workspace or a cut this host made, and a stranger\'s pull request is neither — `judgementCreate` refuses it outright. So there is nothing to allow yet, which is why the gate above landed first. ' +
-  'WHAT HAS TO EXIST: a subject of kind "pull" — repository, number and head sha — refused unless `allowed.check` says yes at THAT sha, so an allowance and a judgement cannot drift apart. ' +
+  'THE MACHINERY IS BUILT, EXACTLY AS THIS ASKED FOR IT, AND NOBODY HAS WALKED IT. This said a stranger\'s pull request could not be a subject at all and that judgementCreate refused it outright. There is a subject of kind "pull" now — repository, number and head sha — and this host has judgements filed under it. ' +
+  'IT IS GATED THE WAY THIS SPECIFIED, which is worth saying because the specification was the useful part: the allowance is checked at THAT sha, and a stale one is refused with the difference spelled out ("was allowed at abc1234 and is now at def5678 — the author has pushed since, so what was approved is not what a judge would read"). An allowance and a judgement cannot drift apart. ' +
+  'WHAT IS LEFT IS THE RUN. Everything below this line is still a description of something no judge has been asked to do, and the questions at the end are still open. ' +
   'WHAT THE OPERATOR ASKED IT TO DO, in their words: why, what and where the changes were made; whether other repositories need changes that are not there (a pull request that is half a change is the case this app exists to catch — one repository cannot half-land); whether the code is proper to check at all; then a rundown of how the project says it should work, and a re-check of exactly what the change touched. ' +
   'GREEN MEANS THREE THINGS AT ONCE: it is safe, it does what it intends, and it is exactly what the pull request says it is. Any one of those failing is not green. ' +
   'TO SETTLE: whether "check it" ever means RUNNING the contributor\'s code. Reading a diff is much cheaper to make safe; running its tests is what makes "it does what it says" a verdict rather than an opinion — and it is arbitrary execution by a stranger on a machine holding a credential. The proposal on the table is to split them: the read is a Claude judge under a contract that forbids running the change, and the test is a credential-free shell job whose output the judge then reads.')
@@ -104,6 +108,7 @@ draft('and a merge somewhere else does not leave what is out unmergeable',
   'NOT BUILT, and it is the first thing here that is maintenance rather than work somebody asked for. ' +
   'When anything lands, every open PR cut is measured against a base that has moved — so a change that was mergeable an hour ago now conflicts, and nobody finds out until somebody presses Merge. ' +
   'WHAT THE OPERATOR ASKED FOR: on a merge, the supervisor checks its open cuts for conflicts and fixes them properly, so what is out stays mergeable. ' +
-  'WHAT HAS TO EXIST: something that notices a merge (the same trigger gap as everywhere else here), a way to ask "would this still merge" per cut, and a task shape for "bring this line up to the base it is landing into". ' +
+  'ONE OF ITS THREE PIECES EXISTS NOW. It named three: something that notices a merge, a way to ask "would this still merge" per cut, and a task shape for "bring this line up to the base it is landing into". The first is built — a look reports a cut of this host\'s own that is no longer open, asks GitHub which end it reached, and wakes the supervisor with "merged" or "closed without being merged". The trigger gap this called "the same as everywhere else here" is closed. ' +
+  'THE OTHER TWO ARE UNTOUCHED, and the second is the one with a decision in it: "would this still merge" can be asked of GitHub, which knows, or worked out here from the tips, which does not need the network and can be wrong. ' +
   'THE CHECK: land something into a line that two open cuts are based on, and both cuts are reported as needing attention; after the supervisor has dealt with them, both merge cleanly. ' +
   'TO SETTLE, AND IT IS THE INTERESTING PART: a rebase or a merge changes what a judge already accepted. If J32 accepted a line and the line then moves to a new base, the verdict is stale by the same rule everything else here uses — so "keep it mergeable" implies "and judge it again", and the cost of keeping ten cuts current is ten more judgements. Whether that is worth it, or whether cuts should simply be told they are stale and left, is a decision nobody has made.')

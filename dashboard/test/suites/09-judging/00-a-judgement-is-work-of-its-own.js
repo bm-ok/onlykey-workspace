@@ -139,7 +139,8 @@ const { draft } = require('../../../tasks/harness')
 
 draft('and GitHub is told, beside the pull request',
   'THE OUTWARD HALF, and the only part of the original nine that is still true as a draft. ' +
-  'Anybody looking at the change on GitHub — which is where a reviewer looks — has no way to know this app read it. A verdict belongs there: a status or a check beside the pull request, saying what was run and what it found. ' +
-  'THE CHECK: after a judgement of a PR cut, the pull request on the parent carries a status naming this app and the verdict. ' +
-  'TO SETTLE, AND STILL UNSETTLED: whether that is a commit status, a check run, or a comment — a comment is the easiest and the least useful, since it cannot gate a merge. And whether a rejection blocks the merge button, which is a decision about somebody else\'s repository rather than about this app. ' +
+  'THE COMMENT HALF IS BUILT AND HAS RUN. This said anybody looking at the change on GitHub had no way to know this app had read it. `prComment` says something on a pull request in this workspace, ending in whether it is recommended for pulling, and the supervisor posted "recommend pulling: YES" on two of them on 19 August 2026. So a reviewer CAN see that it was read. ' +
+  'AND THE OPEN QUESTION IS EXACTLY THE ONE THIS NOTE ALREADY NAMED, which is the argument for writing them down: a comment is the easiest and the least useful, BECAUSE IT CANNOT GATE A MERGE. Building it did not answer whether the verdict should also be a commit status or a check run, which is what a person or a branch rule can actually act on. ' +
+  'THE CHECK, still unwritten: after a judgement of a PR cut, the pull request on the parent carries a status naming this app and the verdict — not merely a comment saying so. ' +
+  'AND STILL UNSETTLED: whether a rejection blocks the merge button, which is a decision about somebody else\'s repository rather than about this app. ' +
   'WHAT HAS CHANGED SINCE THIS WAS FIRST WRITTEN: everything inward. The verdict exists, it is the judge\'s own, it is current or stale against the tips it was made on, and prCutMake already refuses to send out work a judgement has rejected. So this is now the last mile rather than the whole road.')
