@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 63 tests, 292 checks, 21 of them drafts -->
+<!-- 12 suites, 64 tests, 297 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -156,6 +156,14 @@ What this app will not do, proved by asking it to do each thing and reading what
   5. and the whole way round it, from outside, ends where it started
   6. **DRAFT** — and the window cannot be driven while the drills are off
   7. **DRAFT** — and a change cannot be landed from outside the window while the drills are off
+
+## 05 — one permission many gates
+
+  1. a branch that is out as a pull request and not merged is under revision
+  2. and one that has merged is not
+  3. and a branch no cut names is not
+  4. and a default branch is refused whatever any cut says about it
+  5. and every gate in the push path asks the same question
 
 # 03 — the machines are built
 

@@ -195,9 +195,15 @@ async function state (source, target) {
 //
 // NOT ONE THAT HAS MERGED. Once it lands, the branch is history again and the
 // ordinary rule applies.
-function underRevision (branch) {
+//
+// THE RECORDS ARE A PARAMETER, DEFAULTED. Read from the file every other caller
+// wants; handed in by a drill, which must be able to ask about a merged cut and
+// an open one without either existing on this host. A rule that can only be
+// checked against whatever the machine happens to be holding is one that gets
+// checked once.
+function underRevision (branch, cuts = all()) {
   if (!branch) return false
-  for (const cut of Object.values(all())) {
+  for (const cut of Object.values(cuts || {})) {
     for (const p of cut.pulls || []) {
       if (p.merged === true) continue
       const head = String(p.head || '')
@@ -225,12 +231,12 @@ function underRevision (branch) {
 // A branch qualifies when it is protected ONLY as a link in a line -- never as
 // any repository's default branch, which is protected for what it is -- and is
 // the source of a pull request this host opened and nobody has merged.
-function mayRevise (branch) {
+function mayRevise (branch, cuts = all()) {
   if (!branch) return false
   const p = branches.protectedBranches().find(x => x.branch === branch)
   if (!p) return true
   if (p.asDefault.length) return false
-  return underRevision(branch)
+  return underRevision(branch, cuts)
 }
 
 module.exports = { record, describe, forget, state, readings, all, key, underRevision, mayRevise }

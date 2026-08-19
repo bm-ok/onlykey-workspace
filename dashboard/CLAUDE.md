@@ -43,10 +43,28 @@ Rewriting identical text destroys the user's selection mid-copy.
 **Use class names and ids that exist.** CSS has no undefined-name error, so a
 misspelt class is the quietest failure available. `npm test` checks this — run it.
 
-**Never shell-quote code.** Backticks and quotes get mangled writing JavaScript
-through `bash -c` or `node -e`; it has corrupted `ui.js`, `branches.js`,
-`remotes.js` and `vbox.js` this way, once inserting a literal NUL byte. **Write a
-script file to the scratchpad and run that.**
+**Write code to a file; do not pass it as an argument.** Backticks and quotes
+have been mangled writing JavaScript through `bash -c` or `node -e`, corrupting
+`ui.js`, `branches.js`, `remotes.js` and `vbox.js`, once inserting a literal NUL
+byte. The safe shape is unchanged: **write the file, then run it.**
+
+WHAT IS BETTER THAN IT WAS, checked on 2026-08-19 rather than assumed: a quoted
+heredoc (`cat > f <<'EOF'`) now preserves backticks, `${...}`, nested quotes,
+`$(...)` and single backslashes exactly, with no NUL bytes. So writing a whole
+file that way is reliable, and the python-script detour it used to need is not
+required.
+
+**The one that still bites is a doubled backslash.** It collapses to a single
+one, so a source line written with two arrives with one. Regexes are fine — a
+single-backslash escape such as the digit class survives intact — and a
+JavaScript string that needs a literal backslash in it does not: a Windows path
+in quotes, or a regex whose subject IS the backslash character.
+
+**Use Edit or Write for those**, not the shell. This paragraph was first written
+through a script and the trap ate it while it was being described: every doubled
+backslash in the sentence explaining doubled backslashes came out single, which
+turned the examples into nonsense. If a passage is ABOUT escaping, it is the one
+passage that cannot be written through anything that escapes.
 
 **Prefer plain, single-purpose shell commands.** Long `cd … && … && …` chains
 cannot match any permission pattern, so every one of them interrupts the user.
