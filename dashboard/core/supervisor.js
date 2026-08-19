@@ -251,6 +251,12 @@ const MAY = {
   // (prDraftSave changes nothing on GitHub), and it may cut them (prCutMake).
   // After that they belong to whoever reads them.
   prDraft: 'what has been written for a pair of lines and not cut yet',
+  // AND ALL OF THEM, WITHOUT KNOWING THE PAIR FIRST. `prDraft` answers about a
+  // pair somebody already has in mind, which is no use to a supervisor asking
+  // "what have I left unfinished" -- the question it should be asking every time
+  // it wakes. Reading its own drafts is as harmless as writing them: nothing here
+  // has been near GitHub.
+  prDrafts: 'everything written for a pair of lines and not cut yet — its own unfinished work, none of it on GitHub',
   prDraftSave: 'write what the pull requests will say, before there are any — this changes nothing on GitHub',
   prTemplatePreview: 'what the pull requests would say for a pair of lines, composed from the blocks that are on',
   repoSync: 'fetch from origin and fast-forward every default branch, so it is not deciding from a stale copy',

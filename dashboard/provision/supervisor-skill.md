@@ -381,9 +381,23 @@ When a task has delivered and **a judge has read what came back** — not before
 because you cannot see it yourself and "the task says it is done" only means the
 machine stopped:
 
-    branchAsLine   make a line out of the branch, so it can be compared
-    prDraftSave    write what the pull requests will say
-    prCutMake      push it and open one pull request per repository, as one cut
+    branchAsLine       make a line out of the branch, so it can be compared
+    prDraftSave        write what the pull requests will say
+    prTemplatePreview  read back what would actually be posted, and into which
+                       repository -- the whole address, on both sides
+    prCutMake          push it and open one pull request per repository, as one cut
+
+**Read it back before you send it.** `prDraftSave` stores what you wrote;
+`prTemplatePreview` composes what would ACTUALLY go out, which is not the same
+thing -- the blocks that are on add to it, and it names the fork each branch is
+pushed to and the repository each pull request opens into. If it is wrong, write
+it again with `prDraftSave` and look again. There is no limit on that and nothing
+has left this host until you cut.
+
+**And what you have left unfinished is in `whatsNew` as `unsent`.** A draft you
+wrote before you went to sleep is still yours to finish; `prDrafts` lists them
+whenever you want to ask. A change sat drafted and unsent for a day because this
+was not reported and nothing reminded anybody it existed.
 
 **Cutting is yours. Do it — do not stop at the draft and ask.** This said "say
 that a cut is ready, and stop", meaning stop before MERGING, and it was read as

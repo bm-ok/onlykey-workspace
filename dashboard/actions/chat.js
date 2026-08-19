@@ -29,7 +29,7 @@ const actions = require('./table')
 // that could not run at all.
 const supervisor = require('../core/supervisor')
 const s = require('./shared')
-const { log, events, tasks, vms, landings, channel, settings, meter } = s
+const { log, events, tasks, vms, landings, drafts, channel, settings, meter } = s
 
 // ---- waking it ------------------------------------------------------------
 //
@@ -295,6 +295,30 @@ module.exports = {
         },
         machines: vms.read().map(v => v.name).length,
         cuts: Object.values(landings.all() || {}).length,
+
+        // ---- AND WHAT IT HAS WRITTEN AND NOT SENT --------------------------
+        //
+        // A DRAFT IS ITS OWN UNFINISHED WORK, and it could not see it. Writing
+        // one is on its list and reading them back was not, so a supervisor that
+        // wrote a draft, went to sleep and woke up had no way of learning it had
+        // one -- `cuts` is a count of what has ALREADY gone, which is the half
+        // that needs nothing from anybody.
+        //
+        // The consequence was a change sitting drafted and unsent with nothing
+        // wrong with it. Cutting is the supervisor's own act -- its skill says so
+        // in as many words, "do not stop at the draft and ask" -- and an act it
+        // cannot see the input to is one it will not take.
+        //
+        // NOT ONE THAT HAS ALREADY BEEN CUT. The text was written for that cut
+        // and the cut exists; listing it as outstanding is asking for the same
+        // thing twice. Same rule as the window's own count, deliberately: two
+        // answers to "what is waiting" that can disagree is worse than either.
+        unsent: (() => {
+          const already = new Set(Object.values(landings.all() || {}).map(c => `${c.source} -> ${c.target}`))
+          return Object.values(drafts.all() || {})
+            .filter(d => !already.has(`${d.source} -> ${d.target}`))
+            .map(d => ({ source: d.source, target: d.target, title: d.title || null, at: d.at || d.touched || null }))
+        })(),
 
         // WHAT ARRIVED FROM OUTSIDE, which is the only thing here that nobody
         // wrote down first. An issue somebody filed and a pull request somebody
