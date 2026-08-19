@@ -563,28 +563,38 @@ async function paintTemplatesNow () {
         $('prwrite-body').oninput = () => { show(); keep() }
         show()
 
+        // ---- THIS TAB WRITES. THE OTHER ONE SENDS. ------------------------
+        //
+        // Its only button used to be "Cut it", which pushed every branch and
+        // opened every pull request on the spot -- so the screen for composing
+        // text was also the screen that published, and there was no way to write
+        // something and keep it. A person could preview and publish; nothing
+        // else. Meanwhile the supervisor drafted through `prDraftSave` and never
+        // touched this at all, so the two ends of the same job had different
+        // shapes and only one of them could stop halfway.
+        //
+        // Now: compose here, save it, and it appears on PR cuts as "not sent",
+        // where sending is one press and merging is a person's after that. The
+        // draft is the handover between the two screens and is the same object
+        // whichever end wrote it.
+        //
+        // SENDING IS NOT OFFERED HERE ANY MORE, and that is the point rather
+        // than an omission. One screen that both writes and publishes is a
+        // screen where the difference between thinking and doing is a button
+        // you have already moved the mouse to.
         const existing = v.existing && v.existing.count
         fill($('prwrite-actions'),
-          existing
-            ? null
-            // GITHUB'S KIND OF DRAFT, which is not this app's kind: a pull
-            // request that HAS been opened and is marked not ready for review.
-            // Offered only when cutting, because it is a state a pull request is
-            // opened in.
-            : el('label', { className: 'inline', style: 'align-self:center' },
-                el('input', { type: 'checkbox', id: 'prwrite-asdraft' }),
-                el('span', { textContent: 'open them as drafts on GitHub' })),
           el('button', {
             className: 'btn ok',
-            textContent: existing ? `Write it to all ${v.existing.count}` : `Cut it — ${v.repos.length} pull request(s)`,
+            textContent: existing ? `Write it to all ${v.existing.count}` : 'Save it as a draft',
             title: existing
               ? 'Changes the title and description of every pull request in this cut'
-              : 'Pushes each branch onward and opens a pull request in every repository that carries work',
-            onclick: () => existing ? writeToCut(v) : cutFromWriter(v)
+              : 'Keeps this text against these two lines. It appears on PR cuts as "not sent", and that is where it goes out',
+            onclick: () => existing ? writeToCut(v) : saveDraftFromWriter(v)
           }),
           existing
             ? el('span', { className: 'muted', style: 'align-self:center', textContent: `cut ${ago(v.existing.opened)} — ${v.repos.length} repositor${v.repos.length === 1 ? 'y' : 'ies'} carry work` })
-            : el('span', { className: 'muted', style: 'align-self:center', textContent: `${tmplFrom} into ${tmplInto}` }))
+            : el('span', { className: 'muted', style: 'align-self:center', textContent: `${tmplFrom} into ${tmplInto} — ${v.repos.length} repositor${v.repos.length === 1 ? 'y carries' : 'ies carry'} work. Sending it is on the PR cuts tab` }))
       })
       .catch(e => fill($('prtemplate-preview'), el('p', { className: 'empty bad', textContent: e.message })))
   }).catch(() => { /* the tab beside it says when the dashboard is unreachable */ })
@@ -607,14 +617,26 @@ function sendDraft (c) {
       'Each branch is pushed onward from this host first. No machine is ever handed the token.',
       said.title ? `It goes out as: "${said.title}"` : 'It has no title of its own, so the template supplies one.'
     ],
+    // GITHUB'S KIND OF DRAFT, WHICH IS NOT THIS APP'S KIND. This app's draft has
+    // not been sent; GitHub's has been opened and is marked not ready for
+    // review. The option lived on the writer, which was also the thing that
+    // published — it belongs with the act of opening, which is here.
+    fields: [{
+      name: 'asDraft',
+      type: 'checkbox',
+      label: 'Open them as drafts on GitHub',
+      value: false,
+      hint: 'They are opened and visible either way. A GitHub draft says "not ready for review" and cannot be merged until somebody marks it ready.'
+    }],
     cost: 'This pushes branches to GitHub and opens pull requests. Both are visible to anyone who can see those repositories.',
     confirm: 'Push and open them',
-    onYes: async () => {
+    onYes: async f => {
       const r = await api('prCutMake', {
         source: c.source,
         target: c.target,
         title: said.title || undefined,
-        body: said.body || undefined
+        body: said.body || undefined,
+        draft: f && (f.asDraft === true || f.asDraft === 'on')
       })
       pickedCut = `${c.source} -> ${c.target}`
       been.set('prcut', pickedCut)
@@ -624,35 +646,31 @@ function sendDraft (c) {
   })
 }
 
-function cutFromWriter (v) {
-  ask({
-    title: `Cut ${v.repos.length} pull request(s)?`,
-    plain: [
-      `One in each of: ${v.repos.join(', ')}. Only repositories that carry something get one.`,
-      'Each branch is pushed onward from this host first. No machine is ever handed the token.',
-      'They are opened, and then written again with links to each other — those numbers do not exist until all of them are open.'
-    ],
-    cost: 'This pushes branches to GitHub and opens pull requests. Both are visible to anyone who can see those repositories.',
-    confirm: 'Push and open them',
-    onYes: async () => {
-      const asDraft = $('prwrite-asdraft') && $('prwrite-asdraft').checked
-      const r = await api('prCutMake', {
-        source: tmplFrom,
-        target: tmplInto,
-        title: $('prwrite-title').value.trim(),
-        body: $('prwrite-body').value.trim(),
-        draft: !!asDraft
-      })
-      pickedCut = `${tmplFrom} -> ${tmplInto}`
-      been.set('prcut', pickedCut)
-      tmplSeen = null
-      forget('prwrite-fields')
-      setText($('prwrite-state'), '')
-      say(r.note, r.pulls.some(x => !x.opened) ? 'bad' : undefined)
-      return refreshCuts()
-    }
-  })
+// KEEPING WHAT WAS WRITTEN, which is what this screen is for. No confirmation
+// and no cost line: nothing leaves this host, and asking somebody to confirm
+// saving their own text teaches them to click through the dialogs that matter.
+async function saveDraftFromWriter (v) {
+  const title = $('prwrite-title').value.trim()
+  const body = $('prwrite-body').value.trim()
+  const r = await api('prDraftSave', { source: tmplFrom, target: tmplInto, title, body }).catch(e => ({ error: e.message }))
+  if (r && r.error) return say(r.error, 'bad')
+
+  // PICKED ON THE OTHER TAB, so the next thing somebody wants to look at is
+  // already selected when they go there.
+  pickedCut = `${tmplFrom} -> ${tmplInto}`
+  been.set('prcut', pickedCut)
+  cutsSeen = null
+  draftsSeen = null
+  forget('prcuts')
+  forget('prcut-detail')
+  say(`Kept. "${tmplFrom}" into "${tmplInto}" is on PR cuts as not sent — that is where it goes out.`)
 }
+
+// `cutFromWriter` STOOD HERE and published straight from the writer. It is gone
+// rather than left unused: the whole point of the split is that the screen for
+// composing text cannot also be the screen that pushes branches to GitHub, and a
+// function that still could is an invitation to wire a button back to it.
+// Sending lives in `sendDraft`, on the PR cuts tab, against a saved draft.
 
 // CHANGING ONE THAT EXISTS. Every pull request in the cut gets the same title
 // and the same description, which is the only way three of them keep saying the
