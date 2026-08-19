@@ -109,12 +109,21 @@ it('and every machine that is not the kit\'s is kept back while it runs', async 
 
   // AND IT IS TRUE OF THE POOLS, not merely written down: the queue is what
   // decides, and this is the queue's own answer.
+  // ASKED OF THE MACHINE, NOT OF THE POOL IT APPEARS IN. A pool is a ROLE now --
+  // worker, judge -- and a machine may carry both, so the kit's own kit-1 shows
+  // up twice, once under each, with neither pool named "test". Filtering on the
+  // pool's tag therefore reported the kit's own machines as somebody else's and
+  // failed a check that was doing its job.
+  //
+  // What this is actually about is whose machine it is, and that is a property
+  // of the machine: it carries the "test" tag or it does not.
+  const ours = new Set(machines.filter(m => (m.tags || []).includes('test')).map(m => m.name))
   const pools = await okc('pools')
   const loose = (pools.pools || [])
     .flatMap(p => p.machines.map(x => ({ ...x, tag: p.tag })))
-    .filter(x => x.free && x.tag !== 'test')
+    .filter(x => x.free && !ours.has(x.name))
   assert.ok(!loose.length,
-    `${loose.map(x => `${x.name} (${x.tag})`).join(', ')} are still free to the queue. While the kit runs, only the "test" pool may be taken — a drill or a supervisor queuing untagged work would otherwise reach somebody's working machine`)
+    `${loose.map(x => `${x.name} (${x.tag})`).join(', ')} are still free to the queue. While the kit runs, only machines tagged "test" may be taken — a drill or a supervisor queuing untagged work would otherwise reach somebody's working machine`)
 
   log(held.length ? `kept back for the run: ${held.join(', ')}` : 'nothing needed keeping back')
   if (already.length) log(`already kept back by somebody, and left that way: ${already.join(', ')}`)

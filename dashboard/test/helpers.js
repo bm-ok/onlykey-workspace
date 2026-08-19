@@ -100,4 +100,22 @@ async function aConnectedMachine (okc, assert, why) {
 // with no tag takes any free machine, which is every machine somebody owns.
 const POOL_TAG = TEST_POOL
 
-module.exports = { scratch, aLine, aMachine, aConnectedMachine, POOL_TAG }
+// WHICH SIGN-IN A MACHINE SHOULD BE HANDED, when a drill is about to hand it one.
+//
+// A MACHINE MAY BE BOTH. kit-1 carries `worker` and `judge`, and the whole point
+// of that design is that the ROLE COMES FROM THE WORK rather than from the
+// machine — so anything handing over a credential has to say which, and the
+// actions refuse rather than guess. Two drills were written before that was true
+// and simply did not pass one; both failed with the refusal telling them exactly
+// what to add, which is the refusal doing its job.
+//
+// Prefers what the caller asks for, falls back to the machine's only kind, and
+// returns undefined for a machine with no role tag at all — where the action's
+// own inference is a better answer than a guess made here.
+const roleFor = (machine, want = null) => {
+  const kinds = machine.kinds || []
+  if (want && kinds.includes(want)) return want
+  return kinds.length === 1 ? kinds[0] : (want || undefined)
+}
+
+module.exports = { scratch, aLine, aMachine, aConnectedMachine, roleFor, POOL_TAG }

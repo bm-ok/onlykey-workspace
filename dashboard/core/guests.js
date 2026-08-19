@@ -411,6 +411,24 @@ function whyNotOn (role, machineKind, name, machine) {
   // a default, it is an unanswered question. Refused with the answer in it:
   // "not allowed" about a machine somebody just built is useless next to the two
   // words that fix it.
+  // ---- A SUPERVISOR IS REFUSED FOR BEING ONE, BEFORE ANY OF THAT ------------
+  //
+  // ASKED FIRST BECAUSE IT IS TRUE OF EVERY MACHINE. A supervisor sign-in
+  // belongs on a supervisor machine and nowhere else, so the state of the tags
+  // cannot change the answer -- and letting the untagged branch below answer
+  // first produced a refusal that was correct and gave dangerous advice: "give
+  // it the worker tag, and then this can go to it". Tagging the machine is
+  // exactly what must not fix this. The sentence invited the one action that
+  // would put the identity deciding what workers do inside a worker.
+  //
+  // A drill caught it by asking with a machine that does not exist, which is the
+  // shape that isolates WHICH reason a refusal is for -- and the same drill had
+  // caught the same class of fault once before, when the role was checked after
+  // the credential had already been written to the disk.
+  if (want === 'supervisor' && !can.includes('supervisor')) {
+    return `"${name}" is ${SAYS.supervisor} and ${machine} is ${can.length ? MACHINE_SAYS[can[0]] : 'not a supervisor machine'}. Lending it there would let something other than the supervisor spend the identity that decides what workers do. No tag changes this: a supervisor sign-in goes to the supervisor machine or nowhere.`
+  }
+
   if (!can.length) {
     return `${machine} has not been told what it is for, so nothing can be lent to it. A machine holds a worker's identity or a judge's, and the tag is how it says which — give it the "worker" tag or the "judge" tag with vmTags, and then "${name}" can go to it.`
   }

@@ -8,7 +8,7 @@
 // to the ones after it.
 
 const { it, cleanup, requires } = require('../../../tasks/harness')
-const { aMachine } = require('../../helpers')
+const { aMachine, roleFor } = require('../../helpers')
 
 // It borrows a machine and hands it a credential to ask its questions, so it
 // stands on machines existing and on a credential being here.
@@ -36,7 +36,11 @@ it('a machine of our own, up and holding a credential', async ({ okc, assert, st
   state.machine = got.name
   await okc('vmAwait', { name: state.machine, for: 'connected', seconds: 600 })
 
-  const put = await okc('vmCredentialsPut', { name: state.machine })
+  // SAYING WHICH, because a machine may be a worker and a judge at once and the
+  // action refuses to guess between them. What this check is about is a machine
+  // HOLDING a credential at all, so either would do — worker is asked for
+  // because that is the one a snapshot must not capture.
+  const put = await okc('vmCredentialsPut', { name: state.machine, role: roleFor(free, 'worker') })
   state.lent = true
   assert.ok(put, `${state.machine} was not given the credential, so the checks below have nothing to ask about`)
   log(`borrowed ${state.machine}, brought it up and lent it the worker credential — it goes back in the cleanup`)

@@ -89,15 +89,40 @@ it('and a machine says which kind it is, from its tags alone', ({ assert, log })
     if (kind === 'supervisor') assert.ok(tags.includes(vms.SUPERVISOR), `"${v.name}" reads as a supervisor without carrying the tag`)
     if (kind === 'judge') assert.ok(tags.includes(vms.JUDGE), `"${v.name}" reads as a judge without carrying the tag`)
     if (kind === 'worker') assert.ok(tags.includes(vms.WORKER), `"${v.name}" reads as a worker without carrying the tag`)
+    // NULL HAS TWO CAUSES AND THEY ARE OPPOSITES. This assumed one of them: that
+    // a machine reading as no kind carries no role tag, and that the queue
+    // therefore leaves it alone. True for a machine nobody has labelled. False,
+    // and backwards, for one labelled TWICE.
+    //
+    // `kindOf` answers "which one thing is this", so a machine carrying both
+    // worker and judge cannot answer — the role has to come from the WORK, which
+    // is the whole design. It is null for having said too much rather than too
+    // little, and the queue reaches it eagerly, for either kind of work.
     if (kind === null) {
-      assert.ok(!tags.includes(vms.SUPERVISOR) && !tags.includes(vms.JUDGE) && !tags.includes(vms.WORKER),
-        `"${v.name}" reads as having no role while carrying a role tag`)
-      // AND THE CONSEQUENCE, checked rather than assumed: the queue does not
-      // reach it. This is the whole point of the answer being null.
-      assert.ok(!vms.takesQueuedWork(v), `"${v.name}" has said nothing about what it is for and the queue would still send it work`)
+      const kinds = vms.kindsOf(v)
+      if (!kinds.length) {
+        assert.ok(!tags.includes(vms.SUPERVISOR) && !tags.includes(vms.JUDGE) && !tags.includes(vms.WORKER),
+          `"${v.name}" reads as having no role while carrying a role tag`)
+        // AND THE CONSEQUENCE, checked rather than assumed: the queue does not
+        // reach it. This is the whole point of the answer being null.
+        assert.ok(!vms.takesQueuedWork(v), `"${v.name}" has said nothing about what it is for and the queue would still send it work`)
+      } else {
+        assert.ok(kinds.length > 1,
+          `"${v.name}" carries exactly one role, ${kinds[0]}, and still could not say which kind it is`)
+        assert.ok(kinds.every(k => ROLES.includes(k)), `"${v.name}" carries a role that is not one of ${ROLES.join(', ')}: ${kinds.join(', ')}`)
+        // THE OTHER CONSEQUENCE, and it is the reverse of the one above. A
+        // machine that can be two things is not unusable; it is available to
+        // both, one at a time, and the work says which.
+        assert.ok(vms.takesQueuedWork(v),
+          `"${v.name}" carries ${kinds.join(' and ')} and the queue will not send it work — a machine that can do two jobs must not be excluded from both`)
+      }
     }
   }
-  log(here.map(v => `${v.name}: ${vms.kindOf(v) || 'no role — the queue leaves it alone'}`).join(', '))
+  log(here.map(v => {
+    const kinds = vms.kindsOf(v)
+    if (kinds.length > 1) return `${v.name}: ${kinds.join(' and ')} — the work says which`
+    return `${v.name}: ${kinds[0] || 'no role — the queue leaves it alone'}`
+  }).join(', '))
 })
 
 it('a role can be moved, and what was BUILT cannot', async ({ okc, assert, state, log }) => {

@@ -6,7 +6,7 @@
 // GitHub token, and why it never reads a value.
 
 const { it, draft, requires } = require('../../../tasks/harness')
-const { aMachine } = require('../../helpers')
+const { aMachine, roleFor } = require('../../helpers')
 
 // It hands the credential to a machine to find out whether it works, so it
 // stands on machines existing and coming up. That is the whole reason it sits
@@ -60,7 +60,11 @@ it('and a machine can really sign in with it', async ({ okc, assert, state, log 
   // machines to exist.
   const free = await aMachine(okc, assert, 'no machine is free to try it on — this hands the credential to a real machine, because holding a file proves nothing about whether a worker is accepted')
 
-  const tried = await okc('credentialsTest', { name: free.name })
+  // WHICH SIGN-IN, because a machine may be both a worker and a judge and the
+  // role comes from the WORK. This suite is about a worker's credential, so it
+  // asks for the worker's — and on a machine that is only one thing, that is
+  // what it gets anyway.
+  const tried = await okc('credentialsTest', { name: free.name, role: roleFor(free, 'worker') })
   assert.ok(tried.ready === true,
     `${tried.on || free.name} was handed the stored credential and the worker did not authenticate: ${tried.note || 'no reason given'}. It is present and no longer accepted, which is the case that fails at the far end of a real job.`)
   log(`${tried.on} was handed the credential and the worker authenticated`)

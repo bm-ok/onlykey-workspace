@@ -102,14 +102,26 @@ it('and a worker sign-in never goes to the supervisor', async ({ okc, assert, st
   // THE OTHER DIRECTION, and it is not symmetry for its own sake: a supervisor
   // holding a worker's identity takes one out of the pool the runners draw from,
   // and everything it decided would be billed to a worker.
+  // EVERY LENDABLE ROLE, NOT WHICHEVER ONE IS FIRST. This took the first
+  // non-supervisor sign-in and asserted the refusal said "worker" — and once a
+  // JUDGE role existed, the first one it found was runner1, a judge, so the
+  // refusal correctly said "judge" and the check failed on the wording of an
+  // answer that was right.
+  //
+  // The rule is not about workers. It is that neither of the two lendable roles
+  // belongs on the machine that decides what work there is, and for the same
+  // reason each time: it takes an identity out of the pool the runners draw
+  // from, and bills a supervisor's thinking to whoever owns it.
   const machines = (await okc('vmList')).vms || []
   const boss = machines.find(m => m.supervisor)
-  const worker = (state.all || []).find(g => g.role !== 'supervisor')
-  assert.needs(boss && worker, 'this needs a supervisor machine and a worker sign-in')
+  const lendable = (state.all || []).filter(g => g.role !== 'supervisor')
+  assert.needs(boss && lendable.length, 'this needs a supervisor machine and at least one worker or judge sign-in')
 
-  await assert.refuses(
-    () => okc('guestLend', { name: worker.name, machine: boss.name }),
-    'worker sign-in and',
-    `"${worker.name}" is a worker's identity and it was put on the supervisor machine`)
-  log(`"${worker.name}" cannot go to ${boss.name}`)
+  for (const one of lendable) {
+    await assert.refuses(
+      () => okc('guestLend', { name: one.name, machine: boss.name }),
+      'sign-in and',
+      `"${one.name}" is a ${one.role}'s identity and it was put on the supervisor machine`)
+    log(`"${one.name}" (${one.role}) cannot go to ${boss.name}`)
+  }
 })

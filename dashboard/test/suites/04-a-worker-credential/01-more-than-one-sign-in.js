@@ -39,7 +39,17 @@ it('the sign-ins are a list, and every one of them has a name', async ({ okc, as
 
   for (const g of all) {
     assert.ok(g.name, 'an identity in the list has no name, which is also its filename')
-    assert.ok(g.role === 'guest' || g.role === 'supervisor', `"${g.name}" has a role of "${g.role}", and the only two are guest and supervisor`)
+    // THREE NOW, NOT TWO, AND ONE OF THEM WAS RENAMED. A judge was added because
+    // "who said this is good" and "who wrote it" must not be the same account —
+    // that is the one distinction a judge exists to provide. And `guest` was the
+    // old name for a worker: it is still what old records say, is read as
+    // `worker`, and was retired because the machine half of this app already
+    // uses "guest" for the virtual machine itself.
+    //
+    // The old name is accepted here for the same reason the code accepts it: a
+    // record written before the rename is not a record that has gone wrong.
+    assert.ok(['worker', 'judge', 'supervisor', 'guest'].includes(g.role),
+      `"${g.name}" has a role of "${g.role}", and they are worker, judge and supervisor — or "guest", which is what a worker was called before the rename`)
   }
   log(`${all.length} identity(ies): ${all.map(g => `${g.name} (${g.role})`).join(', ')}`)
 })
