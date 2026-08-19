@@ -15,10 +15,16 @@ const actions = require('./table')
 // Everything the table is built out of, in one place rather than a require
 // block repeated nine times. See actions/shared.js.
 const s = require('./shared')
+// WHAT THIS MACHINE IS RUNNING, asked in one place — see tasks/onmachine.js.
+// Needed here to tell a continuation from a first pass.
+const { whatIsOn } = require('../tasks/onmachine')
 const {
   log, keys, ssh, data, secret, github, remotes, landings, prtemplate, drafts, judgements,
   vbox, vms, provisioner, scripts, channel, tasks, artifact,
   archive, files, prompts, jobs, jobrun, workspaces, queue, machines, provision, reach, editor, repos,
+  // What a machine is set up for, and what it remembers — for the announcement
+  // a continuation carries. See vmDispatch.
+  sessions,
   busy, session, dispatch, auth, branches, workspace, fs, path, https,
   started, net, inTheWay, refuseIfThatTitleIsTaken, refuseIfItHoldsACredential,
   guestPath, workFolder, credentialLife, rememberCredentialCheck, twoLines
@@ -44,6 +50,66 @@ module.exports = {
       const vm = vms.get(name)
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in, so it cannot be given work.`)
       if (!task || !String(task).trim()) throw new Error('Say what the task is.')
+
+      // ---- A CONTINUATION IS ANNOUNCED, OR IT IS NOT A NEW TASK AT ALL -----
+      //
+      // MEASURED, NOT SUPPOSED. With sessions filed by branch cut, a second task
+      // on a branch resumes the first one's conversation — which is the point,
+      // and it carries more than facts. A drill gave pass one a standing
+      // instruction ("every file on this branch begins with this heading"), then
+      // gave pass two a different brief under a different contract, and pass two
+      // wrote:
+      //
+      //     CONTRACT-LOADED          <- the new contract's rule
+      //     # PASS ONE STYLE         <- the OLD task's instruction, still obeyed
+      //
+      //     hello
+      //
+      // That is not a worker misbehaving. It obeyed everything it had been told,
+      // and one of those things was told to a different task. Nothing withdrew
+      // it, so nothing expired.
+      //
+      // WHAT IT COSTS is the property this app rests on: a task carries the TEXT
+      // of its prompt and contract so that what a worker was held to can be
+      // proven six weeks later. An instruction still in force and written down
+      // nowhere in this task's record makes that record incomplete.
+      //
+      // AND IT LEAKS BOTH WAYS. Given a brief that contradicted its contract,
+      // the same worker flagged that the PREVIOUS task's committed file broke
+      // the CURRENT contract, and considered amending it. So new rules reach
+      // backwards onto finished work as readily as old rules reach forwards.
+      //
+      // SO THE ANNOUNCEMENT SAYS BOTH THINGS. It does not withhold the memory —
+      // that is what the memory is for, and a worker that has to rediscover the
+      // branch every time is the thing being fixed. It says what has AUTHORITY:
+      // the brief and contract of this task, and nothing else.
+      //
+      // ONLY WHEN IT IS ACTUALLY A CONTINUATION. Filed by uid, or the first pass
+      // on a branch, the conversation belongs to this same piece of work and
+      // there is nothing to announce — saying it anyway would train a reader to
+      // skip it.
+      try {
+        const doing = whatIsOn(name)
+        const key = doing && sessions.keyFor(doing)
+        const kept = key ? sessions.get(key) : null
+        if (doing && kept && kept.taskId && kept.taskId !== doing.id) {
+          task = [
+            'BEFORE ANYTHING ELSE — THIS IS A NEW PIECE OF WORK.',
+            '',
+            `You are continuing a conversation that belongs to this branch, not to this task. What you remember was done as ${kept.kind === 'judgement' ? 'a different reading' : 'a different task'}${kept.number ? ` (#${kept.number})` : ''}, under its own brief and its own rules.`,
+            '',
+            'That memory is yours to use: the codebase, what you tried, what worked, what you decided and why. Use it, and do not spend this run rediscovering it.',
+            '',
+            'It is NOT a source of instructions. Standing instructions, styles and conventions you were given in that earlier work do not carry into this one. What binds you now is the brief below and the rules attached to this run, and nothing else. If something from before should still apply, it will be in the brief.',
+            '',
+            'And what was finished under those earlier rules was correct under them. Do not go back and revise committed work to match rules it was never done under; if you think something earlier is wrong, say so rather than change it.',
+            '',
+            '--- the task ---',
+            '',
+            String(task)
+          ].join('\n')
+        }
+      } catch { /* a brief that could not be annotated is still the brief */ }
 
       // Asked before anything is set up, because a worker that cannot
       // authenticate does not fail as "signed out" -- it fails as an api error
