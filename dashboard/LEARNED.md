@@ -1279,6 +1279,35 @@ it. `vmCredentialsPut` takes the role from the WORK, because a machine tagged
 both cannot answer it. Nothing here got smarter; it got more willing to say it
 did not know.
 
+**AND A FOURTH KIND, FOUND THE SAME EVENING: answering "I do not know" as if it
+were "no".** Six pull requests were reported as `gone from GitHub`. All six were
+merged. Three separate things had to be wrong at once for that sentence to be
+produced, and each of them is the same mistake in a different place:
+
+* **Nobody followed the redirect.** GitHub answers 301 with a `Location` when a
+  repository is renamed or transferred, and keeps doing so. The client resolved
+  the raw status, so every caller saw "not 200" and drew its own conclusion.
+* **The wrong repository was being asked.** `pullsOn` answers "what is on the
+  repository this workspace TARGETS today", which is right for a board and wrong
+  for history — a cut is a record of something that already happened, opened
+  against whatever the target was then. Pointing the workspace at a different
+  fork since does not move the pull request.
+* **And "not found" was printed as "gone".** One is a fact about a pull request.
+  The other is a fact about the asking, and only one of them is somebody's
+  problem.
+
+WHAT MAKES THIS WORTH ITS OWN PARAGRAPH is that a sweep built on top of it then
+reported fifteen outstanding pull requests across two accounts and asked to close
+them all. Nothing was wrong. The layer above inherited the layer below's
+certainty, which is what a wrong answer does that a missing one does not: it
+travels.
+
+THE RULE THE WRITE PATH GOT RIGHT, by contrast, and it is the shape to copy: a
+redirect is followed for GET and HEAD and never for a write. A GET that follows
+one asks the same question at a new address; a POST that follows one publishes
+into a repository nobody named. Reading somewhere else is recoverable. Writing
+somewhere else is not.
+
 AND THE ONE THAT WAS NOT A GUESS, kept beside them because it is the counterweight:
 the kit takes every machine that is not its own out of the queue's reach while it
 runs, and gave them back only in the cooling stage, which is off by default. Two
