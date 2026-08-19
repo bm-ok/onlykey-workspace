@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 62 tests, 287 checks, 21 of them drafts -->
+<!-- 12 suites, 63 tests, 292 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -584,6 +584,14 @@ The machine that decides what work there is, rather than one doing it.
   4. and a save is refused while somebody has it open with unsaved edits
   5. and force writes anyway, and says that it trampled something
   6. and putting it back is an ordinary save
+
+## 10 — the loop closes itself
+
+  1. a cut of this host that is no longer open is news
+  2. and a closed issue is still not
+  3. and a pull request nobody here cut is not
+  4. and a repository that could not be read has said nothing
+  5. and merging is a person, which is why this drill merges nothing
 
 # 11 — cooling the host
 

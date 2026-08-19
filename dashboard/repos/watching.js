@@ -43,6 +43,36 @@ const write = seen => {
 // an issue is named.
 const idOf = (on, kind, number) => `${on} ${kind}#${number}`
 
+// ---- which of them were this host's own, and have gone --------------------
+//
+// SEPARATED FROM THE ASKING SO IT CAN BE CHECKED WITHOUT A NETWORK. Deciding
+// which watched things have ended is arithmetic over two records; finding out
+// what became of one is a trip to GitHub. Folded together the rule could only be
+// tested by merging something, and "merge a real pull request" is not a thing a
+// drill may do.
+//
+// `into` IS WHAT THE RECORD STORES. `on` is the name the same field carries in
+// `landings.state()`, which is a live projection rather than what is kept --
+// reading for `on` here matched nothing at all, silently, and the whole set came
+// out empty. Both are accepted so either record can be handed in.
+function endedAmong (seen, now, cuts) {
+  const ours = new Set()
+  for (const cut of Object.values(cuts || {})) {
+    for (const p of cut.pulls || []) {
+      const on = p.into || p.on
+      if (on && p.number) ours.add(idOf(on, 'pull', p.number))
+    }
+  }
+
+  // STILL IN `now` MEANS IT HAS NOT GONE, and that covers two different cases on
+  // purpose: it is still open, or its repository could not be read this look and
+  // was carried forward. A repository that did not answer has not told us
+  // anything has gone from it.
+  return Object.entries(seen || {})
+    .filter(([id, had]) => !(now || {})[id] && had && had.kind === 'pull' && ours.has(id))
+    .map(([, had]) => had)
+}
+
 // ---- looking --------------------------------------------------------------
 //
 // One trip per repository, for issues and for pull requests. Every repository
@@ -156,21 +186,8 @@ async function look () {
   // AND IT ASKS WHAT BECAME OF IT rather than assuming. Gone from the open list
   // means closed, and closed is not merged -- a cut somebody rejected is news
   // too, and it is different news. One call, only for the few that vanished.
-  const ours = new Set()
-  for (const cut of Object.values(landings.all() || {})) {
-    // `into` IS WHAT THE RECORD STORES. `on` is the name the same field carries
-    // in `landings.state()`, which is a live projection rather than what is kept
-    // -- reading for `on` here matched nothing at all, silently, and the whole
-    // set came out empty.
-    for (const p of cut.pulls || []) {
-      const on = p.into || p.on
-      if (on && p.number) ours.add(idOf(on, 'pull', p.number))
-    }
-  }
   const ended = []
-  for (const [id, had] of Object.entries(seen)) {
-    if (now[id]) continue
-    if (had.kind !== 'pull' || !ours.has(id)) continue
+  for (const had of endedAmong(seen, now, landings.all())) {
     let became = null
     try { became = await remotes.pullAt(had.on, had.number) } catch { /* it is gone from the open list either way */ }
     ended.push({ ...had, merged: !!(became && became.merged), asked: !!became })
@@ -194,4 +211,4 @@ function lastLook () {
   }
 }
 
-module.exports = { look, lastLook, read, FILE }
+module.exports = { look, lastLook, endedAmong, read, FILE }
