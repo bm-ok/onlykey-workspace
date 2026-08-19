@@ -227,17 +227,37 @@ function paintCutDetail (c) {
         : composed
           ? codeBlock(composed, 'markdown', { max: 30 })
           : el('p', { className: 'empty', textContent: 'Nothing would be opened for this pair — the source carries nothing the target does not already have.' }),
+      // ---- WHAT THE BUTTON DOES, BESIDE THE BUTTON --------------------
+      //
+      // "Send it" is the only thing on this screen that reaches outside this
+      // host, and its name says the intent rather than the acts. Four things
+      // happen and they are not reversible in the same way: a branch is pushed
+      // to a fork, pull requests are opened under somebody's account, and they
+      // are then rewritten to link to each other. A dialog says this too, and a
+      // dialog is read once and clicked through afterwards -- so it is on the
+      // screen as well, where somebody deciding can read it without committing
+      // to a press first.
+      el('p', { className: 'note muted', textContent: `Send it pushes ${c.source} to the fork in every repository that carries something, opens one pull request each, and then writes them again with links to one another — those numbers do not exist until all of them are open. They are tracked here as one cut. Merging them is a separate act, and also yours.` }),
+
       el('div', { className: 'row' },
         // THE ONE ACT THIS SCREEN CAN DO ABOUT A DRAFT, and it is deliberately a
         // person's press. See the supervisor: it may write the text and make the
         // line, and sending it outward is not on its list at all.
+        //
+        // `btn ok` RATHER THAN `good`, which is what every other action row on
+        // this tab uses. Written as `good` these two rendered unstyled -- a
+        // class that matches no rule is the quietest failure in CSS, and it made
+        // the one outward-facing button on the screen look like plain text.
         el('button', {
-          className: 'good',
+          className: 'btn ok',
           textContent: 'Send it',
+          title: 'Pushes the branches and opens the pull requests. This is the step that reaches GitHub',
           onclick: () => sendDraft(c)
         }),
         el('button', {
+          className: 'btn',
           textContent: 'Edit it',
+          title: 'Opens this text in the writer on "New PR Cut", with these two lines already chosen',
           onclick: () => {
             // The writer is where this text was composed, so editing means going
             // back to it with the same pair selected rather than a second dialog
