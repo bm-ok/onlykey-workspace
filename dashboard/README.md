@@ -2006,13 +2006,13 @@ ordinary user. What follows is what is still not proven.
   can no longer replace one that carries either, and it has refused three times
   since on a key that still works. Rotation is evidence that something happened,
   not that it worked.
-* **A judge and a worker on the same machine is proven one way round.** A machine
-  may carry both the `worker` and `judge` tags and serve either, one at a time,
-  with the credential chosen by the WORK rather than by the box. A task has run
-  on such a machine under a worker's sign-in. A judgement on the same machine
-  under a judge's sign-in has been dispatched and not yet finished cleanly, so
-  the half that matters most — that one machine keeps two accounts apart across
-  two runs — is dispatched rather than demonstrated.
+* **One machine serving two roles is proven, and here is what it looked like.**
+  `kit-1` carries both the `worker` and `judge` tags. On 19 August it ran task
+  #212 as `runner3` at 15:14, gave that sign-in back, and ran judgement J65 as
+  `runner4` at 15:17 — same disk, two accounts, each handed back before the next
+  was handed over. The separation this app exists to keep is between ACCOUNTS
+  rather than between machines, and that is the run which shows the difference.
+
 * **A session that carries a reading forward has never been used.** Judging is
   filed per branch line and lane like everything else, and a judgement can ask to
   continue from the last reading of the same line — the case where a judge says

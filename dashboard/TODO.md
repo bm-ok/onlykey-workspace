@@ -315,14 +315,45 @@ Worth being clear that this is a *decision*, not an omission: everything
 delivered so far is on a branch precisely because nothing has decided it should
 be anywhere else.
 
-**Nothing runs the supervisor.** Every piece is in place — the queue drives
-machines, pre-defined tasks are written and approved, a worker is given rules and
-watched, and what comes back is judged — and a person still writes every task by
-hand. `legacy/PLAN.md` describes the AI-driven mode and is explicit about why it
-is allowed at all: the dashboard sits between the model and the workers, so
+**The supervisor ran the whole loop on 19 August, and this section used to say
+that was the missing piece.** It is kept, rewritten, because what it was for —
+naming the joint — is still worth having, and because the shape of what happened
+matters more than the fact of it.
+
+In one waking, unaided: it read the board, went back over what judges had handed
+back, and picked up a finding from J39 that had been sitting on its own todo list
+for days. It asked for a judgement to establish the claim was real. It cut a
+branch line — refused first, for naming a group that does not exist, and right on
+the next call. It wrote task #212 citing `becauseOf: J63`, queued it, and set
+triage before going back to reading while it waited. The worker delivered one
+commit in local-repo-c: the fix and its test, +2 −2. It asked for a judgement of
+the delivered work, and J65 accepted.
+
+WHAT THE JUDGE DID IS THE PART WORTH KEEPING. It did not reason from the diff. It
+ran the NEW assertion against the OLD source in a sandbox to prove the edited test
+is a regression test rather than a relaxation that makes the suite green, and it
+confirmed the CLI was byte-identical to base so nothing had over-reached. That is
+the difference between a verdict and a signature.
+
+**AND IT STOPPED WHERE IT WAS TOLD TO.** `branchAsLine` and `prDraftSave` are its
+own and it did both; `prCutMake` publishes outside this host, so it filed T26 and
+waits. Every human gate held and none of them got in its way: it cannot approve a
+job, a prompt or a contract, and it cannot write a task without naming a
+judgement that finished.
+
+**So the joint has moved rather than closed.** What does not exist is not
+something proposing work — that exists, and works. What does not exist is any
+reason to believe it keeps working: this is ONE loop, on a finding it had already
+been handed, in a workspace of three small repositories it has read many times.
+The interesting failures are the ones a single good run cannot show — a claim
+that turns out to be wrong under judgement, two pieces of work that conflict, a
+judge that rejects and a supervisor that has to decide what to do about it.
+
+`legacy/PLAN.md` describes the AI-driven mode and is explicit about why it is
+allowed at all: the dashboard sits between the model and the workers, so
 distribution goes through the observable channel rather than a private call
-inside an orchestrator. That constraint is already satisfied by the queue; what
-does not exist is anything proposing the work.
+inside an orchestrator. That constraint held throughout — every step above is an
+action in the table, refusable, and in the record.
 
 
 Unproven, and unexplained
