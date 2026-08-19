@@ -115,7 +115,22 @@ it('the queue runs it, and gives the sign-in back', async ({ okc, assert, state,
     const mine = (await okc('tasks')).tasks.find(t => t.id === state.task)
     if (mine && ['done', 'accepted', 'rejected', 'failed'].includes(mine.state)) { done = mine; break }
   }
-  assert.ok(done, 'the task never finished within seven minutes')
+  // WHY IT DID NOT FINISH, NOT MERELY THAT IT DID NOT. "Never finished within
+  // seven minutes" is true of a slow run, a wedged machine and a host with no
+  // usable sign-in, and only the last of those is not a fault to go looking for.
+  // It happened: both worker sign-ins were dead, the queue correctly refused to
+  // spend a machine on work it could give no identity, and this reported a
+  // timeout — sending somebody to look at machines when the answer was on the
+  // Keys tab.
+  if (!done) {
+    const held = await okc('credentialsHeld')
+    const workers = (held.guests || []).filter(g => g.role === 'worker')
+    const usable = workers.filter(g => g.lastCheck ? g.lastCheck.ready !== false : true)
+    assert.ok(usable.length,
+      `no worker sign-in on this host can authenticate — ${workers.map(g => `"${g.name}"`).join(', ') || 'there are none at all'}. ` +
+      'The queue is right to leave the task queued and spend no machine on it; there is nothing wrong with the machines. Sign a worker in again on the Keys tab and run this once more.')
+  }
+  assert.ok(done, 'the task never finished within seven minutes, and a worker sign-in was available the whole time — so this is the machines or the run, not the key')
   state.machine = done.machine || null
   assert.ok((done.attempts || []).length, `#${done.number} finished having never been given a machine, so no worker ever held the credential`)
 
