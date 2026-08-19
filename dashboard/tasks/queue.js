@@ -339,7 +339,10 @@ async function tick (actions, log) {
       // what it is waiting for. It is not a failure and must not be filed as one
       // — a paused sign-in is fixed by a person at a login page, and the task
       // should be there waiting when they have done it.
-      const kind = kindOf({ name: may[pick].name, tags: tagsOf(may[pick].name) })
+      // WHICH SIGN-IN THIS WORK NEEDS, from the work. Asked of the MACHINE
+      // before, which answered null for one tagged worker and judge -- so a
+      // dual machine looked like it needed a sign-in of no kind at all.
+      const kind = task.kind === 'judgement' ? 'judge' : 'worker'
       if (!guests.freeFor(kind).length) {
         const stopped = guests.pausedFor(kind)
         sayWaiting(task.ref, stopped.length
@@ -521,7 +524,10 @@ async function runJudgement (actions, log, judgement, machine) {
     judging.update(id, { state: 'given', machine })
 
     await phase('bringUp', () => bringUp(actions, to, machine))
-    await phase('credential', () => actions.vmCredentialsPut.run({ name: machine }))
+    // A JUDGE'S IDENTITY, BECAUSE THIS IS A JUDGEMENT -- said by the work
+    // rather than read off the machine, which is the only thing that can
+    // answer it for a machine tagged worker AND judge.
+    await phase('credential', () => actions.vmCredentialsPut.run({ name: machine, role: 'judge' }))
     await phase('workspace', () => actions.vmWorkspace.run({
       name: machine,
       branch,
@@ -818,7 +824,8 @@ async function run (actions, log, task, machine) {
     await phase('bringUp', () => bringUp(actions, to, machine))
 
     // --- give it the work -------------------------------------------------
-    await phase('credential', () => actions.vmCredentialsPut.run({ name: machine }))
+    // A WORKER'S IDENTITY, BECAUSE THIS IS A TASK. See the judgement path.
+    await phase('credential', () => actions.vmCredentialsPut.run({ name: machine, role: 'worker' }))
     await phase('workspace', () => actions.vmWorkspace.run({
       name: machine,
       branch: task.branch,
@@ -1972,20 +1979,27 @@ const takes = (entry, tags) => {
 let saidNoJudge = false
 function ofItsOwnKind (entry, free, log) {
   if (!entry) return free
-  const kindOf = name => {
+  // MAY IT DO THIS KIND OF WORK, which is membership rather than equality. A
+  // machine tagged worker AND judge does both -- one at a time, rolled back to
+  // base in between -- so asking "is its kind judge" answered no for a machine
+  // that judges perfectly well, and the second tag did nothing.
+  //
+  // An unknown machine can do neither. It used to read as a worker, which is the
+  // guess this whole rule exists to remove.
+  const canDo = (name, role) => {
     const vm = vms.read().find(v => v.name === name)
-    return vm ? vms.kindOf(vm) : 'worker'
+    return vm ? vms.canBe(vm, role) : false
   }
 
   if (entry.kind === 'judgement') {
-    const judges = free.filter(m => kindOf(m.name) === 'judge')
+    const judges = free.filter(m => canDo(m.name, 'judge'))
     if (judges.length) return judges
 
     // None free. If none EXISTS, this host has not set the separation up and
     // judging carries on as it always did — said once, because an arrangement
     // somebody believes is in force and is not is worse than one they know they
     // have not made yet.
-    const anyExists = vms.read().some(v => vms.kindOf(v) === 'judge')
+    const anyExists = vms.read().some(v => vms.canBe(v, 'judge'))
     if (!anyExists) {
       if (!saidNoJudge && log) {
         saidNoJudge = true
@@ -1999,7 +2013,19 @@ function ofItsOwnKind (entry, free, log) {
 
   // A TASK, AND THE STRICT HALF. A judge machine is never eligible, whether or
   // not one is free and whether or not anything else is.
-  return free.filter(m => kindOf(m.name) !== 'judge')
+  // ---- AND A TASK GOES TO A MACHINE THAT MAY WORK -----------------------
+  //
+  // ASKED AS "MAY IT BE A WORKER" rather than "is it not a judge", which are the
+  // same question only while a machine is one thing. A machine tagged both may
+  // work, and excluding it for carrying a judge tag would take a perfectly good
+  // runner out of the pool for a reason that has nothing to do with this task.
+  //
+  // The property being kept is unchanged and is about ACCOUNTS: the identity
+  // that says whether work holds must not be the one that wrote it. A dual
+  // machine is handed a worker's sign-in for this, a judge's for a judgement,
+  // and gives each back before the next -- so the two names stay separate even
+  // though the metal does not.
+  return free.filter(m => canDo(m.name, 'worker'))
 }
 
 const FIRST = { judgement: 0, task: 1 }

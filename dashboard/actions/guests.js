@@ -150,7 +150,10 @@ module.exports = {
       const isSupervisor = (mine.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
       // WHICH KIND OF MACHINE THIS IS, asked of vms rather than worked out here.
       // A judge is the third kind and a boolean cannot carry it; see kindOf.
-      const machineKind = vms.kindOf(mine)
+      // EVERY ROLE THIS MACHINE MAY SERVE. A machine tagged worker and judge may
+      // hold either sign-in -- one at a time -- and asking for a single kind
+      // answered null for it, which read as "it has not said what it is".
+      const machineKind = vms.kindsOf(mine)
       const why = guests.whyNotOn(guest.role, machineKind, name, machine)
       if (why) throw new Error(why)
 

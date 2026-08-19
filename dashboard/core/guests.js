@@ -391,21 +391,33 @@ const MACHINE_SAYS = {
 function whyNotOn (role, machineKind, name, machine) {
   const want = role === 'supervisor' || role === 'judge' ? role : 'worker'
 
+  // ---- WHAT THE MACHINE MAY BE, AS A LIST ---------------------------------
+  //
+  // A MACHINE CAN BE MORE THAN ONE THING. Tagged worker AND judge it serves
+  // both, one at a time, and the question here is not "what kind is it" but
+  // "may this sign-in go to it" -- which is membership, not equality. Written as
+  // equality, a dual machine silently resolved to whichever tag the reader
+  // checked first, and the other tag did nothing.
+  //
+  // A STRING IS STILL ACCEPTED, because callers that know a machine has one kind
+  // are not wrong and should not all be rewritten to pass an array of one.
+  const can = Array.isArray(machineKind)
+    ? machineKind.filter(Boolean)
+    : (machineKind ? [machineKind] : [])
+
   // ---- A MACHINE THAT HAS NOT SAID WHAT IT IS GETS NOTHING -----------------
   //
-  // `kindOf` answers null for a machine carrying no role tag, and null used to
-  // be read here as "worker" -- which handed a worker's identity to any box that
-  // had not been labelled. The tag is how a machine says which credential it may
-  // hold, so no tag is not a default, it is an unanswered question.
-  //
-  // REFUSED WITH THE ANSWER IN IT. "Not allowed" about a machine somebody just
-  // built is useless; what they need is the two words that fix it.
-  if (machineKind !== 'supervisor' && machineKind !== 'judge' && machineKind !== 'worker') {
+  // The tag is how a machine says which credential it may hold, so no tag is not
+  // a default, it is an unanswered question. Refused with the answer in it:
+  // "not allowed" about a machine somebody just built is useless next to the two
+  // words that fix it.
+  if (!can.length) {
     return `${machine} has not been told what it is for, so nothing can be lent to it. A machine holds a worker's identity or a judge's, and the tag is how it says which — give it the "worker" tag or the "judge" tag with vmTags, and then "${name}" can go to it.`
   }
 
-  const is = machineKind
-  if (want === is) return null
+  if (can.includes(want)) return null
+
+  const is = can[0]
 
   const why = want === 'supervisor'
     ? 'Lending it there would let something other than the supervisor spend the identity that decides what workers do.'
@@ -556,6 +568,9 @@ function lentTo (name, machine, { supervisor = false, kind = null } = {}) {
   const all = read()
   const i = all.findIndex(g => g.name === name)
   if (i < 0) throw new Error(`There is no guest called "${name}".`)
+  // `kind` MAY BE A LIST NOW, because a machine may be a worker and a judge at
+  // once -- whyNotOn takes either and asks whether the role is among them. The
+  // boolean is still read for callers that predate three roles.
   const on = kind || (supervisor ? 'supervisor' : 'worker')
   const why = whyNotOn(all[i].role, on, name, machine)
   if (why) throw new Error(why)

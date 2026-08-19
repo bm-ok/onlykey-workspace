@@ -229,16 +229,54 @@ const kindOf = vm => {
   // lending refuses it and says which tag to add, and the register reports it
   // plainly instead of dressing it as a runner. A machine with no role is
   // perfectly usable by hand; it is only automatic work that must not guess.
-  return has(SUPERVISOR) ? 'supervisor' : has(JUDGE) ? 'judge' : has(WORKER) ? 'worker' : null
+  const kinds = kindsOf(vm)
+  // ONE NAME WHERE THERE IS ONE, and null where there is none. A machine that
+  // is BOTH has no single kind and must not be asked for one -- see kindsOf.
+  return kinds.length === 1 ? kinds[0] : null
 }
 
-// WHETHER THE QUEUE MAY PICK THIS ONE UP. Asked in one place so the queue, the
-// pools panel and any drill give the same answer -- and so that "why is my
-// machine never taken" has a function to point at rather than a paragraph.
-const takesQueuedWork = vm => {
-  const kind = kindOf(vm)
-  return kind === 'worker' || kind === 'judge'
+// ---- WHAT A MACHINE MAY BE, WHICH IS A LIST -------------------------------
+//
+// A MACHINE CAN BE A WORKER AND A JUDGE AT ONCE. They are the same build --
+// what separates them is which sign-in may be lent and which work is sent, and
+// both are decisions about an identical disk. So carrying both tags is a
+// sensible thing to want on a host with few machines: it takes tasks when there
+// are tasks and judgements when there are judgements, one at a time, rolled back
+// to base in between.
+//
+// AND THE SEPARATION THAT MATTERS IS UNHARMED, which is the reason this is
+// allowed at all. What must never collapse is the ACCOUNT: the identity that
+// says whether work holds must not be the identity that wrote it. That is kept
+// by the credential, not by the box -- a machine holds one sign-in at a time and
+// gives it back before the next, so a judge machine and a worker machine can be
+// the same metal without "who judged this" and "who wrote it" becoming one name.
+//
+// SUPERVISOR IS EXCLUSIVE, and not by policy: it is a different PROVISION, with
+// its own scripts and a sign-in desk. Nothing is stopping the tags from being
+// combined; there is simply no such machine.
+const kindsOf = vm => {
+  const tags = (vm && vm.tags) || []
+  const has = want => tags.some(t => String(t).toLowerCase() === want)
+  if (has(SUPERVISOR)) return ['supervisor']
+  const out = []
+  if (has(WORKER)) out.push('worker')
+  if (has(JUDGE)) out.push('judge')
+  return out
 }
+
+// WHETHER THIS MACHINE MAY DO THAT KIND OF WORK. The one question every
+// decision here actually has -- asked of the machine and the ROLE together,
+// rather than by reading a single kind off the machine and comparing it.
+const canBe = (vm, role) => kindsOf(vm).includes(role)
+
+// WHETHER THE QUEUE MAY PICK THIS ONE UP AT ALL. Asked in one place so the
+// queue, the pools panel and any drill give the same answer -- and so that "why
+// is my machine never taken" has a function to point at rather than a paragraph.
+const takesQueuedWork = vm => canBe(vm, 'worker') || canBe(vm, 'judge')
+
+// FOR SAYING, NEVER FOR DECIDING. "worker+judge" is what somebody reads on a
+// card; nothing may compare against it.
+const kindSaid = vm => kindsOf(vm).join('+') || 'no role yet'
 
 // AND THE POOL EVERY OTHER MACHINE IS IN.
 //
@@ -306,10 +344,15 @@ async function all () {
       // out of the pool. See kindOf and the JUDGE tag above.
       judge: (vm.tags || []).some(t => String(t).toLowerCase() === JUDGE),
       kind: kindOf(vm),
+      // EVERY ROLE IT MAY SERVE, and the words for a card. `kind` is null for a
+      // machine that is both, on purpose: there is no single answer and anything
+      // comparing against one would be picking a winner silently.
+      kinds: kindsOf(vm),
+      kindSaid: kindSaid(vm),
       agent: channel.list().find(a => a.vm === vm.name) || null
     })
   }
   return { available: true, vms }
 }
 
-module.exports = { all, read, get, add, update, forget, stageOf, kindOf, takesQueuedWork, STAGES, SUPERVISOR, JUDGE, WORKER, POOL }
+module.exports = { all, read, get, add, update, forget, stageOf, kindOf, kindsOf, canBe, kindSaid, takesQueuedWork, STAGES, SUPERVISOR, JUDGE, WORKER, POOL }

@@ -479,7 +479,18 @@ module.exports = {
       const isSupervisor = (mine.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
       // The machine's own kind, so a credential grabbed off a judge machine is
       // filed as a judge's. `isSupervisor` could only ever say two of the three.
-      const role = vms.kindOf(vms.get(name))
+      //
+      // AND A MACHINE THAT IS BOTH CANNOT SAY. Filing it as either would be this
+      // host picking which pool somebody's credential joins, which is the whole
+      // class of guess being removed -- so it asks.
+      const canBe = vms.kindsOf(vms.get(name))
+      if (canBe.length > 1) {
+        throw new Error(`${name} is tagged ${canBe.join(' and ')}, so a credential taken off it could be filed as either. Say which with --role, or take the tag off that does not apply.`)
+      }
+      const role = canBe[0] || null
+      if (!role) {
+        throw new Error(`${name} has not been told what it is for, so a credential taken off it cannot be filed. Tag it "worker" or "judge" with vmTags first.`)
+      }
       if (already && already.role !== role) {
         throw new Error(`"${into}" is a ${already.role} sign-in and ${name} is a ${isSupervisor ? 'supervisor machine' : 'runner'}. One of the two is wrong, and guessing which would put the deciding identity in the pool the workers draw from — or the other way round.`)
       }
@@ -538,7 +549,7 @@ module.exports = {
       // Found by running it: J59 routed to the judge machine correctly and then
       // could not be given an identity at all. The selection had been taught the
       // rule and the recording had not.
-      guests.lentTo(into, name, { kind: vms.kindOf(vms.get(name)) })
+      guests.lentTo(into, name, { kind: vms.kindsOf(vms.get(name)) })
       vms.update(name, { holdsCredential: true, guest: into })
 
       log.on('vm', name).good(already
@@ -607,9 +618,11 @@ module.exports = {
   },
 
   vmCredentialsPut: {
-    about: 'Hand this host\'s worker credential to a machine',
-    takes: ['name'],
-    run: async ({ name }) => {
+    about: 'Hand a machine the sign-in for the work it is about to do. --role worker or judge, needed only when a machine is tagged as both',
+    // `role` NAMES THE WORK, not the machine -- and is needed only for a
+    // machine tagged as more than one thing. See the choice below.
+    takes: ['name', 'role'],
+    run: async ({ name, role = null }) => {
       vms.get(name)
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)
 
@@ -640,7 +653,35 @@ module.exports = {
       // Found by the operator tagging two machines: the moment a judge machine
       // existed, judging was broken on a host whose only free sign-ins were
       // workers. The refusal was right and the selection had never been taught.
-      const want = vms.kindOf(mine)
+      // ---- WHICH KIND OF SIGN-IN THIS MACHINE IS BEING GIVEN --------------
+      //
+      // THE WORK DECIDES, NOT THE BOX. This asked the machine what it was and
+      // handed over the matching identity, which is exactly right while a
+      // machine is one thing. A machine tagged worker AND judge is two, and then
+      // "what kind is this machine" has no answer -- it resolved to whichever
+      // tag was checked first, so a dual machine would have been handed a
+      // judge's credential for a task.
+      //
+      // So the caller says. The queue knows whether it is dispatching a task or
+      // a judgement, which is the thing that actually determines whose identity
+      // should go out.
+      //
+      // AND WHERE NOBODY SAYS, the machine answers if it can do so
+      // unambiguously. A machine with one role is not made harder to use by a
+      // feature for machines with two; one with two is refused, by name, rather
+      // than being given a coin-flip.
+      const canBe = vms.kindsOf(mine)
+      const asked = role === 'worker' || role === 'judge' || role === 'supervisor' ? role : null
+      if (asked && !canBe.includes(asked)) {
+        throw new Error(`${name} cannot hold a ${asked}'s sign-in: it is ${canBe.length ? `tagged ${canBe.join(' and ')}` : 'not tagged for any role'}. Give it the "${asked}" tag with vmTags, or send this work to a machine that has it.`)
+      }
+      if (!asked && canBe.length > 1) {
+        throw new Error(`${name} is tagged ${canBe.join(' and ')}, so which sign-in it should be handed depends on the work rather than on the machine. Say which with --role worker or --role judge.`)
+      }
+      const want = asked || canBe[0] || null
+      if (!want) {
+        throw new Error(`${name} has not been told what it is for, so there is no sign-in to give it. Tag it "worker" or "judge" with vmTags.`)
+      }
       const held = guests.all().filter(g => g.role === want)
 
       // ---- ONE A MACHINE HAS ALREADY FAILED WITH IS NOT OFFERED AGAIN ------
@@ -845,7 +886,7 @@ grep -qxF '${String(ssh.publicKey() || '').trim()}' "$HOME/.ssh/authorized_keys"
       // that is switched off still has a credential on its disk, so "which guest
       // is on that machine" has to be answerable while it is off — and a guest
       // recorded as out is one that will not be handed to a second machine.
-      if (chosen) guests.lentTo(chosen, name, { kind: vms.kindOf(vms.get(name)) })
+      if (chosen) guests.lentTo(chosen, name, { kind: vms.kindsOf(vms.get(name)) })
       vms.update(name, { holdsCredential: true, guest: chosen })
 
       // What the worker itself says, believed over what we just wrote. It prints
