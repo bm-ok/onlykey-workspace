@@ -997,6 +997,33 @@ grep -qxF '${String(ssh.publicKey() || '').trim()}' "$HOME/.ssh/authorized_keys"
           { what: 'reading what the worker refreshed, before taking it back', timeout: 60000, quiet: true })
         const body = String(said.output || '').split('\n').slice(1).join('\n').trim()
         if (body.startsWith('{')) text = body
+
+        // ---- AND WHOSE SIGN-IN THIS TURNED OUT TO BE --------------------
+        //
+        // ONLY WHEN IT IS NOT ALREADY KNOWN, so this is one extra round trip
+        // once in the life of a sign-in rather than one at the end of every
+        // run. A key signed in at the desk arrives knowing already and never
+        // reaches this.
+        //
+        // WHY IT IS WORTH THE TRIP: the alternative for a credential made
+        // before the account was kept is to sign it in again, which throws away
+        // a working credential to obtain a label -- and, if it happens to be the
+        // same Claude account as another here, invalidates one of the two. This
+        // costs a `cat` on a machine that is already dialled in and about to be
+        // shut down anyway.
+        const known = guests.get(mine.guest)
+        if (known && !(known.account && (known.account.email || known.account.uuid))) {
+          try {
+            const who = await channel.run(name, 'cat "$HOME/.claude.json" 2>/dev/null || true',
+              { what: 'reading which account the worker authenticated as', timeout: 30000, quiet: true })
+            const raw = String(who.output || '').split('\n').slice(1).join('\n').trim()
+            const found = raw.startsWith('{') ? guests.accountOf(raw) : null
+            const got = found ? guests.noteAccount(mine.guest, found) : null
+            if (got && got.learned) {
+              log.on('vm', name).good(`the Claude guest "${mine.guest}" is ${found.email || found.uuid}${found.organization ? ` — ${found.organization}` : ''}, learned from this run rather than by signing it in again`)
+            }
+          } catch { /* a sign-in without a name on it is still a sign-in */ }
+        }
       }
 
       if (!channel.connected(name)) throw new Error(`"${name}" is not dialled in.`)

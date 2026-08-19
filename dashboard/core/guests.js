@@ -558,6 +558,42 @@ function backFrom (name, { token } = {}) {
   return { ...get(name), rotated, refused }
 }
 
+// ---- LEARNING WHOSE A SIGN-IN IS, AFTER THE FACT ---------------------------
+//
+// A sign-in made before the account was kept has no email, and re-signing it to
+// get one is a bad trade: it destroys a credential that works to gain a label,
+// and if the new sign-in is the same account as another here it invalidates one
+// of them. Nothing about a working key should have to be risked to find out what
+// it is called.
+//
+// IT DOES NOT HAVE TO BE. The account is on any machine the credential runs on
+// -- Claude Code writes it to `~/.claude.json` when it authenticates -- so the
+// read-back at the end of a run passes it every time. See vmCredentialsForget.
+//
+// FILLED ONLY WHEN EMPTY, and never overwritten. A machine is not the authority
+// on whose credential this is: it is reporting what it saw, and if that ever
+// disagreed with what was recorded at sign-in, the sign-in is the one that was
+// watched by a person. Returned rather than logged, so the caller can say so.
+function noteAccount (name, account) {
+  if (!account || !(account.email || account.uuid)) return { learned: false, why: 'nothing to learn' }
+  const rows = read()
+  const i = rows.findIndex(g => g.name === name)
+  if (i < 0) return { learned: false, why: `there is no sign-in called "${name}"` }
+
+  const had = rows[i].account || null
+  if (had && (had.email || had.uuid)) {
+    // ALREADY KNOWN. Worth saying when it does not match, because a credential
+    // that reports a different account than the one it was signed in as is
+    // either a swapped file or a machine that was holding somebody else's.
+    const same = (had.email || null) === (account.email || null)
+    return { learned: false, sameAsRecorded: same, why: same ? 'already recorded' : `recorded as ${had.email || had.uuid} and the machine reported ${account.email || account.uuid}` }
+  }
+
+  rows[i] = { ...rows[i], account }
+  write(rows)
+  return { learned: true, account }
+}
+
 // The value itself, for the one caller that has to hand it to a machine. Kept
 // separate from everything above so that reading a token is a deliberate call
 // rather than something that falls out of listing.
@@ -687,4 +723,4 @@ const freeFor = (role, machine = null) =>
 const pausedFor = role => all().filter(g => g.role === role && g.has && paused(g))
 
 module.exports = {
-  roleOf, checked, all, get, add, forget, lentTo, backFrom, token, fingerprint, usable, accountOf, planOf, ensurePlans, okName, adoptTheOldOne, whyNotOn, supervisorKey, paused, freeFor, pausedFor, ROOT, fileFor }
+  roleOf, checked, all, get, add, forget, lentTo, backFrom, token, fingerprint, usable, accountOf, planOf, ensurePlans, noteAccount, okName, adoptTheOldOne, whyNotOn, supervisorKey, paused, freeFor, pausedFor, ROOT, fileFor }
