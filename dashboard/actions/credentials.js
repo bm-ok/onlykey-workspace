@@ -179,14 +179,30 @@ module.exports = {
       // answers a different one.
       log.on('keys').good(`a Claude ${kind} called "${called}" was signed in at the desk on ${on}${account && account.email ? ` as ${account.email}` : ''} — ${made.fingerprint}`)
 
-      // AND WHETHER THIS HOST NOW HOLDS THE SAME ACCOUNT TWICE, which is not a
-      // refusal and is worth knowing at the moment it becomes true: two sign-ins
-      // of one Claude account rotate each other's refresh token, so using both
-      // is how one of them stops working for reasons nothing here can see.
+      // AND WHETHER THIS HOST NOW HOLDS THE SAME ACCOUNT TWICE. Worth saying at
+      // the moment it becomes true, and worth saying CAREFULLY.
+      //
+      // THE FIRST VERSION OF THIS ASSERTED SOMETHING THAT TURNED OUT TO BE
+      // FALSE: that two sign-ins of one account rotate each other's refresh
+      // token, so using both invalidates one. It was written from one
+      // observation -- a credential dying eight minutes after another was signed
+      // in on the same account -- and the very next pair disproved it. Two
+      // sign-ins of this account ran CONCURRENTLY on two machines, both spent
+      // real money, and both were still good afterwards.
+      //
+      // WHAT IS ACTUALLY TRUE is narrower and still worth knowing: they share a
+      // fate. Anything done to the account -- revoking old tokens, changing a
+      // password, a plan ending -- lands on both at once, so two sign-ins here
+      // are not the redundancy they look like. And it is the fact somebody wants
+      // when a second credential dies for no visible reason.
+      //
+      // A separation between reading and writing that runs on ONE account is
+      // also a weaker separation than it appears, which is the other reason to
+      // say it out loud on a judge.
       if (account && account.email) {
         const twins = guests.all().filter(g => g.name !== called && g.account && g.account.email === account.email)
         if (twins.length) {
-          log.on('keys').warn(`"${called}" is the same Claude account as ${twins.map(g => `"${g.name}"`).join(', ')} (${account.email}). Two sign-ins of one account refresh the same token, so using both means whichever ran last invalidates the other — keep one per account, or expect one of them to start reporting itself signed out.`)
+          log.on('keys').warn(`"${called}" is the same Claude account as ${twins.map(g => `"${g.name}"`).join(', ')} (${account.email}). They have been seen working at the same time, so this is not a refusal — but they share a fate: anything done to that account reaches both at once, and two sign-ins of one account are not two identities. A judge and a worker on the same account is a weaker separation than it looks.`)
         }
       }
 
