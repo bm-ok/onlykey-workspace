@@ -444,7 +444,17 @@ function gitRoute (req, res, url) {
     // the machine's branch, so the existing test says yes. Told here rather than
     // worked out in the hook, because only this side knows what is protected --
     // and told as a fact rather than a name, so the hook has nothing to look up.
-    if (branches.isProtected(who.branch)) env.OKC_READ_ONLY = '1'
+    //
+    // AND IT ASKS THE SAME QUESTION THE OTHER TWO ASK. This is the THIRD place
+    // this one permission is decided -- the route above, the sign put in the
+    // guest's checkout, and here, the fact handed to the hook that actually
+    // refuses. Each was written where it was needed and each was right on its
+    // own; together they were three opinions, and the exception for a change
+    // that is out was taught to them one at a time, losing a run to each. The
+    // route granted the push and the sign refused it; the sign was taught and
+    // this refused it. See landings.mayRevise: there is one rule now, and every
+    // gate asks it.
+    if (branches.isProtected(who.branch) && !landings.mayRevise(who.branch)) env.OKC_READ_ONLY = '1'
   }
 
   if (tail === '/info/refs') return repos.advertise(res, { dir, service, repo, env })
