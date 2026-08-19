@@ -972,6 +972,28 @@ async function pullsOn (repo) {
   return r.body.map(p => onePull(p, `${into[0]}/${into[1]}`))
 }
 
+// ---- ONE PULL REQUEST, WHERE IT ACTUALLY LIVES -----------------------------
+//
+// `pullsOn` answers "what is on the repository this workspace TARGETS today",
+// which is the right question for a board and the wrong one for history. A cut
+// made in June was opened against whatever the target was in June; if somebody
+// has pointed the workspace at a different fork since, that pull request is
+// still exactly where it was and is no longer in that list.
+//
+// Six of them read as "gone from GitHub" for precisely this reason -- opened on
+// bmatusiak/local-repo-a, looked for on bm-sandbox-b/local-repo-a, all six
+// merged and none of them missing.
+//
+// TAKES THE OWNER/NAME IT IS TOLD, because the record of a landing carries where
+// it went and that is the only thing that can answer this.
+async function pullAt (into, number) {
+  const [owner, repo] = String(into || '').split('/')
+  if (!owner || !repo || !number) return null
+  const r = await github.call('GET', `/repos/${owner}/${repo}/pulls/${number}`)
+  if (r.status !== 200 || !r.body) return null
+  return onePull(r.body, `${owner}/${repo}`)
+}
+
 // What is being ASKED of a repository, as opposed to what is waiting to go into
 // it. Issues are the one thing in this app that arrives from outside: everything
 // else begins with somebody writing a task, and an issue is work that turned up.
@@ -1372,4 +1394,4 @@ const syncDefault = repo => {
   return syncBranch(repo, branch)
 }
 
-module.exports = { read, notesOnly, check, gather, targetOf, setTarget, chainOf, setRemote, fetchPull, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, comment, mergePull, syncFork, deleteBranch, pullsOn, issuesOn, issuePage, pullPage }
+module.exports = { read, notesOnly, check, gather, targetOf, setTarget, chainOf, setRemote, fetchPull, remoteOf, parse, pushBranch, syncBranch, syncDefault, openPull, updatePull, comment, mergePull, syncFork, deleteBranch, pullsOn, pullAt, issuesOn, issuePage, pullPage }

@@ -53,7 +53,28 @@ const token = () => secret.read(FILE()).toString('utf8').trim()
 // One place that talks to GitHub, so there is one place that adds the token, one
 // place that sets the headers GitHub requires, and one place that could ever
 // leak it. Everything else asks this.
-function call (method, at, body = null, { host = null } = {}) {
+// ---- A REPOSITORY THAT MOVED --------------------------------------------
+//
+// GitHub answers 301 with a `Location` when a repository has been renamed or
+// transferred, and keeps doing so indefinitely. Nothing here followed it, so
+// every caller saw "not 200" and reported the thing gone -- which is how six
+// pull requests read as `gone from GitHub` after three repositories moved from
+// one account to another. They were never gone. Nobody was listening.
+//
+// FOLLOWED FOR READS AND NOT FOR WRITES, and that is not a detail. A GET that
+// follows a redirect asks the same question at the address GitHub gave; a POST
+// that follows one PUBLISHES SOMETHING INTO A REPOSITORY NOBODY NAMED. This app
+// refuses to guess which machine a job runs on for the same reason. A write to a
+// moved repository is reported, with the new name in the message, and somebody
+// decides.
+//
+// WHERE IT WENT IS CARRIED BACK, because a read that quietly succeeds at a new
+// address leaves the record here still naming the old one -- working today and
+// wrong the moment anybody reads it.
+const REDIRECTS = new Set([301, 302, 307, 308])
+const SAFE = new Set(['GET', 'HEAD'])
+
+function call (method, at, body = null, { host = null, hops = 0, from = null } = {}) {
   if (!has()) return Promise.reject(new Error('This host holds no GitHub token. Add one on the Keys tab.'))
   const api = host || about().api || PUBLIC
   const payload = body == null ? null : Buffer.from(JSON.stringify(body))
@@ -79,7 +100,32 @@ function call (method, at, body = null, { host = null } = {}) {
         const text = Buffer.concat(chunks).toString('utf8')
         let json = null
         try { json = text ? JSON.parse(text) : null } catch { /* GitHub answers HTML for some errors */ }
-        resolve({ status: res.statusCode, headers: res.headers, body: json, text })
+        const answer = { status: res.statusCode, headers: res.headers, body: json, text, movedTo: from }
+
+        // ONE HOP AT A TIME, AND NOT MANY. A chain of redirects is a
+        // misconfiguration rather than a rename, and following it for ever is
+        // how a client hangs on somebody else's mistake.
+        const where = res.headers && res.headers.location
+        if (REDIRECTS.has(res.statusCode) && where && hops < 3) {
+          // The path only. `Location` is absolute and its host is the API host
+          // we already asked; taking the path keeps the token going to the one
+          // place this file is allowed to send it.
+          let next = where
+          try { next = new URL(where, `https://${api}`).pathname } catch { /* use it as given */ }
+
+          if (SAFE.has(String(method).toUpperCase())) {
+            return resolve(call(method, next, body, { host, hops: hops + 1, from: next }))
+          }
+
+          // A WRITE. Not followed, and said plainly enough to act on.
+          return resolve({
+            ...answer,
+            movedTo: next,
+            movedRefused: `${at} has moved to ${next}. A read would follow that; a ${method} is not followed, because writing into a repository nobody named is not this app's decision to make.`
+          })
+        }
+
+        resolve(answer)
       })
     })
     req.on('timeout', () => { req.destroy(new Error(`GitHub did not answer within 30 seconds (${api}).`)) })

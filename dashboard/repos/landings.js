@@ -100,9 +100,26 @@ async function state (source, target) {
   for (const p of rec.pulls) {
     if (!p.number) { now.push({ ...p, state: 'never opened' }); continue }
     try {
-      const open = await remotes.pullsOn(p.repo)
-      const found = open.find(x => x.number === p.number)
-      now.push(found ? { ...p, ...found } : { ...p, state: 'gone from GitHub' })
+      // WHERE IT WENT, WHICH THE RECORD ALREADY KNOWS. `pullsOn` answers about
+      // the repository this workspace targets TODAY, and a cut is history: one
+      // opened against a fork somebody has since stopped pointing at is not
+      // missing, it is where it always was.
+      //
+      // Asking the wrong repository and reporting "gone from GitHub" put six
+      // merged pull requests on a list of things a drill had left behind.
+      let found = p.into ? await remotes.pullAt(p.into, p.number) : null
+
+      // Still the list where there is no `into` -- every cut made before this
+      // was recorded -- so nothing that used to work stops working.
+      if (!found) {
+        const open = await remotes.pullsOn(p.repo)
+        found = open.find(x => x.number === p.number) || null
+      }
+
+      // AND "NOT FOUND" IS NOT "GONE". GitHub answering nothing for a pull
+      // request means this host could not see it, which is a sentence about the
+      // asking rather than about the pull request.
+      now.push(found ? { ...p, ...found } : { ...p, state: 'could not be found', why: `${p.into || p.repo} did not answer for #${p.number}` })
     } catch (e) {
       now.push({ ...p, state: 'could not be read', why: e.message })
     }
