@@ -24,15 +24,47 @@
 // Every one of them was fluent, correct-looking machinery with a wrong fact
 // underneath. The loop has to be driven for them to appear.
 
-const { draft, requires } = require('../../../tasks/harness')
+const { it, draft, requires } = require('../../../tasks/harness')
 
 requires('the supervisor', 'judging')
 
-draft('a person opens an issue and the supervisor reads it',
-  'THE TRIGGER, AND IT IS THE PART THAT IS NOT BUILT. `whatsNew` carries what was said, tasks, machines, cuts and what happened — and NOT issues or pull requests. ' +
-  'So a supervisor waking on a quiet host is never told that an issue arrived; it can ASK (`issues` is on its list, and it did) but only because the wake reason named it. Without that it would wake, see nothing new, and go back to sleep with an open issue sitting there. ' +
-  'WHAT HAS TO EXIST FIRST: `whatsNew` reporting open issues and incoming pull requests, and something that wakes the supervisor when one arrives. This app deliberately never asks GitHub on a timer, so that is a decision rather than a line of code — poll on a slow cadence, or check on every wake and rely on other things waking it. ' +
-  'THE CHECK: with an issue open that the supervisor has not been told about, wake it for an unrelated reason, and it still finds the issue. Today it does not, and the run above only worked because the wake reason said "a new issue arrived on local-repo-c: #2".')
+// THE TRIGGER, WHICH THIS DRAFT SAID WAS NOT BUILT. It is now, and the note is
+// kept because the reasoning was right and the decision it named has been taken.
+// What it asked for was `whatsNew` reporting issues and incoming pull requests,
+// and something to wake the supervisor when one arrives -- observing that this
+// app deliberately never asks GitHub on a timer, so it was a decision rather
+// than a line of code. The decision went to a slow, opt-in poll: repos/watching.js
+// looks every five minutes when `watchGitHub` is on, and the queue wakes the
+// supervisor with what it found.
+//
+// IT RAN FOR REAL ON 19 AUGUST 2026, twice in one hour. A pull request this host
+// had itself opened was noticed and the supervisor was woken with its number and
+// title -- and answered, correctly, that there was nothing to do because it had
+// made it. Later a merge woke it the same way.
+it('a supervisor waking is told what arrived on GitHub, without asking GitHub', async ({ actions, assert, log }) => {
+  const now = await actions.whatsNew.run({})
+
+  // THE SHAPE IS THE CLAIM. A supervisor that has to know to ask is one that
+  // wakes on a quiet host, sees nothing, and goes back to sleep with an open
+  // issue sitting there -- which is exactly what happened before this existed.
+  assert.ok(now.arrived, 'a waking says nothing about what arrived from outside')
+  assert.ok(Array.isArray(now.arrived.issues), 'it does not report issues')
+  assert.ok(Array.isArray(now.arrived.pulls), 'it does not report incoming pull requests')
+
+  // AND IT IS A READING, WITH ITS AGE. This runs inside a wake, and a wake is
+  // not the moment to spend a round trip per repository -- so it reports what
+  // the watcher last saw and says when that was. A list with no age is one
+  // somebody treats as current for ever.
+  assert.ok('lookedAt' in now.arrived, 'it does not say when the list was taken, so nothing can tell a fresh answer from a stale one')
+  assert.ok('watching' in now.arrived, 'it does not say whether anything is looking at all, so an empty list is unreadable')
+  log(`watching: ${now.arrived.watching}, last look ${now.arrived.lookedAt || 'not yet'}, ${now.arrived.issues.length} issue(s) and ${now.arrived.pulls.length} pull request(s)`)
+})
+
+draft('and it finds an issue it was never told about',
+  'WHAT IS LEFT OF THE TRIGGER DRAFT, and it is a much smaller thing than it was. The reporting is built and checked above; the waking is built and has run for real twice. ' +
+  'What has never been watched is the case the original note cared about most: an issue that arrived while nothing was waking, so the wake REASON does not name it and the only way to find it is to read `arrived` in whatsNew. ' +
+  'THE CHECK: with an issue open on a watched repository and no wake pending for it, wake the supervisor for an unrelated reason and it still finds the issue. ' +
+  'WHY IT IS A DRILL AND NOT A CHECK: it costs a supervisor turn of somebody\'s money and needs a real issue on a real repository, so it belongs with the runs that spend rather than with the arithmetic.')
 
 draft('and a judge decides whether the claim is real before any work is written',
   'THIS HALF IS BUILT AND WAS PROVEN. `taskCreate` over the wire refuses without `becauseOf` naming a FINISHED judgement, and in the real run the supervisor tried twice to get round it — once passing a prose sentence as the ref, once leaving it off — before reasoning its way to "the issue\'s claim has to be checked first". ' +

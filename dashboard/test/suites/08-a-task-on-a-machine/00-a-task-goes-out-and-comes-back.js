@@ -228,11 +228,12 @@ it('and judging it is refused, because this worker pushed nothing', async ({ okc
   // the checks above is an artifact, which is a different thing from a change on
   // a branch, and this is where that difference is enforced.
   //
-  // THE ACCEPT PATH IS STILL UNPROVEN, and no job here can prove it: the only
-  // credential-free job does not push, and the one that would is a worker with a
-  // Claude credential. Proving it needs a job that makes a small change and
-  // pushes it — which a person has to write and approve at the window, because
-  // approving a job over the wire is refused on purpose.
+  // THE ACCEPT PATH IS STILL UNPROVEN, and this check cannot prove it: the only
+  // credential-free job does not push, so there is never a delivery here to
+  // accept. What has changed since this was written is that the job it wanted
+  // now exists — `do-the-work` pushed for real on 19 August 2026 — so the
+  // blocker is a credential and a run rather than something nobody has built.
+  // See the draft at the bottom of this file.
   const refusal = await assert.refuses(
     () => okc('taskJudge', { id: state.task.id, verdict: 'accept', note: 'a drill: the round trip ran and delivered' }),
     'nothing to judge|without pushing|has arrived',
@@ -328,12 +329,11 @@ cleanup(async ({ okc, state }) => {
 // happen, rather than in a list somewhere else.
 
 draft('and a task that pushed something can be accepted',
-  'THE ACCEPT PATH, and no job here can reach it. ' +
-  'api-tour hands back a FILE and never commits, so the branch is exactly as it was cut and taskJudge refuses — correctly. ' +
-  'ask-a-worker would push, and needs a Claude credential, which makes it a different and slower drill. ' +
-  'WHAT IT NEEDS: a job that makes a small change and pushes it, written and approved at the window, because approving a job over the wire is refused on purpose. ' +
-  'THE CHECK: queue a task under that job, let the queue run it, and accept the delivery — the verdict is recorded, the task reads accepted, and the artifact it was judged on is named in the verdict. ' +
-  'AND ACCEPTING MUST NOT MERGE. Landing work is a separate act with its own rules; a verdict that quietly merged would make reading the work and publishing it the same button.')
+  'THE BLOCKER IS GONE, AND THE CHECK IS NOT WRITTEN. This said "no job here can reach it": api-tour hands back a FILE and never commits, so the branch is exactly as it was cut and taskJudge refuses, correctly. ' +
+  'The job it asked for exists now. `do-the-work` makes a change and pushes it, it is approved, and on 19 August 2026 it did so twice for real — #213 put the escaping fix on a branch and #214 put the adjustment on top of it, both landing as commits this host received. ' +
+  'So what is left is only the accept path itself, which is the same list as before: queue a task under that job, let the queue run it, and accept the delivery — the verdict is recorded, the task reads accepted, and the artifact it was judged on is named in the verdict. ' +
+  'AND ACCEPTING MUST NOT MERGE. Landing work is a separate act with its own rules; a verdict that quietly merged would make reading the work and publishing it the same button. ' +
+  'IT COSTS A WORKER RUN AND A CREDENTIAL, which is why it is still here rather than beside the arithmetic — about a dollar and three minutes, measured on the runs above.')
 
 // ---- the surface a job actually talks to ----------------------------------
 //

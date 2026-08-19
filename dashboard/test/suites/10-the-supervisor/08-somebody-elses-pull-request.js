@@ -94,11 +94,11 @@ draft('a judge investigates an arrived pull request',
   'TO SETTLE: whether "check it" ever means RUNNING the contributor\'s code. Reading a diff is much cheaper to make safe; running its tests is what makes "it does what it says" a verdict rather than an opinion — and it is arbitrary execution by a stranger on a machine holding a credential. The proposal on the table is to split them: the read is a Claude judge under a contract that forbids running the change, and the test is a credential-free shell job whose output the judge then reads.')
 
 draft('and what it found is reported back on the pull request',
-  'NOT BUILT: nothing in this app can write to a pull request or an issue. `prCutUpdate` changes a title, a description or a state, and there is no comment anywhere. ' +
-  'So a judge can read somebody\'s change and reach a verdict that only this host can see, which is half a review. ' +
-  'WHAT HAS TO EXIST: an action that posts a comment to a pull request in THIS workspace — taking a repository this host holds rather than an owner/name, or the restriction the operator set ("these three forks and no others") leaks straight through the new door. ' +
-  'THE CHECK: after a judgement of an arrived pull request, the pull request carries a comment naming this app, the verdict, and what was checked. And a comment cannot be posted to a repository the workspace does not hold. ' +
-  'TO SETTLE: whether a rejection comments at all. A green light is useful to a contributor; a red one written by a model on somebody\'s work is a different act, and it may want a person to press it.')
+  'BUILT SINCE THIS WAS WRITTEN, AND THE NOTE IS KEPT BECAUSE IT ASKED FOR THE RIGHT DOOR. It said nothing here could write to a pull request, so a judge could reach a verdict only this host could see — half a review. ' +
+  'There are two actions now: `prComment` says something on a pull request in this workspace, ending in whether it is recommended for pulling, and `judgementSay` puts a judgement of an ARRIVED pull request on GitHub as a comment, with a preview step. Both take a repository this host holds rather than an owner and name, which is what this note asked for — otherwise the operator\'s "these three forks and no others" leaks straight through the new door. ' +
+  'IT HAS RUN, on this host\'s own cuts rather than on a stranger\'s: the supervisor posted "recommend pulling: YES" on two pull requests on 19 August 2026. ' +
+  'WHAT IS STILL A DRAFT is the case this file is about — a pull request that ARRIVED. THE CHECK: after a judgement of an arrived pull request, it carries a comment naming this app, the verdict, and what was checked; and a comment cannot be posted to a repository the workspace does not hold. The second half needs no machine and could be written now. ' +
+  'STILL TO SETTLE, and building it did not settle it: whether a REJECTION comments at all. A green light is useful to a contributor; a red one written by a model on somebody else\'s work is a different act, and it may want a person to press it.')
 
 draft('and a merge somewhere else does not leave what is out unmergeable',
   'NOT BUILT, and it is the first thing here that is maintenance rather than work somebody asked for. ' +
