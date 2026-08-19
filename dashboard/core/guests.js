@@ -87,6 +87,38 @@ function write (all) {
 // What a token IS, as a number, for comparing without reading. See the header.
 const fingerprint = text => crypto.createHash('sha256').update(String(text)).digest('hex').slice(0, 16)
 
+// ---- WHETHER A CREDENTIAL IS A CREDENTIAL AT ALL ---------------------------
+//
+// A Claude sign-in is `{ claudeAiOauth: { accessToken, refreshToken, ... } }`
+// and the two tokens are the whole point of it. Everything else in the file —
+// scopes, subscriptionType, rateLimitTier, the expiry dates — is description,
+// and a file carrying only those authenticates nothing.
+//
+// THIS EXISTS BECAUSE ONE OF THOSE OVERWROTE A WORKING SIGN-IN. A judgement ran
+// on a machine, failed to authenticate, and the CLI on that machine appears to
+// have CLEARED its own credential file — leaving the shape intact and both
+// tokens empty. The read-back saw a different fingerprint, concluded the machine
+// had refreshed it, and wrote 280 bytes of empty over the 508 that worked. Every
+// attempt afterwards reported `authMethod: "none"`, which is exactly honest: the
+// file had no auth in it. A transient failure on a guest had been turned into a
+// permanent one on the host, and the token was not recoverable.
+//
+// SHAPE ONLY, NEVER CONTENT. This asks whether the two fields are non-empty
+// strings and nothing else — it does not validate a token, judge its age or
+// look at what it says. Anything cleverer would be this host deciding a
+// credential is bad, and only a machine's attempt is proof of that.
+function usable (text) {
+  try {
+    const o = JSON.parse(String(text))
+    const c = o.claudeAiOauth || o
+    return !!(String(c.accessToken || '').trim() || String(c.refreshToken || '').trim())
+  } catch {
+    // Unparseable is unusable. A truncated read looks exactly like this, and
+    // "keep what we have" is the right answer to both.
+    return false
+  }
+}
+
 // ---- what is here ---------------------------------------------------------
 
 // Never the token. Everything else about a guest is safe to show, and this is
@@ -392,17 +424,40 @@ function backFrom (name, { token } = {}) {
   // and the old path deleted it. Written only when it actually differs, so an
   // unchanged one does not rewrite a sealed file for nothing.
   let rotated = false
+  let refused = null
   if (token) {
     const print = fingerprint(token)
     if (print !== all[i].fingerprint) {
-      secret.write(fileFor(name), Buffer.from(String(token), 'utf8'))
-      all[i] = { ...all[i], fingerprint: print, refreshed: new Date().toISOString() }
-      rotated = true
+      // DIFFERENT IS NOT THE SAME AS NEWER, and this is where that was assumed.
+      //
+      // A machine that CLEARED its credential hands back something with a new
+      // fingerprint and nothing in it. Storing that is not keeping up with a
+      // rotation, it is destroying the only copy — see `usable` above for the
+      // run where it happened.
+      //
+      // THE ONE WE HOLD HAS TO BE WORTH KEEPING for this to refuse. If what is
+      // here is already unusable then there is nothing to protect, and the thing
+      // that came back is at worst no worse: taking it keeps the old behaviour
+      // for a host recovering from exactly this, and stops this refusal becoming
+      // a door that cannot be opened.
+      let holding = null
+      try { holding = secret.read(fileFor(name)).toString('utf8') } catch { holding = null }
+
+      if (!usable(token) && holding && usable(holding)) {
+        // NOT WRITTEN, AND SAID OUT LOUD. Returned rather than logged here,
+        // because this file does not log — the caller puts it in the record,
+        // where somebody looking for why a sign-in stopped working will be.
+        refused = `"${name}" was handed back a credential with no access token and no refresh token in it — the machine appears to have cleared its own sign-in rather than refreshed it. The working one here was KEPT and nothing was overwritten.`
+      } else {
+        secret.write(fileFor(name), Buffer.from(String(token), 'utf8'))
+        all[i] = { ...all[i], fingerprint: print, refreshed: new Date().toISOString() }
+        rotated = true
+      }
     }
   }
   all[i] = { ...all[i], holder: null }
   write(all)
-  return { ...get(name), rotated }
+  return { ...get(name), rotated, refused }
 }
 
 // The value itself, for the one caller that has to hand it to a machine. Kept
@@ -534,4 +589,4 @@ const freeFor = (role, machine = null) =>
 const pausedFor = role => all().filter(g => g.role === role && g.has && paused(g))
 
 module.exports = {
-  roleOf, checked, all, get, add, forget, lentTo, backFrom, token, fingerprint, okName, adoptTheOldOne, whyNotOn, supervisorKey, paused, freeFor, pausedFor, ROOT, fileFor }
+  roleOf, checked, all, get, add, forget, lentTo, backFrom, token, fingerprint, usable, okName, adoptTheOldOne, whyNotOn, supervisorKey, paused, freeFor, pausedFor, ROOT, fileFor }

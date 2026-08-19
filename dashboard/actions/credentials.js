@@ -938,9 +938,17 @@ grep -qxF '${String(ssh.publicKey() || '').trim()}' "$HOME/.ssh/authorized_keys"
       if (mine.guest) {
         const now = guests.backFrom(mine.guest, { token: text })
         rotated = now.rotated
-        log.on('vm', name)[rotated ? 'good' : 'info'](rotated
-          ? `the Claude guest "${mine.guest}" came back refreshed — ${now.fingerprint}`
-          : `the Claude guest "${mine.guest}" came back unchanged`)
+        // LOUD, BECAUSE IT IS THE ONLY WARNING THAT A MACHINE JUST TRIED TO
+        // DESTROY A SIGN-IN. The credential survives, and the run that emptied
+        // it did not — so this is the sentence that connects "a judgement
+        // failed" to "and it took the credential with it" when somebody reads
+        // the record afterwards.
+        if (now.refused) log.on('vm', name).bad(now.refused)
+        else {
+          log.on('vm', name)[rotated ? 'good' : 'info'](rotated
+            ? `the Claude guest "${mine.guest}" came back refreshed — ${now.fingerprint}`
+            : `the Claude guest "${mine.guest}" came back unchanged`)
+        }
       }
 
       vms.update(name, { holdsCredential: false, guest: null })

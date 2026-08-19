@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 60 tests, 276 checks, 21 of them drafts -->
+<!-- 12 suites, 61 tests, 279 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -254,6 +254,12 @@ The second door a person has to open, and it is deliberately not beside the
   2. and a machine is standing free that it could have spent
   3. so a task queued against it waits, and nothing boots
   4. and it says so once, not four times a minute
+
+## 10 — a cleared credential cannot overwrite
+
+  1. the rule knows a credential from the shape of one
+  2. and a machine that clears its sign-in does not take the host copy with it
+  3. and a real rotation still comes home
 
 # 05 — the machines
 
