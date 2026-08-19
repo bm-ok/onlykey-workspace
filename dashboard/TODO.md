@@ -147,9 +147,24 @@ Outstanding
   will be told there is nothing to wait for — worth watching, because that is
   the first time the notebook will contradict what it believed.
 
-* **Two sign-ins have never been used.** `runner1` and `runner2` replaced the
-  credential that died. Nothing has run a worker on either, so "this host can do
-  work" is currently an assumption. One task or one judgement settles it.
+* **Both lanes have now been run, at the same time, and this is what it cost.**
+  On 19 August a task ran on kit-1 as `runner3` (0.0525 USD, exit 0) while a
+  judgement ran on kit-2 as `runner4` (0.6158 USD, exit 0, one file handed back
+  and read by the supervisor through `judgementFindings`). So the separation is
+  exercised rather than described: the account that judged the work is not the
+  account that wrote it, on a machine that may read and may not push.
+
+  **`runner1` and `runner2` are both dead and both KEPT on purpose.** Neither
+  authenticates; both are held as fixtures, because a paused sign-in is the only
+  way to exercise what happens to work that can be given no identity without
+  breaking a working credential to arrange it. Nothing that CHOOSES a sign-in
+  will pick them; lending one by name is allowed and says so.
+
+  What killed them is worth not re-deriving. `runner2` was destroyed by this app:
+  a run failed to authenticate, the CLI on the machine cleared its own credential
+  file, and the read-back stored 280 bytes of empty over the 508 that worked.
+  `runner1` was an old token, cleared out of the account along with other old
+  ones. Both paths are now guarded — see LEARNED.md.
 
 * **The judging chains have been approved twice and rewritten three times.**
   They are approved and runnable now, and the scripts have never had a
@@ -380,26 +395,42 @@ Volatile, and the first thing to check rather than trust:
 
     okc.js vmList --json
 
-**There are four now, and two of them belong to the test kit.**
+**There are three now, and every one of them is tagged.**
 
-    runner3, runner4   yours. Untagged, so they take any work that asks for
-                       no particular kind of machine
-    kit-1, kit-2       built by `03 the machines are built` on 16 August 2026,
-                       from the server ISO, both installers at once. Tagged
-                       `test`, so a task tagged `test` goes to one of them and
-                       waits rather than taking one of yours
+    kit-1          worker. Built by `03 the machines are built` from the server
+                   ISO. Tags `test` and `worker`, so it takes tasks and never a
+                   judgement
+    kit-2          judge. Same build, same day, tags `test` and `judge` — which
+                   is the whole difference between them. A judgement goes here
+                   and waits rather than being read on a runner
+    supervisor-1   a different PROVISION, not a different label: its own scripts
+                   and a sign-in desk. That tag cannot be taken off
 
-The kit's two are removed by `09 cooling the host`, which is off unless asked
+`runner3` and `runner4` were yours and untagged, and were removed on 19 August.
+**So there is no untagged pool any more**, which has one consequence worth
+knowing before it surprises somebody: work asking for no particular kind of
+machine now matches nothing and WAITS, rather than failing. Every task written
+from here wants a tag, or a machine wants making without one.
+
+The kit's two are removed by `11 cooling the host`, which is off unless asked
 for with `--teardown true` — so they stay standing between runs, which is why
 that suite passes in a second on a warm host instead of building for ten
 minutes. Taking them away marks the build stage dirty, and the next run makes
 them again.
 
-Last checked, **all four were off**, each on a single snapshot called
+Machines the kit keeps back are given back when the RUN ends now, not when
+cooling is asked for. That was the fault: warming took `runner3` and `runner4`
+out of the queue's reach, only cooling gave them back, cooling is off, and they
+sat out of the pool for a day looking exactly like a quiet queue.
+
+Last checked, **kit-1 and kit-2 were off**, each on a single snapshot called
 `base` that predates any branch, claiming nothing, holding no credential,
 borrowed by nobody, and free to the queue. That is the resting state the whole
-design is arranged around, and the state to put them back into.
+design is arranged around, and the state to put them back into. `supervisor-1`
+is up, holding `supervisor1`, which is what a running supervisor does — and is
+why it cannot be snapshotted while it is up.
 
-Nothing is on either of them that a script did not put there, and neither has
-ever been signed in: the credential arrives only when the queue gives them work,
-and leaves before they shut down.
+Both have been signed in and worked since: a task on kit-1 as `runner3` and a
+judgement on kit-2 as `runner4`, at the same time, on 19 August. The credential
+still arrives only when the queue gives them work and leaves before they shut
+down.
