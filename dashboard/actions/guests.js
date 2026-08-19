@@ -112,7 +112,10 @@ module.exports = {
       // supervisor machine, which is the right answer to be refused by.
       const mine = vms.read().find(v => v.name === machine) || {}
       const isSupervisor = (mine.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
-      const why = guests.whyNotOn(guest.role, isSupervisor, name, machine)
+      // WHICH KIND OF MACHINE THIS IS, asked of vms rather than worked out here.
+      // A judge is the third kind and a boolean cannot carry it; see kindOf.
+      const machineKind = vms.kindOf(mine)
+      const why = guests.whyNotOn(guest.role, machineKind, name, machine)
       if (why) throw new Error(why)
 
       // AND THEN THE MACHINE, so a worker lent to something that does not exist
@@ -173,7 +176,7 @@ module.exports = {
         throw new Error(`"${machine}" wrote ${done.fingerprint} where "${name}" is ${mineIs}. The credential was sealed to that machine's key and what it opened is not what was sent — nothing on this host records it as lent.`)
       }
 
-      guests.lentTo(name, machine, { supervisor: isSupervisor })
+      guests.lentTo(name, machine, { kind: machineKind })
       vms.update(machine, { holdsCredential: true, guest: name })
       log.on('vm', machine).warn(`${machine} is holding the Claude guest "${name}" — it cannot be snapshotted until that is taken back`)
       return { name, machine, note: `${machine} is signed in as "${name}". Take it back with guestBack before the machine is snapshotted or put away.` }

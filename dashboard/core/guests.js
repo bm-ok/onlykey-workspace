@@ -20,11 +20,23 @@
 // built to is that a model may know something was done in the Keys tab without
 // knowing what was done — so the list is safe to draw, log and photograph.
 //
-// TWO ROLES, ONE LIST. A "guest" is lent out to a machine; a "supervisor" is a
-// sign-in this host uses itself, for the model that decides what work to give
-// rather than the one doing it. They are the same object — a name and a sealed
-// token — and the difference is entirely who spends it, so they are one store
-// with a `role` on each record and two panes that filter on it.
+// THREE ROLES, ONE LIST. A WORKER is lent to a machine that does the work; a
+// JUDGE is lent to a machine that reads work and never writes it; a SUPERVISOR
+// is the sign-in this host uses itself, for the model that decides what work to
+// give rather than the one doing it. They are the same object — a name and a
+// sealed token — and the difference is entirely who spends it, so they are one
+// store with a `role` on each record and panes that filter on it.
+//
+// WHY A JUDGE HAS ITS OWN. A judge says whether work holds, and a worker writes
+// the work. Sharing one identity between them makes "who said this is good" and
+// "who wrote it" the same account, which is the one distinction a judge exists
+// to provide. It is also the difference between a review and a signature.
+//
+// AND `guest` WAS THE OLD NAME FOR A WORKER. It is still what old records say
+// and is read as `worker` — see all(). The word was retired because the
+// machine-facing half of this app already uses "guest" for the virtual machine
+// itself, so one word meant a credential in one file and a computer in the
+// next.
 //
 // A SECOND STORE WOULD BE THE FAULT THIS FILE EXISTS TO FIX. One credential in
 // the Keys tab and another somewhere else is how one of them goes stale
@@ -82,10 +94,14 @@ const fingerprint = text => crypto.createHash('sha256').update(String(text)).dig
 function all () {
   return read().map(g => ({
     name: g.name,
-    // Anything written before roles existed was lent to machines, which is what
-    // a guest is. Defaulted here rather than migrated, so an old record needs no
-    // rewriting to be read correctly.
-    role: g.role === 'supervisor' ? 'supervisor' : 'guest',
+    // WORKER, JUDGE OR SUPERVISOR, and `guest` read as `worker`. Defaulted here
+    // rather than migrated, so an old record needs no rewriting to be read.
+    //
+    // Everything written before there were three roles says `guest`, which meant
+    // "lent to a machine that does the work". That is a worker, and calling it
+    // one costs nothing to read and stops the word meaning two things -- in the
+    // machine-facing half of this app a "guest" is the virtual machine itself.
+    role: g.role === 'supervisor' ? 'supervisor' : g.role === 'judge' ? 'judge' : 'worker',
     added: g.added,
     from: g.from || null,
     // Read from the file rather than trusted from the record, so a guest whose
@@ -103,7 +119,7 @@ const get = name => all().find(g => g.name === name) || null
 
 // ---- adding and removing --------------------------------------------------
 
-function add ({ name, token, from = null, note = null, role = 'guest' }) {
+function add ({ name, token, from = null, note = null, role = 'worker' }) {
   if (!okName(name)) {
     throw new Error(`"${name}" is not a name for a guest. Letters, digits, dash, dot and underscore, up to 64 — it is a filename and a label in a list, so it is refused rather than changed into something you would not recognise.`)
   }
@@ -133,7 +149,7 @@ function add ({ name, token, from = null, note = null, role = 'guest' }) {
     // One namespace across both roles, because both are filenames in one folder
     // and a supervisor called the same thing as a guest would be one file. See
     // the header: they are the same object, spent by different hands.
-    role: role === 'supervisor' ? 'supervisor' : 'guest',
+    role: role === 'supervisor' ? 'supervisor' : role === 'judge' ? 'judge' : 'worker',
     added: new Date().toISOString(),
     from,
     note,
@@ -185,22 +201,71 @@ function forget (name) {
 //
 // Enforced at the one point that records a machine holding something, rather
 // than at each of the several places that hand one over.
-function whyNotOn (role, machineIsSupervisor, name, machine) {
-  const isSup = role === 'supervisor'
-  if (isSup && !machineIsSupervisor) {
-    return `"${name}" is a supervisor sign-in and ${machine} is a runner. Lending it there would let a worker spend the identity that decides what workers do — give the runner a guest instead.`
-  }
-  if (!isSup && machineIsSupervisor) {
-    return `"${name}" is a worker sign-in and ${machine} is a supervisor machine. A supervisor signs in as itself: it would otherwise hold one of the identities the runners draw from, and everything it decided would be billed to a worker.`
-  }
-  return null
+// A MATCH BETWEEN KINDS, RATHER THAN TWO BOOLEANS.
+//
+// This was `isSupervisor` on both sides and a pair of ifs, which is exactly
+// right for two kinds and becomes four ifs for three. A judge is the third —
+// a sign-in that reads changes and never writes them — and the rule it wants is
+// the rule the other two already follow, so it is written once as an equality
+// instead of once per pair.
+//
+//   worker sign-in      on a runner              yes
+//   judge sign-in       on a judge machine       yes
+//   supervisor sign-in  on a supervisor machine  yes
+//   anything else                                no, and it says which two
+//
+// WHY EACH CROSSING IS REFUSED, and they are refused for different reasons:
+//
+//   a supervisor's identity on a runner    a worker spending the identity that
+//                                          decides what workers do
+//   a worker's identity elsewhere          it holds one of the identities the
+//                                          runners draw from, and bills that
+//                                          machine's work to a worker
+//   a judge's identity on a runner         the reading and the writing become
+//                                          one account, so "who said this holds"
+//                                          and "who wrote it" stop being
+//                                          separable — which is the whole point
+//                                          of a judge having its own
+//
+// Enforced at the one point that records a machine holding something, rather
+// than at each of the several places that hand one over.
+const SAYS = {
+  worker: 'a worker sign-in',
+  judge: 'a judge sign-in',
+  supervisor: 'a supervisor sign-in'
+}
+const MACHINE_SAYS = {
+  worker: 'a runner',
+  judge: 'a judge machine',
+  supervisor: 'a supervisor machine'
 }
 
-function lentTo (name, machine, { supervisor = false } = {}) {
+function whyNotOn (role, machineKind, name, machine) {
+  const want = role === 'supervisor' || role === 'judge' ? role : 'worker'
+  const is = machineKind === 'supervisor' || machineKind === 'judge' ? machineKind : 'worker'
+  if (want === is) return null
+
+  const why = want === 'supervisor'
+    ? 'Lending it there would let something other than the supervisor spend the identity that decides what workers do.'
+    : want === 'judge'
+      ? 'A judge has its own identity so that reading a change and writing one are separate accounts — lending it elsewhere collapses that back into one.'
+      : `A ${is === 'supervisor' ? 'supervisor' : 'judge'} machine signs in as itself: this would hold one of the identities the runners draw from, and bill that machine's work to a worker.`
+
+  return `"${name}" is ${SAYS[want]} and ${machine} is ${MACHINE_SAYS[is]}. ${why}`
+}
+
+// `kind` IS THE MACHINE'S, AND `supervisor` IS STILL ACCEPTED. Callers that
+// predate three roles pass a boolean, and a boolean cannot express "judge" — so
+// it is read as the two kinds it could ever mean, and a caller that knows better
+// passes the kind itself. One of these will be removed when the last boolean
+// caller is gone; keeping both for now is what lets that happen a file at a time
+// rather than in one change that has to be right everywhere at once.
+function lentTo (name, machine, { supervisor = false, kind = null } = {}) {
   const all = read()
   const i = all.findIndex(g => g.name === name)
   if (i < 0) throw new Error(`There is no guest called "${name}".`)
-  const why = whyNotOn(all[i].role, supervisor, name, machine)
+  const on = kind || (supervisor ? 'supervisor' : 'worker')
+  const why = whyNotOn(all[i].role, on, name, machine)
   if (why) throw new Error(why)
   all[i] = { ...all[i], holder: machine, lastGiven: new Date().toISOString(), lastGivenTo: machine }
   write(all)

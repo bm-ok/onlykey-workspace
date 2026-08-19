@@ -146,6 +146,42 @@ const STAGES = ['defined', 'created', 'installing', 'online', 'ready', 'connecte
 // — because a guarantee somebody can type away is not a guarantee.
 const SUPERVISOR = 'supervisor'
 
+// AND THE SAME IDEA FOR A JUDGE, for the same reasons and with one difference.
+//
+// A machine carrying this reads changes and says whether they hold. It is given
+// work by the queue like any runner — a judgement is queued, dispatched and put
+// away exactly as a task is — so unlike a supervisor it is not out of the pool.
+// What it is, is a DIFFERENT pool: judgements ask for this tag, and a machine
+// carrying it is lent a judge's sign-in rather than a worker's.
+//
+// WHY SEPARATE THEM AT ALL. A judge says whether work holds; a worker writes the
+// work. On one machine with one identity those are the same account, and "who
+// said this is good" stops being separable from "who wrote it" — which is the
+// whole thing a judge is for. Keeping them apart costs a machine and buys the
+// only property that makes a verdict worth reading.
+//
+// A TAG RATHER THAN A FLAG, exactly as above: the queue already reads tags when
+// it decides which machines a piece of work will accept, and a second idea of
+// "which machines are eligible" beside the one that exists is how the two come
+// to disagree.
+const JUDGE = 'judge'
+
+// WHICH OF THE THREE A MACHINE IS, asked in one place.
+//
+// A machine is a runner unless it says otherwise. Both special tags are refused
+// after creation — see vmTags — so this cannot change under a machine that is
+// already holding something.
+//
+// SUPERVISOR WINS IF BOTH ARE SOMEHOW PRESENT, which should be impossible and is
+// resolved anyway: of the two wrong answers, "this is the machine that decides"
+// is the one that refuses more, and when a record is confused the safe reading
+// wins. The same order the rest of this app uses — see whatIsOn.
+const kindOf = vm => {
+  const tags = (vm && vm.tags) || []
+  const has = want => tags.some(t => String(t).toLowerCase() === want)
+  return has(SUPERVISOR) ? 'supervisor' : has(JUDGE) ? 'judge' : 'worker'
+}
+
 // AND THE POOL EVERY OTHER MACHINE IS IN.
 //
 // A tag is how work asks for a KIND of machine. Machines with no tag were a kind
@@ -208,10 +244,14 @@ async function all () {
       // put the tag there — see provisioner.fill — and vmTags refuses to move it
       // afterwards.
       supervisor: (vm.tags || []).some(t => String(t).toLowerCase() === SUPERVISOR),
+      // AND WHETHER IT IS A JUDGE, which is a different pool rather than being
+      // out of the pool. See kindOf and the JUDGE tag above.
+      judge: (vm.tags || []).some(t => String(t).toLowerCase() === JUDGE),
+      kind: kindOf(vm),
       agent: channel.list().find(a => a.vm === vm.name) || null
     })
   }
   return { available: true, vms }
 }
 
-module.exports = { all, read, get, add, update, forget, stageOf, STAGES, SUPERVISOR, POOL }
+module.exports = { all, read, get, add, update, forget, stageOf, kindOf, STAGES, SUPERVISOR, JUDGE, POOL }
