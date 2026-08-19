@@ -194,18 +194,32 @@ async function watchIfItIsTime (actions, log) {
     // about the old commit no longer describes it -- which is worth saying
     // as loudly as a new one arriving.
     const news = [
-      ...said.fresh.map(o => `${o.kind === 'issue' ? 'issue' : 'pull request'} ${o.on}#${o.number} "${String(o.title || '').slice(0, 60)}"`),
-      ...said.moved.map(o => `${o.on}#${o.number} has been pushed to since it was last read`)
+      ...said.fresh.map(o => `arrived: ${o.kind === 'issue' ? 'issue' : 'pull request'} ${o.on}#${o.number} "${String(o.title || '').slice(0, 60)}"`),
+      ...said.moved.map(o => `arrived: ${o.on}#${o.number} has been pushed to since it was last read`),
+
+      // AND THE FAR END OF SOMETHING THAT STARTED HERE. A cut of this host's own
+      // that is no longer open has finished, and until this the last step of the
+      // loop was the one step nothing drove: the supervisor recommended a merge,
+      // a person made it, and nothing ever told the supervisor it had happened.
+      //
+      // WHICH END IT REACHED IS THE POINT. Merged is the loop closing; closed
+      // without merging is somebody saying no, which is worth more attention
+      // rather than less. And when GitHub would not say, this says THAT --
+      // "no longer open" is a fact about the list it fell out of, and inventing
+      // "closed" from it is the mistake this file has already paid for once.
+      ...(said.ended || []).map(o => o.asked
+        ? `${o.merged ? 'merged' : 'closed without being merged'}: ${o.on}#${o.number} "${String(o.title || '').slice(0, 60)}"`
+        : `no longer open, and GitHub did not say what became of it: ${o.on}#${o.number}`)
     ]
     if (!news.length) return
 
-    for (const line of news) log.on('github').good(`arrived: ${line}`)
+    for (const line of news) log.on('github').good(line)
 
     // AND THE SUPERVISOR IS TOLD, if it answers by itself at all. The same
     // switch as everywhere else: this host may notice without anything being
     // woken, which is the state somebody watching by hand wants.
     if (settings.read().supervisorWakes === true) {
-      actions.supervisorWake.run({ why: `arrived on GitHub — ${news.join('; ')}` })
+      actions.supervisorWake.run({ why: `on GitHub — ${news.join('; ')}` })
         .catch(e => log.on('supervisor').warn(`it could not be woken about GitHub: ${e.message}`))
     }
   } catch (e) {

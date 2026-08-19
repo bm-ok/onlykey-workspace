@@ -26,6 +26,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const workspaces = require('../core/workspaces')
 const remotes = require('./remotes')
+const landings = require('./landings')
 
 const FILE = () => path.join(workspaces.stateDir(), 'watching.json')
 
@@ -133,9 +134,51 @@ async function look () {
     if (trouble.some(t => t.on === had.on && t.kind === had.kind)) now[id] = had
   }
 
+  // ---- AND A CUT OF THIS HOST'S OWN, REACHING ITS END ----------------------
+  //
+  // "What is gone is not reported" is right above, and it stays right for an
+  // issue: somebody else closed it, and it was never this host's loop to close.
+  // It was wrong for ONE case. A pull request this host cut is the far end of
+  // something that started here -- a draft written, a line made, a branch pushed
+  // -- and its disappearance is that loop finishing. Nothing said so. A change
+  // merged three minutes after the supervisor recommended it, and the supervisor
+  // closed the item about WAITING for the press and then sat with the item about
+  // the actual work still marked as being done, because the only thing that
+  // could have told it had been deliberately silent.
+  //
+  // NARROW ON PURPOSE. Only a pull request, only one that belongs to a cut in
+  // the landings record, and only from a repository that ANSWERED this look --
+  // the same condition as the carry-forward above, because a repository that
+  // could not be read has not told us anything has gone from it. Every waking
+  // costs a turn of somebody's money; this is the smallest set that closes the
+  // loop.
+  //
+  // AND IT ASKS WHAT BECAME OF IT rather than assuming. Gone from the open list
+  // means closed, and closed is not merged -- a cut somebody rejected is news
+  // too, and it is different news. One call, only for the few that vanished.
+  const ours = new Set()
+  for (const cut of Object.values(landings.all() || {})) {
+    // `into` IS WHAT THE RECORD STORES. `on` is the name the same field carries
+    // in `landings.state()`, which is a live projection rather than what is kept
+    // -- reading for `on` here matched nothing at all, silently, and the whole
+    // set came out empty.
+    for (const p of cut.pulls || []) {
+      const on = p.into || p.on
+      if (on && p.number) ours.add(idOf(on, 'pull', p.number))
+    }
+  }
+  const ended = []
+  for (const [id, had] of Object.entries(seen)) {
+    if (now[id]) continue
+    if (had.kind !== 'pull' || !ours.has(id)) continue
+    let became = null
+    try { became = await remotes.pullAt(had.on, had.number) } catch { /* it is gone from the open list either way */ }
+    ended.push({ ...had, merged: !!(became && became.merged), asked: !!became })
+  }
+
   write(now)
 
-  return { at, open: found, fresh, moved, trouble, watched: Object.keys(now).length }
+  return { at, open: found, fresh, moved, ended, trouble, watched: Object.keys(now).length }
 }
 
 // What the last look saw, without asking GitHub. This is what anything on a
