@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 55 tests, 256 checks, 21 of them drafts -->
+<!-- 12 suites, 56 tests, 258 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -398,6 +398,11 @@ The point of the whole tool, and the last part of it that nothing checked.
   2. a machine kept for looking at is not rolled back, and says so
   3. and the person is told, rather than the pool quietly draining
   4. and giving it back puts it in the pool again
+
+## 09 — what a branch remembers
+
+  1. a branch, and a first pass that picks a number it writes down nowhere
+  2. and the second pass knows what the flag says it should know
 
 # 09 — judging
 
