@@ -354,24 +354,36 @@ module.exports = {
         throw new Error(`"${name}" is a supervisor machine, so it keeps the "${vms.SUPERVISOR}" tag. Taking it off would put it in the queue's pool, and the first queued task would roll it back to its base snapshot while it was working.`)
       }
 
-      // AND THE SAME FOR A JUDGE, for a related reason rather than the same one.
+      // A JUDGE AND A WORKER ARE THE SAME MACHINE, SO THE ROLE CAN MOVE.
       //
-      // The supervisor tag is protected because losing it puts a machine in the
-      // pool. This one is protected because it decides WHICH SIGN-IN a machine
-      // may be lent: a judge machine takes a judge's identity, and that is what
-      // keeps "who said this work holds" separable from "who wrote it".
+      // Supervisor is fixed because it describes what was BUILT — a different
+      // provision, a second user, a sign-in desk. A judge and a worker are the
+      // same disk built the same way; what separates them is which sign-in they
+      // may be lent and which work the queue sends them, and both are this
+      // host's decisions about an identical machine. So turning a worker into a
+      // judge is saying so, not rebuilding it.
       //
-      // A tag somebody can add is a boundary somebody can grant themselves. A
-      // tag somebody can remove is worse: a machine mid-judgement would become
-      // an ordinary runner, and the next thing lent to it would be a worker's
-      // sign-in — quietly making the reader and the writer one account again,
-      // which is exactly the property this exists to keep.
-      const isJudge = was.includes(vms.JUDGE)
-      if (!isJudge && want.includes(vms.JUDGE)) {
-        throw new Error(`"${vms.JUDGE}" is not a tag you can add. It decides which sign-in a machine may be lent — a judge's rather than a worker's — so it is chosen when the machine is made, not granted afterwards to a machine already in the pool.`)
-      }
-      if (isJudge && !want.includes(vms.JUDGE)) {
-        throw new Error(`"${name}" is a judge machine, so it keeps the "${vms.JUDGE}" tag. Taking it off would let it be lent a worker's sign-in, and the account that says whether work holds would become the account that wrote it.`)
+      // WHAT MUST NOT HAPPEN IS THE CHANGE LANDING UNDERNEATH RUNNING WORK. A
+      // machine that becomes a judge mid-task, or a worker mid-judgement, is
+      // holding a sign-in for a role it no longer has — and the next thing lent
+      // to it would be the wrong kind. So the guard is about whether it is BUSY,
+      // which is a fact about right now, rather than about when it was made.
+      //
+      // BUSY MEANS ANY OF THE THREE, because each is a different way of being
+      // mid-something and any one of them makes a role change wrong.
+      const changingRole = was.includes(vms.JUDGE) !== want.includes(vms.JUDGE) ||
+        was.includes(vms.WORKER) !== want.includes(vms.WORKER)
+      if (changingRole) {
+        const busyWith = vm.branch
+          ? `claiming "${vm.branch}"`
+          : vm.holdsCredential
+            ? 'holding a sign-in'
+            : vm.borrowed
+              ? `borrowed — ${(vm.borrowed.why || 'somebody is using it')}`
+              : null
+        if (busyWith) {
+          throw new Error(`"${name}" is ${busyWith}, so what it is FOR cannot change right now. A machine that becomes a judge mid-task — or a worker mid-judgement — is holding a sign-in for a role it no longer has. Let it finish, or give it back with vmReturn, then change it.`)
+        }
       }
 
       // CLEARING THEM PUTS IT BACK IN THE ORDINARY POOL, rather than leaving it

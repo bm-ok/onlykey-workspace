@@ -277,13 +277,15 @@ async function tick (actions, log) {
       // none, nothing changes. The narrowing is applied before the match rather
       // than inside `takes`, because it is about which machines are ELIGIBLE
       // rather than about a tag the work asked for.
-      const may = onlyJudgesJudge(task, free, tagsOf, log)
+      const may = ofItsOwnKind(task, free, log)
       const pick = may.findIndex(m => willTake(task, m))
       if (pick < 0) {
         if (String(task.tag || '').trim()) {
           log.on('queue').info(`${task.ref} wants a machine tagged "${task.tag}" and none is free — it waits`)
-        } else if (task.kind === 'judgement' && may !== free) {
+        } else if (task.kind === 'judgement' && !may.length) {
           log.on('queue').info(`${task.ref} is a judgement and every judge machine is busy — it waits rather than being read by a runner`)
+        } else if (may.length < free.length) {
+          log.on('queue').info(`${task.ref} will not go to a judge machine — it waits for a runner`)
         }
         continue
       }
@@ -1736,18 +1738,59 @@ const takes = (entry, tags) => {
 // SAID OUT LOUD WHEN IT IS NOT ON, once, rather than silently doing the old
 // thing — an arrangement somebody believes is in force and is not is worse than
 // one they know they have not set up yet.
+// THE TWO DIRECTIONS ARE NOT THE SAME RULE, and the difference is not tidiness.
+//
+//   a task must never go to a JUDGE machine       — always, no exception
+//   a judgement goes to a judge machine           — when this host has one
+//
+// WHY THEY DIFFER. Excluding judge machines from tasks can never leave a task
+// with nowhere to go: a machine is a worker unless it says otherwise, so the
+// only way to run out of workers is for every machine to be a judge, which is a
+// host nobody has built. Requiring a judge machine for judgements CAN leave work
+// with nowhere to go — on any host that has not made one, which is most of them
+// and this one today.
+//
+// So the strict half is applied strictly and the half that could break a working
+// app switches itself on when the machine to do it with exists. A rule that
+// stops an app the moment it is added is a rule that gets reverted rather than
+// adopted.
+//
+// WHAT BOTH HALVES ARE FOR: a judge machine is lent a JUDGE's sign-in and a
+// runner a worker's — see whyNotOn in core/guests.js. Sending a task to a judge
+// machine would have it lent a worker's identity, and the account that says
+// whether work holds becomes the account that wrote it. That is the one property
+// this whole arrangement exists to keep, and it can be lost from either side.
 let saidNoJudge = false
-function onlyJudgesJudge (entry, free, tagsOf, log) {
-  if (!entry || entry.kind !== 'judgement') return free
-  const judges = free.filter(m => (tagsOf(m.name) || []).map(t => String(t).toLowerCase()).includes(vms.JUDGE))
-  if (judges.length) return judges
-
-  const anyExists = vms.read().some(v => vms.kindOf(v) === 'judge')
-  if (!anyExists && !saidNoJudge && log) {
-    saidNoJudge = true
-    log.on('queue').info(`no machine is tagged "${vms.JUDGE}", so judgements go to ordinary runners and are signed by a worker's identity. Make a judge machine to keep reading and writing on separate accounts.`)
+function ofItsOwnKind (entry, free, log) {
+  if (!entry) return free
+  const kindOf = name => {
+    const vm = vms.read().find(v => v.name === name)
+    return vm ? vms.kindOf(vm) : 'worker'
   }
-  return free
+
+  if (entry.kind === 'judgement') {
+    const judges = free.filter(m => kindOf(m.name) === 'judge')
+    if (judges.length) return judges
+
+    // None free. If none EXISTS, this host has not set the separation up and
+    // judging carries on as it always did — said once, because an arrangement
+    // somebody believes is in force and is not is worse than one they know they
+    // have not made yet.
+    const anyExists = vms.read().some(v => vms.kindOf(v) === 'judge')
+    if (!anyExists) {
+      if (!saidNoJudge && log) {
+        saidNoJudge = true
+        log.on('queue').info(`no machine is tagged "${vms.JUDGE}", so judgements go to ordinary runners and are signed by a worker's identity. Make a judge machine to keep reading and writing on separate accounts.`)
+      }
+      return free
+    }
+    // One exists and is busy: wait for it rather than using a runner.
+    return []
+  }
+
+  // A TASK, AND THE STRICT HALF. A judge machine is never eligible, whether or
+  // not one is free and whether or not anything else is.
+  return free.filter(m => kindOf(m.name) !== 'judge')
 }
 
 const FIRST = { judgement: 0, task: 1 }

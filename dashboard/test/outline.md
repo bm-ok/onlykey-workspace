@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 58 tests, 265 checks, 21 of them drafts -->
+<!-- 12 suites, 58 tests, 267 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -235,8 +235,10 @@ The second door a person has to open, and it is deliberately not beside the
   1. every sign-in goes on its own kind of machine, and nowhere else
   2. and the old name for a worker still reads as one
   3. and a machine says which kind it is, from its tags alone
-  4. and neither tag can be granted or taken away afterwards
-  5. and judging is routed by what this host actually has
+  4. a role can be moved, and what was BUILT cannot
+  5. and a role cannot change underneath running work
+  6. and work only ever goes to a machine of its own kind
+  7. and judging is routed by what this host actually has
 
 # 05 — the machines
 

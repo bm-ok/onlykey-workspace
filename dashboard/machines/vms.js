@@ -146,7 +146,31 @@ const STAGES = ['defined', 'created', 'installing', 'online', 'ready', 'connecte
 // — because a guarantee somebody can type away is not a guarantee.
 const SUPERVISOR = 'supervisor'
 
-// AND THE SAME IDEA FOR A JUDGE, for the same reasons and with one difference.
+// AND TWO MORE THAT SAY WHAT A MACHINE IS FOR — WHICH IS A DIFFERENT KIND OF
+// FACT FROM THE ONE ABOVE, AND THE DIFFERENCE DECIDES WHETHER THEY CAN CHANGE.
+//
+// The supervisor tag describes WHAT WAS BUILT. A supervisor skips the project's
+// half of provisioning and gets the app's own instead, including a second user
+// for the sign-in desk — see machines/scripts.js. You cannot retag your way into
+// that, so the tag is fixed at creation and refused afterwards.
+//
+// A JUDGE AND A WORKER ARE THE SAME MACHINE. Same provision, same scripts, same
+// disk. What separates them is which SIGN-IN they may be lent and which work the
+// queue sends them — both decisions this host makes at the time, about a machine
+// that is identical either way. So these two are ordinary tags that can be moved,
+// and a machine can be turned from a worker into a judge by saying so.
+//
+// (The first version of this made `judge` immutable by copying the supervisor
+// rule without its reason. The reason is provisioning, and it does not apply.)
+//
+// WHAT DOES STILL HAVE TO BE TRUE is that neither changes underneath running
+// work: a machine that becomes a judge mid-task, or a worker mid-judgement,
+// would be lent the wrong identity for what it is already doing. That is a
+// question about whether it is BUSY, not about when it was made — see vmTags.
+//
+// AND THEY COMPOSE WITH EVERY OTHER TAG, which is the point of using tags at all.
+// `judge` and `test` together is the kit's judge pool; `worker` and `test` is the
+// kit's worker pool. Nothing here has to know those combinations exist.
 //
 // A machine carrying this reads changes and says whether they hold. It is given
 // work by the queue like any runner — a judgement is queued, dispatched and put
@@ -166,6 +190,15 @@ const SUPERVISOR = 'supervisor'
 // to disagree.
 const JUDGE = 'judge'
 
+// AND THE ONE THAT SAYS "ORDINARY WORK", stated rather than implied.
+//
+// A machine with neither special tag has always been a runner, and still is —
+// nothing on this host has to be retagged. What this adds is the ability to SAY
+// it, which matters once there is something else it could be: "worker" and
+// "judge" beside each other read as two choices, where "judge" and nothing read
+// as a special case and a default.
+const WORKER = 'worker'
+
 // WHICH OF THE THREE A MACHINE IS, asked in one place.
 //
 // A machine is a runner unless it says otherwise. Both special tags are refused
@@ -179,6 +212,10 @@ const JUDGE = 'judge'
 const kindOf = vm => {
   const tags = (vm && vm.tags) || []
   const has = want => tags.some(t => String(t).toLowerCase() === want)
+  // UNTAGGED IS A WORKER, which is why the WORKER tag is optional rather than
+  // required: every machine made before this existed carries no role tag at all
+  // and is an ordinary runner, correctly. Requiring the tag would have made them
+  // all kindless on the day it was added.
   return has(SUPERVISOR) ? 'supervisor' : has(JUDGE) ? 'judge' : 'worker'
 }
 
@@ -254,4 +291,4 @@ async function all () {
   return { available: true, vms }
 }
 
-module.exports = { all, read, get, add, update, forget, stageOf, kindOf, STAGES, SUPERVISOR, JUDGE, POOL }
+module.exports = { all, read, get, add, update, forget, stageOf, kindOf, STAGES, SUPERVISOR, JUDGE, WORKER, POOL }
