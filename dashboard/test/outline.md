@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 56 tests, 258 checks, 21 of them drafts -->
+<!-- 12 suites, 57 tests, 260 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -403,6 +403,11 @@ The point of the whole tool, and the last part of it that nothing checked.
 
   1. a branch, and a first pass that picks a number it writes down nowhere
   2. and the second pass knows what the flag says it should know
+
+## 10 — a new task on a remembered branch
+
+  1. a branch, and a first pass that lays down a rule for it
+  2. and the second pass does the new job, not the old one
 
 # 09 — judging
 
