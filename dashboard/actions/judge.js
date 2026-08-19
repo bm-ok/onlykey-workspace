@@ -240,8 +240,8 @@ module.exports = {
   judgementCreate: {
     about: 'Ask for a judgement of a branch cut or a PR cut: what is read, which job reads it, and what question it is being asked',
     needs: 'workspace',
-    takes: ['kind', 'branch', 'source', 'target', 'on', 'number', 'sha', 'job', 'by', 'tag', 'question'],
-    run: async ({ kind, branch, source, target, on, number, sha, job, by, tag, question, _overTheWire }) => {
+    takes: ['kind', 'branch', 'source', 'target', 'on', 'number', 'sha', 'job', 'by', 'tag', 'question', 'remembers'],
+    run: async ({ kind, branch, source, target, on, number, sha, job, by, tag, question, remembers, _overTheWire }) => {
       // WHAT IS BEING READ, resolved before anything is written, so a judgement
       // is never filed against a cut that does not exist. `subjectFrom` is where
       // the two shapes are understood, and it refuses anything else.

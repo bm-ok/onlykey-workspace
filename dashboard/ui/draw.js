@@ -165,6 +165,16 @@ async function drawOnce () {
     asking ? `waiting on you:\n${asking}` : ''
   ].filter(Boolean).join('\n\n'), toAllow.length > 0)
   nudge('cuts-badge', (owed.out || []).length, outstanding)
+
+  // A SIGN-IN A MACHINE COULD NOT AUTHENTICATE WITH. Red rather than quiet: it
+  // is the one thing on that tab that silently costs an afternoon — work routes
+  // to that identity, boots a machine, lays out a workspace and fails minutes
+  // in, every time, until somebody reads a log. The credential's own dates say
+  // nothing useful about it, because a refresh rotates the token and a
+  // superseded copy looks alive.
+  nudge('runners-badge', owed.runners, owed.runners
+    ? `${owed.runners} Claude sign-in(s) a machine has tried and could not authenticate with. Runners → the pane for that role says what the machine said and what it exited with.`
+    : '', true)
   nudge('todo-badge', toAllow.length, asking ? `waiting on you:\n${asking}` : '', true)
 
   // ON THE TAB AND ON THE PANE THAT SHOWS IT, like every other sub-tab here.

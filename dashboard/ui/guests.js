@@ -106,6 +106,14 @@ const identityCard = (g, pane, key = {}) => el('div', {
         : null,
     fingerprintOf(g),
     g.has ? null : el('span', { className: 'badge bad', textContent: 'no token file' }),
+    // KNOWN BAD IS THE ONE THING WORTH SHOUTING IN A LIST. A sign-in whose dates
+    // look fine and which a machine could not authenticate with is the state
+    // that costs an afternoon: work routes to it, boots a machine, and fails
+    // minutes in. See checked() in core/guests.js — this is proof rather than a
+    // reading of a clock.
+    g.lastCheck && g.lastCheck.ready === false
+      ? el('span', { className: 'badge bad', textContent: `signed out on ${g.lastCheck.on || 'a machine'}` })
+      : null,
     g.note ? el('span', { className: 'muted', textContent: g.note }) : null))
 
 // What is known about the one picked. Everything on this panel is a fact about
@@ -126,6 +134,26 @@ function identityPanel (g, machines, pane, key = null) {
     pane.lendable ? ['where it is', g.holder ? `on ${g.holder}` : 'here, lent to nobody'] : null,
     pane.lendable ? ['last lent', g.lastGiven ? `${new Date(g.lastGiven).toLocaleString()}${g.lastGivenTo ? ` to ${g.lastGivenTo}` : ''}` : 'never'] : null,
     g.refreshed ? ['last refreshed', new Date(g.refreshed).toLocaleString()] : null,
+    // WHAT A MACHINE FOUND OUT, which outranks every date above it: a refresh
+    // rotates the token, so a copy can be within its stated life and already
+    // superseded. This row is the only one here that is evidence rather than
+    // arithmetic.
+    g.lastCheck
+      ? ['a machine tried it', g.lastCheck.ready
+          ? `yes — signed in on ${g.lastCheck.on || 'a machine'}, ${new Date(g.lastCheck.at).toLocaleString()}`
+          : `NO — ${g.lastCheck.on || 'a machine'} took it and the worker reported itself signed out, ${new Date(g.lastCheck.at).toLocaleString()}. Sign in again with the + on this pane; this one cannot be recovered.`]
+      : ['a machine tried it', 'not yet — nothing here is proof until a worker has been handed it'],
+    // THE MACHINE'S OWN WORDS, unedited. "Signed out" is a state and the sentence
+    // is the diagnosis: an OAuth session that expired cannot be recovered and
+    // wants a new sign-in, where a worker that could not read the file wants
+    // something else entirely. Shown here because it otherwise exists only in a
+    // log on a machine that is about to be rolled back.
+    g.lastCheck && g.lastCheck.why ? ['what it said', g.lastCheck.why] : null,
+    // The number beside the words. Zero and a refusal means it ran and was told
+    // no, which is a credential problem; anything else usually is not.
+    g.lastCheck && g.lastCheck.code !== null && g.lastCheck.code !== undefined
+      ? ['it exited', `${g.lastCheck.code}${g.lastCheck.code === 0 ? ' — it ran and answered, so this is the credential rather than the machine' : ' — it did not finish normally, which may be the machine rather than the credential'}`]
+      : null,
     // WHAT THIS ONE IS TO THE SUPERVISOR. Said as a fact in the table rather
     // than only as a badge, because "the supervisor signs in as this" is the
     // single most consequential thing about a supervisor sign-in and the panel
@@ -301,50 +329,75 @@ async function paintIdentitiesNow (pane) {
       fill($(pane.ids.detail), identityPanel(one, machines.vms || [], pane, key))
     }
 
-    // THE THIRD COLUMN IS WHAT THIS SIGN-IN HAS BEEN PART OF, and it is filtered
-    // to the one picked on the left.
+    // THE THIRD COLUMN IS THE CONVERSATIONS OF THIS LANE, and it is deliberately
+    // NOT filtered by which credential paid for them.
     //
-    // Sessions are kept per TASK — a worker's memory belongs to the task, not to
-    // the identity that ran it — and this column showed all of them because
-    // nothing recorded which sign-in spent a run. It does now: every archive
-    // names the identity that was on the machine, and the set of every one that
-    // has carried the conversation. See tasks/sessions.js.
+    // IT USED TO BE, AND ONE ACTION PROVED IT WRONG. Moving a sign-in from
+    // worker to judge — a relabelling that does not touch the token — carried
+    // twenty-three WORKER sessions onto the judge pane with it, every one badged
+    // `worker`, because this list asked "which key signed this" rather than
+    // "what is this a conversation about". The sessions appeared to swap with
+    // the credential, which is exactly the pairing this app now says does not
+    // exist.
     //
-    // Matched on the SET, not on the latest. A task resumed three times may have
-    // been signed by three identities, and a credential that paid for two of
-    // those runs has been part of that conversation whether or not it was the
-    // last one to touch it.
-    const mine = one
-      ? (kept.sessions || []).filter(s => (s.guests || []).includes(one.name) || s.guest === one.name)
-      : []
-    // Anything from before this was recorded, said out loud rather than left to
-    // look like an identity that has never worked.
-    const older = (kept.sessions || []).filter(s => !(s.guests || []).length && !s.guest).length
+    // A SESSION BELONGS TO A BRANCH LINE AND A LANE — see tasks/sessions.js,
+    // which keys them `<lane>--cut--<branch>` for this reason — and a credential
+    // is swappable underneath it. So the judge pane shows readings and the
+    // worker pane shows work, whoever happened to pay for them, and picking a
+    // different sign-in does not change what is in the list.
+    //
+    // WHICH SIGN-INS CARRIED IT STAYS ON THE CARD. That is provenance and it is
+    // worth having; it is just not the thing that decides which list a
+    // conversation is in.
+    const mine = (kept.sessions || []).filter(s => s.lane === pane.role)
+    // Kept before a lane was written down, so they belong to neither rather than
+    // being quietly filed under whichever pane is open.
+    const older = (kept.sessions || []).filter(s => !s.lane).length
 
-    setText($(pane.ids.sessionsCount), one ? (mine.length ? `— ${mine.length}` : '— none') : '')
+    setText($(pane.ids.sessionsCount), mine.length ? `— ${mine.length}` : '— none')
     if (changed(`${pane.pane}-sessions`, [one && one.name, mine, older])) {
       fill($(pane.ids.sessions), mine.length
         ? mine.map(s => el('div', { className: 'card' },
             el('div', { className: 'card-title' },
-              el('span', { className: 'grow', textContent: s.title || (s.number ? `#${s.number}` : s.uid.slice(0, 8)) }),
+              // WHAT IT IS ABOUT, WHICH IS THE BRANCH LINE — not the number of
+              // whatever last wrote it. A session outlives the piece of work
+              // that started it now, so "#61" names something that may be gone
+              // while the conversation is very much alive, and a list of those
+              // reads "#61, task is gone" about a thing still in daily use.
+              el('span', { className: 'grow', textContent: s.about || s.title || (s.number ? `#${s.number}` : s.uid.slice(0, 8)) }),
+              // AND WHICH LANE, because the same branch has two conversations —
+              // one that worked on it and one that read it — and they must never
+              // be mistaken for each other.
+              s.lane ? el('span', { className: `badge ${s.lane === 'judge' ? 'run' : 'ok'}`, textContent: s.lane }) : null,
               el('span', { className: 'muted', textContent: `${Math.round((s.bytes || 0) / 1024)} KB` })),
             el('div', { className: 'badges' },
               s.number ? el('span', { className: 'muted', textContent: `#${s.number}` }) : null,
-              // Which end of the conversation this credential is on, since the
-              // set says it was part of it and not that it was the last.
-              s.guest === one.name
+              // WHICH END OF THE CONVERSATION THE PICKED SIGN-IN IS ON, when one
+              // is picked at all — and who last signed it when none is, so a
+              // conversation no current key has touched still says who paid.
+              // None of this decides whether the card is here; see the filter.
+              one && s.guest === one.name
                 ? el('span', { className: 'badge ok', textContent: 'signed the last run' })
-                : el('span', { className: 'badge muted', textContent: 'signed an earlier run' }),
+                : one && (s.guests || []).includes(one.name)
+                  ? el('span', { className: 'badge muted', textContent: 'signed an earlier run' })
+                  : s.guest
+                    ? el('span', { className: 'muted', textContent: `last signed by ${s.guest}` })
+                    : null,
               (s.guests || []).length > 1 ? el('span', { className: 'muted', textContent: `${s.guests.length} sign-ins` }) : null,
               s.machine ? el('span', { className: 'muted', textContent: `on ${s.machine}` }) : null,
-              s.orphaned ? el('span', { className: 'badge muted', textContent: 'task is gone' }) : null,
+              // ONLY WORTH SAYING FOR A CONVERSATION THAT BELONGS TO ONE PIECE
+              // OF WORK. A session filed under a branch line is SUPPOSED to
+              // outlive the tasks that wrote it, so "the task is gone" would be
+              // describing it working as designed.
+              s.orphaned && !s.about ? el('span', { className: 'badge muted', textContent: 'the work it began with is gone' }) : null,
               s.kept ? el('span', { className: 'muted', textContent: ago(s.kept) }) : null)))
         : el('div', {},
-            el('p', { className: 'empty', textContent: one
-              ? `Nothing yet under "${one.name}". A worker hands its memory back when it finishes, and the sign-in that was on the machine is written down with it.`
-              : `Pick a ${pane.what} on the left.` }),
+            // ABOUT THE LANE, NOT ABOUT THE SIGN-IN, because that is what the
+            // column is now. "Nothing yet under runner1" was the old sentence
+            // and it described the old filter.
+            el('p', { className: 'empty', textContent: `No ${pane.what} conversations have been kept yet. One is filed the first time a ${pane.what} finishes on a branch line, under that line and this lane — not under whichever sign-in paid for it.` }),
             older
-              ? el('p', { className: 'muted', textContent: `${older} session${older === 1 ? ' was' : 's were'} kept before this was written down, so ${older === 1 ? 'it names' : 'they name'} no sign-in at all. They are on the Sessions tab.` })
+              ? el('p', { className: 'muted', textContent: `${older} session${older === 1 ? ' was' : 's were'} kept before the lane was written down, so ${older === 1 ? 'it belongs' : 'they belong'} to neither lane rather than being filed under this one. They are on the Sessions tab.` })
               : null))
     }
   }).catch(e => { if (changed(`${pane.pane}-bad`, String(e.message))) oops(e) })

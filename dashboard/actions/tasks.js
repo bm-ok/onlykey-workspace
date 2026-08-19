@@ -806,7 +806,28 @@ module.exports = {
           number: t ? t.number : s.number,
           title: t ? t.title : null,
           branch: t ? t.branch : null,
-          orphaned: !t
+          orphaned: !t,
+
+          // ---- WHAT IT IS ABOUT AND WHICH LANE, FOR THE ONES KEPT BEFORE
+          // ---- EITHER WAS WRITTEN DOWN ---------------------------------
+          //
+          // `aboutWork` records both on every session now, so this is history
+          // rather than an ongoing hole: sessions kept before there were lanes
+          // name none, and a list of them reads "#42, the work it began with is
+          // gone" — which says nothing about the only question somebody has,
+          // which is what branch line it was for.
+          //
+          // IT IS A LOOKUP, NOT A GUESS, and the distinction is the reason this
+          // is allowed to fill anything in at all. `board` is the TASK board, so
+          // a uid found on it belonged to a task, and a task is worked rather
+          // than read — the lane follows from where the record was found. A
+          // judgement is not on this board and so is never given a lane here.
+          //
+          // AND WHAT IS NOT RECOVERABLE IS LEFT EMPTY. A session whose task was
+          // thrown away has no branch line anywhere on this host; filing it
+          // under the likelier of two lanes would be inventing the answer.
+          lane: s.lane || (t ? 'worker' : null),
+          about: s.about || (t ? t.branch : null)
         }
       })
       return {

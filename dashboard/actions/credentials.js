@@ -586,9 +586,45 @@ module.exports = {
       // workers. The refusal was right and the selection had never been taught.
       const want = vms.kindOf(mine)
       const held = guests.all().filter(g => g.role === want)
+
+      // ---- ONE A MACHINE HAS ALREADY FAILED WITH IS NOT OFFERED AGAIN ------
+      //
+      // A credential that could not authenticate does not get better by being
+      // tried on another machine. Left in the pool it is picked again, boots a
+      // machine, lays out a workspace and fails minutes in -- and it is picked
+      // FIRST if it happens to be first in the list, so one dead sign-in can
+      // starve a host that has a working one.
+      //
+      // PAUSED RATHER THAN THROWN AWAY, because that is not this app's decision
+      // to make: it is somebody's credential and the fix is a new sign-in, which
+      // is a person at a login page. See checked() in core/guests.js -- signing
+      // in again replaces the record and clears this by construction.
+      // The predicate lives in core/guests.js now, because the QUEUE asks the
+      // same question before it spends a machine and two readings of "has this
+      // failed" is exactly how the two halves come to disagree.
+      const dead = guests.paused
+      const alive = held.filter(g => !dead(g))
+
       const wanted = mine.guest
         ? held.find(g => g.name === mine.guest)
-        : held.find(g => g.has && (!g.holder || g.holder === name))
+        : alive.find(g => g.has && (!g.holder || g.holder === name))
+
+      // AND SAID PLAINLY WHEN EVERY ONE OF THEM IS KNOWN BAD, which is a
+      // different sentence from "none is free": nothing is out, they are dead,
+      // and waiting will not help.
+      if (!wanted && held.length && held.every(dead)) {
+        const which = held.map(g => `"${g.name}" (${g.lastCheck.on || 'a machine'} could not authenticate with it${g.lastCheck.at ? `, ${String(g.lastCheck.at).slice(0, 16).replace('T', ' ')}` : ''})`).join('; ')
+        const no = new Error(`Every ${want} sign-in this host holds has already failed on a machine: ${which}. They are paused rather than thrown away — sign in again on the Runners tab, which replaces the record. Nothing will spend a machine on these until then.`)
+        // MARKED SO THE CALLER CAN TELL THIS APART FROM A MACHINE THAT BROKE.
+        // The queue finishes a task whose setup failed, on the grounds that the
+        // attempt happened and produced nothing — which is right for a machine
+        // that would not boot and wrong for this: nothing was attempted, and
+        // marking it done files "we learnt nothing" as an outcome. Read as a
+        // flag rather than by matching the sentence above, because a sentence
+        // is written for a person and gets rewritten for one.
+        no.noIdentity = true
+        throw no
+      }
 
       // AND SAID PLAINLY WHEN THERE IS NONE OF THAT KIND AT ALL, because "every
       // guest is out" below is the wrong sentence for it: nothing is out, there
@@ -746,6 +782,30 @@ grep -qxF '${String(ssh.publicKey() || '').trim()}' "$HOME/.ssh/authorized_keys"
       // thrown away the moment it was learnt — so every panel went back to
       // guessing from a clock that says the wrong thing.
       if (ready !== null) rememberCredentialCheck({ at: new Date().toISOString(), on: name, ready })
+      // AND AGAINST THE SIGN-IN THAT WAS ACTUALLY TRIED. The line above keeps it
+      // for the host as a whole, which is what there was when there was one
+      // credential; with three, "something is dead" names nothing. See checked()
+      // in core/guests.js.
+      // AND WHAT IT SAID, WORD FOR WORD, when the answer was no.
+      //
+      // "signed out" is a state and not a diagnosis. The machine has the actual
+      // sentence -- an OAuth session expired, a refresh refused, a version that
+      // does not understand the file -- and those want different things done
+      // about them. Thrown away here, it survived only in a run log on a machine
+      // about to be rolled back, which is where this afternoon's went.
+      //
+      // TRIMMED, NOT SUMMARISED. Whatever the worker printed, up to a screenful,
+      // kept against the credential it is about. A sentence somebody can search
+      // for beats a category this app invented.
+      const why = ready === false
+        ? String(said || '')
+            .split(/\r?\n/)
+            .map(x => x.trim())
+            .filter(x => x && !/^okc-credential-placed$/.test(x))
+            .join(' ')
+            .slice(0, 600) || null
+        : null
+      if (ready !== null && chosen) guests.checked(chosen, { ready, on: name, why, code: r.code })
 
       return {
         to: name,

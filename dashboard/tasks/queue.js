@@ -46,7 +46,12 @@ const settings = require('../core/settings')
 // cannot do it because it brings the machine up as part of borrowing it.
 const vms = require('../machines/vms')
 // The one tag this app gives a meaning to. See vms.js.
-const { SUPERVISOR } = vms
+const { SUPERVISOR, kindOf } = vms
+
+// WHAT HAS ALREADY BEEN SAID ABOUT A TASK THAT IS WAITING. See sayWaiting.
+// Module-level because the dispatch loop is called afresh on every tick and a
+// memory inside it would forget between them, which is the thing being fixed.
+const waitingSaid = new Map()
 const store = require('./store')
 // The other kind of work this dispatches. Its own store, because a judgement is
 // a different record about a different subject — see the head of it.
@@ -263,6 +268,24 @@ async function tick (actions, log) {
     // The board says a tagged task is waiting for a tagged machine; nothing
     // happens silently.
     const tagsOf = name => (vms.find(v => v.name === name) || {}).tags || []
+
+    // WHY WAITING IS SAID ONCE AND NOT EVERY FIFTEEN SECONDS.
+    //
+    // This loop runs on a tick, so anything it says about a task that is WAITING
+    // it says again four times a minute, for as long as the wait lasts. A task
+    // waiting overnight for a sign-in somebody has to make writes three and a
+    // half thousand identical lines into the record — and that record is read
+    // from a bookmark, so the cost is not disk, it is that the next real event
+    // arrives buried under them.
+    //
+    // KEYED ON THE REASON, not on the task, so a task that starts waiting for a
+    // DIFFERENT reason says so. Cleared when it is dispatched, so the next wait
+    // is announced again rather than silenced by a sentence from last week.
+    const sayWaiting = (ref, message) => {
+      if (waitingSaid.get(ref) === message) return
+      waitingSaid.set(ref, message)
+      log.on('queue').info(message)
+    }
     // The rule itself is at the foot of this file, so what this dispatches by and
     // what `taskQueue` promises are the same function rather than two readings
     // of the same paragraph.
@@ -281,20 +304,45 @@ async function tick (actions, log) {
       const pick = may.findIndex(m => willTake(task, m))
       if (pick < 0) {
         if (String(task.tag || '').trim()) {
-          log.on('queue').info(`${task.ref} wants a machine tagged "${task.tag}" and none is free — it waits`)
+          sayWaiting(task.ref, `${task.ref} wants a machine tagged "${task.tag}" and none is free — it waits`)
         } else if (task.kind === 'judgement' && !may.length) {
-          log.on('queue').info(`${task.ref} is a judgement and every judge machine is busy — it waits rather than being read by a runner`)
+          sayWaiting(task.ref, `${task.ref} is a judgement and every judge machine is busy — it waits rather than being read by a runner`)
         } else if (may.length < free.length) {
-          log.on('queue').info(`${task.ref} will not go to a judge machine — it waits for a runner`)
+          sayWaiting(task.ref, `${task.ref} will not go to a judge machine — it waits for a runner`)
         }
         continue
       }
+      // ---- AND WHETHER THERE IS AN IDENTITY TO GIVE IT ------------------
+      //
+      // BEFORE THE MACHINE IS CLAIMED, which is the whole point. Every run gets
+      // a credential — see the `credential` phase below, which is not optional —
+      // so a task dispatched with none available boots a machine, rolls it
+      // forward, fails at the handover and rolls it back. That happened, and the
+      // refusal it produced said "Nothing will spend a machine on these until
+      // then" immediately after spending one.
+      //
+      // WAITING IS THE SAME SHAPE AS WAITING FOR A MACHINE, which this loop
+      // already does two branches up: the work stays queued and the board says
+      // what it is waiting for. It is not a failure and must not be filed as one
+      // — a paused sign-in is fixed by a person at a login page, and the task
+      // should be there waiting when they have done it.
+      const kind = kindOf({ name: may[pick].name, tags: tagsOf(may[pick].name) })
+      if (!guests.freeFor(kind).length) {
+        const stopped = guests.pausedFor(kind)
+        sayWaiting(task.ref, stopped.length
+          ? `${task.ref} needs a ${kind} sign-in and every one this host holds is paused (${stopped.map(g => `"${g.name}"`).join(', ')}) — it waits, and no machine is spent on it. Sign in again on the Runners tab`
+          : `${task.ref} needs a ${kind} sign-in and none is free — it waits`)
+        continue
+      }
+
       const at = free.indexOf(may[pick])
       const next = free.splice(at, 1)[0]
       if (!next) break
       // Claimed synchronously, before any await, so two ticks cannot hand the
       // same machine to two tasks.
       busyWith.set(next.name, task.ref)
+      // It is not waiting any more, so the next time it does, that is news.
+      waitingSaid.delete(task.ref)
 
       // A JUDGEMENT GOES DOWN ITS OWN PATH. It shares everything up to the point
       // where work is given — a machine, rolled back, dialled in, holding a
@@ -326,14 +374,28 @@ async function tick (actions, log) {
         // and produced nothing, which is a true and useful thing to see -- and a
         // task that re-queues itself onto a machine that just failed to boot
         // does that for ever, quietly, with nobody deciding anything.
+        //
+        // EXCEPT WHEN THERE WAS NO IDENTITY TO GIVE IT, which is not that. The
+        // check above means this should not be reachable, and it is kept because
+        // "should not be reachable" is a claim about timing: a sign-in can be
+        // paused by another machine's run between the check and the handover.
+        // Nothing was read, nothing was written, and no code was even fetched,
+        // so `done` would file "we learnt nothing" as the outcome of a task that
+        // never started. It goes back to waiting, where the check above then
+        // holds it without spending anything -- so this cannot become the loop
+        // the paragraph above is about.
+        const nothingToGiveIt = e && e.noIdentity
         try {
           await actions.taskUpdate.run({
             id: task.id,
-            task: {
-              state: 'done',
-              attempts: [...(task.attempts || []), { machine: next.name, at: new Date().toISOString(), failed: e.message }]
-            }
+            task: nothingToGiveIt
+              ? { state: 'queued', machine: null, run: null }
+              : {
+                  state: 'done',
+                  attempts: [...(task.attempts || []), { machine: next.name, at: new Date().toISOString(), failed: e.message }]
+                }
           })
+          if (nothingToGiveIt) log.on('queue', next.name).warn(`#${task.number} is back in the queue — it was never started, because there was no sign-in to give the machine`)
         } catch { /* the log already carries it */ }
       })
     }
@@ -488,7 +550,25 @@ async function runJudgement (actions, log, judgement, machine) {
     }
 
     // Before anything else touches the machine — see meterRun.
-    await meterRun(actions, to, machine, started.run, { kind: 'judgement', about: subject.name || judgement.title || null, ref })
+    const metered = await meterRun(actions, to, machine, started.run, { kind: 'judgement', about: subject.name || judgement.title || null, ref })
+
+    // THE SAME FOR A READING, and written here rather than shared because the
+    // two paths file their work in different stores — but the RULE is the same
+    // one, so if it changes it changes in both. See the task path for why.
+    if (metered && metered.failedAuthAs) {
+      const already = (judgement.attempts || []).filter(a => a.authFailed).length
+      if (!already) {
+        judging.update(id, {
+          state: 'queued',
+          machine: null,
+          run: null,
+          attempts: [...(judgement.attempts || []).slice(0, -1), { ...((judgement.attempts || []).slice(-1)[0] || {}), authFailed: metered.failedAuthAs }]
+        })
+        to.warn(`${ref} is back in the queue — it was never read: "${metered.failedAuthAs}" could not authenticate, and that sign-in is now paused`)
+        return
+      }
+      to.bad(`${ref} could not authenticate a second time, so it is not being re-queued again. Replace the judge sign-in on the Runners tab before this can run.`)
+    }
 
     // ---- AND THE WHOLE LOG, WHICH NOTHING KEPT --------------------------
     //
@@ -904,7 +984,39 @@ async function run (actions, log, task, machine) {
     }
 
     // The same, for work rather than for a reading. See meterRun.
-    await meterRun(actions, to, machine, started.run, { kind: 'task', about: task.title || null, ref: `#${task.number}` })
+    const metered = await meterRun(actions, to, machine, started.run, { kind: 'task', about: task.title || null, ref: `#${task.number}` })
+
+    // ---- A RUN THAT COULD NOT AUTHENTICATE DID NOT FAIL. IT NEVER STARTED. --
+    //
+    // The worker was handed a dead sign-in, so nothing about this task was
+    // tried: no code was read, nothing was decided, nothing was written. Marking
+    // it done would file "we learnt nothing" as an outcome and quietly lose the
+    // work -- somebody would find a task marked finished with an empty branch
+    // and no idea why.
+    //
+    // So it goes back in the queue, and the sign-in is already paused by
+    // meterRun, which is the half that stops this being a loop: the next
+    // dispatch cannot be handed the same dead credential, and if there is no
+    // live one the task WAITS rather than burning a machine every fifteen
+    // seconds.
+    //
+    // ONCE, AND ONLY ONCE. If it has already been sent back for this, something
+    // is wrong that re-running will not fix -- a second identity that is also
+    // dead, a machine that cannot reach Anthropic at all -- and a task that
+    // re-queues itself for ever is worse than one that stops and says so.
+    if (metered && metered.failedAuthAs) {
+      const before = (((await actions.tasks.run({})).tasks || []).find(t => t.id === id) || {}).attempts || []
+      const already = before.filter(a => a.authFailed).length
+      const marked = [...before]
+      if (marked.length) marked[marked.length - 1] = { ...marked[marked.length - 1], authFailed: metered.failedAuthAs }
+
+      if (!already) {
+        await actions.taskUpdate.run({ id, task: { state: 'queued', machine: null, run: null, attempts: marked } })
+        to.warn(`#${task.number} is back in the queue — it was never run: "${metered.failedAuthAs}" could not authenticate, and that sign-in is now paused so this will not be given to it again`)
+        return
+      }
+      to.bad(`#${task.number} could not authenticate a second time, so it is not being re-queued again. Every sign-in it can be given is failing — replace one on the Runners tab before this can run.`)
+    }
 
     // Pulled across before the machine is touched again. taskProgress does this
     // too, but that only happens if somebody looks -- and this machine is about
@@ -1340,10 +1452,53 @@ async function settle (actions, to, machine, ok, timeout, what, usual) {
 // a gap in a total; a run that FAILED because the metering did is work lost for
 // bookkeeping. One catch around the whole of it, and nothing downstream reads
 // what it returns.
+// RETURNS WHETHER THE RUN DIED OF AUTHENTICATION, as well as metering it.
+//
+// Both paths already call this with the run they just finished, so it is the one
+// place that sees the output and knows which sign-in was on the machine. The
+// caller needs the answer because it changes what happens to the WORK -- see
+// where it is used: a run that could not authenticate did not fail, it never
+// started, and the difference decides whether the task is finished or waiting.
 async function meterRun (actions, to, machine, runId, { kind, about, ref }) {
+  let failedAuthAs = null
   try {
     const said = await actions.vmRunOutput.run({ name: machine, run: runId, lines: 60 })
     const text = String((said && (said.output || said.tail)) || '')
+
+    // ---- A RUN THAT COULD NOT AUTHENTICATE IS A FACT ABOUT THE SIGN-IN ------
+    //
+    // WHERE THE REAL SENTENCE LIVES. Handing a machine a credential asks it
+    // "are you signed in" and gets back `{"loggedIn": false}` -- true, and not a
+    // diagnosis. A RUN says why:
+    //
+    //     Failed to authenticate: OAuth session expired and could not be
+    //     refreshed
+    //
+    // That sentence existed only in a log on a machine about to be rolled back,
+    // so the same credential was handed out again and failed again, and the only
+    // way to know was to read a run log afterwards.
+    //
+    // HERE BECAUSE BOTH PATHS ALREADY CALL IT. A task and a judgement each reach
+    // meterRun with the run they just finished, and it already works out which
+    // sign-in the machine is holding. Putting this anywhere else would be two
+    // copies -- which is the mistake this arrangement has already made twice
+    // today, in lentTo and in the announcement.
+    try {
+      const trouble = String(text).split(String.fromCharCode(10))
+        .map(x => x.trim())
+        .filter(x => /failed to authenticate|oauth|invalid_grant|unauthor/i.test(x))
+        .slice(0, 3)
+        .join(' ')
+        .slice(0, 600)
+      if (trouble) {
+        const on = guests.all().find(g => g.holder === machine)
+        if (on) {
+          guests.checked(on.name, { ready: false, on: machine, why: trouble })
+          to.bad(`${ref} could not authenticate as "${on.name}" — that sign-in is paused, and nothing will spend a machine on it again until it is replaced: ${trouble.slice(0, 160)}`)
+          failedAuthAs = on.name
+        }
+      }
+    } catch { /* the meter's own job matters more than this note */ }
 
     let last = null
     for (const line of text.split('\n')) {
@@ -1354,7 +1509,10 @@ async function meterRun (actions, to, machine, runId, { kind, about, ref }) {
         if (e && e.type === 'result') last = e
       } catch { /* a line the tail cut in half, which is expected */ }
     }
-    if (!last) return null
+    // THE ANSWER IS THE SAME SHAPE WHETHER OR NOT THERE WAS ANYTHING TO METER.
+    // A run that could not authenticate often has no result line at all, and
+    // that is exactly the case the caller most needs told about.
+    if (!last) return { row: null, failedAuthAs }
 
     const holder = guests.all().find(g => g.holder === machine)
     const row = meter.record({
@@ -1366,10 +1524,10 @@ async function meterRun (actions, to, machine, runId, { kind, about, ref }) {
       ...meter.fromResult(last)
     })
     if (row.cost != null) to.info(`${ref} cost ${Number(row.cost).toFixed(4)} USD on ${row.key || 'an unrecorded sign-in'}`)
-    return row
+    return { row, failedAuthAs }
   } catch (e) {
     to.warn(`could not read what ${runId} cost: ${e.message}`)
-    return null
+    return { row: null, failedAuthAs }
   }
 }
 

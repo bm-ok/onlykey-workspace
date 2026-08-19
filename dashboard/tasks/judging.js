@@ -229,6 +229,17 @@ function add (input) {
     // pool's work on the test pool's machines is the ordinary reason.
     tag: input.tag ? String(input.tag) : null,
 
+    // WHETHER THIS READING CARRIES ON FROM THE LAST ONE OF THE SAME SUBJECT.
+    //
+    // Asked per judgement rather than set once, because it is a trade somebody
+    // makes knowingly: a judge that remembers can say what was fixed since, and
+    // has already formed a view it tends to keep confirming. See the checkbox in
+    // the Ask-for-a-judgement dialog, which says both halves.
+    //
+    // KEPT ON THE RECORD, so what was asked for is part of what happened rather
+    // than a setting that may have moved since.
+    remembers: input.remembers === true || input.remembers === 'true',
+
     state: 'draft',
     machine: null,
     attempts: [],

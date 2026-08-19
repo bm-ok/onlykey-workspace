@@ -557,6 +557,26 @@ function askForOne (about = null) {
           label: 'On a machine tagged (optional)',
           value: '',
           options: [{ value: '', label: 'any free machine' }, ...kinds.map(t => ({ value: t, label: t }))]
+        },
+        // ---- WHETHER IT ARRIVES REMEMBERING ---------------------------------
+        //
+        // A reading session is filed under WHAT IS BEING READ — the branch line
+        // — and not under this judgement. So a second reading of the same branch
+        // can carry on the first one's conversation, which is the difference
+        // between "you fixed two of the three things I raised" and a stranger
+        // starting cold every round.
+        //
+        // OFFERED AS A CHOICE, PER JUDGEMENT, because it is a real trade and the
+        // person asking is the one who knows which they want. What it costs is
+        // written on the box rather than in a document nobody opens: a judge
+        // that remembers has already formed a view, and the failure mode is that
+        // it confirms itself instead of re-reading what is actually there.
+        {
+          name: 'remembers',
+          type: 'checkbox',
+          label: 'Let it carry on from the last reading of this branch',
+          value: false,
+          hint: 'Off: it reads cold, like a stranger, which is the only way a verdict is independent of the last one. On: it continues the conversation from the previous reading of this subject — it can say what you fixed and what you did not, and it can also agree with itself. A judge that has already decided something tends to keep finding it.'
         }
       ],
       confirm: 'Ask for it',
@@ -579,7 +599,10 @@ function askForOne (about = null) {
           // for, and somebody reading it themselves is not being instructed.
           job: mine ? undefined : f.job,
           question: f.question || undefined,
-          tag: mine ? undefined : (f.tag || undefined)
+          tag: mine ? undefined : (f.tag || undefined),
+          // Carried on the judgement itself, so what was asked for is part of
+          // the record rather than a setting that may have changed since.
+          remembers: mine ? undefined : (f.remembers === true || f.remembers === 'on')
         })
         // NOT QUEUED WHEN IT IS YOURS. The queue would give it to a machine and
         // run a worker over the change you said you would read — judgementQueue

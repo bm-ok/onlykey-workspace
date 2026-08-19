@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 58 tests, 267 checks, 21 of them drafts -->
+<!-- 12 suites, 59 tests, 272 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -239,6 +239,14 @@ The second door a person has to open, and it is deliberately not beside the
   5. and a role cannot change underneath running work
   6. and work only ever goes to a machine of its own kind
   7. and judging is routed by what this host actually has
+
+## 08 — a session is not tied to a key
+
+  1. the same branch line keys the same session, whoever is paying
+  2. and the lane is part of the key, so reading and writing never collide
+  3. and what a session is about is the line, not the task that started it
+  4. and a piece of work may ask to remember, over the default
+  5. and a credential can be relabelled without touching the token
 
 # 05 — the machines
 

@@ -111,6 +111,10 @@ function all () {
     lastGiven: g.lastGiven || null,
     lastGivenTo: g.lastGivenTo || null,
     holder: g.holder || null,
+    // WHAT A MACHINE LAST FOUND OUT, and whether that was good news. Null until
+    // one has been tried -- "never checked" and "checked and dead" are different
+    // and only one of them is a reason to sign in again.
+    lastCheck: g.lastCheck || null,
     note: g.note || null
   }))
 }
@@ -278,6 +282,50 @@ function whyNotOn (role, machineKind, name, machine) {
 // else, and moving the identity out from under it would leave the supervisor
 // pointing at a sign-in it may no longer hold -- discovered the next time it was
 // woken, which is the worst moment to find out.
+// ---- WHAT A MACHINE FOUND OUT ABOUT IT, KEPT AGAINST THE SIGN-IN ---------
+//
+// A credential's own dates say when its refresh token expires, and that is not
+// the same as it working: a refresh ROTATES the token, so a copy taken before
+// another machine refreshed is already superseded while still looking fine. The
+// only proof is a worker being handed it and reporting whether it can
+// authenticate.
+//
+// That answer was already being kept -- in the single-credential file, from
+// before sign-ins had names. With three of them it recorded that SOMETHING was
+// bad and could not say which, which is the same as not knowing.
+//
+// So it is kept here, against the one that was actually tried. A sign-in that a
+// machine reported signed out is known bad until a machine says otherwise, and
+// nothing has to spend a machine to find out again.
+function checked (name, { ready = null, on = null, at = null, why = null, code = null } = {}) {
+  if (ready === null || ready === undefined) return get(name)
+  const all = read()
+  const i = all.findIndex(g => g.name === name)
+  if (i < 0) return null
+  all[i] = {
+    ...all[i],
+    lastCheck: {
+      ready: !!ready,
+      on: on || null,
+      at: at || new Date().toISOString(),
+      // WHAT THE MACHINE SAID, kept whole. "It failed" is a state; the sentence
+      // is the diagnosis, and an OAuth session that expired wants a different
+      // thing done about it than a worker that could not read the file.
+      why: why || null,
+      // AND WHAT THE COMMAND EXITED WITH. A different kind of clue from the
+      // words: a shell that could not find the binary, one killed by a timeout,
+      // and one that ran and was refused all print different things and exit
+      // differently, and the number is the half that is never ambiguous.
+      //
+      // Kept even when it is zero, because "it ran fine and said no" is a real
+      // answer and is not the same as "it never ran".
+      code: code === null || code === undefined ? null : Number(code)
+    }
+  }
+  write(all)
+  return get(name)
+}
+
 function roleOf (name, want) {
   const all = read()
   const i = all.findIndex(g => g.name === name)
@@ -440,5 +488,33 @@ function supervisorKey () {
   return { key: one, chosen: picked, inUse, why: null }
 }
 
+// ---- WHETHER THERE IS AN IDENTITY TO GIVE AT ALL --------------------------
+//
+// ASKED BEFORE A MACHINE IS SPENT, and by the same rule that picks one after.
+// It was only ever asked after: the queue booted a machine, rolled it forward,
+// laid out a workspace and THEN found there was no sign-in it could hand over —
+// so the refusal read "Nothing will spend a machine on these until then" while
+// having just spent one, and did it again on the next tick.
+//
+// PAUSED IS NOT THE SAME AS BUSY, and the difference is what somebody does next:
+//
+//   paused    a machine took it and the worker reported itself signed out. It
+//             does not get better by being tried again, and the fix is a person
+//             at a login page.
+//   held      out on a machine that is working. It comes back on its own.
+//
+// Both mean "not now"; only one means "not ever, without you". So they are
+// counted separately and said differently, rather than collapsed into "none".
+const paused = g => !!(g.lastCheck && g.lastCheck.ready === false)
+
+// The ones that could go to a machine of this role right now. `machine` names a
+// machine already holding one, which is not a reason to refuse it its own.
+const freeFor = (role, machine = null) =>
+  all().filter(g => g.role === role && g.has && !paused(g) && (!g.holder || g.holder === machine))
+
+// The ones that would be free but for having failed. Named so a refusal can say
+// WHICH sign-in to replace rather than that there is none.
+const pausedFor = role => all().filter(g => g.role === role && g.has && paused(g))
+
 module.exports = {
-  roleOf, all, get, add, forget, lentTo, backFrom, token, fingerprint, okName, adoptTheOldOne, whyNotOn, supervisorKey, ROOT, fileFor }
+  roleOf, checked, all, get, add, forget, lentTo, backFrom, token, fingerprint, okName, adoptTheOldOne, whyNotOn, supervisorKey, paused, freeFor, pausedFor, ROOT, fileFor }

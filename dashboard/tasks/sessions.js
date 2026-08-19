@@ -54,6 +54,35 @@
 // STILL NOT THE TOKEN, and not a path to it. A name, which is what the guest
 // list already shows -- see core/guests.js. The credential itself is excluded
 // from the archive, as above, and pairing the two by name does not put it back.
+//
+// ---- A SESSION AND A CREDENTIAL ARE NOT TIED, AND THAT IS THE DESIGN -------
+//
+// Said plainly because everything above could be misread as a pairing: a session
+// records which sign-in was on the machine, and a pane lists sessions under a
+// sign-in. NEITHER IS A BINDING. They are provenance -- who spent this run, and
+// which identities have been part of this conversation -- kept because "what did
+// this cost and to whom" is a real question, not because one owns the other.
+//
+// WHAT FOLLOWS FROM THAT, and it is the whole point:
+//
+//   A KEY CAN BE SWAPPED AND THE CONVERSATION SURVIVES. A sign-in expires, is
+//   replaced, or is rotated by another machine; the work goes on under a new
+//   one and picks up exactly where it was. `guests` is a LIST for this reason --
+//   one conversation resumed across three runs may have been signed by three
+//   identities, and that is ordinary rather than a fault.
+//
+//   THE SESSION IS THE VALUABLE HALF. A credential is replaceable in a minute
+//   by somebody at a login page. What a worker worked out about a branch is not
+//   replaceable at all -- it is hours of reading, and it is why this file exists.
+//
+//   SO NOTHING HERE MAY REFUSE FOR CREDENTIAL REASONS. Losing a sign-in must
+//   never lose a session, and a session must never be filed under a credential:
+//   it is filed under WHAT THE WORK IS ABOUT -- the branch line and the lane --
+//   which is stable while identities come and go. See keyFor.
+//
+// The one place they meet is a machine: it is lent a sign-in of its own kind and
+// handed the session for what it is doing. Two independent lookups, at the same
+// moment, for the same machine — and that is all the relationship there is.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -213,7 +242,20 @@ function announcement (doing) {
 function keyFor (doing) {
   if (!doing || !doing.uid) return null
   const lane = doing.kind === 'judgement' ? 'judge' : 'worker'
-  if (!REMEMBERS[lane]) return doing.uid
+
+  // THE PIECE OF WORK MAY ASK FOR ITSELF, and that outranks the constant.
+  //
+  // A judgement carries `remembers` — set by a person in the Ask-for-a-judgement
+  // dialog, where the trade is written on the box. REMEMBERS below is the
+  // default for work that did not say, and a per-judgement yes is not overridden
+  // by it: somebody who ticked the box has read what it costs, which is more
+  // than a default can claim.
+  //
+  // ONLY UPWARDS. Ticking it turns memory on for that one reading; nothing here
+  // turns it off for work that would otherwise have it, because that would make
+  // a silent default beat a deliberate arrangement.
+  const asked = doing.item && doing.item.remembers === true
+  if (!asked && !REMEMBERS[lane]) return doing.uid
 
   const item = doing.item || {}
   const subject = item.subject || null
@@ -228,6 +270,23 @@ function keyFor (doing) {
     : (item.branch ? `cut--${item.branch}` : null)
 
   return about ? `${lane}--${safe(about)}` : doing.uid
+}
+
+// THE SAME TWO FACTS, SAID RATHER THAN ENCODED. keyFor turns them into a
+// filename; this hands them back as words, so what is stored beside a session
+// and what the key is built from cannot drift apart. One function works both
+// out, which is the only way they stay the same answer.
+function aboutWork (doing) {
+  if (!doing) return { lane: null, about: null }
+  const lane = doing.kind === 'judgement' ? 'judge' : 'worker'
+  const item = doing.item || {}
+  const subject = item.subject || null
+  const about = doing.kind === 'judgement'
+    ? (subject && subject.kind === 'pull'
+        ? (subject.on && subject.number ? `${subject.on}#${subject.number}` : null)
+        : (subject && (subject.branch || subject.name)) || null)
+    : (item.branch || null)
+  return { lane, about }
 }
 const dirFor = uid => path.join(ROOT(), safe(uid))
 // One name, because there is one per task. A second one would be the first one
@@ -340,7 +399,7 @@ function look (bytes) {
 // delivery: two runs producing `firmware.bin` are two results and losing either
 // loses work. A session is a conversation, and the newer copy is the older one
 // plus what happened since.
-function keep (uid, bytes, { id = null, run = null, machine = null, taskId = null, number = null, folder = null, guest = null } = {}) {
+function keep (uid, bytes, { id = null, run = null, machine = null, taskId = null, number = null, folder = null, guest = null, lane = null, about = null } = {}) {
   if (!okId(id)) throw new Error('that is not a session id')
   if (!bytes || !bytes.length) throw new Error('there was nothing in it')
   if (bytes.length > MOST) throw new Error(`that is ${Math.round(bytes.length / 1048576)} MB, and the most this takes is ${MOST / 1048576} MB`)
@@ -374,6 +433,20 @@ function keep (uid, bytes, { id = null, run = null, machine = null, taskId = nul
     // keep, and blanking it is more honest than inheriting the previous name.
     guest: guest || null,
     guests: [...signed],
+    // ---- WHAT THIS CONVERSATION IS ABOUT, IN WORDS -----------------------
+    //
+    // The key already says it -- `worker--cut--fix_thing` -- and a key is a
+    // filename, not a sentence. Every panel that showed a session showed the
+    // number of the work that last wrote it, so a list read "#61, task is gone":
+    // true, useless, and actively misleading now that a session outlives the
+    // task that started it.
+    //
+    // A session belongs to a SUBJECT and a LANE — the branch line and whether it
+    // was worked or read. Those are the two things somebody needs to know what
+    // they are looking at, and neither survives being derived from a filename by
+    // whichever panel happens to be drawing.
+    lane: lane || (was && was.lane) || null,
+    about: about || (was && was.about) || null,
     folder: folder || null,
     bytes: bytes.length,
     kept: new Date().toISOString(),
@@ -395,7 +468,25 @@ function get (uid) {
   try { bytes = fs.statSync(file).size } catch { return null }
   let about = {}
   try { about = JSON.parse(fs.readFileSync(aboutFor(uid), 'utf8')) } catch { /* an interrupted keep */ }
-  return { uid, path: file, bytes, ...about }
+  // WHAT AN OLDER RECORD IS MISSING, WORKED OUT FROM ITS OWN NAME.
+  //
+  // `lane` and `about` are written down now; every session kept before that has
+  // neither, and the two of them are exactly what a panel needs to say what it
+  // is looking at. The key already carries both -- `worker--cut--fix_thing` --
+  // so they are recovered on the way out rather than by rewriting files.
+  //
+  // Read-time and idempotent, the same shape machines/vms.js uses for the fields
+  // that moved: a record that already has them is untouched, and one that never
+  // will (a uid from before subject keying) simply keeps null and says so.
+  const named = /^(worker|judge)--(?:cut|pull)--(.+)$/.exec(String(uid))
+  return {
+    uid,
+    path: file,
+    bytes,
+    ...about,
+    lane: about.lane || (named ? named[1] : null),
+    about: about.about || (named ? named[2] : null)
+  }
 }
 
 const has = uid => !!get(uid)
@@ -417,4 +508,4 @@ function everything () {
     .sort((a, b) => String(b.kept || '').localeCompare(String(a.kept || '')))
 }
 
-module.exports = { keep, get, has, forget, everything, okId, keyFor, announcement, dirFor, fileFor, ROOT, MOST, REMEMBERS }
+module.exports = { keep, get, has, forget, everything, okId, keyFor, aboutWork, announcement, dirFor, fileFor, ROOT, MOST, REMEMBERS }

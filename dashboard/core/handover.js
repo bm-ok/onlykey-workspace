@@ -157,7 +157,13 @@ async function deliver ({ run, text, what, andThen = '' }) {
   // THE FINGERPRINT IT ENDED UP WITH, compared by the caller against the one this
   // host sealed. Sixteen hex characters of sha256 — it says "the same one"
   // without either side printing the thing itself.
-  return { fingerprint: placed[1], output: said }
+  // AND WHAT THE COMMAND EXITED WITH, carried through rather than dropped.
+  //
+  // The caller writes down what a machine found out about a credential — see
+  // checked() in core/guests.js — and "it ran and answered no" is a different
+  // fault from "it never ran". Only the number tells those apart, and this was
+  // the one place it was known and thrown away.
+  return { fingerprint: placed[1], output: said, code: done.code === undefined ? null : done.code }
 }
 
 // What this host would call the same text, so a caller can compare without

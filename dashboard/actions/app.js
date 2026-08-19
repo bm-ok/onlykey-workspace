@@ -22,6 +22,9 @@ const s = require('./shared')
 // The conversation, for counting what the supervisor has said since the
 // person's own bookmark — see  below.
 const chat = require('../core/chat')
+// The Claude identities, for the one thing on the Runners tab that owes somebody
+// an action: a sign-in a machine could not authenticate with. See `waiting`.
+const guests = require('../core/guests')
 // Whether the drills are running, for the banner that says so. See status.
 const testruns = require('../core/testruns')
 
@@ -217,8 +220,30 @@ module.exports = {
       const forTasks = unapproved.filter(a => a.of === 'task')
       const forJudges = unapproved.filter(a => a.of === 'judge')
 
+      // ---- A SIGN-IN A MACHINE COULD NOT AUTHENTICATE WITH ----------------
+      //
+      // The one thing on the Runners tab that costs an afternoon rather than a
+      // minute. A credential's own dates can say it is alive while it is already
+      // superseded -- a refresh rotates the token, so a copy taken before
+      // another machine refreshed is dead and looks fine. The only proof is a
+      // worker being handed it, and when that proof is bad NOTHING said so
+      // anywhere: work routes to that identity, boots a machine, sets up a
+      // workspace and fails minutes in, every time, until somebody reads a log.
+      //
+      // Counted from what a machine actually found, never from a clock.
+      const dead = (() => {
+        try {
+          return guests.all().filter(g => g.lastCheck && g.lastCheck.ready === false)
+        } catch { return [] }
+      })()
+      count(dead.length, 'sign-in a machine could not authenticate with', 'sign-ins a machine could not authenticate with')
+
       return {
         actions: forTasks.length,
+        // WHAT THE RUNNERS TAB OWES SOMEBODY. Only this: a machine being kept
+        // for inspection is already an inbox item, and everything else about a
+        // machine is the queue's business rather than a person's.
+        runners: dead.length,
         // READINGS WITHOUT A VERDICT ARE NOT COUNTED HERE ANY MORE.
         //
         // This was mine + mute + forJudges, and the first two are judgements

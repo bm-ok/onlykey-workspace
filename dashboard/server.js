@@ -746,6 +746,10 @@ function handler (req, res) {
           // and a task can share a number, and a reader needs both to know
           // which one this was.
           kind: doing.kind,
+          // AND WHAT IT IS ABOUT, in words rather than only in the key. See
+          // aboutWork in tasks/sessions.js — the same function keyFor uses, so
+          // the filename and the sentence cannot disagree.
+          ...sessions.aboutWork(doing),
           taskId: doing.id,
           number: work.number,
           guest: on.guest || null,

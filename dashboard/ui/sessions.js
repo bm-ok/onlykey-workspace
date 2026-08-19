@@ -57,12 +57,24 @@ async function paintSessionsNow () {
             }
           },
           el('div', { className: 'card-title' },
-            el('span', { className: 'grow', textContent: s.number ? `#${s.number} ${s.title || s.task || ''}`.trim() : (s.taskId || s.uid) }),
+            // THE BRANCH LINE, BECAUSE THAT IS WHAT A CONVERSATION IS ABOUT.
+            //
+            // This led with "#42 <task title>", and the question somebody has
+            // in front of a list of these is WHICH LINE IT WAS RUN UNDER —
+            // which a task number does not answer, and answers less every time
+            // a session outlives the task that started it. A row saying
+            // "#42, task gone" is true and tells you nothing.
+            el('span', { className: 'grow', textContent: s.about || s.branch || s.title || (s.number ? `#${s.number}` : (s.taskId || s.uid)) }),
+            // AND WHICH LANE. The same line has two conversations — the one
+            // that worked on it and the one that read it — and they must never
+            // be mistaken for each other.
+            s.lane ? el('span', { className: `badge ${s.lane === 'judge' ? 'run' : 'ok'}`, textContent: s.lane }) : null,
             // A task that was thrown away leaves its memory behind on purpose --
-            // what was produced outlives the note about it. Said, because a row
-            // pointing at nothing otherwise reads as a fault.
-            s.orphaned ? el('span', { className: 'badge muted', textContent: 'task gone' }) : null),
-          el('div', { className: 'card-sub muted', textContent: `${s.runs || 1} run${s.runs === 1 ? '' : 's'} · ${s.bytes >= 1048576 ? `${(s.bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(s.bytes / 1024))} KB`}` }),
+            // what was produced outlives the note about it. Said only where
+            // there is no line to show instead, since a session filed under a
+            // branch line is SUPPOSED to outlive its task.
+            s.orphaned && !s.about && !s.branch ? el('span', { className: 'badge muted', textContent: 'task gone' }) : null),
+          el('div', { className: 'card-sub muted', textContent: `${s.number ? `#${s.number} · ` : ''}${s.runs || 1} run${s.runs === 1 ? '' : 's'} · ${s.bytes >= 1048576 ? `${(s.bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(s.bytes / 1024))} KB`}` }),
           el('div', { className: 'card-sub muted', textContent: `last kept ${ago(s.kept)}${s.machine ? ` from ${s.machine}` : ''}` })))
         : el('p', { className: 'empty', textContent: 'Nothing yet. A worker started by a job hands its memory back when it finishes, and gets it again the next time that task runs.' }))
     }
@@ -77,7 +89,8 @@ function paintSession (s) {
 
   fill($('session-detail'),
     el('div', { className: 'card-title' },
-      el('span', { className: 'grow', textContent: s.number ? `#${s.number} ${s.title || ''}`.trim() : (s.taskId || s.uid) }),
+      el('span', { className: 'grow', textContent: s.about || s.branch || s.title || (s.number ? `#${s.number}` : (s.taskId || s.uid)) }),
+      s.lane ? el('span', { className: `badge ${s.lane === 'judge' ? 'run' : 'ok'}`, textContent: s.lane }) : null,
       el('span', { className: 'badge ok', textContent: `${s.runs || 1} run${s.runs === 1 ? '' : 's'}` })),
 
     el('table', { className: 'kv' },
@@ -88,8 +101,14 @@ function paintSession (s) {
         el('td', { className: 'mono', style: 'user-select:text', textContent: s.id || 'not recorded' })),
       el('tr', {}, el('th', { textContent: 'task' }),
         el('td', { className: 'mono', textContent: s.taskId || '—' })),
-      el('tr', {}, el('th', { textContent: 'branch' }),
-        el('td', { className: 'mono', textContent: s.branch || '—' })),
+      el('tr', {}, el('th', { textContent: 'branch line' }),
+        el('td', { className: 'mono', textContent: s.about || s.branch || '—' })),
+      // WHAT IT IS FILED UNDER, which is the pair above and not the credential.
+      // A key can be swapped and this does not move; see tasks/sessions.js.
+      el('tr', {}, el('th', { textContent: 'lane' }),
+        el('td', { className: 'mono', textContent: s.lane
+          ? `${s.lane} — ${s.lane === 'judge' ? 'a reading of that line' : 'work done on that line'}`
+          : 'not recorded — kept before lanes were' })),
       el('tr', {}, el('th', { textContent: 'last machine' }),
         el('td', { className: 'mono', textContent: s.machine || '—' })),
       el('tr', {}, el('th', { textContent: 'last run' }),
