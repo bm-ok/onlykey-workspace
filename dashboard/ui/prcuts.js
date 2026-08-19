@@ -25,6 +25,24 @@ let cutsSeen = null
 
 let cutsAsking = false
 
+// ---- WHAT A DRAFT WOULD SAY, ASKED ONCE ----------------------------------
+//
+// `prTemplatePreview` composes the real body, and composing it reads git for
+// every repository in the pair. THE WINDOW SHARES ONE NODE CONTEXT, so that read
+// happens on the thread that is drawing -- see CLAUDE.md, and see the two
+// panels that already put `spawn` at 70% of this window's samples.
+//
+// Asked from a paint path with no memory, it ran on every draw and the window
+// stopped responding: not an exception, a block, several git processes deep,
+// three seconds apart, for as long as a draft was selected. Which is the failure
+// that rule was written about, walked into again.
+//
+// SO IT IS ASKED ONCE PER PAIR AND KEPT. `asking` is separate from `previewOf`
+// because "not asked yet" and "asked, and the answer was nothing" are different
+// and only one of them should ask again.
+const previewOf = new Map()
+const asking = new Set()
+
 // WHAT WAS DRAWN BEFORE GITHUB WAS ASKED. Kept so a draft stays picked across a
 // redraw — the loop runs every few seconds and would otherwise throw the panel
 // away between one look and the next.
@@ -173,14 +191,42 @@ function paintCutDetail (c) {
   // what it says.
   if (c.draft) {
     const said = c.said || {}
+    const at = key(c)
+
+    // WHAT WOULD ACTUALLY BE POSTED, not what was typed. The saved body is only
+    // somebody's half; a pull request carries that plus everything the blocks on
+    // "New PR Cut" add — why the branch was cut, what it was cut from, the
+    // commit each repository ends at, the links between the cut's own pull
+    // requests. Showing the typed half and calling it a preview shows the
+    // smaller and less surprising part.
+    //
+    // COMPOSED BY THE SAME THING THAT COMPOSES THE REAL ONE, so it cannot drift
+    // from what goes out. Asked once — see previewOf above for why that matters
+    // more than it looks.
+    if (!previewOf.has(at) && !asking.has(at)) {
+      asking.add(at)
+      api('prTemplatePreview', { source: c.source, target: c.target, title: said.title || undefined, body: said.body || undefined })
+        .then(v => { previewOf.set(at, (v && v.text) || (v && v.note) || '') })
+        .catch(e => { previewOf.set(at, `Could not compose it: ${e.message}`) })
+        .finally(() => {
+          asking.delete(at)
+          if (pickedCut === at) { forget('prcut-detail'); paintCuts() }
+        })
+    }
+
+    const composed = previewOf.get(at)
+
     return fill($('prcut-detail'),
       el('div', { className: 'card-title' },
         el('span', { className: 'grow', textContent: said.title || c.source }),
         el('span', { className: 'badge warn', textContent: 'not sent' })),
       el('p', { className: 'note', textContent: `"${c.source}" into "${c.target}", written here and not sent. Nothing is on GitHub yet — this text lives in this workspace only, and sending it is one act: a branch pushed and a pull request opened for every repository that carries something.` }),
-      said.body
-        ? codeBlock('prcut-draft-body', said.body, { language: 'markdown' })
-        : el('p', { className: 'empty', textContent: 'No body was written — a pull request opened from this would carry the template alone.' }),
+      el('p', { className: 'note muted', textContent: 'What a pull request would say — what was written, and everything the blocks on "New PR Cut" add to it.' }),
+      composed === undefined
+        ? el('p', { className: 'empty', textContent: 'Composing what it would say…' })
+        : composed
+          ? codeBlock(composed, 'markdown', { max: 30 })
+          : el('p', { className: 'empty', textContent: 'Nothing would be opened for this pair — the source carries nothing the target does not already have.' }),
       el('div', { className: 'row' },
         // THE ONE ACT THIS SCREEN CAN DO ABOUT A DRAFT, and it is deliberately a
         // person's press. See the supervisor: it may write the text and make the
@@ -661,6 +707,8 @@ async function saveDraftFromWriter (v) {
   been.set('prcut', pickedCut)
   cutsSeen = null
   draftsSeen = null
+  // The composition is of the OLD text until it is asked again.
+  previewOf.delete(`${tmplFrom} -> ${tmplInto}`)
   forget('prcuts')
   forget('prcut-detail')
   say(`Kept. "${tmplFrom}" into "${tmplInto}" is on PR cuts as not sent — that is where it goes out.`)
