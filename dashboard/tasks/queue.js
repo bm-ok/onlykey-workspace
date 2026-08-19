@@ -46,7 +46,7 @@ const settings = require('../core/settings')
 // cannot do it because it brings the machine up as part of borrowing it.
 const vms = require('../machines/vms')
 // The one tag this app gives a meaning to. See vms.js.
-const { SUPERVISOR, kindOf } = vms
+const { SUPERVISOR, kindOf, takesQueuedWork } = vms
 
 // WHAT HAS ALREADY BEEN SAID ABOUT A TASK THAT IS WAITING. See sayWaiting.
 // Module-level because the dispatch loop is called afresh on every tick and a
@@ -313,10 +313,34 @@ async function tick (actions, log) {
       // hand, and everything about it is on the Machines tab. It simply never
       // has work sent to it automatically, because automatic work is exactly
       // where nobody is watching to catch the wrong identity going out.
-      const may = ofItsOwnKind(task, free.filter(m => vms.takesQueuedWork(vms.get(m.name))), log)
+      // THE MODULE, NOT THE ARRAY. `vms` is the machine LIST inside this loop --
+      // `const { vms } = await actions.vmList.run({})` -- so `vms.get` here was a
+      // property of an Array and every tick threw "vms.get is not a function".
+      // The same shadow already caught kindOf; both are pulled out at module
+      // scope for exactly this reason, and an availability row carries a name
+      // rather than tags, which is what tagsOf is for.
+      const may = ofItsOwnKind(task, free.filter(m => takesQueuedWork({ name: m.name, tags: tagsOf(m.name) })), log)
       const pick = may.findIndex(m => willTake(task, m))
       if (pick < 0) {
-        if (String(task.tag || '').trim()) {
+        // ---- WHY, AND IT HAS TO BE THE REAL WHY ---------------------------
+        //
+        // These three sentences described a host where every machine had a role,
+        // because until today every machine did. With the roles taken off, all
+        // three lied at once: "no machine is tagged judge, so judgements go to
+        // ordinary runners" (there were no runners either), "every judge machine
+        // is busy" (none was busy; none existed), and "wants a machine tagged
+        // test and none is free" — while two machines tagged `test` sat there
+        // free, wanting nothing but a role.
+        //
+        // A WAIT THAT NAMES THE WRONG CAUSE IS WORSE THAN SILENCE. Somebody acts
+        // on it: they go looking for the busy machine, or they add a `test` tag
+        // that is already there. So the roleless case is asked FIRST, because it
+        // is the one that explains a host where nothing can run at all.
+        const roleless = free.filter(m => !takesQueuedWork({ name: m.name, tags: tagsOf(m.name) }))
+
+        if (!may.length && roleless.length) {
+          sayWaiting(task.ref, `${task.ref} waits: ${roleless.map(m => m.name).join(', ')} ${roleless.length === 1 ? 'is' : 'are'} free and ${roleless.length === 1 ? 'has' : 'have'} not been told what ${roleless.length === 1 ? 'it is' : 'they are'} for. The queue hands a machine a sign-in and picks which one by the machine's role, so it will not send work to a machine that has not said. Give one the "${task.kind === 'judgement' ? vms.JUDGE : vms.WORKER}" tag with vmTags and this goes straight out.`)
+        } else if (String(task.tag || '').trim()) {
           sayWaiting(task.ref, `${task.ref} wants a machine tagged "${task.tag}" and none is free — it waits`)
         } else if (task.kind === 'judgement' && !may.length) {
           sayWaiting(task.ref, `${task.ref} is a judgement and every judge machine is busy — it waits rather than being read by a runner`)
@@ -2003,7 +2027,15 @@ function ofItsOwnKind (entry, free, log) {
     if (!anyExists) {
       if (!saidNoJudge && log) {
         saidNoJudge = true
-        log.on('queue').info(`no machine is tagged "${vms.JUDGE}", so judgements go to ordinary runners and are signed by a worker's identity. Make a judge machine to keep reading and writing on separate accounts.`)
+        // ONLY A FALLBACK IF THERE IS SOMETHING TO FALL BACK TO. This promised
+        // that judging would carry on using ordinary runners, which is true on a
+        // host that HAS runners and was said on one where every machine had had
+        // its role taken off -- so it described a graceful degradation that was
+        // not happening while the work sat still.
+        const runners = vms.read().filter(v => vms.canBe(v, 'worker')).length
+        log.on('queue').info(runners
+          ? `no machine is tagged "${vms.JUDGE}", so judgements go to ordinary runners and are signed by a worker's identity. Make a judge machine to keep reading and writing on separate accounts.`
+          : `no machine is tagged "${vms.JUDGE}" and none is tagged "${vms.WORKER}" either, so judging has nowhere to go and waits. Tag a machine with vmTags — "${vms.JUDGE}" to keep reading and writing on separate accounts, or "${vms.WORKER}" to have judgements read on a runner.`)
       }
       return free
     }
