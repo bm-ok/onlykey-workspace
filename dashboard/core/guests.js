@@ -260,6 +260,51 @@ function whyNotOn (role, machineKind, name, machine) {
 // passes the kind itself. One of these will be removed when the last boolean
 // caller is gone; keeping both for now is what lets that happen a file at a time
 // rather than in one change that has to be right everywhere at once.
+// ---- WHAT AN IDENTITY IS FOR CAN CHANGE, AND THE TOKEN DOES NOT MOVE ------
+//
+// A worker and a judge sign-in are the same object: a name and a sealed token.
+// What separates them is which machines may hold one, which is a decision about
+// this host rather than a property of the credential. So changing it is a label
+// change -- nothing is re-sealed, nothing is re-read, and the fingerprint is the
+// same afterwards, which is how you can tell it was a relabelling and not a
+// replacement.
+//
+// NOT WHILE IT IS OUT. A sign-in on a machine was lent under the rule that the
+// roles match; changing it underneath would leave a judge machine holding a
+// worker's identity with nothing having been refused. The same shape as a
+// machine's role, and for the same reason -- see vmTags.
+//
+// AND NOT THE ONE THE SUPERVISOR IS SET TO USE. That name is a setting somewhere
+// else, and moving the identity out from under it would leave the supervisor
+// pointing at a sign-in it may no longer hold -- discovered the next time it was
+// woken, which is the worst moment to find out.
+function roleOf (name, want) {
+  const all = read()
+  const i = all.findIndex(g => g.name === name)
+  if (i < 0) throw new Error(`There is no sign-in called "${name}".`)
+
+  const to = String(want || '').toLowerCase()
+  if (!['worker', 'judge', 'supervisor'].includes(to)) {
+    throw new Error(`"${want}" is not a role. A sign-in is a worker, a judge or a supervisor — which decides the kind of machine it may be lent to.`)
+  }
+
+  const was = all[i].role === 'supervisor' ? 'supervisor' : all[i].role === 'judge' ? 'judge' : 'worker'
+  if (was === to) return get(name)
+
+  if (all[i].holder) {
+    throw new Error(`"${name}" is out on ${all[i].holder}, so what it is for cannot change right now. It was lent under the rule that a machine holds a sign-in of its own kind, and changing it underneath would leave that machine holding the wrong one. Take it back first with guestBack.`)
+  }
+
+  const chosen = settings.read().supervisorKey
+  if (was === 'supervisor' && chosen === name) {
+    throw new Error(`"${name}" is the sign-in the supervisor is set to use, so it cannot stop being a supervisor. Choose another one first on the Runners tab.`)
+  }
+
+  all[i] = { ...all[i], role: to }
+  write(all)
+  return get(name)
+}
+
 function lentTo (name, machine, { supervisor = false, kind = null } = {}) {
   const all = read()
   const i = all.findIndex(g => g.name === name)
@@ -395,4 +440,5 @@ function supervisorKey () {
   return { key: one, chosen: picked, inUse, why: null }
 }
 
-module.exports = { all, get, add, forget, lentTo, backFrom, token, fingerprint, okName, adoptTheOldOne, whyNotOn, supervisorKey, ROOT, fileFor }
+module.exports = {
+  roleOf, all, get, add, forget, lentTo, backFrom, token, fingerprint, okName, adoptTheOldOne, whyNotOn, supervisorKey, ROOT, fileFor }

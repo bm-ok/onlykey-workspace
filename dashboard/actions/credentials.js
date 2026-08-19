@@ -88,9 +88,13 @@ module.exports = {
   claudeSignedIn: {
     about: 'Give the code back. The credential is kept here under a name, and the desk is left empty',
     takes: ['name', 'code', 'as', 'role', 'note'],
-    run: async ({ name, code, as, role = 'guest', note = null }) => {
+    run: async ({ name, code, as, role = 'worker', note = null }) => {
       const on = await whichSupervisor(name)
-      const kind = role === 'supervisor' ? 'supervisor' : 'guest'
+      // ALL THREE ROLES, because this is what the window's "+" calls. It mapped
+      // anything that was not a supervisor to a worker, so the Claude Judge pane
+      // would have signed somebody in and quietly filed them as a worker — a
+      // credential that then cannot be lent to the machine it was made for.
+      const kind = role === 'supervisor' ? 'supervisor' : role === 'judge' ? 'judge' : 'worker'
       const called = String(as || '').trim()
       if (!called) throw new Error('Say what to call it. A credential is kept under a name, and a list of "claude-code-2" is a list nobody can read six weeks later.')
       if (guests.get(called)) throw new Error(`There is already a sign-in called "${called}". Pick another name, or throw that one away first.`)
@@ -417,7 +421,9 @@ module.exports = {
       // Read from the tag, which is the one place this is decided and is
       // answerable with the machine switched off.
       const isSupervisor = (mine.tags || []).some(t => String(t).toLowerCase() === vms.SUPERVISOR)
-      const role = isSupervisor ? 'supervisor' : 'guest'
+      // The machine's own kind, so a credential grabbed off a judge machine is
+      // filed as a judge's. `isSupervisor` could only ever say two of the three.
+      const role = vms.kindOf(vms.get(name))
       if (already && already.role !== role) {
         throw new Error(`"${into}" is a ${already.role} sign-in and ${name} is a ${isSupervisor ? 'supervisor machine' : 'runner'}. One of the two is wrong, and guessing which would put the deciding identity in the pool the workers draw from — or the other way round.`)
       }
@@ -468,7 +474,15 @@ module.exports = {
       // its sign-in away would sign out the thing that decides what work there
       // is. The record is the same either way — this machine holds that
       // identity — and what differs is that nothing takes a supervisor's back.
-      guests.lentTo(into, name, { supervisor: isSupervisor })
+      // BY KIND, NOT BY A BOOLEAN. This was the last call site still passing
+      // `supervisor: true/false`, which can say "supervisor or worker" and
+      // cannot say "judge" — so lending a judge's sign-in to a judge machine was
+      // refused with "kit-2 is a runner", about a machine tagged judge.
+      //
+      // Found by running it: J59 routed to the judge machine correctly and then
+      // could not be given an identity at all. The selection had been taught the
+      // rule and the recording had not.
+      guests.lentTo(into, name, { kind: vms.kindOf(vms.get(name)) })
       vms.update(name, { holdsCredential: true, guest: into })
 
       log.on('vm', name).good(already
@@ -709,7 +723,7 @@ grep -qxF '${String(ssh.publicKey() || '').trim()}' "$HOME/.ssh/authorized_keys"
       // that is switched off still has a credential on its disk, so "which guest
       // is on that machine" has to be answerable while it is off — and a guest
       // recorded as out is one that will not be handed to a second machine.
-      if (chosen) guests.lentTo(chosen, name)
+      if (chosen) guests.lentTo(chosen, name, { kind: vms.kindOf(vms.get(name)) })
       vms.update(name, { holdsCredential: true, guest: chosen })
 
       // What the worker itself says, believed over what we just wrote. It prints

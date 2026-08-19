@@ -56,13 +56,37 @@ module.exports = {
     about: 'Keep a Claude token here under a name. It is sealed to this account and never shown again',
     takes: ['name', 'token', 'note', 'role'],
     run: ({ name, token, note, role }) => {
-      const made = guests.add({ name, token, note: note || null, from: 'typed in', role: role || 'guest' })
+      const made = guests.add({ name, token, note: note || null, from: 'typed in', role: role || 'worker' })
       // The name and the fingerprint, never the token. This line is kept in the
       // durable record, so it has to be safe to read six weeks later.
       log.on('keys').good(`a Claude ${made.role} called "${made.name}" was added — ${made.fingerprint}`)
       return {
         ...made,
         note: `"${made.name}" is kept, sealed to this Windows account. Nothing shows it again — what is reported from here is a name, a date and a fingerprint.`
+      }
+    }
+  },
+
+  guestRole: {
+    about: 'Change what a Claude sign-in is for: a worker, a judge, or a supervisor. The token is untouched',
+    takes: ['name', 'role'],
+    run: ({ name, role }) => {
+      // A RELABELLING, NOT A REPLACEMENT. Nothing is re-sealed and nothing is
+      // read; the fingerprint afterwards is the same one, which is how somebody
+      // can tell this did what it says. See roleOf in core/guests.js for the two
+      // things it refuses: a sign-in that is out on a machine, and the one the
+      // supervisor is set to use.
+      const was = guests.get(name)
+      if (!was) throw new Error(`There is no sign-in called "${name}".`)
+      const now = guests.roleOf(name, role)
+
+      log.on('keys').good(`the Claude sign-in "${name}" is a ${now.role} now${was.role === now.role ? '' : ` — it was a ${was.role}`}`)
+      return {
+        ...now,
+        was: was.role,
+        note: was.role === now.role
+          ? `"${name}" was already a ${now.role}.`
+          : `"${name}" is a ${now.role} now, and can be lent to a ${now.role === 'supervisor' ? 'supervisor machine' : `${now.role} machine`} and nothing else. Its token was not touched — the fingerprint is the same one.`
       }
     }
   },
