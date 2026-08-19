@@ -35,6 +35,7 @@ const prompts = require('../tasks/prompts')
 const contracts = require('../tasks/contracts')
 const judging = require('../tasks/judging')
 const landings = require('../repos/landings')
+const drafts = require('../repos/drafts')
 const remotes = require('../repos/remotes')
 // The machines, for the one item here that is about a thing rather than a
 // decision: a machine the queue is holding because it lost sight of it.
@@ -268,6 +269,36 @@ function all () {
       // left to learn from it. Nothing in this app will ever clear this by
       // itself: that is the whole point of keeping the machine.
       { since: held.at || null, mine: true, id: v.name }
+    ))
+  }
+
+  // ---- work that is written and has not gone out --------------------------
+  //
+  // A DRAFT USED TO BE DELIBERATELY LEFT OUT OF HERE, and the reason was good
+  // when it was written: a draft was a note somebody left themselves, it could
+  // not be sent from the window at all, and one sat for four days pointing at a
+  // pane where pressing anything would be refused. A badge that sends somebody
+  // to a refusal spends attention and returns nothing.
+  //
+  // TWO OF THOSE THREE HAVE EXPIRED. A draft is now the ONLY way a supervisor
+  // proposes a pull request -- it may write the text and make the line, and
+  // sending is a person's press -- so it is not a note to yourself, it is
+  // somebody asking. And it can be sent, from the PR cuts tab, in one press.
+  //
+  // THE THIRD IS HANDLED BY NOT COUNTING WHAT IS ALREADY CUT. A draft whose pair
+  // has been cut is text for something that already went; it is not outstanding
+  // and does not appear. What can still happen is a draft whose source carries
+  // nothing -- that one is answered where it is read rather than here, because
+  // finding out costs a git read per repository and this runs on the draw loop.
+  const cutAlready = new Set(Object.values(landings.all() || {}).map(c => `${c.source} -> ${c.target}`))
+  for (const d of Object.values(drafts.all() || {})) {
+    if (cutAlready.has(`${d.source} -> ${d.target}`)) continue
+    out.push(item(
+      'written and not sent',
+      `${d.source} into ${d.target}`,
+      `${d.title ? `"${d.title}" is ` : 'A pull request is '}written and waiting to be sent. Nothing is on GitHub yet — sending it is one act, and it is yours to press.`,
+      at('repos', 'cuts', `${d.source} -> ${d.target}`),
+      { since: d.at || d.touched || null, mine: true }
     ))
   }
 

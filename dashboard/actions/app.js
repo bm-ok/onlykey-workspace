@@ -127,23 +127,38 @@ module.exports = {
       count(mine.length, 'judgement to decide', 'judgements to decide')
       count(mute.length, 'judgement that ended without a verdict', 'judgements that ended without a verdict')
 
-      // ---- work that is ready and has not gone out -------------------------
+      // ---- WORK THAT IS WRITTEN AND HAS NOT GONE OUT ----------------------
       //
-      // A draft is a title and a body somebody wrote for a pair of lines and
-      // did not cut. It is the state the supervisor parks in, deliberately, and
-      // it was invisible.
+      // COUNTED NOW, AND IT WAS DELIBERATELY NOT. The reason it was left out is
+      // kept because it was right when it was written: a draft was a note
+      // somebody left themselves, it could not be sent from the window at all,
+      // and one sat for four days pointing at a pane where pressing anything
+      // would be refused with "carries nothing that default does not already
+      // have". A badge that sends somebody to a refusal spends attention and
+      // returns nothing.
+      //
+      // TWO OF THOSE THREE HAVE EXPIRED. A draft is now the only way a
+      // supervisor proposes a pull request -- it writes the text and makes the
+      // line, and sending is a person's press -- so it is not a note to
+      // yourself, it is somebody asking for something. And it can be sent, from
+      // the PR cuts tab, in one press, with what it would say shown above the
+      // button.
+      //
+      // THE THIRD IS NARROWED RATHER THAN ANSWERED. A draft whose pair has
+      // already been cut is not counted -- that text is for something that went.
+      // A draft whose source carries nothing still could be, and finding out
+      // costs a git read per repository, which is the one thing this must not do
+      // on the draw loop. So it is answered where the draft is READ instead: the
+      // panel composes what would be posted and says plainly when the answer is
+      // nothing.
+      const cutAlready = new Set(Object.values(landings.all() || {}).map(c => `${c.source} -> ${c.target}`))
+      const unsent = Object.values(drafts.all() || {}).filter(d => !cutAlready.has(`${d.source} -> ${d.target}`))
+      count(unsent.length, 'change written and not sent', 'changes written and not sent')
+
       // ---- WORK THAT IS OUT AND NOT IN ------------------------------------
       //
-      // A DRAFT IS NOT THIS. The first version counted PR drafts -- a title
-      // and a body somebody wrote and did not cut -- and a draft is a note
-      // you left yourself, not a thing that has stopped. It also outlives
-      // its subject: one sat here for four days after its work had landed,
-      // pointing at a pane where pressing anything would be refused with
-      // "carries nothing that default does not already have". A badge that
-      // sends somebody to a refusal spends attention and returns nothing.
-      //
-      // What is genuinely outstanding is a CUT that went out and has not
-      // landed: pull requests open on somebody else's repository, waiting
+      // What is outstanding in the other direction: a CUT that went out and has
+      // not landed -- pull requests open on somebody else's repository, waiting
       // on a merge. That is work in the world with this host's name on it.
       //
       // AS LAST READ FROM GITHUB, and the hover says so. This is local --
@@ -256,13 +271,17 @@ module.exports = {
         // What is left is what is genuinely owed on that tab: a judging job,
         // prompt or contract that nothing may run until a person reads it.
         judge: forJudges.length,
-        repos: out.length + arrived.length,
+        // A DRAFT COUNTS ON THIS TAB TOO. `count` above builds the sentence a
+        // hover shows; these are the numbers the badges read, and adding one
+        // without the other is how a tab says nothing while the Dashboard
+        // says two.
+        repos: out.length + arrived.length + unsent.length,
         supervisor: said + beyond,
         // Apart as well as together, so the hover can say which is which and the
         // window does not have to re-derive it.
         supervisorSaid: said,
         beyondReach: beyond,
-        total: unapproved.length + mine.length + mute.length + out.length + arrived.length + said,
+        total: unapproved.length + mine.length + mute.length + unsent.length + out.length + arrived.length + said,
         // What each of them IS, so a badge can carry it on its hover rather than
         // being a number somebody has to go and interpret.
         approvals: unapproved,
