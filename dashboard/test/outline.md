@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 54 tests, 253 checks, 22 of them drafts -->
+<!-- 12 suites, 55 tests, 256 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -15,7 +15,7 @@
   A capability with no check here is one somebody will build again.
 -->
 
-## 22 drafts, not written yet
+## 21 drafts, not written yet
 
 - **the refusals / the ways round a refusal** — and the window cannot be driven while the drills are off
   THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. It matters more than it looks: windowClick and windowFill reach the SAME handlers a person's press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. WHY IT IS NOT A CHECK HERE: a drill runs only while testing mode is on, which is exactly when this is allowed. Proving the refusal means turning testing mode OFF, which stops the drills. HOW TO WRITE IT: from outside the kit — a script that turns testing mode off at the window, calls windowClick over the wire, sees the refusal, and turns it back on. That is a person-driven drill rather than one the harness can run, and it belongs in the same family as the sign-in that needs somebody to visit a page. THE HALF THAT COULD BE CHECKED FROM HERE NOW IS — see "and the whole way round it, from outside, ends where it started" below: a prompt written down the pipe, the window driven to it, Approve pressed and confirmed, and the thing still unapproved. What is left in this draft is only the part that needs testing mode OFF.
@@ -29,8 +29,6 @@
   THE GAP TO BRIDGE, and half of it is already built. `machines/job-api.js` archives ~/.claude per task and excludes .credentials.json on purpose — that folder is the worker's MEMORY and is kept for a long time, so an unsealed token riding along would be filed for ever. The consequence is that memory and credential are two different things with two different lifetimes, and only one of them has somewhere to live. WHAT IT WOULD MEAN: the token is set up and kept through the same path the memory uses — captured when the run ends, sealed here, per machine — so ~/.claude on the guest becomes disposable. Trash it, restore the memory, hand back the token, and the machine is where it was. THE CHECK: delete ~/.claude on a machine entirely, start its next task, and it both remembers what it was doing and authenticates.
 - **a worker credential / more than one sign in** — and what comes back off a machine is what the worker refreshed
   HALF BUILT, AND THE HALF THAT IS MISSING IS THE PROOF. vmCredentialsForget and guestBack now READ the credential off the machine before clearing it, and core/guests.js keeps it when the fingerprint differs — so a rotation during a run is no longer deleted. What has not happened is a run that demonstrates it. THE CHECK: lend a guest to a machine, give that machine real work that uses Claude, take the guest back, and the fingerprint this host holds is the one the machine finished with. Compared by fingerprint and never by value. AND IT SETTLES A QUESTION ON ITS OWN: if the fingerprint moves, the refresh rotates and one sign-in shared between machines is a broken design rather than an untidy one. If it never moves, sharing is survivable and one-per-machine is about throughput instead. IT COSTS A WORKER RUN, which is why it is here rather than in the checks above — those need no machine at all.
-- **a worker credential / more than one sign in** — and two machines work at once, each as its own identity
-  THE FEATURE THE LIST WAS FOR, and it is now reachable: guests are named, one is chosen per machine, a machine records which it holds, and a second machine asking while every guest is out is REFUSED rather than handed somebody else's. What is untested is the whole of it running at once. THE CHECK: with two guests held, dispatch two tasks at the same time, both run, and the two machines report different sign-ins — then both come back and neither guest is left marked as out. WHAT IT WILL PROBABLY FIND FIRST: the queue serialises most work, so getting two runs genuinely overlapping is the harder half of writing this.
 - **a worker credential / more than one sign in** — and a machine that can be given no identity waits rather than borrowing one
   THE REFUSAL EXISTS AND NOTHING ACTS ON IT. vmCredentialsPut throws when every guest is out, naming who holds what — which is right, and turns into a failed dispatch rather than a task that waits. Waiting for a credential is the same shape as waiting for a machine, and tasks/queue.js already knows how to do that: a task asking for a tag waits for a machine with that tag rather than taking any machine. THE CHECK: with one guest and two machines, dispatch two tasks — the second waits, and runs when the first gives its guest back, rather than failing. TO SETTLE FIRST: whether a guest is PINNED to a machine or drawn from a pool per job. Pinned wastes one per idle machine; pooled is the shape the machines themselves already have.
 - **a task on a machine / a task goes out and comes back** — and a task that pushed something can be accepted
@@ -196,8 +194,7 @@ The second door a person has to open, and it is deliberately not beside the
   3. and a supervisor is refused when a machine asks for it
   4. and one that is out on a machine cannot be thrown away
   5. **DRAFT** — and what comes back off a machine is what the worker refreshed
-  6. **DRAFT** — and two machines work at once, each as its own identity
-  7. **DRAFT** — and a machine that can be given no identity waits rather than borrowing one
+  6. **DRAFT** — and a machine that can be given no identity waits rather than borrowing one
 
 ## 02 — what comes back
 
@@ -225,6 +222,13 @@ The second door a person has to open, and it is deliberately not beside the
   2. and nothing sent to the machine carries any part of it
   3. and the machine ends up holding exactly it
   4. and the key that could open it does not outlive the handover
+
+## 06 — two tasks at once each as itself
+
+  1. two machines free, and two identities to give them
+  2. two tasks are queued, and nothing here touches them again
+  3. and the queue runs both at once, each machine as a different identity
+  4. and when both are done, both identities are back
 
 # 05 — the machines
 

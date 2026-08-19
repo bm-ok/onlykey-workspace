@@ -150,11 +150,12 @@ draft('and what comes back off a machine is what the worker refreshed',
   'AND IT SETTLES A QUESTION ON ITS OWN: if the fingerprint moves, the refresh rotates and one sign-in shared between machines is a broken design rather than an untidy one. If it never moves, sharing is survivable and one-per-machine is about throughput instead. ' +
   'IT COSTS A WORKER RUN, which is why it is here rather than in the checks above — those need no machine at all.')
 
-draft('and two machines work at once, each as its own identity',
-  'THE FEATURE THE LIST WAS FOR, and it is now reachable: guests are named, one is chosen per machine, a machine records which it holds, and a second machine asking while every guest is out is REFUSED rather than handed somebody else\'s. ' +
-  'What is untested is the whole of it running at once. ' +
-  'THE CHECK: with two guests held, dispatch two tasks at the same time, both run, and the two machines report different sign-ins — then both come back and neither guest is left marked as out. ' +
-  'WHAT IT WILL PROBABLY FIND FIRST: the queue serialises most work, so getting two runs genuinely overlapping is the harder half of writing this.')
+// WRITTEN NOW, next door: see 06-two-tasks-at-once-each-as-itself.js. Two tasks
+// are queued and nothing touches them again; the queue picks the machines, lends
+// each one an identity, runs both at once, and gives both back. The draft was
+// right about the hard part -- dispatch is not serialised but BOOTING is, one
+// kernel at a time, so the job has to be slow enough that the two runs overlap
+// in the middle.
 
 draft('and a machine that can be given no identity waits rather than borrowing one',
   'THE REFUSAL EXISTS AND NOTHING ACTS ON IT. vmCredentialsPut throws when every guest is out, naming who holds what — which is right, and turns into a failed dispatch rather than a task that waits. ' +
