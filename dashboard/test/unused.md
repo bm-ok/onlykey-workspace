@@ -8,7 +8,7 @@ not, and a name appearing in a comment looks used when a comment cannot call
 anything. Every line here is something to look at, and some of it is meant to be
 here.
 
-245 actions, 162 files searched.
+255 actions, 181 files searched.
 
 ## Named only in comments
 
@@ -30,6 +30,7 @@ and that is what they are for; the rest is surface nothing asks for.
 - `logWatch` — actions/app.js
 - `changeFile` — actions/branches.js
 - `vmAuthStatus` — actions/credentials.js
+- `guestRole` — actions/guests.js
 - `guestBackup` — actions/guests.js
 - `guestRestore` — actions/guests.js
 - `machineAdd` — actions/host.js
@@ -40,12 +41,11 @@ and that is what they are for; the rest is surface nothing asks for.
 - `vmForget` — actions/machines.js
 - `vmAddress` — actions/machines.js
 - `vmLogs` — actions/machines.js
-- `vmNetwork` — actions/machines.js
 - `vmInfo` — actions/machines.js
 - `vmBridges` — actions/machines.js
 - `vmScripts` — actions/machines.js
 - `vmRotateToken` — actions/machines.js
-- `prComment` — actions/repos.js
+- `repoTarget` — actions/repos.js
 - `gitRepos` — actions/repos.js
 - `prDraftForget` — actions/repos.js
 - `vmShellRun` — actions/runs.js
@@ -58,13 +58,14 @@ and that is what they are for; the rest is surface nothing asks for.
 
 Something calls them, but nothing a person clicks and nothing a test exercises.
 
-- `events` — actions/app.js, called by actions/app.js, actions/chat.js
+- `windowShot` — actions/app.js, called by core/log.js
 - `appQuit` — actions/app.js, called by tools/restart.js
 - `logSince` — actions/app.js, called by core/log.js
 - `vmAuthBegin` — actions/credentials.js, called by actions/credentials.js
 - `vmAuthCode` — actions/credentials.js, called by actions/credentials.js
 - `vmAuthCancel` — actions/credentials.js, called by actions/credentials.js
 - `vmSetupAgain` — actions/machines.js, called by actions/machines.js
+- `repoRemoteSet` — actions/repos.js, called by repos/remotes.js
 - `prFetch` — actions/repos.js, called by tasks/queue.js
 - `vmRuns` — actions/runs.js, called by tasks/queue.js, actions/tasks.js
 - `vmRunOutput` — actions/runs.js, called by tasks/queue.js, actions/tasks.js
@@ -76,11 +77,13 @@ Something calls them, but nothing a person clicks and nothing a test exercises.
 
 - core/data.js — LEGACY
 - core/github.js — PUBLIC
+- core/guests.js — planOf
 - core/guests.js — okName
 - core/handover.js — sealFor
 - core/handover.js — openWith
 - core/handover.js — aPair
 - core/handover.js — guestHalf
+- core/inbox.js — hiddenNow
 - core/ipc.js — ADDRESS
 - core/keys.js — CA_PEM
 - core/secret.js — WINDOWS
@@ -106,6 +109,7 @@ Something calls them, but nothing a person clicks and nothing a test exercises.
 - machines/vbox.js — logFolder
 - machines/vbox.js — OFF_STATES
 - machines/vms.js — stageOf
+- machines/vms.js — kindSaid
 - repos/branches.js — headOf
 - repos/branches.js — inAnyGroup
 - repos/branches.js — protectedBranches

@@ -17,14 +17,20 @@ built yet because it is not its turn belongs in `ROADMAP.md`.
 What the test kit is owed
 -------------------------
 
-The kit is **12 suites, 46 tests, 215 checks**, and `npm test` keeps that count
-honest — it fails when `test/outline.md` goes stale.
+The kit's size is on the first line of `test/outline.md`, which is generated, and
+`npm test` fails when it goes stale — so that file cannot lie about it and this
+one should not try. It was 46 tests and 215 checks when this paragraph carried
+the number; it is not any more, and nobody noticed here.
 
-**The last full sequential run was 76 passed, 0 failed, 7 could not be tried, in
-nine minutes, and that was a smaller kit.** It is left here as the last thing
-actually measured rather than updated to a guess: a number in this file that
-nobody ran is worse than an old one that somebody did. Re-run it and replace
-this paragraph with what happened.
+**The last full sequential run was 169 passed, 0 failed** — 18 August, on a
+smaller kit than today's. It is left as the last thing actually MEASURED rather
+than updated to a guess: a number nobody ran is worse than an old one somebody
+did. Re-run it and replace this paragraph with what happened.
+
+Since then the kit has grown by the checks written for what broke on 19 August:
+a session is not tied to a key, a dead key costs no machine, a cleared credential
+cannot overwrite a working one, and three roles and three kinds now covers a
+machine that has said nothing about what it is for.
 
 **What is outstanding about the app itself is not here any more.** A thing the
 app should do and does not is a DRAFT check, declared in the suite where it
@@ -43,16 +49,19 @@ in a circle:
   stands on has passed. That is the difference between describing the order and
   enforcing it.
 
-* **`test/unused.md` is the hardening queue.** 5 actions named only in comments,
-  26 with no caller, 13 with neither a button nor a drill, 54 exports nothing
-  outside their file uses. Some are legitimately command-line tools; the list
-  stops crying wolf once an action can say it is one on purpose.
+* **`test/unused.md` is the hardening queue.** Actions named only in comments,
+  actions with no caller, actions with neither a button nor a drill, and exports
+  nothing outside their file uses. Some are legitimately command-line tools; the
+  list stops crying wolf once an action can say it is one on purpose.
 
-  **Copying those numbers into here is the mistake this bullet keeps making.**
-  They were 8 / 24 / 12 / 52 and were wrong in both directions — two had
-  improved and two had got worse while this file said otherwise. `unused.md` is
-  generated; read it there. What belongs here is the sentence about what the
-  list is FOR, and `node test/unused.js --write` is how to see where it stands.
+  **There are no counts in this bullet any more, and that is the fix.** It has
+  carried them twice and been wrong twice: 8 / 24 / 12 / 52 was corrected to
+  5 / 26 / 13 / 54, and that was wrong by the next time anybody looked — two of
+  the four had moved again. A number copied out of a generated file is wrong by
+  tomorrow and looks authoritative until somebody checks.
+
+  `unused.md` is generated; read it there. `node test/unused.js --write` is how
+  to see where it stands, and what belongs here is only what the list is FOR.
 
   Worth knowing what the scanner cannot see: it matches names in text, so an
   action called through a template literal reads as having no caller. Three did

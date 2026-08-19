@@ -1193,3 +1193,96 @@ when a seventh is added. So the drill for it does not ask "is the rule right",
 it makes GitHub answer 403 for the length of one call and asks "does this
 branch still obey it". Waiting for a real failure means a drill that passes
 for months and then cannot be trusted the one time it matters.
+
+
+## Six ways to guess, and what each one cost
+
+One day, 19 August, spent proving that a worker and a judge could each be given
+their own identity. The mechanism worked. What broke, six separate times, was
+something quieter: **a place where this app answered a question it had not been
+told the answer to.** Every one of them looked like a sensible default when it
+was written, and every one was a guess wearing a default's clothes.
+
+They are grouped because the shape is the lesson. Read singly they look like six
+unrelated bugs; read together they are one habit.
+
+**A session was filed under the credential that paid for it.** Moving one
+sign-in from worker to judge -- a relabelling that does not touch the token --
+carried twenty-three worker sessions onto the judge pane with it. Nothing threw.
+The list was asking "which key signed this" when the question is "what is this a
+conversation about". A key is replaceable in a minute at a login page; what a
+worker worked out about a branch is not replaceable at all, so the cheap half was
+deciding where the expensive half lived. **Sessions are keyed by branch line and
+lane now, and the credential is provenance on the card.**
+
+**"Different" was read as "newer", and it destroyed a credential.** A judgement
+failed to authenticate, the CLI on the machine cleared its own credential file,
+and the read-back saw an unfamiliar fingerprint and wrote 280 bytes of empty over
+the 508 that worked. That token is not recoverable. Reading the file back is
+still right -- it is the only way a genuine rotation ever reaches this host -- but
+a machine that CLEARED its sign-in also hands back something different, and
+telling those two apart is the whole difference between keeping up and
+destroying the only copy. **A credential carrying neither token cannot replace
+one that carries either.** It has since refused three more times, on a key that
+is still working.
+
+**A probe was allowed to overturn a run.** Placing a credential asks the worker
+"are you signed in", and it reads a file and says yes. A RUN calls the API and
+finds out. A credential that had failed a real judgement was un-paused ten
+minutes later by the placement probe of the next job, which reported ready
+because the bytes were on the disk -- so the queue spent another machine on it,
+three times, and the diagnosis was wrong twice in a row because the evidence kept
+being overwritten by weaker evidence. **Anything may condemn a credential; only a
+run may clear what a run established.**
+
+**A wait that named the wrong cause.** With the role tags taken off both
+machines, three sentences lied at once: "no machine is tagged judge, so
+judgements go to ordinary runners" (there were none), "every judge machine is
+busy" (none existed), and "wants a machine tagged test and none is free" while
+two machines tagged `test` sat free, wanting nothing but a role. Each described a
+host where every machine had a role, because until that afternoon every machine
+did. Somebody acts on these: they go looking for the busy machine, or add a tag
+that is already there. **A wait that names the wrong cause is worse than
+silence.**
+
+**An auth failure was detected by scanning prose.** A judge read a README, wrote
+seven thousand characters about how a CSV parser handles quoting, and this app
+paused its credential and threw the reading away. The run had authenticated and
+spent 0.74 USD. The fault was searching ALL output for words like "oauth" -- and
+it had just been made worse by unwrapping the JSON first, which aimed the search
+squarely at the half a worker WRITES. A judge asked to read authentication code
+would condemn its own sign-in for describing it accurately. **Structure first,
+words second:** Claude Code marks its own failures, and a report is not one of
+them however it is worded.
+
+**And a name that shadowed a module, three times in one file in one day.**
+`const { vms } = await actions.vmList.run({})` inside the dispatch loop. Every
+`vms.something` in that scope then read a property off an Array: `vms.get` threw
+on every tick and stopped all dispatch, `vms.kindOf` was undefined, and
+`vms.JUDGE` printed the word "undefined" into the sentence telling somebody which
+tag to add. Three faults, one name. The local is called `here` now. **A local
+that shadows a module is not a style question; it is a trap that resets itself
+every time somebody adds a line.**
+
+WHAT TIES THEM TOGETHER, and it is worth saying plainly because the fixes look
+unrelated in the diff: **each was a place where "we do not know" had been
+answered with the likeliest value instead of with nothing.** Untagged meant
+worker. Different meant newer. A file on disk meant a working account. Words
+about authentication meant an authentication failure. None of those is
+unreasonable; all of them are this host deciding something it was not told, at
+the exact moment somebody would have wanted to be asked.
+
+The shape of every fix is the same, and it is the thing to reach for next time:
+**say the unknown out loud and make the caller supply it.** `kindOf` returns null
+and the queue skips the machine. `whyNotOn` refuses and names the tag that fixes
+it. `vmCredentialsPut` takes the role from the WORK, because a machine tagged
+both cannot answer it. Nothing here got smarter; it got more willing to say it
+did not know.
+
+AND THE ONE THAT WAS NOT A GUESS, kept beside them because it is the counterweight:
+the kit takes every machine that is not its own out of the queue's reach while it
+runs, and gave them back only in the cooling stage, which is off by default. Two
+machines sat out of the pool for a day -- not broken, correctly never picked up,
+and indistinguishable from a queue that had gone quiet. That one was not a wrong
+answer, it was a right answer nobody was told. **Whoever borrows something
+returns it, and a run ends many more ways than "everything passed".**

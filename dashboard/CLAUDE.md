@@ -131,11 +131,26 @@ the whole thing away.
 * **One surface.** Every capability is an action in the table in `server.js`,
   reached by the window, the CLI and the drills through `call()`. If the CLI
   cannot do something, add an action — do not reach around it.
-* **A worker's memory is the task's, not the machine's.** `~/.claude` is archived
-  when a run ends and unpacked before the next one starts, keyed by task uid. The
-  guest never names a session; the host looks it up from the task that machine is
-  running, exactly like an artifact. The credential is excluded from the archive
-  on purpose.
+* **A worker's memory belongs to the branch line, not to the machine and not to
+  the task.** `~/.claude` is archived when a run ends and unpacked before the next
+  one starts, keyed by LINE and LANE — `worker--cut--fix-thing` and
+  `judge--cut--fix-thing` are two conversations about one branch, one that wrote
+  it and one that read it. Per-task was the old rule and made every task on a line
+  a stranger to the last. The guest never names a session; the host looks it up
+  from the work that machine is running, exactly like an artifact.
+* **A credential and a session are not tied.** A key is replaceable in a minute at
+  a login page; what a worker worked out about a branch is not replaceable at all.
+  A session records which sign-ins carried it as PROVENANCE, and nothing in that
+  path may refuse for credential reasons. The credential is excluded from the
+  archive on purpose.
+* **A machine's role comes from its tags, and silence is not an answer.**
+  `worker`, `judge`, `supervisor` — and a machine may carry both `worker` and
+  `judge`, serving either, one at a time. A machine with NO role tag gets no
+  automatic work at all: the queue picks which sign-in to hand over from the
+  machine's role, so an unlabelled machine means guessing whose identity to send.
+  It can still be borrowed and worked on by hand. The role a piece of work needs
+  comes from the WORK — a task wants a worker's sign-in, a judgement a judge's —
+  which is the only thing that can answer it for a machine that is both.
 * **`needs: 'workspace'`** on an action that is a question about a folder of
   repositories. `call()` refuses it by name when none is open.
 * **Only `machines/` drives VBoxManage**, and every call goes through

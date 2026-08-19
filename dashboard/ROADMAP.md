@@ -214,11 +214,29 @@ was used.
 That may be exactly what was seen on 2026-08-15: `credentialsHeld` reported the
 refresh token good until September while the worker answered "OAuth session
 expired and could not be refreshed". A clock-valid token the server rejects is
-what a rotated-away token looks like. **Worth settling rather than assuming** —
-run one task, `vmCredentialsGrab` from that machine before it is put away, and
-compare the refresh token to this host's copy. Same string means no rotation and
-the failure was something else; different means this is the highest-value item
-here rather than a hardening exercise.
+what a rotated-away token looks like.
+
+**SETTLED ON 19 AUGUST, AND NOT THE WAY THIS ASSUMED.** Two sign-ins of one
+Claude account — `runner3` and `runner4`, both `bmatusiak@gmail.com`, signed in
+twenty-five minutes apart — were given to two machines and ran AT THE SAME TIME.
+Both spent real money, both were still good afterwards, and a third sign-in of
+the same account was working throughout. No mutual rotation was observed at all.
+
+So the premise this item was built on is wrong, and what killed credentials here
+was two other things entirely: one was destroyed by this app writing a cleared
+file over a working one, and one was an old token cleared out of the account by
+hand. Both are fixed or explained; neither wanted a credential per machine.
+
+**That drops this from "highest-value item here" to a hardening exercise**, which
+is what the paragraph above promised it would mean. It is still worth having —
+one sign-in per machine is a cleaner story than a pool, and it makes "whose run
+was this" answerable without a meter — but it is no longer solving an outage.
+
+What DID come out of settling it is the thing to keep: this host records which
+account a sign-in belongs to now, so "are these two the same account" is a fact
+on the card rather than a theory. They share a fate — anything done to the
+account reaches both at once — which is a real reason to want more than one
+account, and a different reason from the one written here.
 
 So: a credential is **assigned to a machine**, and there are as many as there are
 machines that need one. Each is its own sign-in, so each has its own refresh

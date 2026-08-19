@@ -693,10 +693,30 @@ second go, and the only record of WHY it did what it did — the transcript — 
 until somebody tidied up.
 
 So `~/.claude` is archived when a run ends and unpacked before the next one
-starts, keyed by task uid, one per task. The whole folder rather than the
-transcript file: Claude files a session under a slug made from the working
-directory, and putting a `.jsonl` back in the wrong place restores a transcript
-nothing will ever find. An archive puts itself back.
+starts. The whole folder rather than the transcript file: Claude files a session
+under a slug made from the working directory, and putting a `.jsonl` back in the
+wrong place restores a transcript nothing will ever find. An archive puts itself
+back.
+
+**Filed under the BRANCH LINE and the LANE, not under the task.** It was one per
+task, which made every task on a line a stranger to the last one — the worker
+that fixed something in the morning had never heard of it by the afternoon. A
+conversation is about a line of work, so `worker--cut--fix-thing` is one and
+`judge--cut--fix-thing` is another: the same branch has two conversations, one
+that wrote it and one that read it, and they must never be mistaken for each
+other. Work that belongs to no line still falls back to its own uid.
+
+**And a lane can be told to arrive cold.** A judge that carries on from its last
+reading can say what you fixed and what you did not; it has also already formed a
+view, and the failure mode is confirming itself rather than re-reading. So it is
+a choice made per judgement, with the trade written on the checkbox that makes
+it, and the default is that judging starts fresh.
+
+**A key can be swapped and the conversation survives.** A session records which
+sign-ins have carried it, and that is provenance rather than ownership — one
+conversation resumed three times may have been signed by three identities, which
+is ordinary. Losing a credential must never lose a session, so nothing in that
+path may refuse for credential reasons.
 
 Proved across machines, which is the point: a conversation started on runner1 was
 carried on by runner2, same session id, and the second worker knew which file it
@@ -1963,18 +1983,47 @@ ordinary user. What follows is what is still not proven.
 * **A job's artifacts are only findable through a task.** A job run on its own is
   filed under its run id, and no pane shows those — only `taskFiles` reads them,
   and only for a task.
-* **The credential's clock has been wrong twice, in the direction that matters.**
-  `credentialsHeld` reads the refresh token's own expiry, and a token the server
-  has stopped accepting still says September. It happened again on 17 August: the
-  suite's "a machine can really sign in with it" passed at 14:30 and the same
-  credential was dead by 17:11, discovered only because a judge failed on a
-  machine and its transcript said so. Nothing marks a held credential as suspect
-  after a run fails that way.
+* **The credential's clock has been wrong three times, in the direction that
+  matters.** `credentialsHeld` reads the refresh token's own expiry, and a token
+  the server has stopped accepting still says September. It happened again on 19
+  August: `runner1` passed a placement check at 12:31 and 12:44 and failed a real
+  judgement at 12:52 with "OAuth session expired and could not be refreshed".
 
-  A REFRESHED TOKEN IS NOT A WORKING ONE, either. Taking that credential back
-  reported it as rotated — a new fingerprint — because the CLI wrote its failed
-  refresh state back to the file. Rotation is evidence that something happened,
+  WHAT IS NO LONGER A GAP: a sign-in that fails on a machine is paused, the work
+  is put back rather than finished, and the queue spends no machine on it — it
+  waits and names which sign-in to replace. And a PROBE may not clear a failure a
+  RUN established, which is what let this keep looking healthy: placing a
+  credential asks a worker to read a file and it says yes, while a run calls the
+  API and finds out.
+
+  WHAT IS STILL TRUE: only a run is proof, and a run costs a machine and a
+  minute. Nothing here can tell you a credential is dead before you spend one.
+
+  A REFRESHED TOKEN IS NOT A WORKING ONE, and it is worse than that. On 19 August
+  a run failed to authenticate, the CLI on the machine CLEARED its own credential
+  file — shape intact, both tokens empty — and the read-back wrote that over the
+  working copy. `runner2` is not recoverable. A credential carrying neither token
+  can no longer replace one that carries either, and it has refused three times
+  since on a key that still works. Rotation is evidence that something happened,
   not that it worked.
+* **A judge and a worker on the same machine is proven one way round.** A machine
+  may carry both the `worker` and `judge` tags and serve either, one at a time,
+  with the credential chosen by the WORK rather than by the box. A task has run
+  on such a machine under a worker's sign-in. A judgement on the same machine
+  under a judge's sign-in has been dispatched and not yet finished cleanly, so
+  the half that matters most — that one machine keeps two accounts apart across
+  two runs — is dispatched rather than demonstrated.
+* **A session that carries a reading forward has never been used.** Judging is
+  filed per branch line and lane like everything else, and a judgement can ask to
+  continue from the last reading of the same line — the case where a judge says
+  what you fixed and what you did not, and equally where it agrees with itself.
+  Every judgement so far has started cold, which is the default. The checkbox
+  exists, the key exists, nothing has ticked it.
+* **A freshly built machine has never been given work.** `defRunner1` was built
+  from nothing on 19 August and is proven to be correctly IGNORED by the queue
+  while it carries no role tag — which is the new rule working. What has not
+  happened is tagging it and watching a task run on a machine that has never held
+  a credential.
 * **A backup exists and has never been restored in anger.** `guestBackup` and
   `guestRestore` round-trip byte-identically and refuse a wrong passphrase, an
   altered file, and an overwrite of something newer. What has not happened is
