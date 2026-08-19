@@ -1476,8 +1476,30 @@ module.exports = {
       const which = repo && on.includes(repo) ? repo : on[0]
       const typed = String(body || '').trim()
 
+      // ---- WHERE EACH ONE WOULD GO -----------------------------------
+      //
+      // `repos` is a list of names, which answers "how many" and not "into
+      // whose". Those are different questions and only one of them is worth
+      // asking before pressing a button that publishes: a pull request goes from
+      // a fork this host pushes to, into a repository somebody else owns, and on
+      // this host those are two different accounts.
+      //
+      // The context already carries both -- `at` is the fork, `from` is where it
+      // lands -- so this is naming what is already known rather than looking
+      // anything up.
+      const owner = url => String(url || '').replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/, '') || null
+      const where = (context.repos || []).map(r => ({
+        repo: r.repo,
+        branch: r.branch,
+        base: r.base,
+        ahead: r.ahead,
+        from: owner(r.at),
+        into: owner(r.from)
+      }))
+
       return {
         repos: on,
+        where,
         showing: which,
         // SEPARATELY, so the window can recompose as somebody types without
         // asking again. What the blocks add does not depend on what is typed —

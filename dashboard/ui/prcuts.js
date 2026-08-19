@@ -211,8 +211,13 @@ function paintCutDetail (c) {
         // carrying nothing composes an empty body and a `note` explaining why,
         // and the note rendered in a code editor as though it were the pull
         // request.
-        .then(v => previewOf.set(at, { text: (v && v.text) || '', why: (v && v.note) || '', can: !!(v && (v.repos || []).length) }))
-        .catch(e => previewOf.set(at, { text: '', why: `Could not compose it: ${e.message}`, can: false }))
+        .then(v => previewOf.set(at, {
+          text: (v && v.text) || '',
+          why: (v && v.note) || '',
+          can: !!(v && (v.repos || []).length),
+          where: (v && v.where) || []
+        }))
+        .catch(e => previewOf.set(at, { text: '', why: `Could not compose it: ${e.message}`, can: false, where: [] }))
         .finally(() => {
           asking.delete(at)
           if (pickedCut === at) { forget('prcut-detail'); paintCuts() }
@@ -250,6 +255,23 @@ function paintCutDetail (c) {
       composed && !composed.can
         ? el('p', { className: 'note bad', textContent: `This cannot be sent: ${composed.why} A draft outlives the work it was written for — throw it away, or point it at a line that carries something.` })
         : el('p', { className: 'note muted', textContent: `Send it pushes ${c.source} to the fork in every repository that carries something, opens one pull request each, and then writes them again with links to one another — those numbers do not exist until all of them are open. They are tracked here as one cut. Merging them is a separate act, and also yours.` }),
+
+      // ---- AND EXACTLY WHERE, BEFORE THE PRESS --------------------------
+      //
+      // A count of repositories is not a destination. A pull request goes from a
+      // fork this host pushes to, INTO a repository somebody else owns — on this
+      // host those are two different accounts, and which one receives it is the
+      // single fact somebody most wants confirmed before publishing anything.
+      composed && composed.can && composed.where.length
+        ? el('table', { className: 'kv' },
+            ...composed.where.map(w => el('tr', {},
+              el('th', { textContent: w.repo }),
+              el('td', { className: 'mono' },
+                el('span', { textContent: `${w.from || 'this host\'s fork'} : ${w.branch}` }),
+                el('span', { className: 'muted', textContent: '  →  ' }),
+                el('span', { textContent: `${w.into || 'the target'} : ${w.base}` }),
+                el('span', { className: 'muted', textContent: `   ${w.ahead} commit${w.ahead === 1 ? '' : 's'}` })))))
+        : null,
 
       el('div', { className: 'row' },
         // THE ONE ACT THIS SCREEN CAN DO ABOUT A DRAFT, and it is deliberately a
@@ -717,10 +739,19 @@ async function paintTemplatesNow () {
 // was not noticeable in the first place.
 function sendDraft (c) {
   const said = c.said || {}
+  // THE DESTINATIONS, IN THE DIALOG AS WELL. The panel behind it says the same,
+  // and this is the last thing read before anything is published — a person who
+  // scrolled past it on the screen should not have to trust their memory of it
+  // at the moment of pressing.
+  const where = ((previewOf.get(key(c)) || {}).where || [])
+    .map(w => `${w.repo}: ${w.from || 'this fork'}:${w.branch} → ${w.into || 'the target'}:${w.base} (${w.ahead} commit${w.ahead === 1 ? '' : 's'})`)
+
   ask({
     title: `Send "${c.source}" into "${c.target}"?`,
     plain: [
-      'One pull request in each repository that carries something, tracked together as one cut.',
+      where.length
+        ? `${where.length} pull request${where.length === 1 ? '' : 's'} would be opened:\n${where.join('\n')}`
+        : 'One pull request in each repository that carries something, tracked together as one cut.',
       'Each branch is pushed onward from this host first. No machine is ever handed the token.',
       said.title ? `It goes out as: "${said.title}"` : 'It has no title of its own, so the template supplies one.'
     ],
