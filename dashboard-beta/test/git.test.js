@@ -46,6 +46,14 @@ before(() => {
     git(['commit', '-q', '-m', 'a change to send out']);
     git(['checkout', '-q', 'master']);
 
+    //AND THE BASE MOVES ON AFTERWARDS, which is the whole point of the fixture.
+    //Without a commit on master AFTER the branch was cut, two dots and three dots
+    //agree and the test below cannot tell them apart — which is exactly how the
+    //bug it exists for got written.
+    fs.writeFileSync(path.join(repo, 'elsewhere.txt'), 'moved on\n');
+    git(['add', '.']);
+    git(['commit', '-q', '-m', 'something else entirely']);
+
     //a folder that is not a repository, to prove it is not offered as one
     fs.mkdirSync(path.join(work, 'not-a-repo'));
 });
@@ -130,6 +138,31 @@ test('what one branch carries that another does not', async () => {
     const one = await g.diff('repo-one', 'master', 'work/thing', 'added.txt');
     assert.match(one, /added\.txt/);
     assert.ok(!/readme\.md/.test(one), 'asking for one file gave the whole diff');
+});
+
+//TWO DOTS FOR A LOG, THREE FOR A DIFF, AND THEY ARE NOT INTERCHANGEABLE.
+//
+//`git log base...head` is SYMMETRIC — commits on either side the other does not
+//have — so it hands back the base's commits too. `git diff base..head` compares
+//against where base is NOW, so it grows when somebody else commits there.
+//
+//This only shows up once the base has moved on after the branch was cut, which
+//is why the fixture commits to master afterwards. On the real workspace the
+//first version reported twenty commits for a one-line change.
+test('the base moving on does not change what the branch is carrying', async () => {
+    const { git: g } = await theGit();
+
+    const log = await g.commits('repo-one', 'master', 'work/thing');
+    assert.deepEqual(log.map((c) => c.subject), ['a change to send out'],
+        'the log is symmetric — it is handing back what the base carries as well');
+
+    const files = await g.files('repo-one', 'master', 'work/thing');
+    assert.deepEqual(files.map((f) => f.file).sort(), ['added.txt', 'readme.md'],
+        'the diff is against where the base is now, so it grew when the base moved on');
+
+    const diff = await g.diff('repo-one', 'master', 'work/thing');
+    assert.ok(!/elsewhere\.txt/.test(diff),
+        'the diff carries a file the branch never touched, because the base moved');
 });
 
 //WRITING IS A SEPARATE DOOR AND IT IS NOT BUILT. A plugin that could commit by

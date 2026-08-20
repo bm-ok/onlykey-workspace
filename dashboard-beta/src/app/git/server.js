@@ -36,6 +36,27 @@ var child = require('child_process');
 //AND IT READS. Writing is a separate door and it is not built — see `run`. A
 //plugin that could commit, push or reset by the same call that lists branches is
 //one where a mistake in a pane is a mistake in a repository.
+//
+//---- the surface, which is a contract --------------------------------------
+//
+//WHAT `git` PROVIDES IS THE WHOLE OF WHAT ANYTHING ELSE MAY DEPEND ON, and that
+//is what makes this replaceable rather than merely tidy. Anything that provides
+//these names, with these shapes, IS this plugin as far as the rest of the app is
+//concerned — a different implementation, a remote one, a fake in a test — and
+//nothing that consumes `git` has to be told.
+//
+//    repos are named, never pathed         a caller says `local-repo-a`
+//    run(repo, args)     -> { code, stdout, stderr, cut }
+//    branches(repo)      -> [name]
+//    head(repo)          -> name
+//    has(repo, ref)      -> boolean
+//    files(repo, b, h)   -> [{ file, added, removed, binary }]
+//    commits(repo, b, h) -> [{ sha, who, at, subject }]
+//    diff(repo, b, h, f) -> text
+//
+//`b` AND `h` ARE BASE AND HEAD, in that order, and a replacement has to mean the
+//same thing by them: what HEAD carries that BASE does not. Swapping them silently
+//is a diff that reads backwards, with every addition shown as a removal.
 //---------------------------------------------------------------------------
 
 //WHAT MAY BE ASKED. Not a safety boundary on its own — the two rules above are
@@ -140,15 +161,27 @@ async function plugin(imports, register) {
         return lines(said.stdout)[0] || null;
     }
 
-    //THREE DOTS, WHICH IS WHAT A PULL REQUEST SHOWS. `base..head` is "everything
-    //in head that is not in base right now" — so it changes when base moves, and
-    //a diff that grows because somebody else committed to master is a diff that
-    //answers a question nobody asked. `base...head` is what head has done SINCE
-    //THEY PARTED, which is the change being proposed and nothing else.
-    function range(base, head) { return String(base) + '...' + String(head); }
+    //TWO RANGES, AND THEY ARE NOT INTERCHANGEABLE. This is the trap; both spell
+    //a comparison and git means something different by each, depending on the
+    //command.
+    //
+    //FOR A DIFF, THREE DOTS. `git diff base..head` is "everything in head that
+    //base does not have RIGHT NOW", so it grows when somebody else commits to
+    //base — a diff that answers a question nobody asked. `git diff base...head`
+    //is from where they parted to head: the change being proposed and nothing
+    //else. That is what a pull request shows.
+    //
+    //FOR A LOG, TWO DOTS. `git log base...head` is SYMMETRIC — commits on either
+    //side that the other does not have — so it hands back base's commits as well.
+    //Measured on a real branch: three dots gave twenty commits for a one-line
+    //change, two dots gave one. The first version of this used three for both and
+    //the numbers said so: a repository reported twenty commits and one changed
+    //file, and another reported three commits with nothing changed at all.
+    function diffRange(base, head) { return String(base) + '...' + String(head); }
+    function logRange(base, head) { return String(base) + '..' + String(head); }
 
     async function diff(repo, base, head, file) {
-        var args = ['diff', range(base, head)];
+        var args = ['diff', diffRange(base, head)];
         //`--` IS NOT OPTIONAL. It is what tells git the rest is a path and not a
         //revision, so a file called `master` is a file and not a branch.
         if (file) args = args.concat(['--', String(file)]);
@@ -158,7 +191,7 @@ async function plugin(imports, register) {
     }
 
     async function files(repo, base, head) {
-        var said = await run(repo, ['diff', '--numstat', range(base, head)]);
+        var said = await run(repo, ['diff', '--numstat', diffRange(base, head)]);
         if (said.code !== 0) throw new Error(said.stderr || 'git could not read that comparison');
 
         return lines(said.stdout).map(function (l) {
@@ -179,7 +212,7 @@ async function plugin(imports, register) {
         var said = await run(repo, [
             'log', '--no-merges', '--date=iso-strict',
             '--pretty=format:%h' + SEP + '%an' + SEP + '%ad' + SEP + '%s',
-            range(base, head)
+            logRange(base, head)
         ]);
         if (said.code !== 0) throw new Error(said.stderr || 'git could not read that range');
 
