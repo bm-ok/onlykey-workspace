@@ -48,6 +48,17 @@ const NOT_OURS = new Set([]);
 function walk(dir, out = []) {
     for (const name of fs.readdirSync(dir)) {
         if (name.startsWith('_') || name.startsWith('.')) continue;
+        //VENDORED CODE IS NOT THIS APP'S MARKUP. A plugin may keep a library it
+        //owns in `vendor/` beside its own files — ../src/app/editor/vendor/ace
+        //is 900KB of somebody else's, and it names forty classes of its own that
+        //ace's own stylesheet defines at run time. Demanding they appear in this
+        //app's stylesheet is asking a third party to obey a rule written for
+        //panes, and the only way to satisfy it would be to copy forty names into
+        //dashboard.scss that nothing here ever writes.
+        //
+        //The rule this check exists for is "a pane must not invent a class", and
+        //a pane is a file this repository wrote. Vendored code is not one.
+        if (name === 'vendor') continue;
         const full = path.join(dir, name);
         const stat = fs.statSync(full);
         if (stat.isDirectory()) walk(full, out);

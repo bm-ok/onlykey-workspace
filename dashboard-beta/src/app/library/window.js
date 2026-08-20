@@ -150,7 +150,7 @@ async function plugin(imports, register) {
                                 : 'It is the rules a worker is given — what it may do and what it may not.',
                         x.lapsed ? 'It was approved before and has been edited since. What follows is the version as it stands now.' : null,
                         //THE THING ITSELF, IN THE DIALOG.
-                        body ? <Code key="body" text={body} /> : null
+                        body ? <Code key="body" text={body} mode={which == 'job' ? 'javascript' : undefined} /> : null
                     ],
                     fields: [{ name: 'note', label: 'A note, if it needs one', placeholder: 'what you checked' }],
                     cost: which == 'job'
@@ -335,7 +335,7 @@ async function plugin(imports, register) {
                                                 + (on.lines ? on.lines + ' line(s).' : '')}
                                         </CardSub>
                                         {on[K.body]
-                                            ? <Code text={on[K.body]} />
+                                            ? <Code text={on[K.body]} mode={which == 'job' ? 'javascript' : undefined} />
                                             : <Empty>{'the ' + K.one + ' list does not carry the text — ask for it by id on the command line'}</Empty>}
                                     </Panel>
                                 </div>

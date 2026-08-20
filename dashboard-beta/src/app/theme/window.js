@@ -35,7 +35,7 @@ var dialog = require('./dialog');
 //the convention is actually for.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['react', 'config', 'appPackage'];
+plugin.consumes = ['react', 'config', 'appPackage', 'editor', 'markdown'];
 plugin.provides = ['theme'];
 async function plugin(imports, register, config) {
     require('./dashboard.scss');
@@ -132,13 +132,54 @@ async function plugin(imports, register, config) {
     //the modifier is simply always on.
     function Pane({ children }) { return <div className="pane active">{children}</div>; }
 
+    //---- the two that arrive from plugins of their own ---------------------
+    //
+    //ACE AND MARKED EACH LIVE IN THEIR OWN PLUGIN, WITH THEIR OWN VENDOR FOLDER,
+    //and are folded in here so a pane still asks the theme for everything. That
+    //is the whole point of the theme being a slot: `Code` and `Markdown` are
+    //part of what it promises, and where they come from is nobody else's
+    //business. Swap ../editor for a different one and no pane changes.
+    //
+    //THE DIRECTION IS FIXED BY THE CYCLE. Every pane consumes the theme, so the
+    //theme may consume them and they may not consume the theme — which is why
+    //../markdown provides only the frame and the toggle around it is built here,
+    //where Button already lives.
+    var Code = imports.editor.Code;
+    var Frame = imports.markdown.Frame;
+
+    //RENDERED OR AS WRITTEN, AND BOTH, because they answer different questions.
+    //The rendered view is for reading what something produced; the source is for
+    //seeing what it actually WROTE, which is what matters when the formatting is
+    //the thing that went wrong.
+    function Markdown({ text, height }) {
+        var [look, setLook] = React.useState('rendered');
+        return (
+            <div>
+                <div className="row" style={{ marginBottom: '8px' }}>
+                    <bits.Button kind={look == 'rendered' ? 'ok' : undefined}
+                        onClick={function () { setLook('rendered'); }}>Rendered</bits.Button>
+                    <bits.Button kind={look == 'source' ? 'ok' : undefined}
+                        onClick={function () { setLook('source'); }}>Source</bits.Button>
+                </div>
+                {look == 'rendered'
+                    ? <Frame text={text} height={height} />
+                    //NOT AUTO-HEIGHT HERE. The two views swapping between a
+                    //fixed frame and a page-length block makes the panel jump
+                    //under the pointer mid-read.
+                    : <Code text={text} mode="markdown" tall />}
+            </div>
+        );
+    }
+
     await register(null, {
         //ONE OBJECT, AND A PANE NEVER SEES A CLASS NAME. Everything a pane
         //is allowed to draw with is here; anything it cannot find is either
         //missing from the kit — worth adding here so the next pane gets it too
         //— or is that pane's own furniture and belongs in its own stylesheet.
         //See ../../THEME.md for which is which.
-        theme: Object.assign({ Topbar, Pane }, layout, bits, dialog)
+        theme: Object.assign({ Topbar, Pane }, layout, bits, dialog, {
+            Code: Code, Editor: imports.editor.Editor, Markdown: Markdown
+        })
     });
 }
 module.exports = plugin;

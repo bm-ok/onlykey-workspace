@@ -342,7 +342,8 @@ async function plugin(imports, register) {
                         How it works: the loop, what it may propose, what it may never do. Fetched fresh
                         at the head of every turn, so a change here takes effect on the next waking.
                     </CardSub>
-                    <Code text={text} tall />
+                    {/* A SKILL IS A MARKDOWN FILE, so it is read as one. */}
+                    <Code text={text} mode="markdown" tall />
                     {/* EDITING IT IS NOT PORTED, and this is one to be careful
                         about rather than quick with: `skillSave` is refused while
                         the window holds unsaved edits, which is a whole
