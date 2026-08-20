@@ -11,7 +11,8 @@
     "restart": "node tools/restart.js",
     "build": "node tools/build.js",
     "dist": "node tools/build.js && node tools/pack.js",
-    "test": "node --test"
+    "test": "node --test",
+    "walk": "node tools/walk.js"
   },
   "browserslist": [
     "chrome >= 120"
@@ -36,7 +37,6 @@
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "style-loader": "^4.0.0",
-
     "webpack": "^5.109.2",
     "webpack-dev-middleware": "^8.1.1",
     "webpack-hot-middleware": "^2.26.1"

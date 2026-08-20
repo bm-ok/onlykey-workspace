@@ -227,7 +227,19 @@ async function plugin(imports, register) {
     theme.setGuardCheck(guarded);
     listeners.add(function () { theme.guardsChanged(); });
 
-    await reload().catch(function () { /* the server may not be up yet; the pane reloads */ });
+    //NOT AWAITED, AND THAT IS THE WHOLE POINT.
+    //
+    //This is a round trip over the socket, made while the plugin graph is still
+    //being built — and the socket is not necessarily up yet at that moment. An
+    //`await` here does not fail when it is down; it HANGS, the graph never
+    //finishes, `start` never fires and the window renders nothing while the
+    //process looks perfectly healthy from outside. That is what it did.
+    //
+    //A plugin may not block its own registration on something across a wire.
+    //The safe default is already in place — every proposed guard stands until
+    //this answers — so arriving late costs nothing and arriving never costs
+    //nothing either.
+    reload().catch(function () { /* the socket may not be up yet; the pane asks again */ });
 
     await register(null, {
         guards: { guarded: guarded, subscribe: subscribe, reload: reload }

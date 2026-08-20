@@ -64,6 +64,106 @@ async function plugin(imports, register) {
         return <div className={'authline' + (kind ? ' ' + kind : '')}>{children}</div>;
     }
 
+    //THE DRILLS, AND THE ONE THING THAT MAKES THEM DANGEROUS. They drive this
+    //app for real: one writes a task and removes it again, one takes a
+    //credential off a machine and puts it back. Against three scaffolding
+    //repositories that is what they are for; against somebody's actual work it
+    //is a stranger typing into their repository, and nothing here can tell the
+    //two apart. So the card leads with the folder.
+    function TestCard({ t, asked, onOff, onAsk, said }) {
+        var on = !!t.enabled;
+        //TAKEN FROM THE ACTION RATHER THAN RECOMPUTED. It is the same string
+        //equality either way, and computing it twice is how a card comes to
+        //disagree with the refusal a drill was given.
+        var here = !!t.allowed;
+        //A request standing about THIS folder. One raised against another
+        //workspace is not a question anybody here can answer — and testsAnswer
+        //re-checks the folder itself and clears such a request rather than
+        //honouring it, so showing it would only invite an answer about the
+        //wrong place.
+        var standing = asked && !here && asked.forDir === t.openDir ? asked : null;
+
+        return (
+            <div className={'card' + (on && !here ? ' warn' : '')}>
+                <div className="card-title">
+                    <span className="grow">Run the drills against this workspace</span>
+                    {/* THREE STATES, NOT A BOOLEAN. Off wears the plain badge,
+                        which in this stylesheet is already the muted one —
+                        `.badge` and `.badge.muted` are the same grey, and a
+                        state nobody has acted on should read as quiet rather
+                        than as a warning. */}
+                    {here
+                        ? <Badge kind="ok">on, here</Badge>
+                        : on
+                            ? <Badge kind="warn">on, elsewhere</Badge>
+                            : <Badge>off</Badge>}
+                </div>
+
+                {/* ASKED, AND STILL WAITING — on the card as well as in the
+                    dialog, for the same reason the dialog has a "No" button. */}
+                {standing
+                    ? <Line><strong>{'Asked ' + ago(standing.at) + ': '}</strong><span>{standing.why}</span></Line>
+                    : null}
+
+                <p className="note">
+                    The drills in the Test tab drive this app for real — one writes a task and removes it
+                    again, one takes the worker credential off a machine, proves a signed-out machine is
+                    refused work, and puts it back. Against scaffolding repositories that is exactly what
+                    they are for. Against work you care about it is a stranger typing into your repository,
+                    and this app cannot tell the two apart, so it does not guess.
+                </p>
+
+                {/* BOTH ROWS, EVEN WHEN THEY MATCH. That redundancy is the check
+                    somebody came here to make. Raw, and selectable: the server
+                    compares these strings as they are, so prettying the case or
+                    the separators would make the pane disagree with the
+                    predicate it is reporting. */}
+                <table className="kv">
+                    <tbody>
+                        <tr>
+                            <th>turned on for</th>
+                            {/* TWO DIFFERENT EMPTY STATES. A null `forDir` is a
+                                fact about the setting — turning off writes it
+                                away in the same act — and a null `openDir` is a
+                                fact about the app. */}
+                            <td style={{ userSelect: 'text' }}><Mono>{t.forDir || '—'}</Mono></td>
+                        </tr>
+                        <tr>
+                            <th>open now</th>
+                            <td style={{ userSelect: 'text' }}><Mono>{t.openDir || 'nothing is open'}</Mono></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                {/* WHY, IN THE WORDS THE ACTION USES. Three different reasons
+                    arrive here — switched off, no workspace open, on for a
+                    different folder — and it is rendered verbatim so that a
+                    person reading this card and a model reading a refusal on the
+                    command line are looking at one sentence rather than two
+                    wordings of it. */}
+                {!here
+                    ? <Line>{t.why}</Line>
+                    : <Line kind="ok">On for the folder open now. Opening a different workspace switches this off — it is on for a place, not on in general.</Line>}
+
+                {/* WHAT THE LAST PRESS ANSWERED, said where the press was made.
+                    Over the wire these two writes are refused on purpose; the
+                    refusal is a sentence worth reading rather than a button that
+                    silently does nothing. */}
+                {said ? <Line kind={said.bad ? 'bad' : 'ok'}>{said.text}</Line> : null}
+
+                <div className="row" style={{ marginTop: '8px' }}>
+                    {on
+                        //Switching off is free and asks nothing.
+                        ? <button className="btn" onClick={function () { onOff(); }}>Switch them off</button>
+                        : <button className="btn danger" disabled={!t.openDir}
+                            onClick={function () { if (t.openDir) onAsk(); }}>
+                            {t.openDir ? 'Turn them on for this workspace' : 'No workspace is open'}
+                        </button>}
+                </div>
+            </div>
+        );
+    }
+
     //THE DIALOG USED TO BE WRITTEN OUT HERE, and that is the drift this port was
     //meant to catch. It was a fair copy — an overlay, a body, three buttons —
     //and it was the second one in the app, which is how a look stops being one
