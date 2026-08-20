@@ -41,7 +41,7 @@ var http = require('http');
 //takes a screenshot of a page, remote or not, without the page needing any
 //privilege at all — which is the whole point of it being a debugger.
 
-plugin.consumes = ['actions', 'app', 'http'];
+plugin.consumes = ['actions', 'app', 'http', 'dataDir'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var actions = imports.actions;
@@ -53,10 +53,10 @@ async function plugin(imports, register) {
     //chromium writes the port on its first line and the browser's own websocket
     //path on the second. The directory is nw's user data, named after the app.
     function debuggerPort() {
-        var dir = process.platform == 'win32'
-            ? path.join(process.env.LOCALAPPDATA || os.homedir(), app.appPackage.name)
-            : path.join(os.homedir(), '.config', app.appPackage.name);
-        var file = path.join(dir, 'User Data', 'DevToolsActivePort');
+        //Same directory the rest of this app's data lives in, and worked out
+        //in one place — ../datadir, which says why it moves if the package is
+        //renamed and what stops working when it does.
+        var file = imports.dataDir.at('User Data', 'DevToolsActivePort');
         var said = fs.readFileSync(file, 'utf8').split('\n')[0].trim();
         if (!said) throw new Error('DevToolsActivePort is empty');
         return Number(said);
