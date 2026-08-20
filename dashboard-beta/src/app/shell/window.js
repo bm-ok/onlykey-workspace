@@ -94,6 +94,19 @@ async function plugin(imports, register) {
             .sort(function (a, b) { return at(a) - at(b) || a.name.localeCompare(b.name); });
     }
 
+    //GOING SOMEWHERE FROM A PANE, which is a different thing from a person
+    //pressing a tab.
+    //
+    //A pane sometimes hands off: an issue becomes a task, and the form that
+    //writes one lives under another tab. The alternative is a second copy of
+    //that form inside a dialog, which is how one question ends up with two
+    //answers that drift.
+    //
+    //A HOLDER RATHER THAN CONTEXT, because `shell` is handed out at register
+    //time and the setters only exist once the component is mounted. Same shape
+    //as the guard hook in the theme, and for the same reason.
+    var goTo = { at: null };
+
     function App() {
         //WHERE YOU WERE, KEPT. This window is restarted on every change to the
         //server half, and it used to come back on the first tab every time —
@@ -153,7 +166,12 @@ async function plugin(imports, register) {
             }
 
             okc.io.on('shell:show', asked);
-            return function () { okc.io.off('shell:show', asked); };
+            //THE SAME DOOR THE SOCKET USES. A pane that navigated by calling
+            //setOn directly would skip the checks `asked` makes — that the tab
+            //exists, that the pane is in it — and a typo would leave the shell
+            //on a tab with no panes rather than saying so.
+            goTo.at = function (tab, pane) { asked({ tab: tab, pane: pane || null }, null); };
+            return function () { okc.io.off('shell:show', asked); goTo.at = null; };
         }, [on]);
 
         //STANDING ON A TAB THAT JUST SWITCHED OFF. Moved rather than left
@@ -263,7 +281,12 @@ async function plugin(imports, register) {
             //`why` lets a tab be used again.
             badge: setBadge,
             label: setLabel,
-            stop: setStopped
+            stop: setStopped,
+
+            //WHERE A PANE HANDS OFF TO ANOTHER PANE. Refuses quietly before the
+            //shell is mounted: there is nowhere to go yet, and throwing at that
+            //moment would take the whole graph down with it.
+            go: function (tab, pane) { if (goTo.at) goTo.at(tab, pane); }
         }
     });
 }

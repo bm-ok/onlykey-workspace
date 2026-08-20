@@ -41,7 +41,7 @@ async function plugin(imports, register) {
     var { shell, theme, okc, remember } = imports;
     var {
         Pane, Panel, Cols, Col, Card, CardTitle, CardSub,
-        Badge, Button, Skeleton, Empty, Note, Mono, Notice, ask, ago
+        Badge, Button, Skeleton, Empty, Note, Mono, Notice, ask, ago, Group, Head
     } = theme;
 
     //A REAL MINUS SIGN, not a hyphen. It sits beside a plus and has to read as
@@ -335,11 +335,11 @@ async function plugin(imports, register) {
                             ) : (
                                 carrying.length ? carrying.map(function (r) {
                                     return (
-                                        <div className="carries" key={r.repo}>
-                                            <div className="carries-head">
+                                        <Group key={r.repo}>
+                                            <Head>
                                                 <span>{r.repo}</span>
                                                 <span className="muted">{r.ahead + ' on top of ' + r.base}</span>
-                                            </div>
+                                            </Head>
                                             {(r.commits || []).map(function (c) {
                                                 return (
                                                     <div className="change-commit" key={c.sha}>
@@ -350,7 +350,7 @@ async function plugin(imports, register) {
                                                 );
                                             })}
                                             {r.more ? <div className="card-sub">{'and ' + r.more + ' more'}</div> : null}
-                                        </div>
+                                        </Group>
                                     );
                                 }) : <Empty>Nothing to land — these two lines carry the same commits.</Empty>
                             )}

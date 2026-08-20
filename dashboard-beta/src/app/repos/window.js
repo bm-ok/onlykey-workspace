@@ -1,6 +1,9 @@
 var React = require('react');
 var useAsk = require('../okc/ask');
-var makeRepos = require('./list');
+var makeChassis = require('./chassis');
+var makeReposRight = require('./list');
+var makeIssues = require('./issues');
+var makePulls = require('./pulls');
 
 //the Repositories tab, and its first pane.
 //
@@ -104,7 +107,32 @@ async function plugin(imports, register) {
     //Repositories, six under Runners, and the tab names as written.
     shell.tab({ name: 'Repositories', order: 10 });
     shell.pane({ tab: 'Repositories', name: 'Overview', order: 10, Component: Overview });
-    shell.pane({ tab: 'Repositories', name: 'Repos', order: 20, Component: makeRepos(theme, okc, remember) });
+    //THE THREE THAT SHARE A CHASSIS. Same repository list, same heading, same
+    //remembered selection; a different sentence and a different right-hand half.
+    //See ./chassis.js for why that is one file rather than three.
+    var paneOf = makeChassis(theme, okc, remember);
+
+    shell.pane({
+        tab: 'Repositories', name: 'Repos', order: 20,
+        Component: paneOf(
+            'What this workspace is made of, and whether the far end of each one can still be reached. '
+            + 'Everything above is local and instant; anything about GitHub was asked for on purpose and carries when it was asked.',
+            makeReposRight(theme, okc))
+    });
+    shell.pane({
+        tab: 'Repositories', name: 'Issues', order: 30,
+        Component: paneOf(
+            'Work that arrived, rather than work written here — the one thing in this app that comes IN. '
+            + 'An issue becomes a task from the button on its card, which is the far end of a chain that otherwise starts midway.',
+            makeIssues(theme, okc, remember, shell))
+    });
+    shell.pane({
+        tab: 'Repositories', name: 'Pull requests', order: 40,
+        Component: paneOf(
+            'What is waiting to go in, per repository. The Changes tab holds the same pull requests as one landing, '
+            + 'because "what is open against this repository" and "is my change in" are different questions.',
+            makePulls(theme))
+    });
 
     await register(null, {});
 }

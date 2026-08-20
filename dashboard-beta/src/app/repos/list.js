@@ -1,5 +1,5 @@
 var React = require('react');
-var { useState } = React;
+var { useState, useRef } = React;
 var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
@@ -32,11 +32,10 @@ var useAsk = require('../okc/ask');
 //is the whole distinction.
 //---------------------------------------------------------------------------
 
-module.exports = function reposPane(theme, okc, remember) {
+module.exports = function reposRight(theme, okc) {
     var {
-        Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
-        Badge, Badges, Button, Plus, Skeleton, Empty, Note, Mono, Muted,
-        Kv, KvRow, Part, PartWhy, Notice, ask, ago, openOut
+        Panel, Grow, Card, CardTitle, Badge, Button, Plus, Skeleton, Empty,
+        Note, Mono, Kv, KvRow, Part, PartWhy, ask, ago, openOut
     } = theme;
 
     //Which of them a fast-forward can actually help. `ahead` and `only here` are
@@ -421,109 +420,40 @@ module.exports = function reposPane(theme, okc, remember) {
         );
     }
 
-    //---- the pane ----------------------------------------------------------
-
-    return function Repos() {
-        //ASKED ON A CADENCE BUT NEVER OF GITHUB. `repositories` returns what was
-        //last learnt about the remote plus everything local; only the buttons
-        //here reach GitHub.
-        var q = useAsk(okc, 'repositories', {}, 8000);
-        var [picked, setPicked] = remember.use('repos', 'repo', null);
+    //---- the right-hand half ----------------------------------------------
+    //
+    //The repository list, the heading and "Ask GitHub" are the chassis all three
+    //of these panes share — see ./chassis.js. This file is only what Repos puts
+    //beside it.
+    return function ReposRight({ r, say, again, askGitHub }) {
         var [chain, setChain] = useState(null);
-        var [said, setSaid] = useState(null);
 
-        if (q.error && !q.state) return <Pane><Note kind="bad">{q.error}</Note></Pane>;
-        if (!q.state) return <Pane><Skeleton rows={4} /></Pane>;
-
-        var repos = q.state.repos || [];
-        //Reconciled against what exists, like every other selection here — a
-        //remembered name for a repository that has been removed would leave the
-        //detail column empty with no way to see why.
-        var one = repos.filter(function (r) { return r.repo == picked; })[0]
-            || (repos.length ? repos[0] : null);
-
-        function pick(name) {
-            setPicked(name);
-            //THE WALK BELONGS TO THE REPOSITORY IT WAS WALKED FOR. Carrying it
-            //across a selection would show one repository's fork chain under
-            //another's name.
-            setChain(null);
-        }
+        //THE WALK BELONGS TO THE REPOSITORY IT WAS WALKED FOR. Carried across a
+        //selection it would show one repository's fork chain under another's
+        //name — and a fork chain is exactly the kind of thing nobody would
+        //double-check before acting on.
+        var walkedFor = useRef(null);
+        if (walkedFor.current !== r.repo) { walkedFor.current = r.repo; if (chain) setChain(null); }
 
         function walk() {
-            okc.call('repoChain', { repo: one.repo }).then(
-                function (c) { setChain(c); setSaid({ text: c.note }); },
-                function (e) { setSaid({ kind: 'bad', text: e.message }); }
+            okc.call('repoChain', { repo: r.repo }).then(
+                function (c) { setChain(c); say(c.note); },
+                function (e) { say(e.message, 'bad'); }
             );
         }
 
         function changed(note, warn) {
             setChain(null);
-            setSaid({ text: note, kind: warn ? 'warn' : null });
-            q.now();
+            say(note, warn ? 'warn' : null);
+            again();
         }
 
         return (
-            <Pane>
-                <Note>
-                    What this workspace is made of, and whether the far end of each one can still be reached.
-                    Everything above is local and instant; anything about GitHub was asked for on purpose and
-                    carries when it was asked.
-                </Note>
-
-                <TitleRow>
-                    <span>Repositories</span>
-                    <span className="muted">{repos.length ? '— ' + repos.length + ' in ' + q.state.dir : '— none'}</span>
-                    <Grow />
-                    <Button onClick={function () {
-                        okc.call('repositoriesCheck', {}).then(
-                            function (x) { setSaid({ text: x.note }); q.now(); },
-                            function (e) { setSaid({ kind: 'bad', text: e.message }); }
-                        );
-                    }}>Ask GitHub</Button>
-                </TitleRow>
-                <Note>{q.state.note}</Note>
-                {said ? <Notice kind={said.kind} onClose={function () { setSaid(null); }}>{said.text}</Notice> : null}
-
-                <Cols>
-                    <Col narrow>
-                        <Stack>
-                            {repos.length ? repos.map(function (r) {
-                                return (
-                                    <Card key={r.repo} pick on={one && r.repo == one.repo}
-                                        warn={r.reachable === false}
-                                        onClick={function () { pick(r.repo); }}>
-                                        <CardTitle>
-                                            <Mono>{r.repo}</Mono>
-                                            {r.reachable === false ? <Badge kind="bad">unreachable</Badge> : null}
-                                            {r.reachable === true && r.why ? <Badge kind="warn">limited</Badge> : null}
-                                        </CardTitle>
-                                        <CardSub><span className="mono">{r.default || '(no default branch)'}</span></CardSub>
-                                        <Badges>
-                                            <span className="muted">{r.branches + ' branch(es)'}</span>
-                                            {r.openIssues != null ? <span className="muted">{r.openIssues + ' issue(s)'}</span> : null}
-                                            {r.openPulls != null ? <span className="muted">{r.openPulls + ' pull(s)'}</span> : null}
-                                        </Badges>
-                                    </Card>
-                                );
-                            }) : <Empty>No repositories in this workspace folder.</Empty>}
-                        </Stack>
-                    </Col>
-                    <Col wide>
-                        <Detail r={one} chain={chain} onWalk={walk} onChanged={changed}
-                            onAsked={function () {
-                                okc.call('repositoriesCheck', { repo: one.repo }).then(
-                                    function (x) { setSaid({ text: x.note }); q.now(); },
-                                    function (e) { setSaid({ kind: 'bad', text: e.message }); }
-                                );
-                            }} />
-                        {one ? <Branches repo={one.repo} onMoved={function (note, kind) {
-                            setSaid({ text: note, kind: kind });
-                            q.now();
-                        }} /> : null}
-                    </Col>
-                </Cols>
-            </Pane>
+            <React.Fragment>
+                <Detail r={r} chain={chain} onWalk={walk} onChanged={changed}
+                    onAsked={function () { askGitHub(r.repo); }} />
+                <Branches repo={r.repo} onMoved={function (note, kind) { say(note, kind); again(); }} />
+            </React.Fragment>
         );
     };
 };

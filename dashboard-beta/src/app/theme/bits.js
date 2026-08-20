@@ -287,6 +287,22 @@ function Spec({ summary, children }) {
 
 //A key/value table. Used in enough places to be worth naming, and it keeps the
 //`<table className="kv">` spelling in one file.
+//---- a section inside a pane, and its heading -----------------------------
+//
+//A HEADING THAT CARRIES QUALIFIERS BESIDE IT: what this section is, then which
+//repository it was read from, then when. Distinct from `TitleRow` in one way
+//that matters -- the muted parts beside the word stay in normal case.
+//
+//THAT IS NOT A FLOURISH. "ISSUES ON BM-SANDBOX-B/LOCAL-REPO-A 11 HOURS AGO"
+//shouts a repository path that somebody has to read character by character to
+//check, and uppercasing a name makes it a DIFFERENT name to the eye than the
+//one in the list two inches to the left.
+//
+//Both of these were being written as bare class names in one pane already,
+//which is how a kit stops being the place the answer lives.
+function Group({ children }) { return <div className="carries">{children}</div>; }
+function Head({ children }) { return <div className="carries-head">{children}</div>; }
+
 //---- a thin row of facts, and the sentence under it -----------------------
 //
 //A LIST OF BRANCHES IS NOT A LIST OF CARDS. A card is a thing somebody picks;
@@ -325,5 +341,5 @@ module.exports = {
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip,
     Button, Plus, Cog, Finder, Form, HeadRow, Controls,
-    Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, Part, PartWhy, Code, ago, openOut
+    Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Code, ago, openOut
 };
