@@ -19,10 +19,22 @@
      is that somebody read it and decided. The command line can see these
      buttons and is refused when it tries to press one.
 
-     The same purple as --running, and deliberately so rather than by accident:
-     a button is never a banner and a banner is never pressable, so the two
-     cannot meet on one element and be read as each other. What the colour
-     means in both places is "this is not the ordinary case, look at it". */
+     WHY PURPLE, AND IT IS NOT A TASTE. Every other colour in this file is
+     already spoken for by a STATE, and those meanings are conventional enough
+     that they cannot be borrowed: green is fine, red is broken, amber is
+     careful, blue is a link or a selection. A guard is not a state -- the
+     button works perfectly, nothing is wrong, and the thing being said is
+     about WHO may press it. Reusing a status colour would file that under
+     "how is it doing", which is a different question, and the eye answers the
+     familiar question first.
+
+     Purple sits outside the ordinary swatch, so it carries no prior meaning to
+     override. Somebody who has never been told what it is still reads it as
+     "this one is not like the others", which is exactly the whole message.
+
+     The same purple as --running, and deliberately: a button is never a banner
+     and a banner is never pressable, so the two cannot meet on one element and
+     be read as each other. */
   --human: #a371f7;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
