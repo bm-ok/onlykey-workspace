@@ -1,0 +1,134 @@
+//---------------------------------------------------------------------------
+//driving the window from outside: reading what is on it, pressing a button,
+//filling a field.
+//
+//WHY IT HAS TO EXIST. The window is the one half of this app that cannot be
+//exercised any other way. Everything else is an action, reachable from the
+//command line; the window had a camera and nothing else — so a pane could be
+//photographed and never operated, and every fault that lives in a click handler
+//has to be found by somebody clicking it. The old window shipped two that way:
+//a button wired to a function that did not exist, and a pane that painted and
+//then swallowed what had been typed into it.
+//
+//A DRIVEN PRESS IS A REAL PRESS. `.click()` runs exactly the handler a person's
+//click runs, and a fill raises the same `input` and `change` events the fields
+//listen for. A test that took a private path would be testing the path and not
+//the button — the same reason the queue drives the actions rather than having
+//its own way to the machines.
+//
+//AND THAT IS ALSO THE WHOLE PROBLEM, which is why the gate below is not
+//optional.
+//
+//  Every refusal this app makes about the command line is a refusal about THE
+//  WIRE. A click is not on the wire. So without a gate, "a model may not
+//  approve its own job" is one `windowClick --text Approve` away from being
+//  untrue — and nothing would have been refused, or even recorded as strange.
+//
+//So pressing and filling are shut unless testing mode is on: the same switch
+//that says the drills may run, turned on at a window by a person, for one named
+//folder. READING STAYS OPEN — `windowControls` lists what is there and presses
+//nothing, and a photograph and a list of buttons change nothing.
+//
+//THE SWITCH IS THE DASHBOARD'S, ON PURPOSE. This app has no settings of its
+//own; it relays to the running dashboard, and that is where testing mode is
+//turned on, where the banner saying so is shown, and where it is turned off
+//again when the workspace changes. A second switch for one property is the
+//second set of rules, and the second set is always the one that turns out to be
+//wrong.
+//---------------------------------------------------------------------------
+
+plugin.consumes = ['app'];
+plugin.provides = [];
+async function plugin(imports, register) {
+    var host = imports.app.host;
+    var io = host.io;
+    var actions = host.actions;
+
+    //absent when built against a bare host — the test suite does that
+    if (!actions) return register(null, {});
+
+    //---- the gate ----------------------------------------------------------
+
+    async function mayDrive(what) {
+        var s;
+        try {
+            s = await actions.call('settings', {});
+        } catch (e) {
+            throw new Error('Cannot ' + what + ': the dashboard could not be asked whether testing mode is on (' + e.message + ').');
+        }
+        if (!s || s.testsEnabled !== true) {
+            throw new Error(
+                'Cannot ' + what + ' — testing mode is off. A driven press reaches exactly the handlers a person\'s press reaches, ' +
+                'so every refusal this app makes about the command line would be one click away from untrue. ' +
+                'Turn it on at the dashboard window, for the folder being worked on. Reading what is on screen (windowControls, and --dry) stays open.'
+            );
+        }
+        return s;
+    }
+
+    //---- asking the page ---------------------------------------------------
+
+    async function drive(want) {
+        var pages = [...io.sockets.sockets.values()];
+        if (!pages.length) throw new Error('no page is connected — the window may be closed, or still loading');
+
+        //ONE PAGE, NOT ALL OF THEM, and this differs from `show` deliberately.
+        //Showing something in every page is right: they should all be looking at
+        //the same thing. PRESSING a button in every page is pressing it several
+        //times, which for anything that is not idempotent is a different act
+        //from the one that was asked for.
+        var page = pages[0];
+        var answer = await new Promise(function (resolve) {
+            page.timeout(15000).emit('drive:do', want, function (err, a) {
+                resolve(err ? { error: 'the page did not answer' } : a);
+            });
+        });
+        if (answer && answer.error) throw new Error(answer.error);
+        return answer;
+    }
+
+    var undo = [
+        actions.define('windowControls', {
+            about: 'What is on screen right now: the buttons that can be pressed and the fields that can be filled',
+            run: function () { return drive({ do: 'controls' }); }
+        }),
+
+        actions.define('windowClick', {
+            about: 'Press a button in the window, by the words on it. Only while testing mode is on. --dry says which one it would press',
+            takes: ['text', 'nth', 'dry'],
+            run: async function (args) {
+                var asking = args.dry === true || args.dry === 'true';
+                //--dry IS ALLOWED EITHER WAY. It says WHICH button would be
+                //pressed and presses nothing, which is reading rather than
+                //driving — and it is how somebody finds out the door is shut
+                //without opening it.
+                if (!asking) await mayDrive('press a button in the window');
+                return drive({
+                    do: 'click',
+                    text: args.text,
+                    nth: args.nth == null ? null : Number(args.nth),
+                    dry: asking
+                });
+            }
+        }),
+
+        actions.define('windowFill', {
+            about: 'Type into a field in the window, by its label. Only while testing mode is on',
+            takes: ['label', 'value', 'nth'],
+            run: async function (args) {
+                await mayDrive('type into the window');
+                return drive({
+                    do: 'fill',
+                    label: args.label,
+                    value: args.value,
+                    nth: args.nth == null ? null : Number(args.nth)
+                });
+            }
+        })
+    ];
+
+    await register(null, {
+        onDestroy: function () { undo.forEach(function (f) { f(); }); }
+    });
+}
+module.exports = plugin;
