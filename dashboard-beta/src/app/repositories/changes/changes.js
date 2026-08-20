@@ -4,7 +4,7 @@ var { useState, useEffect, useRef } = React;
 module.exports = function changes(theme, okc, remember) {
     var {
         Pane, Panel, Cols, Col, Card, CardTitle, CardSub,
-        Badge, Button, Views, Toggle, Code, Skeleton, Empty, Note, Mono, Notice, ask, ago, Group, Head
+        Badge, Button, Views, Toggle, Skeleton, Empty, Note, Mono, Notice, ask, ago, Group, Head
     } = theme;
 
     //A REAL MINUS SIGN, not a hyphen. It sits beside a plus and has to read as
@@ -41,9 +41,8 @@ module.exports = function changes(theme, okc, remember) {
     //colour does not travel and the marks are the entire meaning.
     //
     //THIS IS ONE OF THE TWO READINGS NOW — see `SideBySide` below, and the switch
-    //between them. This one stays the default because it is the right thing for a
-    //change of any size; the other answers a different question and costs two
-    //file reads to do it.
+    //between them. Both are built from the same unified diff; the other one takes
+    //it apart into aligned rows rather than fetching anything more.
     function Diff({ text }) {
         var lines = String(text || '').split('\n');
         return (
@@ -63,52 +62,113 @@ module.exports = function changes(theme, okc, remember) {
     //---- side by side ------------------------------------------------------
     //
     //THE TWO READINGS ANSWER DIFFERENT QUESTIONS, which is why this is a switch
-    //and not a replacement. A unified diff answers "what changed" and is the
-    //right thing to read for a change of any size. Side by side answers "what is
-    //this file now, and what was it" — which is what somebody wants when the
-    //change is three lines and the code AROUND those lines is the actual
-    //question, and what a `<pre>` of `@@ -1 +1 @@` cannot show at all.
+    //and not a replacement. A unified diff is one column and reads as a story:
+    //this went, that came. Side by side puts what went opposite what replaced it,
+    //which is the reading for "is this the same thing, done differently".
     //
-    //IT IS `Code` FROM THE KIT, so it is the same read-only editor the approval
-    //dialogs use — syntax coloured, not editable, cursor hidden. Two of them, one
-    //per side.
+    //THE ALIGNMENT COMES OUT OF THE DIFF, WHICH IS WHY THIS IS NOT TWO EDITORS.
     //
-    //A MISSING SIDE IS AN ANSWER. A file added on the head has no `before` and a
-    //deleted one has no `after`; the server half answers `null` for those, and an
-    //empty half that SAYS why reads as the file having been added rather than as
-    //something having failed to load.
-    function SideBySide({ cmp, pick }) {
-        var { state, error } = okc.use('compareFile', {
-            base: cmp.base, head: cmp.head, repo: pick.repo, file: pick.file
-        }, 0);
+    //The first attempt was: fetch both files, put one in each column. It renders,
+    //and it is not a side-by-side diff — it is two files near each other. The
+    //whole value of this reading is that line 41 on the left sits opposite the
+    //line that REPLACED it, with a gap on the other side where one of them has
+    //nothing. Two independently scrolled columns cannot do that, which is why the
+    //note about "tying their scrolling together" was chasing the wrong problem:
+    //aligned rows do not need tying, because they are one grid.
+    //
+    //A unified diff already carries the alignment. `@@ -a,b +c,d @@` gives the
+    //line number each side starts at, and then every line says which side it is
+    //on: a space is both, a minus is the left, a plus is the right.
+    //
+    //RUNS ARE PAIRED, NOT LISTED. Three removed lines followed by three added
+    //ones is a change to three lines, and showing them as six rows — three with
+    //an empty right, then three with an empty left — is the same information
+    //arranged so nobody can read it. Paired by position within the run, which is
+    //what makes "this became that" visible.
+    function splitRows(text) {
+        var rows = [];
+        var dels = [];
+        var adds = [];
+        var ln = 0;
+        var rn = 0;
 
-        if (!state && error) return <Note kind="bad">{error}</Note>;
-        if (!state) return <Skeleton rows={4} />;
+        function flush() {
+            var most = Math.max(dels.length, adds.length);
+            for (var i = 0; i < most; i++) {
+                rows.push({
+                    kind: 'change',
+                    left: dels[i] || null,
+                    right: adds[i] || null
+                });
+            }
+            dels = [];
+            adds = [];
+        }
 
-        //THE MODE FROM THE FILE'S OWN NAME. The kit defaults to plain text on
-        //purpose — most of what this app shows is prose — but a file called
-        //`.js` is not prose, and reading a change in it uncoloured is the thing
-        //the editor exists to stop.
-        var dot = String(pick.file).lastIndexOf('.');
-        var ext = dot < 0 ? '' : String(pick.file).slice(dot + 1).toLowerCase();
-        var mode = ext == 'js' || ext == 'jsx' || ext == 'json' ? 'javascript'
-            : ext == 'md' ? 'markdown' : 'text';
+        String(text || '').split('\n').forEach(function (l) {
+            //THE FILE HEADERS ARE NOT CONTENT. `diff --git`, `index`, `---` and
+            //`+++` all begin with characters this otherwise reads as sides, and
+            //`---` in particular would be taken for a removed line.
+            if (l.slice(0, 5) == 'diff ' || l.slice(0, 6) == 'index '
+                || l.slice(0, 4) == '--- ' || l.slice(0, 4) == '+++ '
+                || l.slice(0, 11) == 'new file mo' || l.slice(0, 11) == 'deleted fil'
+                || l.slice(0, 9) == 'similarit' || l.slice(0, 7) == 'rename ') return;
+
+            if (l.slice(0, 2) == '@@') {
+                flush();
+                var at = l.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+                if (at) { ln = Number(at[1]); rn = Number(at[2]); }
+                //THE HUNK HEADING IS KEPT, because the jump in the numbers either
+                //side of it is the only thing saying that lines were skipped.
+                rows.push({ kind: 'hunk', text: l });
+                return;
+            }
+
+            if (l[0] == '-') { dels.push({ n: ln++, text: l.slice(1) }); return; }
+            if (l[0] == '+') { adds.push({ n: rn++, text: l.slice(1) }); return; }
+
+            flush();
+            //A LINE THAT IS ON BOTH SIDES. An empty last line of the diff is not
+            //one, and `\ No newline at end of file` is a note about the file
+            //rather than a line in it.
+            if (l === '' || l.slice(0, 1) == '\\') return;
+            rows.push({ kind: 'same', left: { n: ln++, text: l.slice(1) }, right: { n: rn++, text: l.slice(1) } });
+        });
+
+        flush();
+        return rows;
+    }
+
+    function Half({ side, kind }) {
+        //A GAP IS NOT AN EMPTY LINE. One side having nothing opposite a change is
+        //what makes the other side read as added or removed, and drawing it as a
+        //blank row of the ordinary colour loses exactly that.
+        if (!side) return <><span className="n" /><span className="gap" /></>;
+        return <><span className="n">{side.n}</span><span className={'t ' + kind}>{side.text || ' '}</span></>;
+    }
+
+    function SideBySide({ state }) {
+        var rows = splitRows(state.diff);
+        if (!rows.length) return <Empty>no changes</Empty>;
 
         return (
-            <Cols>
-                <Col>
-                    <CardSub>{state.base}</CardSub>
-                    {state.before == null
-                        ? <Empty>not on this side — the file is added by the change</Empty>
-                        : <Code text={state.before} mode={mode} tall />}
-                </Col>
-                <Col>
-                    <CardSub>{state.head}</CardSub>
-                    {state.after == null
-                        ? <Empty>not on this side — the file is deleted by the change</Empty>
-                        : <Code text={state.after} mode={mode} tall />}
-                </Col>
-            </Cols>
+            <div className="split">
+                {rows.map(function (r, i) {
+                    if (r.kind == 'hunk') {
+                        return <div className="row hunk" key={i}><span className="n" /><span className="t">{r.text}</span></div>;
+                    }
+                    //WHICH SIDE IS TINTED DEPENDS ON WHICH SIDE IT IS. The left
+                    //half of a change is what went; the right half is what came.
+                    //A row that is on both sides is neither.
+                    var same = r.kind == 'same';
+                    return (
+                        <div className="row" key={i}>
+                            <Half side={r.left} kind={same ? '' : 'del'} />
+                            <Half side={r.right} kind={same ? '' : 'add'} />
+                        </div>
+                    );
+                })}
+            </div>
         );
     }
 
@@ -131,16 +191,14 @@ module.exports = function changes(theme, okc, remember) {
                 <Toggle on={side} onChange={setSide}>Side by side</Toggle>
 
                 {side
-                    ? <SideBySide cmp={cmp} pick={pick} />
+                    ? <SideBySide state={state} />
                     : (state.diff ? <Diff text={state.diff} /> : <Empty>no changes</Empty>)}
 
-                {/* NOT TIED TOGETHER YET, and that is the one thing still missing
-                    rather than a vague gap. Two columns that scroll apart are two
-                    views of two files, which is what side by side exists to stop
-                    being. The kit exports `Editor` beside `Code` for exactly this
-                    — reaching the instance to tie two of them — and nothing does
-                    it yet. */}
-                {side ? <Note>Their scrolling is not tied together yet, so a long file has to be followed on both sides.</Note> : null}
+                {/* NOTHING TO TIE TOGETHER ANY MORE. The version before this was
+                    two editors, and it carried a note promising to tie their
+                    scrolling — which was chasing the wrong problem. Aligned rows
+                    are one grid and scroll as one thing; the note is gone because
+                    the gap it described is. */}
             </Panel>
         );
     }

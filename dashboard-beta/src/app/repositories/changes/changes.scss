@@ -128,3 +128,87 @@
    Indented under the name it belongs to, and quiet, because it is an
    explanation rather than a second row of facts. */
 .group-why { font-size: 11px; padding: 2px 0 6px 0; line-height: 1.5; }
+
+/* ---- side by side --------------------------------------------------------
+
+   ONE GRID, NOT TWO COLUMNS, and that is the whole design. Two scrollable
+   halves would be two views of two files -- which is what side by side exists
+   to stop being -- and would need their scrolling tied together to be read at
+   all. Rows that are already aligned need nothing tied: they scroll because the
+   grid does.
+
+   FOUR TRACKS: a number and a line, twice. The numbers are sized to the content
+   so a file with four-digit lines does not crush the text, and the two text
+   columns share what is left equally so neither side looks like the important
+   one.
+
+   THE MARK IS NOT KEPT IN THE TEXT HERE, unlike the unified diff above. There,
+   the +/- is the whole meaning when the colour does not travel. Here the SIDE is
+   the meaning -- left is what went, right is what came -- and a column of minus
+   signs down the middle of the left half would be noise repeating what the
+   layout already says. */
+.split {
+  background: #0a0d12;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 70vh;
+}
+.split .row {
+  display: grid;
+  grid-template-columns: max-content 1fr max-content 1fr;
+  align-items: stretch;
+}
+/* A NUMBER IS A SIGNPOST AND NOT CONTENT, so it is dim, unselectable, and does
+   not travel when somebody copies a block of the code out of here. */
+.split .n {
+  padding: 0 8px;
+  text-align: right;
+  color: var(--muted);
+  opacity: .65;
+  user-select: none;
+  background: rgba(255, 255, 255, .02);
+  min-width: 3.5em;
+}
+/* WRAPPED, NEVER TRUNCATED. The first version clipped with an ellipsis, which
+   on a diff is the one unforgivable thing: the end of a line somebody is reading
+   to decide something was replaced with three dots, and nothing said so.
+
+   Wrapping is what a grid makes safe. The two halves are cells of the SAME row,
+   so a line that wraps to three lines on the left makes the row three lines tall
+   and its opposite number stays opposite it. In two separate columns that would
+   pull the sides out of step, which is the reason this is a grid at all. */
+.split .t {
+  padding: 0 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+/* THE DIVIDER BETWEEN THE TWO HALVES. Without it a long line on the left runs
+   into the number of the right, and the eye stops being able to find the middle. */
+.split .row > :nth-child(3) { border-left: 1px solid var(--line); }
+
+.split .t.add { background: rgba(63, 185, 80, .13); color: #7ee787; }
+.split .t.del { background: rgba(248, 81, 73, .12); color: #ffa198; }
+
+/* THE GAP IS THE POINT. One side having nothing opposite a change is what makes
+   the other side read as added or removed; drawn as an ordinary blank row it
+   would read as a line that happens to be empty. Hatched rather than tinted, so
+   it cannot be mistaken for either colour that means something. */
+.split .gap {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, .03) 0, rgba(255, 255, 255, .03) 6px,
+    transparent 6px, transparent 12px
+  );
+}
+
+.split .row.hunk {
+  grid-template-columns: max-content 1fr;
+  color: var(--accent);
+  background: rgba(74, 163, 255, .08);
+}
+.split .row.hunk .t { white-space: pre; }
