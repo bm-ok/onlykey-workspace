@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const mockPair = require('../src/app/io/mock');
+const mockPair = require('../src/app/core/io/mock');
 
 //the mock is what lets the browser run a plugin's server half with nothing on
 //the wire, so it has to behave like the socket.io it stands in for.

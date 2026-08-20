@@ -56,7 +56,7 @@ async function plugin(imports, register) {
         //---- packaged ---------------------------------------------------
 
         //the window half, built before packaging and carried here as strings
-        var assets = require('../../../dist/assets.json');
+        var assets = require('../../../../dist/assets.json');
 
         http.app.get('/', function (req, res) {
             res.type('html').send(assets['index.html']);
@@ -70,7 +70,7 @@ async function plugin(imports, register) {
         });
 
         //no separate bundle to load, and no reason to reload it
-        ready = require('../../server.js')(host);
+        ready = require('../../../server.js')(host);
 
     } else {
 
@@ -80,7 +80,7 @@ async function plugin(imports, register) {
         var webpack = require('webpack');
         var devMiddleware = require('webpack-dev-middleware');
         var hotMiddleware = require('webpack-hot-middleware');
-        var configs = require('../../../webpack.config.js');
+        var configs = require('../../../../webpack.config.js');
 
         var built = configs({}, { mode: process.env.NODE_ENV });
         var windowConfig = built.find(function (c) { return c.name == 'window'; });
