@@ -31,6 +31,13 @@ async function plugin(imports, register) {
     var tabs = [];
     var panes = [];
 
+    //WHAT SITS ABOVE EVERYTHING, ON EVERY TAB. A banner is not a pane: it is not
+    //somewhere you go, it is something that is true wherever you are. So it is
+    //registered like a tab and rendered outside the one-tab-at-a-time rule --
+    //mounted for as long as the window is, because a warning that is only on
+    //screen while you happen to be looking at the right tab is not a warning.
+    var banners = [];
+
     //A TAB WITH PANES IN IT, and the panes are folders too.
     //
     //The Repositories tab in the app being ported is six panes over one subject
@@ -220,6 +227,8 @@ async function plugin(imports, register) {
         //
         //(A `{/* */}` comment cannot sit between attributes — that is for
         //children. Between attributes it is a `//` line, as here. Learned twice.)
+        var showing = banners.slice().sort(function (a, b) { return at(a) - at(b); });
+
         return (<>
             <Topbar
                 brand="Dashboard"
@@ -240,6 +249,14 @@ async function plugin(imports, register) {
                 })}
                 onBrand={setOn}
             />
+
+            {/* ABOVE THE SUB-TABS AND BELOW THE ROW, which is where the old
+                window puts them: they are about the whole app rather than about
+                the tab, and a person reads down from the top. */}
+            {showing.map(function (b, i) {
+                var B = b.Component;
+                return <B key={b.name || i} />;
+            })}
 
             {mine.length > 1 ? (
                 <div className="subtabs">
@@ -293,6 +310,12 @@ async function plugin(imports, register) {
             //either knowing about the other. Ties fall back to the name.
             tab: function (t) { tabs.push(t); },
             pane: function (p) { panes.push(p); },
+
+            //ORDER, BECAUSE THE STACKING IS AN ARGUMENT. Over there the running
+            //banner sits above testing mode deliberately: that one says this
+            //folder MAY be written to, this one says something is writing to it
+            //NOW. Lowest order first, same as tabs.
+            banner: function (b) { banners.push(b); },
 
             //Pushed by whoever knows. `null` or 0 takes a badge off; a falsy
             //`why` lets a tab be used again.

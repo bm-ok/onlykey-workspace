@@ -238,6 +238,23 @@ function Banner({ kind, children }) {
     return <div className={BANNERS[kind] || BANNERS.stale}>{children}</div>;
 }
 
+//GOING SOMEWHERE, WRITTEN AS A LINK BUT NOT ONE. `Link` opens the person's real
+//browser; this moves them within the app, and the difference matters enough that
+//the two must not look interchangeable in a pane's source.
+//
+//IT IS A <button> AND NOT AN <a> because there is no address. An anchor with no
+//href is a thing screen readers announce as a link and then cannot follow, and
+//an anchor with href="#" puts a stray entry in the history for every press.
+//
+//THE STYLESHEET ALREADY EXPECTED IT. `.linky` has been there since the theme was
+//carried over, described as "a button that reads as a link, for moving between
+//views rather than acting" -- and the banner rules style `.running-banner .linky`
+//and `.testing-banner .linky` specifically, because the accent blue is the one
+//colour on those grounds nobody can read.
+function Linky({ children, onClick, title }) {
+    return <button className="linky" onClick={onClick} title={title}>{children}</button>;
+}
+
 //---- links ---------------------------------------------------------------
 
 //A LINK MUST REACH THE PERSON'S REAL BROWSER, not open inside the app window.
@@ -362,5 +379,5 @@ module.exports = {
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip,
     Button, Plus, Cog, Finder, Form, HeadRow, Controls,
-    Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Act, ago, openOut
+    Skeleton, Notice, Banner, Link, Linky, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Act, ago, openOut
 };
