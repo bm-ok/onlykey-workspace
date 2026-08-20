@@ -57,7 +57,12 @@ async function plugin(imports, register) {
     function region() {
         var dlg = document.querySelector('.dlg-overlay .dlg');
         if (dlg) return { where: 'the open dialog', node: dlg, dialog: true };
-        var tab = document.querySelector('.tab.active');
+        //THE BRAND IS A TAB TOO, when something is behind it. The Inbox lives
+        //there rather than in the row, so a region read only from `.tab.active`
+        //came back "?" while the Inbox was perfectly on screen — and `npm run
+        //walk` reports a nameless region as a pane that did not render, which is
+        //exactly what it said about a pane that had just been photographed.
+        var tab = document.querySelector('.tab.active') || document.querySelector('.brand-tab.active');
         var pane = document.querySelector('.subtab.active');
         return {
             where: (tab ? words(tab) : '?') + (pane ? '/' + words(pane) : ''),
@@ -136,7 +141,13 @@ async function plugin(imports, register) {
                         //else. The guards pane listing its own "guarded 0" and
                         //"open 3" chips as things somebody might want to guard
                         //was how this became obvious.
-                        || n.classList.contains('chip'),
+                        || n.classList.contains('chip')
+                        //AND THE BRAND, which is on every screen. Counted as a
+                        //control it made every pane in the app look like it had
+                        //something on it — the count of bare panes went from ten
+                        //to zero the moment the brand became a button, which is
+                        //a measurement changing rather than the app.
+                        || n.classList.contains('brand-tab'),
                     //PURPLE MEANS A PERSON PRESSES IT. Carried into the answer
                     //so a list of buttons says which are mine to press and which
                     //are not, rather than that only being found out by trying.
