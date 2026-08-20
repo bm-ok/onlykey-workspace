@@ -74,11 +74,17 @@ async function theGit() {
         //KEPT IN MEMORY HERE. What these tests are about is paths and git, not
         //what survives a restart — core/state has its own test for that — and a
         //real one would leave documents in the app's data folder every run.
-        state: { doc: () => { let held = null; return {
-            read: (fallback) => (held === null ? fallback : held),
-            write: (v) => { held = v; return v; },
-            forget: () => { held = null; return true; }
-        }; } }
+        state: {
+            app: { doc: () => { let held = null; return {
+                read: (fallback) => (held === null ? fallback : held),
+                write: (v) => { held = v; return v; },
+                forget: () => { held = null; return true; }
+            }; } },
+            //workspace hands its own `dir` in so core/state knows which drawer
+            //is current; nothing here reads it back, and core/state has its own
+            //test for what it does with it.
+            follow: () => () => {}
+        }
     }, async (_e, s) => { workspace = s.workspace; });
 
     let git = null;

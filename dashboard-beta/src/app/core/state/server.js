@@ -26,19 +26,26 @@ async function plugin(imports, register) {
         var nowhere = function () {
             throw new Error('nothing is keeping state in this process — there is no main half behind it');
         };
+        //READING IS THE ONE THING THAT MAY ANSWER, because "there is nothing
+        //kept" is a true answer to it and the fallback is what the caller
+        //already said to use. Writing is not: a write that silently went nowhere
+        //would be read back as nothing and taken for a cleared setting.
+        var blank = {
+            path: null,
+            read: function (fallback) { return fallback; },
+            write: nowhere,
+            forget: nowhere
+        };
         return register(null, {
             state: {
-                doc: function () {
-                    return {
-                        path: null,
-                        //READING IS THE ONE THING THAT MAY ANSWER, because
-                        //"there is nothing kept" is a true answer to it and the
-                        //fallback is what the caller already said to use.
-                        read: function (fallback) { return fallback; },
-                        write: nowhere,
-                        forget: nowhere
-                    };
+                app: { doc: function () { return blank; }, where: null },
+                here: {
+                    doc: async function () { return blank; },
+                    open: async function () { return false; },
+                    where: async function () { return null; }
                 },
+                follow: function () { return function () {}; },
+                slugFor: function (d) { return String(d); },
                 where: null
             }
         });

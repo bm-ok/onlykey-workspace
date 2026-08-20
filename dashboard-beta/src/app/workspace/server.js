@@ -44,7 +44,11 @@ plugin.consumes = ['app', 'okc', 'state'];
 plugin.provides = ['workspace'];
 async function plugin(imports, register) {
     var okc = imports.okc;
-    var kept = imports.state.doc('workspace');
+    //WHICH FOLDER IS OPEN IS A FACT ABOUT THIS HOST, not about a workspace —
+    //so it goes in the app's drawer. Putting it in the workspace's would be a
+    //workspace remembering that it is the one open, which is circular and, on a
+    //fresh run with no workspace, unreadable.
+    var kept = imports.state.app.doc('workspace');
 
     var was = null;
     var at = 0;
@@ -131,6 +135,14 @@ async function plugin(imports, register) {
         }
         return found.dir;
     }
+
+    //AND ../core/state IS TOLD WHERE WE ARE, rather than asking. It keeps a
+    //drawer per workspace and cannot consume this plugin to find out which —
+    //this one already consumes it, and each waiting on the other is a graph that
+    //does not resolve. So the answer is pushed, and because `state.here` resolves
+    //it on every call, changing workspace changes the drawer with nothing
+    //subscribing and nothing reloading.
+    imports.state.follow(function () { return dir().catch(function () { return null; }); });
 
     await register(null, {
         workspace: {
