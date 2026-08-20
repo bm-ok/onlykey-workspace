@@ -129,7 +129,32 @@ module.exports = {
       const short = all.map(({ brief, rules, attempts, question, note, ...rest }) => ({
         ...rest,
         question: trim(question, 160),
-        note: trim(note, 240)
+        note: trim(note, 240),
+
+        // ---- AND THE ONE ANSWER THE ATTEMPTS WERE CARRYING -------------------
+        //
+        // TAKING `attempts` OUT COST SOMETHING, and it was not obvious until a
+        // second reader went looking. A judgement that CRASHED and one that read
+        // the change and found nothing are the same row without the exit code --
+        // that is written down in the record already -- and the exit code lives
+        // on the attempts. So anything computing "did this crash" from this list
+        // ran `(j.attempts || [])` over a field that is not here, found nothing,
+        // and reported a confident FALSE standing in for "I was not told".
+        //
+        // The raw material stays out; the answer it was wanted for comes along.
+        // Same shape as the tasks board, which carries `reads` rather than the
+        // commits it worked that word out from.
+        //
+        // THREE VALUES, NOT TWO. `null` for a judgement whose attempts recorded
+        // no exit code at all -- everything from before the queue started
+        // keeping them. "Nothing was recorded" is its own answer and is not
+        // evidence of a clean run, which is the same distinction `waiting` makes
+        // when it counts these apart on the host.
+        crashed: (() => {
+          const said = (attempts || []).filter(a => a.exit != null)
+          if (!said.length) return null
+          return said.some(a => a.exit !== 0)
+        })()
       }))
 
       return {
