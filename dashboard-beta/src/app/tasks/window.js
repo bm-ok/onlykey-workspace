@@ -2,6 +2,7 @@ var React = require('react');
 var { useState } = React;
 var useAsk = require('../okc/ask');
 var makeBoard = require('./board');
+var makeAdd = require('./add');
 
 //the Tasks tab: what has been written, what is running, and what came back.
 //
@@ -101,7 +102,8 @@ async function plugin(imports, register) {
     //carries the note about `reads` that the board is built on.
     shell.tab({ name: 'Tasks', order: 20 });
     shell.pane({ tab: 'Tasks', name: 'Board', order: 10, Component: makeBoard(theme, okc, remember, useState) });
-    shell.pane({ tab: 'Tasks', name: 'Recent', order: 20, Component: Tasks });
+    shell.pane({ tab: 'Tasks', name: 'Add task', order: 20, Component: makeAdd(theme, okc, remember) });
+    shell.pane({ tab: 'Tasks', name: 'Recent', order: 30, Component: Tasks });
 
     await register(null, {});
 }
