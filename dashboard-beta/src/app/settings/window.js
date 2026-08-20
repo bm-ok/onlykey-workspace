@@ -17,16 +17,22 @@ var { useState, useEffect } = React;
 //not the one open" is the exact state this card exists to make visible, and
 //collapsing it to on or to off deletes the pane's reason to exist.
 //
-//WHY THE TWO BUTTONS HERE ARE EXPECTED TO BE REFUSED, and that is not a bug in
-//this file. `settingSet testsEnabled` and `testsAnswer` are guarded against
-//`_overTheWire`, `_driven` and `_fromTest` — a model may ASK for the drills and
-//may not decide that somebody's repository is a fine place to run them. This
-//window is a second process talking to the running dashboard down its socket,
-//so the guard counts it as the pipe and says so. The buttons stay, because they
-//are what the pane is for and because the refusal is the honest answer to press
-//them from here today; the sentence it returns is shown where the press was
-//made rather than swallowed. When this window IS the window, the same press
-//goes through unchanged.
+//THE TWO BUTTONS HERE USED TO BE REFUSED, AND NOW GO THROUGH. That is not a
+//guard having been dropped — it is the reason the guard exists arriving.
+//
+//`settingSet testsEnabled` and `testsAnswer` refuse the pipe: a model may ASK
+//for the drills and may not decide that somebody's repository is a fine place to
+//run them. While these relayed, the press left this window, crossed a socket
+//into the app being ported from, and was correctly counted as the pipe — so the
+//pane's own buttons answered with a refusal, and the sentence was shown where
+//the press was made rather than swallowed.
+//
+//./server.js owns both actions now. `_overTheWire` is stamped by ../core/ipc and
+//by nothing else, so a press made HERE is a person at the window and is not
+//marked — which is what the guard always meant. The pipe is still refused, and
+//the confirm dialog in ./general.js is `protect`ed so ../core/drive will not
+//press it either. Both halves are real; see ./server.js for why one mark now
+//does the work three used to.
 
 plugin.consumes = ['shell', 'theme', 'okc'];
 plugin.provides = [];

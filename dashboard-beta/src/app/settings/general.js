@@ -146,16 +146,21 @@ module.exports = function general(theme, okc, shell) {
 
     function Settings() {
         var { state, error, reads } = okc.use('settings', {}, 5000);
-        //THE STANDING REQUEST COMES FROM `status` AS WELL, already filtered to
-        //the open folder on the other side. Two reads rather than one because
-        //they answer two questions: what this app is set to, and whether
-        //something is waiting on a person right now.
-        var live = okc.use('status', {}, 5000);
+        //THE STANDING REQUEST COMES BACK WITH THE SETTINGS, and it used to be a
+        //second read of `status`. That was right while the two lived in
+        //different modules over in the app being ported from — they answered two
+        //questions, what this app is set to and what is waiting on a person.
+        //
+        //./server.js OWNS BOTH NOW: the request IS a setting, kept in the same
+        //document, so two reads would be two answers to one question with a
+        //five-second window in which they disagree. Worse, the one that would be
+        //wrong is `status` — it is still relayed, so it reports the OTHER app's
+        //settings file, which this app can neither read nor write.
 
         var [dlgOpen, setDlgOpen] = useState(false);
         var [said, setSaid] = useState(null);
 
-        var req = live.state ? live.state.askedToTest : null;
+        var req = state ? state.askedToTest : null;
         var reqAt = req ? req.at : null;
 
         //THE ENTRY POINT THE OLD WINDOW CALLED FROM ITS DRAW LOOP, kept: the
