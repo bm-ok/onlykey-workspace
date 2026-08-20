@@ -191,3 +191,93 @@ test('and the stylesheet it checks against is actually there', () => {
     assert.ok(fs.existsSync(SHEET), 'the stylesheet this checks against is missing: ' + SHEET);
     assert.ok(defined().size > 50, 'the stylesheet parsed to fewer classes than it should have — the check would be toothless');
 });
+
+//---- a modifier that belongs to a different base -------------------------
+//
+//THE FAILURE THIS WAS WRITTEN FOR, and it survived every other check here for
+//days: the topbar rendered `className="tab on"` while the stylesheet defines
+//`.tab.active`. So the tab bar had no current tab — eleven tabs, none of them
+//looking chosen — through a dozen screenshots.
+//
+//Neither existing check could see it. The name check passes because `on` IS a
+//class: `.card.on`, `.chip.on`. The self-hiding check passes because `.tab` is
+//not display:none on its own. It is a wrong name that happens to be somebody
+//else's right name, which is the quietest version of the quietest failure
+//available in CSS.
+//
+//WHAT THIS LOOKS FOR. If the stylesheet ever writes `.base.modifier`, then the
+//set of modifiers that mean anything on `.base` is known — so markup putting
+//some OTHER known class beside `.base` is almost certainly reaching for one of
+//them and missing. `.card pick` is fine because `.card.pick` exists; `.tab on`
+//is not, because `.tab.on` does not.
+//
+//DELIBERATELY NARROW. It says nothing about a base that has no modifiers at
+//all, and nothing about a word that is not a class anywhere — the first check
+//already covers that. It only speaks where the stylesheet has shown what the
+//modifiers on this base are.
+function modifiersFor(css) {
+    //A BASE IS SOMETHING THE STYLESHEET DRESSES ON ITS OWN. `.tab { ... }`
+    //exists, so `.tab.active` is `tab` wearing a modifier. Without that
+    //requirement every compound anywhere counts, and `.why.muted` — one rule
+    //inside a chat pane — makes `why` a modifier of `muted`, which then fails
+    //every `note muted` in the app. That was the first version of this and it
+    //reported eighteen faults, none of them real.
+    const standalone = new Set();
+    for (const m of css.matchAll(/(^|\})\s*\.(-?[A-Za-z_][\w-]*)\s*[{,]/g)) standalone.add(m[2]);
+
+    //FORWARD ONLY. In `.a.b` the base is `a` and the modifier is `b`, and
+    //reading it both ways is what made the pairs symmetric and useless.
+    const out = new Map();
+    for (const m of css.matchAll(/(^|[\s,>~+])\.(-?[A-Za-z_][\w-]*)\.(-?[A-Za-z_][\w-]*)/g)) {
+        if (!standalone.has(m[2])) continue;
+        if (!out.has(m[2])) out.set(m[2], new Set());
+        out.get(m[2]).add(m[3]);
+    }
+    return out;
+}
+
+test('a modifier used on a base is one the stylesheet gives that base', () => {
+    //Every sheet, because a pane may modify a shared base from its own file —
+    //`.card.snap` lives in machines.scss and `.card` in the theme.
+    const sheets = [SHEET];
+    for (const name of fs.readdirSync(APP)) {
+        const own = path.join(APP, name, name + '.scss');
+        if (fs.existsSync(own)) sheets.push(own);
+    }
+    const css = sheets.map(f => fs.readFileSync(f, 'utf8')).join('\n');
+    const mods = modifiersFor(css);
+    const known = classesIn(SHEET);
+    for (const s of sheets) for (const c of classesIn(s)) known.add(c);
+
+    assert.ok(mods.size > 5, 'no compound selectors were found at all, so this check is inert');
+
+    const wrong = [];
+    for (const file of walk(APP)) {
+        const src = fs.readFileSync(file, 'utf8');
+        //ONLY THE PLAIN `className="a b"` FORM, for the same reason the
+        //self-hiding check limits itself to it: in `className={...}` the pieces
+        //come from separate literals and nothing here can tell which of them
+        //end up on one element.
+        for (const m of src.matchAll(/className\s*=\s*"([^"]*)"/g)) {
+            const words = String(m[1]).split(/\s+/).filter(Boolean);
+            if (words.length < 2) continue;
+            for (const base of words) {
+                const allowed = mods.get(base);
+                if (!allowed) continue;
+                for (const other of words) {
+                    if (other === base) continue;
+                    if (allowed.has(other)) continue;
+                    //Not a class anywhere, so it is the first check's business.
+                    if (!known.has(other)) continue;
+                    //Something that is itself a base with its own modifiers is
+                    //a second thing on the element, not a modifier of the first.
+                    if (mods.has(other)) continue;
+                    wrong.push(`"${m[1]}" in ${path.relative(ROOT, file)} — "${other}" is not a modifier of "${base}"; it gives ${[...allowed].map(x => '"' + x + '"').join(', ')}`);
+                }
+            }
+        }
+    }
+
+    assert.deepStrictEqual(wrong, [],
+        'these pair a base class with a modifier that belongs to something else, so the modifier does nothing:\n  ' + wrong.join('\n  '));
+});

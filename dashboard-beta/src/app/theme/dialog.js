@@ -1,5 +1,6 @@
 var React = require('react');
 var { useState, useEffect, useRef } = React;
+var { useGuard } = require('./bits');
 
 //---------------------------------------------------------------------------
 //the dialog — where an irreversible thing is agreed to.
@@ -83,7 +84,9 @@ function drop(id, answer) {
 //— see ../drive/window.js. The mark and the withholding are one feature: an
 //outline saying "this is private" on something readable is a decoration.
 function Field({ f, value, onChange }) {
-    var mark = f.protect ? ' protected' : '';
+    //Guarded by the same list the buttons are, and by its label for the same
+    //reason: it is what the driver matches on and what a person reads.
+    var mark = useGuard(f.label, f.protect) ? ' protected' : '';
     //A CHECKBOX ANSWERS WITH `checked`. Its `value` is the string "on" whether
     //it is ticked or not, which is the quietest way available to build a form
     //where every box reads as yes.
@@ -161,6 +164,11 @@ function Dialog({ id, spec }) {
     var confirm = t.confirm || spec.confirm || 'Yes';
     var danger = t.danger != null ? t.danger : spec.danger;
     var onYes = t.onYes || spec.onYes;
+    //A DIALOG'S CONFIRM IS THE PRESS, so it is the one that most needs to be
+    //guardable. Same rule as a Button: `protect` is the app proposing, the
+    //guards list decides, and the person's own press is untouched either way —
+    //what a guard stops is something else pressing it for them.
+    var guardedYes = useGuard(confirm, t.protect != null ? t.protect : spec.protect);
 
     var [values, setValues] = useState(function () { return startingValues(fields); });
     var [err, setErr] = useState(null);
@@ -251,7 +259,7 @@ function Dialog({ id, spec }) {
                             {spec.extra.label}
                         </button>
                     ) : null}
-                    <button className={'btn ' + (danger ? 'danger' : 'ok')} disabled={busy} onClick={yes}>
+                    <button className={'btn ' + (danger ? 'danger' : 'ok') + (guardedYes ? ' protected' : '')} disabled={busy} onClick={yes}>
                         {busy ? 'working…' : confirm}
                     </button>
                 </div>

@@ -111,9 +111,30 @@ async function plugin(imports, register) {
         //table of named actions, and the window asks for them by name — the same
         //way its own window, its CLI and its drills all do. A per-action handler
         //here would be a second list to keep in step with that one.
+        //THE WINDOW REACHES THE SAME SURFACE THE COMMAND LINE DOES, and until
+        //now it did not: this handler went straight down the pipe, so the window
+        //could ask the app being ported FROM anything at all and could not ask
+        //this app for its own actions. `show`, `guards`, `status` — none of them
+        //were reachable from the page that is meant to be the app.
+        //
+        //It went unnoticed because every tab so far wants the dashboard's data
+        //and nothing else. The first pane that needed a local action found it
+        //immediately, with "No action called guards" on a screen whose own
+        //command line could read them fine.
+        //
+        //`actions.call` tries this app's table and falls through to the pipe on
+        //its own — the fall-through registered below — so this is the whole fix,
+        //and there is still no list anywhere of which half owns what.
+        //
+        //AND IT IS NOT OVER THE WIRE, which matters. A call from the window is a
+        //person at the window; ipc/main.js stamps `_overTheWire` on what comes
+        //down the pipe, and that stamp is what lets a guard be read from
+        //anywhere and set only here.
+        var reach = actions ? function (n, a) { return actions.call(n, a); } : call;
+
         client.on('okc:call', function (msg, reply) {
             if (typeof reply != 'function') return;
-            call(msg && msg.action, msg && msg.args).then(
+            reach(msg && msg.action, msg && msg.args).then(
                 function (result) { reply({ ok: true, result: result }); },
                 function (e) { reply({ ok: false, error: e.message }); }
             );

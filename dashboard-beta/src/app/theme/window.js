@@ -64,8 +64,22 @@ async function plugin(imports, register, config) {
                     {(tabs || []).map(function (t) {
                         var name = typeof t == 'string' ? t : t.name;
                         return (
+                            //`active`, NOT `on`, AND THE DIFFERENCE WAS INVISIBLE. The
+                            //stylesheet defines `.tab.active`; this said `on`, so the
+                            //tab bar had no current tab at all — eleven tabs, none of
+                            //them looking chosen, through a dozen screenshots.
+                            //
+                            //The name check could not catch it and it is worth saying
+                            //why: `on` IS a real class — `.card.on`, `.chip.on` — so
+                            //the name exists, which is all that check asks. A wrong
+                            //name that happens to be somebody else's right name is the
+                            //quietest version of the quietest failure available here.
+                            //
+                            //There is a check for it now. test/classes.test.js knows
+                            //which modifiers the stylesheet gives each base, and says
+                            //`"on" is not a modifier of "tab"; it gives "active"`.
                             <button key={name}
-                                className={'tab' + (name == on ? ' on' : '')}
+                                className={'tab' + (name == on ? ' active' : '')}
                                 onClick={function () { if (onPick) onPick(name); }}>
                                 {name}
                                 {t.badge ? <span className="tab-badge">{t.badge}</span> : null}

@@ -34,7 +34,18 @@ plugin.consumes = ['shell', 'theme', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Button } = theme;
+
+    //FORGETTING A SESSION IS PROPOSED AS A PERSON'S PRESS.
+    //
+    //A session is the record of what a machine was actually asked and what it
+    //actually said — the only account of a run that survives the machine being
+    //put back to its snapshot. Forgetting one is not deleting a row; it is
+    //deleting the answer to "what happened", and the question always gets asked
+    //later than the deletion.
+    //
+    //The second press, the one behind "Yes, forget it", is guarded rather than
+    //the first: arming it shows what is about to go, which is reading.
 
     //A 1 KB FLOOR, NOT A ROUNDING. Two of the archives on this host are 185 and
     //186 bytes; without the floor they read "0 KB", which looks like an empty
@@ -304,8 +315,8 @@ async function plugin(imports, register) {
                     : null}
                 {armed
                     ? (<>
-                        <button className="btn small danger" onClick={forget}>Yes, forget it</button>
-                        <button className="btn small" onClick={function () { setArmed(false); }}>Keep it</button>
+                        <Button kind="small danger" protect onClick={forget}>Yes, forget it</Button>
+                        <Button kind="small" onClick={function () { setArmed(false); }}>Keep it</Button>
                     </>)
                     : <button className="btn small danger" onClick={function () { setSaid(null); setArmed(true); }}>Forget it</button>}
             </div>

@@ -1,4 +1,39 @@
 var React = require('react');
+var { useState, useEffect } = React;
+
+//---- who decides what is guarded -------------------------------------------
+//
+//THE THEME MUST NOT CONSUME `guards`, and this is why the answer arrives
+//backwards. Every pane consumes the theme, and the guards pane is a pane — so a
+//theme that asked for `guards` would be waiting on something waiting on it.
+//
+//Instead the theme keeps a hook with a safe default: what the code proposed
+//stands, and nothing is unlocked. The guards plugin fills it in when it comes
+//up. If it never comes up, every proposed guard is still a guard — which is the
+//direction to fail in, since the cost is a trip to the window and the other
+//direction is a press nobody agreed to.
+var guardHook = {
+    check: function (label, proposed) { return !!proposed; },
+    watchers: new Set()
+};
+function setGuardCheck(fn) {
+    guardHook.check = fn || function (label, proposed) { return !!proposed; };
+    guardsChanged();
+}
+function guardsChanged() {
+    guardHook.watchers.forEach(function (w) { w(); });
+}
+//Subscribed per control, so turning a guard on repaints the button that moment
+//rather than at the next time something else happens to render.
+function useGuard(label, proposed) {
+    var [, bump] = useState(0);
+    useEffect(function () {
+        var f = function () { bump(function (n) { return n + 1; }); };
+        guardHook.watchers.add(f);
+        return function () { guardHook.watchers.delete(f); };
+    }, []);
+    return guardHook.check(label, proposed);
+}
 
 //---------------------------------------------------------------------------
 //the small pieces every pane is built from.
@@ -69,8 +104,14 @@ function Chip({ children, count, on, kind, onClick, title }) {
 //SPELT `protect` RATHER THAN `protected` because `protected` is reserved in
 //strict mode and cannot be destructured out of props. The class is `protected`,
 //which is the word that shows up in the markup and in what the driver reports.
-function Button({ children, kind, protect, ...rest }) {
-    var cls = 'btn' + (kind ? ' ' + kind : '') + (protect ? ' protected' : '');
+function Button({ children, kind, protect, guard, ...rest }) {
+    //THE WORDS ON THE BUTTON ARE ITS NAME. That is what the driver matches on,
+    //what the guards pane lists, and what a person reads — three things that
+    //have to agree, and only agree by being the same string. `guard` is the
+    //override for a button whose children are not plain text.
+    var label = guard || (typeof children == 'string' ? children : null);
+    var on = useGuard(label, protect);
+    var cls = 'btn' + (kind ? ' ' + kind : '') + (on ? ' protected' : '');
     return <button className={cls} {...rest}>{children}</button>;
 }
 
@@ -194,6 +235,7 @@ function Kv({ children }) { return <table className="kv"><tbody>{children}</tbod
 function KvRow({ label, children }) { return <tr><th>{label}</th><td>{children}</td></tr>; }
 
 module.exports = {
+    setGuardCheck, guardsChanged, useGuard,
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip,
     Button, Plus, Cog, Finder, Form, HeadRow, Controls,

@@ -52,7 +52,19 @@ plugin.consumes = ['shell', 'theme', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Button } = theme;
+
+    //RUNNING THE DRILLS IS A PERSON'S PRESS, and every button here starts one.
+    //
+    //A drill is an ATTEMPT TO DO THE WRONG THING — it writes a task on a branch
+    //cut, takes the worker credential off a machine, proves a signed-out machine
+    //is refused work, and puts it back. It drives real machines with real
+    //credentials, and if a guard has already stopped working then the thing that
+    //guard was stopping happens for real, in this workspace.
+    //
+    //So these are proposed as guarded: visible from the command line, refused
+    //from it. The person who wants to spend that time is the person who presses
+    //it. Turn any of them off in Settings -> Guards.
 
     //WHERE A PERSON WAS LOOKING, kept the way the old window kept it and under
     //the same keys, so the beta opens on the suite the desktop window closed on.
@@ -206,10 +218,10 @@ async function plugin(imports, register) {
                     {s.requires && s.requires.length
                         ? <span className="muted">{'stands on ' + s.requires.join(' + ')}</span>
                         : null}
-                    <button className="btn small"
+                    <Button kind="small" protect
                         disabled={!may.can}
                         title={may.why || ('Run every test in "' + s.name + '"')}
-                        onClick={function (e) { e.stopPropagation(); onRun({ suite: s.name }); }}>Run it</button>
+                        onClick={function (e) { e.stopPropagation(); onRun({ suite: s.name }); }}>Run it</Button>
                 </div>
                 {d
                     ? <div className="card-sub bad">
@@ -380,7 +392,7 @@ async function plugin(imports, register) {
                         result cannot outlive the code it is a statement about,
                         and this is how that is known. */}
                     <span className="muted grow"><Mono>{c.fingerprint}</Mono></span>
-                    <button className="btn small"
+                    <Button kind="small" protect
                         disabled={!may.can}
                         //A STEP LIFTED OUT OF ITS SERIES IS NOT THE SERIES. It
                         //runs with nothing the earlier steps arranged, which is
@@ -389,7 +401,7 @@ async function plugin(imports, register) {
                         title={may.why || 'Runs this step on its own, without the steps before it'}
                         onClick={function () { onRun({ suite: suiteName, test: testName, check: c.name }); }}>
                         Run this check
-                    </button>
+                    </Button>
                 </div>
             </div>
         );
@@ -458,14 +470,14 @@ async function plugin(imports, register) {
                 : null}
 
             <div className="row" style={{ marginTop: '10px' }}>
-                <button className="btn ok"
+                <Button kind="ok" protect
                     disabled={!may.can}
                     title={may.why || 'Runs every check in this test, in order'}
-                    onClick={function () { onRun({ suite: suite.name, test: test.name }); }}>Run this test</button>
-                <button className="btn"
+                    onClick={function () { onRun({ suite: suite.name, test: test.name }); }}>Run this test</Button>
+                <Button protect
                     disabled={!may.can}
                     title={may.why || ('Runs every test in "' + suite.name + '"')}
-                    onClick={function () { onRun({ suite: suite.name }); }}>Run the suite</button>
+                    onClick={function () { onRun({ suite: suite.name }); }}>Run the suite</Button>
             </div>
             <div className="badges">
                 <Counts states={states} />
@@ -598,10 +610,10 @@ async function plugin(imports, register) {
                     <div className="card-title grow">
                         {suites.length ? count(suites.length, 'suite') + ', ' + count(everyCheck.length, 'check') : 'no suites'}
                     </div>
-                    <button className="btn"
+                    <Button protect
                         disabled={!may.can}
                         title={may.why || 'Run every check in every suite'}
-                        onClick={function () { run({}); }}>Run everything</button>
+                        onClick={function () { run({}); }}>Run everything</Button>
                     {/* shown only while there is something to stop. A permanent
                         Stop on a quiet tab is a button that does nothing, which
                         teaches people that buttons here do nothing. */}

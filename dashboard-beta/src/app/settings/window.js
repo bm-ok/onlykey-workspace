@@ -153,6 +153,12 @@ async function plugin(imports, register) {
                 cost: 'If a guard has already stopped working, the thing it was guarding against happens here, in this folder. That is what a drill is: an attempt to do the wrong thing.',
                 confirm: 'Turn them on here',
                 danger: true,
+                //THE MOST IMPORTANT GUARD IN THE APP. This switch is what opens
+                //driving at all — a model able to press it could open its own
+                //gate. The circle happens to close on its own today, since
+                //nothing can be pressed from outside while the switch is off,
+                //but "it works out" is not a rule and this is.
+                protect: true,
                 onYes: function () { setTests(true); }
             };
         }
@@ -169,6 +175,10 @@ async function plugin(imports, register) {
                 cost: 'If a guard has already stopped working, the thing it was meant to stop happens here, in this folder. That is what a drill is: an attempt to do the wrong thing.',
                 confirm: 'Allow, for this workspace',
                 danger: true,
+                //ASKED BY SOMETHING ELSE, ANSWERED BY A PERSON. That is the
+                //whole shape of this request, and it stops being that the moment
+                //the thing that asked can also answer.
+                protect: true,
                 extra: { label: 'No', onClick: function () { answer(false); } },
                 onYes: function () { answer(true); }
             };

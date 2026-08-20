@@ -57,7 +57,7 @@ async function plugin(imports, register) {
     function region() {
         var dlg = document.querySelector('.dlg-overlay .dlg');
         if (dlg) return { where: 'the open dialog', node: dlg, dialog: true };
-        var tab = document.querySelector('.tab.on');
+        var tab = document.querySelector('.tab.active');
         var pane = document.querySelector('.subtab.active');
         return {
             where: (tab ? words(tab) : '?') + (pane ? '/' + words(pane) : ''),
@@ -122,6 +122,21 @@ async function plugin(imports, register) {
             .map(function (n) {
                 return {
                     node: n, label: btnWords(n), disabled: !!n.disabled, why: n.title || '',
+                    //NAVIGATION IS NOT AN ACT. A tab, a sub-tab, a tab inside a
+                    //dialog — pressing one changes what is being looked at and
+                    //nothing else, which is why `show` is allowed to do it with
+                    //no gate at all. Marked so the guards pane can leave them
+                    //out: eleven tabs listed as things somebody might want to
+                    //guard is eleven rows of noise in front of the two that
+                    //matter.
+                    nav: n.classList.contains('tab') || n.classList.contains('subtab')
+                        || n.classList.contains('dlg-tab')
+                        //A CHIP IS A FILTER, which is the same kind of thing as
+                        //a tab: it changes what is being LOOKED AT and nothing
+                        //else. The guards pane listing its own "guarded 0" and
+                        //"open 3" chips as things somebody might want to guard
+                        //was how this became obvious.
+                        || n.classList.contains('chip'),
                     //PURPLE MEANS A PERSON PRESSES IT. Carried into the answer
                     //so a list of buttons says which are mine to press and which
                     //are not, rather than that only being found out by trying.
