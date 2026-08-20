@@ -30,10 +30,10 @@ var { useState, useEffect, useCallback } = React;
 //refused, by name, with the reason. See ../guards/ and ../drive/.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['shell', 'theme', 'okc'];
+plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
-    var { shell, theme, okc } = imports;
+    var { shell, theme, okc, remember } = imports;
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Link,
@@ -133,8 +133,12 @@ async function plugin(imports, register) {
         var [said, setSaid] = useState(null);
         var [busy, setBusy] = useState(false);
         var [find, setFind] = useState('');
-        var [only, setOnly] = useState(null);
-        var [picked, setPicked] = useState(null);
+        var [only, setOnly] = remember.use('cuts', 'only', null);
+        //READING A CUT IS NOT DONE IN ONE SITTING. It is a pull request per
+        //repository and the point of the pane is deciding whether to send or
+        //merge it, so coming back to a blank panel is starting the read again
+        //from the top.
+        var [picked, setPicked] = remember.use('cuts', 'picked', null);
 
         //DRAFTS ARE LOCAL AND ANSWER INSTANTLY; cuts are a network call. Asked
         //separately so the one row on the screen that wants a person is not

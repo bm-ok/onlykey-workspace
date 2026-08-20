@@ -22,10 +22,10 @@ var { useState, useEffect } = React;
 //happened to be resolved first, and the order would be the plugin resolution
 //order rather than anything a person chose.
 
-plugin.consumes = ['react', 'theme', 'appPackage', 'okc', 'app'];
+plugin.consumes = ['react', 'theme', 'appPackage', 'okc', 'app', 'remember'];
 plugin.provides = ['shell'];
 async function plugin(imports, register) {
-    var { react, theme, appPackage, okc, app } = imports;
+    var { react, theme, appPackage, okc, app, remember } = imports;
     var { Topbar, Dialogs } = theme;
 
     var tabs = [];
@@ -50,8 +50,25 @@ async function plugin(imports, register) {
     }
 
     function App() {
-        var [on, setOn] = useState(tabs.length ? tabs[0].name : null);
-        var [pane, setPane] = useState(null);
+        //WHERE YOU WERE, KEPT. This window is restarted on every change to the
+        //server half, and it used to come back on the first tab every time —
+        //so the cost of a restart was finding your place, paid by whoever is
+        //working on this tool. See ../remember, which also carries the rule
+        //about what may and may not be kept there.
+        var [on, setOn] = remember.use('shell', 'tab', tabs.length ? tabs[0].name : null);
+
+        //ONE REMEMBERED PANE PER TAB, not one for the app. Coming back to
+        //Repositories should land where you left Repositories, and that is a
+        //different answer from where you left Settings.
+        var [panes, setPanes] = remember.use('shell', 'panes', {});
+        var pane = panes[on] || null;
+        var setPane = function (name) {
+            setPanes(function (was) {
+                var next = Object.assign({}, was);
+                if (name == null) delete next[on]; else next[on] = name;
+                return next;
+            });
+        };
         var [up, setUp] = useState(okc.connected);
 
         useEffect(function () { return okc.onUp(setUp); }, []);
@@ -73,9 +90,14 @@ async function plugin(imports, register) {
                 }
 
                 if (to) setOn(to);
-                //A TAB WITHOUT A NAMED PANE GOES BACK TO ITS FIRST, so asking for
-                //a tab twice does not depend on what was showing last time.
-                setPane(pane || null);
+                //A TAB WITHOUT A NAMED PANE LEAVES THE PANE ALONE, which changed
+                //when panes started being remembered. It used to reset to the
+                //first one so that asking for a tab twice gave the same answer —
+                //but that answer is now somebody's bookmark, and a read-only
+                //tool that moves where a person was standing is not read-only in
+                //the way that matters. Name the pane when the answer has to be
+                //the same every time; `npm run walk` does.
+                if (pane) setPane(pane);
                 if (reply) reply({ ok: true, tab: inTab, pane: pane || null });
             }
 
@@ -101,7 +123,7 @@ async function plugin(imports, register) {
                 live={up}
                 tabs={tabs.map(function (t) { return { name: t.name, badge: t.badge }; })}
                 on={on}
-                onPick={function (name) { setOn(name); setPane(null); }}
+                onPick={setOn}
             />
 
             {mine.length > 1 ? (

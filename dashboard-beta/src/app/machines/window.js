@@ -26,12 +26,12 @@ var useAsk = require('../okc/ask');
 //it claiming a branch, and is anything allowed to give it work.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['shell', 'theme', 'okc'];
+plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
     //THIS PANE'S OWN LOOK, which the theme does not promise. See ./machines.scss.
     require('./machines.scss');
-    var { shell, theme, okc } = imports;
+    var { shell, theme, okc, remember } = imports;
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Kv, KvRow, ask
@@ -203,8 +203,12 @@ async function plugin(imports, register) {
     function Machines() {
         var { state: got, error, reads, again } = useAsk(okc, 'vmList', {}, 5000);
         var [find, setFind] = useState('');
-        var [only, setOnly] = useState(null);
-        var [picked, setPicked] = useState(null);
+        //THE FILTER AND THE SELECTION SURVIVE A RESTART; the search box does
+        //not. A half-typed word is not a place, and coming back to a box
+        //with something in it and a list that does not match what is on the
+        //machines is worse than coming back to an empty one.
+        var [only, setOnly] = remember.use('machines', 'only', null);
+        var [picked, setPicked] = remember.use('machines', 'picked', null);
 
         if (!got && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!got) return <Pane><Skeleton rows={4} /></Pane>;

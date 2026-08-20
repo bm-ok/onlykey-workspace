@@ -48,10 +48,10 @@ var useAsk = require('../okc/ask');
 //  THE CHECK", kept up to date as reality moves ahead of the draft — and it was
 //  reachable only by unfolding something labelled "the code it runs".
 
-plugin.consumes = ['shell', 'theme', 'okc'];
+plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
-    var { shell, theme, okc } = imports;
+    var { shell, theme, okc, remember } = imports;
     var { Pane, Panel, Badge, Empty, Note, Mono, Button } = theme;
 
     //RUNNING THE DRILLS IS A PERSON'S PRESS, and every button here starts one.
@@ -66,21 +66,12 @@ async function plugin(imports, register) {
     //from it. The person who wants to spend that time is the person who presses
     //it. Turn any of them off in Settings -> Guards.
 
-    //WHERE A PERSON WAS LOOKING, kept the way the old window kept it and under
-    //the same keys, so the beta opens on the suite the desktop window closed on.
-    //Guarded on both sides: a tab that will not render because it could not
-    //remember a selection is a poor trade for the convenience.
-    var been = {
-        get: function (key, fallback) {
-            try {
-                var raw = window.localStorage.getItem('okc.' + key);
-                return raw === null ? fallback : JSON.parse(raw);
-            } catch (e) { return fallback; }
-        },
-        set: function (key, value) {
-            try { window.localStorage.setItem('okc.' + key, JSON.stringify(value)); } catch (e) { /* private mode, or a full disk */ }
-        }
-    };
+    //WHERE A PERSON WAS LOOKING lives in ../remember now, and this pane is why
+    //that plugin has a test guarding it. This file had grown its own copy of the
+    //old window's `been` -- same idea, same `okc.` prefix, written in good faith
+    //for something small -- which is a second place for the rule about what may
+    //be kept in browser storage to be broken. The rule is only worth having if
+    //there is one.
 
     //Local rather than imported: over in ui/ this lived in machines.js and every
     //other pane reached across for it, which is what made the load order of a
@@ -512,8 +503,8 @@ async function plugin(imports, register) {
         //tab is not consent to do that. The action reads the register.
         var { state, error, reads } = useAsk(okc, 'suites', {}, 5000);
 
-        var [pickedSuite, setPickedSuite] = useState(function () { return been.get('test-suite', null); });
-        var [pickedTest, setPickedTest] = useState(function () { return been.get('test-name', null); });
+        var [pickedSuite, setPickedSuite] = remember.use('tests', 'suite', null);
+        var [pickedTest, setPickedTest] = remember.use('tests', 'test', null);
         var [open, setOpen] = useState({});
         var [busy, setBusy] = useState(false);
         var [said, setSaid] = useState(null);
@@ -538,10 +529,10 @@ async function plugin(imports, register) {
         var suiteName = suite ? suite.name : null;
         var testName = test ? test.name : null;
         useEffect(function () {
-            if (suiteName && suiteName !== pickedSuite) { setPickedSuite(suiteName); been.set('test-suite', suiteName); }
+            if (suiteName && suiteName !== pickedSuite) setPickedSuite(suiteName);
         }, [suiteName]);
         useEffect(function () {
-            if (testName && testName !== pickedTest) { setPickedTest(testName); been.set('test-name', testName); }
+            if (testName && testName !== pickedTest) setPickedTest(testName);
         }, [testName]);
 
         var everyCheck = suites.reduce(function (all, s) { return all.concat(checksOf(s)); }, []);
@@ -642,10 +633,10 @@ async function plugin(imports, register) {
                                         return <Suite key={s.name} s={s}
                                             on={!!suite && s.name === suite.name}
                                             onPick={function () {
-                                                setPickedSuite(s.name); been.set('test-suite', s.name);
+                                                setPickedSuite(s.name);
                                                 //cleared rather than kept: a test name from
                                                 //another folder is a selection pointing at nothing
-                                                setPickedTest(null); been.set('test-name', null);
+                                                setPickedTest(null);
                                             }}
                                             may={may} onRun={run} />;
                                     })
@@ -662,7 +653,7 @@ async function plugin(imports, register) {
                                     ? suite.tests.map(function (t) {
                                         return <TestCard key={t.name} t={t}
                                             on={!!test && t.name === test.name}
-                                            onPick={function () { setPickedTest(t.name); been.set('test-name', t.name); }} />;
+                                            onPick={function () { setPickedTest(t.name); }} />;
                                     })
                                     : <Empty>Pick a suite on the left.</Empty>}
                             </div>

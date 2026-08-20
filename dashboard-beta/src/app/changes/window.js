@@ -34,11 +34,11 @@ var useAsk = require('../okc/ask');
 //changes, and there is no timer on this pane at all.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['shell', 'theme', 'okc'];
+plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
     require('./changes.scss');
-    var { shell, theme, okc } = imports;
+    var { shell, theme, okc, remember } = imports;
     var {
         Pane, Panel, Cols, Col, Card, CardTitle, CardSub,
         Badge, Button, Skeleton, Empty, Note, Mono, Notice, ask
@@ -120,14 +120,18 @@ async function plugin(imports, register) {
 
     function Changes() {
         var lines = useAsk(okc, 'lines', {}, 0);
-        var [from, setFrom] = useState(null);
-        var [into, setInto] = useState(null);
-        var [look, setLook] = useState('files');
+        //WHICH TWO LINES, AND WHICH LOOK. Reading a change is not something
+        //somebody finishes in one sitting, and coming back to a blank pane is
+        //how a review gets started again from the top.
+        var [from, setFrom] = remember.use('changes', 'from', null);
+        var [into, setInto] = remember.use('changes', 'into', null);
+        var [look, setLook] = remember.use('changes', 'look', 'files');
         var [cmp, setCmp] = useState(null);
         var [busy, setBusy] = useState(false);
         var [err, setErr] = useState(null);
         var [said, setSaid] = useState(null);
-        var [pick, setPick] = useState(null);
+        //The file, too — it is the thing being read.
+        var [pick, setPick] = remember.use('changes', 'file', null);
 
         //KEPT UNTIL THE QUESTION CHANGES. See the header: this is the expensive
         //pane. The key is a JSON pair rather than the two names joined — a line

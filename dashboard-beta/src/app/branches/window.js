@@ -23,10 +23,10 @@ var useAsk = require('../okc/ask');
 //answering only the first is how work gets thrown away as empty.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['shell', 'theme', 'okc'];
+plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
-    var { shell, theme, okc } = imports;
+    var { shell, theme, okc, remember } = imports;
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Plus, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Spec,
@@ -180,8 +180,8 @@ async function plugin(imports, register) {
     function Branches() {
         var { state, error, reads, again } = useAsk(okc, 'branchBoard', {}, 10000);
         var [find, setFind] = useState('');
-        var [only, setOnly] = useState(null);
-        var [picked, setPicked] = useState(null);
+        var [only, setOnly] = remember.use('branches', 'only', null);
+        var [picked, setPicked] = remember.use('branches', 'picked', null);
         var [said, setSaid] = useState(null);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
