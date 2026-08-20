@@ -66,6 +66,69 @@ draft('and it finds an issue it was never told about',
   'THE CHECK: with an issue open on a watched repository and no wake pending for it, wake the supervisor for an unrelated reason and it still finds the issue. ' +
   'WHY IT IS A DRILL AND NOT A CHECK: it costs a supervisor turn of somebody\'s money and needs a real issue on a real repository, so it belongs with the runs that spend rather than with the arithmetic.')
 
+// ---- THE HALVES OF THE LOOP THAT NEED NO MACHINE ---------------------------
+//
+// The three drafts below are all "BUILT, and nobody has watched a supervisor
+// walk it". That is true of the WALK and was hiding something: each of them
+// rests on a rule that can be asked here, for nothing, and those rules were
+// going unchecked while the drill that would exercise them waited for a
+// credential and a machine.
+//
+// What is left in the drafts afterwards is only the walking.
+
+it('a change cannot be sent out by naming a branch instead of a line', async ({ okc, assert, log }) => {
+  // ONE CUT, NEVER ONE REPOSITORY, and this is the argument type that enforces
+  // it. `prCutMake` takes two LINE names; a line is one branch per repository,
+  // so sending one out is necessarily one act across all of them. A raw branch
+  // would be a per-repository pull request, which is the half-landed change
+  // this whole idea exists to prevent -- and there is no per-repository action
+  // anywhere to fall back on.
+  const lines = new Set(((await okc('lines')).groups || []).map(g => g.name))
+  const links = new Set()
+  for (const g of (await okc('lines')).groups || []) for (const p of g.on || []) links.add(p.branch)
+
+  // A REAL BRANCH THAT IS NOT A LINE, found rather than named -- this file may
+  // not know what this host's projects are called.
+  const loose = ((await okc('branchBoard')).branches || [])
+    .map(b => b.name)
+    .find(n => !lines.has(n) && !links.has(n))
+  assert.needs(loose, 'this host has no branch that is not already a line, so there is nothing to be refused')
+
+  await assert.refuses(
+    () => okc('prCutMake', { source: loose, target: 'default' }),
+    'no line called',
+    `"${loose}" is a branch and not a line, and it was accepted as something to send out`)
+  log(`"${loose}" is a real branch, is not a line, and cannot be cut`)
+})
+
+it('and a judgement is stale the moment anything it read has moved', async ({ assert, log }) => {
+  // THE SECOND JUDGEMENT IS THE ONE THAT MATTERS, and staleness is what makes
+  // it the second rather than a re-run of the first. A judgement made before
+  // the last push is a green light from a different change.
+  //
+  // Asked of the arithmetic with tips handed in, so it needs no repository to
+  // be in any particular state -- the same separation the revise rule and the
+  // merge rule got.
+  const judgements = require('../../../repos/judgements')
+  const read = { 'repo-a': 'aaa1111', 'repo-b': 'bbb2222' }
+  const made = { tips: read }
+
+  assert.equal(judgements.staleAgainst(made, { ...read }), false,
+    'a judgement was called stale against the very tips it read')
+  assert.equal(judgements.staleAgainst(made, { 'repo-a': 'ccc3333', 'repo-b': 'bbb2222' }), true,
+    'a repository moved under a judgement and it still read as current')
+
+  // AND A REPOSITORY APPEARING OR DISAPPEARING COUNTS, which is the case that
+  // is easy to leave out. A judgement that read two repositories does not
+  // describe a line that now spans three: the third is a change nobody read.
+  assert.equal(judgements.staleAgainst(made, { ...read, 'repo-c': 'ddd4444' }), true,
+    'a repository joined the line and the old judgement still read as current')
+  assert.equal(judgements.staleAgainst(made, { 'repo-a': 'aaa1111' }), true,
+    'a repository left the line and the old judgement still read as current')
+
+  log('same tips: current — moved, joined or left: stale')
+})
+
 draft('and a judge decides whether the claim is real before any work is written',
   'THIS HALF IS BUILT AND WAS PROVEN. `taskCreate` over the wire refuses without `becauseOf` naming a FINISHED judgement, and in the real run the supervisor tried twice to get round it — once passing a prose sentence as the ref, once leaving it off — before reasoning its way to "the issue\'s claim has to be checked first". ' +
   'The refusal text is what taught it the path, which is the argument for refusals that say what to do next. ' +
@@ -74,7 +137,8 @@ draft('and a judge decides whether the claim is real before any work is written'
 draft('and the work is judged again before it goes out',
   'BUILT, AND THE SECOND JUDGEMENT IS THE ONE THAT MATTERS. J31 established the claim was real; J32 read what the task delivered. `prCutMake` refuses over the wire unless a judgement of that line has finished, is not stale against the tips it was made on, and did not reject. ' +
   'A judgement made before the last push does not count — which is exactly the case here, because J31 was made before the fix was pushed. ' +
-  'THE CHECK: after the task delivers, sending the change out is refused until a judgement made AFTER that push has accepted it. Then it goes.')
+  'THE RULE IS CHECKED ABOVE, without a machine: a judgement is stale the moment anything it read has moved, joined or left. What is left here is a supervisor meeting it. ' +
+  'AND ON 19 AUGUST ONE ALMOST DID. After the adjustment was pushed, J67 was stale and the supervisor said so itself — "a fresh judgement is genuinely needed because the head sha will no longer be the commit J67 read" — and asked for J69 before re-cutting. So the gate never had to fire. That is the loop working and is NOT this check: what is wanted is the refusal actually stopping something, which needs a supervisor that forgets, or a person cutting straight after a push.')
 
 draft('and the pull request carries the issue it came from',
   'THE ONE THAT BROKE, AND IT BROKE SILENTLY. The supervisor wrote "Closes #2 — <url>" into the draft with `prDraftSave`, then called `prCutMake`, which read only its `body` argument and ignored the draft entirely. The pull request went out as template blocks, titled after the LINE, with no closing keyword anywhere in it — so the issue stayed open through the merge and had to be closed by hand. ' +
@@ -87,4 +151,5 @@ draft('and the pull request carries the issue it came from',
 draft('and one cut, never one repository',
   'BUILT AND ENFORCED BY THE ARGUMENT TYPE. `prCutMake` takes two LINE names and `twoLines` refuses anything that is not a line, so a raw branch cannot be sent out — it has to be made a line first, and the line is what goes out as one act with one pull request per repository that carries something. ' +
   'There is no per-repository PR action anywhere, and none on the supervisor\'s list. ' +
-  'THE CHECK: with a line carrying commits in one repository of three, one pull request is opened and the cut records it as one landing; and `prCutMake` given a branch name rather than a line name is refused.')
+  'THE SECOND HALF IS CHECKED ABOVE, without a machine: a real branch that is not a line is refused, and the refusal names it and lists the lines there are. ' +
+  'THE FIRST HALF HAPPENED ON 19 AUGUST: a line spanning three repositories where only one carried anything went out as one cut with one pull request, and the landing records it as one. What is not proven is the case with TWO carrying — that is where cross-links are written, where the second pass exists, and where "one act" earns the name.')
