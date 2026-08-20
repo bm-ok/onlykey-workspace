@@ -3,10 +3,15 @@ const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const appPackage = require('./package.json');
 
-//two of the three boots are bundled. src/window.js gathers every
-//src/app/*/window.js, src/server.js every src/app/*/server.js — so a plugin
-//declares where it runs by which files it has, and neither bundle carries the
-//other's half. the third boot, src/main.js, is loaded off disk by nw.js.
+//two of the three boots are bundled. src/window.js gathers every plugin's
+//window.js, src/server.js every server.js — so a plugin declares where it runs
+//by which files it has, and neither bundle carries the other's half. the third
+//boot, src/main.js, is loaded off disk by nw.js.
+//
+//a plugin is a folder one level under src/app or two: src/app/queue, or
+//src/app/repositories/changes. the second level is the grouping, so the tree
+//says what the app's tab row says. see the note over the require.context call
+//in each boot file for why it stops at two.
 module.exports = (env, argv = {}) => {
 
     const isProduction = ((argv.mode || process.env.NODE_ENV) == 'production');

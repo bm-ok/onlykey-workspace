@@ -9,9 +9,10 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 //  server.js   the app's node half, bundled and reloaded on every save
 //  window.js   the window
 //
-//so this is every src/app/<plugin>/main.js there is, read off disk. the
-//packaged build cannot do that — there is no src/ in it — so src/main.prod.js
-//gets the same list from the bundle instead.
+//so this is every plugin's main.js there is, read off disk. the packaged build
+//cannot do that — there is no src/ in it — so src/main.prod.js gets the same
+//list from the bundle instead, and test/plugins.test.js holds the two to the
+//same answer.
 
 //webpack replaces this in the packaged bundle; here it just has to exist
 global.BUILD_PROD = false;
@@ -25,11 +26,39 @@ var Config = require('./config');
 
 var PLUGINS = path.join(__dirname, 'app');
 
-var plugins = fs.readdirSync(PLUGINS)
-    .filter(function (name) { return name[0] != '_' && name[0] != '.'; })
-    .map(function (name) { return path.join(PLUGINS, name, 'main.js'); })
-    .filter(function (file) { return fs.existsSync(file); })
-    .map(function (file) { return require(file); });
+//A PLUGIN IS A FOLDER WITH A main.js IN IT, one level down or two: src/app/http,
+//or src/app/core/http. The second level is the grouping, and it stops there --
+//../app/ui/editor/vendor/ace is 900KB of somebody else's code, and the only thing
+//standing between it and being started as a plugin is that nothing three levels
+//down is ever looked at.
+//
+//THIS HAS TO ACCEPT EXACTLY WHAT THE THREE require.context CALLS ACCEPT --
+//src/window.js, src/server.js, src/main.prod.js. A plugin they take and this one
+//misses runs in the packaged build and not in development, and neither says a
+//word: an unfound plugin is not an error, it is an absence. That is the
+//divergence the header above says these two files exist to prevent, and
+//test/plugins.test.js is what holds all four to one answer.
+var DEPTH = 2;
+
+function scanned(name) {
+    return name[0] != '_' && name[0] != '.' && name != 'vendor';
+}
+
+function found(dir, left, out) {
+    fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
+        if (!entry.isDirectory() || !scanned(entry.name)) return;
+        var here = path.join(dir, entry.name);
+        //BOTH, NOT EITHER. The regexes match a path shape and have no idea
+        //whether a folder is a group or a plugin, so a folder that was somehow
+        //both would be taken twice there and once here. Disagreeing with them is
+        //worse than either answer; test/plugins.test.js refuses the shape itself.
+        if (fs.existsSync(path.join(here, 'main.js'))) out.push(path.join(here, 'main.js'));
+        if (left > 1) found(here, left - 1, out);
+    });
+    return out;
+}
+
+var plugins = found(PLUGINS, DEPTH, []).map(function (file) { return require(file); });
 
 plugins.config = Config();
 

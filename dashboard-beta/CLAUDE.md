@@ -9,7 +9,7 @@ NW.js and in a browser tab.
 (`reload=true`) serves the window bundle and `webpack().watch()` rebuilds the
 server half. Both are already running.
 
-**A UI change needs nothing.** Edit `src/app/*/window.js`, any other file in the
+**A UI change needs nothing.** Edit `src/app/**/window.js`, any other file in the
 window bundle, or a `.scss`, and the page rebuilds and reloads itself in about
 five seconds. Do not build. Do not restart.
 
@@ -18,7 +18,7 @@ five seconds. Do not build. Do not restart.
 
 **`npm run restart` is only for what does not reload:**
 
-* `src/app/*/main.js` — the process that never reloads
+* `src/app/**/main.js` — the process that never reloads
 * `webpack.config.js`
 * a new npm dependency or anything vendored
 

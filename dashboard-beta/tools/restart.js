@@ -2,9 +2,8 @@
 
 // Close the app, wait for it to actually be gone, and start it again.
 //
-// The node half is loaded once at startup — main.js and everything in
-// src/app/<plugin>/main.js — so a change to any of those is invisible until the
-// app restarts. The window and the server half reload on save and need none of
+// The node half is loaded once at startup — main.js and every plugin's own
+// main.js — so a change to any of those is invisible until the app restarts. The window and the server half reload on save and need none of
 // this; this is for the third one, the process around the app.
 //
 // TWO SCRIPTS, RUN IN ORDER, RATHER THAN ONE THAT DOES BOTH. stop.js already
