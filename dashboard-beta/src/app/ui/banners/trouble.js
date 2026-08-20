@@ -15,20 +15,88 @@ var React = require('react');
 //A THIRD ELEMENT, OPTIONAL: WHERE TO GO ABOUT IT. Every line describes something
 //somebody has to do something about, and a line that does not say where leaves
 //them to read the sentence, agree with it, and then go hunting.
+//
+//BUILT AS ONE LIST RATHER THAN AS CONDITIONALS, which is carried over and is
+//load-bearing. The version before it wrote the machines in and then, if
+//VirtualBox was missing, REPLACED them — so the more serious problem hid the
+//other one instead of joining it.
+//
+//AND A LINE THAT CAN BE ACTED ON CARRIES THE ACT. A warning that describes a fix
+//and cannot perform it is one that gets read and postponed. Both of the acts here
+//move a credential, so both go through the gate and both are `protect`ed: this
+//banner is on every tab, and a press that moves a sign-in is a person's.
 //---------------------------------------------------------------------------
 
 module.exports = function trouble(theme, okc, shell) {
-    var { Banner, Linky } = theme;
+    var { Banner, Linky, Button, ask } = theme;
 
     return function Trouble() {
+        //FIVE QUESTIONS, ASKED FROM SOMETHING THAT IS ALWAYS MOUNTED. The old
+        //window asked all five on its draw loop three seconds apart, for this
+        //same banner; ten is slower than that, and none of these answers is the
+        //kind that changes in between.
         var q = okc.use('waiting', {}, 10000);
+        var st = okc.use('status', {}, 10000);
+        //`vmList` CANNOT BE ALLOWED TO TAKE THE REST DOWN, because a broken
+        //VirtualBox is not a broken window. Over there this was the one call
+        //without a catch and it did exactly that: every panel emptied, including
+        //the two that never touch a machine. Here each question is its own hook,
+        //so one failing leaves the others standing on its own.
+        var vm = okc.use('vmList', {}, 10000);
+        var qs = okc.use('queueState', {}, 10000);
+        var cr = okc.use('credentialsHeld', {}, 30000);
+
         var s = q.state;
-        if (!s) return null;
+        var status = st.state || {};
+        var machines = vm.state || {};
+        var vms = machines.vms || [];
 
         var lines = [];
 
-        //SOMETHING IS WAITING FOR A PERSON TO READ IT, and a badge alone was not
-        //enough over there.
+        //---- VirtualBox ----------------------------------------------------
+        //
+        //Said in the banner and not only in the machines panel, because it is a
+        //fact about every tab: a task cannot be given out, a branch cannot be
+        //worked on, and the reason has nothing to do with either of them.
+        if (st.state && !status.virtualbox) {
+            lines.push({
+                key: 'novbox',
+                bold: 'VirtualBox was not found. ',
+                rest: 'Nothing here can make or start a machine until it is installed.'
+            });
+        }
+
+        if (machines.unreachable) {
+            lines.push({
+                key: 'vboxsick',
+                bold: 'VirtualBox is installed but not answering. ',
+                rest: 'Machine actions will hang or fail until it recovers — everything read from this host is'
+                    + ' unaffected. It said: ' + machines.unreachable
+            });
+        }
+
+        //A MACHINE IN THE LIST THAT VIRTUALBOX DOES NOT HAVE.
+        vms.filter(function (v) { return !v.live; }).forEach(function (v) {
+            lines.push({
+                key: 'gone-' + v.name,
+                bold: v.name + ' is in this list but VirtualBox has no such machine. ',
+                rest: 'It was deleted elsewhere, or never finished being made. Delete it here to tidy up.',
+                go: { label: 'Runners', at: function () { shell.go('Runners', 'Virtual machines'); } }
+            });
+        });
+
+        //---- a repository left mid-change ----------------------------------
+        (status.repos || []).filter(function (r) { return !r.clean; }).forEach(function (r) {
+            lines.push({
+                key: 'dirty-' + r.repo,
+                bold: r.repo + ' is on "' + r.on + '" here with uncommitted changes. ',
+                rest: 'A machine working on "' + r.on + '" cannot push while that is true, and its own error'
+                    + ' will not say why. Commit or discard them, or put ' + r.repo + ' back on ' + r.home + '.',
+                go: { label: 'Changes', at: function () { shell.go('Repositories', 'Changes'); } }
+            });
+        });
+
+        //---- something is waiting on a person ------------------------------
         //
         //A badge is on a tab somebody is not looking at. That is fine for a
         //count and wrong for a STOP: a job written over the wire sits
@@ -39,7 +107,7 @@ module.exports = function trouble(theme, okc, shell) {
         //something that went wrong; this is the machinery working exactly as
         //designed — a model may write one of these and may not ratify it — and
         //reading it as an alarm would teach somebody to dismiss the banner.
-        var approvals = s.approvals || [];
+        var approvals = (s && s.approvals) || [];
         if (approvals.length) {
             var named = approvals.map(function (a) {
                 return a.kind + ' "' + (a.name || a.id) + '"';
@@ -66,27 +134,180 @@ module.exports = function trouble(theme, okc, shell) {
             });
         }
 
-        //NOT PORTED YET, AND SAID HERE RATHER THAN LEFT TO BE NOTICED.
+        //---- a supervisor that cannot think --------------------------------
         //
-        //The old window's list carries several more rules — VirtualBox missing
-        //or not answering, a machine in the list that VirtualBox does not have,
-        //a repository left on a branch with uncommitted changes, a machine idle
-        //and still holding a credential, a supervisor up and unable to think.
+        //A runner's natural state is off and holding nothing, and every other
+        //rule here says so. A supervisor is the opposite on both counts: it is
+        //meant to be up, and it is useless without a sign-in — so the state that
+        //is restful for a runner is a fault for a supervisor, and the window said
+        //nothing at all. What it DID say was worse: the terminal's own line
+        //called it "signed out by design", which is the runner's sentence read
+        //out over a machine it is not true of.
         //
-        //Every one of them reads the DASHBOARD's `status` and `vmList`.
+        //FROM THE FIELD THAT ANSWERS ABOUT SUPERVISORS. The first version of this
+        //asked `guests`, which omits them on purpose — so a host with a
+        //supervisor sign-in sitting free was told it had none, and sent off to
+        //make one it already had.
+        var sup = (cr.state && cr.state.supervisor) || null;
+        vms.filter(function (v) {
+            return v.running && (v.tags || []).indexOf('supervisor') >= 0 && !v.holdsCredential;
+        }).forEach(function (v) {
+            //SIGNING IN IS AUTOMATIC, so a supervisor that is up and holding
+            //nothing while a sign-in is available is not "somebody forgot to
+            //press the button" — it is that the automatic thing did not happen.
+            //Worth saying differently, and worth still having a button for: a
+            //banner describing a fault the app was supposed to prevent should not
+            //also be the one that can do nothing about it.
+            if (sup && sup.free) {
+                lines.push({
+                    key: 'sup-' + v.name,
+                    bold: v.name + ' is up and holding no sign-in, and it should have been given one. ',
+                    rest: '"' + sup.using + '" is here and free. A supervisor is signed in when it dials in and'
+                        + ' again before every wake, so this means one of those did not run.',
+                    act: {
+                        label: 'Sign it in',
+                        cost: 'It places a sign-in on ' + v.name + '. That identity is on that machine until it is taken back.',
+                        run: function () { return okc.call('supervisorSignIn', { name: v.name }); }
+                    }
+                });
+                return;
+            }
+
+            //EVERYTHING ELSE IS A PERSON'S DECISION, and the reason is written
+            //where the decision is made rather than here — copying those
+            //sentences into the window is how the two drift apart. No button:
+            //both remaining cases are somebody choosing an identity, and the
+            //whole point of that boundary is that nothing here does it for them.
+            lines.push({
+                key: 'sup-' + v.name,
+                bold: v.name + ' is up and cannot think: ' + ((sup && sup.why) || 'it is holding no sign-in') + '. ',
+                rest: sup && sup.out
+                    ? 'One identity cannot be in two places, so nothing here will take it back automatically —'
+                        + ' that is somebody deciding which machine is the supervisor.'
+                    : 'The worker credentials here are a different identity and are refused on a supervisor.',
+                go: { label: 'Claude supervisor', at: function () { shell.go('Runners', 'Claude supervisor'); } }
+            });
+        });
+
+        //---- a machine left on, doing nothing ------------------------------
         //
-        //THE THING THAT BLOCKED THEM IS GONE. This app defined a `status` of its
-        //own — what it is and whether its window is up — and a local name beats a
-        //relayed one, so `okc.call('status')` never reached the half that knows
-        //whether VirtualBox is there. That one is called `info` now and `status`
-        //means what it means everywhere else: the workspace, VirtualBox, whether
-        //the drills are on and whether one is running.
+        //Said because nothing else says it. A runner's natural state is off; one
+        //that is up and idle looks exactly like one that is working, and that is
+        //how a machine stayed on for hours holding a token while every panel
+        //reported it as healthy. It was noticed by eye.
         //
-        //So these are ordinary unwritten rules now rather than blocked ones, and
-        //they are written next. Kept as a note in the meantime because a banner
-        //that silently checks four things out of nine is worse than one that says
-        //which four.
+        //THE CREDENTIAL IS WHAT MAKES IT A BANNER rather than a note: an idle
+        //machine is the one case where a token is exposed for no reason at all —
+        //nothing is using it, and it will keep not being used until somebody
+        //looks.
+        var busy = {};
+        ((qs.state && qs.state.inFlight) || []).forEach(function (f) { busy[f.machine] = true; });
+
+        vms.filter(function (v) {
+            //A SHELL OPEN ON IT WOULD COUNT AS USING IT, and there is no way to
+            //have one here yet — the terminal's live half is not built, so there
+            //are no shells to ask about. When it lands, this filter needs the
+            //same exclusion the old window has, or the window will argue with
+            //itself: the sign-in line offers to hand a machine a credential so
+            //`claude` will run, and this would immediately scold you for the
+            //credential you were just told to place, on a machine you are
+            //visibly sitting in.
+            return v.running
+                && !busy[v.name]              //the queue is using it
+                && !v.borrowed                //somebody took it, deliberately
+                && v.forTasks !== false       //somebody said keep this one back
+                && v.stage !== 'installing';  //it is being built
+        }).forEach(function (v) {
+            if (v.holdsCredential) {
+                lines.push({
+                    key: 'idle-' + v.name,
+                    bold: v.name + ' is on, doing nothing, and holding a worker credential. ',
+                    rest: 'A runner rests off and holding nothing. Take the credential back and shut it down,'
+                        + ' or give it something to do.',
+                    act: {
+                        label: 'Take it back',
+                        //THE SAME REPAIR, and the machine is already up so it is
+                        //one step rather than three. It leaves a machine it found
+                        //running exactly as it found it — this is a repair, not a
+                        //tidy-up, and something may be about to use it.
+                        cost: 'It takes the sign-in off ' + v.name + ' and leaves the machine running, as it found it.',
+                        run: function () { return okc.call('credentialRecover', { name: v.name }); }
+                    }
+                });
+                return;
+            }
+            //NOT OFFERED HERE. Stopping a machine somebody may be about to use is
+            //not a repair, and this line is a nudge rather than a fault — the one
+            //above it is the one with something wrong to put right.
+            lines.push({
+                key: 'idle-' + v.name,
+                bold: v.name + ' is on and doing nothing. ',
+                rest: 'A runner rests off — the queue starts one when there is work. Shut it down, or give it'
+                    + ' something to do.',
+                go: { label: 'Runners', at: function () { shell.go('Runners', 'Virtual machines'); } }
+            });
+        });
+
+        //---- off, and still holding one ------------------------------------
+        //
+        //Which nothing said, because every other rule here is about a machine
+        //that is running. A credential is taken back before a machine is shut
+        //down, so this state cannot be reached by anything working correctly — it
+        //means a machine was stopped from OUTSIDE that sequence. A host that
+        //rebooted for an update is the ordinary way, and it happened.
+        //
+        //IT MATTERS MORE WHEN THE MACHINE IS OFF THAN WHEN IT IS ON, not less. A
+        //running machine is at least visible; a powered-off one looks finished,
+        //and the credential sits on its disk indefinitely, unmentioned, waiting
+        //for somebody to happen to read a field.
+        vms.filter(function (v) { return !v.running && v.live && v.holdsCredential; }).forEach(function (v) {
+            //WHICH SIGN-IN, BY NAME AND BY KIND. This said "a worker credential"
+            //whatever it was holding, and the first machine it ever fired on was
+            //a SUPERVISOR holding a supervisor sign-in — the one sentence
+            //somebody reads at the moment they least want a procedure, naming the
+            //wrong kind of credential on the wrong kind of machine. The name
+            //matters more than the kind: this host may hold several, and "a
+            //credential" does not say which one is stranded on a disk.
+            var what = v.guest
+                ? 'the ' + (v.kind || 'worker') + ' sign-in "' + v.guest + '"'
+                : 'a ' + (v.kind || 'worker') + ' credential';
+            lines.push({
+                key: 'stranded-' + v.name,
+                bold: v.name + ' is powered off and still holding ' + what + '. ',
+                rest: 'That cannot happen in the ordinary sequence — a credential is taken back before a machine'
+                    + ' is shut down — so it was stopped from outside it, which a host restart does. Until then it'
+                    + ' cannot be snapshotted.',
+                act: {
+                    label: 'Take it back',
+                    //THE INSTRUCTION BECAME A BUTTON. This sentence used to end
+                    //"start it, take the credential back, and shut it down again"
+                    //— three steps in an order that matters, told to somebody at
+                    //the moment they least want a procedure. It can be one press
+                    //because every step is decided: the machine ends up off again
+                    //exactly as it was found.
+                    cost: 'It starts ' + v.name + ', takes the sign-in back, and shuts it down again. About a minute.',
+                    run: function () { return okc.call('credentialRecover', { name: v.name }); }
+                }
+            });
+        });
+
+        //NOT PORTED, AND ON PURPOSE. The old window's first line reports that
+        //loading states are being held open deliberately. `slowMs` does arrive on
+        //`status` — but it is the DASHBOARD's slow mode, and this app has no
+        //`windowSlow` of its own, so the line would report a setting that changes
+        //nothing about anything on this screen.
+
         if (!lines.length) return null;
+
+        function press(l) {
+            ask({
+                title: l.act.label,
+                plain: [l.bold + l.rest],
+                cost: l.act.cost,
+                confirm: l.act.label,
+                onYes: function () { return l.act.run(); }
+            });
+        }
 
         return (
             <Banner kind="stale">
@@ -96,6 +317,9 @@ module.exports = function trouble(theme, okc, shell) {
                             <strong>{l.bold}</strong>
                             <span>{l.rest}</span>
                             {l.go ? <Linky onClick={l.go.at}>{l.go.label}</Linky> : null}
+                            {l.act
+                                ? <Button protect onClick={function () { press(l); }}>{l.act.label}</Button>
+                                : null}
                         </div>
                     );
                 })}
