@@ -32,9 +32,13 @@
      override. Somebody who has never been told what it is still reads it as
      "this one is not like the others", which is exactly the whole message.
 
-     The same purple as --running, and deliberately: a button is never a banner
-     and a banner is never pressable, so the two cannot meet on one element and
-     be read as each other. */
+     The same purple as --running, and it used to be argued for by saying a
+     button is never a banner and a banner is never pressable, so the two could
+     not meet. That stopped being true: the trouble banner carries repairs now,
+     and a purple press sits inside a banner. It still holds, because the two
+     banners that ARE purple say so with a border and never with text, and the
+     one carrying presses is red -- so purple on that line can only be the press.
+     Worth re-checking rather than assuming if a third purple thing appears. */
   --human: #a371f7;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -229,6 +233,13 @@ h2:first-child { margin-top: 0; }
   line-height: 1.5;
 }
 .stale-banner strong { color: var(--fail); }
+
+/* THE ONLY BANNER WHOSE LINKS SIT INSIDE THE SENTENCE. The other two put theirs
+   at the far end with `margin-left: auto`, because each is one line saying one
+   thing. This one is a list, and its links follow the words they are about — so
+   they need the space a sentence would have had, and without it the repair reads
+   as part of the last word: "snapshotted.Take it back". */
+.stale-banner .linky { margin-left: 8px; }
 
 /* TESTING MODE, AND IT IS NOT THE SAME KIND OF THING AS THE BANNER ABOVE.
    That one is trouble — something is wrong and somebody should look. This is a
@@ -683,6 +694,22 @@ input.protected, select.protected, textarea.protected {
   border-color: var(--human);
   background: rgba(163, 113, 247, .12);
 }
+
+/* THE SAME RULE ON A PHRASE INSTEAD OF A CONTROL. A Linky has no border to
+   colour, so the whole of the mark is the colour and the underline -- and the
+   underline is permanent here rather than on hover, because a purple word that
+   only looks pressable when the mouse is already on it is a guard nobody sees
+   until they have decided to press.
+
+   It sits after the banner rules on purpose. `.running-banner .linky` and the
+   testing one set a colour at the same specificity, and the later rule wins --
+   so a guarded link inside a banner stays purple rather than taking the banner's
+   colour and losing the one thing it is saying. */
+.linky.protected {
+  color: var(--human);
+  text-decoration: underline;
+}
+.linky.protected:hover { color: var(--human); }
 
 
 label.inline { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }

@@ -25,10 +25,15 @@ var React = require('react');
 //and cannot perform it is one that gets read and postponed. Both of the acts here
 //move a credential, so both go through the gate and both are `protect`ed: this
 //banner is on every tab, and a press that moves a sign-in is a person's.
+//
+//THE ACT IS A LINK RATHER THAN A BUTTON, which is a look and not a weakening.
+//Every line here is a sentence and the repair is the end of it; a button planted
+//there reads as chrome the sentence is wrapped around. The guard is identical —
+//same purple, same `protected` class, and the driver refuses it the same way.
 //---------------------------------------------------------------------------
 
 module.exports = function trouble(theme, okc, shell) {
-    var { Banner, Linky, Button, ask } = theme;
+    var { Banner, Linky, ask } = theme;
 
     return function Trouble() {
         //FIVE QUESTIONS, ASKED FROM SOMETHING THAT IS ALWAYS MOUNTED. The old
@@ -317,8 +322,16 @@ module.exports = function trouble(theme, okc, shell) {
                             <strong>{l.bold}</strong>
                             <span>{l.rest}</span>
                             {l.go ? <Linky onClick={l.go.at}>{l.go.label}</Linky> : null}
+                            {/* A PHRASE, NOT A CONTROL. Every line here is a
+                                sentence, and a button planted at the end of one
+                                is a second kind of thing sitting in the middle
+                                of a paragraph — it reads as chrome the sentence
+                                happens to be wrapped around. A guarded Linky is
+                                the same press with the same refusal behind it:
+                                same purple, same class, same words, and the
+                                driver turns it down identically. */}
                             {l.act
-                                ? <Button protect onClick={function () { press(l); }}>{l.act.label}</Button>
+                                ? <Linky protect onClick={function () { press(l); }}>{l.act.label}</Linky>
                                 : null}
                         </div>
                     );

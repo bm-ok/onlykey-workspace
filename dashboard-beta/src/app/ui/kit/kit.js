@@ -4,7 +4,7 @@ module.exports = function kit(theme) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Row,
         Card, CardTitle, CardSub, Badge, Badges, Chips, Chip,
-        Button, Plus, Cog, Finder, Form, Field, Skeleton, Notice, Banner, Link, Spec,
+        Button, Linky, Plus, Cog, Finder, Form, Field, Skeleton, Notice, Banner, Link, Spec,
         Empty, Note, Mono, Muted, Kv, KvRow, Part, PartWhy, Group, Head, Markdown, ask
     } = theme;
 
@@ -68,10 +68,10 @@ module.exports = function kit(theme) {
                             </Row>
                         </Shelf>
 
-                        {/* THE TWO MARKS THAT MEAN A PERSON, and they are the
+                        {/* THE THREE MARKS THAT MEAN A PERSON, and they are the
                             only purple in the app. Everything else here is about
-                            reading a state off the screen; these two are about
-                            who is allowed to act. */}
+                            reading a state off the screen; these are about who is
+                            allowed to act. */}
                         <Shelf title="Guarded" about="purple is the one colour that means: this is yours, not a model's">
                             <Row>
                                 <Button protect>Merge it</Button>
@@ -82,6 +82,22 @@ module.exports = function kit(theme) {
                                 A guarded button is refused from the command line even with testing mode
                                 on — testing mode says the window may be driven, not that every press in
                                 it may be a model&apos;s.
+                            </Note>
+
+                            {/* THE SAME GUARD ON A PHRASE, for a sentence that
+                                ends in a repair. The trouble banner is a list of
+                                sentences and a button planted at the end of one
+                                reads as chrome the sentence is wrapped around —
+                                so the weight changes and nothing else does. */}
+                            <Row>
+                                <Linky protect>Take it back</Linky>
+                                <Linky>Read them</Linky>
+                            </Row>
+                            <Note>
+                                Guarded on the left, ordinary on the right. Both are buttons underneath,
+                                so both answer to <Mono>windowControls</Mono> and to the keyboard; the
+                                purple one is refused the same way the purple buttons above are. Use it
+                                where the act belongs to a sentence rather than to a row of controls.
                             </Note>
                             <Form>
                                 <Field f={{ name: 'tok', label: 'A guarded field', protect: true, placeholder: 'typed here and nowhere else', hint: 'neither read nor written from outside — a value written is a value known, so writing is a way of learning that does not look like reading' }} value="" onChange={function () { }} />

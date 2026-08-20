@@ -255,8 +255,22 @@ function Banner({ kind, children }) {
 //views rather than acting" -- and the banner rules style `.running-banner .linky`
 //and `.testing-banner .linky` specifically, because the accent blue is the one
 //colour on those grounds nobody can read.
-function Linky({ children, onClick, title }) {
-    return <button className="linky" onClick={onClick} title={title}>{children}</button>;
+//A LINK THAT IS PRESSED RATHER THAN FOLLOWED, and it is a <button> for that
+//reason: it does something, so it answers to the keyboard and to the driver like
+//everything else that does something.
+//
+//`protect` MAKES IT PURPLE, AND THE SAME PURPLE MEANS THE SAME THING. A guarded
+//Linky is a person's press exactly as a guarded Button is — the driver refuses it
+//by the same class, the guards pane lists it by the same words. What changes is
+//only the weight: a sentence with a repair at the end of it wants a phrase, not a
+//control sitting in the middle of the paragraph.
+function Linky({ children, onClick, title, protect, guard }) {
+    //THE WORDS ON IT ARE ITS NAME, the same rule as Button: that is what the
+    //driver matches, what the guards pane lists and what a person reads, and the
+    //three only agree by being one string.
+    var label = guard || (typeof children == 'string' ? children : null);
+    var on = useGuard(label, protect);
+    return <button className={'linky' + (on ? ' protected' : '')} onClick={onClick} title={title}>{children}</button>;
 }
 
 //---- links ---------------------------------------------------------------
