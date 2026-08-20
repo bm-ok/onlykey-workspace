@@ -236,30 +236,34 @@ function MarkdownFrame({ text, height }) {
     var doc = `<!doctype html><html><head><meta charset="utf-8">`
         + `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">`
         + `<style>${MD_STYLE}</style></head><body>${body}</body></html>`;
-    //allow-same-origin, AND IT IS LOAD-BEARING THAT NOTHING ELSE IS ALLOWED.
+    //NO SANDBOX. THE CSP IS WHAT HOLDS, AND IT HOLDS BY ITSELF.
     //
-    //The old window uses `sandbox=""` — every restriction on. In this NW.js
-    //build that frame renders NOTHING AT ALL, and the failure is silent: an
-    //empty box the size you asked for, which reads as "there was nothing to
-    //show". Measured in the Kit pane, five ways:
+    //`default-src 'none'` is not only about images. Every fetch directive falls
+    //back to it, `script-src` included — so a <script> in the markdown has no
+    //source it is allowed to execute from, and an inline `onerror=` needs
+    //`script-src 'unsafe-inline'`, which is not granted either. The policy
+    //refuses the code; the sandbox was refusing it a second time.
     //
-    //  srcdoc, no sandbox                    renders
-    //  srcdoc + sandbox=""                   BLANK
-    //  srcdoc + sandbox="" + the CSP         BLANK
-    //  sandbox="" + a data: URL instead      BLANK
-    //  sandbox="allow-same-origin" + srcdoc  renders
+    //WHICH IS WHY THE SANDBOX COULD GO. It was not free: `sandbox=""` renders
+    //NOTHING in this NW.js build, silently — an empty box the size you asked
+    //for, which reads as "there was nothing to show". Measured in the Kit pane,
+    //five ways: plain srcdoc renders; adding sandbox="" blanks it; adding the
+    //CSP as well blanks it; a data: URL instead blanks it; only
+    //sandbox="allow-same-origin" rendered. So the choice was never
+    //"sandbox or not" — it was which single restriction to keep.
     //
-    //So the opaque origin is what this build cannot show, whatever the document
-    //arrives as. What is given up by naming allow-same-origin is ONLY the
-    //opaque origin — and that matters solely as a barrier against script, which
-    //cannot run here because `allow-scripts` is absent. Measured too, in the
-    //same pane: a <script> in the markdown did not run, and an <img onerror=>
-    //did not fire. The CSP still blocked a remote image from loading.
+    //STILL AN IFRAME, AND THAT PART IS NOT NEGOTIABLE. This text came off a
+    //machine running a script somebody wrote, and markdown carries raw HTML
+    //through BY DESIGN — `marked` does not sanitise and has never claimed to.
+    //In this document it would be inside a page that has node behind it. In a
+    //frame with its own policy it is inert.
     //
-    //NEVER ADD allow-scripts. The two together are the documented hole: a frame
-    //with both can reach into this document and remove its own sandbox
-    //attribute. Everything above holds because exactly one of them is named.
-    return <iframe className="md" sandbox="allow-same-origin" srcDoc={doc} style={{ height: height || '60vh' }} />;
+    //AND IT IS ASSERTED RATHER THAN ASSUMED. The Markdown exhibit in the Kit
+    //pane contains a real <script> and a real onerror in its markdown, with the
+    //text they would overwrite written beside them. If the policy ever stops
+    //holding, that exhibit says so on sight instead of a comment here claiming
+    //it still does.
+    return <iframe className="md" srcDoc={doc} style={{ height: height || '60vh' }} />;
 }
 
 //RENDERED OR AS WRITTEN, and both, because they answer different questions. The

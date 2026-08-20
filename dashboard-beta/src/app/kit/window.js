@@ -188,8 +188,19 @@ async function plugin(imports, register) {
                             <Empty bad>No repository here has a default branch, which should not be possible.</Empty>
                         </Shelf>
 
-                        <Shelf title="Markdown, where it can do nothing" about="rendered in a sandboxed frame with a CSP, because this text came off a machine running somebody's script">
-                            <Markdown height="220px" text={[
+                        <Shelf title="Markdown, where it can do nothing" about="an iframe with a CSP, because this text came off a machine running somebody's script">
+                            {/* THE LAST TWO LINES ARE A LIVE ASSERTION, not
+                                decoration. They are raw HTML inside the
+                                markdown — which `marked` passes straight
+                                through, by design — and each says what it will
+                                say if the policy holds. If either is ever
+                                replaced by the word BROKEN, then
+                                `default-src 'none'` has stopped covering
+                                script-src and this frame is running somebody
+                                else's code inside a page that has node behind
+                                it. A comment claiming it is safe cannot fail;
+                                this can. */}
+                            <Markdown height="360px" text={[
                                 '## What a pull request would say',
                                 '',
                                 'Composed from **real facts**, not placeholders.',
@@ -198,7 +209,12 @@ async function plugin(imports, register) {
                                 '- links to the others show `?` until the cut exists',
                                 '',
                                 '> markdown carries raw HTML through by design, which is why this is in',
-                                '> a frame that may not run scripts and may not fetch anything.'
+                                '> a frame that may not run scripts and may not fetch anything.',
+                                '',
+                                '<p id="a">a script here does not run</p>',
+                                '<scr' + 'ipt>document.getElementById("a").textContent = "BROKEN: the script ran"</scr' + 'ipt>',
+                                '<p id="b">nor does an onerror</p>',
+                                '<img src="x" width="1" onerror="document.getElementById(&quot;b&quot;).textContent = &quot;BROKEN: the onerror ran&quot;">'
                             ].join('\n')} />
                         </Shelf>
 

@@ -23,5 +23,12 @@ marked/ — the same copy the old window vendors
 
 Parses markdown to HTML. It does NOT sanitise, and has never claimed to —
 markdown carries raw HTML through by design. See `Markdown` in
-src/app/theme/bits.js for the frame that makes that safe: sandbox="" and a CSP
-of default-src 'none'.
+src/app/theme/bits.js for the frame that makes that safe: an iframe carrying a
+CSP of `default-src 'none'`, which covers script-src by fallback, so a <script>
+or an inline onerror in the markdown has nothing it is allowed to run from.
+
+There is no sandbox attribute. `sandbox=""` renders nothing at all in this NW.js
+build — silently, as an empty box — and the CSP already refuses the code it
+would have refused. The Markdown exhibit on the Kit pane asserts that: it feeds
+a real script and a real onerror through, with the text they would overwrite
+written beside them.
