@@ -192,16 +192,26 @@ cleanup(async ({ okc, state }) => {
   state.prompt = null
 })
 
-draft('and the window cannot be driven while the drills are off',
-  'THE REFUSAL: "The window is only driven while testing mode is on for this workspace." — actions/app.js. ' +
-  'It matters more than it looks: windowClick and windowFill reach the SAME handlers a person\'s press reaches, so an unguarded one is a way around every refusal this app makes about the command line — approving a job, landing a change, switching the drills on. ' +
-  'WHY IT IS NOT A CHECK HERE: a drill runs only while testing mode is on, which is exactly when this is allowed. Proving the refusal means turning testing mode OFF, which stops the drills. ' +
-  'HOW TO WRITE IT: from outside the kit — a script that turns testing mode off at the window, calls windowClick over the wire, sees the refusal, and turns it back on. That is a person-driven drill rather than one the harness can run, and it belongs in the same family as the sign-in that needs somebody to visit a page. ' +
-  'THE HALF THAT COULD BE CHECKED FROM HERE NOW IS — see "and the whole way round it, from outside, ends where it started" below: a prompt written down the pipe, the window driven to it, Approve pressed and confirmed, and the thing still unapproved. What is left in this draft is only the part that needs testing mode OFF.')
-
-draft('and a change cannot be landed from outside the window while the drills are off',
-  'THE REFUSAL: "Landing a cut from outside the window is only done while testing mode is on for this workspace… this is a model merging into somebody\'s repository, and that needs to have been said out loud first." — actions/repos.js. ' +
-  'It is the one act in this app with consequences outside this host: everything before a merge is reversible from GitHub and a merge is not. ' +
-  'WHY IT IS NOT A CHECK HERE: same as above — the drills run with testing mode on, which is the state in which this is permitted. ' +
-  'THE CHECK, WHEN THERE IS A WAY TO WRITE IT: with testing mode off, prCutLand over the wire is refused and names the window; with it on, the refusal is not what stops it — a cut that is not ready still is. ' +
-  'AND THE RELATED ONE WORTH HAVING EITHER WAY: a supervisor is refused prCutLand whatever testing mode says, because it is not on its list at all. That one IS checked — see the supervisor suite.')
+// ---- TWO DRAFTS DROPPED ON PURPOSE, 19 August 2026 -------------------------
+//
+// "the window cannot be driven while the drills are off" and "a change cannot
+// be landed from outside the window while the drills are off". Both needed
+// testing mode OFF, and the drills only run with it ON — so neither could ever
+// be a check in this kit, and each sat in the draft list describing a test
+// nobody was going to write here. A draft is a note about work that could
+// happen; these were notes about work that could not.
+//
+// WHAT THEY GUARD IS STILL GUARDED, and the parts that CAN be checked are:
+//
+//   a supervisor is refused prCutLand whatever testing mode says, because it is
+//   not on its list at all -- "one permission many gates" in this suite, and
+//   the supervisor suite
+//
+//   the whole way round a refusal, from outside, ends where it started -- the
+//   check below: a prompt written down the pipe, the window driven to it,
+//   Approve pressed and confirmed, and the thing still unapproved
+//
+// AND THE UNCOMFORTABLE FACT IS WRITTEN DOWN RATHER THAN DRAFTED, in "one
+// permission many gates": during a kit run, testing mode is on by definition,
+// so nothing but the absence of a call stands between this kit and a real
+// merge. That is worth knowing and is not a test.

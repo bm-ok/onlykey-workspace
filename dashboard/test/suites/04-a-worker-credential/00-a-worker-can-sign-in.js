@@ -7,6 +7,7 @@
 
 const { it, draft, requires } = require('../../../tasks/harness')
 const { aMachine, roleFor } = require('../../helpers')
+const guests = require('../../../core/guests')
 
 // It hands the credential to a machine to find out whether it works, so it
 // stands on machines existing and coming up. That is the whole reason it sits
@@ -139,11 +140,50 @@ draft('and signing a worker in is a job, not a sequence written into this app',
 // it checkable was noticing that the CLI rotating is not the thing to prove:
 // what has to be true is that a CHANGE on the machine arrives here, which a
 // throwaway identity can demonstrate in seconds without a worker run.
-draft('and each machine keeps its own credential across a rollback',
-  'A MACHINE IS ROLLED BACK TO BASE WHEN ITS WORK ENDS, which wipes the disk — so a credential on a machine cannot survive by staying there, and the base snapshot must never contain one (a snapshot of a machine holding one keeps a copy for as long as the snapshot exists, which is why vmBaseSnapshot refuses it). ' +
-  'So per-machine means kept HERE, sealed, one per machine: handed over when it starts work, taken back — refreshed — when the work ends, and handed to the same machine next time. ' +
-  'THE CHECK: give a machine work twice with a stop in between, and both runs use that machine\'s own credential, with no machine ever holding another\'s. ' +
-  'TO SETTLE: what happens when there are more machines than credentials — a machine waits, or work waits. Waiting for a credential is the same shape as waiting for a machine, which the queue already knows how to do.')
+// THE INVARIANT THE PINNING DRAFT WAS REALLY PROTECTING, and it needs no machine
+// and no money: one sign-in is never out on two machines at once. Whether it is
+// pinned or pooled is a policy question and this is not -- two machines holding
+// one identity means two workers authenticating as the same account, and the
+// host having no idea which of them refreshed the token it gets back.
+//
+// ASKED OF `choosable` WITH ROWS HANDED IN, so the answer does not depend on
+// what this host happens to be holding. The same separation the merge rule and
+// the revise rule got, for the same reason: a rule only checkable against live
+// state is one that gets checked once.
+it('one sign-in is never out on two machines at once', async ({ assert, log }) => {
+  const rows = [
+    { name: 'free', role: 'worker', has: true, holder: null },
+    { name: 'onA', role: 'worker', has: true, holder: 'machine-a' },
+    { name: 'judgely', role: 'judge', has: true, holder: null },
+    { name: 'tokenless', role: 'worker', has: false, holder: null }
+  ]
+  const names = (role, machine) => guests.choosable(rows, role, machine).map(g => g.name)
+
+  // THE WHOLE POINT: a sign-in already out is not offered to anybody else.
+  assert.ok(!names('worker', 'machine-b').includes('onA'),
+    '"onA" is out on machine-a and was offered to machine-b as well — two workers would authenticate as one account')
+
+  // AND IT IS STILL ITS OWN. A machine already holding one is not refused it a
+  // second time: that is a machine picking up where it left off, not sharing.
+  assert.ok(names('worker', 'machine-a').includes('onA'),
+    'a machine was refused the sign-in it is already holding')
+
+  // THE ORDINARY CASE, so the filter is not simply refusing everything.
+  assert.ok(names('worker', 'machine-b').includes('free'), 'a free worker sign-in was not offered at all')
+
+  // AND THE TWO THAT ARE NOT ABOUT HOLDING: the wrong role, and no token.
+  assert.ok(!names('worker', 'machine-b').includes('judgely'), 'a judge sign-in was offered for a worker')
+  assert.ok(!names('worker', 'machine-b').includes('tokenless'), 'a sign-in with no token behind it was offered')
+
+  log(`offered to machine-b: ${names('worker', 'machine-b').join(', ') || 'nothing'} — "onA" is out on machine-a and stays there`)
+})
+
+draft('and a sign-in is drawn from a pool rather than pinned to a machine',
+  'THE DECISION WENT THE OTHER WAY, AND THIS IS THE RECORD OF IT. This was written as "each machine keeps its own credential across a rollback" and asked for one sign-in PINNED per machine, handed back to the same one next time. That is not what was built and should not be: `choosable` in core/guests.js filters on role, having a token, not being paused, and not being held elsewhere — and never prefers the machine that had it last. A sign-in is drawn from a pool per job. ' +
+  'WHY PINNING LOST. The argument for it was that two sign-ins would rotate each other away if shared, and that turned out to be false: two of ONE Claude account ran on two machines the same afternoon and both were still good afterwards. With that gone, pinning only wastes a sign-in per idle machine, and pooling is the shape the machines themselves already have. ' +
+  '`lastGivenTo` IS RECORDED AND IS NOT CONSULTED, which is worth knowing before somebody reads it as intent. It says where a sign-in went last, for a person looking at a card; it does not make it go there again. ' +
+  'WHAT SURVIVES AS A CHECK, and it is the invariant the original was really protecting: one sign-in is never out on two machines at once. `choosable` enforces it with `!g.holder || g.holder === machine`, and it needs no worker run to test. ' +
+  'AND WHAT THE ORIGINAL ASKED TO SETTLE IS SETTLED, differently: with more machines than sign-ins, WORK waits rather than a machine being spent — proven in the wild on 19 August, when every worker sign-in on this host was dead and a queued task stayed queued.')
 
 draft('and the .claude folder can be thrown away without losing the token',
   'THE GAP TO BRIDGE, and half of it is already built. `machines/job-api.js` archives ~/.claude per task and excludes .credentials.json on purpose — that folder is the worker\'s MEMORY and is kept for a long time, so an unsealed token riding along would be filed for ever. ' +
