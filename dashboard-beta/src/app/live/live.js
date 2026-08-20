@@ -2,7 +2,7 @@ var React = require('react');
 var { useState, useEffect, useRef } = React;
 
 module.exports = function live(theme, okc) {
-    var { Pane, Panel, Badge, Empty, Note, Mono, Skeleton} = theme;
+    var { Pane, Panel, Empty, Note, Skeleton } = theme;
 
     //THE LAST 800 OF WHAT MATCHED, not of what arrived. Filtering to one tag
     //during an install is how somebody finds the six lines that matter in two
@@ -167,73 +167,20 @@ module.exports = function live(theme, okc) {
     //can do exists without appearing here. Its own view rather than more rows in
     //the console, because it answers a different question — Live asks "what is
     //happening", this asks "does this server have a way to do X, and what does
-    //it want".
-    function Catalogue() {
-        //ASKED ONCE, NOT ON A CADENCE. The table is fixed for the life of the
-        //process it is read from, so polling it would be re-asking a
-        //256-answer-wide question every few seconds for an answer that cannot
-        //change. `okc.use` with no interval reads once and stops.
-        var { state, error } = okc.use('actions', {}, 0);
-        var [find, setFind] = useState('');
+    //ONE VIEW, NOT TWO. There was a `Catalogue` here behind an Actions sub-tab,
+    //and it was a second, worse copy of the API tab: that one searches the same
+    //two fields, and also says WHICH HALF answers each action and warns when the
+    //relay is down, so a short list cannot read as capabilities having been lost.
+    //This one did neither, and drew itself out of raw class names rather than the
+    //kit — which is the failure this app has no error for.
+    //
+    //TWO PLACES TO READ ONE TABLE IS ONE PLACE TOO MANY. The question "what can
+    //this app do" has a tab of its own; this tab is what is happening NOW.
+    //
+    //AND IT WAS NEVER A PANE. These sub-tabs were `useState` rather than
+    //`shell.pane`, so `show --pane Actions` could not reach it, `npm run walk`
+    //counted this tab once, and that half was never walked or photographed —
+    //which is how a duplicate survives being looked at.
 
-        if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
-        if (!state) return <Pane><Skeleton rows={4} /></Pane>;
-
-        var all = state.actions || [];
-        var q = find.toLowerCase();
-        var rows = !q ? all : all.filter(function (a) {
-            return String(a.name).toLowerCase().indexOf(q) >= 0
-                || String(a.about || '').toLowerCase().indexOf(q) >= 0;
-        });
-        var withArgs = all.filter(function (a) { return (a.takes || []).length; }).length;
-
-        return (
-            <Pane>
-                {error ? <Note kind="bad">{error}</Note> : null}
-                <Panel>
-                    <div className="card-title">
-                        <Mono>{all.length + ' actions'}</Mono>
-                        <Badge>{withArgs + ' take arguments'}</Badge>
-                    </div>
-                    {/* A FLAT LIST OF 256 ROWS IS WHAT THIS WAS, with no way to
-                        reach one of them. The exhaustiveness is the point, so
-                        nothing is grouped away or cut — but a box that narrows
-                        what is drawn costs that claim nothing. */}
-                    <input className="finder" value={find} placeholder="find an action"
-                        onChange={function (ev) { setFind(ev.target.value); }} />
-                    {rows.length
-                        ? rows.map(function (a) {
-                            return (
-                                <div className="act" key={a.name}>
-                                    <code>{a.name}</code>
-                                    <span className="about">{a.about}</span>
-                                    <span className="takes">{(a.takes || []).join(', ')}</span>
-                                </div>
-                            );
-                        })
-                        : <Empty>{'no action matches — all ' + all.length + ' of them are here'}</Empty>}
-                </Panel>
-            </Pane>
-        );
-    }
-
-    //TWO VIEWS BEHIND ONE TAB, chosen here rather than folded into one list.
-    //Sub-tabs are quieter than the top row on purpose: this picks which question
-    //is being asked about one subject, where the bar above picks the subject.
-    function Live() {
-        var [on, setOn] = useState('Stream');
-        return (<>
-            <div className="subtabs">
-                {['Stream', 'Actions'].map(function (n) {
-                    return (
-                        <button key={n} className={'subtab' + (n == on ? ' active' : '')}
-                            onClick={function () { setOn(n); }}>{n}</button>
-                    );
-                })}
-            </div>
-            {on == 'Stream' ? <Log /> : <Catalogue />}
-        </>);
-    }
-
-    return Live;
+    return Log;
 };
