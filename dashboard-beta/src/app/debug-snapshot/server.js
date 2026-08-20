@@ -50,9 +50,18 @@ async function plugin(imports, register) {
     }
 
     var undo = [actions.define('capture', {
-        about: 'Save what the window currently looks like: the markup, and a picture of it',
-        takes: ['name'],
+        about: 'Save what the window currently looks like: the markup, and a picture of it. Takes everything windowShot takes',
+        //EVERY OPTION windowShot HAS, PASSED STRAIGHT THROUGH.
+        //
+        //Without this, `capture` was the only way to get the markup and
+        //`windowShot` was the only way to get a whole-page picture — so anybody
+        //wanting both had to take two snapshots, of two different moments, and
+        //the pair that is supposed to describe one instant described two. The
+        //two halves answering different questions is the entire argument for
+        //writing both files; they have to be of the same window.
+        takes: ['name', 'whole', 'width', 'height'],
         run: async function (args) {
+            var a = args || {};
             var said = await markup();
             if (said && said.error) throw new Error(said.error);
             if (!said || !said.html) throw new Error('the page sent no markup');
@@ -63,7 +72,14 @@ async function plugin(imports, register) {
             //page — photographing the wrong one returns a blank image, which is
             //evidence worse than none — and two implementations of that would
             //drift, with the drifted one being whichever nobody reads.
-            var shot = await actions.call('windowShot', { name: args && args.name });
+            //
+            //AND THE OPTIONS ARE NOT INTERPRETED ON THE WAY PAST. `whole` and
+            //`width` mean whatever windowShot means by them, today and after it
+            //changes; a copy of that reasoning here would be a second opinion
+            //about a picture this half never sees.
+            var shot = await actions.call('windowShot', {
+                name: a.name, whole: a.whole, width: a.width, height: a.height
+            });
 
             //BESIDE THE PICTURE, AND NAMED AFTER IT. Two files from one moment
             //that do not share a name are two files somebody has to pair up by

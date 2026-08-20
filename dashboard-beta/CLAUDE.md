@@ -75,9 +75,24 @@ Never conclude from reading the source. Run it.
 
     node tools/okc.js show --tab X --pane Y     put a pane on screen
     node tools/okc.js windowControls --json     what is on screen right now
-    node tools/okc.js windowShot --name n       photograph it (--whole, --width)
+    node tools/okc.js capture --name n          the picture AND the markup
     npm run walk                                open every tab and pane
     npm test
+
+**Reach for `capture`, not `windowShot`.** It writes both files, of the same
+moment, named the same thing, and takes everything `windowShot` takes —
+`--whole`, `--width`, `--height`. `windowShot` is the picture on its own and is
+what `capture` is built from; using it directly gets you half the answer and no
+sign that the other half was available.
+
+The two halves are not the same evidence. A class that matches no rule is
+invisible in the picture and obvious in the markup; a value drawn from the wrong
+field is the other way round. CSS has no undefined-name error here, so a
+misspelt class is the quietest failure this app has, and the markup is the only
+place it shows.
+
+Ctrl+Shift+D does the same thing from the window and offers the two paths for
+copying. It is `src/app/debug-snapshot`, which is deletable in one piece.
 
 `windowControls` reports `loading` (a skeleton is visible) and `content` (how
 many characters are on the pane) separately from the button and field counts —
