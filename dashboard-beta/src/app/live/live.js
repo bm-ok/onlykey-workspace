@@ -147,18 +147,18 @@ module.exports = function live(theme, okc) {
                     on an allowlist and never `out`, so the two are different
                     sets of lines.
 
-                    THE NOTE NO LONGER SAYS "the event stream", BECAUSE THIS APP
-                    HAS NOT GOT ONE. These lines are now ../core/log's — this
-                    app's own, about its own acts — and core/events has not been
-                    moved across yet. Pointing somebody at a durable record that
-                    does not exist here is worse than not mentioning one.
+                    AND THE EVENT STREAM IS HERE NOW — ../core/events, which
+                    takes the one `keeper` slot the log leaves open. It is not
+                    on a pane, here or over there: it answers "what happened
+                    while nobody was looking", and whoever is asking that has
+                    just arrived and is at a command line. `okc.js events`.
 
                     AND "lost when the dashboard restarts" WAS WRONG TWICE OVER:
                     it is not the dashboard's log any more, and the lines are
                     kept in main rather than in the node bundle, so a save no
                     longer takes them. That was the reason for putting them
                     there. */}
-                <Note>held in memory only, and never written to disk — it carries whatever a machine printed. It survives a save and is lost when this app restarts</Note>
+                <Note>held in memory only, and never written to disk — it carries whatever a machine printed. It survives a save and is lost when this app restarts; the acts themselves are kept, and `okc.js events` reads them back</Note>
             </Pane>
         );
     }
