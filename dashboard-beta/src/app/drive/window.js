@@ -196,6 +196,23 @@ async function plugin(imports, register) {
             return {
                 on: r.where,
                 dialog: r.dialog,
+                //IS IT STILL COMING? A skeleton on the screen is the pane saying
+                //"this is a list and it is on its way", and it is the difference
+                //between "there is nothing here" and "nothing has arrived yet"
+                //— two answers this app has already confused three times, in
+                //three different panes.
+                //
+                //Reported rather than inferred. Anything reading this from
+                //outside would otherwise have to guess from an empty list, which
+                //is exactly the guess that goes wrong.
+                loading: !![].slice.call(document.querySelectorAll('.skel'))
+                    .filter(seen)
+                    //A SPECIMEN IS NOT A WAIT. The Kit pane exhibits a skeleton
+                    //so the look of one can be reviewed beside everything else,
+                    //and counting it made the catalogue read as permanently
+                    //loading.
+                    .filter(function (n) { return !n.closest('[data-sample]'); })
+                    .length,
                 //THE TITLE TOO, because a dialog is a question and the question
                 //is the point. Reading back "there is a dialog with a Stop it
                 //button" and not what it is about is how the wrong thing gets

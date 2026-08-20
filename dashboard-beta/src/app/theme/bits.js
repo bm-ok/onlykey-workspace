@@ -157,7 +157,14 @@ function Controls({ children }) { return <div className="head-controls">{childre
 //like a failure state. A shape says "this is a list, and it is on its way" —
 //and it holds the layout still, so the page does not jump when the answer
 //lands.
-function Skeleton({ rows }) {
+//`sample` MARKS AN EXHIBIT RATHER THAN A WAIT. The Kit pane shows one of these
+//as a specimen, and anything asking "is this pane still loading" by looking for
+//a skeleton on the screen concluded that the catalogue was loading forever.
+//
+//A data attribute rather than a class, on purpose: there is nothing to style
+//here, and a class would have to be added to a stylesheet and checked by the
+//guard for no reason other than to be ignored.
+function Skeleton({ rows, sample }) {
     var n = rows || 3;
     var cards = [];
     for (var i = 0; i < n; i++) {
@@ -168,7 +175,7 @@ function Skeleton({ rows }) {
             </div>
         );
     }
-    return <div>{cards}</div>;
+    return <div data-sample={sample ? '1' : undefined}>{cards}</div>;
 }
 
 //---- saying something happened -------------------------------------------

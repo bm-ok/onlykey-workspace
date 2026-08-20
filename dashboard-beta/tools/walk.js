@@ -87,15 +87,26 @@ function okc (args) {
   return JSON.parse(out)
 }
 
-// A LOOK IS TAKEN TWICE AND THE SECOND ONE COUNTS.
+// LOOK UNTIL IT HAS STOPPED ARRIVING.
 //
-// Every pane asks for its data when it mounts, so the first look after a switch
-// catches the skeleton — no buttons, no fields, and a report of "nothing on
-// screen" for a pane that is perfectly fine. That is a race in the checking and
-// not in the app, and it has already produced two wrong answers by hand.
-function look () {
-  try { okc(['windowControls']) } catch { /* the first is thrown away */ }
-  return okc(['windowControls'])
+// Every pane asks for its data when it mounts, so a look taken straight after a
+// switch catches the skeleton: no buttons, no fields, and a report of "nothing
+// on screen" for a pane that is perfectly fine.
+//
+// TWO LOOKS WAS THE FIRST ATTEMPT AND IT WAS NOT ENOUGH. The Cuts pane asks
+// GitHub about every cut it has and takes about sixteen seconds; Branches goes
+// through the relay. So the count of bare panes wandered between runs — 8, 9,
+// 11, 12, 10 — and none of those numbers meant anything.
+//
+// Which is this tool making the same mistake it exists to catch: "there is
+// nothing here" and "nothing has arrived yet" are different answers, and only
+// one of them is worth acting on. The app now SAYS which, by reporting whether a
+// skeleton is on the screen, so this waits on a fact rather than on a guess.
+function look (patience) {
+  var seen = okc(['windowControls'])
+  var tries = patience == null ? 40 : patience
+  while (seen.loading && tries-- > 0) seen = okc(['windowControls'])
+  return seen
 }
 
 function main () {
@@ -131,6 +142,7 @@ function main () {
 
   const bad = []
   const bare = []
+  const slow = []
   let walked = 0
 
   for (const tab of tabs) {
@@ -160,6 +172,13 @@ function main () {
         // there at all. A thrown render answers nothing and this reads "?".
         if (!seen.on || seen.on === '?') {
           bad.push(`${name} — the page answered with no region, so nothing rendered`)
+        } else if (seen.loading) {
+          // Still arriving after every look this was willing to take. Not a
+          // failure — some of these are genuinely slow — but not an answer
+          // about the pane either, so it is neither counted as bare nor
+          // reported as fine.
+          slow.push(name)
+          if (!quiet) console.log(`  ${name.padEnd(28)} still arriving`)
         } else if (!anything) {
           bare.push(name)
           if (!quiet) console.log(`  ${name.padEnd(28)} nothing on screen`)
@@ -184,4 +203,19 @@ function main () {
   }
 }
 
-main()
+// EXIT 3 MEANS NOTHING IS LISTENING, WHEREVER IT HAPPENS.
+//
+// It was handled on the first call only, so a walk started a moment too early
+// after a restart got past that check and then died on the next one with a
+// stack trace — which says "this tool is broken" when what it means is "the app
+// is not up yet". The friendly sentence already existed; it was just in the
+// wrong number of places.
+try {
+  main()
+} catch (e) {
+  if (e && e.status === 3) {
+    console.error('the app is not listening — start it with `npm start`, or it may still be coming up')
+    process.exit(3)
+  }
+  throw e
+}

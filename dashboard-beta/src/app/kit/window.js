@@ -154,7 +154,7 @@ async function plugin(imports, register) {
                         </Group>
 
                         <Group title="Waiting" about="a shape, not the word loading — it holds the layout still">
-                            <Skeleton rows={2} />
+                            <Skeleton rows={2} sample />
                         </Group>
 
                         <Group title="The gate" about="every act that cannot be taken back goes through here">
