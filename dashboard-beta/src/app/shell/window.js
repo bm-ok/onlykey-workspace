@@ -120,13 +120,30 @@ async function plugin(imports, register) {
         //different answer from where you left Settings.
         var [panes, setPanes] = remember.use('shell', 'panes', {});
         var pane = panes[on] || null;
-        var setPane = function (name) {
+
+        //THE TAB IT BELONGS TO IS AN ARGUMENT, NOT THE ONE WE HAPPEN TO BE ON.
+        //
+        //This read `next[on] = name`, closing over the tab showing at the time.
+        //For a person pressing a sub-tab that is right — they are already there.
+        //For `show --tab X --pane Y` from anywhere else it is wrong in the
+        //quietest possible way: Y is filed under the tab being LEFT, X keeps
+        //whatever pane it was last on, and the answer comes back {ok:true} with
+        //the tab and pane that were asked for.
+        //
+        //THAT IS WHERE "IT NEEDS TWO CALLS TO SETTLE" CAME FROM. The second call
+        //works because by then `on` really is X. It was worked around for a
+        //whole session — called twice everywhere, and written into CLAUDE.md as
+        //if it were a property of the window — rather than being read as the
+        //symptom of a bug. A workaround that works is how a defect gets
+        //promoted to a documented behaviour.
+        var setPaneOf = function (tab, name) {
             setPanes(function (was) {
                 var next = Object.assign({}, was);
-                if (name == null) delete next[on]; else next[on] = name;
+                if (name == null) delete next[tab]; else next[tab] = name;
                 return next;
             });
         };
+        var setPane = function (name) { setPaneOf(on, name); };
         var [up, setUp] = useState(okc.connected);
         var [, bumpBadge] = useState(0);
 
@@ -161,7 +178,7 @@ async function plugin(imports, register) {
                 //tool that moves where a person was standing is not read-only in
                 //the way that matters. Name the pane when the answer has to be
                 //the same every time; `npm run walk` does.
-                if (pane) setPane(pane);
+                if (pane) setPaneOf(inTab, pane);
                 if (reply) reply({ ok: true, tab: inTab, pane: pane || null });
             }
 

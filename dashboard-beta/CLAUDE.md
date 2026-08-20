@@ -46,9 +46,14 @@ Never conclude from reading the source. Run it.
 many characters are on the pane) separately from the button and field counts —
 so "nothing to press" and "nothing there" stay different answers.
 
-The view often needs `show` called **twice** to settle. Check `on` came back as
-what you asked for before photographing; a shot of the wrong pane looks exactly
-like a shot of the right one.
+`show --tab X --pane Y` lands first time. It did not used to: the shell filed
+the pane under the tab it was *leaving*, so the first call switched tab and kept
+X's old pane, and a second call fixed it. That was worked around here for a whole
+session and written into this file as if it were a property of the window — a
+workaround that works is how a defect gets promoted to documented behaviour.
+
+Still check `on` came back as what you asked for before photographing. A shot of
+the wrong pane looks exactly like a shot of the right one.
 
 ## Porting a pane
 
