@@ -1,5 +1,7 @@
 var React = require('react');
+var { useState } = React;
 var useAsk = require('../okc/ask');
+var makeBoard = require('./board');
 
 //the Tasks tab: what has been written, what is running, and what came back.
 //
@@ -14,10 +16,10 @@ var useAsk = require('../okc/ask');
 //before it, and wrong about the run that had just lost its work. So this shows
 //what the dashboard now computes and does not try to be clever about it.
 
-plugin.consumes = ['shell', 'theme', 'okc'];
+plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
-    var { shell, theme, okc } = imports;
+    var { shell, theme, okc, remember } = imports;
     var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
 
     //the words the board itself uses, and the colour each one deserves
@@ -93,7 +95,13 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.tab({ name: 'Tasks', order: 20, Component: Tasks });
+    //TWO PANES, AS OVER THERE. The board is the list-and-detail the tab has
+    //always been about; what was here before is kept as "Recent" — it is the
+    //same data read a different way, short and reverse-chronological, and it
+    //carries the note about `reads` that the board is built on.
+    shell.tab({ name: 'Tasks', order: 20 });
+    shell.pane({ tab: 'Tasks', name: 'Board', order: 10, Component: makeBoard(theme, okc, remember, useState) });
+    shell.pane({ tab: 'Tasks', name: 'Recent', order: 20, Component: Tasks });
 
     await register(null, {});
 }
