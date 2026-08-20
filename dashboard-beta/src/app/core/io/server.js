@@ -15,7 +15,16 @@ async function plugin(imports, register) {
         appPackage: host.appPackage,
         onDestroy: function () {
             host.io.removeAllListeners('connection');
-            host.io.disconnectSockets();//the clients reconnect onto the new handlers
+            //DROPPED SO THEY LAND ON THE NEW HANDLERS — but they do NOT come
+            //back by themselves, whatever this line used to claim.
+            //socket.io-client treats a disconnect the server ASKED for as final;
+            //only a connection that died under it is retried. So the recovery is
+            //in ./window.js, which listens for the reason and reconnects.
+            //
+            //`disconnectSockets(true)` looks like the fix on this side and is not:
+            //the client reports "io server disconnect" either way. Measured, both
+            //ways, rather than reasoned about.
+            host.io.disconnectSockets();
         }
     });
 }

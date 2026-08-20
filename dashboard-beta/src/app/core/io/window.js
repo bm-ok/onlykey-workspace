@@ -23,6 +23,23 @@ async function plugin(imports, register) {
 
     var socket = connect({ timeout: 4000 });
 
+    //THE NODE HALF RELOADS BY DROPPING EVERYONE, and whether they come back on
+    //their own depends on HOW they were dropped. socket.io-client retries a
+    //connection that closed under it — transport close, ping timeout — but treats
+    //a disconnect the server asked for as final, because the server asking is
+    //taken to mean the server meant it. ../io/server.js asks, on every reload.
+    //
+    //SO WITHOUT THIS THE PAGE IS ORPHANED PERMANENTLY, and it does not look it: it
+    //stays rendered and reads as healthy right up until you touch something that
+    //needs the socket. It presents as an intermittent fault and is not one — it is
+    //every reload, every time. Measured: the reason is "io server disconnect", and
+    //`disconnectSockets(true)` on the server side does not change it. The recovery
+    //has to be here.
+    socket.on('disconnect', function (reason) {
+        console.log('socket disconnected: ' + reason);
+        if (reason == 'io server disconnect') socket.connect();
+    });
+
     //the node side tells us when its half failed to reload, at which point the
     //page is talking to a server that no longer has any handlers
     socket.on('server:error', function (e) {
