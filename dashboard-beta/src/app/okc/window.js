@@ -30,6 +30,20 @@ async function plugin(imports, register) {
     //a panel that was plainly working.
     io.emit('okc:up?', {}, announce);
 
+    //AND THE WIRE ITSELF, because `okc:up` can only ever arrive from a server
+    //that is still there. Driving the dot from that message alone means the one
+    //event it cannot report is the one that matters: when the socket drops,
+    //nothing is emitted, `up` stays true, and the dot stays green over a page
+    //that can no longer ask anything.
+    //
+    //THIS HAS ALREADY COST AN HOUR. The window sat there fully painted, dot
+    //green, while every call from outside answered "no page is connected" — and
+    //because the panes here fetch once rather than poll, nothing on the screen
+    //went stale to give it away. A green dot has to mean the wire is open, or it
+    //is worse than no dot at all.
+    io.on('disconnect', function () { announce(false); });
+    io.on('connect', function () { io.emit('okc:up?', {}, announce); });
+
     function call(action, args) {
         return new Promise(function (resolve, reject) {
             io.emit('okc:call', { action: action, args: args || {} }, function (reply) {

@@ -736,7 +736,14 @@ pre.diff {
 /* ---- a machine's details ---- */
 
 table.kv { width: 100%; border-collapse: collapse; }
+/* THE LABEL COLUMN TAKES ITS CONTENT AND NOT A SHARE OF THE SLACK. A table at
+   width:100% under auto layout hands leftover width to BOTH columns in
+   proportion to what is in them, so a fact table with long values pushes its
+   own labels apart -- and by a different amount in every card, which reads as
+   a misalignment rather than as a table. `width:1%` with nowrap is the
+   standard way to say "as narrow as the words and no narrower". */
 table.kv th {
+  width: 1%;
   text-align: left;
   font-weight: 400;
   color: var(--muted);

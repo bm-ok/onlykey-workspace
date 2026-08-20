@@ -2,6 +2,7 @@ var React = require('react');
 var { useState } = React;
 var useAsk = require('../okc/ask');
 var makeFindings = require('./findings');
+var makeJudges = require('./judges');
 
 //the Judge tab: what has been read, what is being read, and what it concluded.
 //
@@ -408,7 +409,8 @@ async function plugin(imports, register) {
 
     shell.tab({ name: 'Judge', order: 40 });
     shell.pane({ tab: 'Judge', name: 'Judgement', order: 10, Component: Judgements });
-    shell.pane({ tab: 'Judge', name: 'Recent', order: 20, Component: Judge });
+    shell.pane({ tab: 'Judge', name: 'Judges', order: 20, Component: makeJudges(theme, okc) });
+    shell.pane({ tab: 'Judge', name: 'Recent', order: 30, Component: Judge });
 
     await register(null, {});
 }
