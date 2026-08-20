@@ -271,7 +271,25 @@ module.exports = function guests(theme, okc, remember) {
                                         <KvRow label="fingerprint"><Mono>{on.fingerprint || 'none'}</Mono></KvRow>
                                         <KvRow label="held">{on.has ? 'yes' : 'no token here'}</KvRow>
                                         <KvRow label="plan">{on.plan || <span className="muted">not known</span>}</KvRow>
-                                        <KvRow label="account">{on.account || <span className="muted">not recorded</span>}</KvRow>
+                                        {/* AN ACCOUNT IS AN OBJECT, NOT A WORD, and rendering
+                                            it as one took the whole window down: React
+                                            refuses an object as a child and there is no
+                                            boundary between one bad value and a blank app.
+                                            It carries {email, uuid, organization}.
+                                            
+                                            THE UUID IS NOT SHOWN, and that is the same rule
+                                            the fingerprint row is written for: this pane
+                                            says WHOSE a sign-in is and never enough to be
+                                            one. The old window shows the address and the
+                                            organization and nothing else, under the words
+                                            "signed in as" -- which is the question being
+                                            answered, where "account" is only the shape of
+                                            the answer. */}
+                                        <KvRow label="signed in as">
+                                            {on.account && on.account.email
+                                                ? on.account.email + (on.account.organization ? ' — ' + on.account.organization : '')
+                                                : <span className="muted">not recorded — this one was signed in before the account was kept, and the credential itself does not carry it</span>}
+                                        </KvRow>
                                         <KvRow label="added">{day(on.added) || 'unknown'}</KvRow>
                                         <KvRow label="came from">{on.from || <span className="muted">not recorded</span>}</KvRow>
                                         <KvRow label="last refreshed">{day(on.refreshed) || <span className="muted">never</span>}</KvRow>

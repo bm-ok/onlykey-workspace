@@ -161,19 +161,30 @@ module.exports = function kit(theme) {
                             <Empty bad>No repository here has a default branch, which should not be possible.</Empty>
                         </Shelf>
 
-                        <Shelf title="Markdown, where it can do nothing" about="an iframe with a CSP, because this text came off a machine running somebody's script">
-                            {/* THE LAST TWO LINES ARE A LIVE ASSERTION, not
-                                decoration. They are raw HTML inside the
-                                markdown — which `marked` passes straight
-                                through, by design — and each says what it will
-                                say if the policy holds. If either is ever
-                                replaced by the word BROKEN, then
-                                `default-src 'none'` has stopped covering
-                                script-src and this frame is running somebody
-                                else's code inside a page that has node behind
-                                it. A comment claiming it is safe cannot fail;
-                                this can. */}
-                            <Markdown height="360px" text={[
+                        <Shelf title="Markdown, where it can do nothing" about="an iframe that renders a self-contained document and reaches nothing outside it">
+                            {/* SELF-CONTAINED IS THE WHOLE CONTRACT. The frame
+                                carries `default-src 'none'` with two exceptions,
+                                and they are exactly what a document that brings
+                                everything with it needs: `style-src
+                                'unsafe-inline'` for its own <style>, and
+                                `img-src data:` for a picture written into the
+                                markdown rather than fetched.
+
+                                The image below is a data: URI and renders. A
+                                <script>, an inline handler, a remote <img> or a
+                                webfont would each be refused -- which is the
+                                point, because this text came off a machine
+                                running a script somebody wrote, and `marked`
+                                passes raw HTML straight through by design.
+
+                                THIS EXHIBIT USED TO PROVE THAT BY CARRYING A
+                                REAL SCRIPT AND A REMOTE IMAGE. It did prove it
+                                -- the browser refused all three -- but it logged
+                                three CSP violations every time anybody opened
+                                this pane, and a guard that shouts on every
+                                render is one people learn to scroll past. The
+                                proof belongs in a test, not in the catalogue. */}
+                            <Markdown height="300px" text={[
                                 '## What a pull request would say',
                                 '',
                                 'Composed from **real facts**, not placeholders.',
@@ -181,13 +192,9 @@ module.exports = function kit(theme) {
                                 '- cut from `master` at `a1b7432e`',
                                 '- links to the others show `?` until the cut exists',
                                 '',
-                                '> markdown carries raw HTML through by design, which is why this is in',
-                                '> a frame that may not run scripts and may not fetch anything.',
+                                '> Everything it needs, it brings. Nothing it draws is fetched.',
                                 '',
-                                '<p id="a">a script here does not run</p>',
-                                '<scr' + 'ipt>document.getElementById("a").textContent = "BROKEN: the script ran"</scr' + 'ipt>',
-                                '<p id="b">nor does an onerror</p>',
-                                '<img src="x" width="1" onerror="document.getElementById(&quot;b&quot;).textContent = &quot;BROKEN: the onerror ran&quot;">'
+                                '![a picture written into the document](data:image/svg+xml;utf8,<svg%20xmlns="http://www.w3.org/2000/svg"%20width="140"%20height="24"><rect%20width="140"%20height="24"%20rx="4"%20fill="%232ea043"/><text%20x="70"%20y="16"%20font-family="sans-serif"%20font-size="11"%20fill="white"%20text-anchor="middle">self-contained</text></svg>)'
                             ].join('\n')} />
                         </Shelf>
 

@@ -114,6 +114,49 @@ async function plugin(imports, register) {
     //as the guard hook in the theme, and for the same reason.
     var goTo = { at: null };
 
+    //---- one broken thing is not a blank window ---------------------------
+    //
+    //REACT TAKES THE WHOLE TREE DOWN FOR ONE BAD VALUE. Render an object where a
+    //string belongs -- a task's `subject`, a sign-in's `account` -- and every tab
+    //goes, the topbar with it, and what is left says nothing at all. That has
+    //happened twice here, and both times the app looked dead rather than wrong.
+    //
+    //SAYING IT IS THE OLD WINDOW'S RULE, not an invention. `paintTasks` used to
+    //swallow its errors and draw nothing, "which looks exactly like having
+    //nothing to show -- and that is the question somebody is asking when they
+    //look at an empty tab". A boundary that renders the error keeps that true
+    //while stopping one pane from taking the other fourteen with it.
+    //
+    //A CLASS, BECAUSE REACT HAS NO HOOK FOR THIS. componentDidCatch and
+    //getDerivedStateFromError are the whole API and neither exists on a function
+    //component. This is the only class in the app and that is why.
+    class Boundary extends React.Component {
+        constructor(props) { super(props); this.state = { err: null }; }
+        static getDerivedStateFromError(err) { return { err: err }; }
+        componentDidCatch(err) { console.error('[shell] ' + (this.props.what || 'something') + ' threw', err); }
+        //RESET WHEN WHAT IS BEING SHOWN CHANGES, so a pane that broke is not
+        //broken for ever: switching away and back mounts it again. `what` is the
+        //tab and pane name, which is exactly the thing that should clear it.
+        componentDidUpdate(prev) {
+            if (prev.what !== this.props.what && this.state.err) this.setState({ err: null });
+        }
+        render() {
+            if (!this.state.err) return this.props.children;
+            return (
+                <div className="pane active">
+                    <p className="note bad">
+                        <strong>{(this.props.what || 'This') + ' could not be drawn. '}</strong>
+                        {String(this.state.err && this.state.err.message || this.state.err)}
+                    </p>
+                    <p className="note">
+                        The rest of the window is unaffected. This is the pane failing, not the
+                        app — the whole message is in the developer console.
+                    </p>
+                </div>
+            );
+        }
+    }
+
     function App() {
         //WHERE YOU WERE, KEPT. This window is restarted on every change to the
         //server half, and it used to come back on the first tab every time —
@@ -253,9 +296,12 @@ async function plugin(imports, register) {
             {/* ABOVE THE SUB-TABS AND BELOW THE ROW, which is where the old
                 window puts them: they are about the whole app rather than about
                 the tab, and a person reads down from the top. */}
+            {/* A BANNER IS MOUNTED ON EVERY TAB, so one that throws is worse
+                than a pane that throws: it would blank the window wherever you
+                stood. Each gets its own boundary for that reason. */}
             {showing.map(function (b, i) {
                 var B = b.Component;
-                return <B key={b.name || i} />;
+                return <Boundary key={b.name || i} what={'the ' + (b.name || 'banner') + ' banner'}><B /></Boundary>;
             })}
 
             {mine.length > 1 ? (
@@ -285,7 +331,9 @@ async function plugin(imports, register) {
                 that read the JavaScript. Without it the first column sits flush
                 against the left edge, which is exactly how it looked. */}
             <main>
-                {Body ? <Body /> : <p className="empty">no tabs are loaded</p>}
+                <Boundary what={on + (picked ? '/' + picked.name : '')}>
+                    {Body ? <Body /> : <p className="empty">no tabs are loaded</p>}
+                </Boundary>
             </main>
 
             {/* MOUNTED ONCE, HERE, AND NOWHERE ELSE. A dialog is opened from
