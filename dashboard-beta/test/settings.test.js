@@ -152,15 +152,12 @@ test('no workspace open is not allowed, whatever is set', async () => {
 test('the drills cannot be switched on down the pipe', async () => {
     const { actions, settings } = await anApp();
 
+    //WORD FOR WORD, because a drill reads this message. `settingSet testsEnabled`
+    //is watched by src/app/tests/suites/02-the-refusals, which matches on this
+    //phrase — so the wording is part of the interface and not decoration.
     await assert.rejects(
         () => actions.call('settingSet', { name: 'testsEnabled', value: true, _overTheWire: true }),
-        /decided in the window/);
-
-    //AND IT SAYS WHERE TO GO INSTEAD. A refusal with no door is one whoever hit
-    //it works around — this is the whole reason `testsAsk` exists.
-    await assert.rejects(
-        () => actions.call('settingSet', { name: 'testsEnabled', value: true, _overTheWire: true }),
-        /testsAsk/);
+        /switched on in the window/);
 
     assert.equal(settings.read().testsEnabled, false, 'it went on anyway — the refusal came after the write');
 });
@@ -301,8 +298,14 @@ test('the pipe cannot arm the drills by moving the folder instead of the switch'
     assert.equal((await settings.allowed()).allowed, false, 'switching workspace did not switch them off');
 
     await assert.rejects(
-        () => actions.call('settingSet', { name: 'testsFor', value: 'C:\somebody\real-work', _overTheWire: true }),
-        /window/);
+        () => actions.call('settingSet', { name: 'testsFor', value: 'C:\\somebody\\real-work', _overTheWire: true }),
+        /other half of that same permission/);
+
+    //AND IT SAYS WHERE TO GO INSTEAD. A refusal with no door is one whoever hit
+    //it works around, which is the whole reason `testsAsk` exists.
+    await assert.rejects(
+        () => actions.call('settingSet', { name: 'testsFor', value: 'C:\\x', _overTheWire: true }),
+        /testsAsk/);
 
     assert.equal((await settings.allowed()).allowed, false,
         'the drills were armed against somebody else\'s folder without the guarded switch being touched');

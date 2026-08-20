@@ -27,8 +27,12 @@ Measured, in the app being ported from:
 |---|---:|---|
 | `actions/tests.js` | 1018 | `suites`, `suiteRun`, `suiteStop`, `testsForget`, `drillSweep`, `drillCommit` |
 | `tasks/harness.js` | 635 | registration, `needs`, fingerprints, series semantics |
-| `test/*.js` | 1309 | the drills themselves, across 8 files |
+| `test/*.js` | 1309 | the catalogue tools: claims, outline, unused, and the static checks |
 | | **2962** | |
+
+The drills themselves — `test/suites/`, 65 files and 10,268 lines — **are already
+here**, at `./suites`. See `./suites/README-PORT.md` for what was rewritten on the
+way over and what was deliberately left pointing at nothing.
 
 ## Why it is not simply a big copy
 

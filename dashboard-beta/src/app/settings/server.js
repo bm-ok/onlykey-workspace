@@ -164,6 +164,13 @@ function truth(v) {
 function shaped(key, v) {
     if (typeof DEFAULTS[key] === 'boolean') return truth(v);
     if (v === null || v === undefined) return null;
+    //AN OBJECT IS ALREADY A SHAPE. This is only here because a COMMAND LINE has
+    //no types; a caller that hands over a structure has already said what it
+    //means, and `String({...})` is "[object Object]" — which for `testsAsked`
+    //would turn a standing request into a corrupt one that still renders.
+    //Unreachable today, since ATTHEWINDOW refuses the pipe and the window's own
+    //writers build their values; a trap laid for whoever adds the next setting.
+    if (typeof v === 'object') return v;
     var s = String(v).trim();
     return s === '' ? null : s;
 }
@@ -284,8 +291,14 @@ async function plugin(imports, register) {
                 //anyway. Same rule as approving a job: a model may ASK for the
                 //drills and may not decide that somebody's repository is a fine
                 //place to run them.
+                //THE SWITCH KEEPS ITS OWN SENTENCE, WORD FOR WORD, because a
+                //drill in ../tests/suites/02-the-refusals reads this message. A
+                //refusal whose wording drifts is a check that goes red for a
+                //reason that is not the one it is about.
                 if (ATTHEWINDOW.indexOf(key) !== -1 && a._overTheWire) {
-                    throw new Error('"' + key + '" is part of whether the drills may run, and that is decided in the window by somebody who knows what folder is open. They write a task and take a credential off a machine — that is a decision about somebody\'s repository, not a flag to be set down a pipe. Ask with testsAsk instead; it is answered where the folder is visible.');
+                    throw new Error(key === 'testsEnabled'
+                        ? 'The drills are switched on in the window, by somebody who knows what folder is open. They write a task and take a credential off a machine — that is a decision about somebody\'s repository, not a flag to be set down a pipe.'
+                        : '"' + key + '" is the other half of that same permission. The drills are allowed when testsEnabled is on AND testsFor is the folder open now — so moving the folder arms them against whatever is in front of you without the switch ever being touched. It is decided in the same place, in the window, by somebody who can see which folder that is. Ask with testsAsk instead.');
                 }
 
                 var on = truth(a.value);
