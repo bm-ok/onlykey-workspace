@@ -236,54 +236,58 @@ async function plugin(imports, register) {
         </>);
     }
 
-    //THE CHIP IS ITS OWN COMPONENT so the class name is the only string in the
-    //className — a comparison literal beside it reads as a class to the check
-    //that proves every class exists, and a class that does not exist renders as
-    //nothing.
-    function Chip({ on, pick, children }) {
-        return <button className={'chip' + (on ? ' on' : '')} onClick={pick}>{children}</button>;
-    }
-
-    function Graph() {
-        var [on, setOn] = useState('work');
-
-        return (
-            <Pane>
-                {/* TWO QUESTIONS, ONE RENDERER. Chips rather than a second row of
-                    tabs, because this chooses which subject the picture is about
-                    rather than which part of the app you are in. */}
-                <div className="chips">
-                    <Chip on={on == 'work'} pick={function () { setOn('work'); }}>what happened to the branches</Chip>
-                    <Chip on={on == 'turn'} pick={function () { setOn('turn'); }}>what the supervisor did</Chip>
-                </div>
-                <Panel>
-                    <div className="titlerow">
-                        <div className="card-title">{on == 'work' ? 'Branches, end to end' : 'The last turn'}</div>
-                        <span className="grow" />
-                        <span className="muted">{on == 'work'
-                            ? 'a branch, the task cut from it, the machine, the judgement, the pull request'
-                            : 'read back out of the event stream, not recorded separately'}</span>
-                    </div>
-                    {on == 'work'
-                        ? <Board action="workGraph" />
-                        : <Board action="turnGraph"
-                            //A LIVE BUG THIS INHERITS AND MUST NOT PAPER OVER.
-                            //turnGraph finds the turn boundary by searching back
-                            //for "waking it" through events.all(), which keeps
-                            //the last 200 lines — so a turn whose waking has
-                            //aged out of that window answers "it has not been
-                            //woken since this log begins" while three calls and
-                            //an answer from that same turn are still inside it.
-                            //The empty state is a false negative and its wording
-                            //is misleading. The fix belongs in
-                            //actions/graphs.js — search with `since`, or raise
-                            //the limit for this one query — and until it lands
-                            //this pane says so rather than letting somebody read
-                            //it as "the supervisor has done nothing".
-                            caution={'that may be the log window rather than the supervisor: the turn boundary is found by searching back through the last 200 events, so a waking older than those has aged out while the calls that followed it are still there. Not evidence that nothing ran.'} />}
-                </Panel>
-            </Pane>
-        );
+    //---- the two pictures, as two panes -----------------------------------
+    //
+    //TWO PANES AND NOT ONE PANE WITH CHIPS, and the difference is the whole
+    //reason this was rewritten. The old window has Repositories -> Graph and
+    //Supervisor -> Graph: two panes, two tabs, two questions. This file argued
+    //correctly that "the tab names are the structure" and then quietly merged
+    //them anyway, because they happen to share a renderer.
+    //
+    //SHARING A RENDERER IS NOT A REASON TO SHARE A PLACE. What a branch went
+    //through and what the supervisor reached for in its last turn have nothing
+    //to do with each other; they are next to each other here only because both
+    //are drawable as cards and wires. Somebody who knows the old window and
+    //opens Supervisor looking for Graph would not find it, and would have no
+    //way to guess it is behind a chip under Repositories.
+    //
+    //The renderer stays shared. Only the door is two doors.
+    function GraphFor(which) {
+        return function Graph() {
+            var work = which == 'work';
+            return (
+                <Pane>
+                    <Panel>
+                        <div className="titlerow">
+                            <div className="card-title">{work ? 'Branches, end to end' : 'What it did'}</div>
+                            <span className="grow" />
+                            <span className="muted">{work
+                                ? 'a branch, the task cut from it, the machine, the judgement, the pull request'
+                                : 'read back out of the event stream, not recorded separately'}</span>
+                        </div>
+                        {work
+                            ? <Board action="workGraph" />
+                            : <Board action="turnGraph"
+                                //A LIVE BUG THIS INHERITS AND MUST NOT PAPER
+                                //OVER. turnGraph finds the turn boundary by
+                                //searching back for "waking it" through
+                                //events.all(), which keeps the last 200 lines —
+                                //so a turn whose waking has aged out of that
+                                //window answers "it has not been woken since
+                                //this log begins" while three calls and an
+                                //answer from that same turn are still inside it.
+                                //The empty state is a false negative and its
+                                //wording is misleading. The fix belongs in
+                                //actions/graphs.js — search with `since`, or
+                                //raise the limit for this one query — and until
+                                //it lands this pane says so rather than letting
+                                //somebody read it as "the supervisor has done
+                                //nothing".
+                                caution={'that may be the log window rather than the supervisor: the turn boundary is found by searching back through the last 200 events, so a waking older than those has aged out while the calls that followed it are still there. Not evidence that nothing ran.'} />}
+                    </Panel>
+                </Pane>
+            );
+        };
     }
 
     //---- where this lives, and it is not a choice -------------------------
@@ -296,7 +300,8 @@ async function plugin(imports, register) {
     //
     //The real map is in ui/index.html over there: twelve panes under
     //Repositories, six under Runners, and the tab names as written.
-    shell.pane({ tab: 'Repositories', name: 'Graph', order: 120, Component: Graph });
+    shell.pane({ tab: 'Repositories', name: 'Graph', order: 120, Component: GraphFor('work') });
+    shell.pane({ tab: 'Supervisor', name: 'Graph', order: 50, Component: GraphFor('turn') });
 
     await register(null, {});
 }
