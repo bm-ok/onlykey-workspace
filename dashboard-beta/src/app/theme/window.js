@@ -51,15 +51,25 @@ async function plugin(imports, register, config) {
     //`margin-left: auto`. The dot is the one-glance answer to "is this thing
     //connected", which is why it is first and why it is a colour rather than a
     //word.
-    function Topbar({ brand, sub, live, tabs, on, onPick, right }) {
+    function Topbar({ brand, sub, live, tabs, on, onPick, right, brandTab, brandBadge, onBrand }) {
+        //THE BRAND IS A DOOR WHEN THERE IS SOMEWHERE BEHIND IT. Over there the
+        //Inbox sits here, at the far left, badged with what is waiting — it is
+        //somewhere you are sent rather than somewhere you browse to, which is
+        //why it is not in the row with the rest.
+        var brandBody = (<>
+            <span className="dot" style={live ? { background: 'var(--ok)' } : undefined}
+                title={live ? 'connected' : 'not connected'} />
+            <strong>{brand}</strong>
+            {brandBadge ? <span className="tab-badge">{brandBadge}</span> : null}
+            {sub ? <span className="mono muted">{sub}</span> : null}
+        </>);
         return (
             <div className="topbar">
-                <div className="brand">
-                    <span className="dot" style={live ? { background: 'var(--ok)' } : undefined}
-                        title={live ? 'connected' : 'not connected'} />
-                    <strong>{brand}</strong>
-                    {sub ? <span className="mono muted">{sub}</span> : null}
-                </div>
+                {brandTab
+                    ? <button className={'brand brand-tab' + (on == brandTab ? ' active' : '')}
+                        title={brandTab}
+                        onClick={function () { if (onBrand) onBrand(brandTab); }}>{brandBody}</button>
+                    : <div className="brand">{brandBody}</div>}
                 <div className="tabs">
                     {(tabs || []).map(function (t) {
                         var name = typeof t == 'string' ? t : t.name;

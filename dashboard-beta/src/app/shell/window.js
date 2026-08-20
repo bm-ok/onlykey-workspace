@@ -44,6 +44,28 @@ async function plugin(imports, register) {
     //own, and the tab it lands in needs no edit — the same property one level
     //down, and the reason the five biggest files left can be ported
     //independently of each other.
+    //---- badges, and a tab that is not in the row --------------------------
+    //
+    //A BADGE IS READ FROM SOMEWHERE ELSE, which is the whole point of it. Every
+    //pane in this app is mounted only while it is showing, so a tab that is not
+    //open asks nothing — exactly right for a panel and exactly wrong for a
+    //count whose job is to be seen from another tab. So the count is pushed
+    //here by whoever knows it, and the shell holds it.
+    var badges = {};
+    var badgeWatchers = new Set();
+    function setBadge(name, value) {
+        if (badges[name] === value) return;
+        badges[name] = value;
+        badgeWatchers.forEach(function (f) { f(); });
+    }
+
+    //`chrome: true` KEEPS A TAB OUT OF THE ROW WITHOUT MAKING IT UNREACHABLE.
+    //The Inbox is not one of the tabs over there — it is behind the brand, at
+    //the far left, badged with what is waiting. It is somewhere you are SENT
+    //rather than somewhere you browse to, and putting it in the row beside
+    //Repositories would say the opposite.
+    function inRow(t) { return !t.chrome; }
+
     function panesIn(tab) {
         return panes.filter(function (p) { return p.tab == tab; })
             .sort(function (a, b) { return (a.order || 50) - (b.order || 50) || a.name.localeCompare(b.name); });
@@ -70,8 +92,14 @@ async function plugin(imports, register) {
             });
         };
         var [up, setUp] = useState(okc.connected);
+        var [, bumpBadge] = useState(0);
 
         useEffect(function () { return okc.onUp(setUp); }, []);
+        useEffect(function () {
+            var f = function () { bumpBadge(function (n) { return n + 1; }); };
+            badgeWatchers.add(f);
+            return function () { badgeWatchers.delete(f); };
+        }, []);
 
         //DRIVEN FROM OUTSIDE, so a photograph can be of a named pane rather than
         //whichever one happened to be showing. See ./server.js — this is the
@@ -121,9 +149,12 @@ async function plugin(imports, register) {
                 brand="Dashboard"
                 sub={'beta ' + appPackage.version}
                 live={up}
-                tabs={tabs.map(function (t) { return { name: t.name, badge: t.badge }; })}
+                tabs={tabs.filter(inRow).map(function (t) { return { name: t.name, badge: badges[t.name] }; })}
                 on={on}
                 onPick={setOn}
+                brandTab={(tabs.filter(function (t) { return t.chrome; })[0] || {}).name}
+                brandBadge={badges[(tabs.filter(function (t) { return t.chrome; })[0] || {}).name]}
+                onBrand={setOn}
             />
 
             {mine.length > 1 ? (
@@ -177,7 +208,10 @@ async function plugin(imports, register) {
             //`order` rather than an index, so two tabs can be added without
             //either knowing about the other. Ties fall back to the name.
             tab: function (t) { tabs.push(t); },
-            pane: function (p) { panes.push(p); }
+            pane: function (p) { panes.push(p); },
+
+            //Pushed by whoever counts it. `null` or 0 takes it off.
+            badge: setBadge
         }
     });
 }
