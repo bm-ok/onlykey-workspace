@@ -59,8 +59,12 @@ function Panel({ children }) { return <div className="panel">{children}</div>; }
 //
 //`warn` marks the surprising case — a repository counted from something other
 //than its own default — because it changes what every number elsewhere means.
-function Card({ children, pick, on, warn, onClick, title }) {
-    var cls = 'card' + (pick ? ' pick' : '') + (on ? ' on' : '') + (warn ? ' warn' : '');
+//`muted` IS FOR A CARD THAT IS FINISHED RATHER THAN ONE THAT IS UNIMPORTANT — a
+//todo marked done, and whatever else ends up meaning the same thing. It stays in
+//the list on purpose, because done is kept and shown; it just stops competing
+//with the things still to do.
+function Card({ children, pick, on, warn, muted, onClick, title }) {
+    var cls = 'card' + (pick ? ' pick' : '') + (on ? ' on' : '') + (warn ? ' warn' : '') + (muted ? ' muted' : '');
     return <div className={cls} onClick={onClick} title={title}>{children}</div>;
 }
 function CardTitle({ children }) { return <div className="card-title">{children}</div>; }

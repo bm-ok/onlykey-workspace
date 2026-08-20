@@ -76,6 +76,23 @@ async function plugin(imports, register) {
 
         has: function (name) { return table.has(name); },
 
+        //WHO ASKED FOR THIS CALL, in words, from the stamps the table itself
+        //carries. It belongs here because this is what receives them: an action
+        //module that worked it out from the raw fields would be a second opinion
+        //about the one question every refusal in this app turns on.
+        //
+        //TWO ANSWERS, NOT THE DASHBOARD'S THREE. Over there a third — "the
+        //command line, driving the window" — covers a person's own window being
+        //worked from outside. There is no such state here: ../drive refuses to
+        //press a guarded button or fill a guarded field at all, so a driven call
+        //never reaches an action pretending to be a person. The refusal moved
+        //earlier rather than being dropped, and this returns what is true.
+        whoAsked: function (args) {
+            if (args && args._fromMachine) return String(args._fromMachine);
+            if (args && args._overTheWire) return 'the command line';
+            return 'the window';
+        },
+
         //WHAT THIS HALF OWNS, and nothing else. Kept separate from `all()`
         //because "is this action mine" is a real question with a synchronous
         //answer, and making it wait on a socket would be the wrong trade.
