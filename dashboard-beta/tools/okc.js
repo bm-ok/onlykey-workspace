@@ -18,7 +18,16 @@
 // It does not helpfully boot a copy: a second app has its own empty state and
 // would report an empty world while the real one sits beside it, which is a
 // confusing answer rather than a missing one.
+//
+// IT PROVES WHO IT IS FIRST. The socket is on this machine and reachable by
+// anything else on it, so the app asks for a shared secret before it will take a
+// command — see the long note in src/app/core/ipc/main.js for why that is a check
+// rather than something structural. Reading the token is what makes this program
+// privileged, and what makes it privileged is being run by the account that
+// started the app. Nothing here is configured; both ends work out the same two
+// paths from the same two rules.
 
+const fs = require('node:fs')
 const net = require('node:net')
 const os = require('node:os')
 const path = require('node:path')
@@ -27,10 +36,35 @@ const ADDRESS = process.platform === 'win32'
   ? '\\\\.\\pipe\\okc-dashboard-beta'
   : path.join(os.tmpdir(), 'okc-dashboard-beta.sock')
 
+// Beside the socket, derived the same way — see the note on the other end.
+const TOKEN_FILE = path.join(os.tmpdir(), 'okc-dashboard-beta.token')
+
 const TIMEOUT = 15 * 60 * 1000
+
+// THE TWO WAYS THIS IS MISSING ARE DIFFERENT PROBLEMS AND IT SAYS BOTH, because
+// "permission denied" and "no such file" lead somewhere completely different and
+// a caller who reads only "cannot read the token" will check the wrong one.
+function readToken () {
+  try {
+    return fs.readFileSync(TOKEN_FILE, 'utf8').trim()
+  } catch (err) {
+    if (err.code === 'EACCES' || err.code === 'EPERM') {
+      throw Object.assign(new Error(
+        `The token at ${TOKEN_FILE} is not readable by this account.\n` +
+        'It belongs to whoever started the app; run this as that user.'), { refused: true })
+    }
+    throw Object.assign(new Error(
+      `There is no token at ${TOKEN_FILE}.\n` +
+      'The app writes it at startup and removes it on the way out, so either nothing is running — ' +
+      'start it with "npm start" — or it is running as a different user.'), { notRunning: true })
+  }
+}
 
 function call (action, args = {}) {
   return new Promise((resolve, reject) => {
+    let token
+    try { token = readToken() } catch (err) { return reject(err) }
+
     const socket = net.createConnection({ path: ADDRESS })
     let buf = ''
 
@@ -41,7 +75,14 @@ function call (action, args = {}) {
 
     const finish = (fn, value) => { clearTimeout(timer); socket.end(); fn(value) }
 
-    socket.on('connect', () => socket.write(JSON.stringify({ id: 1, action, args }) + '\n'))
+    // BOTH LINES AT ONCE, and the replies sorted out by id. Waiting for the
+    // greeting to come back before sending the command would put a round trip in
+    // front of every call this program makes, for a socket on the same machine
+    // that has already decided the answer by the time the first write lands.
+    socket.on('connect', () => {
+      socket.write(JSON.stringify({ id: 0, auth: token }) + '\n')
+      socket.write(JSON.stringify({ id: 1, action, args }) + '\n')
+    })
 
     socket.on('data', chunk => {
       buf += chunk
@@ -55,6 +96,17 @@ function call (action, args = {}) {
         try { reply = JSON.parse(line) } catch {
           return finish(reject, new Error('the app sent something that was not JSON'))
         }
+
+        // THE GREETING'S REPLY ARRIVES FIRST AND IS NOT THE ANSWER. A refused
+        // greeting is the whole story and stops here; an accepted one is
+        // bookkeeping and the caller never hears about it.
+        if (reply.id === 0) {
+          if (!reply.ok) {
+            return finish(reject, Object.assign(new Error(reply.error || 'it would not take the token, and did not say why'), { refused: true }))
+          }
+          continue
+        }
+
         if (!reply.ok) {
           return finish(reject, Object.assign(new Error(reply.error || 'it refused, and did not say why'), { refused: true }))
         }
