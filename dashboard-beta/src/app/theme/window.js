@@ -52,24 +52,39 @@ async function plugin(imports, register, config) {
     //connected", which is why it is first and why it is a colour rather than a
     //word.
     function Topbar({ brand, sub, live, tabs, on, onPick, right, brandTab, brandBadge, onBrand }) {
-        //THE BRAND IS A DOOR WHEN THERE IS SOMEWHERE BEHIND IT. Over there the
-        //Inbox sits here, at the far left, badged with what is waiting — it is
-        //somewhere you are sent rather than somewhere you browse to, which is
-        //why it is not in the row with the rest.
-        var brandBody = (<>
-            <span className="dot" style={live ? { background: 'var(--ok)' } : undefined}
-                title={live ? 'connected' : 'not connected'} />
-            <strong>{brand}</strong>
-            {brandBadge ? <span className="tab-badge">{brandBadge}</span> : null}
-            {sub ? <span className="mono muted">{sub}</span> : null}
-        </>);
+        //`.brand` IS THE CONTAINER, NOT THE BUTTON, and the first version of this
+        //got it backwards. Over there the brand is a flex row holding the dot,
+        //then a `<button class="tab brand-tab">`, then whatever else belongs at
+        //the far left. Making the whole row one button put a dashed border
+        //around the dot and the version number, and dropped `.tab`, so it got
+        //none of the styling every other tab has.
+        //
+        //`brand-tab` IS A MODIFIER OF `tab`: monospace, accent-coloured, dashed
+        //border, and truncated because a workspace path is long. It is a real
+        //tab so the same switching and the same active styling drive it.
         return (
             <div className="topbar">
-                {brandTab
-                    ? <button className={'brand brand-tab' + (on == brandTab ? ' active' : '')}
-                        title={brandTab}
-                        onClick={function () { if (onBrand) onBrand(brandTab); }}>{brandBody}</button>
-                    : <div className="brand">{brandBody}</div>}
+                <div className="brand">
+                    <span className="dot" style={live ? { background: 'var(--ok)' } : undefined}
+                        title={live ? 'connected' : 'not connected'} />
+
+                    {/* THE TITLE IS THE WAY IN, because it was the one thing in
+                        this chrome that did nothing. What is behind it answers
+                        "what is waiting on me" — the question somebody asks
+                        after finding out the hard way that something sat for a
+                        day. Every other badge in this window is one corner of
+                        it. */}
+                    {brandTab
+                        ? <button className={'tab brand-tab' + (on == brandTab ? ' active' : '')}
+                            title={'what is waiting on you'}
+                            onClick={function () { if (onBrand) onBrand(brandTab); }}>
+                            <strong>{brand}</strong>
+                            {brandBadge ? <span className="tab-badge">{brandBadge}</span> : null}
+                        </button>
+                        : <strong>{brand}</strong>}
+
+                    {sub ? <span className="mono muted">{sub}</span> : null}
+                </div>
                 <div className="tabs">
                     {(tabs || []).map(function (t) {
                         var name = typeof t == 'string' ? t : t.name;
