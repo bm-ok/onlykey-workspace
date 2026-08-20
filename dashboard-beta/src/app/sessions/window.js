@@ -34,7 +34,7 @@ plugin.consumes = ['shell', 'theme', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono, Button } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Button, ago } = theme;
 
     //FORGETTING A SESSION IS PROPOSED AS A PERSON'S PRESS.
     //
@@ -54,17 +54,6 @@ async function plugin(imports, register) {
         var n = bytes || 0;
         if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
         return Math.max(1, Math.round(n / 1024)) + ' KB';
-    }
-
-    function ago(when) {
-        if (!when) return '—';
-        var secs = Math.max(0, Math.round((Date.now() - Date.parse(when)) / 1000));
-        var n, unit;
-        if (secs < 90) { n = secs; unit = 'second'; }
-        else if (secs < 5400) { n = Math.round(secs / 60); unit = 'minute'; }
-        else if (secs < 172800) { n = Math.round(secs / 3600); unit = 'hour'; }
-        else { n = Math.round(secs / 86400); unit = 'day'; }
-        return n + ' ' + unit + (n == 1 ? '' : 's') + ' ago';
     }
 
     //THE BRANCH LINE, BECAUSE THAT IS WHAT A CONVERSATION IS ABOUT. This led

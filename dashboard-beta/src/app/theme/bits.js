@@ -119,8 +119,16 @@ function Button({ children, kind, protect, guard, ...rest }) {
 //reason — branch cuts used to happen as a side effect of setting a machine up,
 //from whatever string a task carried, so a typo made a branch rather than an
 //error.
-function Plus({ title, onClick, kind }) {
-    return <button className={'plus' + (kind ? ' ' + kind : '')} title={title} onClick={onClick}>+</button>;
+//THE ROUND CONTROL AT THE END OF A TITLE ROW. Named for what it usually is
+//rather than what it always is: the same control carries a refresh glyph on a
+//list that syncs. Hard-coding "+" here sent the branch list's sync button
+//through a plain <button>, which is how a guard silently did not apply once
+//already -- a control outside the kit is a control the guard cannot see.
+function Plus({ title, onClick, kind, disabled, children }) {
+    return (
+        <button className={'plus' + (kind ? ' ' + kind : '')} title={title}
+            onClick={onClick} disabled={disabled}>{children == null ? '+' : children}</button>
+    );
 }
 
 //Hidden until the card is hovered or selected, which is deliberate: settings for
@@ -234,6 +242,28 @@ function Banner({ kind, children }) {
 //A LINK MUST REACH THE PERSON'S REAL BROWSER, not open inside the app window.
 //Under NW.js that is `nw.Shell.openExternal`; in a browser tab it is an ordinary
 //link. Asking which we are in is done here once rather than in every pane.
+//HOW LONG AGO, IN ONE PLACE.
+//
+//This was written out separately in three panes and the copies had already
+//stopped agreeing: one said "1 minutes ago", and they crossed from hours into
+//days at 36 hours and at 48 hours respectively. None of that is a decision --
+//it is drift, and the kind that is invisible because each pane reads fine on
+//its own and they are never seen side by side.
+//
+//THE THRESHOLDS ARE THE OLD WINDOW'S, deliberately: seconds up to 90, minutes
+//up to 90 minutes, hours up to two days, days after. Somebody who knows that
+//window should not have to learn a second sense of "a while ago" here.
+function ago(when) {
+    if (!when) return '—';
+    var secs = Math.max(0, Math.round((Date.now() - Date.parse(when)) / 1000));
+    var n, unit;
+    if (secs < 90) { n = secs; unit = 'second'; }
+    else if (secs < 5400) { n = Math.round(secs / 60); unit = 'minute'; }
+    else if (secs < 172800) { n = Math.round(secs / 3600); unit = 'hour'; }
+    else { n = Math.round(secs / 86400); unit = 'day'; }
+    return n + ' ' + unit + (n == 1 ? '' : 's') + ' ago';
+}
+
 function openOut(href) {
     try {
         if (typeof nw != 'undefined' && nw.Shell) { nw.Shell.openExternal(href); return true; }
@@ -257,6 +287,36 @@ function Spec({ summary, children }) {
 
 //A key/value table. Used in enough places to be worth naming, and it keeps the
 //`<table className="kv">` spelling in one file.
+//---- a thin row of facts, and the sentence under it -----------------------
+//
+//A LIST OF BRANCHES IS NOT A LIST OF CARDS. A card is a thing somebody picks;
+//these are rows somebody reads down, twenty at a time, looking for the one that
+//is wrong. Cards at that count are a wall of borders and the eye has nowhere to
+//run, so this is a rule between rows and nothing else.
+//
+//NAME LEFT, FACTS RIGHT, AND THE FACTS TRAVEL TOGETHER. The row is
+//space-between, so anything handed to `right` has to arrive as ONE child or the
+//name drifts into the middle -- which is why `right` is a slot rather than the
+//caller spreading facts into `children`. Paid for once already in the old
+//window, in this exact list.
+function Part({ children, right }) {
+    return (
+        <div className="group-part">
+            <span>{children}</span>
+            {right == null ? null : <span className="where">{right}</span>}
+        </div>
+    );
+}
+
+//WHAT TO DO ABOUT THE ROW ABOVE, in a sentence, indented and quiet.
+//
+//The facts on the row answer "is my copy current". This answers the question
+//somebody actually has -- am I done with this branch -- and it is the one that
+//is genuinely hard to see, because a squashed pull request leaves work that HAS
+//landed and looks unmerged. It is an explanation rather than a second row of
+//facts, and is styled as one.
+function PartWhy({ children }) { return <div className="group-why">{children}</div>; }
+
 function Kv({ children }) { return <table className="kv"><tbody>{children}</tbody></table>; }
 function KvRow({ label, children }) { return <tr><th>{label}</th><td>{children}</td></tr>; }
 
@@ -265,5 +325,5 @@ module.exports = {
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip,
     Button, Plus, Cog, Finder, Form, HeadRow, Controls,
-    Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, Code, openOut
+    Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, Part, PartWhy, Code, ago, openOut
 };

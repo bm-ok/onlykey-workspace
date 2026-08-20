@@ -20,7 +20,8 @@
 //   the page did not answer      the driver timed out. Almost always a render
 //                                that threw, because a thrown render leaves no
 //                                page for it to talk to.
-//   nothing on screen            it answered, and there is no button, no field
+//   no controls, N chars          it answered and has content, just nothing to press
+//   nothing on screen            it answered, and there is neither content nor control
 //                                and no card. Sometimes correct — a pane can
 //                                honestly have nothing yet — so this is
 //                                reported rather than failed, and the person
@@ -180,8 +181,18 @@ function main () {
           slow.push(name)
           if (!quiet) console.log(`  ${name.padEnd(28)} still arriving`)
         } else if (!anything) {
-          bare.push(name)
-          if (!quiet) console.log(`  ${name.padEnd(28)} nothing on screen`)
+          // NO CONTROLS IS NOT NO CONTENT, and conflating them is how this tool
+          // reported "nothing on screen" for a pane that had just been
+          // photographed full of libraries and chains. A reading pane has
+          // nothing to press ON PURPOSE. Only a pane with neither is a fault,
+          // and only that one is counted.
+          const chars = seen.content || 0
+          if (chars > 200) {
+            if (!quiet) console.log(`  ${name.padEnd(28)} no controls, ${chars} chars of content`)
+          } else {
+            bare.push(name)
+            if (!quiet) console.log(`  ${name.padEnd(28)} nothing on screen`)
+          }
         } else if (!quiet) {
           console.log(`  ${name.padEnd(28)} ${acts.length} button(s), ${(seen.fields || []).length} field(s)`)
         }

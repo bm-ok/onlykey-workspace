@@ -229,6 +229,34 @@ async function plugin(imports, register) {
                 //button" and not what it is about is how the wrong thing gets
                 //confirmed.
                 asking: r.dialog ? words(document.querySelector('.dlg-title')) : null,
+                //HOW MUCH IS ACTUALLY ON THE SCREEN, because buttons and fields
+                //are not content and a pane can be full of both without either.
+                //
+                //`npm run walk` had only those two counts to go on, so it
+                //reported "nothing on screen" for the Judges pane -- five
+                //libraries, five chains and a hundred badges -- purely because
+                //nothing there is pressable. That is the same false statement
+                //this whole port keeps tripping over: a confident answer to a
+                //question nobody asked. A pane with no controls and no words is
+                //broken; a pane with no controls and nine hundred words is a
+                //reading pane, and the two must not read alike.
+                //
+                //A COUNT AND NEVER THE WORDS THEMSELVES. What is on screen
+                //includes whatever a person has typed into a field that is
+                //theirs; a length leaks nothing, and answers the only question
+                //being asked here.
+                //MEASURED ON THE PANE, NEVER ON THE BODY. `r.node` is the whole
+                //document on purpose -- a button in the topbar is still a
+                //button somebody can press -- but counting the document's text
+                //would count the tab row and the brand, so every pane would
+                //come back a few hundred characters full and the empty ones
+                //would be the hardest to find. Which is the fault this is here
+                //to fix, arrived at from the other side.
+                content: (function () {
+                    var pane = r.dialog ? r.node : document.querySelector('.pane.active');
+                    if (!pane) return 0;
+                    return (pane.innerText || '').replace(/\s+/g, ' ').trim().length;
+                })(),
                 buttons: got.buttons.map(strip),
                 fields: got.fields.map(strip)
             };

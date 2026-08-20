@@ -1,0 +1,529 @@
+var React = require('react');
+var { useState } = React;
+var useAsk = require('../okc/ask');
+
+//---------------------------------------------------------------------------
+//Repos: what this workspace is made of, and whether the far end of each one can
+//still be reached.
+//
+//TWO KINDS OF FACT ON ONE PANEL, AND THE DIFFERENCE IS THE POINT. Everything
+//local — the path, the default branch, the branches and their commits — is read
+//from git here and is instant and current. Everything about GitHub was asked for
+//ON PURPOSE, at a moment, and carries when it was asked. Mixing them without
+//saying which is which is how "unreachable" gets read as "gone" when it means
+//"nobody has asked since Tuesday".
+//
+//WHICH IS WHY NOTHING HERE ASKS GITHUB ON A TIMER. `repositories` returns what
+//was last learnt; `repositoriesCheck` is a button. A panel that refreshed the
+//remote every few seconds would spend a rate limit on a fact that changes when
+//somebody forks something — months apart — and would make "asked GitHub: 11
+//hours ago" impossible to ever see.
+//
+//WHERE WORK GOES IS THE ONE THING ON THIS PANE THAT REACHES SOMEBODY ELSE'S
+//REPOSITORY.
+//
+//      my fork  <->  somebody else's fork  <->  the project
+//
+//A change belongs in the fork you forked FROM: if the project itself were the
+//destination you would have forked the project. So picking a link is picking who
+//you are working with, and everything above them stops being this app's business
+//— not watched, not counted, not shown. It is stated in a sentence rather than
+//as a bare name, because a name cannot carry whether anybody chose it, and that
+//is the whole distinction.
+//---------------------------------------------------------------------------
+
+module.exports = function reposPane(theme, okc, remember) {
+    var {
+        Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
+        Badge, Badges, Button, Plus, Skeleton, Empty, Note, Mono, Muted,
+        Kv, KvRow, Part, PartWhy, Notice, ask, ago, openOut
+    } = theme;
+
+    //Which of them a fast-forward can actually help. `ahead` and `only here` are
+    //not problems to be fixed — they are work that has not gone anywhere yet —
+    //and `diverged` is a decision this app does not make.
+    function canCatchUp(b) { return b.state == 'behind' || b.state == 'different'; }
+
+    var STATE = {
+        same: null,
+        behind: { kind: 'warn', word: 'behind' },
+        ahead: { kind: 'muted', word: 'ahead' },
+        diverged: { kind: 'bad', word: 'diverged' },
+        different: { kind: 'warn', word: 'out of step' },
+        'only here': { kind: 'muted', word: 'only here' },
+        'only on origin': { kind: 'muted', word: 'only on origin' }
+    };
+
+    function whyNotCatchUp(b) {
+        if (canCatchUp(b)) return 'Fast-forward ' + b.branch + ' to origin';
+        if (b.state == 'same') return 'Already the same commit as origin';
+        if (b.state == 'ahead') return 'It is ahead of origin — there is nothing here to catch up to';
+        if (b.state == 'diverged') return 'It and origin have both moved. This only fast-forwards, so it will not touch it';
+        if (b.state == 'only here') return 'Origin has no branch by this name';
+        return 'There is nothing here to fast-forward';
+    }
+
+    //WHAT THE ROW MEANS, AS OPPOSED TO WHAT IT SAYS. The shas answer "is my copy
+    //current"; this answers "am I done with this branch" — the question somebody
+    //actually has, and the one that is hard to see, because a squashed pull
+    //request leaves work that HAS landed looking unmerged.
+    function saysAbout(b) {
+        var a = b.against;
+        if (!a) return null;
+        var behind = a.behind ? a.behind + ' commit(s) behind ' + a.base : null;
+        if (a.state == 'landed') {
+            return (
+                <PartWhy>
+                    <span className="ok">{'Everything on this branch is already in ' + a.base}</span>
+                    <span className="muted">{' — the commits look different because the pull request was squashed when it merged. Nothing here is unsaved. It can be deleted on the Branches tab.'}</span>
+                </PartWhy>
+            );
+        }
+        if (a.state == 'live') {
+            return (
+                <PartWhy>
+                    <span>{a.unlanded + ' commit(s) not in ' + a.base + ' yet'}</span>
+                    {behind ? <span className="muted">{' · ' + behind + ', so it was cut before the latest work landed'}</span> : null}
+                </PartWhy>
+            );
+        }
+        //Nothing unique and nothing behind is the ordinary resting state of a
+        //branch that is simply level, and it needs no sentence at all.
+        return behind ? <PartWhy><span className="muted">{'Nothing of its own · ' + behind}</span></PartWhy> : null;
+    }
+
+    //---- the branches of the selected repository ---------------------------
+
+    function Branches({ repo, onMoved }) {
+        //ASKED EVERY EIGHT SECONDS BECAUSE IT IS LOCAL AND IT MOVES. This reads
+        //git, not GitHub — a sync from the Branches tab or the command line
+        //moves it, and a panel whose whole job is saying whether two things
+        //match is worse than useless when it is stale.
+        var q = useAsk(okc, 'repoBranches', { repo: repo }, 8000);
+        var [busy, setBusy] = useState(null);
+
+        function sync(branch) {
+            setBusy(branch || '*');
+            okc.call('repoSyncBranch', branch ? { repo: repo, branch: branch } : { repo: repo }).then(
+                function (x) { setBusy(null); q.now(); onMoved(x && x.note, x && x.moved ? null : 'warn'); },
+                function (e) { setBusy(null); onMoved(e.message, 'bad'); }
+            );
+        }
+
+        if (q.error && !q.state) return <Panel><Note kind="bad">{q.error}</Note></Panel>;
+        if (!q.state) return <Panel><Skeleton rows={4} /></Panel>;
+
+        var s = q.state;
+        var branches = s.branches || [];
+
+        return (
+            <Panel>
+                <CardTitle>
+                    <span>Branches</span>
+                    {/* THE BADGE IS ABOUT WHAT IS WRONG. A branch that exists
+                        only here is not wrong — it is unpushed work — so it gets
+                        a plain count beside the warning rather than being folded
+                        into it, where it would read as a fault. */}
+                    <Badge kind={s.outOfStep ? 'warn' : 'ok'}>
+                        {s.outOfStep ? s.outOfStep + ' out of step' : 'in step with origin'}
+                    </Badge>
+                    {s.onlyHere ? <Badge kind="muted">{s.onlyHere + ' only here'}</Badge> : null}
+                    <Grow />
+                    <Plus disabled={busy == '*'} onClick={function () { sync(null); }}
+                        title="Fetch from origin and fast-forward every branch here that has one. Only fast-forwards.">
+                        {busy == '*' ? '…' : '⟳'}
+                    </Plus>
+                </CardTitle>
+                <Note>{s.note}</Note>
+                {branches.length ? branches.map(function (b) {
+                    var st = STATE[b.state];
+                    return (
+                        <div key={b.branch}>
+                            <Part right={
+                                <React.Fragment>
+                                    {/* HERE, THEN THERE, in that order, because
+                                        the question is "is mine current" and the
+                                        answer is read left to right. A dash for
+                                        the side that has nothing, rather than a
+                                        blank that reads as a rendering fault. */}
+                                    <Mono>{b.local || '—'}</Mono>
+                                    <span className="muted">{'→'}</span>
+                                    <span className="mono muted">{b.remote || '—'}</span>
+                                    {b.ahead != null || b.behind != null
+                                        ? <span className="muted">{(b.ahead ? '+' + b.ahead : '') + (b.behind ? ' −' + b.behind : '')}</span>
+                                        : null}
+                                    {st ? <Badge kind={st.kind}>{st.word}</Badge> : null}
+                                    {/* THE REASON A ROW CANNOT BE CAUGHT UP IS
+                                        THE USEFUL PART, and it differs per row —
+                                        which is why the button stays and says
+                                        why rather than going quiet. */}
+                                    <Button kind="small" disabled={!canCatchUp(b) || busy == b.branch}
+                                        title={whyNotCatchUp(b)}
+                                        onClick={function () { sync(b.branch); }}>
+                                        {busy == b.branch ? '…' : '⟳'}
+                                    </Button>
+                                </React.Fragment>
+                            }>
+                                <Mono>{b.branch}</Mono>
+                            </Part>
+                            {saysAbout(b)}
+                        </div>
+                    );
+                }) : <Empty>This repository has no branches.</Empty>}
+            </Panel>
+        );
+    }
+
+    //---- where work goes ---------------------------------------------------
+
+    function WhereWorkGoes({ r, chain, onWalk, onChanged }) {
+        var now = r.target || { on: null, chosen: false };
+
+        function keepToItself() {
+            ask({
+                title: 'Stop sending ' + r.repo + "'s work anywhere?",
+                danger: true,
+                plain: [
+                    'It sends work to ' + now.on + ' now. Afterwards, issues and pull requests both stay on your own remote and nothing upstream is watched.',
+                    'Nothing already open is closed or moved by this. It changes where the next one goes.'
+                ],
+                confirm: 'Keep to itself',
+                onYes: function () {
+                    return okc.call('repoTargetSet', { repo: r.repo, on: '' }).then(function (x) { onChanged(x && x.note, true); });
+                }
+            });
+        }
+
+        function sendWorkHere(l) {
+            ask({
+                title: 'Send ' + r.repo + "'s work to " + l.on + '?',
+                plain: [
+                    'Issues would be read from ' + l.on + ', and pull requests from this repository would open into it.',
+                    'Nothing above it is watched after this — which is the point: if the project itself were the destination, you would have forked the project.',
+                    l.immediate
+                        ? 'It is the immediate parent, so syncing the fork stays one call to GitHub.'
+                        : 'It is NOT the immediate parent, so syncing the fork cannot use GitHub’s one-call merge-upstream — that would need fetching and merging through this host, and is refused rather than substituted.',
+                    l.self ? 'This is your own remote, which is the same as picking nothing — except that it is recorded as a decision.' : null
+                ].filter(Boolean),
+                fields: [{ name: 'why', label: 'Why (optional)', placeholder: 'the fork I am collaborating through' }],
+                confirm: 'Send work to ' + l.on,
+                onYes: function (v) {
+                    return okc.call('repoTargetSet', { repo: r.repo, on: l.on, why: v.why || null })
+                        .then(function (x) { onChanged(x && x.note); });
+                }
+            });
+        }
+
+        return (
+            <Card>
+                <CardTitle>
+                    <span>Where work goes</span>
+                    <Grow />
+                    <Badge kind={now.chosen ? 'ok' : 'warn'}>{now.chosen ? 'picked' : 'not picked'}</Badge>
+                </CardTitle>
+                {/* SAID IN A SENTENCE. A bare name cannot carry whether anybody
+                    chose it, and that is the whole distinction this card makes. */}
+                <Note>
+                    {now.chosen
+                        ? 'Issues are read from ' + now.on + ' and pull requests open into it. You picked that'
+                            + (now.at ? ' on ' + String(now.at).slice(0, 10) : '') + ', and nothing above it is watched.'
+                        : <span>
+                            <strong>{'Nothing has been picked, so this keeps to itself. '}</strong>
+                            {'Issues and pull requests both stay on ' + (now.on || 'this repository')
+                                + ' — your own remote — and nothing upstream is watched. That is right if this IS the project. '
+                                + 'If it is a fork and work belongs with whoever you forked from, walk the chain and say so.'}
+                        </span>}
+                </Note>
+                <div className="row">
+                    {/* THE WALK IS ON A BUTTON, NEVER ON THE DRAW LOOP. One
+                        request per link, and the answer only changes when
+                        somebody forks something — so a panel that walked it on
+                        every paint would spend a handful of requests every few
+                        seconds on a fact that is stable for months. */}
+                    <Button onClick={onWalk}
+                        title="One request per link, following each parent until a repository that is not a fork">
+                        {chain ? 'Walk it again' : 'Walk the fork chain'}
+                    </Button>
+                    {now.chosen
+                        ? <Button onClick={keepToItself}
+                            title="Forget the choice: back to your own remote, and nothing upstream watched">Keep to itself</Button>
+                        : null}
+                </div>
+
+                {/* THE CHAIN, ONCE IT HAS BEEN WALKED. Each link is a place work
+                    could go, with the two facts that decide whether it can: may
+                    this host push there, and does syncing stay cheap. */}
+                {chain ? (
+                    <div style={{ marginTop: '10px' }}>
+                        {chain.stopped ? <Note kind="bad">{chain.stopped}</Note> : null}
+                        {(chain.links || []).map(function (l) {
+                            return (
+                                <Part key={l.on} right={
+                                    <React.Fragment>
+                                        <span className={l.mayPush ? 'muted' : 'bad'}>
+                                            {l.mayPush
+                                                ? (l.openIssues == null ? '' : l.openIssues + ' open issue(s)')
+                                                : 'this token cannot push here'}
+                                        </span>
+                                        {l.target || !l.mayPush
+                                            ? null
+                                            : <Button kind="ok" onClick={function () { sendWorkHere(l); }}>Send work here</Button>}
+                                    </React.Fragment>
+                                }>
+                                    <Mono>{l.on}</Mono>
+                                    {l.self ? <Badge kind="muted">yours</Badge> : null}
+                                    {l.target ? <Badge kind="ok">work goes here</Badge> : null}
+                                    {!l.fork ? <Badge kind="muted">the project</Badge> : null}
+                                </Part>
+                            );
+                        })}
+                    </div>
+                ) : null}
+            </Card>
+        );
+    }
+
+    //---- the detail --------------------------------------------------------
+
+    function Detail({ r, chain, onWalk, onChanged, onAsked }) {
+        if (!r) return <Panel><Empty>Pick a repository on the left.</Empty></Panel>;
+        var rem = r.remote;
+        var asked = !!r.checked;
+
+        function standing() {
+            if (!asked) return <Badge>not asked about yet</Badge>;
+            if (r.reachable === false) return <Badge kind="bad">cannot be reached</Badge>;
+            if (r.why) return <Badge kind="warn">reachable, not usable</Badge>;
+            return <Badge kind="ok">reachable</Badge>;
+        }
+
+        return (
+            <Panel>
+                <CardTitle>
+                    <Mono>{r.repo}</Mono>
+                    {r.privateRepo ? <Badge kind="muted">private</Badge> : null}
+                    {r.fork ? <Badge kind="muted">
+                        {r.chained ? 'fork of ' + r.parent + ' of ' + r.source : (r.parent ? 'fork of ' + r.parent : 'fork')}
+                    </Badge> : null}
+                    {standing()}
+                </CardTitle>
+
+                <Kv>
+                    {/* THE PATH AND THE URL ARE THERE TO BE COPIED. The old window had to
+                        say so with user-select:text on each; here the stylesheet
+                        makes body selectable and only chrome opts out, so a second
+                        override would be a class that changes nothing. */}
+                    <KvRow label="here"><Mono>{r.path}</Mono></KvRow>
+                    <KvRow label="default branch">
+                        <Mono>{r.default || '(none)'}</Mono>
+                        <span className="muted">{r.head ? '  at ' + String(r.head).slice(0, 8) : ''}</span>
+                    </KvRow>
+                    <KvRow label="origin">
+                        {rem
+                            ? <Mono>{rem.url}</Mono>
+                            : <span className="bad">no remote called origin — nothing here can be pushed onward</span>}
+                    </KvRow>
+                    {asked && r.may ? (
+                        <KvRow label="this token may">
+                            <span className={r.may.code ? 'ok' : 'bad'}>{r.may.code ? 'read code' : 'NOT read code'}</span>
+                            <span>{' · '}</span>
+                            <span className={r.may.pulls ? 'ok' : 'bad'}>{r.may.pulls ? 'use pull requests' : 'NOT use pull requests'}</span>
+                        </KvRow>
+                    ) : null}
+                    {asked && r.accountMay ? (
+                        //WHAT THE ACCOUNT MAY DO IS NOT WHAT THE TOKEN MAY DO,
+                        //and reading the first as the second is how somebody
+                        //concludes a refusal is a bug in this app.
+                        <KvRow label="your account may">
+                            <span className="muted">
+                                {Object.keys(r.accountMay).filter(function (k) { return r.accountMay[k]; }).join(', ')
+                                    + ' — which is not the same as what the token may do'}
+                            </span>
+                        </KvRow>
+                    ) : null}
+                    {asked && r.upstreamDefault ? (
+                        <KvRow label="there">
+                            <Mono>{r.upstreamDefault}</Mono>
+                            {r.upstreamHead
+                                ? <span className={r.inStep ? 'ok' : ''}>
+                                    {r.inStep ? '  same commit as here' : '  at ' + String(r.upstreamHead).slice(0, 8) + ' — different from here'}
+                                </span>
+                                : <span className="muted">{'  its head could not be read'}</span>}
+                        </KvRow>
+                    ) : null}
+                    {asked && r.intoParent ? (
+                        //WHAT IS ABOVE THIS ONE, WHICH IS NOT WHERE WORK GOES.
+                        //
+                        //This row said "a pull request goes to" and named the
+                        //parent, which was true while the target was INFERRED
+                        //from the parent and became false the moment it became a
+                        //choice — leaving it two rows above "work goes to"
+                        //saying something different about the same thing. Two
+                        //places knowing one fact and disagreeing.
+                        //
+                        //Kept and renamed, because what it carries is still
+                        //worth having: whether this token could push to the
+                        //parent AT ALL. That is a fact about GitHub rather than
+                        //a decision about where work goes.
+                        <KvRow label="one level up">
+                            <Mono>{r.intoParent.repo}</Mono>
+                            <span>{'  '}</span>
+                            <span className={r.intoParent.mayOpen ? 'ok' : 'bad'}>
+                                {r.intoParent.mayOpen
+                                    ? 'this token could open a pull request there'
+                                    : 'this token could NOT open a pull request there'}
+                            </span>
+                            {r.intoParent.why ? <div className="muted">{r.intoParent.why}</div> : null}
+                            {r.chained ? (
+                                <Note>
+                                    <strong>{'This is a fork of a fork. '}</strong>
+                                    {'One level up is ' + r.parent + '; the root of the network is ' + r.source
+                                        + '. GitHub reports those two and never the middle of a longer chain, so if work belongs somewhere between them, walk the chain below and say so.'}
+                                </Note>
+                            ) : null}
+                        </KvRow>
+                    ) : null}
+                    {/* WHERE WORK GOES, above the timestamp, because it is the
+                        thing on this panel that decides what happens to somebody
+                        else's repository. */}
+                    <KvRow label="work goes to">
+                        <Mono>{(r.target && r.target.on) || '(nowhere — no remote)'}</Mono>
+                        <span>{'  '}</span>
+                        {r.target && r.target.chosen
+                            ? <Badge kind="ok">you picked this</Badge>
+                            : <Badge kind="warn">nothing picked — it keeps to itself</Badge>}
+                    </KvRow>
+                    <KvRow label="asked GitHub">
+                        <span className="muted">{asked ? ago(r.checked) : 'never'}</span>
+                    </KvRow>
+                </Kv>
+
+                {r.why ? (
+                    <Note>
+                        <strong className={r.reachable === false ? 'bad' : ''}>
+                            {r.reachable === false ? 'Cannot be reached. ' : 'Reachable, but not usable yet. '}
+                        </strong>
+                        <span>{r.why}</span>
+                    </Note>
+                ) : null}
+
+                <WhereWorkGoes r={r} chain={chain} onWalk={onWalk} onChanged={onChanged} />
+
+                <div className="row" style={{ marginTop: '8px' }}>
+                    <Button onClick={onAsked}>Ask GitHub about this one</Button>
+                    {rem && rem.kind == 'github'
+                        ? <Button onClick={function () { openOut('https://' + rem.host + '/' + rem.owner + '/' + rem.repo); }}>
+                            Open it on GitHub
+                        </Button>
+                        : null}
+                </div>
+            </Panel>
+        );
+    }
+
+    //---- the pane ----------------------------------------------------------
+
+    return function Repos() {
+        //ASKED ON A CADENCE BUT NEVER OF GITHUB. `repositories` returns what was
+        //last learnt about the remote plus everything local; only the buttons
+        //here reach GitHub.
+        var q = useAsk(okc, 'repositories', {}, 8000);
+        var [picked, setPicked] = remember.use('repos', 'repo', null);
+        var [chain, setChain] = useState(null);
+        var [said, setSaid] = useState(null);
+
+        if (q.error && !q.state) return <Pane><Note kind="bad">{q.error}</Note></Pane>;
+        if (!q.state) return <Pane><Skeleton rows={4} /></Pane>;
+
+        var repos = q.state.repos || [];
+        //Reconciled against what exists, like every other selection here — a
+        //remembered name for a repository that has been removed would leave the
+        //detail column empty with no way to see why.
+        var one = repos.filter(function (r) { return r.repo == picked; })[0]
+            || (repos.length ? repos[0] : null);
+
+        function pick(name) {
+            setPicked(name);
+            //THE WALK BELONGS TO THE REPOSITORY IT WAS WALKED FOR. Carrying it
+            //across a selection would show one repository's fork chain under
+            //another's name.
+            setChain(null);
+        }
+
+        function walk() {
+            okc.call('repoChain', { repo: one.repo }).then(
+                function (c) { setChain(c); setSaid({ text: c.note }); },
+                function (e) { setSaid({ kind: 'bad', text: e.message }); }
+            );
+        }
+
+        function changed(note, warn) {
+            setChain(null);
+            setSaid({ text: note, kind: warn ? 'warn' : null });
+            q.now();
+        }
+
+        return (
+            <Pane>
+                <Note>
+                    What this workspace is made of, and whether the far end of each one can still be reached.
+                    Everything above is local and instant; anything about GitHub was asked for on purpose and
+                    carries when it was asked.
+                </Note>
+
+                <TitleRow>
+                    <span>Repositories</span>
+                    <span className="muted">{repos.length ? '— ' + repos.length + ' in ' + q.state.dir : '— none'}</span>
+                    <Grow />
+                    <Button onClick={function () {
+                        okc.call('repositoriesCheck', {}).then(
+                            function (x) { setSaid({ text: x.note }); q.now(); },
+                            function (e) { setSaid({ kind: 'bad', text: e.message }); }
+                        );
+                    }}>Ask GitHub</Button>
+                </TitleRow>
+                <Note>{q.state.note}</Note>
+                {said ? <Notice kind={said.kind} onClose={function () { setSaid(null); }}>{said.text}</Notice> : null}
+
+                <Cols>
+                    <Col narrow>
+                        <Stack>
+                            {repos.length ? repos.map(function (r) {
+                                return (
+                                    <Card key={r.repo} pick on={one && r.repo == one.repo}
+                                        warn={r.reachable === false}
+                                        onClick={function () { pick(r.repo); }}>
+                                        <CardTitle>
+                                            <Mono>{r.repo}</Mono>
+                                            {r.reachable === false ? <Badge kind="bad">unreachable</Badge> : null}
+                                            {r.reachable === true && r.why ? <Badge kind="warn">limited</Badge> : null}
+                                        </CardTitle>
+                                        <CardSub><span className="mono">{r.default || '(no default branch)'}</span></CardSub>
+                                        <Badges>
+                                            <span className="muted">{r.branches + ' branch(es)'}</span>
+                                            {r.openIssues != null ? <span className="muted">{r.openIssues + ' issue(s)'}</span> : null}
+                                            {r.openPulls != null ? <span className="muted">{r.openPulls + ' pull(s)'}</span> : null}
+                                        </Badges>
+                                    </Card>
+                                );
+                            }) : <Empty>No repositories in this workspace folder.</Empty>}
+                        </Stack>
+                    </Col>
+                    <Col wide>
+                        <Detail r={one} chain={chain} onWalk={walk} onChanged={changed}
+                            onAsked={function () {
+                                okc.call('repositoriesCheck', { repo: one.repo }).then(
+                                    function (x) { setSaid({ text: x.note }); q.now(); },
+                                    function (e) { setSaid({ kind: 'bad', text: e.message }); }
+                                );
+                            }} />
+                        {one ? <Branches repo={one.repo} onMoved={function (note, kind) {
+                            setSaid({ text: note, kind: kind });
+                            q.now();
+                        }} /> : null}
+                    </Col>
+                </Cols>
+            </Pane>
+        );
+    };
+};

@@ -1,5 +1,6 @@
 var React = require('react');
 var useAsk = require('../okc/ask');
+var makeRepos = require('./list');
 
 //the Repositories tab, and its first pane.
 //
@@ -21,12 +22,12 @@ var useAsk = require('../okc/ask');
 //does not have. Nothing here polls GitHub on a timer; that is deliberate over
 //there and carried across.
 
-plugin.consumes = ['shell', 'theme', 'okc'];
+plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
     //THIS PANE'S OWN LOOK, which the theme does not promise. See ./repos.scss.
     require('./repos.scss');
-    var { shell, theme, okc } = imports;
+    var { shell, theme, okc, remember } = imports;
     var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
 
     var LOOK = {
@@ -103,6 +104,7 @@ async function plugin(imports, register) {
     //Repositories, six under Runners, and the tab names as written.
     shell.tab({ name: 'Repositories', order: 10 });
     shell.pane({ tab: 'Repositories', name: 'Overview', order: 10, Component: Overview });
+    shell.pane({ tab: 'Repositories', name: 'Repos', order: 20, Component: makeRepos(theme, okc, remember) });
 
     await register(null, {});
 }

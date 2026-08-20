@@ -27,17 +27,8 @@ async function plugin(imports, register) {
     var { shell, theme, okc, remember } = imports;
     var {
         Pane, Panel, Card, CardTitle, CardSub, Badge, Button, Stack,
-        Chips, Chip, Skeleton, Empty, Note, Mono, Spec
+        Chips, Chip, Skeleton, Empty, Note, Mono, Spec, ago
     } = theme;
-
-    var ago = function (at) {
-        if (!at) return '';
-        var s = Math.max(0, (Date.now() - new Date(at).getTime()) / 1000);
-        if (s < 90) return 'just now';
-        if (s < 5400) return Math.round(s / 60) + ' minutes ago';
-        if (s < 129600) return Math.round(s / 3600) + ' hours ago';
-        return Math.round(s / 86400) + ' days ago';
-    };
 
     //THE OLD WINDOW'S VIEW NAMES ARE NOT THIS APP'S TAB NAMES, and an item that
     //cannot say where to go is worse than one that says nothing. `where.view` is

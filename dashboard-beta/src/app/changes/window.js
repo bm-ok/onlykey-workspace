@@ -41,17 +41,8 @@ async function plugin(imports, register) {
     var { shell, theme, okc, remember } = imports;
     var {
         Pane, Panel, Cols, Col, Card, CardTitle, CardSub,
-        Badge, Button, Skeleton, Empty, Note, Mono, Notice, ask
+        Badge, Button, Skeleton, Empty, Note, Mono, Notice, ask, ago
     } = theme;
-
-    function ago(at) {
-        if (!at) return '';
-        var s = Math.max(0, (Date.now() - new Date(at).getTime()) / 1000);
-        if (s < 90) return 'just now';
-        if (s < 5400) return Math.round(s / 60) + ' minutes ago';
-        if (s < 129600) return Math.round(s / 3600) + ' hours ago';
-        return Math.round(s / 86400) + ' days ago';
-    }
 
     //A REAL MINUS SIGN, not a hyphen. It sits beside a plus and has to read as
     //its opposite at a glance.
