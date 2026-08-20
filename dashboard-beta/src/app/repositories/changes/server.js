@@ -32,16 +32,53 @@
 //are repositories, ../../git runs the commands, and this decides what a
 //comparison MEANS across them. None of the three reaches into another's job, so
 //the day any one of them changes it changes alone.
-plugin.consumes = ['app', 'git', 'workspace'];
+plugin.consumes = ['app', 'git', 'workspace', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var git = imports.git;
     var workspace = imports.workspace;
+    var okc = imports.okc;
     var actions = imports.app.host && imports.app.host.actions;
 
     //`actions` is absent when this half is built against a bare host — the test
     //suite does exactly that. See ../../core/okc/server.js.
     if (!actions) return register(null, {});
+
+    //ONE NAME MEANS TWO DIFFERENT THINGS AND BOTH ARE ORDINARY.
+    //
+    //A BRANCH is itself, in whatever repository has it. A LINE is a name for a
+    //set of branches that are not all called the same thing — "csvstat lockfile
+    //ignore" is `fix/csvstat-lockfile-ignore` in one repository and may be
+    //something else in the next. So a name resolves to a FUNCTION from repository
+    //to ref rather than to a string.
+    //
+    //RESOLVED HERE SO THE PANE HAS ONE PATH. The alternative was the pane
+    //choosing between two actions depending on what somebody picked, which is a
+    //branch in the code for a difference the reader does not have.
+    //
+    //LINES COME FROM THE RELAY, because a line is the dashboard's idea and has
+    //not moved across. A name that is not a line is a branch — deliberately in
+    //that order, since a line named after a branch is somebody meaning the line.
+    async function lines() {
+        try {
+            var said = await okc.call('lines', {});
+            return (said && said.groups) || [];
+        } catch (e) { return []; }
+    }
+
+    function refIn(name, groups) {
+        var line = groups.filter(function (g) { return g.name === name; })[0];
+        if (!line) return function () { return name; };
+
+        var per = {};
+        (line.on || []).forEach(function (p) {
+            //A BRANCH THAT IS NO LONGER THERE IS NOT A REF. The line still names
+            //it; the repository does not have it, and comparing against a name
+            //that is gone is an error about spelling rather than about the line.
+            if (p.stillHere !== false) per[p.repo] = p.branch;
+        });
+        return function (repo) { return per[repo] || null; };
+    }
 
     function twoRefs(a) {
         var base = String((a && a.base) || '').trim();
@@ -62,41 +99,67 @@ async function plugin(imports, register) {
         run: async function (a) {
             var refs = twoRefs(a);
             var where = await workspace.repos();
+            var groups = await lines();
+            var baseIn = refIn(refs.base, groups);
+            var headIn = refIn(refs.head, groups);
 
             var rows = [];
             for (var i = 0; i < where.length; i++) {
                 var repo = where[i].name;
-                var hasBase = await git.has(repo, refs.base);
-                var hasHead = await git.has(repo, refs.head);
+                var b = baseIn(repo);
+                var h = headIn(repo);
 
+                //A LINE THAT DOES NOT REACH THIS REPOSITORY is not a missing
+                //branch — it is a line that was cut across two of three, which
+                //is the ordinary case and an answer rather than a fault.
+                var hasBase = b ? await git.has(repo, b) : false;
+                var hasHead = h ? await git.has(repo, h) : false;
+
+                //EVERY ROW SAYS WHAT IT LOOKED FOR, whether or not it found it.
+                //A line resolves to a different branch in each repository, so
+                //"only the head" without naming the ref leaves somebody unable to
+                //tell a line that was never cut here from a branch that is simply
+                //spelt differently. `null` means the name does not reach this
+                //repository at all, which is a third thing again.
                 if (!hasBase && !hasHead) {
-                    rows.push({ repo: repo, has: 'neither', files: 0, commits: 0 });
+                    rows.push({ repo: repo, has: 'neither', base: b, head: h, files: [], commits: [] });
                     continue;
                 }
                 if (!hasBase || !hasHead) {
                     rows.push({
                         repo: repo, has: hasHead ? 'only the head' : 'only the base',
-                        missing: hasHead ? refs.base : refs.head, files: 0, commits: 0
+                        base: b, head: h,
+                        missing: hasHead ? (b || refs.base) : (h || refs.head),
+                        files: [], commits: []
                     });
                     continue;
                 }
 
-                var files = await git.files(repo, refs.base, refs.head);
-                var commits = await git.commits(repo, refs.base, refs.head);
+                var files = await git.files(repo, b, h);
+                var commits = await git.commits(repo, b, h);
                 rows.push({
                     repo: repo, has: 'both',
-                    files: files.length,
-                    commits: commits.length,
+                    //WHICH BRANCH THIS REPOSITORY'S HALF ACTUALLY IS. For a
+                    //branch it is the name again; for a line it is the only way
+                    //to know what was compared, and it is the question a reader
+                    //has to answer before anything else on the row means
+                    //anything.
+                    base: b, head: h,
+                    //THE FILES AND THE COMMITS THEMSELVES, not counts. The pane
+                    //draws both, and counts would mean a second call per
+                    //repository to fetch what this already had in its hand — the
+                    //shape the old `changeRead` returns, for the same reason.
+                    files: files,
+                    commits: commits,
                     //THE SHAPE OF THE CHANGE, not just that there is one. A row
                     //saying "4 files" reads the same for a comment fix and a
-                    //rewrite; the counts are what tell them apart at a glance.
+                    //rewrite; these are what tell them apart at a glance.
                     added: files.reduce(function (n, f) { return n + (f.added || 0); }, 0),
-                    removed: files.reduce(function (n, f) { return n + (f.removed || 0); }, 0),
-                    names: files.map(function (f) { return f.file; })
+                    removed: files.reduce(function (n, f) { return n + (f.removed || 0); }, 0)
                 });
             }
 
-            var carrying = rows.filter(function (r) { return r.has === 'both' && r.files > 0; });
+            var carrying = rows.filter(function (r) { return r.has === 'both' && r.files.length > 0; });
             return {
                 base: refs.base,
                 head: refs.head,
@@ -111,13 +174,58 @@ async function plugin(imports, register) {
         }
     }));
 
+    //WHAT THERE IS TO COMPARE, in one call, so the pane does not have to know
+    //that lines come from one place and branches from another.
+    //
+    //LINES FIRST, BECAUSE A LINE IS THE THING SOMEBODY LANDS. A branch is where
+    //work happens; a line is a change that has been named and is going somewhere,
+    //and the pane opens on one when there is one.
+    undo.push(actions.define('compareRefs', {
+        about: 'What can be compared: the named lines, and every branch in the workspace',
+        run: async function () {
+            var where = await workspace.repos();
+            var groups = await lines();
+
+            var seen = {};
+            for (var i = 0; i < where.length; i++) {
+                var names = await git.branches(where[i].name);
+                names.forEach(function (n) {
+                    if (!seen[n]) seen[n] = [];
+                    seen[n].push(where[i].name);
+                });
+            }
+
+            return {
+                //A LINE CARRIES WHICH REPOSITORIES IT REACHES, because a line
+                //across two of three repositories is the ordinary case and the
+                //pane says so before anything is compared.
+                lines: groups.map(function (g) {
+                    return {
+                        name: g.name,
+                        marked: !!g.marked,
+                        broken: (g.broken || []).length > 0,
+                        repos: (g.on || []).filter(function (p) { return p.stillHere !== false; })
+                            .map(function (p) { return p.repo; })
+                    };
+                }),
+                branches: Object.keys(seen).sort().map(function (n) {
+                    return { name: n, repos: seen[n] };
+                })
+            };
+        }
+    }));
+
     undo.push(actions.define('compareLog', {
         about: 'The commits one branch carries that another does not, in one repository',
         takes: ['base', 'head', 'repo'],
         run: async function (a) {
             var refs = twoRefs(a);
-            return { repo: a.repo, base: refs.base, head: refs.head,
-                commits: await git.commits(a.repo, refs.base, refs.head) };
+            var groups = await lines();
+            var b = refIn(refs.base, groups)(a.repo);
+            var h = refIn(refs.head, groups)(a.repo);
+            if (!b || !h) throw new Error('"' + (b ? refs.head : refs.base) + '" does not reach ' + a.repo + '.');
+            return { repo: a.repo, base: b, head: h, of: refs,
+                commits: await git.commits(a.repo, b, h) };
         }
     }));
 
@@ -126,8 +234,12 @@ async function plugin(imports, register) {
         takes: ['base', 'head', 'repo', 'file'],
         run: async function (a) {
             var refs = twoRefs(a);
-            return { repo: a.repo, base: refs.base, head: refs.head, file: a.file || null,
-                diff: await git.diff(a.repo, refs.base, refs.head, a.file) };
+            var groups = await lines();
+            var b = refIn(refs.base, groups)(a.repo);
+            var h = refIn(refs.head, groups)(a.repo);
+            if (!b || !h) throw new Error('"' + (b ? refs.head : refs.base) + '" does not reach ' + a.repo + '.');
+            return { repo: a.repo, base: b, head: h, of: refs, file: a.file || null,
+                diff: await git.diff(a.repo, b, h, a.file) };
         }
     }));
 
