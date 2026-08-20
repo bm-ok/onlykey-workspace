@@ -4,19 +4,12 @@ var { useState, useEffect, useRef } = React;
 module.exports = function changes(theme, okc, remember) {
     var {
         Pane, Panel, Cols, Col, Card, CardTitle, CardSub,
-        Badge, Button, Skeleton, Empty, Note, Mono, Notice, ask, ago, Group, Head
+        Badge, Button, Views, Skeleton, Empty, Note, Mono, Notice, ask, ago, Group, Head
     } = theme;
 
     //A REAL MINUS SIGN, not a hyphen. It sits beside a plus and has to read as
     //its opposite at a glance.
     var plusMinus = function (a, r) { return '+' + a + ' −' + r; };
-
-    //THE CLASS IS BUILT OUTSIDE `className`, which looks like fuss and is not.
-    //The guard in test/ reads every string literal inside a className={...} and
-    //checks it is a real class — so `look == 'files'` written inline made it
-    //report "files" and "commits" as missing classes. Hoisting the comparison
-    //keeps that check honest instead of teaching somebody to add exceptions.
-    var subtab = function (look, name) { return 'subtab' + (look == name ? ' active' : ''); };
 
     //A repository has nothing to show for three different reasons and they are
     //not the same news. Folding them together reports a broken setup as a
@@ -65,7 +58,14 @@ module.exports = function changes(theme, okc, remember) {
                 <CardTitle><Mono>{pick.repo + ' · ' + pick.file}</Mono></CardTitle>
                 <CardSub>{state.base + ' → ' + state.head}</CardSub>
                 {state.diff ? <Diff text={state.diff} /> : <Empty>no changes</Empty>}
-                <Note>Side by side is not built here yet — it needs the editor this app does not vendor.</Note>
+                {/* THE REASON THIS GAVE STOPPED BEING TRUE. It said side by side
+                    "needs the editor this app does not vendor" — and ui/editor
+                    vendors ace now, so the sentence was describing a version of
+                    the app that no longer exists. What is actually missing is
+                    smaller and worth naming: two editors whose scrolling is tied
+                    together. Two columns that scroll apart are two views of two
+                    files, which is the thing side by side exists to stop being. */}
+                <Note>Side by side is not built here yet — it needs two editors scrolled together, and only one is wired up.</Note>
             </Panel>
         );
     }
@@ -182,12 +182,13 @@ module.exports = function changes(theme, okc, remember) {
             );
         }
 
-        //COMPUTED HERE, NOT IN `className`. Hoisting the comparison was not
-        //enough: the guard reads every string literal inside a className={...},
-        //and `subtab(look, 'files')` still puts one there. The class has to be a
-        //plain variable by the time the JSX sees it.
-        var filesTab = subtab(look, 'files');
-        var commitsTab = subtab(look, 'commits');
+        //THE WHOLE DANCE ABOVE THIS IS GONE, AND WITH IT THE REASON FOR IT.
+        //Two variables used to be computed here rather than in `className`,
+        //under a comment explaining that the class guard reads every string
+        //literal inside a className={...} and that hoisting the comparison once
+        //was not enough. All of it was this pane working around a check because
+        //the kit had no element for two views of one subject. It has one now —
+        //`Views` — and the class lives in the kit where the guard expects it.
         var onFiles = look == 'files';
 
         var marked = usable.filter(function (g) { return g.name == from && g.marked; })[0];
@@ -250,17 +251,25 @@ module.exports = function changes(theme, okc, remember) {
 
                 {err ? <Note kind="bad">{err}</Note> : null}
                 {!into ? <Note kind="warn">There is no other line to compare it against. Name the line it would go into on the Lines tab.</Note> : null}
+                {/* WHAT THIS PANE IS, AND THAT IT IS SAFE. The old window opens
+                    with this and it was dropped in the port — which loses the
+                    one sentence saying you may read everything here without
+                    changing anything. On the pane whose whole job is the last
+                    look before a change leaves this computer, that is the
+                    sentence somebody most needs to have read. */}
+                <Note>
+                    What a proposed line would land, read before anything leaves this computer: the
+                    commits, and the diff per repository. Nothing here changes anything &mdash; it is
+                    the last look.
+                </Note>
+
                 {busy && !cmp ? <Skeleton rows={3} /> : null}
 
                 {cmp ? (
                     <Cols>
                         <Col narrow>
-                            <div className="subtabs">
-                                <button className={filesTab}
-                                    onClick={function () { setLook('files'); }}>Files</button>
-                                <button className={commitsTab}
-                                    onClick={function () { setLook('commits'); }}>Commits</button>
-                            </div>
+                            <Views names={['Files', 'Commits']} on={look}
+                                onPick={function (n) { setLook(n.toLowerCase()); }} />
 
                             {onFiles ? (
                                 carrying.length ? carrying.map(function (r) {

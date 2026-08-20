@@ -142,6 +142,11 @@ async function plugin(imports, register) {
     var FILE = path.join(dir, 'events.jsonl');
     var kept = null;
 
+    //THE HIGHEST COUNT EVER WRITTEN, kept across restarts by being in the rows.
+    //Derived on load rather than stored separately: two places holding the same
+    //number is two places to disagree, and the rows are the record.
+    var last = 0;
+
     function load() {
         if (kept) return kept;
         kept = [];
@@ -151,6 +156,15 @@ async function plugin(imports, register) {
                 try { kept.push(JSON.parse(line)); } catch (e) { /* a half-written last line */ }
             });
         } catch (e) { /* nothing kept yet */ }
+        //ROWS WRITTEN BEFORE THE COUNT EXISTED GET ONE, in the order they are
+        //already in. Without this a listing that ends on an old row hands back a
+        //bookmark of `null`, and the next read starts from the beginning — not
+        //wrong, but it reads as the record having forgotten where you were. They
+        //keep the numbers on the next write, since the file is rewritten whole.
+        kept.forEach(function (e) {
+            if (!e.seq) e.seq = ++last;
+            else last = Math.max(last, Number(e.seq) || 0);
+        });
         return kept;
     }
 
@@ -167,7 +181,19 @@ async function plugin(imports, register) {
     function keep(entry) {
         if (!worthKeeping(entry)) return null;
         load();
-        kept.push({ at: entry.at, level: entry.level, tags: entry.tags, text: scrub(entry.text) });
+        //A COUNT AS WELL AS A TIME, AND THE COUNT IS WHAT A BOOKMARK IS MADE OF.
+        //
+        //`at` is milliseconds, and two acts in one millisecond is not a rare
+        //case here — the queue puts a machine away and writes the next line
+        //immediately. Bookmarking on a timestamp then loses the second of them
+        //FOR EVER: it is not greater than the mark, so it never comes back, and
+        //a watcher following along simply never learns it happened.
+        //
+        //Its own test caught this by being flaky, which is the only way a
+        //same-millisecond bug ever shows up. ../log solved the same problem with
+        //ids and could accept them resetting, because it is memory; this cannot,
+        //so the count goes in the file and is read back with it.
+        kept.push({ seq: ++last, at: entry.at, level: entry.level, tags: entry.tags, text: scrub(entry.text) });
         if (kept.length > MOST) kept.splice(0, kept.length - MOST);
         write();
         return entry;
@@ -178,7 +204,17 @@ async function plugin(imports, register) {
     //the whole point of this file.
     function all(opts) {
         var o = opts || {};
-        var rows = load().filter(function (e) { return !o.since || e.at > o.since; });
+        //A NUMBER IS A COUNT, ANYTHING ELSE IS A TIME. A bookmark taken before
+        //this existed is a timestamp, and answering it with everything would
+        //flood whoever passed it; answering it the old way is right for the
+        //rows it can still tell apart. New bookmarks are counts and have no
+        //such trouble.
+        var since = o.since;
+        var byCount = since != null && since !== '' && !isNaN(Number(since));
+        var rows = load().filter(function (e) {
+            if (since == null || since === '') return true;
+            return byCount ? (Number(e.seq) || 0) > Number(since) : e.at > since;
+        });
         return rows.slice(-Math.max(1, Math.min(2000, o.limit || 200)));
     }
 
@@ -196,7 +232,7 @@ async function plugin(imports, register) {
                 //The newest timestamp, to pass back as `since` next time. A
                 //bookmark: reading the whole record every time is how a watcher
                 //spends its attention re-reading what it already knows.
-                bookmark: rows.length ? rows[rows.length - 1].at : (a.since || null),
+                bookmark: rows.length ? (rows[rows.length - 1].seq || null) : (a.since || null),
                 where: FILE,
                 kept: KEEP.join(', '),
                 note: rows.length

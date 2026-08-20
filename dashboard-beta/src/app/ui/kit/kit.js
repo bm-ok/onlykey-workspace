@@ -15,7 +15,7 @@ module.exports = function kit(theme) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Row,
         Card, CardTitle, CardSub, Badge, Badges, Chips, Chip,
-        Button, Toggle, Linky, Plus, Cog, Finder, Form, Field, Skeleton, Notice, Banner, Link, Spec,
+        Button, Toggle, Views, Linky, Plus, Cog, Finder, Form, Field, Skeleton, Notice, Banner, Link, Spec,
         Empty, Note, Mono, Muted, Kv, KvRow, Part, PartWhy, Group, Head, Markdown, Code, Term, ask
     } = theme;
 
@@ -122,6 +122,20 @@ module.exports = function kit(theme) {
         );
     }
 
+    //TWO VIEWS OF ONE SUBJECT, and the exhibit has to keep its own pick or the
+    //thing being catalogued cannot be tried.
+    function ViewsExample() {
+        var [look, setLook] = useState('Commits');
+        return (
+            <>
+                <Views names={['Files', 'Commits']} on={look} onPick={setLook} />
+                <Note>{look == 'Files'
+                    ? 'The same change, read as files.'
+                    : 'The same change, read as commits.'}</Note>
+            </>
+        );
+    }
+
     function Kit() {
         return (
             <Pane>
@@ -190,6 +204,22 @@ module.exports = function kit(theme) {
                                 <Button disabled title="this is why">Not yet</Button>
                             </Row>
                         </Shelf>
+                        <Shelf title="Two views of one subject"
+                            about="inside a pane — the row above picks the subject, this picks the question">
+                            <ViewsExample />
+                            <Note>
+                                Not a chip: exactly one is on, always, and picking one puts the last one
+                                away. Not the tab row either &mdash; that picks WHICH pane, this picks
+                                which question about the one you are in.
+                            </Note>
+                            <Note>
+                                The driver presses them by the words on them, like any button. It cannot
+                                reach one with <Mono>show --pane</Mono>, because they are not registered
+                                with the shell &mdash; <Mono>show</Mono> moves between panes and this is
+                                inside one.
+                            </Note>
+                        </Shelf>
+
                         <Shelf title="Switches" about="a state somebody sets, not an act somebody performs">
                             <Switches />
                         </Shelf>

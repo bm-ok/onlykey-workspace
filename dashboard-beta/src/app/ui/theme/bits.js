@@ -101,6 +101,41 @@ function Chip({ children, count, on, kind, onClick, title }) {
     );
 }
 
+//TWO VIEWS OF ONE SUBJECT, INSIDE A PANE.
+//
+//NOT THE SAME THING AS A SUB-TAB IN THE ROW ABOVE, though it is drawn the same
+//and that is deliberate. The row above picks the SUBJECT — which pane you are
+//looking at. This picks the QUESTION being asked about one subject: the same
+//change, read as files or as commits.
+//
+//NOT A CHIP EITHER. A chip is a filter and several can be on at once; exactly
+//one of these is on, always, and picking one puts the last one away.
+//
+//IT EXISTS BECAUSE THE AD-HOC VERSION KEPT COMING BACK. Live had a pair of these
+//built out of `useState` and raw class names, and Changes had another, each with
+//its own `subtab(look, name)` helper — and the one in Changes carried a comment
+//about how to write the comparison so the class checker would not report "files"
+//as a missing CSS class. That is a pane working around a guard because the kit
+//was missing a piece.
+//
+//THE DRIVER CAN PRESS THEM, by the words on them, like any button — they are
+//buttons. What it cannot do is reach one with `show --pane`, because these are
+//not registered with the shell; `show` moves between PANES and this is inside
+//one. Worth knowing before writing a walk that expects to find them.
+function Views({ names, on, onPick }) {
+    var same = function (a, b) { return String(a || '').toLowerCase() === String(b || '').toLowerCase(); };
+    return (
+        <div className="subtabs">
+            {(names || []).map(function (n) {
+                return (
+                    <button key={n} className={'subtab' + (same(on, n) ? ' active' : '')}
+                        onClick={function () { if (onPick) onPick(n); }}>{n}</button>
+                );
+            })}
+        </div>
+    );
+}
+
 //---- controls ------------------------------------------------------------
 
 //`protect` MARKS A PRESS THAT IS A PERSON'S TO MAKE. It draws purple and the
@@ -431,7 +466,7 @@ function KvRow({ label, children }) { return <tr><th>{label}</th><td>{children}<
 module.exports = {
     setGuardCheck, guardsChanged, useGuard,
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
-    Badge, Badges, Chips, Chip,
+    Badge, Badges, Chips, Chip, Views,
     Button, Toggle, Plus, Cog, Finder, Form, HeadRow, Controls,
     Skeleton, Notice, Banner, Link, Linky, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Act, ago, openOut
 };

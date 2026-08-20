@@ -135,6 +135,36 @@ test('the bookmark is what you pass back to see only what is new', async () => {
     assert.match(since.events[0].text, /the second thing/);
 });
 
+//THE ONE THE FLAKY VERSION OF THE TEST ABOVE WAS ACTUALLY FINDING.
+//
+//`at` is milliseconds, and two acts in one millisecond is not a rare case — the
+//queue puts a machine away and writes the next line immediately. While the
+//bookmark was a timestamp, the second of them was not GREATER than the mark, so
+//it never came back: a watcher following along never learned it happened, and
+//nothing anywhere said so.
+//
+//THE COLLISION IS WRITTEN, NOT WAITED FOR. Logging twice in one tick USUALLY
+//shares a millisecond, which made the first version of this test flaky in both
+//directions — it caught the bug about one run in six and proved nothing the rest
+//of the time. `keep` takes the entry, `at` and all, so the timestamps can simply
+//be made identical and the answer is the same on every run.
+test('two acts in the same millisecond are both readable after a bookmark', async () => {
+    const { events, actions } = await anApp();
+    const at = '2026-08-20T12:00:00.000Z';
+
+    events.keep({ at: at, level: 'good', tags: ['task'], text: 'the first thing' });
+    const mark = (await actions.call('events', {})).bookmark;
+
+    events.keep({ at: at, level: 'good', tags: ['task'], text: 'same ms, one' });
+    events.keep({ at: at, level: 'good', tags: ['task'], text: 'same ms, two' });
+
+    const rows = (await actions.call('events', { since: mark })).events;
+    assert.equal(new Set(rows.concat([{ at: at }]).map((e) => e.at)).size, 1,
+        'the fixture stopped sharing one timestamp, so this proves nothing');
+    assert.equal(rows.length, 2, 'an act was lost because another shared its millisecond');
+    assert.deepEqual(rows.map((e) => e.text), ['same ms, one', 'same ms, two']);
+});
+
 //A LEAK CANNOT BE UNDONE ONCE IT IS ON DISK, so this reads the file rather than
 //the accessor: an in-memory scrub with an unscrubbed write behind it would pass
 //every assertion above.
