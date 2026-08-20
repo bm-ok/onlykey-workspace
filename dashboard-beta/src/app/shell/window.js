@@ -56,6 +56,33 @@ async function plugin(imports, register) {
 
         useEffect(function () { return okc.onUp(setUp); }, []);
 
+        //DRIVEN FROM OUTSIDE, so a photograph can be of a named pane rather than
+        //whichever one happened to be showing. See ./server.js — this is the
+        //window end of the `show` action, and it is navigation only.
+        useEffect(function () {
+            function asked(want, reply) {
+                var to = want && want.tab;
+                var pane = want && want.pane;
+
+                if (to && !tabs.some(function (t) { return t.name == to; })) {
+                    return reply && reply({ ok: false, error: 'there is no tab called "' + to + '" — there is ' + tabs.map(function (t) { return t.name; }).join(', ') });
+                }
+                var inTab = to || on;
+                if (pane && !panesIn(inTab).some(function (p) { return p.name == pane; })) {
+                    return reply && reply({ ok: false, error: 'there is no pane called "' + pane + '" in ' + inTab + ' — there is ' + (panesIn(inTab).map(function (p) { return p.name; }).join(', ') || 'none') });
+                }
+
+                if (to) setOn(to);
+                //A TAB WITHOUT A NAMED PANE GOES BACK TO ITS FIRST, so asking for
+                //a tab twice does not depend on what was showing last time.
+                setPane(pane || null);
+                if (reply) reply({ ok: true, tab: inTab, pane: pane || null });
+            }
+
+            okc.io.on('shell:show', asked);
+            return function () { okc.io.off('shell:show', asked); };
+        }, [on]);
+
         var showing = tabs.find(function (t) { return t.name == on; });
         var mine = panesIn(on);
 

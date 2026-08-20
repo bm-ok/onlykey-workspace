@@ -41,6 +41,11 @@ async function plugin(imports, register) {
 
     await register(null, {
         okc: {
+            //THE SOCKET ITSELF, for the one caller that needs more than
+            //`call`: the shell listens for navigation pushed from outside. Not
+            //handed out casually — a tab that reached for this instead of
+            //`call` would be talking to the wire rather than to the table.
+            io: io,
             call: call,
             get connected() { return up; },
             //WHETHER THE DASHBOARD IS THERE IS EVERY TAB'S BUSINESS, and it
