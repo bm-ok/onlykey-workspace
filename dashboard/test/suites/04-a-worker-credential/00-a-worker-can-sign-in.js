@@ -132,19 +132,32 @@ draft('and signing a worker in is a job, not a sequence written into this app',
 // reporting the refresh token good until September while the worker answered
 // "OAuth session expired and could not be refreshed".
 //
-// Which is why one credential per machine is not tidiness. A credential that
-// rotates has to be kept per machine, taken back rather than thrown away, and
-// survive the rollback that wipes the disk between tasks.
+// Which is why a credential that rotates has to be taken back rather than thrown
+// away, and has to survive the rollback that wipes the disk between tasks.
+//
+// AND NOT WHY IT HAS TO BE PER MACHINE, which is what this used to say. That
+// part was argued from a belief since disproved: that two sign-ins sharing an
+// account would rotate each other away. Two of ONE account ran on two machines
+// the same afternoon and both were still good afterwards. Lending is pooled --
+// `choosable` filters on role, token, not paused and not held elsewhere, and
+// never prefers the machine that had it last. `lastGivenTo` is written and never
+// consulted; it says where a sign-in went, not where it goes next. Pinning would
+// only waste one per idle machine.
 
 // WRITTEN NOW — see "what comes back" beside this file. What it took to make
 // it checkable was noticing that the CLI rotating is not the thing to prove:
 // what has to be true is that a CHANGE on the machine arrives here, which a
 // throwaway identity can demonstrate in seconds without a worker run.
-// THE INVARIANT THE PINNING DRAFT WAS REALLY PROTECTING, and it needs no machine
-// and no money: one sign-in is never out on two machines at once. Whether it is
-// pinned or pooled is a policy question and this is not -- two machines holding
-// one identity means two workers authenticating as the same account, and the
-// host having no idea which of them refreshed the token it gets back.
+// THE INVARIANT, and it needs no machine and no money: one sign-in is never out
+// on two machines at once. Whether lending is pinned or pooled is a policy
+// question, settled above and in favour of pooled; this is not policy. Two
+// machines holding one identity means two workers authenticating as the same
+// account, and the host having no idea which of them refreshed the token it gets
+// back — and there is no version of that anybody wants.
+//
+// A draft asking for pinned credentials stood here and was scrapped rather than
+// kept, because a to-do list that carries a design somebody already decided
+// against is one that argues for building it every time it is read.
 //
 // ASKED OF `choosable` WITH ROWS HANDED IN, so the answer does not depend on
 // what this host happens to be holding. The same separation the merge rule and
@@ -178,12 +191,6 @@ it('one sign-in is never out on two machines at once', async ({ assert, log }) =
   log(`offered to machine-b: ${names('worker', 'machine-b').join(', ') || 'nothing'} — "onA" is out on machine-a and stays there`)
 })
 
-draft('and a sign-in is drawn from a pool rather than pinned to a machine',
-  'THE DECISION WENT THE OTHER WAY, AND THIS IS THE RECORD OF IT. This was written as "each machine keeps its own credential across a rollback" and asked for one sign-in PINNED per machine, handed back to the same one next time. That is not what was built and should not be: `choosable` in core/guests.js filters on role, having a token, not being paused, and not being held elsewhere — and never prefers the machine that had it last. A sign-in is drawn from a pool per job. ' +
-  'WHY PINNING LOST. The argument for it was that two sign-ins would rotate each other away if shared, and that turned out to be false: two of ONE Claude account ran on two machines the same afternoon and both were still good afterwards. With that gone, pinning only wastes a sign-in per idle machine, and pooling is the shape the machines themselves already have. ' +
-  '`lastGivenTo` IS RECORDED AND IS NOT CONSULTED, which is worth knowing before somebody reads it as intent. It says where a sign-in went last, for a person looking at a card; it does not make it go there again. ' +
-  'WHAT SURVIVES AS A CHECK, and it is the invariant the original was really protecting: one sign-in is never out on two machines at once. `choosable` enforces it with `!g.holder || g.holder === machine`, and it needs no worker run to test. ' +
-  'AND WHAT THE ORIGINAL ASKED TO SETTLE IS SETTLED, differently: with more machines than sign-ins, WORK waits rather than a machine being spent — proven in the wild on 19 August, when every worker sign-in on this host was dead and a queued task stayed queued.')
 
 draft('and the .claude folder can be thrown away without losing the token',
   'THE GAP TO BRIDGE, and half of it is already built. `machines/job-api.js` archives ~/.claude per task and excludes .credentials.json on purpose — that folder is the worker\'s MEMORY and is kept for a long time, so an unsealed token riding along would be filed for ever. ' +

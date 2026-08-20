@@ -1,5 +1,5 @@
 <!-- generated: node dashboard/test/outline.js --write -->
-<!-- 12 suites, 64 tests, 297 checks, 19 of them drafts -->
+<!-- 12 suites, 64 tests, 296 checks, 18 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -15,12 +15,10 @@
   A capability with no check here is one somebody will build again.
 -->
 
-## 19 drafts, not written yet
+## 18 drafts, not written yet
 
 - **a worker credential / a worker can sign in** — and signing a worker in is a job, not a sequence written into this app
   credentialsBegin and credentialsFinish are guest commands hard-coded in actions/credentials.js and machines/auth.js — written before there was any other way to run a sequence of commands on a machine. There is one now: a job is a script that runs ON a machine, read and approved before it does. WHAT IT WOULD BUY: the flow becomes editable without a release, and the sign-in URL stays on the machine rather than being logged here. THE STICKING POINT, which is why this is a draft and not a task: a credential is NOT an artifact and must not be handed back like one. A job hands files back; this one would have to hand back something the host stores sealed and never shows, which is a hole in the job API rather than a thing to write around. THE CHECK: the sign-in runs as an approved job, the credential arrives sealed on this host, and no URL or token appears in the log.
-- **a worker credential / a worker can sign in** — and a sign-in is drawn from a pool rather than pinned to a machine
-  THE DECISION WENT THE OTHER WAY, AND THIS IS THE RECORD OF IT. This was written as "each machine keeps its own credential across a rollback" and asked for one sign-in PINNED per machine, handed back to the same one next time. That is not what was built and should not be: `choosable` in core/guests.js filters on role, having a token, not being paused, and not being held elsewhere — and never prefers the machine that had it last. A sign-in is drawn from a pool per job. WHY PINNING LOST. The argument for it was that two sign-ins would rotate each other away if shared, and that turned out to be false: two of ONE Claude account ran on two machines the same afternoon and both were still good afterwards. With that gone, pinning only wastes a sign-in per idle machine, and pooling is the shape the machines themselves already have. `lastGivenTo` IS RECORDED AND IS NOT CONSULTED, which is worth knowing before somebody reads it as intent. It says where a sign-in went last, for a person looking at a card; it does not make it go there again. WHAT SURVIVES AS A CHECK, and it is the invariant the original was really protecting: one sign-in is never out on two machines at once. `choosable` enforces it with `!g.holder || g.holder === machine`, and it needs no worker run to test. AND WHAT THE ORIGINAL ASKED TO SETTLE IS SETTLED, differently: with more machines than sign-ins, WORK waits rather than a machine being spent — proven in the wild on 19 August, when every worker sign-in on this host was dead and a queued task stayed queued.
 - **a worker credential / a worker can sign in** — and the .claude folder can be thrown away without losing the token
   THE GAP TO BRIDGE, and half of it is already built. `machines/job-api.js` archives ~/.claude per task and excludes .credentials.json on purpose — that folder is the worker's MEMORY and is kept for a long time, so an unsealed token riding along would be filed for ever. The consequence is that memory and credential are two different things with two different lifetimes, and only one of them has somewhere to live. WHAT IT WOULD MEAN: the token is set up and kept through the same path the memory uses — captured when the run ends, sealed here, per machine — so ~/.claude on the guest becomes disposable. Trash it, restore the memory, hand back the token, and the machine is where it was. THE CHECK: delete ~/.claude on a machine entirely, start its next task, and it both remembers what it was doing and authenticates.
 - **a worker credential / more than one sign in** — and what comes back off a machine is what the worker refreshed
@@ -187,8 +185,7 @@ The second door a person has to open, and it is deliberately not beside the
   3. and a machine can really sign in with it
   4. **DRAFT** — and signing a worker in is a job, not a sequence written into this app
   5. one sign-in is never out on two machines at once
-  6. **DRAFT** — and a sign-in is drawn from a pool rather than pinned to a machine
-  7. **DRAFT** — and the .claude folder can be thrown away without losing the token
+  6. **DRAFT** — and the .claude folder can be thrown away without losing the token
 
 ## 01 — more than one sign in
 
