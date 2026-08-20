@@ -14,6 +14,16 @@
      is happening right now", which is a moment. Two different questions
      wearing one colour is how somebody stops reading either. */
   --running: #a371f7;
+  /* A PERSON HAS TO PRESS THIS ONE. Send it, merge it, allow this to be
+     judged, approve a prompt or a contract -- the acts where the whole point
+     is that somebody read it and decided. The command line can see these
+     buttons and is refused when it tries to press one.
+
+     The same purple as --running, and deliberately so rather than by accident:
+     a button is never a banner and a banner is never pressable, so the two
+     cannot meet on one element and be read as each other. What the colour
+     means in both places is "this is not the ordinary case, look at it". */
+  --human: #a371f7;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -609,6 +619,53 @@ main { padding: 16px; }
 .btn.ok { border-color: var(--ok); color: var(--ok); }
 .btn.danger { border-color: var(--fail); color: var(--fail); }
 .btn.wide { width: 100%; margin-top: 8px; }
+
+/* ---------- a button only a person may press ----------
+
+   VISIBLE BECAUSE THE RULE IS INVISIBLE OTHERWISE. Half the buttons in this app
+   are ordinary and half are the moment somebody takes responsibility for
+   something that cannot be taken back, and until now they looked identical. A
+   person could not tell by looking which ones a model is allowed to press on
+   their behalf, and neither could anybody reading a screenshot.
+
+   Purple says: this one is yours. The command line lists these buttons, says
+   what they are, and is refused when it tries to press one -- see
+   src/app/drive/. That refusal is what makes the colour true rather than
+   decorative: a mark saying "you cannot press this" on something pressable
+   would be worse than no mark.
+
+   NOT `disabled`, WHICH IS A DIFFERENT SENTENCE. Disabled means nothing can
+   press it, including you, and usually because something is missing. This
+   means it works, and it is waiting for a person. */
+/* ---------- a field nothing but a person may read ----------
+
+   THE SAME MARK, THE OTHER DIRECTION. A purple button is a press that is yours;
+   a purple field is a value that is yours. A GitHub token, an ssh key, a
+   password -- the operator's rule is that what was done in here is knowable and
+   what was typed is not.
+
+   And it is enforced in the one place it could leak: `windowControls` reports
+   the label, the kind and that it is protected, and does NOT report the value.
+   `windowFill` withholds `was` and `now` for the same field, because a fill that
+   answers with the previous value is a read wearing a different name -- write
+   junk, keep what came back. That is the hole this would have had.
+
+   An outline rather than a border colour, so it reads as something drawn AROUND
+   the field by somebody else rather than as a state of the field itself. */
+input.protected, select.protected, textarea.protected {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+  border-color: var(--human);
+}
+
+.btn.protected {
+  color: var(--human);
+  border-color: var(--human);
+}
+.btn.protected:hover:not(:disabled) {
+  border-color: var(--human);
+  background: rgba(163, 113, 247, .12);
+}
 
 
 label.inline { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }

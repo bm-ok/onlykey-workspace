@@ -60,8 +60,18 @@ function Chip({ children, count, on, kind, onClick, title }) {
 
 //---- controls ------------------------------------------------------------
 
-function Button({ children, kind, ...rest }) {
-    return <button className={'btn' + (kind ? ' ' + kind : '')} {...rest}>{children}</button>;
+//`protect` MARKS A PRESS THAT IS A PERSON'S TO MAKE. It draws purple and the
+//command line is refused when it tries to press one — send it, merge it, allow
+//this to be judged, approve a prompt. The colour is only honest because of that
+//refusal; a mark saying "you cannot press this" on something a model can press
+//is worse than no mark at all.
+//
+//SPELT `protect` RATHER THAN `protected` because `protected` is reserved in
+//strict mode and cannot be destructured out of props. The class is `protected`,
+//which is the word that shows up in the markup and in what the driver reports.
+function Button({ children, kind, protect, ...rest }) {
+    var cls = 'btn' + (kind ? ' ' + kind : '') + (protect ? ' protected' : '');
+    return <button className={cls} {...rest}>{children}</button>;
 }
 
 //The `+` that lives in a TitleRow. Making a thing is a deliberate act with a

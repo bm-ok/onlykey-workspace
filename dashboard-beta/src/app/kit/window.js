@@ -91,6 +91,31 @@ async function plugin(imports, register) {
                             </Row>
                         </Group>
 
+                        {/* THE TWO MARKS THAT MEAN A PERSON, and they are the
+                            only purple in the app. Everything else here is about
+                            reading a state off the screen; these two are about
+                            who is allowed to act. */}
+                        <Group title="Guarded" about="purple is the one colour that means: this is yours, not a model's">
+                            <Row>
+                                <Button protect>Merge it</Button>
+                                <Button protect kind="danger">Send it</Button>
+                                <Button protect disabled title="nothing to send">Send it</Button>
+                            </Row>
+                            <Note>
+                                A guarded button is refused from the command line even with testing mode
+                                on — testing mode says the window may be driven, not that every press in
+                                it may be a model&apos;s.
+                            </Note>
+                            <Form>
+                                <Field f={{ name: 'tok', label: 'A guarded field', protect: true, placeholder: 'typed here and nowhere else', hint: 'neither read nor written from outside — a value written is a value known, so writing is a way of learning that does not look like reading' }} value="" onChange={function () { }} />
+                            </Form>
+                            <Note>
+                                It still appears in <Mono>windowControls</Mono> with its label and whether
+                                anything is in it. &ldquo;Is the token set&rdquo; has to be answerable, and
+                                it is not the secret.
+                            </Note>
+                        </Group>
+
                         <Group title="Saying something" about="four different sentences, four different looks">
                             <Empty>nothing here — which is an answer, not a fault</Empty>
                             <Note>a quiet aside</Note>

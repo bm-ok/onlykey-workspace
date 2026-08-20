@@ -78,7 +78,12 @@ function drop(id, answer) {
 
 //---- fields --------------------------------------------------------------
 
+//`f.protect` MARKS A VALUE THAT IS THE PERSON'S AND NOBODY ELSE'S. It draws a
+//purple outline, and the driver withholds the value from everything it reports
+//— see ../drive/window.js. The mark and the withholding are one feature: an
+//outline saying "this is private" on something readable is a decoration.
 function Field({ f, value, onChange }) {
+    var mark = f.protect ? ' protected' : '';
     //A CHECKBOX ANSWERS WITH `checked`. Its `value` is the string "on" whether
     //it is ticked or not, which is the quietest way available to build a form
     //where every box reads as yes.
@@ -101,18 +106,18 @@ function Field({ f, value, onChange }) {
     var input;
     if (f.options) {
         input = (
-            <select value={value} disabled={f.disabled} onChange={function (e) { onChange(e.target.value); }}>
+            <select className={mark.trim() || undefined} value={value} disabled={f.disabled} onChange={function (e) { onChange(e.target.value); }}>
                 {f.options.map(function (o) { return <option key={o.value} value={o.value}>{o.label}</option>; })}
             </select>
         );
     } else if (f.multiline) {
         input = (
-            <textarea rows={f.rows || 8} placeholder={f.placeholder || ''} value={value} disabled={f.disabled}
+            <textarea className={mark.trim() || undefined} rows={f.rows || 8} placeholder={f.placeholder || ''} value={value} disabled={f.disabled}
                 onChange={function (e) { onChange(e.target.value); }} />
         );
     } else {
         input = (
-            <input type={f.type || 'text'} placeholder={f.placeholder || ''} value={value} disabled={f.disabled}
+            <input className={mark.trim() || undefined} type={f.type || 'text'} placeholder={f.placeholder || ''} value={value} disabled={f.disabled}
                 onChange={function (e) { onChange(e.target.value); }} />
         );
     }

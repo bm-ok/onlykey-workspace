@@ -120,7 +120,13 @@ async function plugin(imports, register) {
         //should not read the same in a log.
         var buttons = [].slice.call(r.node.querySelectorAll('button')).filter(seen)
             .map(function (n) {
-                return { node: n, label: btnWords(n), disabled: !!n.disabled, why: n.title || '' };
+                return {
+                    node: n, label: btnWords(n), disabled: !!n.disabled, why: n.title || '',
+                    //PURPLE MEANS A PERSON PRESSES IT. Carried into the answer
+                    //so a list of buttons says which are mine to press and which
+                    //are not, rather than that only being found out by trying.
+                    protected: n.classList.contains('protected')
+                };
             })
             .concat([].slice.call(r.node.querySelectorAll('.pick')).filter(seen)
                 .map(function (n) {
@@ -136,12 +142,27 @@ async function plugin(imports, register) {
 
         var fields = [].slice.call(r.node.querySelectorAll('input, select, textarea')).filter(seen)
             .map(function (n) {
+                //A PROTECTED FIELD'S VALUE NEVER LEAVES THE PAGE.
+                //
+                //The operator's rule: what was done in here is knowable and what
+                //was typed is not. A token, an ssh key, a password. The label,
+                //the kind and whether there is anything in it are all reportable
+                //— "is it set" is a real question somebody has to be able to
+                //answer — and the value is not.
+                var shut = n.classList.contains('protected');
                 return {
                     node: n,
                     label: labelOf(n),
                     kind: n.type === 'checkbox' ? 'checkbox' : n.tagName.toLowerCase(),
-                    value: n.type === 'checkbox' ? n.checked : n.value,
-                    options: n.tagName === 'SELECT'
+                    protected: shut,
+                    value: shut ? null : (n.type === 'checkbox' ? n.checked : n.value),
+                    //Emptiness is not the secret. Without this, "is the token
+                    //set" is unanswerable from here and somebody goes looking
+                    //for it somewhere that does show it.
+                    filled: shut ? !!n.value : undefined,
+                    //A SELECT'S OPTIONS ARE ITS VALUES. Listing them for a
+                    //protected one hands over the answer with extra steps.
+                    options: n.tagName === 'SELECT' && !shut
                         ? [].slice.call(n.options).map(function (o) { return o.textContent.trim(); })
                         : null
                 };
@@ -172,6 +193,25 @@ async function plugin(imports, register) {
 
         if (want.do === 'fill') {
             var f = theOne(got.fields, want.label, want.nth, 'field');
+
+            //A PROTECTED FIELD IS NEITHER READ NOR WRITTEN FROM HERE.
+            //
+            //Withholding the value and allowing the write was the half-measure,
+            //and it was wrong twice over. Writing a secret means something other
+            //than the person choosing what it is — and a value written is a
+            //value known, so writing is a way of learning that does not look
+            //like reading. The token, the key, the password: they are typed by
+            //the person whose they are, at the window, and nowhere else.
+            //
+            //It still APPEARS in windowControls, with its label and whether
+            //anything is in it. "Is the token set" has to be answerable, and it
+            //is not the secret.
+            if (f.protected) {
+                throw new Error('"' + f.label + '" is protected, which is what the purple outline says: ' +
+                    'nothing here may read it or write it. A value written from here is a value known from here. ' +
+                    'It is typed at the window by the person whose it is.');
+            }
+
             var before = f.kind === 'checkbox' ? f.node.checked : f.node.value;
 
             if (f.kind === 'checkbox') {
@@ -227,8 +267,29 @@ async function plugin(imports, register) {
                 return {
                     on: r.where, would: b.label, picks: !!b.picks,
                     disabled: b.disabled, why: b.why || null,
-                    note: 'Nothing was pressed. Run it again without --dry to press it.'
+                    protected: !!b.protected,
+                    note: b.protected
+                        ? "Nothing was pressed, and nothing here can press it: this one is a person's."
+                        : 'Nothing was pressed. Run it again without --dry to press it.'
                 };
+            }
+
+            //A PERSON PRESSES THIS ONE, AND THAT IS THE WHOLE FEATURE.
+            //
+            //Testing mode being on says the window may be driven; it does not
+            //say every press in it may be a model's. Send it, merge it, allow
+            //this to be judged, approve a prompt — the point of those buttons is
+            //that somebody read the thing and decided, and a driven press is
+            //indistinguishable from a person's once it reaches the handler. So
+            //this is where the difference has to be made, and it is made by
+            //refusing rather than by anybody remembering.
+            //
+            //Refused even in testing mode, and refused for --dry's benefit too:
+            //--dry still names it, so the button can be FOUND from here and
+            //cannot be pressed from here.
+            if (b.protected) {
+                throw new Error('"' + b.label + '" is a person\'s press. It is marked protected, which is what the purple says: ' +
+                    'the point of this button is that somebody read what it is about and decided. Testing mode does not open it.');
             }
 
             //REFUSED RATHER THAN PRESSED AND IGNORED. A disabled button does
