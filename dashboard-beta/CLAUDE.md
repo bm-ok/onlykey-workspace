@@ -32,6 +32,43 @@ and before `npm test` or a commit. That is all.
 Roughly: 5 seconds versus 90. Reaching for build+restart on a UI change is an
 hour a day of nothing.
 
+## The backslash trap
+
+**A backslash typed into a shell heredoc arrives halved.** Writing a file through
+`bash <<'EOF'` — or through `python - <<'PYEOF'` — is the fastest way to edit
+several places at once, and it is the one way to put a character into a file that
+is not the character you typed.
+
+| you meant | what landed | what it did |
+|---|---|---|
+| `join('\n')` — an escape | a real newline, mid-string | unterminated string, build fails |
+| a Windows pipe path | one backslash where two were meant | dialled nothing, `ENOENT` |
+| `person\'s` | `person's` | unterminated string, build fails |
+
+Type **four** backslashes to get two. It cost time on four separate edits in one
+afternoon and the failures do not look alike: two were build errors, one was a
+client dialling a pipe that does not exist, and one was silent.
+
+**This very section was written through a heredoc and arrived mangled** — the
+table above came out with real newlines in it and the pipe path halved. That is
+the whole argument in one paragraph: the thing you are least likely to notice is
+the edit that describes the problem.
+
+**The reliable ways out, in order:**
+
+* Use `Write` or `Edit` for anything containing a backslash. They take the string
+  as given.
+* Build the character in JavaScript instead — `String.fromCharCode(27)` for an
+  escape, `String.fromCharCode(13, 10)` for CRLF. `ui/kit/kit.js` does exactly
+  this for the terminal exhibit, and says why: what that exhibit is FOR is
+  control sequences, so the sequences have to survive the next person editing
+  them.
+* Reword to avoid it. An apostrophe inside a single-quoted JS string can usually
+  become a different sentence.
+
+`test/bytes.test.js` catches the invisible half of this — a stray control
+character that builds, runs, and makes later string edits silently miss.
+
 ## Proving a change
 
 Never conclude from reading the source. Run it.
