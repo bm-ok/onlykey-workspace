@@ -1,3 +1,4 @@
+var makeMeter = require('./meter');
 var React = require('react');
 var { useState } = React;
 var useAsk = require('../okc/ask');
@@ -290,6 +291,9 @@ async function plugin(imports, register) {
     //Repositories, six under Runners, and the tab names as written.
     shell.tab({ name: 'Runners', order: 60 });
     shell.pane({ tab: 'Runners', name: 'Virtual machines', order: 10, Component: Machines });
+    //LAST UNDER Runners, because it is about what they have COST rather than
+    //what any of them is doing. Nothing on it can be acted on.
+    shell.pane({ tab: 'Runners', name: 'Meter', order: 60, Component: makeMeter(theme, okc) });
 
     await register(null, {});
 }
