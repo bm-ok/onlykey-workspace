@@ -24,7 +24,7 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..', 'src');
 const APP = path.join(ROOT, 'app');
-const SHEET = path.join(APP, 'theme', 'dashboard.scss');
+const SHEET = path.join(APP, 'ui', 'theme', 'dashboard.scss');
 
 //AND NOW THERE IS MORE THAN ONE STYLESHEET, which changes what this can check
 //into something better.
