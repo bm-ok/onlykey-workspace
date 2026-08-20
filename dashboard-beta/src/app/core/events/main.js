@@ -1,3 +1,4 @@
+var looksLike = require('../secret/looks-like');
 var fs = require('fs');
 var path = require('path');
 
@@ -103,22 +104,21 @@ var MOST = 2000;
 //a machine's output is useless if it does. This keeps only sentences this app
 //composed about its own acts, and none of those need a 24-character run of random
 //to make sense — so anything token-shaped goes, wherever it appears.
-var REDACT = [
-    //user:pass@host, which is how a git remote carries a machine's token.
-    [/\/\/[^\s/@]*:[^\s/@]*@/g, '//<credential>@'],
-    //Any URL: keep the scheme and host, drop everything after it.
-    [/\b(https?:\/\/[^\s/]+)\/\S*/gi, '$1/<redacted>'],
-    //A long run of token-shaped characters standing on its own.
-    [/\b[A-Za-z0-9_-]{24,}\b/g, '<redacted>'],
-    //Anything that names itself.
-    [/\b(token|secret|password|api[-_ ]?key|code)\b(\s*[=:]\s*)\S+/gi, '$1$2<redacted>']
-];
-
-function scrub(text) {
-    var out = String(text == null ? '' : text);
-    REDACT.forEach(function (pair) { out = out.replace(pair[0], pair[1]); });
-    return out;
-}
+//THE LIST LIVES IN ../secret/looks-like.js NOW, and this kept its own until
+//20 August 2026 — four patterns here, two in ../log, nine in the app being
+//ported from, no two agreeing. See that file's header.
+//
+//`durable` IS THE RIGHT POLICY FOR THIS ONE and the wrong one for ../log. What
+//is written here is kept for ever, so the blunt rules earn their cost: any run
+//of 24+ token-shaped characters, and the tail of every URL. A live log of a
+//guest's output would become a column of <redacted> under the same rules, which
+//is why they are asked for by name rather than applied everywhere.
+//
+//AND IT CLOSES SOMETHING THIS GOT RIGHT BY LUCK. A GitHub token was caught here
+//only because it is long and random — not because anything knew what one looks
+//like. It is now caught by a rule that names it, so narrowing the blunt one
+//later cannot quietly stop catching it.
+function scrub(text) { return looksLike.redact(text, 'durable'); }
 
 //Whether a live-log entry is one of ours to keep. Kept as a plain function so the
 //rule can be read and tested rather than inferred from behaviour.

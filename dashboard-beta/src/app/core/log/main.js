@@ -1,3 +1,4 @@
+var looksLike = require('../secret/looks-like');
 //---------------------------------------------------------------------------
 //one live log, tagged, that everything writes into.
 //
@@ -48,18 +49,18 @@ var MAX = 2000;
 //AND IT IS THE SECOND LINE OF DEFENCE, not the first. What must not be in a log
 //must not be sent to one. This is here because "must not" is a rule somebody has
 //to be right about every single time.
-var NEVER = [
-    //Anthropic's own key shapes, which say what they are.
-    [/\bsk-ant-[A-Za-z0-9_-]+/g, 'sk-ant-<redacted>'],
-    //The credential file's own fields, whether or not the value looks like a key.
-    [/("(?:access|refresh)Token"\s*:\s*")[^"]+/gi, '$1<redacted>']
-];
+//THE LIST LIVES IN ../secret NOW, and this kept its own until 20 August 2026.
+//Two patterns here, four in ../events, nine in the app being ported from, and no
+//two of them agreeing — which is one permission behind many gates, taught one at
+//a time. The gap that found it: THIS FILE DID NOT REDACT A GITHUB TOKEN AT ALL.
+//
+//WHAT STAYS TRUE IS THE POLICY, and it is the reason this is `redact(text)` and
+//not `redact(text, 'durable')`. A guest's output is full of commit hashes and
+//base64; the blunt rules — anything long and random, the tail of every URL —
+//would make this log useless for the thing it exists for. ../secret keeps the
+//two apart deliberately so that narrow does not have to mean incomplete.
 
-function noCredentials(text) {
-    var out = String(text == null ? '' : text);
-    NEVER.forEach(function (pair) { out = out.replace(pair[0], pair[1]); });
-    return out;
-}
+function noCredentials(text) { return looksLike.redact(text); }
 
 plugin.consumes = [];
 plugin.provides = ['log'];

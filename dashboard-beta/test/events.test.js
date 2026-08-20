@@ -81,7 +81,19 @@ test('a token does not survive, wherever in the sentence it is', async () => {
 
     assert.ok(!events.scrub('pushed with ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345').includes('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345'));
     assert.ok(!events.scrub('set token = hunter2sekrit').includes('hunter2sekrit'));
-    assert.match(events.scrub('remote https://x:ghp_abc@github.com/o/r'), /<credential>@/);
+
+    //THE PROPERTY, NOT THE MARKER. This read `/<credential>@/`, which is the
+    //word the blunt `//user:pass@` rule leaves behind — and it stopped matching
+    //when a rule that KNOWS what a GitHub token is started firing first, leaving
+    //`https://<redacted>@github.com/o/r`. Nothing got weaker: the secret is gone
+    //either way and the host survives, which is more useful than either marker.
+    //
+    //A test that asserts which of two correct rules won is a test that goes red
+    //when the redaction improves.
+    const url = events.scrub('remote https://x:ghp_abc@github.com/o/r');
+    assert.ok(!url.includes('ghp_abc'), 'a token in a remote URL survived');
+    assert.match(url, /<redacted>|<credential>/, 'it was dropped silently, with nothing saying something was there');
+    assert.match(url, /github\.com/, 'the host went too, so the line no longer says where the push was going');
 });
 
 //---------------------------------------------------------------------------
