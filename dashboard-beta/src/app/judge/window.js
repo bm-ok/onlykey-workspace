@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState } = React;
-var useAsk = require('../okc/ask');
 var makeFindings = require('./findings');
 var makeJudges = require('./judges');
 
@@ -89,7 +88,7 @@ async function plugin(imports, register) {
     }
 
     function Judge() {
-        var { state, error, reads } = useAsk(okc, 'judging', {}, 5000);
+        var { state, error, reads } = okc.use('judging', {}, 5000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;
@@ -182,7 +181,7 @@ async function plugin(imports, register) {
     };
 
     function Judgements() {
-        var { state, error, reads } = useAsk(okc, 'judging', {}, 8000);
+        var { state, error, reads } = okc.use('judging', {}, 8000);
         var [find, setFind] = useState('');
         var [only, setOnly] = remember.use('judge', 'only', null);
         var [picked, setPicked] = remember.use('judge', 'picked', null);

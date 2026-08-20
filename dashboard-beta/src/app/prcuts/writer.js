@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState, useEffect, useRef } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //New PR Cut: what every pull request in a cut says beyond what somebody typed.
@@ -37,8 +36,8 @@ module.exports = function writer(theme, okc, remember) {
     } = theme;
 
     return function NewPRCut() {
-        var blocks = useAsk(okc, 'prTemplate', {}, 0);
-        var lines = useAsk(okc, 'lines', {}, 0);
+        var blocks = okc.use('prTemplate', {}, 0);
+        var lines = okc.use('lines', {}, 0);
 
         //WHICH PAIR IS BEING PREVIEWED, kept across restarts like every other
         //place somebody was standing. Two line NAMES — not what they carry.

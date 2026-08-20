@@ -1,5 +1,4 @@
 var React = require('react');
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //the Judges: what may read work, and what each of them was told.
@@ -72,9 +71,9 @@ module.exports = function judges(theme, okc) {
     }
 
     return function Judges() {
-        var jobs = useAsk(okc, 'jobs', { kind: 'judge' }, 0);
-        var prompts = useAsk(okc, 'prompts', { kind: 'judge' }, 0);
-        var contracts = useAsk(okc, 'contracts', { kind: 'judge' }, 0);
+        var jobs = okc.use('jobs', { kind: 'judge' }, 0);
+        var prompts = okc.use('prompts', { kind: 'judge' }, 0);
+        var contracts = okc.use('contracts', { kind: 'judge' }, 0);
 
         var err = jobs.error || prompts.error || contracts.error;
         if (err && !jobs.state) return <Pane><Note kind="bad">{err}</Note></Pane>;

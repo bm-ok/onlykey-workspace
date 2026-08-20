@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState, useEffect } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //the workspace: which folder of repositories all of this is about.
@@ -38,7 +37,7 @@ async function plugin(imports, register) {
     var NEEDS = ['Repositories', 'Tasks'];
 
     function Workspaces() {
-        var { state, error, reads, again } = useAsk(okc, 'workspaces', {}, 15000);
+        var { state, error, reads, again } = okc.use('workspaces', {}, 15000);
         var [said, setSaid] = useState(null);
         var [where, setWhere] = useState('');
 

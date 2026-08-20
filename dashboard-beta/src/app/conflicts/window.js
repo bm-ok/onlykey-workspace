@@ -1,5 +1,4 @@
 var React = require('react');
-var useAsk = require('../okc/ask');
 
 //the Conflicts pane, inside the Repositories tab.
 //
@@ -43,7 +42,7 @@ async function plugin(imports, register) {
     }
 
     function Conflicts() {
-        var { state, error, reads } = useAsk(okc, 'conflicts', {}, 15000);
+        var { state, error, reads } = okc.use('conflicts', {}, 15000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;

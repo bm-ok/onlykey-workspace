@@ -1,5 +1,4 @@
 var React = require('react');
-var useAsk = require('../okc/ask');
 
 //the GitHub pane: the three keys this host holds, and what each one is for.
 //
@@ -37,9 +36,9 @@ async function plugin(imports, register) {
     }
 
     function GitHub() {
-        var token = useAsk(okc, 'githubHeld', {}, 30000);
-        var ssh = useAsk(okc, 'sshKey', {}, 30000);
-        var tls = useAsk(okc, 'tlsKey', {}, 30000);
+        var token = okc.use('githubHeld', {}, 30000);
+        var ssh = okc.use('sshKey', {}, 30000);
+        var tls = okc.use('tlsKey', {}, 30000);
 
         if (!token.state && token.error) return <Pane><Note kind="bad">{token.error}</Note></Pane>;
         if (!token.state) return <Pane><Skeleton rows={4} /></Pane>;

@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState } = React;
-var useAsk = require('../okc/ask');
 var makeBoard = require('./board');
 var makeAdd = require('./add');
 
@@ -61,7 +60,7 @@ async function plugin(imports, register) {
     }
 
     function Tasks() {
-        var { state, error, reads } = useAsk(okc, 'tasks', {}, 5000);
+        var { state, error, reads } = okc.use('tasks', {}, 5000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;

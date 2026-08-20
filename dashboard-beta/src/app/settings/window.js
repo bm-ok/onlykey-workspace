@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState, useEffect } = React;
-var useAsk = require('../okc/ask');
 
 //the Settings tab: one question, asked about one place.
 //
@@ -175,12 +174,12 @@ async function plugin(imports, register) {
     //only inside a dialog somebody closed is a question nobody answers.
 
     function Settings() {
-        var { state, error, reads } = useAsk(okc, 'settings', {}, 5000);
+        var { state, error, reads } = okc.use('settings', {}, 5000);
         //THE STANDING REQUEST COMES FROM `status` AS WELL, already filtered to
         //the open folder on the other side. Two reads rather than one because
         //they answer two questions: what this app is set to, and whether
         //something is waiting on a person right now.
-        var live = useAsk(okc, 'status', {}, 5000);
+        var live = okc.use('status', {}, 5000);
 
         var [dlgOpen, setDlgOpen] = useState(false);
         var [said, setSaid] = useState(null);

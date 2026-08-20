@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState } = React;
-var useAsk = require('../okc/ask');
 
 //the Graph tab: one renderer, two pictures.
 //
@@ -192,7 +191,7 @@ async function plugin(imports, register) {
     //answer arrives. React's reconciliation is the other half: identical text
     //is not rewritten, so a redraw does not destroy a selection mid-copy.
     function Board({ action, caution }) {
-        var { state, error, reads } = useAsk(okc, action, {}, 5000);
+        var { state, error, reads } = okc.use(action, {}, 5000);
         var [picked, setPicked] = useState(null);
 
         //THREE EMPTY STATES, THREE DIFFERENT ANSWERS, and the old pane funnelled

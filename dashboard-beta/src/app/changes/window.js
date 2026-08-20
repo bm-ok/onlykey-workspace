@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState, useEffect, useRef } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //Changes: what one line carries that another does not, file by file.
@@ -90,7 +89,7 @@ async function plugin(imports, register) {
     }
 
     function FileDiff({ cmp, pick }) {
-        var { state, error } = useAsk(okc, 'changeDiff', {
+        var { state, error } = okc.use('changeDiff', {
             source: cmp.source, target: cmp.target, repo: pick.repo, file: pick.file
         }, 0);
 
@@ -110,7 +109,7 @@ async function plugin(imports, register) {
     //---- the pane ----------------------------------------------------------
 
     function Changes() {
-        var lines = useAsk(okc, 'lines', {}, 0);
+        var lines = okc.use('lines', {}, 0);
         //WHICH TWO LINES, AND WHICH LOOK. Reading a change is not something
         //somebody finishes in one sitting, and coming back to a blank pane is
         //how a review gets started again from the top.

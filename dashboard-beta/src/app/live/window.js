@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState, useRef, useEffect } = React;
-var useAsk = require('../okc/ask');
 
 //the Live tab: one tagged stream of everything this host and every machine it
 //supervises are saying, right now.
@@ -56,7 +55,7 @@ async function plugin(imports, register) {
     }
 
     function Log() {
-        var { state, error } = useAsk(okc, 'logSince', { since: 0 }, 2000);
+        var { state, error } = okc.use('logSince', { since: 0 }, 2000);
         var [off, setOff] = useState({});//tags that are muted; starts empty
         var [find, setFind] = useState('');
         var [follow, setFollow] = useState(true);
@@ -186,8 +185,8 @@ async function plugin(imports, register) {
         //ASKED ONCE, NOT ON A CADENCE. The table is fixed for the life of the
         //process it is read from, so polling it would be re-asking a
         //256-answer-wide question every few seconds for an answer that cannot
-        //change. `useAsk` with no interval reads once and stops.
-        var { state, error } = useAsk(okc, 'actions', {}, 0);
+        //change. `okc.use` with no interval reads once and stops.
+        var { state, error } = okc.use('actions', {}, 0);
         var [find, setFind] = useState('');
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;

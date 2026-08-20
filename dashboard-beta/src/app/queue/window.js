@@ -1,5 +1,4 @@
 var React = require('react');
-var useAsk = require('../okc/ask');
 
 //the Queue tab: what is running, what is waiting, and which machines are free.
 //
@@ -61,7 +60,7 @@ async function plugin(imports, register) {
     }
 
     function Queue() {
-        var { state, error, reads } = useAsk(okc, 'queueState', {}, 3000);
+        var { state, error, reads } = okc.use('queueState', {}, 3000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;

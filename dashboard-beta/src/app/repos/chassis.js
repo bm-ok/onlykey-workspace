@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //What Repos, Issues and Pull requests all are: pick a repository on the left,
@@ -34,7 +33,7 @@ module.exports = function chassis(theme, okc, remember) {
     //repository, a way to say something, and a way to ask again.
     return function paneOf(lead, Right) {
         return function ReposPane() {
-            var q = useAsk(okc, 'repositories', {}, 8000);
+            var q = okc.use('repositories', {}, 8000);
             var [picked, setPicked] = remember.use('repos', 'repo', null);
             var [said, setSaid] = useState(null);
 

@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //API: every capability this server has.
@@ -39,7 +38,7 @@ async function plugin(imports, register) {
         //appears when the server half reloads, and the window reloads with it —
         //so polling it every few seconds would be two hundred and fifty rows
         //re-fetched to say the same thing.
-        var q = useAsk(okc, 'actions', {}, 0);
+        var q = okc.use('actions', {}, 0);
         var [find, setFind] = useState('');
 
         if (q.error && !q.state) return <Pane><Note kind="bad">{q.error}</Note></Pane>;

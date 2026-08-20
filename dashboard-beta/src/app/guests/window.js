@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //the Claude sign-ins this host holds.
@@ -69,8 +68,8 @@ async function plugin(imports, register) {
 
     function GuestsFor(role) {
       return function Guests() {
-        var { state, error, reads, again } = useAsk(okc, 'guests', {}, 15000);
-        var machines = useAsk(okc, 'vmList', {}, 30000);
+        var { state, error, reads, again } = okc.use('guests', {}, 15000);
+        var machines = okc.use('vmList', {}, 30000);
         var [find, setFind] = useState('');
         var [only, setOnly] = remember.use('guests', 'only', null);
         var [picked, setPicked] = remember.use('guests', 'picked', null);

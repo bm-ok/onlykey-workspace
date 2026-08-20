@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //Actions: the jobs, prompts and contracts a worker may be given.
@@ -96,7 +95,7 @@ async function plugin(imports, register) {
         var K = KINDS[which];
 
         return function Library() {
-            var { state, error, reads, again } = useAsk(okc, K.list, {}, 20000);
+            var { state, error, reads, again } = okc.use(K.list, {}, 20000);
             var [find, setFind] = useState('');
             var [only, setOnly] = remember.use('library-' + which, 'only', null);
             var [picked, setPicked] = remember.use('library-' + which, 'picked', null);

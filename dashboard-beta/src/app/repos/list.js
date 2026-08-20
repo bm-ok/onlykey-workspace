@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState, useRef } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //Repos: what this workspace is made of, and whether the far end of each one can
@@ -98,7 +97,7 @@ module.exports = function reposRight(theme, okc) {
         //git, not GitHub — a sync from the Branches tab or the command line
         //moves it, and a panel whose whole job is saying whether two things
         //match is worse than useless when it is stale.
-        var q = useAsk(okc, 'repoBranches', { repo: repo }, 8000);
+        var q = okc.use('repoBranches', { repo: repo }, 8000);
         var [busy, setBusy] = useState(null);
 
         function sync(branch) {

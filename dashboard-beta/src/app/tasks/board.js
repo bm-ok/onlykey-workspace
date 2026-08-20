@@ -1,5 +1,4 @@
 var React = require('react');
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //the Board: every task, and what became of it.
@@ -83,7 +82,7 @@ module.exports = function board(theme, okc, remember, useState) {
     }
 
     return function Board() {
-        var { state: got, error, reads, again } = useAsk(okc, 'tasks', {}, 10000);
+        var { state: got, error, reads, again } = okc.use('tasks', {}, 10000);
         var [find, setFind] = useState('');
         var [only, setOnly] = remember.use('tasks', 'only', null);
         var [picked, setPicked] = remember.use('tasks', 'picked', null);

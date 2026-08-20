@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState, useEffect, useRef } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //the Supervisor: the conversation with it, and what it is allowed to do.
@@ -35,8 +34,8 @@ async function plugin(imports, register) {
     //---- the conversation --------------------------------------------------
 
     function Chat() {
-        var state = useAsk(okc, 'supervisorState', {}, 10000);
-        var talk = useAsk(okc, 'chat', {}, 5000);
+        var state = okc.use('supervisorState', {}, 10000);
+        var talk = okc.use('chat', {}, 5000);
         var [text, setText] = useState('');
         var [said, setSaid] = useState(null);
         var [sending, setSending] = useState(false);
@@ -188,7 +187,7 @@ async function plugin(imports, register) {
     //---- what it may do ----------------------------------------------------
 
     function May() {
-        var { state, error } = useAsk(okc, 'supervisorMay', {}, 0);
+        var { state, error } = okc.use('supervisorMay', {}, 0);
         var [find, setFind] = useState('');
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
@@ -233,7 +232,7 @@ async function plugin(imports, register) {
     //---- the list ----------------------------------------------------------
 
     function Todo() {
-        var { state, error, again } = useAsk(okc, 'todos', {}, 15000);
+        var { state, error, again } = okc.use('todos', {}, 15000);
         var [only, setOnly] = remember.use('todo', 'only', null);
         var [said, setSaid] = useState(null);
 
@@ -312,7 +311,7 @@ async function plugin(imports, register) {
 
     function Skill() {
         var [which, setWhich] = remember.use('skill', 'which', 'supervisor');
-        var { state, error, again } = useAsk(okc, 'skills', { which: which }, 0);
+        var { state, error, again } = okc.use('skills', { which: which }, 0);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;

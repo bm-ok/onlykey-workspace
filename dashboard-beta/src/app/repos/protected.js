@@ -1,5 +1,4 @@
 var React = require('react');
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //Protected: what may not be built on, and whether you could change that.
@@ -73,7 +72,7 @@ module.exports = function protectedPane(theme, okc) {
     }
 
     return function Protected() {
-        var q = useAsk(okc, 'branchBoard', {}, 8000);
+        var q = okc.use('branchBoard', {}, 8000);
 
         if (q.error && !q.state) return <Pane><Note kind="bad">{q.error}</Note></Pane>;
         if (!q.state) return <Pane><Skeleton rows={4} /></Pane>;

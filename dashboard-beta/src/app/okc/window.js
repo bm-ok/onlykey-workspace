@@ -10,6 +10,8 @@
 //one function here rather than a method per action. A per-action wrapper would
 //be a second list to keep in step with a table that already exists.
 
+var useAsk = require('./ask');
+
 plugin.consumes = ['io'];
 plugin.provides = ['okc'];
 async function plugin(imports, register) {
@@ -53,24 +55,42 @@ async function plugin(imports, register) {
         });
     }
 
-    await register(null, {
-        okc: {
-            //THE SOCKET ITSELF, for the one caller that needs more than
-            //`call`: the shell listens for navigation pushed from outside. Not
-            //handed out casually — a tab that reached for this instead of
-            //`call` would be talking to the wire rather than to the table.
-            io: io,
-            call: call,
-            get connected() { return up; },
-            //WHETHER THE DASHBOARD IS THERE IS EVERY TAB'S BUSINESS, and it
-            //changes often — it is restarted whenever its own code is worked
-            //on. Subscribing beats each tab polling for it.
-            onUp: function (fn) {
-                listeners.push(fn);
-                fn(up);
-                return function () { listeners = listeners.filter(function (x) { return x != fn; }); };
-            }
+    var api = {
+        //THE SOCKET ITSELF, for the one caller that needs more than
+        //`call`: the shell listens for navigation pushed from outside. Not
+        //handed out casually — a tab that reached for this instead of
+        //`call` would be talking to the wire rather than to the table.
+        io: io,
+        call: call,
+        get connected() { return up; },
+        //WHETHER THE DASHBOARD IS THERE IS EVERY TAB'S BUSINESS, and it
+        //changes often — it is restarted whenever its own code is worked
+        //on. Subscribing beats each tab polling for it.
+        onUp: function (fn) {
+            listeners.push(fn);
+            fn(up);
+            return function () { listeners = listeners.filter(function (x) { return x != fn; }); };
         }
-    });
+    };
+
+    //ASKING THE SAME QUESTION ON A CADENCE, ON THE SERVICE THAT ANSWERS IT.
+    //
+    //This was a file every tab reached across for — `require('../okc/ask')` in
+    //thirty-one of them, each one spelling out how many folders deep the
+    //reaching file happened to sit. Its first argument was always this object;
+    //every caller wrote `useAsk(okc, ...)` with the `okc` it had already
+    //declared. A function whose first parameter is its receiver is a method.
+    //
+    //IT WAS ALSO A DECLARED BOUNDARY BEING WALKED AROUND. ../shell/window.js
+    //says it plainly — "a tab is a plugin with a declared boundary: it consumes
+    //`okc` to ask the dashboard something and it cannot reach anything it did
+    //not declare" — and thirty-one tabs declared `okc` and then reached past it
+    //to a file inside it anyway.
+    //
+    //`./ask` is a sibling, so this survives the folder being moved. The
+    //requires it replaces did not: every one of them counted levels.
+    api.use = function (action, args, everyMs) { return useAsk(api, action, args, everyMs); };
+
+    await register(null, { okc: api });
 }
 module.exports = plugin;

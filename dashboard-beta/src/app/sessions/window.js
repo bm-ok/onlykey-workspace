@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState } = React;
-var useAsk = require('../okc/ask');
 
 //the Sessions tab: what the work on a branch line remembers.
 //
@@ -313,7 +312,7 @@ async function plugin(imports, register) {
     }
 
     function Sessions() {
-        var { state, error, reads } = useAsk(okc, 'sessions', {}, 5000);
+        var { state, error, reads } = okc.use('sessions', {}, 5000);
         var [picked, setPicked] = useState(null);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;

@@ -1,5 +1,4 @@
 var React = require('react');
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //the Meter: what each sign-in has spent.
@@ -50,7 +49,7 @@ module.exports = function meter(theme, okc) {
     function joined(parts) { return parts.filter(Boolean).join(' · '); }
 
     return function Meter() {
-        var q = useAsk(okc, 'meter', {}, 8000);
+        var q = okc.use('meter', {}, 8000);
 
         if (q.error && !q.state) return <Pane><Note kind="bad">{q.error}</Note></Pane>;
         if (!q.state) return <Pane><Skeleton rows={4} /></Pane>;

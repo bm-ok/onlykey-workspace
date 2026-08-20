@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState, useEffect } = React;
-var useAsk = require('../okc/ask');
 
 //the Tests tab: this app run against itself, and what the green is worth.
 //
@@ -501,7 +500,7 @@ async function plugin(imports, register) {
         //AND LISTING RUNS NOTHING, which is what makes it safe to ask on a
         //cadence at all: some of these drills borrow a machine, and opening a
         //tab is not consent to do that. The action reads the register.
-        var { state, error, reads } = useAsk(okc, 'suites', {}, 5000);
+        var { state, error, reads } = okc.use('suites', {}, 5000);
 
         var [pickedSuite, setPickedSuite] = remember.use('tests', 'suite', null);
         var [pickedTest, setPickedTest] = remember.use('tests', 'test', null);

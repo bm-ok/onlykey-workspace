@@ -1,5 +1,4 @@
 var React = require('react');
-var useAsk = require('../okc/ask');
 
 //the Lines pane: every named line, and why it exists.
 //
@@ -56,7 +55,7 @@ async function plugin(imports, register) {
     }
 
     function Lines() {
-        var { state, error, reads } = useAsk(okc, 'lines', {}, 10000);
+        var { state, error, reads } = okc.use('lines', {}, 10000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;

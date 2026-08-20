@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState, useEffect } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //the Inbox: everything waiting on you, and where to go for it.
@@ -49,7 +48,7 @@ async function plugin(imports, register) {
     };
 
     function Inbox() {
-        var { state, error, reads, again } = useAsk(okc, 'inbox', {}, 15000);
+        var { state, error, reads, again } = okc.use('inbox', {}, 15000);
         var [only, setOnly] = remember.use('inbox', 'only', null);
         var [went, setWent] = useState(null);
 

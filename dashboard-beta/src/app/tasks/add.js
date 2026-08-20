@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState, useEffect } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //Add task: writing down what a worker is told, and the branch it delivers on.
@@ -48,11 +47,11 @@ module.exports = function add(theme, okc, remember) {
         //EVERYTHING THIS FORM MAY OFFER, ASKED FOR TOGETHER. Each of these
         //narrows the list to what could actually be chosen, which is the whole
         //argument of the pane.
-        var board = useAsk(okc, 'branchBoard', {}, 0);
-        var prompts = useAsk(okc, 'prompts', { kind: 'task' }, 0);
-        var jobs = useAsk(okc, 'jobs', { kind: 'task' }, 0);
-        var contracts = useAsk(okc, 'contracts', { kind: 'task' }, 0);
-        var machines = useAsk(okc, 'vmList', {}, 0);
+        var board = okc.use('branchBoard', {}, 0);
+        var prompts = okc.use('prompts', { kind: 'task' }, 0);
+        var jobs = okc.use('jobs', { kind: 'task' }, 0);
+        var contracts = okc.use('contracts', { kind: 'task' }, 0);
+        var machines = okc.use('vmList', {}, 0);
 
         //WHAT IS TYPED IS KEPT. Writing a brief is not something somebody
         //finishes in one sitting, and this window restarts constantly — see

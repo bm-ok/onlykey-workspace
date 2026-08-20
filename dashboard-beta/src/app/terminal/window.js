@@ -1,5 +1,4 @@
 var React = require('react');
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //Terminal: shells that were started from a task, arriving here.
@@ -34,7 +33,7 @@ async function plugin(imports, register) {
     var { Pane, Panel, TitleRow, Grow, Button, Skeleton, Empty, Note, Mono } = theme;
 
     function Terminal() {
-        var q = useAsk(okc, 'vmList', {}, 8000);
+        var q = okc.use('vmList', {}, 8000);
 
         //RUNNING AND UNWATCHABLE. Only while one is actually running, so this is
         //silent on a quiet host.

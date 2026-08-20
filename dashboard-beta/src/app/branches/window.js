@@ -1,6 +1,5 @@
 var React = require('react');
 var { useState } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //Branch cuts: what work is done on, and what each one carries.
@@ -89,7 +88,7 @@ async function plugin(imports, register) {
     //---- the right column --------------------------------------------------
 
     function Carries({ branch }) {
-        var { state, error } = useAsk(okc, 'branchArtifacts', { branch: branch }, 0);
+        var { state, error } = okc.use('branchArtifacts', { branch: branch }, 0);
 
         if (!state && error) return <Panel><Note kind="bad">{error}</Note></Panel>;
         if (!state) return <Panel><Skeleton rows={2} /></Panel>;
@@ -178,7 +177,7 @@ async function plugin(imports, register) {
     //---- the pane ----------------------------------------------------------
 
     function Branches() {
-        var { state, error, reads, again } = useAsk(okc, 'branchBoard', {}, 10000);
+        var { state, error, reads, again } = okc.use('branchBoard', {}, 10000);
         var [find, setFind] = useState('');
         var [only, setOnly] = remember.use('branches', 'only', null);
         var [picked, setPicked] = remember.use('branches', 'picked', null);

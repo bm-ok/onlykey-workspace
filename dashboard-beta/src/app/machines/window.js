@@ -1,7 +1,6 @@
 var makeMeter = require('./meter');
 var React = require('react');
 var { useState } = React;
-var useAsk = require('../okc/ask');
 
 //---------------------------------------------------------------------------
 //the Machines tab — and the first pane built in the shape the app actually has.
@@ -202,7 +201,7 @@ async function plugin(imports, register) {
     //---- the tab -----------------------------------------------------------
 
     function Machines() {
-        var { state: got, error, reads, again } = useAsk(okc, 'vmList', {}, 5000);
+        var { state: got, error, reads, again } = okc.use('vmList', {}, 5000);
         var [find, setFind] = useState('');
         //THE FILTER AND THE SELECTION SURVIVE A RESTART; the search box does
         //not. A half-typed word is not a place, and coming back to a box

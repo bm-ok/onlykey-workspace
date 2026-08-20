@@ -1,5 +1,4 @@
 var React = require('react');
-var useAsk = require('../okc/ask');
 
 //the Keys tab: the Claude sign-ins this host holds.
 //
@@ -89,7 +88,7 @@ async function plugin(imports, register) {
     }
 
     function Keys() {
-        var { state, error, reads } = useAsk(okc, 'guests', {}, 10000);
+        var { state, error, reads } = okc.use('guests', {}, 10000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;
