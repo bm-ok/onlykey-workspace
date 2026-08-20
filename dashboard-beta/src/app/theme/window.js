@@ -1,4 +1,7 @@
 var React = require('react');
+var layout = require('./layout');
+var bits = require('./bits');
+var dialog = require('./dialog');
 
 //---------------------------------------------------------------------------
 //the dashboard's own look, as a rectify theme kit.
@@ -76,6 +79,12 @@ async function plugin(imports, register, config) {
     }
 
     //---- the pieces every pane is made of ----------------------------------
+    //
+    //THE REST OF THE KIT LIVES IN ITS OWN FILES, because it stopped being a
+    //handful of wrappers. ./layout is the shape of a tab, ./bits is everything
+    //small enough to have no argument attached to it, and ./dialog is the gate.
+    //Only Topbar and Pane are here, and only because they are the shell's own
+    //furniture rather than a pane's.
 
     //`active` IS NOT OPTIONAL, and leaving it off cost an evening. The
     //stylesheet says `.pane { display: none }` and `.pane.active { display:
@@ -88,27 +97,14 @@ async function plugin(imports, register, config) {
     //exists at all is the one being looked at — there is nothing to toggle, and
     //the modifier is simply always on.
     function Pane({ children }) { return <div className="pane active">{children}</div>; }
-    function Panel({ children }) { return <div className="panel">{children}</div>; }
-    function Card({ children, on, onClick }) {
-        return <div className={'card' + (on ? ' on' : '')} onClick={onClick}>{children}</div>;
-    }
-    function Badge({ children, kind }) {
-        return <span className={'badge' + (kind ? ' ' + kind : '')}>{children}</span>;
-    }
-    function Button({ children, kind, ...rest }) {
-        return <button className={'btn' + (kind ? ' ' + kind : '')} {...rest}>{children}</button>;
-    }
-    //"NOTHING HERE" IS AN ANSWER AND HAS ITS OWN LOOK, because an empty panel
-    //reads as broken and this reads as empty — a different thing, and the one
-    //somebody is actually asking about.
-    function Empty({ children }) { return <p className="empty">{children}</p>; }
-    function Note({ children, kind }) { return <p className={'note' + (kind ? ' ' + kind : ' muted')}>{children}</p>; }
-    function Mono({ children }) { return <span className="mono">{children}</span>; }
 
     await register(null, {
-        theme: {
-            Topbar, Pane, Panel, Card, Badge, Button, Empty, Note, Mono
-        }
+        //ONE OBJECT, AND A PANE NEVER SEES A CLASS NAME. Everything a pane
+        //is allowed to draw with is here; anything it cannot find is either
+        //missing from the kit — worth adding here so the next pane gets it too
+        //— or is that pane's own furniture and belongs in its own stylesheet.
+        //See ../../THEME.md for which is which.
+        theme: Object.assign({ Topbar, Pane }, layout, bits, dialog)
     });
 }
 module.exports = plugin;

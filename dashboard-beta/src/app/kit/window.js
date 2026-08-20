@@ -1,0 +1,180 @@
+var React = require('react');
+
+//---------------------------------------------------------------------------
+//the Kit pane — every piece of the theme, on one screen.
+//
+//WHY THIS EXISTS. `theme` is meant to be a slot: swap the folder and the app
+//looks different and nothing else moves. That is only true if somebody can see
+//what the slot is required to provide, and until this pane the answer was
+//spread across fourteen panes — so the real contract was "whatever the panes
+//happen to use", which is not a contract.
+//
+//It is also the review surface. Consolidating a look means comparing things
+//side by side: two badges that should differ and do not, a warn and a bad that
+//read the same at a glance, a skeleton that does not match the card it stands
+//in for. None of that is visible one pane at a time.
+//
+//AND IT IS WHAT A NEW PANE IS WRITTEN FROM. The rule is that a pane never names
+//a class — if what it needs is not here, either it belongs here so the next pane
+//gets it too, or it is that pane's own furniture and belongs in that plugin's
+//own stylesheet. ../../THEME.md says which is which.
+//
+//THE DIALOG CANNOT BE PHOTOGRAPHED FROM OUTSIDE, and that is on purpose. `show`
+//moves the window and does nothing else — it cannot press a button — so the
+//gate has to be opened by a person. That is the same reason it is the gate.
+//---------------------------------------------------------------------------
+
+plugin.consumes = ['shell', 'theme'];
+plugin.provides = [];
+async function plugin(imports, register) {
+    var { shell, theme } = imports;
+    var {
+        Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Row,
+        Card, CardTitle, CardSub, Badge, Badges, Chips, Chip,
+        Button, Plus, Cog, Finder, Skeleton, Notice, Banner, Link, Spec,
+        Empty, Note, Mono, Muted, Kv, KvRow, ask
+    } = theme;
+
+    function Group({ title, about, children }) {
+        return (
+            <Panel>
+                <CardTitle>{title}</CardTitle>
+                {about ? <CardSub>{about}</CardSub> : null}
+                <div style={{ marginTop: '10px' }}>{children}</div>
+            </Panel>
+        );
+    }
+
+    function Kit() {
+        return (
+            <Pane>
+                <Note>
+                    Every piece the theme provides. A pane is written from this and never names a
+                    class of its own — see THEME.md for what belongs here and what belongs to a pane.
+                </Note>
+
+                <Cols>
+                    <Col narrow>
+                        <TitleRow>A master column<Grow /><Plus title="what the + looks like" /></TitleRow>
+                        <Finder value="" onChange={function () { }} placeholder="find a thing" />
+                        <Chips>
+                            <Chip count={4} on>picked</Chip>
+                            <Chip count={11}>another</Chip>
+                            <Chip count={0}>none</Chip>
+                        </Chips>
+                        <Stack>
+                            <Card pick><CardTitle><Mono>pickable</Mono></CardTitle><CardSub>hover changes the border</CardSub></Card>
+                            <Card pick on><CardTitle><Mono>chosen</Mono></CardTitle><CardSub>accent border, lighter ground</CardSub></Card>
+                            <Card warn><CardTitle><Mono>the surprising case</Mono></CardTitle><CardSub>a bar down the left</CardSub></Card>
+                            <Card><CardTitle>plain<Grow /><Cog title="appears on hover" /></CardTitle></Card>
+                        </Stack>
+                    </Col>
+
+                    <Col>
+                        <Group title="Badges" about="a state, in one word">
+                            <Badges>
+                                <Badge kind="ok">ok</Badge>
+                                <Badge kind="bad">bad</Badge>
+                                <Badge kind="warn">warn</Badge>
+                                <Badge kind="run">happening now</Badge>
+                                <Badge kind="muted">muted</Badge>
+                                <Badge>plain</Badge>
+                            </Badges>
+                        </Group>
+
+                        <Group title="Buttons" about="disable what must not be pressed, and say why in the title">
+                            <Row>
+                                <Button kind="ok">Confirm</Button>
+                                <Button>Plain</Button>
+                                <Button kind="danger">Destroy</Button>
+                                <Button disabled title="this is why">Not yet</Button>
+                            </Row>
+                        </Group>
+
+                        <Group title="Saying something" about="four different sentences, four different looks">
+                            <Empty>nothing here — which is an answer, not a fault</Empty>
+                            <Note>a quiet aside</Note>
+                            <Note kind="bad">something could not be read</Note>
+                            <Notice kind="ok" onClose={function () { }}>it worked</Notice>
+                            <Banner kind="stale">what is on screen is out of date</Banner>
+                            <Banner kind="testing">testing mode is on — a standing state</Banner>
+                            <Banner kind="running">a drill is running right now — a moment</Banner>
+                        </Group>
+                    </Col>
+
+                    <Col wide>
+                        <Group title="Facts" about="a key and a value, which is most of the right-hand column">
+                            <Kv>
+                                <KvRow label="a label">a value</KvRow>
+                                <KvRow label="code"><Mono>fix/escape-note-id</Mono></KvRow>
+                                <KvRow label="a link"><Link href="https://github.com">somewhere else</Link></KvRow>
+                                <KvRow label="nothing"><Muted>not known</Muted></KvRow>
+                            </Kv>
+                            <Spec summary="folded away until asked for">
+                                <Kv><KvRow label="inside">the detail nobody needs by default</KvRow></Kv>
+                            </Spec>
+                        </Group>
+
+                        <Group title="Waiting" about="a shape, not the word loading — it holds the layout still">
+                            <Skeleton rows={2} />
+                        </Group>
+
+                        <Group title="The gate" about="every act that cannot be taken back goes through here">
+                            <Note>
+                                It has to be opened by a person. Nothing in this app can press it — `show`
+                                moves the window and does nothing else, which is the same reason it is the gate.
+                            </Note>
+                            <Row>
+                                <Button kind="ok" onClick={function () {
+                                    ask({
+                                        title: 'A dialog, with nothing behind it',
+                                        plain: [
+                                            'This is what an irreversible act looks like before it is agreed to.',
+                                            'The middle scrolls; the title and the buttons do not.',
+                                            'Confirming it does nothing at all.'
+                                        ],
+                                        cost: 'nothing — this one is a demonstration',
+                                        fields: [
+                                            { name: 'why', label: 'Why', placeholder: 'a reason', hint: 'where a value comes from is what somebody is missing at the moment they are asked for it' },
+                                            { name: 'kind', label: 'A choice', value: 'b', options: [{ value: 'a', label: 'the first' }, { value: 'b', label: 'the second' }] },
+                                            { name: 'force', type: 'checkbox', label: 'A tick with consequences', hint: 'and what ticking it actually does, said here rather than found out later' },
+                                            { name: 'off', label: 'There and not usable yet', disabled: true, value: '', hint: 'disabled and visible, rather than hidden and appearing one day out of nowhere' }
+                                        ],
+                                        confirm: 'Do the thing',
+                                        onYes: function () { }
+                                    });
+                                }}>Open a dialog</Button>
+
+                                <Button onClick={function () {
+                                    ask({
+                                        title: 'A refusal, shown in place',
+                                        plain: ['Confirming this throws. The dialog stays open and says why, rather than closing and going quiet.'],
+                                        confirm: 'Try it',
+                                        danger: true,
+                                        onYes: function () { throw new Error('Refused: this is what a refusal looks like, and half of them are the app working correctly.'); }
+                                    });
+                                }}>A refusal</Button>
+
+                                <Button onClick={function () {
+                                    ask({
+                                        title: 'Two ways to do one thing',
+                                        confirm: 'Go',
+                                        tabs: [
+                                            { label: 'By name', plain: ['Each tab is rebuilt, not hidden.'], fields: [{ name: 'name', label: 'Name' }], onYes: function () { } },
+                                            { label: 'By address', plain: ['So the fields of the tab nobody is looking at cannot decide what gets submitted.'], fields: [{ name: 'addr', label: 'Address' }], onYes: function () { } }
+                                        ]
+                                    });
+                                }}>Tabs</Button>
+                            </Row>
+                        </Group>
+                    </Col>
+                </Cols>
+            </Pane>
+        );
+    }
+
+    shell.pane({ tab: 'Settings', name: 'Kit', order: 90, Component: Kit });
+
+    await register(null, {});
+}
+module.exports = plugin;

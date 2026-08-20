@@ -26,7 +26,7 @@ plugin.consumes = ['react', 'theme', 'appPackage', 'okc', 'app'];
 plugin.provides = ['shell'];
 async function plugin(imports, register) {
     var { react, theme, appPackage, okc, app } = imports;
-    var { Topbar } = theme;
+    var { Topbar, Dialogs } = theme;
 
     var tabs = [];
     var panes = [];
@@ -124,7 +124,23 @@ async function plugin(imports, register) {
                 forgotten three times — twice putting `spawn` at a quarter of
                 the window's samples. Here an unmounted tab has no effects
                 running, so the rule enforces itself. */}
-            {Body ? <Body /> : <p className="empty">no tabs are loaded</p>}
+            {/* <main> IS NOT DECORATION EITHER. The stylesheet says
+                `main { padding: 16px }` and that is the only thing holding a
+                pane off the edges of the window — another piece of the old
+                skeleton that lived in index.html and so was invisible to a port
+                that read the JavaScript. Without it the first column sits flush
+                against the left edge, which is exactly how it looked. */}
+            <main>
+                {Body ? <Body /> : <p className="empty">no tabs are loaded</p>}
+            </main>
+
+            {/* MOUNTED ONCE, HERE, AND NOWHERE ELSE. A dialog is opened from
+                deep inside a pane by calling `theme.ask(...)` and awaiting the
+                answer — so the overlay has to live above whatever pane is
+                showing, and has to survive that pane going away. Hanging it off
+                the shell is what lets `ask` stay a function call rather than
+                open/close state threaded down through forty components. */}
+            <Dialogs />
         </>);
     }
 

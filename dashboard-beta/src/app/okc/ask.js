@@ -26,6 +26,11 @@ module.exports = function useAsk(okc, action, args, everyMs) {
     var [reads, setReads] = useState(0);
     var seq = useRef(0);
     var alive = useRef(true);
+    //ASKING AGAIN, ON DEMAND. An act changes the thing being polled, and waiting
+    //out the rest of the interval to find out shows a stale answer for up to the
+    //full cadence — which reads as the act having done nothing, and is how
+    //somebody presses it a second time.
+    var now = useRef(function () {});
 
     var key = JSON.stringify(args || {});
 
@@ -48,13 +53,15 @@ module.exports = function useAsk(okc, action, args, everyMs) {
             });
         }
 
+        now.current = read;
         read();
         var t = everyMs ? setInterval(read, everyMs) : null;
         return function () {
             alive.current = false;
+            now.current = function () {};
             if (t) clearInterval(t);
         };
     }, [action, key, everyMs]);
 
-    return { state, error, reads };
+    return { state, error, reads, again: function () { now.current(); } };
 };

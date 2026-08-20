@@ -32,7 +32,7 @@ plugin.consumes = ['shell', 'theme', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, ask } = theme;
 
     //ONCE PER REQUEST, kept outside the component so it survives the tab being
     //switched away from and back. Keyed on when the request was made: the reads
@@ -64,139 +64,15 @@ async function plugin(imports, register) {
         return <div className={'authline' + (kind ? ' ' + kind : '')}>{children}</div>;
     }
 
-    //The confirmation, in page rather than native: it has to carry plain words
-    //about what the drills actually do and what it costs when one of them finds
-    //something. A confirm() holds none of that.
-    function Dialog({ d, onClose }) {
-        if (!d) return null;
-        return (
-            <div className="dlg-overlay"
-                onClick={function (e) { if (e.target === e.currentTarget) onClose(); }}>
-                <div className="dlg">
-                    <div className="dlg-title">{d.title}</div>
-                    <div className="dlg-body">
-                        {(d.plain || []).map(function (p, i) {
-                            return <p key={i} className="note">{p}</p>;
-                        })}
-                        {d.cost ? <div className="dlg-cost"><strong>What it costs: </strong>{d.cost}</div> : null}
-                    </div>
-                    <div className="dlg-actions">
-                        {/* DISMISSING AND ANSWERING "NO" ARE DIFFERENT ACTS, and
-                            both have to exist. Closing this leaves the request
-                            standing so it can be found on the card; "No" clears
-                            it. A question that exists only inside a dialog
-                            somebody closed is a question nobody answers. */}
-                        {d.extra
-                            ? <button className="btn" onClick={function () { onClose(); d.extra.onClick(); }}>{d.extra.label}</button>
-                            : null}
-                        <button className="btn" onClick={onClose}>Never mind</button>
-                        <button className={'btn' + (d.danger ? ' danger' : '')}
-                            onClick={function () { onClose(); d.onYes(); }}>{d.confirm}</button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    //THE DRILLS, AND THE ONE THING THAT MAKES THEM DANGEROUS. They drive this
-    //app for real: one writes a task and removes it again, one takes a
-    //credential off a machine and puts it back. Against three scaffolding
-    //repositories that is what they are for; against somebody's actual work it
-    //is a stranger typing into their repository, and nothing here can tell the
-    //two apart. So the card leads with the folder.
-    function TestCard({ t, asked, onOff, onAsk, said }) {
-        var on = !!t.enabled;
-        //TAKEN FROM THE ACTION RATHER THAN RECOMPUTED. It is the same string
-        //equality either way, and computing it twice is how a card comes to
-        //disagree with the refusal a drill was given.
-        var here = !!t.allowed;
-        //A request standing about THIS folder. One raised against another
-        //workspace is not a question anybody here can answer — and testsAnswer
-        //re-checks the folder itself and clears such a request rather than
-        //honouring it, so showing it would only invite an answer about the
-        //wrong place.
-        var standing = asked && !here && asked.forDir === t.openDir ? asked : null;
-
-        return (
-            <div className={'card' + (on && !here ? ' warn' : '')}>
-                <div className="card-title">
-                    <span className="grow">Run the drills against this workspace</span>
-                    {/* THREE STATES, NOT A BOOLEAN. Off wears the plain badge,
-                        which in this stylesheet is already the muted one —
-                        `.badge` and `.badge.muted` are the same grey, and a
-                        state nobody has acted on should read as quiet rather
-                        than as a warning. */}
-                    {here
-                        ? <Badge kind="ok">on, here</Badge>
-                        : on
-                            ? <Badge kind="warn">on, elsewhere</Badge>
-                            : <Badge>off</Badge>}
-                </div>
-
-                {/* ASKED, AND STILL WAITING — on the card as well as in the
-                    dialog, for the same reason the dialog has a "No" button. */}
-                {standing
-                    ? <Line><strong>{'Asked ' + ago(standing.at) + ': '}</strong><span>{standing.why}</span></Line>
-                    : null}
-
-                <p className="note">
-                    The drills in the Test tab drive this app for real — one writes a task and removes it
-                    again, one takes the worker credential off a machine, proves a signed-out machine is
-                    refused work, and puts it back. Against scaffolding repositories that is exactly what
-                    they are for. Against work you care about it is a stranger typing into your repository,
-                    and this app cannot tell the two apart, so it does not guess.
-                </p>
-
-                {/* BOTH ROWS, EVEN WHEN THEY MATCH. That redundancy is the check
-                    somebody came here to make. Raw, and selectable: the server
-                    compares these strings as they are, so prettying the case or
-                    the separators would make the pane disagree with the
-                    predicate it is reporting. */}
-                <table className="kv">
-                    <tbody>
-                        <tr>
-                            <th>turned on for</th>
-                            {/* TWO DIFFERENT EMPTY STATES. A null `forDir` is a
-                                fact about the setting — turning off writes it
-                                away in the same act — and a null `openDir` is a
-                                fact about the app. */}
-                            <td style={{ userSelect: 'text' }}><Mono>{t.forDir || '—'}</Mono></td>
-                        </tr>
-                        <tr>
-                            <th>open now</th>
-                            <td style={{ userSelect: 'text' }}><Mono>{t.openDir || 'nothing is open'}</Mono></td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                {/* WHY, IN THE WORDS THE ACTION USES. Three different reasons
-                    arrive here — switched off, no workspace open, on for a
-                    different folder — and it is rendered verbatim so that a
-                    person reading this card and a model reading a refusal on the
-                    command line are looking at one sentence rather than two
-                    wordings of it. */}
-                {!here
-                    ? <Line>{t.why}</Line>
-                    : <Line kind="ok">On for the folder open now. Opening a different workspace switches this off — it is on for a place, not on in general.</Line>}
-
-                {/* WHAT THE LAST PRESS ANSWERED, said where the press was made.
-                    Over the wire these two writes are refused on purpose; the
-                    refusal is a sentence worth reading rather than a button that
-                    silently does nothing. */}
-                {said ? <Line kind={said.bad ? 'bad' : 'ok'}>{said.text}</Line> : null}
-
-                <div className="row" style={{ marginTop: '8px' }}>
-                    {on
-                        //Switching off is free and asks nothing.
-                        ? <button className="btn" onClick={function () { onOff(); }}>Switch them off</button>
-                        : <button className="btn danger" disabled={!t.openDir}
-                            onClick={function () { if (t.openDir) onAsk(); }}>
-                            {t.openDir ? 'Turn them on for this workspace' : 'No workspace is open'}
-                        </button>}
-                </div>
-            </div>
-        );
-    }
+    //THE DIALOG USED TO BE WRITTEN OUT HERE, and that is the drift this port was
+    //meant to catch. It was a fair copy — an overlay, a body, three buttons —
+    //and it was the second one in the app, which is how a look stops being one
+    //look. It is now `theme.ask`, whose host is mounted once by the shell.
+    //
+    //One thing that copy said and the shared one keeps: DISMISSING AND ANSWERING
+    //"NO" ARE DIFFERENT ACTS. Closing this leaves the request standing so it can
+    //be found on the card; the extra button clears it. A question that exists
+    //only inside a dialog somebody closed is a question nobody answers.
 
     function Settings() {
         var { state, error, reads } = useAsk(okc, 'settings', {}, 5000);
@@ -206,7 +82,7 @@ async function plugin(imports, register) {
         //something is waiting on a person right now.
         var live = useAsk(okc, 'status', {}, 5000);
 
-        var [dlg, setDlg] = useState(null);
+        var [dlgOpen, setDlgOpen] = useState(false);
         var [said, setSaid] = useState(null);
 
         var req = live.state ? live.state.askedToTest : null;
@@ -231,10 +107,11 @@ async function plugin(imports, register) {
             //somebody is mid-decision in another one steals the keyboard and
             //answers the wrong question. This can wait five seconds for the
             //screen to be free.
-            if (dlg) return;
+            if (dlgOpen) return;
             askedShown = reqAt;
-            setDlg(askToTest(req));
-        }, [reqAt, !!dlg]);
+            setDlgOpen(true);
+            ask(askToTest(req)).then(function () { setDlgOpen(false); });
+        }, [reqAt, dlgOpen]);
 
         //Both writes report what they were told and leave the reading to the
         //next poll. The old window had to `forget` five cached panels here —
@@ -337,7 +214,7 @@ async function plugin(imports, register) {
                     <div className="stack">
                         <TestCard t={t} asked={asked} said={said}
                             onOff={function () { setTests(false); }}
-                            onAsk={function () { setDlg(confirmOn(t.openDir)); }} />
+                            onAsk={function () { ask(confirmOn(t.openDir)); }} />
                     </div>
                 </Panel>
 
@@ -359,12 +236,16 @@ async function plugin(imports, register) {
 
                 <Note>{'read ' + reads + ' time(s), every 5s'}</Note>
 
-                <Dialog d={dlg} onClose={function () { setDlg(null); }} />
             </Pane>
         );
     }
 
-    shell.tab({ name: 'Settings', order: 90, Component: Settings });
+    //A PANE RATHER THAN THE TAB ITSELF, so the tab can hold more than one thing.
+    //The shell shows a tab's panes when it has any and its own Component when it
+    //has none — so a tab that is both is a tab whose body silently disappears the
+    //day somebody adds a second pane to it. Registered this way it cannot.
+    shell.tab({ name: 'Settings', order: 90 });
+    shell.pane({ tab: 'Settings', name: 'General', order: 10, Component: Settings });
 
     await register(null, {});
 }
