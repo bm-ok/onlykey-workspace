@@ -20,8 +20,13 @@ async function plugin(imports, register) {
 
     undo.push(actions.define('actions', {
         about: 'Every action there is, and what each one takes',
+        //EVERYTHING, NOT JUST WHAT THIS HALF OWNS. While the port is under way
+        //most of what the app can do is still answered by the app it relays to,
+        //and an answer listing only this half's ten reads as "the other two
+        //hundred and fifty were lost" rather than "they have not moved yet".
+        //Each row says which side answers it.
         takes: [],
-        run: async function () { return { actions: actions.list() }; }
+        run: async function () { return actions.all(); }
     }));
 
     undo.push(actions.define('status', {

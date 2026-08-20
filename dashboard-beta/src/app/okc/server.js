@@ -160,6 +160,18 @@ async function plugin(imports, register) {
     //testing is the graph and the socket. Assuming the table exists turned a
     //passing suite into one that hung, which is a worse failure than the missing
     //feature would have been.
+    //AND WHAT IS DOWN THERE, BY NAME. A fallback answers a name and cannot
+    //enumerate; this is the other half of the same relay, so the API pane can
+    //say what the app can actually do rather than what this half has got to.
+    //Asked at the moment somebody looks, not cached: the far side is restarted
+    //constantly while its own code is worked on, and a cached table would
+    //describe the version before the last restart.
+    var uncatalogue = actions ? actions.catalogue(async function () {
+        if (!sock) throw new Error('the dashboard this relays to is not running, so its actions are not listed');
+        var got = await call('actions', {});
+        return { where: 'okc-dashboard', list: (got && got.actions) || [] };
+    }) : function () {};
+
     var unfallback = actions ? actions.fallback(function (name, args) {
         if (!sock) return undefined;//not mine to answer while the pipe is down
         return call(name, args);
@@ -175,6 +187,7 @@ async function plugin(imports, register) {
         onDestroy: function () {
             closing = true;
             unfallback();
+            uncatalogue();
             drop('the server half is reloading');
             io.removeAllListeners('connection');
             if (sock) { try { sock.destroy(); } catch (e) { /* already gone */ } }

@@ -417,6 +417,26 @@ function Spec({ summary, children }) {
 
 //A key/value table. Used in enough places to be worth naming, and it keeps the
 //`<table className="kv">` spelling in one file.
+//---- one capability, as a row ---------------------------------------------
+//
+//A NAME, WHAT IT IS FOR, AND WHAT IT TAKES. Three columns and no card, because
+//this is a reference somebody scans down looking for one name — two hundred and
+//fifty cards is a scroll bar and nothing else. The name column is a fixed width
+//so the descriptions line up and the eye can run down them.
+//
+//THE ARGUMENTS ARE ON THE RIGHT AND QUIET. They are the second question. What
+//matters first is whether the thing exists at all and whether it is the one you
+//meant.
+function Act({ name, about, takes }) {
+    return (
+        <div className="act">
+            <code>{name}</code>
+            <span className="about">{about}</span>
+            <span className="takes">{takes}</span>
+        </div>
+    );
+}
+
 //---- a section inside a pane, and its heading -----------------------------
 //
 //A HEADING THAT CARRIES QUALIFIERS BESIDE IT: what this section is, then which
@@ -471,5 +491,5 @@ module.exports = {
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip,
     Button, Plus, Cog, Finder, Form, HeadRow, Controls,
-    Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Code, Markdown, ago, openOut
+    Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Act, Code, Markdown, ago, openOut
 };

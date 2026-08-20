@@ -26,6 +26,7 @@ plugin.provides = ['actions'];
 async function plugin(imports, register) {
     var table = new Map();
     var fallbacks = [];
+    var catalogues = [];
 
     var actions = {
         //`spec` is { about, takes, run } — the same shape the dashboard uses,
@@ -56,12 +57,74 @@ async function plugin(imports, register) {
             };
         },
 
+        //AND WHAT EACH FALL-THROUGH COULD ANSWER, which `fallback` cannot say.
+        //A fallback is a function that answers a name; it has no way to
+        //enumerate what it would accept, so a list built from this table alone
+        //describes a tenth of what the app can actually do.
+        //
+        //That is not a cosmetic gap. The API pane leads with "every capability
+        //this server has, nothing can exist without appearing here" — a
+        //sentence which, listing ten of two hundred and sixty, is simply false,
+        //and false in the direction that makes somebody conclude a capability
+        //was lost in the port.
+        catalogue: function (fn) {
+            catalogues.push(fn);
+            return function remove() {
+                catalogues = catalogues.filter(function (x) { return x !== fn; });
+            };
+        },
+
         has: function (name) { return table.has(name); },
 
+        //WHAT THIS HALF OWNS, and nothing else. Kept separate from `all()`
+        //because "is this action mine" is a real question with a synchronous
+        //answer, and making it wait on a socket would be the wrong trade.
         list: function () {
             return [...table.entries()]
                 .map(function (e) { return { name: e[0], about: e[1].about || null, takes: e[1].takes || [] }; })
                 .sort(function (a, b) { return a.name.localeCompare(b.name); });
+        },
+
+        //EVERYTHING THIS APP CAN DO, wherever it is answered.
+        //
+        //`where` TRAVELS WITH EACH ROW, because during a port that is the most
+        //interesting fact about an action: 'here' is one this app owns, and
+        //anything else names the half still answering it. It is also how the
+        //list stops needing maintenance — the day an action moves in, its row
+        //changes side on its own.
+        //
+        //A CATALOGUE THAT CANNOT BE READ IS NOT AN EMPTY ONE. If the pipe is
+        //down, its names are missing from this answer, and saying so is the
+        //difference between "the port has not got there yet" and "the thing it
+        //relays to is not running". The caller is told which.
+        all: async function () {
+            var mine = actions.list().map(function (a) {
+                return { name: a.name, about: a.about, takes: a.takes, where: 'here' };
+            });
+            var seen = new Set(mine.map(function (a) { return a.name; }));
+            var missing = [];
+
+            for (var i = 0; i < catalogues.length; i++) {
+                var got;
+                try { got = await catalogues[i](); }
+                catch (e) { missing.push(e.message); continue; }
+                if (!got || !got.list) continue;
+                got.list.forEach(function (a) {
+                    //THIS HALF WINS A NAME IT OWNS. An action that has moved in
+                    //is answered here, so listing the far one beside it would
+                    //show two rows for one capability and no way to tell which
+                    //one runs.
+                    if (seen.has(a.name)) return;
+                    seen.add(a.name);
+                    mine.push({
+                        name: a.name, about: a.about || null,
+                        takes: a.takes || [], where: got.where || 'elsewhere'
+                    });
+                });
+            }
+
+            mine.sort(function (a, b) { return a.name.localeCompare(b.name); });
+            return { actions: mine, missing: missing };
         },
 
         call: async function (name, args) {
