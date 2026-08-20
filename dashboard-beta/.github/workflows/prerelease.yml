@@ -1,0 +1,94 @@
+# Builds the app on each platform and attaches the results to a release.
+#
+# The matrix is not a convenience here. nwjc compiles main.bin to native code
+# for one platform and one nw.js version, so a build made on linux will not run
+# on windows — each target has to be built on its own runner.
+#
+# Nothing is signed: no certificate is involved anywhere in this file. What that
+# means for whoever downloads the result is written in the release notes step.
+
+name: prerelease-app
+run-name: ${{ github.actor }} is building ${{ github.ref_name }}
+
+on:
+  # published covers prereleases too, so "create a prerelease, let CI fill it"
+  # is the normal path
+  release:
+    types: [published]
+  # and this builds without needing a release at all — the artifacts land on
+  # the run itself, which is the "I just want a build" case
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # one platform failing should not delete the others' output
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: win-x64
+          - os: ubuntu-latest
+            label: linux-x64
+          - os: macos-latest
+            label: mac-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # not `npm ci --ignore-scripts`: nw's postinstall is what downloads the
+      # sdk runtime, and tools/build.js needs nwjc out of it
+      - name: Install
+        run: npm ci --foreground-scripts
+
+      - name: Check
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Build and package
+        run: npm run dist
+
+      # apple silicon refuses to run an unsigned binary at all, so this is not
+      # optional even without a certificate. `--sign -` is ad-hoc: it needs no
+      # identity, and it is what makes the app launchable at all on arm64.
+      - name: Ad-hoc sign (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          APP=$(find build/out -maxdepth 1 -name "*.app" | head -1)
+          echo "signing $APP"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --verbose "$APP" || true
+
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path build/out/* -DestinationPath "${{ github.event.repository.name }}-${{ matrix.label }}.zip"
+
+      - name: Archive (macOS and Linux)
+        if: runner.os != 'Windows'
+        run: cd build/out && zip -ry "../../${{ github.event.repository.name }}-${{ matrix.label }}.zip" .
+
+      # available on the run itself, which is what workflow_dispatch is for
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}
+          path: ${{ github.event.repository.name }}-${{ matrix.label }}.zip
+          retention-days: 14
+
+      # every job would append its own copy of any body text, so what a
+      # downloader needs to know about unsigned builds lives in the readme
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ github.event.repository.name }}-${{ matrix.label }}.zip

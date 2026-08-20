@@ -1,0 +1,44 @@
+{
+  "name": "dashboard-beta",
+  "title": "Dashboard (beta)",
+  "version": "0.1.0",
+  "description": "The dashboard, being taken apart into rectify plugins: the machines and the queue in the process that does not reload, the actions in the half that does, and the window as a client of both",
+  "type": "commonjs",
+  "main": "main.js",
+  "scripts": {
+    "start": "node tools/nw.js",
+    "stop": "node tools/stop.js",
+    "restart": "node tools/restart.js",
+    "build": "node tools/build.js",
+    "dist": "node tools/build.js && node tools/pack.js",
+    "test": "node --test"
+  },
+  "browserslist": [
+    "chrome >= 120"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
+    "@babel/preset-react": "^7.29.7",
+    "@bmatusiak/rectify": "github:bmatusiak/rectify",
+    "babel-loader": "^10.1.1",
+    "css-loader": "^7.1.4",
+    "express": "^5.2.1",
+    "html-webpack-plugin": "^5.6.8",
+    "nw": "0.114.2-sdk",
+    "nw-builder": "^4.18.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "sass": "^1.102.0",
+    "sass-loader": "^16.0.8",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "style-loader": "^4.0.0",
+
+    "webpack": "^5.109.2",
+    "webpack-dev-middleware": "^8.1.1",
+    "webpack-hot-middleware": "^2.26.1"
+  }
+}

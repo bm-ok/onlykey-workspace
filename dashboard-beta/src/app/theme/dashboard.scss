@@ -1,0 +1,1283 @@
+:root {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --panel-2: #1c232d;
+  --line: #2a323d;
+  --text: #d7dee8;
+  --muted: #7d8998;
+  --accent: #4aa3ff;
+  --ok: #3fb950;
+  --fail: #f85149;
+  --warn: #d29922;
+  /* THE DRILLS ARE ACTUALLY RUNNING. Its own colour on purpose: amber is
+     "testing mode is on", which is a standing state, and this is "something
+     is happening right now", which is a moment. Two different questions
+     wearing one colour is how somebody stops reading either. */
+  --running: #a371f7;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+/* ---------- scrollbars ----------
+
+   THE ONE PART OF THIS WINDOW THAT WAS NOT DARK. Chromium's default bar is a
+   pale grey trough with a white face, and against a dark panel it is the
+   brightest thing on the screen -- so the eye goes to a control that says
+   nothing rather than to the content it is beside. In a dialog it lands
+   directly against the fields, which is where it was noticed.
+
+   Both spellings, on purpose. `scrollbar-color` is the standard one and is what
+   a future Chromium will honour; the `::-webkit-` rules are what this one
+   actually paints, and they are the only way to reach the corner and the
+   buttons. Neither is redundant, and dropping the first would be writing to a
+   vendor prefix and calling it done.
+
+   NOT HIDDEN, and not made thinner than the pointer expects. A scrollbar is how
+   somebody knows there is more below the fold, which this window has been caught
+   getting wrong twice -- a branch list that ran past the bottom, and a dialog
+   whose confirm button sat below it. Something that dim and quiet still has to
+   be visible. */
+:root {
+  scrollbar-color: var(--line) transparent;
+  scrollbar-width: thin;
+}
+
+/* SELECTABLE, BECAUSE THE WHOLE APP IS TEXT SOMEBODY COPIES — a machine name,
+   a branch, a commit sha, the exact wording of a refusal. The chrome is not:
+   the topbar, the tabs and the buttons are things you press, and selecting them
+   by accident while dragging is the noise `user-select: none` exists to stop.
+   Said here rather than left to the kit, because it is a fact about this app
+   rather than about whatever is drawing it. */
+body { user-select: text; }
+.topbar, .tabs, .tab, .subtabs, .subtab, .btn, .badge, .chip { user-select: none; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+
+::-webkit-scrollbar-track { background: transparent; }
+
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 6px;
+  /* A border in the track's colour, so the thumb reads as a rounded bar with air
+     around it rather than a block filling the gutter. */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: padding-box; }
+
+/* The little square where two bars meet, which is otherwise the default grey and
+   the last pale pixel on the screen. */
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* The arrows at each end go. They are the last part Chromium still paints in its
+   own grey — a pale triangle top and bottom, which after the trough and the
+   thumb are dark is the only bright thing left on the bar. Nothing is lost: the
+   wheel, the thumb and the keyboard all still scroll, and an arrow that moves
+   the view by one line is not how anybody here reads a diff. */
+::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  margin: 18px 0 8px;
+  font-weight: 600;
+}
+h2:first-child { margin-top: 0; }
+
+.muted { color: var(--muted); }
+.hidden { display: none !important; }
+.mono, code { font-family: var(--mono); font-size: 12px; }
+
+/* ---------- top bar ---------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.brand .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30vw; }
+.dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--fail);
+  transition: background .2s;
+  flex: none;
+}
+.dot.live { background: var(--ok); }
+
+.tabs { display: flex; gap: 4px; margin-left: auto; }
+.tab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.tab:hover { color: var(--text); background: var(--panel-2); }
+.tab.active { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+
+/* The workspace, beside the title. Monospaced and dotted because it names a
+   folder and is a control -- and a control that looks like a label is one
+   nobody presses. */
+.brand-tab {
+  font-family: var(--mono);
+  color: var(--accent);
+  border-style: dashed;
+  border-color: var(--line);
+  max-width: 26vw;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.brand-tab.none { color: var(--warn); }
+
+/* A TAB THAT NEEDS A WORKSPACE, WHILE THERE IS NONE. Dimmed and unclickable
+   rather than removed: which tabs stop working is the clearest statement of
+   what a workspace IS, and a row that silently loses half its buttons reads as
+   a broken window rather than as a state. */
+.tab:disabled { opacity: .3; cursor: default; }
+.tab:disabled:hover { color: var(--muted); background: transparent; }
+.tab-badge {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 4px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #0b1017;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+.tab-badge.bad { background: var(--fail); color: #fff; }
+/* SOMETHING ONLY A PERSON CAN DO, which is not the same as something happening.
+   The blue badge is a count -- how many are in the queue, how many lines are
+   live. Amber means the thing has STOPPED and you are what it is waiting for:
+   an approval nobody has given, a verdict nobody has recorded. Same shape and
+   same place, so it is read as the same kind of thing, and a different colour
+   so it is not read as the same kind of news. */
+.tab-badge.warn { background: var(--warn); color: #1a1205; }
+.topright { margin-left: 12px; font-size: 12px; white-space: nowrap; }
+
+/* ---------- notice ---------- */
+
+.notice {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.notice.ok { background: #10261a; border-bottom-color: var(--ok); }
+.notice.bad { background: #2b1414; border-bottom-color: var(--fail); }
+.notice span { flex: 1 1 auto; }
+.notice-x {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 7px;
+  font-size: 14px;
+}
+.notice-x:hover { color: var(--text); }
+
+.stale-banner {
+  background: linear-gradient(180deg, #4a1111, #300a0a);
+  border-bottom: 1px solid var(--fail);
+  padding: 12px 16px;
+  line-height: 1.5;
+}
+.stale-banner strong { color: var(--fail); }
+
+/* TESTING MODE, AND IT IS NOT THE SAME KIND OF THING AS THE BANNER ABOVE.
+   That one is trouble — something is wrong and somebody should look. This is a
+   state somebody ASKED FOR, deliberately, and the only risk in it is forgetting.
+   So it is amber rather than red: alarming it would train somebody to dismiss
+   the colour, and the one thing this must not become is wallpaper.
+
+   Its own element, so nothing in the shared banner can take its place. */
+.testing-banner {
+  background: linear-gradient(180deg, #3a2c08, #241b05);
+  border-bottom: 1px solid var(--warn);
+  /* Slim, because it is permanent while testing is on. The banner below is for
+     something wrong and is worth the room it takes; this one has to sit there
+     for as long as somebody is working, and a permanent strip that costs two
+     lines is one they learn to look past. */
+  padding: 5px 16px;
+  font-size: 12px;
+  line-height: 1.4;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  /* One line. Long enough to be read at a glance and no longer -- the paragraph
+     about what the drills do lives on the Settings card. */
+  white-space: nowrap;
+  overflow: hidden;
+}
+.testing-banner span { overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- a graph ----------
+
+   A canvas has no natural size and does not grow with its contents, so it is
+   given one by its holder and resized in code when the pane is shown. A
+   canvas sized by CSS alone is drawn at one resolution and stretched to
+   another, which looks like a blurry mistake rather than a deliberate one. */
+.graph-holder {
+  position: relative;
+  width: 100%;
+  /* Tall enough to be worth drawing, and bounded so the pane does not run
+     past the bottom of the window -- the mistake this file has made before
+     with a branch list and with a dialog. */
+  height: calc(100vh - 220px);
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.graph-holder canvas { display: block; }
+
+/* ---------- the drills are running ----------
+
+   ON WHILE A RUN IS GOING AND OFF WHEN IT IS NOT. Nothing subtler: the
+   question it answers is "is it running", asked from across a room.
+
+   ITS OWN ELEMENT, ABOVE TESTING MODE, for the same reason testing mode has
+   one -- the shared banner below is a list, and a thing that has to be true
+   at a glance cannot be the fourth entry in a list.
+
+   IT CANNOT LIE AFTER A RESTART. A run in flight when this app stops is
+   marked `running: false, interrupted: true` on the way back up (see
+   core/testruns.js), so the banner goes out with it rather than sitting
+   purple for ever over nothing. */
+.running-banner {
+  background: linear-gradient(180deg, #2a1b45, #1b1230);
+  border-bottom: 1px solid var(--running);
+  padding: 5px 16px;
+  font-size: 12px;
+  line-height: 1.4;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  /* THE MOVEMENT IS THE POINT, and it is why the text can stay still. A
+     banner that counted seconds would be rewritten every three seconds --
+     which flickers, and takes somebody's selection with it mid-copy. So the
+     words are fixed and the border breathes: the same "it is alive" without
+     touching a character of text. */
+  animation: running-pulse 1.6s ease-in-out infinite;
+}
+@keyframes running-pulse {
+  0%, 100% { border-bottom-color: var(--running); box-shadow: none; }
+  50% { border-bottom-color: #d0b3ff; box-shadow: 0 1px 10px rgba(163, 113, 247, 0.45); }
+}
+/* Somebody who does not want a moving thing on their screen still gets the
+   colour, which carries the whole message on its own. */
+@media (prefers-reduced-motion: reduce) {
+  .running-banner { animation: none; }
+}
+.running-banner span { overflow: hidden; text-overflow: ellipsis; }
+.running-banner strong { color: var(--running); }
+.running-banner .linky { color: var(--running); text-decoration: underline; margin-left: auto; white-space: nowrap; }
+.testing-banner strong { color: var(--warn); }
+/* Readable against amber rather than the accent blue, which on this ground is
+   the one thing on the line somebody cannot read. */
+.testing-banner .linky { color: var(--warn); text-decoration: underline; margin-left: auto; white-space: nowrap; }
+
+/* ---------- dialog ----------
+   In-page, not native: it has to carry plain words about what an action does, what
+   it costs when that cannot be undone, and sometimes fields. A native confirm()
+   holds none of that. */
+
+.dlg-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+}
+.dlg {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px 20px;
+  max-width: 560px;
+  width: 100%;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  /* Never taller than the screen. A dialog can carry a diff or a whole
+     definition, and those are as long as they are -- so without a ceiling the
+     confirm button lands below the bottom of a fixed overlay that does not
+     scroll, and the question cannot be answered at all. */
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  min-height: 0;
+}
+/* The part that moves. What is being READ scrolls; the title above it and the
+   buttons below it stay where they are, because they are the question. */
+/* Padded on both sides, because the scrolling half is the only part of a dialog
+   with a scrollbar in it: without the gap a field's border sits against the bar
+   and the two read as one control. Equal on both sides so the fields stay
+   centred under the title. */
+.dlg-body { overflow-y: auto; min-height: 0; flex: 1 1 auto; padding: 0 5px; }
+/* A block of text to read INSIDE a dialog, which cannot use the viewport height
+   the way a full-page console does -- the dialog is already bounded, and 100vh
+   inside it is what pushed the buttons off the screen. */
+/* The editor's own box. It carries its height inline -- ace measures its
+   container to lay itself out, so the height has to exist before ace does. */
+/* HEIGHT IS ACE'S, NOT THIS FILE'S. There used to be `max-height: 44vh` and
+   `min-height: 6rem` here, from when the height was arithmetic in base.js. Now
+   that ace sizes itself to its own wrapped rows, a lid here does not shorten the
+   editor — ace still lays out every row and `overflow: hidden` CLIPS the rest,
+   with ace's own scrollbar turned off because it believes it has room. A
+   hundred-and-sixty-seven-line job showed twenty-seven lines and the other
+   hundred and forty were not reachable at all. Two things owning one height is
+   how that happens; only one of them owns it now. */
+.code {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 0 0 12px;
+}
+/* Ace paints its own background; this keeps the seam from showing while it
+   initialises. */
+.code .ace_gutter { background: #0a0d12; }
+.code .ace_scroller { background: #0a0d12; }
+.dlg-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+.dlg-heading {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.dlg ul { margin: 0 0 12px; padding-left: 18px; }
+.dlg li { margin: 2px 0; }
+.dlg-cost {
+  background: #2b1414;
+  border: 1px solid var(--fail);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+.dlg-cost strong { color: var(--fail); }
+.dlg-err { color: var(--fail); margin: 12px 0 0; flex: none; }
+/* Two ways into one dialog, when they are different acts rather than variations. */
+.dlg-tabs { display: flex; gap: 4px; margin: -4px 0 14px; border-bottom: 1px solid var(--line); flex: none; }
+.dlg-tab { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font: inherit; font-size: 12px; padding: 6px 10px; cursor: pointer; }
+.dlg-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.dlg-tab:hover { color: var(--text); }
+.dlg-actions { display: flex; gap: 8px; justify-content: flex-end; flex: none; padding-top: 12px; }
+/* Markdown, rendered in a frame that can do nothing. The border and radius match
+   .code, because they are the two ways of looking at the same thing and swapping
+   between them should not move the box. See markdownFrame in ui/base.js for why
+   it is an iframe at all. */
+.md {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0a0d12;
+  margin: 0 0 12px;
+}
+
+/* FORM CONTROLS, WHEREVER A FORM IS. These were .dlg-only, from when every
+   form in this window was a modal. Writing a task is a pane now, and without
+   this its inputs fell back to the browser's defaults -- a title box sized to
+   nothing next to a select sized to its longest option, in a column neither of
+   them filled. A form should look the same wherever it is; where it is, is a
+   question about how much room it deserves, not about what an input looks like. */
+.dlg input, .dlg select, .dlg textarea,
+.form input, .form select, .form textarea {
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+/* A TICK IS NOT A BOX TO TYPE IN. The rule above dresses every input in a
+   dialog as a text field -- full width, padded, a margin beneath it -- and a
+   checkbox was taking it: it drew as a wide empty rectangle with a small square
+   inside, and the label beside it was squeezed into "Open them as / drafts on /
+   GitHub" down three lines. The label looked like the broken thing; the box
+   next to it was. */
+.dlg input[type="checkbox"], .form input[type="checkbox"] {
+  width: auto;
+  flex: none;
+  margin: 0;
+  padding: 0;
+}
+label.inline > span { flex: 1 1 auto; }
+.dlg label, .form label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+
+/* ---------- layout ---------- */
+
+main { padding: 16px; }
+.view { display: none; }
+.view.active { display: block; }
+
+.cols { display: flex; gap: 16px; align-items: flex-start; }
+/* Three up, for a chain read a rung at a time: job <- prompt <- contract. The
+   same flex rules as .cols; the narrower minimum is what lets three fit before
+   they wrap, since each holds a short list rather than a detail panel. */
+.cols3 { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.cols3 > .col { min-width: 220px; }
+.col { flex: 1 1 0; min-width: 260px; }
+.col.narrow { flex: 0 1 260px; }
+.col.wide { flex: 1.6 1 0; }
+
+/* TWO CONTAINERS IN ONE COLUMN, WITH NOTHING BETWEEN THEM.
+ *
+ * Spacing here was a property of the CONTAINER and never of the column: .stack
+ * has a gap inside itself, .chips carries its own margin, and .panel carries
+ * nothing at all. So a column holding two of them had no rule about the join,
+ * and whether there was a gap depended entirely on which classes happened to
+ * meet. On Branches -> Lines the "Default branches" card sat flush against the
+ * first line below it, while the lines below THAT were spaced -- one list, two
+ * different answers, because the first card is outside the stack.
+ *
+ * Three places had it: baselines-now + groups, change-actions + change-summary,
+ * and approvals + queue on the board. Every one of them was somebody adding a
+ * second container to a column and there being nothing to remember.
+ *
+ * 8px, which is what .stack already uses -- the join should not be able to look
+ * different from the gaps either side of it.
+ *
+ * NOT PANES. A column can hold several and only one is shown; giving the second
+ * and third a margin makes a sub-tab jump 8px depending on which one it is.
+ *
+ * AND NOT AFTER SOMETHING HIDDEN, which is the case that makes this correct
+ * rather than nearly correct. Half these containers are `hidden` until they have
+ * something to say, and an adjacent-sibling rule counts them anyway -- so the
+ * first VISIBLE container would be pushed down by a gap under an element that is
+ * not on the screen. CSS cannot ask whether the previous sibling is visible, but
+ * it can undo the rule when it is not, which comes to the same thing. */
+.col > div + div:not(.pane) { margin-top: 8px; }
+.col > .hidden + div { margin-top: 0; }
+
+@media (max-width: 1100px) {
+  .cols { flex-wrap: wrap; }
+  .col, .col.narrow, .col.wide { flex: 1 1 320px; }
+}
+
+.stack { display: flex; flex-direction: column; gap: 8px; }
+
+/* ---------- cards and panels ---------- */
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.card.pick { cursor: pointer; }
+.card.pick:hover { border-color: var(--muted); }
+/* A repository counted from something other than its own default. Marked because
+   it is the surprising case and it changes what every number elsewhere means. */
+.card.warn { border-left: 3px solid var(--warn); }
+.card.on { border-color: var(--accent); background: var(--panel-2); }
+.card-title { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.card-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.card-sub.bad { color: var(--fail); }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+/* A ROW OF BUTTONS, WHEREVER IT IS.
+   This was .panel .row only, so the same markup inside a .card laid out as
+   plain inline elements with no gap: "Take me therePut it away", on every card
+   row added since. The class EXISTS, which is why the check in npm test passed
+   -- it can tell a class that is defined from one that is not, and cannot tell
+   one that applies here from one that applies somewhere else. */
+.panel .row, .card .row { display: flex; flex-wrap: wrap; gap: 6px; }
+.empty { color: var(--muted); font-size: 12px; }
+.note {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 12px;
+}
+
+/* A section title with a control on the right. */
+.titlerow { display: flex; align-items: center; gap: 8px; }
+.plus {
+  margin-left: auto;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+}
+.plus:hover { border-color: var(--accent); color: var(--accent); }
+
+/* WHAT THE SYNC BUTTON ALREADY KNOWS, said in its own colour.
+ *
+ * The state is on the row beside it either way — a badge, or two commits that do
+ * not match — so this is not the only place it is said, which is what makes it
+ * safe to say in colour alone. It is the glanceable version: a column of green
+ * is "nothing to do here" without reading a word of it.
+ *
+ * The same three on both shapes, because the round button on a card title and
+ * the small one on a row are the same act at different scopes, and a colour that
+ * meant different things in the two places would be worse than no colour.
+ *
+ *   ok    the same commit as origin
+ *   off   behind or otherwise fast-forwardable — the button will move it
+ *   bad   both sides have moved. A fast-forward cannot help and this is where a
+ *         merge would have to be decided rather than computed
+ *
+ * Border as well as text: at 11px a glyph is a few pixels of colour, and the
+ * ring is what makes it readable at a glance rather than something to lean in at.
+ */
+.plus.sync-ok, .btn.small.sync-ok { color: var(--ok); border-color: var(--ok); }
+.plus.sync-off, .btn.small.sync-off { color: var(--warn); border-color: var(--warn); }
+.plus.sync-bad, .btn.small.sync-bad { color: var(--fail); border-color: var(--fail); }
+/* Hover keeps the meaning rather than overriding it with the accent, which would
+   make a red button turn blue exactly when somebody is about to press it. */
+.plus.sync-ok:hover, .btn.small.sync-ok:hover { color: var(--ok); border-color: var(--ok); }
+.plus.sync-off:hover, .btn.small.sync-off:hover { color: var(--warn); border-color: var(--warn); }
+.plus.sync-bad:hover, .btn.small.sync-bad:hover { color: var(--fail); border-color: var(--fail); }
+
+/* Lives on the row it belongs to, so there is no doubt which machine it means --
+   an action panel button applies to "the selected one", which is one inference
+   too many when deleting is behind it. Not styled as a danger: opening it is
+   harmless, and the delete inside asks for itself. */
+.card .cog {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 5px;
+  font-size: 13px;
+  padding: 0 5px;
+  opacity: 0;
+}
+.card:hover .cog, .card.on .cog { opacity: 1; }
+.card .cog:hover { color: var(--accent); border-color: var(--accent); }
+
+.badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.badge.ok { color: var(--ok); border-color: var(--ok); }
+.badge.bad { color: var(--fail); border-color: var(--fail); }
+.badge.warn { color: var(--warn); border-color: var(--warn); }
+.badge.run { color: var(--accent); border-color: var(--accent); }
+/* A state nobody has acted on yet reads as quiet rather than as a warning. */
+.badge.muted { color: var(--muted); border-color: var(--line); }
+/* A card that is asking for something, rather than reporting something. */
+.card.wants { border-color: var(--warn); margin-bottom: 10px; }
+
+/* ---------- buttons ---------- */
+
+.btn {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 5px 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.ok { border-color: var(--ok); color: var(--ok); }
+.btn.danger { border-color: var(--fail); color: var(--fail); }
+.btn.wide { width: 100%; margin-top: 8px; }
+
+/* ---------- the console ---------- */
+
+.sync-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sync-head h2 { margin: 0; }
+.sync-controls { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+/* The supervisor's state, inline in its header row: what it is, whether it can
+   run, and the one button that changes that. Deliberately not a card — it was
+   one, and three short facts took the top third of a tab whose subject is the
+   conversation below them. */
+.head-state { display: flex; align-items: center; flex-wrap: wrap; }
+
+/* WHERE THE COMPOSER WOULD BE, WHEN THERE IS NOBODY TO READ IT. The same
+   pinned position and the same room, so the page does not jump when a
+   supervisor comes up — only the contents change. Centred, because it is one
+   decision rather than a form: which supervisor, and start it. */
+.chat-offline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  /* THE WHOLE BODY, because that is what it replaces. The header above it stays
+     and says why; everything else on this tab is a conversation with something
+     that is not there. Not a fixed height: it takes what the view has, so the
+     one decision on the screen sits in the middle of it. */
+  min-height: 55vh;
+  text-align: center;
+}
+.chat-offline .why { color: var(--text); margin: 0; }
+.chat-offline .why.muted { color: var(--muted); font-size: 12px; }
+.sync-controls input {
+  background: #0d1117;
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 4px 9px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+}
+label.inline { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 8px; }
+.chip {
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.chip.on { border-color: var(--accent); color: var(--accent); background: rgba(74, 163, 255, .1); }
+.chip b { font-weight: 700; opacity: .6; margin-left: 4px; }
+
+.console {
+  background: #0a0d12;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 4px 8px 10px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.console.tall { height: calc(100vh - 220px); min-height: 18rem; }
+/* A brief is read while it is being judged, so it gets room without taking the
+   panel over. */
+.console.short { max-height: 14rem; white-space: pre-wrap; word-break: break-word; margin: 0; }
+.dlg textarea, .form textarea { resize: vertical; min-height: 6rem; font-family: var(--mono); }
+.line { display: flex; gap: 10px; white-space: pre-wrap; word-break: break-word; }
+.line .t { color: var(--muted); opacity: .65; flex: none; }
+.line .g { color: var(--muted); flex: none; }
+.line.good .m { color: var(--ok); }
+.line.warn .m { color: var(--warn); }
+.line.bad .m { color: var(--fail); }
+.line.out .m { color: var(--muted); }
+
+pre.diff {
+  background: #0a0d12;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 8px 0 0;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre;
+}
+
+/* ---------- all actions ---------- */
+
+/* ---- a machine's details ---- */
+
+table.kv { width: 100%; border-collapse: collapse; }
+table.kv th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+  padding: 3px 10px 3px 0;
+  white-space: nowrap;
+  vertical-align: top;
+  font-size: 12px;
+}
+/* BREAK ANYWHERE ONLY WHEN THERE IS NOWHERE ELSE TO BREAK. `break-all` is right
+   for what this table mostly holds — a branch name, a commit, a path, a
+   fingerprint, none of which have spaces and all of which must not push the
+   column wide. It is wrong for a sentence: "it has not finished reading" came
+   out as "readin / g".
+
+   `break-word` keeps whole words together and still breaks a long unspaced
+   value, which is both cases rather than the more common one. */
+table.kv td { padding: 3px 0; word-break: break-word; overflow-wrap: anywhere; }
+
+/* A fact in a fact table that is good or bad news, coloured as a sentence
+   rather than as a pill. `bad` and `ok` existed only as modifiers of .badge and
+   .card-sub, so a bare <span class="bad"> matched a class name that exists and
+   no rule that draws anything -- the quietest failure this stylesheet allows,
+   and one already paid for once. */
+table.kv td .bad { color: var(--fail); }
+table.kv td .ok { color: var(--ok); }
+
+.act {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  margin-bottom: 6px;
+}
+.act code { color: var(--accent); flex: 0 0 11rem; }
+.act .about { flex: 1 1 auto; }
+.act .takes { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+/* The terminal panel. A fixed box rather than one that grows: xterm measures
+   its container to work out rows and columns, so a container sized by its
+   contents would size itself to nothing and report zero rows.
+
+   ITS HEIGHT IS MEASURED, NOT WRITTEN HERE. It used to be `100vh - 200px`, and
+   200 was a guess at everything above it -- which stopped being true the moment
+   a sign-in line and a tab strip were added, and the page grew a scrollbar with
+   the terminal running off the bottom. Above it there is a header, a banner that
+   is sometimes several lines and sometimes absent, a note, a sign-in line and a
+   strip of tabs; no constant describes that. So `sizeTerminal()` asks the box
+   where it actually is and gives it the rest of the window. */
+.term {
+  min-height: 20rem;
+  background: #0a0d12;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+.sync-controls select {
+  background: #0d1117;
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* Snapshots, drawn as the tree they are. The indent comes from the depth
+   VirtualBox reports; the rule on the left is what makes an indent read as a
+   branch rather than as a margin. */
+.card.snap { position: relative; }
+.card.snap[style*="margin-left"]::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 8px;
+  border-top: 1px solid var(--line);
+}
+/* Where the machine actually is: the end of the tree, and not a snapshot. */
+.card.snap.current { border-style: dashed; }
+.card.snap.current.changed { border-color: var(--warn); }
+
+/* What a machine was made with: real, copyable, and closed by default, because
+   it answers a question asked once. */
+.spec { margin-top: 12px; }
+.spec summary {
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 4px 0;
+}
+.spec summary:hover { color: var(--text); }
+.spec .kv { margin-top: 6px; }
+
+/* Pushes what follows it to the far end of a title row. */
+.grow { flex: 1 1 auto; }
+
+/* A chip that does something. Same shape as the ones that only report, because
+   it reports the same kind of thing -- it just also fixes it. */
+.linky-chip { cursor: pointer; font: inherit; font-size: 11px; }
+.linky-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* NOT YET, RATHER THAN NOTHING — and shaped like what is coming.
+
+   A blank panel and a panel whose answer is "none" look identical and mean
+   opposite things. A word in the gap says so, but a word is easy to miss and
+   easy to mistake for the answer itself; a shape that is obviously not content
+   cannot be read as content. It also makes the gap MEASURABLE — if a skeleton
+   never appears, the panel is not painting at all, which is a different fault
+   and was invisible while the gap was empty. */
+.skel {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--panel-2) 25%, rgba(255, 255, 255, .06) 37%, var(--panel-2) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+/* Somebody who has asked for less motion gets a still block rather than none:
+   the shape is the message, the movement is only a hint that it is temporary. */
+@media (prefers-reduced-motion: reduce) {
+  .skel { animation: none; }
+}
+
+.skel-line { height: 9px; margin: 7px 0; }
+.skel-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--panel);
+}
+/* A hair narrower each row, so a column of them reads as a list rather than as
+   a broken table. */
+.skel-card .skel-line:first-child { width: 55%; margin-top: 0; }
+.skel-card .skel-line:last-child { width: 32%; margin-bottom: 0; height: 8px; opacity: .7; }
+
+/* Sub-tabs inside a view. Quieter than the main ones on purpose: these choose
+   which question you are asking about ONE subject, where the top row chooses the
+   subject. Making them look the same would be two navigations competing. */
+.subtabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.subtab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.subtab:hover { color: var(--text); }
+.subtab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.pane { display: none; }
+.pane.active { display: block; }
+
+/* ---- landing a line ---------------------------------------------------
+   The comparison is the thing being read, so it gets the width. Everything
+   above it is a choice about what is being compared and stays on one row. */
+.change-pick { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.change-pick select {
+  background: #0d1117; border: 1px solid var(--line); color: var(--text);
+  padding: 5px 9px; border-radius: 6px; font: inherit; font-size: 12px; min-width: 14rem;
+}
+.change-into { color: var(--muted); font-size: 12px; }
+
+/* The file list and the file, side by side. The list is narrow and scrolls on
+   its own: a change of two hundred files must not push the diff off the page. */
+.change-files { display: flex; gap: 14px; align-items: flex-start; }
+.change-list {
+  flex: 0 0 22rem; max-height: 70vh; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 6px;
+}
+.change-view { flex: 1 1 0; min-width: 0; }
+.change-viewhead { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; min-height: 26px; }
+
+.change-repo {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  padding: 8px 6px 4px; border-bottom: 1px solid var(--line); margin-bottom: 4px;
+}
+.change-file {
+  display: flex; align-items: baseline; gap: 8px; width: 100%;
+  background: none; border: 1px solid transparent; border-radius: 5px;
+  color: var(--text); font: inherit; font-size: 12px; text-align: left;
+  padding: 3px 6px; cursor: pointer;
+}
+.change-file:hover { background: var(--panel-2); }
+.change-file.on { background: var(--panel-2); border-color: var(--accent); }
+.change-file .path {
+  font-family: var(--mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; flex: 1 1 auto; direction: rtl; text-align: left;
+}
+/* AND THE PRICE OF THAT `direction: rtl`, PAID BACK.
+ *
+ * It is there so a long path is cut from the LEFT -- the end of a path is the
+ * part worth reading, so `...ory/src/store.js` beats `src/very/long/direct...`.
+ * What it also does is hand every leading NEUTRAL character to the paragraph
+ * direction, and a dot is neutral: `.gitignore` rendered as `gitignore.`, and
+ * so did every dotfile in the list. The markup was right and the tooltip was
+ * right; only the screen lied, which is why it survived -- it is invisible to
+ * everything except looking.
+ *
+ * A left-to-right mark before it gives that dot a strong LTR character on both
+ * sides, so it resolves LTR and stays where it was written. Zero width, and the
+ * cut-from-the-left behaviour is untouched. */
+.change-file .path::before { content: "\200e"; }
+.change-file .plus { color: var(--ok); font-size: 11px; }
+.change-file .minus { color: var(--fail); font-size: 11px; }
+
+/* One commit, as a row rather than as a line of text in an editor. */
+.change-commit { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; font-size: 12px; }
+.change-commit .sha { color: var(--accent); flex: 0 0 auto; }
+.change-commit .subject { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.change-commit .who { flex: 0 0 auto; font-size: 11px; }
+
+/* Two editors, one per side. Equal widths so the same line lands at the same
+   height in both, which is the whole point of reading it this way. */
+.change-sides { display: flex; gap: 8px; align-items: stretch; }
+.change-side { flex: 1 1 0; min-width: 0; }
+.change-side-head {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); padding-bottom: 4px;
+}
+.change-side-head .gone { color: var(--fail); }
+.change-side-head .new { color: var(--ok); }
+
+/* Line marks inside Ace, painted in the row's full width. Ace positions these
+   absolutely against the text layer, so `position: absolute` is required and the
+   width comes from the marker itself. */
+.ace_marker-layer .change-added { position: absolute; background: rgba(63, 185, 80, .16); }
+.ace_marker-layer .change-removed { position: absolute; background: rgba(248, 81, 73, .16); }
+.ace_marker-layer .change-pad { position: absolute; background: rgba(125, 137, 152, .10); }
+
+/* A group of baselines: one branch per repository, named. */
+.group-part {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+.group-part:last-child { border-bottom: 0; }
+.group-part .gone { color: var(--fail); }
+/* The branch and the commit it is at, kept together on the right. `.group-part`
+   is space-between, so these have to be one child or the branch name ends up
+   adrift in the middle of the row. */
+.group-part .where { display: flex; align-items: baseline; gap: 8px; }
+/* The sentence under a branch row saying what it is and what to do about it.
+   Indented under the name it belongs to, and quiet, because it is an
+   explanation rather than a second row of facts. */
+.group-why { font-size: 11px; padding: 2px 0 6px 0; line-height: 1.5; }
+
+/* The branch list's own controls, in the narrow column with it rather than in a
+   header bar the other two columns would have to leave room for. */
+.finder {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0d1117;
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.titlerow .mine { font-size: 11px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+/* What a branch carries, of every kind: commits, files handed over, the session.
+   One block each, so a branch with no files reads as "none" rather than as a
+   gap where something failed to render. */
+.carries { margin-bottom: 16px; }
+.carries-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 5px;
+  margin-bottom: 8px;
+}
+.carries-head .muted { text-transform: none; letter-spacing: 0; font-size: 12px; }
+.carries-head .badge { text-transform: none; letter-spacing: 0; }
+.carries-part { margin-bottom: 10px; }
+
+/* Branches. The card carries one badge saying what the branch IS, a row of facts
+   about it, and its tasks as a way back into the board. */
+.card.branch .card-title span:first-child { font-size: 13px; }
+.branch-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.branch-facts .strong { color: var(--text); font-weight: 600; }
+.branch-tasks { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 8px; }
+
+/* A button that reads as a link, for moving between views rather than acting. */
+.linky {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.linky:hover { text-decoration: underline; }
+
+/* Counts across the top, coloured by what they mean rather than uniformly. */
+.chip.ok { border-color: rgba(63, 185, 80, .4); color: var(--ok); }
+.chip.warn { border-color: rgba(210, 153, 34, .4); color: var(--warn); }
+.chip.bad { border-color: rgba(248, 81, 73, .4); color: var(--fail); }
+
+/* One pane per shell, stacked in the same box and shown one at a time. Hidden
+   with display:none rather than being removed, so a shell you switched away
+   from keeps its scrollback and whatever is still running in it. */
+.term-pane { display: none; height: 100%; }
+.term-pane.on { display: block; }
+
+.term-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 10px 0 6px;
+}
+.term-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px 6px 0 0;
+  border-bottom-color: transparent;
+  background: #0d1117;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.term-tab.on { color: var(--text); background: #0a0d12; border-color: var(--accent); }
+/* A session whose ssh has exited. Left in the strip on purpose -- whatever it
+   said before it died is the reason it died, and closing the tab for you would
+   take that away exactly when it is worth reading. */
+.term-tab.ended { text-decoration: line-through; opacity: .65; }
+.term-x {
+  background: none;
+  border: 0;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  opacity: .6;
+}
+.term-x:hover { opacity: 1; color: var(--fail); }
+
+/* Whether the worker on a machine could authenticate. */
+.authline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.authline.ok { border-left-color: var(--ok); }
+/* A signed-out SUPERVISOR, which is a fault rather than the rest a signed-out
+   runner is. Same line, different edge, because the two states look identical
+   and only one of them is somebody's problem. */
+.authline.bad { border-left-color: var(--fail); }
+.authline strong { color: var(--text); }
+.btn.small { padding: 3px 8px; font-size: 11px; }
+
+/* Writing the thing rather than only looking at it. The preview below these is
+   composed as they are typed in, so a person sees the sentence they are writing
+   in the place it will appear. */
+.writer { margin-bottom: 10px; }
+.writer label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 0 0 3px;
+}
+.writer textarea { resize: vertical; min-height: 5rem; font-family: var(--mono); }
+.writer input, .writer textarea { margin-bottom: 8px; }
+
+
+/* ---- Chat -----------------------------------------------------------------
+   A CONVERSATION, WHICH IS A DIFFERENT SHAPE FROM EVERYTHING ELSE HERE. Every
+   other panel is a list of records and reads top-down; a conversation reads
+   bottom-up, keeps its composer under your hands, and says who is speaking by
+   WHERE a line sits rather than by a field called "who".
+
+   The view is a column the height of the window: the thread takes what is left
+   and scrolls inside itself, and the composer is pinned under it. Without that
+   the whole page scrolls, the box you type into walks off the bottom as the
+   conversation grows, and the newest message — the one you are waiting for —
+   ends up below the fold. */
+/* ON THE PANE, NOT THE VIEW, since the conversation stopped being the whole tab.
+   This was #view-chat.active, and adding a sub-tab bar put a display:block pane
+   between the column and #chat-thread — which is flex:1 1 auto and so had
+   nothing to be 1-of any more. The thread grew to its content, the page scrolled
+   as a whole, and the composer walked off the bottom: precisely the failure the
+   note above says this rule exists to prevent, reintroduced by moving the markup
+   one level down rather than by touching the CSS. */
+#view-chat.active { display: block; }
+#pane-chat.active {
+  display: flex;
+  flex-direction: column;
+  /* The window, less the header, the banners, the sub-tab bar and this view's
+     own padding. A fixed height rather than a flex chain up to <body>, because
+     the banners above come and go and a chain would have to be right in every
+     combination. */
+  height: calc(100vh - 195px);
+  min-height: 320px;
+}
+
+#chat-thread {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 2px 10px;
+  /* The gap belongs to the thread rather than to each bubble, so a run of
+     messages from one side does not get double spacing at its joins. */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* WHO SAID IT, SAID BY WHERE IT IS. Yours on the right, the supervisor's on the
+   left, which is the one convention every chat window shares — and it means the
+   label above a bubble is a courtesy rather than the only way to tell. */
+.msg { max-width: 74%; display: flex; flex-direction: column; gap: 3px; }
+.msg.mine { align-self: flex-end; align-items: flex-end; }
+.msg.theirs { align-self: flex-start; align-items: flex-start; }
+
+.msg-who {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.msg-body {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 11px;
+  /* Prose from a model arrives with its own line breaks and they are meaningful.
+     Wrapped, so a long identifier cannot push the bubble past the window. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Yours is the one with a voice: the accent edge marks the side of the
+   conversation you are responsible for. */
+.msg.mine .msg-body { background: var(--panel-2); border-color: var(--accent); }
+/* One corner squared off on the speaking side, which is what makes a rounded
+   rectangle read as a speech bubble rather than as a card. */
+.msg.mine .msg-body { border-bottom-right-radius: 4px; }
+.msg.theirs .msg-body { border-bottom-left-radius: 4px; }
+
+/* The composer, pinned under the thread and never scrolling with it. */
+.chat-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-top: 4px;
+}
+.chat-composer textarea {
+  flex: 1;
+  resize: none;
+  min-height: 2.4rem;
+  max-height: 9rem;
+  font: inherit;
+}
+
+/* NOT READ YET. A message of yours is faded until the supervisor has been handed
+   it: it is switched off most of the time, so "written down" and "delivered" are
+   hours apart, and from this side they look identical. The transition is what
+   makes it useful — you see it settle. */
+.msg.waiting .msg-body {
+  opacity: 0.55;
+  border-style: dashed;
+  transition: opacity .25s ease, border-color .25s ease;
+}
+.msg .msg-body { transition: opacity .25s ease, border-color .25s ease; }
+
+/* A rendered message fills its bubble: the frame brings its own padding and its
+   own background, so the bubble gives it none of either. */
+.msg-body:has(iframe) { padding: 0; overflow: hidden; }
+.msg-body iframe { display: block; width: 100%; border: 0; border-radius: 11px; }
+/* WIDTH, NOT MAX-WIDTH, and that is the whole fix. A bubble is a flex item in a
+   column, so it shrinks to fit its content — and an iframe's content cannot be
+   measured from out here, so it shrank to a few hundred pixels and rendered a
+   table into a column. An explicit width gives the frame something to be 100% of.
+
+   Wider than a plain bubble as well, because a fenced block in 74% of the window
+   is a fenced block with a horizontal scrollbar. */
+.msg:has(iframe) { width: 92%; max-width: 92%; }
+.msg-body:has(iframe) { width: 100%; }
+
+/* ---- WHERE A PULL REQUEST WOULD GO ---------------------------------------
+   Two acts per repository -- push a branch to a fork, open a request into
+   somebody else's repository -- and the addresses differ by one character in
+   the middle of a word. The verb is a column of its own so the two addresses
+   line up under each other and can be read as a pair, which is the only way the
+   difference between them is visible at a glance. */
+table.kv.where td { padding: 4px 0 8px; line-height: 1.5; }
+table.kv.where th { padding-top: 4px; color: var(--text); }
+.verb {
+  display: inline-block;
+  width: 42px;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+/* A DIALOG LIST ITEM THAT IS A BUILT THING rather than a sentence: no bullet,
+   and the full width, because what goes in one is a table. */
+.dlg li.wide { list-style: none; margin-left: -18px; }
+/* A URL IN A DIALOG HAS NOWHERE TO BREAK. Left to itself it runs past the edge
+   of a 560px card, and the overflow squeezed the checkbox beneath it until its
+   label wrapped into three words on three lines. */
+/* BREAK ANYWHERE ONLY IN THE ADDRESS. Applied to the whole item it broke the
+   branch name too -- "fix/csvstat- / empty-problems-key" -- when there was a
+   space in front of it to break at instead. */
+.dlg li { overflow-wrap: break-word; }
+table.kv.where .mono { overflow-wrap: anywhere; }
+/* The branch, under the address it belongs to and indented past the verb, so
+   the four lines read as two pairs rather than four facts. */
+table.kv.where .sub { padding-left: 42px; margin-bottom: 4px; }
+table.kv.where .sub:last-child { margin-bottom: 0; }

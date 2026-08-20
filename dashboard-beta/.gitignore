@@ -1,0 +1,15 @@
+node_modules
+package-lock.json
+
+dist
+dist*/
+build
+
+nw.log
+.nw-instance.json
+
+# what windowShot writes. photographs of the running app: worth having while
+# working on it, meaningless a day later, and a new file every time anybody looks
+shots
+icon.ico
+v8.log
