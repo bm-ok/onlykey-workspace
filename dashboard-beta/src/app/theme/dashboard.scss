@@ -1315,3 +1315,26 @@ pre.code {
   color: var(--text);
 }
 pre.code.tall { max-height: 60vh; }
+
+/* ---------- the chrome, when there is not room for it ----------
+
+   FOUND BY PHOTOGRAPHING THE WINDOW AT 900px, which had never been done. At
+   that width the topbar is one row with the brand on the left and a dozen tabs
+   pushed right by `margin-left: auto`, and flex resolves the squeeze by taking
+   it out of the brand: "Dashboard" became "Da..." and the workspace became
+   "w...". So at exactly the width where somebody most needs to know which
+   folder they are looking at, the answer is three characters and an ellipsis.
+
+   The row wraps instead. Both halves keep their size, the tabs drop to a second
+   line, and nothing is truncated that was not already too long to fit on its
+   own — `.brand-tab` still caps itself at 26vw for a genuinely long name.
+
+   A DIVERGENCE FROM THE SHEET THIS WAS CARRIED FROM, and worth saying: the old
+   window has the same rule and the same squeeze, and its own breakpoint only
+   ever touched `.cols`. It has never been looked at narrow either. */
+@media (max-width: 1100px) {
+  .topbar { flex-wrap: wrap; row-gap: 8px; }
+  /* Neither half gives up its width to the other; the row grows instead. */
+  .brand { flex: 0 1 auto; }
+  .tabs { flex-wrap: wrap; }
+}

@@ -117,18 +117,41 @@ async function plugin(imports, register) {
             takes: ['controls'],
             run: function (args) {
                 var list = (args && args.controls) || [];
-                var have = new Set(state.seen.map(function (x) { return key(x); }));
+                var byKey = {};
+                state.seen.forEach(function (x) { byKey[key(x)] = x; });
                 var added = 0;
+                var moved = 0;
                 list.forEach(function (c) {
                     if (!c || !c.label) return;
                     var k = key(c);
-                    if (have.has(k)) return;
-                    have.add(k);
-                    state.seen.push({ label: c.label, kind: c.kind || 'button', where: c.where || null, proposed: !!c.proposed });
-                    added++;
+                    var had = byKey[k];
+                    if (!had) {
+                        had = { label: c.label, kind: c.kind || 'button', where: c.where || null, proposed: !!c.proposed };
+                        byKey[k] = had;
+                        state.seen.push(had);
+                        added++;
+                        return;
+                    }
+                    //SEEN AGAIN IS NEW INFORMATION, and the first version threw
+                    //it away: an entry was written once and never touched, so
+                    //`proposed` was whatever was true the very first time
+                    //anything looked.
+                    //
+                    //Which went wrong exactly as you would expect. The Tests
+                    //buttons were catalogued while they were still raw
+                    //`<button class="btn">`s; they became `<Button protect>`
+                    //later, and the Guards pane went on reporting "Run
+                    //everything — open" about a button that is guarded, painted
+                    //purple, and refused from the command line.
+                    //
+                    //A catalogue that records the world once is a catalogue of
+                    //when it was written.
+                    if (!!had.proposed !== !!c.proposed) { had.proposed = !!c.proposed; moved++; }
+                    if (c.where && had.where !== c.where) { had.where = c.where; moved++; }
+                    if (c.kind && had.kind !== c.kind) { had.kind = c.kind; moved++; }
                 });
-                if (added) save();
-                return { added: added, seen: state.seen.length };
+                if (added || moved) save();
+                return { added: added, changed: moved, seen: state.seen.length };
             }
         }));
 

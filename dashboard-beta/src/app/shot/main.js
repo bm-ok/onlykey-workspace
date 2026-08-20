@@ -74,7 +74,7 @@ async function plugin(imports, register) {
         });
     }
 
-    function screenshot(wsUrl) {
+    function screenshot(wsUrl, want) {
         var WebSocket = require('ws');
         return new Promise(function (resolve, reject) {
             var ws = new WebSocket(wsUrl, { perMessageDeflate: false, maxPayload: 256 * 1024 * 1024 });
@@ -90,23 +90,62 @@ async function plugin(imports, register) {
                 done(reject, new Error('the debugger did not answer within 20s'));
             }, 20000);
 
-            ws.on('error', function (e) { done(reject, e); });
-            ws.on('open', function () {
-                ws.send(JSON.stringify({ id: 1, method: 'Page.captureScreenshot', params: { format: 'png' } }));
+            //TWO THINGS A PHOTOGRAPH OF A WINDOW CANNOT SHOW, and both of them
+            //have hidden real faults in this app's history.
+            //
+            //  BELOW THE FOLD. A picture is one viewport. The old window was
+            //  caught twice by what was under the edge — a branch list that ran
+            //  past the bottom, and a dialog whose confirm button sat below it
+            //  and could not be reached at all. `captureBeyondViewport` gives
+            //  the whole page instead.
+            //
+            //  A NARROWER SCREEN. `@media (max-width: 1100px)` makes every
+            //  three-column pane wrap, and that layout had never been looked at
+            //  once. `Emulation.setDeviceMetricsOverride` asks for it without
+            //  touching the real window.
+            //
+            //Sent as a small script rather than one call, because the metrics
+            //override has to be in place before the capture and cleared after —
+            //leaving a window convinced it is 900px wide would be a strange
+            //thing to find later.
+            var steps = [];
+            if (want && want.width) {
+                steps.push({
+                    method: 'Emulation.setDeviceMetricsOverride',
+                    params: { width: Number(want.width), height: Number(want.height) || 1000, deviceScaleFactor: 1, mobile: false }
+                });
+            }
+            steps.push({
+                method: 'Page.captureScreenshot',
+                params: { format: 'png', captureBeyondViewport: !!(want && want.whole) }
             });
+            if (want && want.width) steps.push({ method: 'Emulation.clearDeviceMetricsOverride', params: {} });
+
+            var at = 0;
+            var shot = null;
+            function next() {
+                if (at >= steps.length) return done(resolve, shot);
+                var step = steps[at];
+                ws.send(JSON.stringify({ id: at + 1, method: step.method, params: step.params }));
+            }
+
+            ws.on('error', function (e) { done(reject, e); });
+            ws.on('open', next);
             ws.on('message', function (raw) {
                 var msg;
                 try { msg = JSON.parse(raw); } catch (e) { return; }
-                if (msg.id !== 1) return;//events and other replies share this socket
+                if (msg.id !== at + 1) return;//events and other replies share this socket
                 if (msg.error) return done(reject, new Error(msg.error.message || 'the debugger refused'));
-                done(resolve, msg.result && msg.result.data);
+                if (steps[at].method === 'Page.captureScreenshot') shot = msg.result && msg.result.data;
+                at++;
+                next();
             });
         });
     }
 
     var undo = actions.define('windowShot', {
-        about: 'Photograph the window and save it, so what is on screen can be looked at from outside',
-        takes: ['name'],
+        about: 'Photograph the window and save it. --whole takes the page past the bottom of the screen; --width photographs it at another width',
+        takes: ['name', 'whole', 'width', 'height'],
         run: async function (args) {
             var win = app.services.window;
             if (!app.isNw) throw new Error('there is no window to photograph — this app is running without nw');
@@ -129,7 +168,11 @@ async function plugin(imports, register) {
                     ' — it has ' + targets.map(function (t) { return t.type; }).join(', '));
             }
 
-            var b64 = await screenshot(page.webSocketDebuggerUrl);
+            var b64 = await screenshot(page.webSocketDebuggerUrl, {
+                whole: args && (args.whole === true || args.whole === 'true'),
+                width: args && args.width,
+                height: args && args.height
+            });
             if (!b64) throw new Error('the debugger answered with no image');
 
             fs.mkdirSync(shots, { recursive: true });
