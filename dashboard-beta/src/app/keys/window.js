@@ -1,34 +1,61 @@
-var React = require('react');
-var makeKeys = require('./keys');
+var makeGithub = require('./github');
+var makeSsh = require('./ssh');
+var makeHttps = require('./https');
 
-//the Keys tab: the Claude sign-ins this host holds.
+//---------------------------------------------------------------------------
+//KEYS: everything this host holds so that a machine does not have to.
 //
-//THE RULE THIS TAB IS BUILT AROUND, and it is the operator's own words: you
-//should only know that something was done in here, not what. A credential is
-//never shown, never logged, never returned by an action, and never put on a
-//screen — so this tab is deliberately a page about credentials that contains
-//none.
+//ONE TAB, SIX PANES, TWO KINDS OF CREDENTIAL:
 //
-//WHAT IT SHOWS INSTEAD IS THE SHAPE OF ONE. A fingerprint, which is a hash and
-//says only "the same one" or "a different one". Two dates, because the age of
-//the SECRET and the age of the RECORD are different questions — `refreshed`
-//moves only when the fingerprint actually changes, so a sign-in added weeks ago
-//and refreshed this morning is a healthy one and looks it. Whether the last
-//machine that tried it could authenticate. And who is holding it right now,
-//because a sign-in that is out cannot be given to anything else.
+//    Claude Worker  ]  identities that are LENT OUT. Kept here under a name,
+//    Claude Judge   ]  handed to a machine for one task, taken back after —
+//    Claude sup...  ]  registered by ../runners/guests, which still owns them
 //
-//THE ACCOUNT IS SHOWN AND THE TOKEN IS NOT, which is not a contradiction: the
-//email answers "whose bill is this" and is the thing somebody actually needs
-//when two accounts are in play. It is not a secret; the token is.
+//    GitHub         ]  the token this host spends ITSELF. It never leaves.
+//    SSH            ]  how this host gets INTO a machine
+//    HTTPS          ]  how a machine knows it is talking to this host
+//
+//WHAT CHANGED AND WHY.
+//
+//`This host` is gone. It read `guests` every ten seconds and drew the same list
+//../runners/guests already draws three times, split by role, with strictly more
+//on it — fingerprint, whose account, when the secret was last refreshed, who has
+//it now, and what the last machine that tried it said. A second view of one list
+//is a second answer to one question, and the smaller one wins by being first.
+//
+//The three sign-in panes MOVED HERE FROM RUNNERS. A sign-in is a credential
+//before it is anything to do with a machine: it is kept whether or not a machine
+//exists, it outlives every machine it is lent to, and what is asked of it is
+//what is asked of the GitHub token beside it. Under Runners they sat in the tab
+//named after the thing they are lent TO. There is a signpost where they were —
+//see ../runners/guests/moved.js, and note that it asks nothing.
+//
+//`GitHub` BECAME THREE PANES. It was one pane holding three credentials and two
+//of them were not GitHub — with a caption inside it apologising for the heading:
+//"nothing to do with GitHub". A warning that a title is misleading is an
+//argument for a different title. The app being ported from draws the same line,
+//as two headings: "GitHub" and "This app's own keys".
+//
+//AND THE FOLDER `github/` IS GONE WITH IT. It held the ssh and certificate panes
+//too, so the name was wrong in the tree as well as on screen, and its stylesheet
+//turned out to define only `.sync-*` classes that nothing anywhere uses — a
+//sheet inherited by a plugin that never drew a sync button.
+//---------------------------------------------------------------------------
 
 plugin.consumes = ['shell', 'theme', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc } = imports;
 
-
     shell.tab({ name: 'Keys', order: 100 });
-    shell.pane({ tab: 'Keys', name: 'This host', order: 10, Component: makeKeys(theme, okc) });
+
+    //40, 50, 60 — AFTER THE SIGN-INS, which take 10, 20 and 30 from
+    //../runners/guests. The lent-out identities come first because they are what
+    //somebody comes to this tab to do something ABOUT; these three are set up
+    //once and then read.
+    shell.pane({ tab: 'Keys', name: 'GitHub', order: 40, Component: makeGithub(theme, okc) });
+    shell.pane({ tab: 'Keys', name: 'SSH', order: 50, Component: makeSsh(theme, okc) });
+    shell.pane({ tab: 'Keys', name: 'HTTPS', order: 60, Component: makeHttps(theme, okc) });
 
     await register(null, {});
 }

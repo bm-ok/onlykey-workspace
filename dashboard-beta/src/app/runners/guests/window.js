@@ -1,5 +1,6 @@
 var React = require('react');
 var makeGuests = require('./guests');
+var makeMoved = require('./moved');
 var { useState } = React;
 
 //---------------------------------------------------------------------------
@@ -37,9 +38,45 @@ async function plugin(imports, register) {
     var GuestsFor = makeGuests(theme, okc, remember);
 
 
-    shell.pane({ tab: 'Runners', name: 'Claude Worker', order: 20, Component: GuestsFor('worker') });
-    shell.pane({ tab: 'Runners', name: 'Claude Judge', order: 30, Component: GuestsFor('judge') });
-    shell.pane({ tab: 'Runners', name: 'Claude supervisor', order: 40, Component: GuestsFor('supervisor') });
+    //---- UNDER KEYS, AND THEY USED TO BE UNDER RUNNERS ---------------------
+    //
+    //A SIGN-IN IS A CREDENTIAL BEFORE IT IS ANYTHING TO DO WITH A MACHINE. It is
+    //kept here whether or not a machine exists, it outlives every machine it is
+    //ever lent to, and the questions asked of it — whose account, when was the
+    //secret last refreshed, does it still sign in, who has it now — are the same
+    //questions asked of the GitHub token in the next pane along. A machine is
+    //where one goes; it is not what one IS.
+    //
+    //Under Runners they sat beside the machines, which put "the thing lent" in
+    //the tab named after "the thing lent to", and left the Keys tab holding one
+    //credential and a copy of this list.
+    //
+    //THE FOLDER STAYS `runners/guests` ON PURPOSE, for now. rectify resolves
+    //plugins from `provides`/`consumes` and never from the path, so the folder
+    //is a statement to a reader rather than to the loader — and moving it is a
+    //separate change with its own diff. Same shape as ../../ui/kit, which lives
+    //under `ui` and registers a Settings pane.
+    shell.pane({ tab: 'Keys', name: 'Claude Worker', order: 10, Component: GuestsFor('worker') });
+    shell.pane({ tab: 'Keys', name: 'Claude Judge', order: 20, Component: GuestsFor('judge') });
+    shell.pane({ tab: 'Keys', name: 'Claude supervisor', order: 30, Component: GuestsFor('supervisor') });
+
+    //---- AND A SIGNPOST WHERE THEY WERE -----------------------------------
+    //
+    //MOVED AND GONE ARE DIFFERENT, and a tab that quietly loses three panes
+    //reads as the second. Somebody who comes to Runners looking for a sign-in is
+    //looking for something that WAS here, and being told where it went is the
+    //whole difference.
+    //
+    //The app being ported from does exactly this, in the other direction: when
+    //the sign-ins left Keys for Runners it left a card behind saying so, with a
+    //comment calling it "a signpost and not a redirect". Same reasoning, and its
+    //other note applies too — the panel it replaced went on asking every few
+    //seconds for a credential it no longer owned, so this one asks NOTHING.
+    //
+    //REGISTERED BY THIS PLUGIN rather than by Runners, so that deleting this
+    //folder takes its own signpost with it. A pointer to something that is gone
+    //is worse than no pointer.
+    shell.pane({ tab: 'Runners', name: 'Claude sign-ins', order: 20, Component: makeMoved(theme, shell) });
 
     await register(null, {});
 }

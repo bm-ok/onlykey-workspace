@@ -2,52 +2,49 @@ var React = require('react');
 var { useState } = React;
 
 //---------------------------------------------------------------------------
-//the three credentials this host holds, and the six things that can be done to
-//them.
+//the GitHub token, and only that.
 //
-//NONE OF THEM IS EVER SHOWN, and that is the rule this pane is built to rather
-//than a side effect of the actions happening not to return them. You can see
-//THAT a token is held, who it belongs to, what it may do and when it expires —
-//and never the token. The one place a secret is typed is a password field in a
-//dialog, because this window gets photographed several times a day, by this app,
-//on purpose.
+//IT WAS ONE PANE HOLDING THREE CREDENTIALS, and two of them were not GitHub.
+//The ssh key reaches the machines and the certificate is how a machine knows it
+//is talking to this host — neither has anything to do with github.com, and a
+//pane called GitHub containing them is how somebody replaces a working ssh key
+//while looking for a GitHub problem. That sentence was literally in the old
+//pane, as a warning, one panel down: "nothing to do with GitHub". A warning that
+//a heading is misleading is an argument for a different heading.
 //
-//EVERY DESTRUCTIVE ONE IS PURPLE AND GATED. Three of these six cannot be undone
-//and two of them lock this host out of every machine it has already built — so
-//they are a person's press, refused to the command line and to the driver, with
-//the cost written out before the press rather than discovered after it.
+//THIS ONE GOES OUT AND THE OTHER TWO DO NOT, which is the division the app being
+//ported from draws as well: "GitHub" and "This app's own keys" are two headings
+//there for the same reason they are two panes here.
+//
+//NONE OF THEM IS EVER SHOWN, and that is a rule this pane is built to rather
+//than a side effect of the actions happening not to return one. You can see THAT
+//a token is held, whose it is, what it may do and when it expires — never the
+//token. The one place a secret is typed is a password field in a dialog, because
+//this window gets photographed several times a day, by this app, on purpose.
 //---------------------------------------------------------------------------
 
 module.exports = function github(theme, okc) {
-    var { Pane, Panel, Badge, Button, Empty, Note, Notice, Mono, Skeleton, ask } = theme;
+    var { Pane, Panel, Badge, Button, Empty, Note, Notice, ask } = theme;
 
     var day = function (s) { return s ? String(s).slice(0, 10) : null; };
-
     function Row({ label, children }) {
         return <tr><th>{label}</th><td>{children}</td></tr>;
     }
 
-    function GitHub() {
+    return function GitHub() {
         var token = okc.use('githubHeld', {}, 30000);
-        var ssh = okc.use('sshKey', {}, 30000);
-        var tls = okc.use('tlsKey', {}, 30000);
         var [said, setSaid] = useState(null);
 
         if (!token.state && token.error) return <Pane><Note kind="bad">{token.error}</Note></Pane>;
-        if (!token.state) return <Pane><Skeleton rows={4} /></Pane>;
+        if (!token.state) return <Pane><Note>reading…</Note></Pane>;
 
         var t = token.state;
-        var s = ssh.state || {};
-        var x = tls.state || {};
-
         function ok(text) { setSaid({ text: text }); }
         function bad(e) { setSaid({ bad: true, text: e.message }); throw e; }
 
-        //---- the GitHub token ----------------------------------------------
-
         //ASKING GITHUB WHO THIS IS, which is the only way to know. A token that
-        //is held is not a token that works: it can be revoked, expired or
-        //scoped wrongly, and every one of those looks identical from here until
+        //is held is not a token that works: it can be revoked, expired or scoped
+        //wrongly, and every one of those looks identical from here until
         //somebody asks the far end.
         function check() {
             return okc.call('githubCheck').then(function (r) {
@@ -118,63 +115,6 @@ module.exports = function github(theme, okc) {
             });
         }
 
-        //---- this app's own two keys ----------------------------------------
-
-        function writeSshConfig() {
-            return okc.call('sshConfig').then(function (r) {
-                var n = (r.hosts || []).length;
-                ok(n + ' machine' + (n === 1 ? '' : 's') + ' written to ' + r.file
-                    + (r.include && r.include.added ? ', and included from ' + r.include.file : ''));
-            }, bad);
-        }
-
-        function makeSshKey() {
-            ask({
-                title: s.ok ? 'Make a new ssh key?' : 'Make this app an ssh key?',
-                danger: !!s.ok,
-                plain: s.ok
-                    ? [
-                        'A new key is written, and this one is gone.',
-                        'Every machine already built has the OLD public key in its authorized_keys, and nothing here can reach in to change that — the only thing that could is the key being replaced.',
-                        'Machines built after this will accept the new one.'
-                    ]
-                    : [
-                        'Makes a key belonging to this app, kept beside its certificate.',
-                        'New machines are built with it; machines that already exist are not touched.'
-                    ],
-                cost: s.ok
-                    ? 'This app loses its way into every existing machine. They have to be rebuilt, or given the new key by hand while the old one still works.'
-                    : null,
-                confirm: s.ok ? 'Replace it' : 'Make it',
-                onYes: function () {
-                    return okc.call('sshKeyMake', { force: true }).then(function (r) {
-                        ok(r.fingerprint + ' — ' + r.note);
-                        ssh.again();
-                    }, bad);
-                }
-            });
-        }
-
-        function newCertificate() {
-            ask({
-                title: 'Make a new certificate?',
-                danger: true,
-                plain: [
-                    'A new authority and a new certificate, naming this host’s addresses as they are now.',
-                    'Every machine already built trusts the OLD authority, which was checked against a fingerprint when it was made. They will refuse the new one.',
-                    'This is what to do when this host’s address has changed, or the certificate is close to expiring.'
-                ],
-                cost: 'Every existing machine has to be set up again before it can fetch scripts or push work.',
-                confirm: 'Replace it',
-                onYes: function () {
-                    return okc.call('tlsRegenerate').then(function () {
-                        ok('New certificate. Every machine has to be set up again.');
-                        tls.again();
-                    }, bad);
-                }
-            });
-        }
-
         //A TOKEN THAT WAS CHECKED AND REFUSED reads differently from one that has
         //never been asked about, and the buttons swap emphasis accordingly: when
         //it is dead the useful press is "Replace it", not "Check it again".
@@ -191,6 +131,8 @@ module.exports = function github(theme, okc) {
                             ? <Badge kind="ok">{'held' + (t.login ? ' — ' + t.login : '')}</Badge>
                             : <Badge kind="bad">none — nothing can reach GitHub</Badge>}
                     </div>
+                    <div className="card-sub">this host pushes branches onward and opens pull requests with it — no machine is ever handed it</div>
+
                     {t.held ? (
                         <table className="kv"><tbody>
                             <Row label="as">{(t.name || '') + (t.login ? ' (' + t.login + ')' : '')}</Row>
@@ -249,82 +191,8 @@ module.exports = function github(theme, okc) {
                     </div>
                 </Panel>
 
-                <Panel>
-                    <div className="card-title">
-                        {'ssh key '}
-                        {s.ok ? <Badge kind="ok">held</Badge> : <Badge kind="warn">{s.missing ? 'none' : 'unknown'}</Badge>}
-                    </div>
-                    {/* NOT GITHUB'S. This one reaches the machines, and mixing the
-                        two up is how somebody replaces a working key looking for
-                        a GitHub problem. */}
-                    <div className="card-sub">how this host reaches the machines — nothing to do with GitHub</div>
-                    <table className="kv"><tbody>
-                        <Row label="fingerprint"><Mono>{s.fingerprint || 'none'}</Mono></Row>
-                        <Row label="made">{day(s.made) || 'unknown'}</Row>
-                        <Row label="machines with it">{(s.machines || []).length || 0}</Row>
-                    </tbody></table>
-                    {s.why ? <Note kind="warn">{s.why}</Note> : null}
-
-                    {/* WHICH MACHINES WILL REFUSE IT, by name. "Some machines will
-                        not accept it" is a sentence somebody has to go and
-                        investigate; the names are the investigation. */}
-                    {(s.strangers || []).length ? (
-                        <div className="card-sub">
-                            {(s.strangers || []).length + ' machine' + ((s.strangers || []).length === 1 ? '' : 's')
-                                + ' will not accept it: ' + (s.strangers || []).map(function (m) { return m.name || m; }).join(', ')
-                                + ' — built with a different key, and nothing here can change that from outside.'}
-                        </div>
-                    ) : null}
-
-                    <div className="row">
-                        <Button onClick={writeSshConfig}
-                            title="So ssh and VS Code find these machines by name, using this key">
-                            Write the ssh config
-                        </Button>
-                        <Button kind="danger" protect onClick={makeSshKey}>
-                            {s.ok ? 'Make a new one' : 'Make one'}
-                        </Button>
-                    </div>
-                </Panel>
-
-                <Panel>
-                    <div className="card-title">
-                        {'TLS certificate '}
-                        {x.expired ? <Badge kind="bad">expired</Badge>
-                            : x.expiringSoon ? <Badge kind="warn">{x.daysLeft + ' days left'}</Badge>
-                                : x.ok ? <Badge kind="ok">{x.daysLeft + ' days left'}</Badge>
-                                    : <Badge kind="warn">unknown</Badge>}
-                    </div>
-                    <div className="card-sub">how a machine knows it is talking to this host when it fetches its scripts</div>
-                    <table className="kv"><tbody>
-                        <Row label="covers">{(x.covers || []).join(', ') || 'nothing'}</Row>
-                        {/* COVERS AND MATCHES ARE DIFFERENT QUESTIONS. A
-                            certificate can be perfectly valid and name an address
-                            this host no longer has — which fails at the far end,
-                            on a machine, twenty-five minutes into an install. */}
-                        <Row label="this host is">
-                            {x.address || 'unknown'}
-                            {x.matches === false ? <span>{' '}<Badge kind="bad">not covered</Badge></span> : null}
-                        </Row>
-                        <Row label="good until">{day(x.validTo) || 'unknown'}</Row>
-                        {/* PUBLISHED RATHER THAN SECRET, which is why it may be on
-                            screen at all: a brand-new machine checks the authority
-                            against this over a connection that is not yet
-                            protected, and that is what makes the very first fetch
-                            possible. */}
-                        <Row label="authority"><Mono>{x.fingerprint || '—'}</Mono></Row>
-                    </tbody></table>
-                    {x.why ? <Note kind="warn">{x.why}</Note> : null}
-
-                    <div className="row">
-                        <Button kind="danger" protect onClick={newCertificate}>Make a new certificate</Button>
-                    </div>
-                </Panel>
-
-                <Note>no key, token or certificate is shown here, and none is returned by the actions that fill this page</Note>
+                <Note>no token is shown here, and none is returned by the action that fills this page</Note>
             </Pane>
         );
-    }
-
-    return GitHub;
+    };
 };

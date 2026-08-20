@@ -61,16 +61,28 @@ test('nothing uses defaultValue, which would serialise into a capture', () => {
 //THE FIELD A SECRET IS TYPED INTO, held to both marks. `password` is what keeps
 //it out of the picture; `protect` is what keeps it out of windowFill. They are
 //different protections against different things and it needs both.
-test('the GitHub token is typed into a password field, and a guarded one', () => {
-    const src = fs.readFileSync(path.join(APP, 'github', 'github.js'), 'utf8');
+test('a token is typed into a password field, and a guarded one', () => {
+    //FOUND RATHER THAN NAMED, and it used to be named. This read a hard-coded
+    //`app/github/github.js` and the pane moved to `app/keys`, so the test died
+    //with ENOENT — a failure that says the path is wrong rather than whether the
+    //rule holds. A test that breaks when code is REARRANGED and passes when the
+    //rule is REMOVED is pointing the wrong way round.
+    //
+    //AND IT IS EVERY SUCH FIELD, NOT THE ONE THAT WAS THOUGHT OF. The next
+    //credential typed into this window gets the same two marks or this goes red,
+    //which is the behaviour that was wanted from a file named after one token.
+    const fields = sources()
+        .flatMap((f) => code(f).split('\n').map((l) => [f, l]))
+        .filter(([, l]) => /name:\s*'token'/.test(l));
 
-    const field = src.split('\n').find((l) => /name:\s*'token'/.test(l));
-    assert.ok(field, 'the token field is gone or renamed — this test is asserting nothing');
+    assert.ok(fields.length, 'no token field found anywhere — this test is asserting nothing');
 
-    assert.match(field, /type:\s*'password'/,
-        'the token field stopped being a password field, so `capture` now photographs it');
-    assert.match(field, /protect:\s*true/,
-        'the token field stopped being guarded, so windowFill can write a credential into it');
+    for (const [f, field] of fields) {
+        assert.match(field, /type:\s*'password'/,
+            rel(f) + ': a token field stopped being a password field, so `capture` now photographs it');
+        assert.match(field, /protect:\s*true/,
+            rel(f) + ': a token field stopped being guarded, so windowFill can write a credential into it');
+    }
 });
 
 //A CAPTURE IS UNPUBLISHED, NOT PROTECTED. It sits in the working tree in

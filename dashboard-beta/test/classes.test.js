@@ -293,7 +293,16 @@ test('a modifier used on a base is one the stylesheet gives that base', () => {
             else if (name.endsWith('.scss') && full !== SHEET) sheets.push(full);
         }
     })(APP);
-    assert.ok(sheets.length >= 7,
+    //WAS 7, AND A SHEET WAS LEGITIMATELY DELETED. `github/github.scss` went with
+    //the plugin whose panes moved into ../src/app/keys — and it turned out to
+    //define only `.sync-*` classes that nothing in the app has ever used, so it
+    //was dead furniture inherited by a plugin that never drew a sync button.
+    //
+    //This floor is a guard against the WALK breaking, not a census: it exists so
+    //that a scan which silently finds nothing cannot pass. Lowering it when a
+    //sheet is genuinely removed is the maintenance it asks for; lowering it
+    //because the number went down is how it stops guarding anything.
+    assert.ok(sheets.length >= 6,
         'fewer stylesheets were found than there are on disk, so the scan is not reaching into the groups');
     const css = sheets.map(f => fs.readFileSync(f, 'utf8')).join('\n');
     const mods = modifiersFor(css);
