@@ -1287,3 +1287,31 @@ table.kv.where .sub:last-child { margin-bottom: 0; }
    is a fenced block with a horizontal scrollbar. */
 .msg:has(iframe) { width: 92%; max-width: 92%; }
 .msg-body:has(iframe) { width: 100%; }
+
+/* ---------- something being read ----------
+
+   `.code` already existed here as the wrapper the vendored editor was mounted
+   into, and its rules were about giving that editor a border and a ground. With
+   no editor in this app it dresses a <pre> instead, which needs the font and the
+   scrolling the editor used to bring with it.
+
+   BOUNDED BY DEFAULT. This appears inside a dialog, where the title and the
+   buttons are pinned and only the middle scrolls — a script that grows without a
+   ceiling pushes the confirm button below the bottom of a fixed overlay, and the
+   question cannot be answered at all. `.tall` is for the cases with a whole pane
+   to themselves. */
+pre.code {
+  background: #0a0d12;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 6px 0 0;
+  overflow: auto;
+  max-height: 320px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--text);
+}
+pre.code.tall { max-height: 60vh; }

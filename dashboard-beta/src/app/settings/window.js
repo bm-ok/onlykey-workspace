@@ -354,7 +354,10 @@ async function plugin(imports, register) {
     //The shell shows a tab's panes when it has any and its own Component when it
     //has none — so a tab that is both is a tab whose body silently disappears the
     //day somebody adds a second pane to it. Registered this way it cannot.
-    shell.tab({ name: 'Settings', order: 90 });
+    //LAST, AND OUTSIDE THE ROW OF WORK. Over there it is a ☰ at the far
+    //end rather than a word in the line — settings is not somewhere you go
+    //to work, it is somewhere you go to change one thing and come back from.
+    shell.tab({ name: 'Settings', order: 200 });
     shell.pane({ tab: 'Settings', name: 'General', order: 10, Component: Settings });
 
     await register(null, {});

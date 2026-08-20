@@ -148,6 +148,25 @@ function Form({ children }) { return <div className="form">{children}</div>; }
 function HeadRow({ children }) { return <div className="head-row">{children}</div>; }
 function Controls({ children }) { return <div className="head-controls">{children}</div>; }
 
+//---- something being read -------------------------------------------------
+//
+//A <pre> AND NOT AN EDITOR, AND THAT IS A GAP RATHER THAN A DECISION. The rule
+//in the old window is "code that is read gets an editor, not a <pre>", written
+//because a hundred lines of undifferentiated JavaScript is something a person
+//scrolls past and approves anyway — which is exactly the failure the approval
+//panes exist to prevent. It vendors Ace for this.
+//
+//This app does not vendor it yet, and pretending otherwise would be worse than
+//saying so: `Code` is the seam, so the day the editor arrives one file changes
+//and every pane that shows something for reading gets it.
+//
+//BOUNDED, because it appears inside a dialog. A script that grows pushes the
+//confirm button off the bottom of a fixed overlay, which is how a question
+//becomes unanswerable — that has happened here before.
+function Code({ text, tall }) {
+    return <pre className={'code' + (tall ? ' tall' : '')}>{String(text == null ? '' : text)}</pre>;
+}
+
 //---- waiting -------------------------------------------------------------
 
 //A SKELETON RATHER THAN THE WORD "LOADING".
@@ -246,5 +265,5 @@ module.exports = {
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip,
     Button, Plus, Cog, Finder, Form, HeadRow, Controls,
-    Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, openOut
+    Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, Code, openOut
 };

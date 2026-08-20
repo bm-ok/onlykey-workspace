@@ -679,7 +679,7 @@ async function plugin(imports, register) {
 
     //held rather than passed inline so the badge above has something to write
     //on. The shell reads it when it next paints the bar.
-    var tab = { name: 'Test', order: 50, Component: Tests };
+    var tab = { name: 'Test', order: 110, Component: Tests };
     shell.tab(tab);
 
     await register(null, {});
