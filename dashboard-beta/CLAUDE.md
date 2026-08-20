@@ -82,7 +82,18 @@ about subject:
 * **An action goes where the pane is.** `logSince` and `logClear` are what the
   Live pane asks for, so they are `live/server.js`. Same shape as `show` living
   in `ui/shell/server.js`.
-* A plugin with neither has no server half. Most do not.
+* **How an answer prints goes with the plugin too**, in `cli.js` — the fourth
+  half. `okc.js todos` printing a wall of braces is a JSON dump with a prompt in
+  front of it, and whoever knows how a todo should read wrote the todo pane.
+  It exports `{ print: { <action>: said => string } }`, nothing more; an action
+  with no printer still prints as JSON, and `--json` always does.
+* A plugin with none of them has no server half. Most do not.
+
+`cli.js` is a plain module, not a rectify plugin: the command line is a separate
+program with no plugin graph in it, which is what lets it answer while the window
+is closed. It is loaded by a walk in `tools/okc.js` — the **fifth** place the
+"one or two levels, no `_`, no `vendor`" rule is written down, and
+`test/plugins.test.js` holds it to the same answer as the other four.
 
 **`main.js` versus `server.js` is about lifetime, not subject.** The node bundle
 is rebuilt on every save; main is not. Anything that must survive a save goes in

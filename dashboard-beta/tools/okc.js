@@ -126,6 +126,61 @@ function call (action, args = {}) {
   })
 }
 
+//---------------------------------------------------------------------------
+// HOW AN ANSWER PRINTS, FROM THE PLUGIN THE ANSWER BELONGS TO.
+//
+// A FOURTH HALF, beside window.js, server.js and main.js, and it earns its place
+// the same way they do: `okc.js todos` printing a wall of braces is not a command
+// line, it is a JSON dump with a prompt in front of it. Whoever knows how a
+// todo should read is whoever wrote the todo pane, and they are one folder away.
+//
+// A PLAIN MODULE, NOT A rectify PLUGIN, because this process has no graph in it.
+// The CLI is a separate program that knows one socket and nothing else — that is
+// what lets it work while the window is closed, and what stops it booting a
+// second copy of the app to ask a question. So a cli.js is required, not started,
+// and it may not consume anything.
+//
+// THE SAME FOLDER RULES AS THE OTHER THREE: one or two levels down, no leading
+// `_` or `.`, never inside a vendor. A fifth reading of one sentence is a fifth
+// chance to disagree with it, so test/plugins.test.js holds this one too.
+//
+// AND NOTHING HERE IS REQUIRED. An action with no printer prints as JSON, which
+// is what everything did before this existed.
+//---------------------------------------------------------------------------
+
+const APP = path.join(__dirname, '..', 'src', 'app')
+const DEPTH = 2
+
+const scanned = (name) => name[0] !== '_' && name[0] !== '.' && name !== 'vendor'
+
+function cliHalves (dir, left, out) {
+  let entries
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return out }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !scanned(entry.name)) continue
+    const here = path.join(dir, entry.name)
+    if (fs.existsSync(path.join(here, 'cli.js'))) out.push(path.join(here, 'cli.js'))
+    if (left > 1) cliHalves(here, left - 1, out)
+  }
+  return out
+}
+
+function printers () {
+  const all = {}
+  for (const file of cliHalves(APP, DEPTH, [])) {
+    let half
+    // A BROKEN PRINTER MUST NOT COST YOU THE ANSWER. This is presentation; the
+    // result is already in hand, and falling back to JSON is a worse-looking
+    // answer rather than no answer at all.
+    try { half = require(file) } catch (err) {
+      console.error('the printers in ' + path.relative(APP, file) + ' did not load: ' + err.message)
+      continue
+    }
+    Object.assign(all, (half && half.print) || {})
+  }
+  return all
+}
+
 // --k v, --flag (true), and --json for the raw answer
 function readArgs (argv) {
   const args = {}
@@ -162,12 +217,36 @@ async function main () {
   }
 
   const said = await call(name, args)
-  console.log(json || typeof said !== 'string' ? JSON.stringify(said, null, 2) : said)
+  if (json) return console.log(JSON.stringify(said, null, 2))
+  if (typeof said === 'string') return console.log(said)
+
+  const show = printers()[name]
+  if (!show) return console.log(JSON.stringify(said, null, 2))
+
+  // A PRINTER THAT THROWS IS A BUG IN THE PRINTER, not a reason to lose what the
+  // app said. It says so and prints the answer the old way.
+  let text
+  try { text = show(said) } catch (err) {
+    console.error('the printer for "' + name + '" threw: ' + err.message)
+    return console.log(JSON.stringify(said, null, 2))
+  }
+  console.log(Array.isArray(text) ? text.join('\n') : String(text))
 }
 
-main().catch(err => {
-  console.error(err.message)
-  // 3 for "nothing is listening", 1 for a refusal — so a script can tell "it
-  // said no" from "it was not there", which are different problems.
-  process.exit(err.notRunning ? 3 : 1)
-})
+// REQUIRED RATHER THAN RUN, when something is checking the walk above rather
+// than asking the app a question. Without this guard, requiring this file to test
+// its folder rules prints the whole action list into the test output and then
+// exits the runner.
+module.exports = { cliHalves, printers }
+
+// RUN WHEN RUN, AND SILENT WHEN REQUIRED. Without this, something checking the
+// folder rules above prints the whole action list into its own output and then
+// exits the test runner.
+if (require.main === module) {
+  main().catch(err => {
+    console.error(err.message)
+    // 3 for "nothing is listening", 1 for a refusal — so a script can tell "it
+    // said no" from "it was not there", which are different problems.
+    process.exit(err.notRunning ? 3 : 1)
+  })
+}

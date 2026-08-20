@@ -124,3 +124,50 @@ test('and it is not counting nothing', () => {
         'the walk found almost no window.js plugins, so the comparison above proves nothing');
     assert.ok(onDisk('main.js').length > 5, 'nor any main.js plugins');
 });
+
+//---------------------------------------------------------------------------
+//AND THE FIFTH READING OF THE SAME SENTENCE.
+//
+//tools/okc.js walks for `cli.js` — how a plugin's answers print at a command
+//line. It is a separate program with no plugin graph in it, so it cannot use any
+//of the three require.contexts and has its own walk, which makes it the fifth
+//place one rule is written down. A printer that is not found is not an error
+//either: the answer prints as JSON, exactly as it did before printers existed,
+//which is the quietest way for this to stop working.
+//---------------------------------------------------------------------------
+
+const CLI = path.join(__dirname, '..', 'tools', 'okc.js');
+
+test('the command line walks for cli.js the same way everything else walks', () => {
+    const src = fs.readFileSync(CLI, 'utf8');
+
+    //the rules as they are actually written there, not as remembered here
+    assert.match(src, /const DEPTH = 2/, 'the command line no longer stops at two levels');
+    assert.match(src, /name\[0\] !== '_' && name\[0\] !== '\.' && name !== 'vendor'/,
+        'the command line no longer skips the same folders the others skip');
+
+    const { cliHalves } = require(CLI);
+    const found = cliHalves(APP, 2, []).map(f => './' + path.relative(APP, f).split(path.sep).join('/'));
+    assert.deepEqual(found.sort(), onDisk('cli.js').sort());
+});
+
+test('a printer is never taken from a vendor folder', () => {
+    const { cliHalves } = require(CLI);
+    for (const f of cliHalves(APP, 2, [])) {
+        assert.ok(!f.split(path.sep).includes('vendor'), f + ' came out of a vendor folder');
+    }
+});
+
+test('and the printers that exist are loadable and shaped right', () => {
+    const { cliHalves } = require(CLI);
+    const files = cliHalves(APP, 2, []);
+    assert.ok(files.length >= 2, 'no cli halves found at all — this test is asserting nothing');
+
+    for (const f of files) {
+        const half = require(f);
+        assert.equal(typeof half.print, 'object', f + ' exports no printers');
+        for (const [name, fn] of Object.entries(half.print)) {
+            assert.equal(typeof fn, 'function', f + ' printer for "' + name + '" is not a function');
+        }
+    }
+});

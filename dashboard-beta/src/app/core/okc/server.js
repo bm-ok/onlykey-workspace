@@ -202,6 +202,14 @@ async function plugin(imports, register) {
         //of handlers listening, which is what the whole onDestroy contract is
         //for.
         onDestroy: function () {
+            //SAID ON THE WAY OUT, SO THE NEXT "connected" IS NOT A MYSTERY.
+            //
+            //Each reload builds a fresh copy of this half, and `said` starts
+            //false in it — so the log fills with "connected to the dashboard"
+            //with nothing between the entries, and reads exactly like a dashboard
+            //dropping in and out. It was not: this end was rebuilt. Three of them
+            //in a row was the first thing the new command-line view showed.
+            if (said) log.info('the relay is going down with a reload of this half');
             closing = true;
             unfallback();
             uncatalogue();
