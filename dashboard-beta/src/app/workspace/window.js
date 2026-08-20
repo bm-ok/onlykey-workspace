@@ -42,9 +42,6 @@ async function plugin(imports, register) {
         var [said, setSaid] = useState(null);
         var [where, setWhere] = useState('');
 
-        //THE CHROME IS TOLD FROM HERE, because this is the pane that knows: the
-        //label on the button beside the title, and the gate on the tabs that
-        //need a folder.
         var open = state ? state.open : null;
         var cur = state && state.current ? state.current : null;
         //THE COUNT LIVES ON THE KNOWN ENTRY, NOT ON `current`, which is how the
@@ -53,12 +50,6 @@ async function plugin(imports, register) {
         var mine = cur && state ? (state.known || []).filter(function (w) { return w.dir == cur.dir; })[0] : null;
         var name = cur ? cur.name : null;
         var repos = mine ? mine.repos : (cur ? cur.repos : null);
-
-        useEffect(function () {
-            shell.label('Workspace', name || 'no workspace');
-            var why = open ? null : 'Needs a workspace. Open a folder of repositories from the button beside the title.';
-            NEEDS.forEach(function (t) { shell.stop(t, why); });
-        }, [open, name]);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={3} /></Pane>;
@@ -251,6 +242,36 @@ async function plugin(imports, register) {
         label: 'no workspace', Component: Workspaces
     });
 
-    await register(null, {});
+    //---- the chrome, told from OUTSIDE the pane -----------------------------
+    //
+    //THE PANE CANNOT BE THE ONE THAT SAYS THIS, and the browser proved it: a
+    //fresh tab opens on Repositories, the Workspaces pane never mounts, and the
+    //button beside the title read "no workspace" over a workspace that was
+    //perfectly open. In the desktop window it looked right only because I had
+    //navigated to that pane and left it there.
+    //
+    //THE GATE HAD IT WORSE. Repositories and Tasks would not have been disabled
+    //until somebody visited the thing that gates them — a rule that applies
+    //only after you have looked at the rule.
+    //
+    //Same shape as the Inbox badge, and the same answer: chrome is told by
+    //something that runs for as long as the app does. Two of these now, and if
+    //there is a third it wants a service rather than a third copy of this.
+    var stop = null;
+    function chrome() {
+        okc.call('workspaces', {}).then(function (d) {
+            var open = !!(d && d.open);
+            var name = d && d.current ? d.current.name : null;
+            shell.label('Workspace', name || 'no workspace');
+            var why = open ? null : 'Needs a workspace. Open a folder of repositories from the button beside the title.';
+            NEEDS.forEach(function (t) { shell.stop(t, why); });
+        }, function () { /* the pipe may be down; the chrome stays as it was */ });
+    }
+    chrome();
+    stop = setInterval(chrome, 20000);
+
+    await register(null, {
+        onDestroy: function () { if (stop) clearInterval(stop); }
+    });
 }
 module.exports = plugin;

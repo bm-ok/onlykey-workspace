@@ -4,7 +4,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>React App</title>
+  <!-- THE NAME COMES FROM package.json, NOT FROM HERE.
+       It said "React App" — the scaffold's placeholder — which nobody sees in
+       the desktop window because nw takes its title from the package, and
+       everybody sees the moment the app is opened in a browser tab. That is the
+       whole point of serving it over http, so the one place the title is
+       visible was the one place it was wrong.
+       tools/build.js already builds this line from `pkg.title || pkg.name` for
+       the packaged build. Two copies had already drifted; this is the same
+       source. -->
+  <title><%= htmlWebpackPlugin.options.title %></title>
 </head>
 
 <body>

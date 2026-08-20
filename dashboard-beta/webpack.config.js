@@ -1,6 +1,7 @@
 const path = require('path');
 const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const appPackage = require('./package.json');
 
 //two of the three boots are bundled. src/window.js gathers every
 //src/app/*/window.js, src/server.js every src/app/*/server.js — so a plugin
@@ -77,7 +78,11 @@ module.exports = (env, argv = {}) => {
             ]
         },
         plugins: [
-            new HtmlWebpackPlugin({ template: path.join(__dirname, 'src', 'index.html') }),
+            new HtmlWebpackPlugin({
+                template: path.join(__dirname, 'src', 'index.html'),
+                //One source for the name, shared with tools/build.js.
+                title: appPackage.title || appPackage.name
+            }),
             ...(isProduction ? [] : [new webpack.HotModuleReplacementPlugin()])
         ]
     };
