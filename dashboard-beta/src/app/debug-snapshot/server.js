@@ -20,6 +20,41 @@ var path = require('path');
 //folder and the action, the key and the dialog all go with it; nothing else has
 //a line to take out. That is what the plugin system is for, and a debugging tool
 //is exactly the kind of thing that should be removable without a search.
+//
+//---- what this writes to disk, and why that needs watching -----------------
+//
+//THIS IS THE ONE THING IN THE APP THAT COPIES THE WHOLE SCREEN TO A FILE, AND IT
+//SCRUBS NOTHING. Every other route to disk here is narrowed on purpose: the live
+//log stays in memory because command output carries sign-in URLs and tokens, and
+//../core/events keeps only an allowlist of tags and redacts inside them. This
+//keeps whatever was rendered, verbatim, in two files.
+//
+//WHAT SAVES IT TODAY IS NOT A DECISION ANYBODY MADE HERE. A value somebody typed
+//does not reach the markup, because React sets `value` as a PROPERTY and
+//`outerHTML` serialises ATTRIBUTES — measured, with a canary typed into a field
+//and zero occurrences in the file. That is a property of React, not a rule this
+//app enforces, and it stops being true for an uncontrolled input, a
+//`defaultValue`, or any `<input value={...}>` written by hand. Anything that
+//starts putting a secret in an attribute puts it in every capture from then on,
+//silently.
+//
+//THE PICTURE IS THE OTHER HALF AND HAS NO SUCH LUCK: it is what the screen looks
+//like. The token field is `type="password"` so it photographs as dots, and that
+//is the only reason a capture of the Keys dialog is safe. A field that stops
+//being a password field stops being safe here too.
+//
+//SO THE RULES, FOR ANYTHING ADDED TO THIS APP LATER:
+//
+//  * a secret must never be an attribute value, only a property
+//  * a secret on screen must be a password field, or not on screen
+//  * `/shots` is gitignored, and nothing in it is tracked — checked. These files
+//    are not protected, only unpublished: they sit in the working tree in
+//    cleartext, and they are the right thing to delete after reading.
+//
+//AND IT IS CALLABLE OVER THE PIPE, which is what makes ../core/ipc's token the
+//thing standing in front of it. Before that, anything on this machine that could
+//open a named pipe could have written the screen to disk and read it back. An
+//action that dumps the window is exactly the kind the socket needed closing for.
 //---------------------------------------------------------------------------
 
 plugin.consumes = ['app', 'log'];

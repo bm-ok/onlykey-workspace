@@ -182,3 +182,16 @@ machines, tasks or sign-ins. Say so in the pane if empty would read as broken.
   `vendors/` folder here: a library that belongs to one concern should go when
   that concern does. `ui/xterm/vendor/README.md` is the shape a note takes —
   version, where it came from, and what would break without each file.
+* **A secret is never an attribute, and never on screen unmasked.** `capture`
+  writes the whole rendered DOM and a picture of the window to `/shots`, with no
+  redaction anywhere — unlike the live log, which stays in memory precisely
+  because command output carries tokens, and unlike `core/events`, which
+  allowlists and scrubs before writing. Two things keep captures safe today and
+  **neither is a rule this app enforces**: React sets `value` as a property so a
+  typed value is not serialised into `outerHTML` (measured with a canary), and
+  the token field is `type="password"` so it photographs as dots. An
+  uncontrolled input, a `defaultValue`, a hand-written `value={...}`, or an
+  unmasked field breaks one of those and every capture afterwards carries the
+  secret, silently. `/shots` is gitignored and nothing in it is tracked, but
+  those files are cleartext in the working tree — unpublished, not protected,
+  and worth deleting after reading.
