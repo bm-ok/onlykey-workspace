@@ -1,15 +1,21 @@
 node_modules
 package-lock.json
 
-dist
-dist*/
-build
+# ANCHORED, BECAUSE THESE NAME THIS FOLDER'S OUTPUT AND NOTHING ELSE.
+# Without the leading slash a rule matches a directory of that name AT ANY
+# DEPTH -- and `build` was doing exactly that to src/app/build, a plugin whose
+# main.js has therefore never been committed. It exists on the machine it was
+# written on and nowhere else; a fresh clone would boot without it and say
+# nothing, because a plugin that is not there is not an error, it is an absence.
+/dist
+/dist*/
+/build
 
 nw.log
 .nw-instance.json
 
 # what windowShot writes. photographs of the running app: worth having while
 # working on it, meaningless a day later, and a new file every time anybody looks
-shots
+/shots
 icon.ico
 v8.log
