@@ -73,13 +73,19 @@ module.exports = function trouble(theme, okc, shell) {
         //a repository left on a branch with uncommitted changes, a machine idle
         //and still holding a credential, a supervisor up and unable to think.
         //
-        //Every one of them reads the DASHBOARD's `status` and `vmList`, and this
-        //app cannot reach that `status`: it defines a `status` action of its own
-        //— what this app is and whether its window is up — which shadows the
-        //relayed one, so `okc.call('status')` never reaches the half that knows
-        //whether VirtualBox is there. Fixing that is renaming one of the two,
-        //not writing this pane differently, so it is a note here rather than a
-        //rule that quietly checks nothing.
+        //Every one of them reads the DASHBOARD's `status` and `vmList`.
+        //
+        //THE THING THAT BLOCKED THEM IS GONE. This app defined a `status` of its
+        //own — what it is and whether its window is up — and a local name beats a
+        //relayed one, so `okc.call('status')` never reached the half that knows
+        //whether VirtualBox is there. That one is called `info` now and `status`
+        //means what it means everywhere else: the workspace, VirtualBox, whether
+        //the drills are on and whether one is running.
+        //
+        //So these are ordinary unwritten rules now rather than blocked ones, and
+        //they are written next. Kept as a note in the meantime because a banner
+        //that silently checks four things out of nine is worse than one that says
+        //which four.
         if (!lines.length) return null;
 
         return (
