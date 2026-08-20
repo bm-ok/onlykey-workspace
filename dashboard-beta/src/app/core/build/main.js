@@ -12,10 +12,10 @@
 //reach it — a `require('webpack')` in an unreachable function is still bundled,
 //and dragging webpack into a packaged app is exactly what this avoids.
 
-plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir', 'state'];
+plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir', 'state', 'secret'];
 plugin.provides = ['build'];
 async function plugin(imports, register) {
-    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir, state } = imports;
+    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir, state, secret } = imports;
 
     //what the node half is handed. the window and the tray are passed as
     //controllers rather than objects, because they outlive the bundle.
@@ -38,6 +38,12 @@ async function plugin(imports, register) {
         //written by the old bundle and a line written by the new one land in the
         //same stream, in order, and the record of a reload is not a gap.
         log: log,
+
+        //SEALING, AND WHAT A SECRET LOOKS LIKE. Handed over rather than required
+        //again on the other side so there is ONE answer to both — a second copy
+        //of the redaction list is the exact fault ../secret/looks-like.js was
+        //written to end, and a second sealing implementation would be worse.
+        secret: secret,
 
         //WHERE ANYTHING KEPT IS KEPT. A server half that stores something needs
         //a path before it needs anything else, and it must be THIS one — derived

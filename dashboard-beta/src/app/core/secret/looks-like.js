@@ -72,19 +72,6 @@ function apply(list, text) {
 }
 
 //`durable` IS OPT-IN, so the blunt rules cannot arrive somewhere by accident and
-//quietly make a log of commit hashes unreadable.
-function redact(text, how) {
-    var out = apply(CREDENTIALS, text);
-    return how === 'durable' ? apply(GREEDY, out) : out;
-}
-
-function apply(list, text) {
-    var out = String(text == null ? '' : text);
-    list.forEach(function (pair) { out = out.replace(pair[0], pair[1]); });
-    return out;
-}
-
-//`durable` IS OPT-IN, so the blunt rules cannot arrive somewhere by accident and
 //quietly turn a log of commit hashes into a column of <redacted>.
 function redact(text, how) {
     var out = apply(CREDENTIALS, text);
