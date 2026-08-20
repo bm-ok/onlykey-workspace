@@ -102,7 +102,7 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.tab({ name: 'Queue', order: 20, Component: Queue });
+    shell.tab({ name: 'Queue', order: 30, Component: Queue });
 
     await register(null, {});
 }

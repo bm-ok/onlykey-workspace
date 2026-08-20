@@ -131,7 +131,7 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.tab({ name: 'Judge', order: 35, Component: Judge });
+    shell.tab({ name: 'Judge', order: 40, Component: Judge });
 
     await register(null, {});
 }

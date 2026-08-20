@@ -447,7 +447,7 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.pane({ tab: 'Repositories', name: 'Changes', order: 25, Component: Changes });
+    shell.pane({ tab: 'Repositories', name: 'Changes', order: 80, Component: Changes });
 
     await register(null, {});
 }

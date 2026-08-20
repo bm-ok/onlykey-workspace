@@ -390,7 +390,7 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.pane({ tab: 'Repositories', name: 'Cuts', order: 30, Component: Cuts });
+    shell.pane({ tab: 'Repositories', name: 'PR cuts', order: 100, Component: Cuts });
 
     await register(null, {});
 }

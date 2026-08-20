@@ -84,7 +84,7 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.pane({ tab: 'Repositories', name: 'Conflicts', order: 40, Component: Conflicts });
+    shell.pane({ tab: 'Repositories', name: 'Conflicts', order: 50, Component: Conflicts });
 
     await register(null, {});
 }

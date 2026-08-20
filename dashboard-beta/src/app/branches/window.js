@@ -374,7 +374,7 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.pane({ tab: 'Repositories', name: 'Branches', order: 15, Component: Branches });
+    shell.pane({ tab: 'Repositories', name: 'Branches Cut', order: 60, Component: Branches });
 
     await register(null, {});
 }

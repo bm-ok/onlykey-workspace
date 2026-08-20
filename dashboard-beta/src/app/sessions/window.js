@@ -377,7 +377,7 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.tab({ name: 'Sessions', order: 15, Component: Sessions });
+    shell.pane({ tab: 'Runners', name: 'Claude Sessions', order: 50, Component: Sessions });
 
     await register(null, {});
 }

@@ -77,7 +77,7 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.pane({ tab: 'Repositories', name: 'Lines', order: 20, Component: Lines });
+    shell.pane({ tab: 'Repositories', name: 'Branches Lines', order: 70, Component: Lines });
 
     await register(null, {});
 }

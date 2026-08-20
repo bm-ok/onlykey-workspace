@@ -121,7 +121,11 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.pane({ tab: 'Repositories', name: 'GitHub', order: 60, Component: GitHub });
+    //ui/github.js paints into `app-keys` over there — the GitHub token sits
+    //on the KEYS screen beside the ssh key and the certificate, not among the
+    //repositories. It shares one screen with them there and is a pane here,
+    //which is a divergence worth knowing about rather than a decision.
+    shell.pane({ tab: 'Keys', name: 'GitHub', order: 20, Component: GitHub });
 
     await register(null, {});
 }

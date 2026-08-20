@@ -56,11 +56,31 @@ async function plugin(imports, register) {
         } catch (e) {
             throw new Error('Cannot ' + what + ': the dashboard could not be asked whether testing mode is on (' + e.message + ').');
         }
-        if (!s || s.testsEnabled !== true) {
+
+        //`tests.allowed` IS THE ANSWER, AND THE FIRST VERSION ASKED THE WRONG
+        //QUESTION. It read `settings.testsEnabled`, which does not exist —
+        //the shape is `settings.tests = { allowed, why, enabled, forDir,
+        //openDir }`. So the gate refused every time, INCLUDING while testing
+        //mode was on, and that looked exactly like the gate working.
+        //
+        //It failed shut, which is the right direction to fail in and is also
+        //why it went unnoticed: a door that is always locked passes every test
+        //you can think to run on a locked door. It was found by reading the
+        //other app's own answer rather than my assumption about it.
+        //
+        //`allowed` rather than `enabled`, because they are not the same
+        //question: enabled says somebody turned it on, allowed says it is on
+        //FOR THE FOLDER THAT IS OPEN NOW. The dashboard clears it when the
+        //workspace changes, and a switch that stayed on across that would be a
+        //switch about a folder nobody is looking at.
+        var tests = s && s.tests;
+        if (!tests || tests.allowed !== true) {
             throw new Error(
-                'Cannot ' + what + ' — testing mode is off. A driven press reaches exactly the handlers a person\'s press reaches, ' +
-                'so every refusal this app makes about the command line would be one click away from untrue. ' +
-                'Turn it on at the dashboard window, for the folder being worked on. Reading what is on screen (windowControls, and --dry) stays open.'
+                'Cannot ' + what + ' — the window is only driven while testing mode is on for this workspace. '
+                + ((tests && tests.why) ? tests.why + ' ' : '')
+                + "A driven press reaches exactly the handlers a person's press reaches, so this would be a way around "
+                + 'every refusal this app makes about the command line. Turn it on at the dashboard window, for the '
+                + 'folder being worked on. Reading what is on screen (windowControls, and --dry) stays open.'
             );
         }
         return s;

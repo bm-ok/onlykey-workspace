@@ -270,7 +270,7 @@ async function plugin(imports, register) {
     //  question on its own cadence now, so Machines finds out by asking rather
     //  than by being told — and the debounce existed only to stop dozens of
     //  lines a second each re-asking VirtualBox for the whole machine list.
-    shell.tab({ name: 'Live', order: 30, Component: Live });
+    shell.tab({ name: 'Live', order: 80, Component: Live });
 
     await register(null, {});
 }

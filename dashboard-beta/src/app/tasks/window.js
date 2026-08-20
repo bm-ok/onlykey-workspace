@@ -93,7 +93,7 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.tab({ name: 'Tasks', order: 30, Component: Tasks });
+    shell.tab({ name: 'Tasks', order: 20, Component: Tasks });
 
     await register(null, {});
 }

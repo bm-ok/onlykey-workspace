@@ -120,7 +120,8 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.tab({ name: 'Keys', order: 40, Component: Keys });
+    shell.tab({ name: 'Keys', order: 100 });
+    shell.pane({ tab: 'Keys', name: 'This host', order: 10, Component: Keys });
 
     await register(null, {});
 }

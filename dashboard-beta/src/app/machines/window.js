@@ -278,7 +278,18 @@ async function plugin(imports, register) {
         );
     }
 
-    shell.tab({ name: 'Machines', order: 10, Component: Machines });
+    //---- where this lives, and it is not a choice -------------------------
+    //
+    //THE TAB NAMES ARE THE STRUCTURE. This port had been inventing its own —
+    //top-level tabs for Machines, Sessions, Sign-ins and Graph, none of which
+    //exist in the app being ported from, and renamed panes elsewhere. An
+    //information architecture that drifts is one that has to be re-learned by
+    //anybody who knows the old window, which is everybody who would use this.
+    //
+    //The real map is in ui/index.html over there: twelve panes under
+    //Repositories, six under Runners, and the tab names as written.
+    shell.tab({ name: 'Runners', order: 60 });
+    shell.pane({ tab: 'Runners', name: 'Virtual machines', order: 10, Component: Machines });
 
     await register(null, {});
 }
