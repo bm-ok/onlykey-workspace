@@ -31,7 +31,7 @@ var { useState, useRef } = React;
 //is the whole distinction.
 //---------------------------------------------------------------------------
 
-module.exports = function reposRight(theme, okc) {
+module.exports = function repos(theme, okc) {
     var {
         Panel, Grow, Card, CardTitle, Badge, Button, Plus, Skeleton, Empty,
         Note, Mono, Kv, KvRow, Part, PartWhy, ask, ago, openOut
@@ -419,12 +419,13 @@ module.exports = function reposRight(theme, okc) {
         );
     }
 
-    //---- the right-hand half ----------------------------------------------
+    //---- the Repos pane's own half -----------------------------------------
     //
     //The repository list, the heading and "Ask GitHub" are the chassis all three
-    //of these panes share — see ./chassis.js. This file is only what Repos puts
-    //beside it.
-    return function ReposRight({ r, say, again, askGitHub }) {
+    //of these panes share — see ./chassis.js. This file is what Repos puts
+    //beside it, which is why it is named for the pane and not for the side of
+    //the screen it happens to occupy.
+    return function Repos({ r, say, again, askGitHub }) {
         var [chain, setChain] = useState(null);
 
         //THE WALK BELONGS TO THE REPOSITORY IT WAS WALKED FOR. Carried across a

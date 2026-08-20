@@ -1,6 +1,6 @@
 var React = require('react');
 var makeChassis = require('./chassis');
-var makeReposRight = require('./list');
+var makeRepos = require('./repos');
 var makeIssues = require('./issues');
 var makePulls = require('./pulls');
 var makeProtected = require('./protected');
@@ -117,7 +117,7 @@ async function plugin(imports, register) {
         Component: paneOf(
             'What this workspace is made of, and whether the far end of each one can still be reached. '
             + 'Everything above is local and instant; anything about GitHub was asked for on purpose and carries when it was asked.',
-            makeReposRight(theme, okc))
+            makeRepos(theme, okc))
     });
     shell.pane({
         tab: 'Repositories', name: 'Issues', order: 30,

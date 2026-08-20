@@ -1,4 +1,5 @@
 var React = require('react');
+var { useState } = React;
 
 //---------------------------------------------------------------------------
 //the Board: every task, and what became of it.
@@ -23,7 +24,7 @@ var React = require('react');
 //machine up costs about thirty seconds before any work starts, every time.
 //---------------------------------------------------------------------------
 
-module.exports = function board(theme, okc, remember, useState) {
+module.exports = function board(theme, okc, remember) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Spec,

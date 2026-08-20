@@ -129,15 +129,23 @@ async function plugin(imports, register) {
     //that a suite halfway through actually says so instead of reading "not run"
     //because most of its checks have not been reached yet.
     var RANK = ['failed', 'running', 'interrupted', 'asks you', 'changed', 'unrunnable', 'carried', 'passed', 'not run', 'draft'];
-    //everything before `passed` is a finding; the three after it are absences.
-    var FINDINGS = RANK.indexOf('passed');
+    //WHERE THE FINDINGS STOP. Everything ranked before `passed` is a finding;
+    //the three after it are absences. So this is a boundary, and it is named for
+    //the boundary rather than for what lies on one side of it -- `rank(s) <
+    //PASSED` says "worse than passed", which is the question being asked.
+    //
+    //It was called FINDINGS, which was wrong twice over: a plural noun for a
+    //number, and the same word the Judge tab uses for the files a judgement
+    //handed back. Two unrelated things under one name in one app is how the
+    //wrong one gets found by a search.
+    var PASSED = RANK.indexOf('passed');
     function rank(s) { var i = RANK.indexOf(s); return i < 0 ? RANK.length : i; }
     function worse(a, b) { return rank(a) <= rank(b) ? a : b; }
 
     function worstOf(states) {
         var found = null;
         states.forEach(function (s) {
-            if (rank(s) < FINDINGS && (found === null || rank(s) < rank(found))) found = s;
+            if (rank(s) < PASSED && (found === null || rank(s) < rank(found))) found = s;
         });
         if (found) return found;
         //DRAFTS ARE SET ASIDE RATHER THAN COUNTED AGAINST, because a draft is a
