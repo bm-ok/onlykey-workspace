@@ -57,6 +57,16 @@ module.exports = (env, argv = {}) => {
         module: {
             rules: [
                 babel,
+                //PLAIN CSS, WHICH ONLY VENDORED CODE BRINGS. Nothing written in
+                //this app is a .css file — the theme and every plugin sheet are
+                //scss. This rule exists because xterm ships a stylesheet it
+                //cannot lay out without, and a vendored file is not one to
+                //rewrite into our syntax: the whole point of vendoring is that
+                //what is here is what they published.
+                {
+                    test: /\.css$/i,
+                    use: ['style-loader', 'css-loader']
+                },
                 {
                     test: /\.s[ac]ss$/i,
                     use: [

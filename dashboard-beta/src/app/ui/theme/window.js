@@ -36,7 +36,7 @@ var dialog = require('./dialog');
 //the convention is actually for.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['react', 'config', 'appPackage', 'editor', 'markdown'];
+plugin.consumes = ['react', 'config', 'appPackage', 'editor', 'markdown', 'xterm'];
 plugin.provides = ['theme'];
 async function plugin(imports, register, config) {
     require('./dashboard.scss');
@@ -179,7 +179,13 @@ async function plugin(imports, register, config) {
         //— or is that pane's own furniture and belongs in its own stylesheet.
         //See ../../THEME.md for which is which.
         theme: Object.assign({ Topbar, Pane }, layout, bits, dialog, {
-            Code: Code, Editor: imports.editor.Editor, Markdown: Markdown
+            Code: Code, Editor: imports.editor.Editor, Markdown: Markdown,
+            //A TERMINAL IS A SURFACE LIKE THE OTHER TWO, and folded in for the
+            //same reason: a pane asks the theme for what it draws with, and
+            //asking a different plugin for one thing would be a second door.
+            //What it draws is somebody else's bytes, which is exactly what
+            //../editor and ../markdown are for as well.
+            Term: imports.xterm.Term
         })
     });
 }

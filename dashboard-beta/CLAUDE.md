@@ -124,5 +124,9 @@ machines, tasks or sign-ins. Say so in the pane if empty would read as broken.
 * **`remember` keeps only where somebody was looking**, never what they were
   looking at. Credentials live in the app data folder, which is derived from
   `name` in `package.json` — a rename moves it, and it is not the old app's.
-* **Vendored, not installed**, for anything that renders somebody else's bytes.
-  See `vendors/README.md`.
+* **Vendored, not installed**, for anything that renders somebody else's bytes,
+  and it lives **inside the plugin that uses it** — `ui/editor/vendor/ace`,
+  `ui/markdown/vendor/marked`, `ui/xterm/vendor/xterm`. There is no shared
+  `vendors/` folder here: a library that belongs to one concern should go when
+  that concern does. `ui/xterm/vendor/README.md` is the shape a note takes —
+  version, where it came from, and what would break without each file.

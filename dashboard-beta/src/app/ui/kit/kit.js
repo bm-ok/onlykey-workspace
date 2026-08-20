@@ -1,11 +1,22 @@
 var React = require('react');
+var { useRef, useEffect } = React;
+
+//WRITTEN OUT OF CHARACTER CODES RATHER THAN ESCAPES IN THE SOURCE. What the
+//terminal exhibit is FOR is showing that xterm reads control sequences, so the
+//sequences have to survive being read, edited and pasted by whoever comes next —
+//and an escape in a string literal is the first thing a well-meaning editor or a
+//shell heredoc mangles into something that renders as garbage. Named constants
+//cannot be mangled quietly: if one of these is wrong, it is wrong out loud.
+var ESC = String.fromCharCode(27);
+var CRLF = String.fromCharCode(13, 10);
+var CR = String.fromCharCode(13);
 
 module.exports = function kit(theme) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Row,
         Card, CardTitle, CardSub, Badge, Badges, Chips, Chip,
         Button, Linky, Plus, Cog, Finder, Form, Field, Skeleton, Notice, Banner, Link, Spec,
-        Empty, Note, Mono, Muted, Kv, KvRow, Part, PartWhy, Group, Head, Markdown, ask
+        Empty, Note, Mono, Muted, Kv, KvRow, Part, PartWhy, Group, Head, Markdown, Code, Term, ask
     } = theme;
 
     //NAMED Shelf RATHER THAN Group, and the rename is the point. The theme now
@@ -20,6 +31,52 @@ module.exports = function kit(theme) {
                 <div style={{ marginTop: '10px' }}>{children}</div>
             </Panel>
         );
+    }
+
+    //A TERMINAL IS WRITTEN INTO RATHER THAN RENDERED FROM A PROP, which is the
+    //whole shape of the component and the reason this exhibit needs a ref at all.
+    //Output arrives in chunks and is APPENDED; a `text` prop would re-render on
+    //every chunk, and re-rendering a terminal throws away the scrollback somebody
+    //is reading.
+    function TermExample() {
+        var term = useRef(null);
+
+        useEffect(function () {
+            var t = term.current;
+            if (!t) return;
+
+            //WHAT A <pre> WOULD MAKE OF THIS is the point of the exhibit. Every
+            //line below carries control sequences: colour, and below it a
+            //carriage return that overwrites a line in place. In a <pre> those
+            //are garbage characters in the middle of the output somebody is
+            //trying to read; here they are what they mean.
+            t.write([
+                ESC + '[90m$' + ESC + '[0m git push origin fix/the-thing',
+                ESC + '[32m ok' + ESC + '[0m    refs/heads/fix/the-thing',
+                ESC + '[33m warn' + ESC + '[0m  1 file had trailing whitespace',
+                ESC + '[31m fail' + ESC + '[0m  the remote rejected it',
+                ''
+            ].join(CRLF));
+
+            //A PROGRESS LINE, WRITTEN OVER ITSELF. This is the one a <pre>
+            //cannot show at all: it would print four states underneath each
+            //other, which is not what the machine said.
+            var steps = ['  installing  25%', '  installing  50%', '  installing  75%', '  installing 100%'];
+            var i = 0;
+            var tick = setInterval(function () {
+                if (!term.current) return;
+                term.current.write(CR + steps[i]);
+                i++;
+                if (i >= steps.length) {
+                    clearInterval(tick);
+                    term.current.write(CRLF + ESC + '[32m  done' + ESC + '[0m' + CRLF);
+                }
+            }, 700);
+
+            return function () { clearInterval(tick); };
+        }, []);
+
+        return <Term ref={term} height="170px" />;
     }
 
     function Kit() {
@@ -212,6 +269,75 @@ module.exports = function kit(theme) {
                                 '',
                                 '![a picture written into the document](data:image/svg+xml;utf8,<svg%20xmlns="http://www.w3.org/2000/svg"%20width="140"%20height="24"><rect%20width="140"%20height="24"%20rx="4"%20fill="%232ea043"/><text%20x="70"%20y="16"%20font-family="sans-serif"%20font-size="11"%20fill="white"%20text-anchor="middle">self-contained</text></svg>)'
                             ].join('\n')} />
+                        </Shelf>
+
+                        {/* THE THREE SURFACES THAT SHOW SOMEBODY ELSE'S BYTES,
+                            and each is its own plugin with its own vendor
+                            folder — ../markdown, ../editor, ../xterm. They are
+                            catalogued together because the question they answer
+                            is one question: this text was not written by this
+                            app, and a person has to be able to READ it. */}
+                        <Shelf title="Code, where it is read and not written"
+                            about="a pre is what somebody scrolls past and approves anyway">
+                            <Code mode="javascript" text={[
+                                "//what a job looks like in the dialog that asks you to approve it",
+                                "module.exports = async function ({ run, say }) {",
+                                "    const { stdout } = await run('git status --porcelain');",
+                                "    if (stdout.trim()) throw new Error('the tree is not clean');",
+                                "    say('nothing to commit, so nothing to push');",
+                                "};"
+                            ].join('\n')} />
+                            <Note>
+                                Read-only in four ways, not one: the content is not editable, the cursor is
+                                hidden so it does not invite one, the active-line highlight is off for the
+                                same reason, and the syntax worker never starts. Nothing here is a place to
+                                write code and it should not look like one for a moment.
+                            </Note>
+                            <Note>
+                                It sizes to its content rather than scrolling inside a page that already
+                                scrolls &mdash; a hundred lines behind an inner scrollbar is a hundred
+                                lines nobody reads. <Mono>tall</Mono> puts a lid on it, which is what a
+                                ten-thousand-line diff needs and a job&apos;s script does not.
+                            </Note>
+                            <Note>
+                                The same component draws the <strong>Source</strong> view of the markdown
+                                above &mdash; that toggle swaps a frame for one of these in
+                                <Mono>markdown</Mono> mode, with a lid on it. Two configurations of one
+                                thing, catalogued here because it is a member of the kit rather than a
+                                detail of that exhibit.
+                            </Note>
+                            <Note>
+                                The default mode is <Mono>text</Mono>, deliberately. Most of what this app
+                                puts up to be read is prose &mdash; a contract, a prompt, a brief &mdash;
+                                and highlighting prose as JavaScript colours <Mono>delete</Mono>,
+                                <Mono>do</Mono> and <Mono>in</Mono> at random. On a contract about what a
+                                judge may not do, that is false emphasis on the one document somebody has
+                                to read every line of.
+                            </Note>
+                        </Shelf>
+
+                        <Shelf title="A terminal, which is not text"
+                            about="what comes back from a machine is drawing instructions, not a string">
+                            <TermExample />
+                            <Note>
+                                Every line above carries control sequences, and the progress line is
+                                written over itself with a carriage return. A <Mono>&lt;pre&gt;</Mono>
+                                would print four states underneath each other with the escapes showing as
+                                garbage &mdash; which is not what the machine said. This app learned that
+                                from the other end once already: a sign-in URL scraped out of a pty
+                                arrived wrapped and doubled because nothing had stripped them.
+                            </Note>
+                            <Note>
+                                Written into through a ref rather than rendered from a prop. Output
+                                arrives in chunks and is appended, and re-rendering a terminal throws away
+                                the scrollback somebody is reading.
+                            </Note>
+                            <Note>
+                                No native module and no pty on this side &mdash; <Mono>ssh -tt</Mono>
+                                allocates one on the machine at the far end, which is where the shell
+                                actually is. Nothing here opens a connection: it is a surface, and the
+                                relay that would carry bytes to it is not built yet.
+                            </Note>
                         </Shelf>
 
                         <Shelf title="The gate" about="every act that cannot be taken back goes through here">

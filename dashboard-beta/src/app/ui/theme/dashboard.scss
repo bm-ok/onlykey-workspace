@@ -705,6 +705,30 @@ input.protected, select.protected, textarea.protected {
    testing one set a colour at the same specificity, and the later rule wins --
    so a guarded link inside a banner stays purple rather than taking the banner's
    colour and losing the one thing it is saying. */
+/* A DEFINITE HEIGHT, AND IT IS NOT A LOOK — IT STOPS A RUNAWAY.
+   xterm measures its container to decide how many rows fit, and this app watches
+   the container with a ResizeObserver so the far end can be told when the box
+   changes. Give that pair a box whose height comes from its CONTENT and they
+   feed each other: fit() picks rows, the rows make the box taller, the observer
+   sees a taller box, fit() picks more rows. It settles only when something else
+   stops it — which is why the first terminal in the kit rendered about twelve
+   hundred pixels tall and pushed everything below it off the screen.
+
+   So the height is set here rather than left to the content. A caller that wants
+   another size says so; a caller that says nothing gets a readable terminal
+   instead of a page-long one.
+
+   The background matches the theme handed to xterm in ../xterm/window.js, so the
+   two cannot disagree about what colour a terminal is. */
+.term {
+  height: 260px;
+  padding: 6px 8px;
+  background: #0a0d12;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
 .linky.protected {
   color: var(--human);
   text-decoration: underline;

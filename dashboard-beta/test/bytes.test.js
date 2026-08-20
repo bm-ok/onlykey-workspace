@@ -32,6 +32,14 @@ const path = require('node:path');
 //the file binary, which nobody reads as a warning.
 //
 //TABS AND NEWLINES ARE FINE. Everything else below 0x20, and 0x7f, is not.
+//
+//AND VENDORED CODE IS NOT SOURCE, which this learned from xterm. Its bundle
+//carries a real 0x1b — an escape, written into a string, by a terminal emulator
+//that exists to interpret escapes. That is not a stray byte, it is the subject
+//matter. The argument above is about files somebody EDITS: a byte that makes a
+//later string edit silently miss. Nobody edits a vendored bundle; the whole
+//point of vendoring is that what is here is what they published, and a rule that
+//forbade it would be a rule to suppress rather than one to keep.
 //---------------------------------------------------------------------------
 
 const ROOT = path.join(__dirname, '..');
@@ -39,7 +47,7 @@ const LOOK = ['src', 'test', 'tools'];
 
 function walk(dir, out = []) {
     for (const name of fs.readdirSync(dir)) {
-        if (name.startsWith('.') || name === 'node_modules') continue;
+        if (name.startsWith('.') || name === 'node_modules' || name === 'vendor') continue;
         const full = path.join(dir, name);
         if (fs.statSync(full).isDirectory()) walk(full, out);
         else if (/\.(jsx?|json|scss|css|md)$/.test(name)) out.push(full);
