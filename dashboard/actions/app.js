@@ -125,7 +125,26 @@ module.exports = {
       const mine = all.filter(j => j.by === 'person' && j.state === 'done' && !j.verdict)
       const mute = all.filter(j => j.by !== 'person' && j.state === 'done' && !j.verdict)
       count(mine.length, 'judgement to decide', 'judgements to decide')
-      count(mute.length, 'judgement that ended without a verdict', 'judgements that ended without a verdict')
+
+      // ---- AND WHY IT ENDED WITHOUT ONE, WHICH IS NOT ONE FACT --------------
+      //
+      // "12 judgements that ended without a verdict" reads as twelve things
+      // somebody has to sit down and decide. None of them was: `mine` above is
+      // the queue of decisions, and it was empty. These are readings that said
+      // NOTHING -- and half of them said nothing because they crashed.
+      //
+      // Six exited 1 having handed back no file and reached no conclusion. That
+      // is a fault to look at, not a decision to make, and folding it in with
+      // "a survey that was never going to conclude" puts a phantom chore on
+      // somebody's list and hides a real failure inside it.
+      //
+      // The exit code is only there for runs since it started being kept, so an
+      // older one is counted as neither -- "nothing was recorded" is its own
+      // answer and is not evidence of a crash.
+      const crashed = mute.filter(j => (j.attempts || []).some(a => a.exit != null && a.exit !== 0))
+      const quiet = mute.filter(j => !crashed.includes(j))
+      count(crashed.length, 'judgement that crashed without saying anything', 'judgements that crashed without saying anything')
+      count(quiet.length, 'judgement that ended without saying anything', 'judgements that ended without saying anything')
 
       // ---- WORK THAT IS WRITTEN AND HAS NOT GONE OUT ----------------------
       //
