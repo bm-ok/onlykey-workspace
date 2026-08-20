@@ -555,6 +555,11 @@ main { padding: 16px; }
    one that applies here from one that applies somewhere else. */
 .panel .row, .card .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .empty { color: var(--muted); font-size: 12px; }
+/* An emptiness that should not be possible. `bad` existed only as a modifier of
+   .badge and .card-sub, so <p class="empty bad"> matched a class name that
+   exists and no rule that draws anything -- the quietest failure this
+   stylesheet allows, and one already paid for once on table.kv. */
+.empty.bad { color: var(--fail); }
 .note {
   color: var(--muted);
   font-size: 12px;

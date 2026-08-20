@@ -4,6 +4,7 @@ var makeChassis = require('./chassis');
 var makeReposRight = require('./list');
 var makeIssues = require('./issues');
 var makePulls = require('./pulls');
+var makeProtected = require('./protected');
 
 //the Repositories tab, and its first pane.
 //
@@ -125,6 +126,13 @@ async function plugin(imports, register) {
             'Work that arrived, rather than work written here — the one thing in this app that comes IN. '
             + 'An issue becomes a task from the button on its card, which is the far end of a chain that otherwise starts midway.',
             makeIssues(theme, okc, remember, shell))
+    });
+    //NOT ON THE CHASSIS, and that is right rather than an oversight: this one
+    //is about the workspace as a whole, not about a repository somebody picked.
+    //A repository list beside it would be a selection that changes nothing.
+    shell.pane({
+        tab: 'Repositories', name: 'Protected', order: 90,
+        Component: makeProtected(theme, okc)
     });
     shell.pane({
         tab: 'Repositories', name: 'Pull requests', order: 40,

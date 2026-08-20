@@ -69,7 +69,11 @@ function CardSub({ children, bad }) { return <div className={'card-sub' + (bad ?
 //"NOTHING HERE" IS AN ANSWER AND HAS ITS OWN LOOK, because an empty panel reads
 //as broken and this reads as empty — a different thing, and the one somebody is
 //actually asking about.
-function Empty({ children }) { return <p className="empty">{children}</p>; }
+//"NOTHING HERE" AND "NOTHING HERE, AND THAT IS WRONG" ARE DIFFERENT SENTENCES.
+//No line naming a branch is an ordinary Tuesday; no repository having a default
+//branch should not be possible. Drawn the same way, the second reads as the
+//first and nobody looks into it.
+function Empty({ children, bad }) { return <p className={'empty' + (bad ? ' bad' : '')}>{children}</p>; }
 function Note({ children, kind }) { return <p className={'note' + (kind ? ' ' + kind : ' muted')}>{children}</p>; }
 function Mono({ children }) { return <span className="mono">{children}</span>; }
 function Muted({ children }) { return <span className="muted">{children}</span>; }
