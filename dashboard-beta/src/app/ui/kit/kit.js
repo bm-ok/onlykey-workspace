@@ -1,5 +1,5 @@
 var React = require('react');
-var { useRef, useEffect } = React;
+var { useRef, useEffect, useState } = React;
 
 //WRITTEN OUT OF CHARACTER CODES RATHER THAN ESCAPES IN THE SOURCE. What the
 //terminal exhibit is FOR is showing that xterm reads control sequences, so the
@@ -15,7 +15,7 @@ module.exports = function kit(theme) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Row,
         Card, CardTitle, CardSub, Badge, Badges, Chips, Chip,
-        Button, Linky, Plus, Cog, Finder, Form, Field, Skeleton, Notice, Banner, Link, Spec,
+        Button, Toggle, Linky, Plus, Cog, Finder, Form, Field, Skeleton, Notice, Banner, Link, Spec,
         Empty, Note, Mono, Muted, Kv, KvRow, Part, PartWhy, Group, Head, Markdown, Code, Term, ask
     } = theme;
 
@@ -77,6 +77,49 @@ module.exports = function kit(theme) {
         }, []);
 
         return <Term ref={term} height="170px" />;
+    }
+
+    //A SWITCH KEEPS ITS OWN STATE, which an exhibit has to as well or the thing
+    //being catalogued cannot be tried. Everything else on this pane is a picture;
+    //these four are the real control.
+    function Switches() {
+        var [follow, setFollow] = useState(true);
+        var [quiet, setQuiet] = useState(false);
+        var [lend, setLend] = useState(false);
+
+        return (
+            <>
+                <Row>
+                    <Toggle on={follow} onChange={setFollow}>Follow the log</Toggle>
+                    <Toggle on={quiet} onChange={setQuiet}>Quiet hours</Toggle>
+                </Row>
+                <Note>
+                    A switch is a STATE somebody sets, not an act somebody performs &mdash; which is why
+                    it is not a button. A button says &ldquo;do this now&rdquo; and what comes of it is a
+                    thing that happened; a switch says &ldquo;be like this from now on&rdquo;, and you can
+                    read how it is set without pressing anything.
+                </Note>
+                <Row>
+                    <Toggle on={lend} onChange={setLend} protect>Lend this machine out</Toggle>
+                </Row>
+                <Note>
+                    Guarded, and purple means here what it means everywhere: a person&apos;s. It is an
+                    <Mono>input</Mono> underneath, so <Mono>windowControls</Mono> reports its label, its
+                    kind and which way it is set &mdash; a switch the driver can READ rather than one it
+                    flips blind. A protected one withholds its value by the same rule that withholds a
+                    token.
+                </Note>
+                <Row>
+                    <Toggle on disabled title="the queue is using it">Lend this machine out</Toggle>
+                </Row>
+                <Note>
+                    Disabled says why in the title, the same as a button. The knob moves AND the track
+                    changes colour, because colour alone is the whole message to somebody who cannot see
+                    the difference between grey and green, and two pixels of travel is not a difference
+                    anybody notices at a glance.
+                </Note>
+            </>
+        );
     }
 
     function Kit() {
@@ -147,6 +190,10 @@ module.exports = function kit(theme) {
                                 <Button disabled title="this is why">Not yet</Button>
                             </Row>
                         </Shelf>
+                        <Shelf title="Switches" about="a state somebody sets, not an act somebody performs">
+                            <Switches />
+                        </Shelf>
+
                         <Shelf title="The gate" about="every act that cannot be taken back goes through here">
                             <Note>
                                 It has to be opened by a person. Nothing in this app can press it — `show`

@@ -695,6 +695,82 @@ input.protected, select.protected, textarea.protected {
   background: rgba(163, 113, 247, .12);
 }
 
+/* A SWITCH, DRAWN AS A PILL WITH A KNOB THAT SLIDES.
+
+   THE CHECKBOX IS HIDDEN AND NOT REMOVED, which is the whole trick. `display:
+   none` would take it out of the accessibility tree and off the keyboard, and
+   `windowControls` would stop seeing it — so the control this app drives and the
+   picture a person reads would be two different things. It is kept, made
+   one pixel, and the pill beside it is painted from its :checked state.
+
+   THE KNOB MOVES AND THE TRACK CHANGES COLOUR, both. Colour alone is the whole
+   message for somebody who cannot see the difference between grey and green, and
+   position alone is a two-pixel difference nobody notices at a glance. */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+.toggle .pill {
+  position: relative;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 17px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  transition: background .12s ease, border-color .12s ease;
+}
+.toggle .pill::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform .12s ease, background .12s ease;
+}
+.toggle input:checked + .pill {
+  background: rgba(46, 160, 67, .25);
+  border-color: var(--ok);
+}
+.toggle input:checked + .pill::after {
+  background: var(--ok);
+  transform: translateX(13px);
+}
+/* KEYBOARD REACHABLE, AND VISIBLY SO. The input it belongs to is a pixel wide,
+   so its own focus ring is invisible — the pill has to wear it instead, or the
+   switch is a control you can tab to and cannot see you have. */
+.toggle input:focus-visible + .pill { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toggle.disabled { opacity: .5; cursor: default; }
+
+/* PURPLE MEANS THE SAME THING HERE AS EVERYWHERE ELSE. The mark goes on the
+   pill because that is what is on screen; the input carrying the class is a
+   pixel wide and an outline on it would say nothing. */
+.toggle input.protected + .pill { border-color: var(--human); }
+.toggle input.protected + .pill::after { background: var(--human); }
+.toggle input.protected:checked + .pill { background: rgba(163, 113, 247, .22); border-color: var(--human); }
+
+/* A KNOB THAT SLIDES IS MOTION, and somebody who has turned motion off still
+   needs to know which way it is set — which is why the colour is not the only
+   signal above. Take the animation away and both remain. */
+@media (prefers-reduced-motion: reduce) {
+  .toggle .pill, .toggle .pill::after { transition: none; }
+}
+
 /* THE SAME RULE ON A PHRASE INSTEAD OF A CONTROL. A Linky has no border to
    colour, so the whole of the mark is the colour and the underline -- and the
    underline is permanent here rather than on hover, because a purple word that

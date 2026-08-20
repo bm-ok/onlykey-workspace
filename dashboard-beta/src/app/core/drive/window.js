@@ -176,16 +176,31 @@ async function plugin(imports, register) {
                 //— "is it set" is a real question somebody has to be able to
                 //answer — and the value is not.
                 var shut = n.classList.contains('protected');
+
+                //A GUARDED CHECKBOX STILL SAYS WHICH WAY IT IS SET, and that is
+                //not a hole in the rule above — it is the rule read properly.
+                //What is withheld is what was TYPED, because a value written from
+                //here is a value known from here. A checkbox has nothing typed in
+                //it: its value is which way a switch is, and a guard on one means
+                //"you may not SET this", not "you may not SEE it".
+                //
+                //Withholding it makes the answer worse in both directions.
+                //"Is this machine lent out" is an operational fact somebody has
+                //to be able to read, and `filled` cannot stand in for it — a
+                //checkbox's `value` is the string "on" whether it is ticked or
+                //not, so a protected one reported `filled: true` for ever and
+                //said nothing at all.
+                var box = n.type === 'checkbox';
                 return {
                     node: n,
                     label: labelOf(n),
-                    kind: n.type === 'checkbox' ? 'checkbox' : n.tagName.toLowerCase(),
+                    kind: box ? 'checkbox' : n.tagName.toLowerCase(),
                     protected: shut,
-                    value: shut ? null : (n.type === 'checkbox' ? n.checked : n.value),
+                    value: box ? n.checked : (shut ? null : n.value),
                     //Emptiness is not the secret. Without this, "is the token
                     //set" is unanswerable from here and somebody goes looking
                     //for it somewhere that does show it.
-                    filled: shut ? !!n.value : undefined,
+                    filled: shut && !box ? !!n.value : undefined,
                     //A SELECT'S OPTIONS ARE ITS VALUES. Listing them for a
                     //protected one hands over the answer with extra steps.
                     options: n.tagName === 'SELECT' && !shut
@@ -277,10 +292,20 @@ async function plugin(imports, register) {
             //It still APPEARS in windowControls, with its label and whether
             //anything is in it. "Is the token set" has to be answerable, and it
             //is not the secret.
+            //AND A SWITCH IS REFUSED FOR A DIFFERENT REASON, so it is told a
+            //different sentence. Nothing is hidden about a guarded checkbox —
+            //windowControls says which way it is set — so a message about a
+            //value being known from here would be describing something that is
+            //not happening, on the one screen where being exactly right about
+            //what is refused and why is the entire point.
             if (f.protected) {
-                throw new Error('"' + f.label + '" is protected, which is what the purple outline says: ' +
-                    'nothing here may read it or write it. A value written from here is a value known from here. ' +
-                    'It is typed at the window by the person whose it is.');
+                throw new Error(f.kind === 'checkbox'
+                    ? '"' + f.label + '" is a setting that belongs to a person. It is marked protected, '
+                        + 'which is what the purple says: which way it is set is readable from here, and '
+                        + 'setting it is not. Somebody decides that at the window.'
+                    : '"' + f.label + '" is protected, which is what the purple outline says: '
+                        + 'nothing here may read it or write it. A value written from here is a value known from here. '
+                        + 'It is typed at the window by the person whose it is.');
             }
 
             var before = f.kind === 'checkbox' ? f.node.checked : f.node.value;

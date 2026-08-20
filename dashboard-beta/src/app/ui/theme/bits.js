@@ -273,6 +273,42 @@ function Linky({ children, onClick, title, protect, guard }) {
     return <button className={'linky' + (on ? ' protected' : '')} onClick={onClick} title={title}>{children}</button>;
 }
 
+//A SWITCH: A STATE SOMEBODY SETS, NOT AN ACT SOMEBODY PERFORMS.
+//
+//THAT IS THE WHOLE REASON IT IS NOT A BUTTON. A button says "do this now" and
+//the result is a thing that happened; a switch says "be like this from now on"
+//and the result is a thing that is TRUE. Reading its own state back is the point
+//of the shape — you can see how it is set without pressing anything, which a
+//button cannot do and a pair of buttons only fakes.
+//
+//AND IT IS A CHECKBOX UNDERNEATH, which is not an implementation detail. It is
+//what makes it legible to everything else: `windowControls` already reports an
+//`input` with its label, its kind and its VALUE, so a switch is a control the
+//driver can read the setting of rather than one it flips blind. It answers to
+//the keyboard, `protect` marks it the same way it marks a field, and a
+//protected one has its value withheld by the same rule that withholds a token.
+//
+//A LABEL AROUND IT RATHER THAN BESIDE IT, because ../core/drive/window.js looks
+//up as well as back — `n.closest('label')` — so the words are its name for the
+//driver, for the guards pane and for a person, which is the same rule Button
+//keeps.
+function Toggle({ children, on, onChange, disabled, title, protect, guard }) {
+    var label = guard || (typeof children == 'string' ? children : null);
+    var marked = useGuard(label, protect);
+    return (
+        <label className={'toggle' + (disabled ? ' disabled' : '')} title={title}>
+            <input type="checkbox" className={marked ? 'protected' : undefined}
+                checked={!!on} disabled={disabled}
+                onChange={function (ev) { if (onChange) onChange(ev.target.checked); }} />
+            {/* THE PILL IS DRAWN AND NOT PRESSED. The checkbox above is the
+                control; this is a picture of it, so nothing here has to keep a
+                second idea of which way it is set. */}
+            <span className="pill" />
+            <span>{children}</span>
+        </label>
+    );
+}
+
 //---- links ---------------------------------------------------------------
 
 //A LINK MUST REACH THE PERSON'S REAL BROWSER, not open inside the app window.
@@ -396,6 +432,6 @@ module.exports = {
     setGuardCheck, guardsChanged, useGuard,
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip,
-    Button, Plus, Cog, Finder, Form, HeadRow, Controls,
+    Button, Toggle, Plus, Cog, Finder, Form, HeadRow, Controls,
     Skeleton, Notice, Banner, Link, Linky, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Act, ago, openOut
 };
