@@ -32,10 +32,14 @@ async function plugin(imports, register) {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Row,
         Card, CardTitle, CardSub, Badge, Badges, Chips, Chip,
         Button, Plus, Cog, Finder, Form, Field, Skeleton, Notice, Banner, Link, Spec,
-        Empty, Note, Mono, Muted, Kv, KvRow, ask
+        Empty, Note, Mono, Muted, Kv, KvRow, Part, PartWhy, Group, Head, Markdown, ask
     } = theme;
 
-    function Group({ title, about, children }) {
+    //NAMED Shelf RATHER THAN Group, and the rename is the point. The theme now
+    //provides a `Group` of its own -- a section inside a pane -- and two things
+    //with one name in one file is precisely the confusion this catalogue exists
+    //to prevent. The local one is a shelf in a shop: it holds the exhibits.
+    function Shelf({ title, about, children }) {
         return (
             <Panel>
                 <CardTitle>{title}</CardTitle>
@@ -71,7 +75,7 @@ async function plugin(imports, register) {
                     </Col>
 
                     <Col>
-                        <Group title="Badges" about="a state, in one word">
+                        <Shelf title="Badges" about="a state, in one word">
                             <Badges>
                                 <Badge kind="ok">ok</Badge>
                                 <Badge kind="bad">bad</Badge>
@@ -80,22 +84,22 @@ async function plugin(imports, register) {
                                 <Badge kind="muted">muted</Badge>
                                 <Badge>plain</Badge>
                             </Badges>
-                        </Group>
+                        </Shelf>
 
-                        <Group title="Buttons" about="disable what must not be pressed, and say why in the title">
+                        <Shelf title="Buttons" about="disable what must not be pressed, and say why in the title">
                             <Row>
                                 <Button kind="ok">Confirm</Button>
                                 <Button>Plain</Button>
                                 <Button kind="danger">Destroy</Button>
                                 <Button disabled title="this is why">Not yet</Button>
                             </Row>
-                        </Group>
+                        </Shelf>
 
                         {/* THE TWO MARKS THAT MEAN A PERSON, and they are the
                             only purple in the app. Everything else here is about
                             reading a state off the screen; these two are about
                             who is allowed to act. */}
-                        <Group title="Guarded" about="purple is the one colour that means: this is yours, not a model's">
+                        <Shelf title="Guarded" about="purple is the one colour that means: this is yours, not a model's">
                             <Row>
                                 <Button protect>Merge it</Button>
                                 <Button protect kind="danger">Send it</Button>
@@ -114,9 +118,9 @@ async function plugin(imports, register) {
                                 anything is in it. &ldquo;Is the token set&rdquo; has to be answerable, and
                                 it is not the secret.
                             </Note>
-                        </Group>
+                        </Shelf>
 
-                        <Group title="Saying something" about="four different sentences, four different looks">
+                        <Shelf title="Saying something" about="four different sentences, four different looks">
                             <Empty>nothing here — which is an answer, not a fault</Empty>
                             <Note>a quiet aside</Note>
                             <Note kind="bad">something could not be read</Note>
@@ -124,11 +128,11 @@ async function plugin(imports, register) {
                             <Banner kind="stale">what is on screen is out of date</Banner>
                             <Banner kind="testing">testing mode is on — a standing state</Banner>
                             <Banner kind="running">a drill is running right now — a moment</Banner>
-                        </Group>
+                        </Shelf>
                     </Col>
 
                     <Col wide>
-                        <Group title="Facts" about="a key and a value, which is most of the right-hand column">
+                        <Shelf title="Facts" about="a key and a value, which is most of the right-hand column">
                             <Kv>
                                 <KvRow label="a label">a value</KvRow>
                                 <KvRow label="code"><Mono>fix/escape-note-id</Mono></KvRow>
@@ -138,9 +142,9 @@ async function plugin(imports, register) {
                             <Spec summary="folded away until asked for">
                                 <Kv><KvRow label="inside">the detail nobody needs by default</KvRow></Kv>
                             </Spec>
-                        </Group>
+                        </Shelf>
 
-                        <Group title="Fields" about="the same in a pane as in the gate — one set of rules, so they cannot drift">
+                        <Shelf title="Fields" about="the same in a pane as in the gate — one set of rules, so they cannot drift">
                             <Form>
                                 <Field f={{ name: 'a', label: 'A box' , placeholder: 'type here', hint: 'a hint under it, because where a value comes from is what somebody is missing' }} value="" onChange={function () { }} />
                                 {/* THERE AND NOT USABLE YET, which is the case
@@ -151,13 +155,54 @@ async function plugin(imports, register) {
                                 <Field f={{ name: 'c', label: 'A choice', options: [{ value: 'x', label: 'one' }, { value: 'y', label: 'the other' }] }} value="x" onChange={function () { }} />
                                 <Field f={{ name: 'd', type: 'checkbox', label: 'A tick', hint: 'its label goes beside it, not over it' }} value={false} onChange={function () { }} />
                             </Form>
-                        </Group>
+                        </Shelf>
 
-                        <Group title="Waiting" about="a shape, not the word loading — it holds the layout still">
+                        <Shelf title="Waiting" about="a shape, not the word loading — it holds the layout still">
                             <Skeleton rows={2} sample />
-                        </Group>
+                        </Shelf>
 
-                        <Group title="The gate" about="every act that cannot be taken back goes through here">
+                        <Shelf title="A list read down, not picked from" about="rows with their facts kept together on the right, and a sentence under one">
+                            <Part right={<React.Fragment><Mono>fc60650</Mono><span className="muted">{'→'}</span><span className="mono muted">{'—'}</span><Badge kind="muted">only here</Badge></React.Fragment>}>
+                                <Mono>brads/testing2</Mono>
+                            </Part>
+                            <PartWhy>
+                                <span className="ok">Everything on this branch is already in master</span>
+                                <span className="muted">{' — the sentence under a row says what to do about it, which the shas above cannot.'}</span>
+                            </PartWhy>
+                            <Part right={<Badge kind="warn">behind</Badge>}><Mono>fix/csvstat-readme</Mono></Part>
+                        </Shelf>
+
+                        <Shelf title="A section, and its heading" about="the muted parts beside the word stay in normal case — a path in capitals is a different name to the eye">
+                            <Group>
+                                <Head>
+                                    <span>Issues</span>
+                                    <span className="muted">on bm-sandbox-b/local-repo-a</span>
+                                    <span className="muted">11 hours ago</span>
+                                </Head>
+                                <Note>What sits under a heading like that.</Note>
+                            </Group>
+                        </Shelf>
+
+                        <Shelf title="Nothing here" about="and nothing here that should not be — two different sentences">
+                            <Empty>No line names a branch that is not already a default.</Empty>
+                            <Empty bad>No repository here has a default branch, which should not be possible.</Empty>
+                        </Shelf>
+
+                        <Shelf title="Markdown, where it can do nothing" about="rendered in a sandboxed frame with a CSP, because this text came off a machine running somebody's script">
+                            <Markdown height="220px" text={[
+                                '## What a pull request would say',
+                                '',
+                                'Composed from **real facts**, not placeholders.',
+                                '',
+                                '- cut from `master` at `a1b7432e`',
+                                '- links to the others show `?` until the cut exists',
+                                '',
+                                '> markdown carries raw HTML through by design, which is why this is in',
+                                '> a frame that may not run scripts and may not fetch anything.'
+                            ].join('\n')} />
+                        </Shelf>
+
+                        <Shelf title="The gate" about="every act that cannot be taken back goes through here">
                             <Note>
                                 It has to be opened by a person. Nothing in this app can press it — `show`
                                 moves the window and does nothing else, which is the same reason it is the gate.
@@ -204,7 +249,7 @@ async function plugin(imports, register) {
                                     });
                                 }}>Tabs</Button>
                             </Row>
-                        </Group>
+                        </Shelf>
                     </Col>
                 </Cols>
             </Pane>

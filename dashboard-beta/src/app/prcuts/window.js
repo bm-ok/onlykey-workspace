@@ -1,3 +1,4 @@
+var makeWriter = require('./writer');
 var React = require('react');
 var { useState, useEffect, useCallback } = React;
 
@@ -391,6 +392,10 @@ async function plugin(imports, register) {
     }
 
     shell.pane({ tab: 'Repositories', name: 'PR cuts', order: 100, Component: Cuts });
+    //THE ONE THAT WRITES, BESIDE THE ONE THAT SENDS. Two panes rather than one
+    //screen that does both, because the difference between thinking and doing
+    //should not be a button the mouse is already over.
+    shell.pane({ tab: 'Repositories', name: 'New PR Cut', order: 110, Component: makeWriter(theme, okc, remember) });
 
     await register(null, {});
 }

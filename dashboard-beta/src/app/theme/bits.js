@@ -1,3 +1,4 @@
+var marked = require('../../../vendors/marked/marked.js');
 var React = require('react');
 var { useState, useEffect } = React;
 
@@ -159,6 +160,131 @@ function Form({ children }) { return <div className="form">{children}</div>; }
 //dresses the inputs in it.
 function HeadRow({ children }) { return <div className="head-row">{children}</div>; }
 function Controls({ children }) { return <div className="head-controls">{children}</div>; }
+
+//---- markdown, rendered where it cannot do anything -----------------------
+//
+//A PULL REQUEST BODY IS MARKDOWN THAT GITHUB WILL RENDER, so a preview of it
+//that is not rendered is a preview of the wrong thing. As source it is a wall
+//of pipes and hashes, and the one thing it was formatted for is the thing that
+//does not happen.
+//
+//IN AN IFRAME, AND THAT IS THE WHOLE DESIGN rather than a convenience for
+//styling. This text came off a machine running a script somebody wrote, so it
+//is exactly as trustworthy as that script — and markdown carries raw HTML
+//through BY DESIGN, which `marked` does not sanitise and has never claimed to.
+//Put in this document it would be running inside a page that has node behind it.
+//
+//So it renders into a frame that can do nothing:
+//
+//  no allow-scripts   a <script> or an onerror in the markdown never runs. This
+//                     is the load-bearing one, and both halves are measured in
+//                     the Kit pane rather than assumed.
+//  a CSP too          default-src 'none', so a remote <img> cannot phone home —
+//                     which would otherwise turn "somebody opened this" into a
+//                     request to a host of the author's choosing.
+//  srcdoc             no file is written anywhere to show it.
+//
+//What it does NOT have is an opaque origin — see the note on the sandbox
+//attribute below for why, and why that is survivable here and would not be if
+//scripts could run.
+//
+//THE COST OF A REAL SANDBOX is that this side cannot measure the frame to size
+//it, because reading contentDocument needs allow-same-origin. So it takes a
+//height and scrolls inside, which is what these panels do anyway.
+var MD_STYLE = [
+    ':root { color-scheme: dark }',
+    'body { margin: 0; padding: 14px 16px; background: #0a0d12; color: #d7dee8;',
+    '       font: 13px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }',
+    'h1, h2, h3, h4 { color: #fff; line-height: 1.25; margin: 1.2em 0 .5em; }',
+    'h1 { font-size: 1.5em; border-bottom: 1px solid #2a323d; padding-bottom: .3em }',
+    'h2 { font-size: 1.25em; border-bottom: 1px solid #2a323d; padding-bottom: .3em }',
+    'h1:first-child, h2:first-child, h3:first-child { margin-top: 0 }',
+    'a { color: #4aa3ff }',
+    'code { font-family: ui-monospace, Consolas, monospace; font-size: 12px;',
+    '       background: #161b22; padding: .15em .4em; border-radius: 4px }',
+    'pre { background: #161b22; border: 1px solid #2a323d; border-radius: 8px;',
+    '      padding: 12px; overflow-x: auto }',
+    'pre code { background: none; padding: 0 }',
+    'blockquote { margin: 0 0 1em; padding: .2em 0 .2em 14px; border-left: 3px solid #2a323d; color: #9aa6b5 }',
+    'table { border-collapse: collapse; margin: 0 0 1em; display: block; overflow-x: auto }',
+    'th, td { border: 1px solid #2a323d; padding: 6px 10px; text-align: left }',
+    'th { background: #161b22 }',
+    'hr { border: 0; border-top: 1px solid #2a323d; margin: 1.5em 0 }',
+    'img { max-width: 100% }',
+    'ul, ol { padding-left: 22px }',
+    'li { margin: .2em 0 }'
+].join('\n');
+
+function escapeBits(s) {
+    return String(s).replace(/[<&]/g, function (c) { return c == '<' ? '&lt;' : '&amp;'; });
+}
+
+function MarkdownFrame({ text, height }) {
+    var body;
+    try {
+        body = marked.parse(String(text == null ? '' : text));
+    } catch (e) {
+        //SAID IN THE FRAME RATHER THAN THROWN, because the source view beside
+        //it still works and is what somebody would fall back to anyway.
+        body = '<p>This could not be rendered as markdown: ' + escapeBits(e.message) + '</p>';
+    }
+    //A TEMPLATE LITERAL BECAUSE THE CSP CONTAINS BOTH KINDS OF QUOTE, and a
+    //policy that fails to parse fails OPEN in the sense that matters here: the
+    //browser drops a malformed CSP and renders the frame with no policy at all,
+    //which looks identical to a working one until the day the markdown contains
+    //a remote image.
+    var doc = `<!doctype html><html><head><meta charset="utf-8">`
+        + `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">`
+        + `<style>${MD_STYLE}</style></head><body>${body}</body></html>`;
+    //allow-same-origin, AND IT IS LOAD-BEARING THAT NOTHING ELSE IS ALLOWED.
+    //
+    //The old window uses `sandbox=""` — every restriction on. In this NW.js
+    //build that frame renders NOTHING AT ALL, and the failure is silent: an
+    //empty box the size you asked for, which reads as "there was nothing to
+    //show". Measured in the Kit pane, five ways:
+    //
+    //  srcdoc, no sandbox                    renders
+    //  srcdoc + sandbox=""                   BLANK
+    //  srcdoc + sandbox="" + the CSP         BLANK
+    //  sandbox="" + a data: URL instead      BLANK
+    //  sandbox="allow-same-origin" + srcdoc  renders
+    //
+    //So the opaque origin is what this build cannot show, whatever the document
+    //arrives as. What is given up by naming allow-same-origin is ONLY the
+    //opaque origin — and that matters solely as a barrier against script, which
+    //cannot run here because `allow-scripts` is absent. Measured too, in the
+    //same pane: a <script> in the markdown did not run, and an <img onerror=>
+    //did not fire. The CSP still blocked a remote image from loading.
+    //
+    //NEVER ADD allow-scripts. The two together are the documented hole: a frame
+    //with both can reach into this document and remove its own sandbox
+    //attribute. Everything above holds because exactly one of them is named.
+    return <iframe className="md" sandbox="allow-same-origin" srcDoc={doc} style={{ height: height || '60vh' }} />;
+}
+
+//RENDERED OR AS WRITTEN, and both, because they answer different questions. The
+//rendered view is for reading what something produced; the source is for seeing
+//what it actually WROTE, which is what matters when the formatting is the thing
+//that went wrong.
+function Markdown({ text, height }) {
+    var [look, setLook] = useState('rendered');
+    return (
+        <div>
+            <div className="row" style={{ marginBottom: '8px' }}>
+                <Button kind={look == 'rendered' ? 'ok' : undefined}
+                    onClick={function () { setLook('rendered'); }}>Rendered</Button>
+                <Button kind={look == 'source' ? 'ok' : undefined}
+                    onClick={function () { setLook('source'); }}>Source</Button>
+            </div>
+            {look == 'rendered'
+                ? <MarkdownFrame text={text} height={height} />
+                //NOT AUTO-HEIGHT HERE. The two views swapping between a fixed
+                //frame and a page-length block makes the panel jump under the
+                //pointer mid-read.
+                : <Code text={text} tall />}
+        </div>
+    );
+}
 
 //---- something being read -------------------------------------------------
 //
@@ -345,5 +471,5 @@ module.exports = {
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip,
     Button, Plus, Cog, Finder, Form, HeadRow, Controls,
-    Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Code, ago, openOut
+    Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Code, Markdown, ago, openOut
 };
