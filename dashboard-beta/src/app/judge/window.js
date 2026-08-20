@@ -407,10 +407,23 @@ async function plugin(imports, register) {
         );
     }
 
+    //NO "Recent" PANE UNDER EITHER TAB, and its removal is the point rather
+    //than a tidy-up.
+    //
+    //The old window has Tasks: Board, Add task — and Judge: Judgement, Judges.
+    //There is no Recent in either, and there never was. It was scaffolding from
+    //early in this port, written before Board and Judgement existed, and it
+    //outlived them: two panes showing the same list as the pane next door, with
+    //fewer facts and different rules about which rows count as live.
+    //
+    //THAT IS THE FAULT THIS PORT KEEPS FINDING, not a spare tab. Two places
+    //knowing one thing is two places to disagree, and the one somebody happens
+    //to open decides what they believe. The Repositories/Supervisor Graph split
+    //was the same shape from the other direction.
+
     shell.tab({ name: 'Judge', order: 40 });
     shell.pane({ tab: 'Judge', name: 'Judgement', order: 10, Component: Judgements });
     shell.pane({ tab: 'Judge', name: 'Judges', order: 20, Component: makeJudges(theme, okc) });
-    shell.pane({ tab: 'Judge', name: 'Recent', order: 30, Component: Judge });
 
     await register(null, {});
 }
