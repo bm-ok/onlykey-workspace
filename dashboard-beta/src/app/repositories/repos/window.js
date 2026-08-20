@@ -4,8 +4,9 @@ var makeRepos = require('./repos');
 var makeIssues = require('./issues');
 var makePulls = require('./pulls');
 var makeProtected = require('./protected');
+var makeOverview = require('./overview');
 
-//the Repositories tab, and its first pane.
+//the Repositories tab.
 //
 //THE TAB IS A CONTAINER AND OWNS ALMOST NOTHING. It registers itself so there is
 //something for panes to land in, and registers the one pane that belongs to it.
@@ -14,16 +15,6 @@ var makeProtected = require('./protected');
 //what lets the five biggest files left be ported one at a time, in any order,
 //by anyone.
 //
-//WHAT THE OVERVIEW IS FOR. One list of everything outstanding across every
-//repository: issues somebody filed, pull requests that arrived, and cuts this
-//host sent out. The point is that "is there anything to do" should not require
-//opening four panes and adding up — and that GitHub cannot answer it, because
-//each repository only sees its own.
-//
-//AND IT IS A READING, NOT A LIVE VIEW. Every row is as fresh as the last time
-//GitHub was asked, which the app says out loud rather than implying currency it
-//does not have. Nothing here polls GitHub on a timer; that is deliberate over
-//there and carried across.
 
 plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
@@ -31,69 +22,7 @@ async function plugin(imports, register) {
     //THIS PANE'S OWN LOOK, which the theme does not promise. See ./repos.scss.
     require('./repos.scss');
     var { shell, theme, okc, remember } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono, Skeleton} = theme;
 
-    var LOOK = {
-        merged: 'ok',
-        open: '',
-        closed: 'warn',
-        landed: 'ok'
-    };
-
-    function Item({ it }) {
-        var where = it.repos && it.repos.length ? it.repos.join(', ') : (it.repo || it.on || '');
-        return (
-            <div className="card">
-                <div className="card-title">
-                    <Badge kind={it.kind == 'cut' ? '' : 'run'}>{it.kind}</Badge>{' '}
-                    {it.number ? <Mono>{'#' + it.number + ' '}</Mono> : null}
-                    {it.title}
-                    {it.state ? <span>{' '}<Badge kind={LOOK[it.state] === undefined ? '' : LOOK[it.state]}>{it.state}</Badge></span> : null}
-                </div>
-                <div className="card-sub">
-                    {where ? <Mono>{where}</Mono> : null}
-                    {it.source && it.target ? <span>{' · '}<Mono>{it.source + ' → ' + it.target}</Mono></span> : null}
-                </div>
-            </div>
-        );
-    }
-
-    function Overview() {
-        var { state, error, reads } = okc.use('repoOverview', {}, 10000);
-
-        if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
-        if (!state) return <Pane><Skeleton rows={4} /></Pane>;
-
-        var counts = state.counts || {};
-        var items = state.items || [];
-
-        return (
-            <Pane>
-                {error ? <Note kind="bad">{error}</Note> : null}
-
-                <Panel>
-                    <div className="card-title">
-                        {'Outstanding — '}
-                        <Badge>{(counts.issues || 0) + ' issue' + (counts.issues == 1 ? '' : 's')}</Badge>{' '}
-                        <Badge>{(counts.pulls || 0) + ' pull request' + (counts.pulls == 1 ? '' : 's')}</Badge>{' '}
-                        <Badge>{(counts.cuts || 0) + ' cut' + (counts.cuts == 1 ? '' : 's')}</Badge>
-                        {counts.toAllow ? <span>{' '}<Badge kind="warn">{counts.toAllow + ' to allow'}</Badge></span> : null}
-                    </div>
-
-                    {items.length
-                        ? items.slice(0, 20).map(function (it, i) { return <Item key={it.id || i} it={it} />; })
-                        : <Empty>nothing is outstanding — no issue, no arrived pull request, and nothing cut and unlanded</Empty>}
-
-                    {items.length > 20 ? <Note>{'showing the newest 20 of ' + items.length}</Note> : null}
-                </Panel>
-
-                {/* THE AGE OF THE ANSWER, said rather than implied. Everything
-                    above is as fresh as the last time GitHub was asked, and a
-                    list with no age is one somebody treats as current for ever. */}
-                <Note>{(state.note || '') + ' · read ' + reads + ' time(s) from this host'}</Note>
-            </Pane>
-        );
-    }
 
     //---- where this lives, and it is not a choice -------------------------
     //
@@ -106,7 +35,7 @@ async function plugin(imports, register) {
     //The real map is in ui/index.html over there: twelve panes under
     //Repositories, six under Runners, and the tab names as written.
     shell.tab({ name: 'Repositories', order: 10 });
-    shell.pane({ tab: 'Repositories', name: 'Overview', order: 10, Component: Overview });
+    shell.pane({ tab: 'Repositories', name: 'Overview', order: 10, Component: makeOverview(theme, okc) });
     //THE THREE THAT SHARE A CHASSIS. Same repository list, same heading, same
     //remembered selection; a different sentence and a different right-hand half.
     //See ./chassis.js for why that is one file rather than three.

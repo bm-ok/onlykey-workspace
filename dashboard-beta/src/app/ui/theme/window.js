@@ -1,4 +1,5 @@
 var React = require('react');
+var { useState } = React;
 var layout = require('./layout');
 var bits = require('./bits');
 var dialog = require('./dialog');
@@ -152,7 +153,7 @@ async function plugin(imports, register, config) {
     //seeing what it actually WROTE, which is what matters when the formatting is
     //the thing that went wrong.
     function Markdown({ text, height }) {
-        var [look, setLook] = React.useState('rendered');
+        var [look, setLook] = useState('rendered');
         return (
             <div>
                 <div className="row" style={{ marginBottom: '8px' }}>
