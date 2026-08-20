@@ -35,10 +35,40 @@ const SHEET = path.join(APP, 'theme', 'dashboard.scss');
 //vocabulary and its OWN sheet, and nothing else. Reaching into another pane's
 //stylesheet is the leak that makes `theme` unswappable one class at a time, and
 //it is invisible to a check that pools every sheet together.
+//WHICH PLUGIN A FILE BELONGS TO. The folder holding its window.js, found by
+//walking up -- which is the same boundary the three boot files draw, and the
+//only one that stays right now that a plugin may be one level down or two.
+const ENTRY = ['window.js', 'window.jsx', 'server.js', 'main.js'];
+function pluginRootOf(file) {
+    let dir = path.dirname(file);
+    while (dir.startsWith(APP) && dir !== APP) {
+        if (ENTRY.some(n => fs.existsSync(path.join(dir, n)))) return dir;
+        dir = path.dirname(dir);
+    }
+    return null;
+}
+
+//A PANE'S OWN SHEET IS <plugin>/<plugin>.scss, AND THE PLUGIN IS NOT rel[0].
+//Once the folders are grouped, rel[0] is `repositories` -- and there is no
+//repositories.scss, so the old line found nothing and every class in
+//changes.scss read as missing.
+//
+//BUT THE DANGEROUS FIX IS THE ONE THAT KEEPS rel[0] AND POINTS IT AT THE GROUP.
+//The rule here is that a pane may reach the shared theme and its OWN sheet,
+//nothing else. Key it on the group and the moment a repositories.scss exists,
+//every pane in the group may use every sibling's classes -- and this check goes
+//on passing while asserting the opposite of what it says.
+//
+//So walk UP from the file, and stop at the plugin. A helper inside a plugin gets
+//its plugin's sheet; nothing gets its group's.
 function sheetFor(file) {
-    const rel = path.relative(APP, file).split(path.sep);
-    const own = path.join(APP, rel[0], rel[0] + '.scss');
-    return fs.existsSync(own) ? own : null;
+    const root = pluginRootOf(file);
+    if (!root) return null;
+    for (let dir = path.dirname(file); ; dir = path.dirname(dir)) {
+        const own = path.join(dir, path.basename(dir) + '.scss');
+        if (fs.existsSync(own)) return own;
+        if (dir === root) return null;
+    }
 }
 
 //classes the browser or the framework supplies, which are correctly absent
@@ -250,11 +280,21 @@ function modifiersFor(css) {
 test('a modifier used on a base is one the stylesheet gives that base', () => {
     //Every sheet, because a pane may modify a shared base from its own file —
     //`.card.snap` lives in machines.scss and `.card` in the theme.
+    //EVERY SHEET UNDER src/app, AT WHATEVER DEPTH. This read the top level and
+    //joined <name>/<name>.scss, which after the grouping finds exactly nothing:
+    //the top level is core, ui, repositories, runners, and none of them has a
+    //stylesheet. An empty pool makes `mods` empty and this check inert.
     const sheets = [SHEET];
-    for (const name of fs.readdirSync(APP)) {
-        const own = path.join(APP, name, name + '.scss');
-        if (fs.existsSync(own)) sheets.push(own);
-    }
+    (function under(dir) {
+        for (const name of fs.readdirSync(dir)) {
+            if (name.startsWith('_') || name.startsWith('.') || name === 'vendor') continue;
+            const full = path.join(dir, name);
+            if (fs.statSync(full).isDirectory()) under(full);
+            else if (name.endsWith('.scss') && full !== SHEET) sheets.push(full);
+        }
+    })(APP);
+    assert.ok(sheets.length >= 7,
+        'fewer stylesheets were found than there are on disk, so the scan is not reaching into the groups');
     const css = sheets.map(f => fs.readFileSync(f, 'utf8')).join('\n');
     const mods = modifiersFor(css);
     const known = classesIn(SHEET);

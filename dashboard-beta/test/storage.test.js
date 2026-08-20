@@ -34,6 +34,10 @@ const MAY = new Set(['storage', 'remember']);
 function walk(dir, out = []) {
     for (const name of fs.readdirSync(dir)) {
         if (name.startsWith('_') || name.startsWith('.')) continue;
+        //VENDORED CODE IS NOT THIS APP'S. ace and marked happen to touch neither
+        //store, which makes this latent rather than live -- and the next library
+        //may be less accommodating.
+        if (name === 'vendor') continue;
         const full = path.join(dir, name);
         if (fs.statSync(full).isDirectory()) walk(full, out);
         else if (/\.jsx?$/.test(name)) out.push(full);
@@ -41,11 +45,31 @@ function walk(dir, out = []) {
     return out;
 }
 
+//WHICH PLUGIN A FILE BELONGS TO, AND IT IS NOT rel[0] ANY MORE. Plugins are
+//grouped -- src/app/core/storage -- so rel[0] is `core`, and an allow-list keyed
+//on it would exempt every plugin in core: http, tray, window, ipc, all of them,
+//silently, forever.
+//
+//THAT IS THE SHAPE OF THIS BUG AND IT IS WHY THE ASSERTION BELOW EXISTS. A guard
+//that exempts too much does not fail. It reports an empty list, prints ok, and
+//means nothing.
+const ENTRY = ['window.js', 'window.jsx', 'server.js', 'main.js'];
+function pluginOf(file) {
+    let dir = path.dirname(file);
+    while (dir.startsWith(APP) && dir !== APP) {
+        if (ENTRY.some(n => fs.existsSync(path.join(dir, n)))) return path.basename(dir);
+        dir = path.dirname(dir);
+    }
+    return null;
+}
+
 test('only the storage plugins reach localStorage or sessionStorage', () => {
     const wrong = [];
+    const seen = new Set();
     for (const file of walk(APP)) {
-        const plugin = path.relative(APP, file).split(path.sep)[0];
-        if (MAY.has(plugin)) continue;
+        const plugin = pluginOf(file);
+        if (plugin) seen.add(plugin);
+        if (plugin && MAY.has(plugin)) continue;
         const src = fs.readFileSync(file, 'utf8');
         for (const m of src.matchAll(/\b(localStorage|sessionStorage)\b/g)) {
             //A mention inside a comment is somebody explaining the rule, which
@@ -54,6 +78,13 @@ test('only the storage plugins reach localStorage or sessionStorage', () => {
             if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
             wrong.push(`${path.relative(APP, file)} — ${line.trim()}`);
         }
+    }
+
+    //THE EXEMPTION HAS TO HAVE APPLIED TO SOMETHING. If neither name resolved,
+    //the allow-list exempted nothing and the empty list below proves nothing.
+    for (const name of MAY) {
+        assert.ok(seen.has(name),
+            'no file under src/app resolved to the "' + name + '" plugin, so this guard exempted nothing and proved nothing');
     }
 
     assert.deepStrictEqual(wrong, [],
@@ -65,8 +96,11 @@ test('only the storage plugins reach localStorage or sessionStorage', () => {
 test('and the plugin that carries the rule is still there', () => {
     //A guard whose subject has been renamed away passes forever and checks
     //nothing. Same reason the class guard asserts its stylesheet exists.
-    const rule = path.join(APP, 'remember', 'window.js');
-    assert.ok(fs.existsSync(rule), 'src/app/remember/window.js is missing — the rule it carries has nowhere to live');
+    //FOUND RATHER THAN SPELT OUT. This was a hard-coded src/app/remember path,
+    //which makes the check fail when the plugin MOVES -- the one thing it was
+    //not asking about.
+    const rule = walk(APP).find(f => pluginOf(f) === 'remember' && path.basename(f) === 'window.js');
+    assert.ok(rule, 'the remember plugin has no window.js anywhere under src/app — the rule it carries has nowhere to live');
     const src = fs.readFileSync(rule, 'utf8');
     assert.match(src, /ONLY WHERE SOMEBODY WAS LOOKING/,
         'the rule about what may be kept in browser storage is no longer stated in the plugin that enforces it');
