@@ -24,12 +24,25 @@ var ADDRESS = process.platform == 'win32'
 //service and this is the server graph, which is a different plugin list — the
 //two meet only through the host object build/main.js hands over. Consuming it
 //by name here would simply never resolve.
-plugin.consumes = ['app'];
+plugin.consumes = ['app', 'log'];
 plugin.provides = ['okc'];
 async function plugin(imports, register) {
     var host = imports.app.host;
     var io = host.io;
     var actions = host.actions;
+
+    //THE FIRST THING IN THIS APP THAT WRITES TO ITS OWN LOG, and it says the
+    //one thing the Live tab could not tell you before: whether the half that
+    //answers almost every question on screen is reachable at all.
+    //
+    //ON THE CHANGE ONLY, NEVER ON THE ATTEMPT. `gone` fires once a second for as
+    //long as the dashboard is down, and a line each time would fill all two
+    //thousand of them with the same sentence in half an hour — evicting the
+    //record of whatever went wrong just before it. The comment below already
+    //says a dashboard that is not running is an ordinary state; a log that
+    //shouts it sixty times a minute disagrees.
+    var log = imports.log.on('okc');
+    var said = false;
 
     var sock = null;
     var buf = '';
@@ -52,7 +65,10 @@ async function plugin(imports, register) {
         var s = net.connect(ADDRESS);
         sock = s;
 
-        s.on('connect', function () { io.emit('okc:up', true); });
+        s.on('connect', function () {
+            if (!said) { said = true; log.good('connected to the dashboard'); }
+            io.emit('okc:up', true);
+        });
 
         s.on('data', function (chunk) {
             buf += chunk;
@@ -77,6 +93,7 @@ async function plugin(imports, register) {
             if (sock != s) return;
             sock = null;
             buf = '';
+            if (said) { said = false; log.warn('the dashboard stopped answering — reconnecting quietly until it is back'); }
             drop('the dashboard is not listening — it may be restarting');
             io.emit('okc:up', false);
             if (!closing) setTimeout(connect, 1000);

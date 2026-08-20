@@ -12,10 +12,10 @@
 //reach it — a `require('webpack')` in an unreachable function is still bundled,
 //and dragging webpack into a packaged app is exactly what this avoids.
 
-plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions'];
+plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log'];
 plugin.provides = ['build'];
 async function plugin(imports, register) {
-    var { app, http, io, window: win, tray, lifecycle, actions } = imports;
+    var { app, http, io, window: win, tray, lifecycle, actions, log } = imports;
 
     //what the node half is handed. the window and the tray are passed as
     //controllers rather than objects, because they outlive the bundle.
@@ -32,6 +32,12 @@ async function plugin(imports, register) {
         //than copied, so a define() from the new bundle lands in the same table
         //the old one was removing itself from.
         actions: actions,
+
+        //THE LOG, FOR THE SAME REASON AND WITH ONE MORE. It lives in main so the
+        //lines survive a save; it is passed as the object itself so a line
+        //written by the old bundle and a line written by the new one land in the
+        //same stream, in order, and the record of a reload is not a gap.
+        log: log,
 
         window: !win ? undefined : {
             get url() { return http.url; },

@@ -70,6 +70,35 @@ structure as well, never instead.
 The tab and pane names come from `../dashboard/ui/index.html` and are not up for
 invention.
 
+## Where server logic goes
+
+The dashboard's own node logic is being moved out of `../dashboard/` and into the
+plugin whose pane uses it. It goes in one of two places and the split is not
+about subject:
+
+* **A service goes where it is owned.** `log` is written by every action module
+  there will ever be, so it is `core/log` beside `actions` and `io` — not in
+  `live/`, even though Live is where you read it.
+* **An action goes where the pane is.** `logSince` and `logClear` are what the
+  Live pane asks for, so they are `live/server.js`. Same shape as `show` living
+  in `ui/shell/server.js`.
+* A plugin with neither has no server half. Most do not.
+
+**`main.js` versus `server.js` is about lifetime, not subject.** The node bundle
+is rebuilt on every save; main is not. Anything that must survive a save goes in
+main and is handed over on the host — the window, the tray, the action table, and
+now the log. `core/log/server.js` is that hand-over, and it answers with a log
+that drops every line when there is no main behind it, because the test suite
+builds server halves against a bare host and every ported module logs.
+
+**Moving an action shadows the relayed one, and that is the migration path.**
+`actions.call` tries this app's table first and the pipe to `dashboard/` second,
+so a moved action takes over the moment it is defined and everything not yet
+moved keeps working. It also means the pane starts reading THIS app's answer —
+state lives in `%LOCALAPPDATA%\dashboard-beta`, not the dashboard's, so a moved
+subsystem starts empty. That is deliberate: nothing here can corrupt the real
+machines, tasks or sign-ins. Say so in the pane if empty would read as broken.
+
 ## Rules the code is built to
 
 * **A pane never names a CSS class.** Everything it draws with comes from

@@ -137,7 +137,7 @@ module.exports = function live(theme, okc) {
                         //says which in words.
                         : <Empty>{entries.length
                             ? 'nothing matches — ' + entries.length + ' lines are held and the filters hide all of them'
-                            : 'the log is empty — nothing has been said since this dashboard started'}</Empty>}
+                            : 'the log is empty — nothing has been said since this app started'}</Empty>}
                 </div>
 
                 {/* WHAT THIS IS AND WHAT IT IS NOT. The live log is in memory,
@@ -145,8 +145,20 @@ module.exports = function live(theme, okc) {
                     it carries sign-in URLs, tokens and whatever a worker
                     printed. It is also not the event stream: that keeps app acts
                     on an allowlist and never `out`, so the two are different
-                    sets of lines. */}
-                <Note>held in memory only and lost when the dashboard restarts — the durable record is the event stream, which is a different set of lines</Note>
+                    sets of lines.
+
+                    THE NOTE NO LONGER SAYS "the event stream", BECAUSE THIS APP
+                    HAS NOT GOT ONE. These lines are now ../core/log's — this
+                    app's own, about its own acts — and core/events has not been
+                    moved across yet. Pointing somebody at a durable record that
+                    does not exist here is worse than not mentioning one.
+
+                    AND "lost when the dashboard restarts" WAS WRONG TWICE OVER:
+                    it is not the dashboard's log any more, and the lines are
+                    kept in main rather than in the node bundle, so a save no
+                    longer takes them. That was the reason for putting them
+                    there. */}
+                <Note>held in memory only, and never written to disk — it carries whatever a machine printed. It survives a save and is lost when this app restarts</Note>
             </Pane>
         );
     }
