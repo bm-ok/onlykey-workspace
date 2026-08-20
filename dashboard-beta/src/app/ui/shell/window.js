@@ -26,7 +26,7 @@ plugin.consumes = ['react', 'theme', 'appPackage', 'okc', 'app', 'remember'];
 plugin.provides = ['shell'];
 async function plugin(imports, register) {
     var { react, theme, appPackage, okc, app, remember } = imports;
-    var { Topbar, Dialogs } = theme;
+    var { Topbar, Dialogs, Notice, Linky } = theme;
 
     var tabs = [];
     var panes = [];
@@ -114,6 +114,24 @@ async function plugin(imports, register) {
     //as the guard hook in the theme, and for the same reason.
     var goTo = { at: null };
 
+    //WHERE THE WINDOW IS, AND A WAY TO SAY SOMETHING IN IT — held the same way
+    //`goTo` is, because they are the same kind of thing: the shell knows, and
+    //everything else has to ask rather than work it out.
+    //
+    //`where` EXISTS SO NOBODY READS THE DOM FOR IT. A plugin wanting to know
+    //which pane is showing would otherwise query `.tab.active` — naming a class,
+    //which is the one thing a pane may never do here, and reading a fact the
+    //shell is holding three lines away. The first plugin that needed it did
+    //exactly that before this existed.
+    //
+    //`say` IS THE SLOT THE OLD WINDOW HAS AND THIS ONE DID NOT. Over there one
+    //notice bar sits under the tab row and everything says its results into it.
+    //Here each pane grew its own `said` state — Keys, Todo and the rest all keep
+    //one — which is fine for a pane reporting on its own button, and no use at
+    //all to anything that is not a pane. A key press is not a pane.
+    var here = { at: null };
+    var saying = { at: null };
+
     //---- one broken thing is not a blank window ---------------------------
     //
     //REACT TAKES THE WHOLE TREE DOWN FOR ONE BAD VALUE. Render an object where a
@@ -194,10 +212,38 @@ async function plugin(imports, register) {
             });
         };
         var setPane = function (name) { setPaneOf(on, name); };
+        //WHAT THE SHELL LENDS OUT, kept current rather than captured once. Both
+        //are set on every render for the same reason `goTo` is set in an effect:
+        //a closure taken at mount would answer with the tab that was showing
+        //when the window opened, which is the failure `setPaneOf` was written to
+        //fix one screen away from here.
+        var [said, setSaid] = useState(null);
+
         var [up, setUp] = useState(okc.connected);
         var [, bumpBadge] = useState(0);
 
         useEffect(function () { return okc.onUp(setUp); }, []);
+
+        here.at = function () { return { tab: on, pane: pane }; };
+
+        //ONE AT A TIME, AND THE NEWEST WINS. Two results on screen at once is a
+        //stack somebody has to read backwards; the second thing that happened is
+        //the thing being reported on.
+        saying.at = function (text, opts) {
+            setSaid({ at: Date.now(), text: String(text), kind: opts.kind || 'ok', does: opts.does || null,
+                lasts: opts.lasts == null ? 8000 : opts.lasts });
+        };
+
+        //IT GOES AWAY BY ITSELF, and the timer restarts when a new one arrives
+        //rather than the old one taking the new one with it. `said.at` is in the
+        //dependency list for exactly that: two captures eight seconds apart
+        //would otherwise leave the second showing for whatever was left of the
+        //first one's time.
+        useEffect(function () {
+            if (!said || !said.lasts) return;
+            var t = setTimeout(function () { setSaid(null); }, said.lasts);
+            return function () { clearTimeout(t); };
+        }, [said && said.at, said && said.lasts]);
         useEffect(function () {
             var f = function () { bumpBadge(function (n) { return n + 1; }); };
             badgeWatchers.add(f);
@@ -304,6 +350,24 @@ async function plugin(imports, register) {
                 return <Boundary key={b.name || i} what={'the ' + (b.name || 'banner') + ' banner'}><B /></Boundary>;
             })}
 
+            {/* WHAT SOMETHING JUST DID, BELOW THE BANNERS. A banner is a
+                state that is still true; this is an event that has finished, so
+                the thing that still needs doing stays nearest the top.
+                
+                It was written above them first, and the comment saying "below
+                them on purpose" sat directly over the code putting it above.
+                Only the photograph showed it. */}
+            {said ? (
+                <Boundary what="the notice">
+                    <Notice kind={said.kind} onClose={function () { setSaid(null); }}>
+                        {said.text}
+                        {said.does ? said.does.map(function (d, i) {
+                            return <Linky key={i} onClick={function () { d.onClick(); }}>{d.label}</Linky>;
+                        }) : null}
+                    </Notice>
+                </Boundary>
+            ) : null}
+
             {mine.length > 1 ? (
                 <div className="subtabs">
                     {mine.map(function (p) {
@@ -374,7 +438,17 @@ async function plugin(imports, register) {
             //WHERE A PANE HANDS OFF TO ANOTHER PANE. Refuses quietly before the
             //shell is mounted: there is nowhere to go yet, and throwing at that
             //moment would take the whole graph down with it.
-            go: function (tab, pane) { if (goTo.at) goTo.at(tab, pane); }
+            go: function (tab, pane) { if (goTo.at) goTo.at(tab, pane); },
+
+            //WHAT IS ON SCREEN, in the same words the tab row uses — which are
+            //the words `show` takes and the words a photograph should be named
+            //after, so all three agree by being one string.
+            where: function () { return here.at ? here.at() : { tab: null, pane: null }; },
+
+            //A SENTENCE, AND OPTIONALLY A BUTTON. It goes away by itself: a
+            //result that stays is a result somebody has to dismiss, and a window
+            //that accumulates things to dismiss is one people stop reading.
+            say: function (text, opts) { if (saying.at) saying.at(text, opts || {}); }
         }
     });
 }

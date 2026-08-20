@@ -695,6 +695,12 @@ input.protected, select.protected, textarea.protected {
   background: rgba(163, 113, 247, .12);
 }
 
+/* A LINK IN A NOTICE FOLLOWS A SENTENCE, so it needs the space a sentence would
+   have had. Without it the button reads as the last word of the text:
+   "shots/probe.pngCopy both paths". The same fix the stale banner needed, for
+   the same reason, one slot further up the window. */
+.notice .linky { margin-left: 10px; }
+
 /* A SWITCH, DRAWN AS A PILL WITH A KNOB THAT SLIDES.
 
    THE CHECKBOX IS HIDDEN AND NOT REMOVED, which is the whole trick. `display:
