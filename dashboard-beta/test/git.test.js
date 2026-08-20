@@ -70,7 +70,15 @@ async function theGit() {
     let workspace = null;
     await wsPlugin({
         app: { host: {} },
-        okc: { call: async () => ({ workspace: { dir: work } }) }
+        okc: { call: async () => ({ workspace: { dir: work } }) },
+        //KEPT IN MEMORY HERE. What these tests are about is paths and git, not
+        //what survives a restart — core/state has its own test for that — and a
+        //real one would leave documents in the app's data folder every run.
+        state: { doc: () => { let held = null; return {
+            read: (fallback) => (held === null ? fallback : held),
+            write: (v) => { held = v; return v; },
+            forget: () => { held = null; return true; }
+        }; } }
     }, async (_e, s) => { workspace = s.workspace; });
 
     let git = null;

@@ -12,10 +12,10 @@
 //reach it — a `require('webpack')` in an unreachable function is still bundled,
 //and dragging webpack into a packaged app is exactly what this avoids.
 
-plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir'];
+plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir', 'state'];
 plugin.provides = ['build'];
 async function plugin(imports, register) {
-    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir } = imports;
+    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir, state } = imports;
 
     //what the node half is handed. the window and the tray are passed as
     //controllers rather than objects, because they outlive the bundle.
@@ -45,6 +45,11 @@ async function plugin(imports, register) {
         //the thing being stored. Two answers to "where does it live" is how a
         //list ends up written in one place and read from another.
         dataDir: dataDir,
+
+        //WHAT SURVIVES A RESTART, for the halves that reload. Passed as the
+        //object rather than copied, so a document written by the old bundle and
+        //read by the new one is the same document.
+        state: state,
 
         window: !win ? undefined : {
             get url() { return http.url; },

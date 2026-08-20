@@ -17,11 +17,19 @@ var path = require('path');
 //checkout — and each would have grown its own copy of the folder scan, which is
 //the shape of every "second opinion about state" bug this project has had.
 //
-//WHERE THE FOLDER COMES FROM, FOR NOW. `core/workspaces` has not moved across,
-//so the open folder is read from the dashboard's `status`. That is deliberate
-//and it is the honest source: it is the folder the app is actually open on,
-//rather than a second idea of it kept here. When that plugin moves, this file is
-//the only one that changes.
+//IT KEEPS ITS OWN CHOICE NOW, in ../core/state, which is what makes this a
+//plugin rather than a view onto somebody else's setting. Somebody picks a
+//workspace here; this remembers it; everything downstream asks this. The picking,
+//the keeping and the answering are one plugin's job, so a different one of any of
+//them changes one folder.
+//
+//AND IT ADOPTS THE DASHBOARD'S ON A FIRST RUN, rather than starting empty. That
+//app is still open on a folder and still answering most of this window's
+//questions; coming up with nothing selected would mean a pane comparing branches
+//in one workspace beside a pane listing repositories in another, with nothing on
+//screen saying why. So the borrowed answer is the DEFAULT and the kept one wins
+//once there is one — and the day core/workspaces moves across, the fallback is
+//the only part that goes.
 //
 //AND IT IS NOT ASKED FOR EVERY CALL. `folderOf` runs for every diff, every file
 //list and every log — three times a keystroke on a pane that is being read —
@@ -32,22 +40,54 @@ var path = require('path');
 
 var HELD = 3000;
 
-plugin.consumes = ['app', 'okc'];
+plugin.consumes = ['app', 'okc', 'state'];
 plugin.provides = ['workspace'];
 async function plugin(imports, register) {
     var okc = imports.okc;
+    var kept = imports.state.doc('workspace');
 
     var was = null;
     var at = 0;
 
+    //WHAT THE DASHBOARD IS OPEN ON. Not an error when it cannot be reached —
+    //this is a default, and a default that throws is not one.
+    async function borrowed() {
+        try {
+            var said = await okc.call('status', {});
+            return (said && said.workspace && said.workspace.dir) || null;
+        } catch (e) { return null; }
+    }
+
     async function dir() {
         if (was && Date.now() - at < HELD) return was;
-        var said = await okc.call('status', {});
-        var open = said && said.workspace && said.workspace.dir;
+
+        var mine = kept.read({});
+        var open = mine && mine.dir;
+
+        if (!open) open = await borrowed();
         if (!open) throw new Error('no workspace is open, so there is nothing to read');
+
         was = open;
         at = Date.now();
         return open;
+    }
+
+    //CHOSEN, AND KEPT. The one act this plugin has, and the reason it owns the
+    //value rather than reading somebody else's.
+    //
+    //IT CHECKS BEFORE IT KEEPS. A workspace that is not a folder is a setting
+    //that breaks every pane downstream with an error about somewhere that does
+    //not exist, at the moment somebody is least expecting one.
+    function use(open) {
+        var want = String(open == null ? '' : open).trim();
+        if (!want) throw new Error('Which folder?');
+        if (!fs.existsSync(want)) throw new Error('There is no folder at "' + want + '".');
+        if (!fs.statSync(want).isDirectory()) throw new Error('"' + want + '" is a file, not a folder.');
+
+        kept.write({ dir: want, at: new Date().toISOString() });
+        was = want;
+        at = Date.now();
+        return want;
     }
 
     //A FOLDER WITH A .git IN IT, one level down. Asked of the disk rather than
@@ -95,8 +135,14 @@ async function plugin(imports, register) {
     await register(null, {
         workspace: {
             dir: dir,
+            use: use,
             repos: repos,
             folderOf: folderOf,
+            //WHETHER THIS IS THIS APP'S CHOICE OR THE OTHER APP'S, which the
+            //picker has to be able to say. "Open on the same folder as the
+            //dashboard" and "open on the folder somebody chose here" look
+            //identical from a path.
+            chosen: function () { return !!(kept.read({}) || {}).dir; },
             //SO A TEST OR A RELOAD DOES NOT READ A STALE FOLDER. Nothing calls
             //this in ordinary use; it exists because a cache with no way to drop
             //it is a cache somebody works around.
