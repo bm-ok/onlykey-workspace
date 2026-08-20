@@ -1,7 +1,7 @@
 'use strict'
 
 // The command line. Same actions the window uses, over the socket in
-// src/app/ipc.
+// src/app/core/ipc.
 //
 //     node tools/okc.js                      every action there is
 //     node tools/okc.js <action> [--k v]     run one

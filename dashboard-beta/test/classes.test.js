@@ -79,7 +79,7 @@ function walk(dir, out = []) {
     for (const name of fs.readdirSync(dir)) {
         if (name.startsWith('_') || name.startsWith('.')) continue;
         //VENDORED CODE IS NOT THIS APP'S MARKUP. A plugin may keep a library it
-        //owns in `vendor/` beside its own files — ../src/app/editor/vendor/ace
+        //owns in `vendor/` beside its own files — ../src/app/ui/editor/vendor/ace
         //is 900KB of somebody else's, and it names forty classes of its own that
         //ace's own stylesheet defines at run time. Demanding they appear in this
         //app's stylesheet is asking a third party to obey a rule written for

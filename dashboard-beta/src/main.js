@@ -26,7 +26,7 @@ var Config = require('./config');
 
 var PLUGINS = path.join(__dirname, 'app');
 
-//A PLUGIN IS A FOLDER WITH A main.js IN IT, one level down or two: src/app/http,
+//A PLUGIN IS A FOLDER WITH A main.js IN IT, one level down or two: src/app/api,
 //or src/app/core/http. The second level is the grouping, and it stops there --
 //../app/ui/editor/vendor/ace is 900KB of somebody else's code, and the only thing
 //standing between it and being started as a plugin is that nothing three levels

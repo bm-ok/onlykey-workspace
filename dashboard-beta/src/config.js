@@ -1,6 +1,6 @@
 //rectify hands this to every plugin as the third argument to its setup,
 //keyed by the service name the plugin provides. so `theme` below arrives as
-//`config.theme` inside src/app/theme.
+//`config.theme` inside src/app/ui/theme.
 
 module.exports = function () {
 

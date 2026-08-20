@@ -10,7 +10,7 @@ genuinely shared vocabulary. The other 55 are one pane's private business and
 have been sitting in the shared stylesheet the whole time — which is the real
 finding here, and the thing worth fixing while it is cheap.
 
-`theme` is a slot. Nothing outside `src/app/theme/` should know what is behind
+`theme` is a slot. Nothing outside `src/app/ui/theme/` should know what is behind
 it, and no pane should reach a class name directly.
 
 ---

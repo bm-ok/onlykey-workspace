@@ -9,7 +9,9 @@ everything, and the code it runs is the code in `src/`.
 
 ## three boots, one folder of plugins
 
-A plugin is a folder in `src/app/`, and the files inside say where it runs:
+A plugin is a folder in `src/app/` — one level down, or two — and the files
+inside say where it runs. The second level is the grouping, and it mirrors the
+app's own tab row, so looking at a tab tells you where its code is.
 
 ```
 src/
@@ -21,25 +23,40 @@ src/
   overlay.js
   rectify.d.ts
   app/
-    lifecycle/  main.js                              shutdown, crashes, instance file
-    http/       main.js                              express, the swappable router
-    io/         main.js server.js window.js          socket.io, all three sides
-                serve.js mock.js                     shared between two of them
-    window/     main.js server.js                    the nw window, and its handle
-    tray/       main.js server.js                    the tray, and its menu api
-    devtools/   main.js                              the two Inspect items
-    build/      main.js                              webpack and the reload
-    react/      window.js                            createRoot
-    storage/    window.ts                            session + config stores
-    theme/      window.js + components/ + scss       the theme kit
-    example/    server.js window.js                  delete this one
+    core/           the plumbing, and nothing with a tab
+      lifecycle/    shutdown, crashes, instance file
+      http/         express, the swappable router
+      io/           socket.io, all three sides
+      window/       the nw window, and its handle
+      tray/         the tray, and its menu api
+      build/        webpack and the reload
+      react/  storage/  remember/  datadir/  devtools/
+      okc/          the socket to the running dashboard
+      actions/      the action table          about/  drive/  ipc/  shot/
+    ui/             how it looks, and what renders inside it
+      theme/        the kit every pane draws from
+      shell/        tabs, panes, the chrome
+      kit/          the catalogue pane, under Settings
+      editor/       ace, in its own vendor/
+      markdown/     marked, in its own vendor/
+    repositories/   repos conflicts branches lines changes prcuts graph
+    runners/        machines guests sessions
+    library/  keys/  github/  settings/  guards/     a tab that is one plugin
+    judge/  tasks/  supervisor/  queue/  live/       stays flat, named for
+    terminal/  api/  tests/                          the tab it serves
+    inbox/  workspace/                               chrome, not in the row
 ```
+
+A folder directly under `src/app/` is either a **plugin** (it has a `window.js`,
+`server.js` or `main.js`) or a **group** (it has none, and holds plugins). Never
+both — `test/plugins.test.js` refuses the shape, because a folder that was both
+would be matched at either depth and register twice.
 
 Each boot gathers its own half and nothing else:
 
 ```js
 //src/window.js
-var found = require.context('./app', true, /^\.\/[^_.][^/]*\/window\.(js|ts)$/);
+var found = require.context('./app', true, /^\.\/[^_./][^/]*(?:\/(?!vendor\/)[^_./][^/]*)?\/window\.(js|jsx)$/);
 var plugins = found.keys().map(found);
 ```
 
@@ -141,7 +158,7 @@ That is the whole reason for the second boot: `src/main.js` reads plugins off
 disk for development, `src/main.prod.js` gets the same list from the bundle
 through `require.context`, and both hand off to `src/boot.js`.
 
-`src/app/build` is where the two modes actually diverge — webpack, watching and
+`src/app/core/build` is where the two modes actually diverge — webpack, watching and
 reloading on one side; assets served from memory and the node half simply
 required on the other. `BUILD_PROD` gates the requires directly rather than
 sitting inside a function, because webpack collects a dependency wherever it
@@ -350,7 +367,7 @@ Closing the devtools window does nothing to the app.
 
 ### the tray belongs to the app too
 
-`src/app/tray/server.js` provides a `tray` service, so a plugin can put its own
+`src/app/core/tray/server.js` provides a `tray` service, so a plugin can put its own
 items on the menu:
 
 ```js
@@ -406,6 +423,11 @@ src/app/my-thing/
   window.js     runs in the window
 ```
 
+If it belongs to a tab that already has a group, it goes inside that one
+instead — `src/app/repositories/my-thing/`. Two levels is as deep as the
+loaders look, which is what keeps a plugin's own `vendor/` from ever being
+mistaken for a plugin.
+
 ```js
 //src/app/my-thing/server.js
 plugin.consumes = ['app', 'appPackage'];
@@ -428,12 +450,12 @@ never matters.
 ### the theme kit
 
 `theme` is a slot, and bringing your own style is the expected thing to do.
-Bootstrap, jquery and bootstrap-icons are in `src/app/theme/` because something
+Bootstrap, jquery and bootstrap-icons are in `src/app/ui/theme/` because something
 had to be — tailwind, plain css, a component library or nothing at all all fit
 the same slot.
 
 The service name is the only thing anything outside that directory knows:
-`src/app/example/window.js` asks for `theme` and reads `theme.navbar`. So a swap is the
+`src/app/_example/window.js` asks for `theme` and reads `theme.navbar`. So a swap is the
 whole directory replaced. What this kit happens to carry is `navbar`, `dialog`,
 `themeSwitcher`, `bs` (its own library) and `$` (its dom helper, deliberately
 not a top level service since another kit may not want one) — none of which are

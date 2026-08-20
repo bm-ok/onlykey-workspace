@@ -131,7 +131,7 @@ module.exports = (env, argv = {}) => {
     //
     //nothing is external: the point is one file with no node_modules beside it,
     //so express, socket.io and the plugins all go in. BUILD_PROD folds away the
-    //development branch of src/app/build, which is what keeps webpack itself
+    //development branch of src/app/core/build, which is what keeps webpack itself
     //from being dragged in with it.
     const main = {
         name: 'main',
