@@ -33,6 +33,14 @@ module.exports = function changes(theme, okc, remember) {
     //a change to read.
     var carries = function (r) { return r.has === 'both' && (r.files || []).length > 0; };
 
+    //NOTHING CAPS THE FILE LIST ANY MORE, AND THAT IS WORTH KNOWING. The old
+    //action returned a capped list with `moreFiles` beside it, and the pane drew
+    //"and 30 more not listed"; `compare` returns every file, so those two reads
+    //were of a field nothing sets and have gone. A change touching five hundred
+    //files would now draw five hundred rows. That has not happened here and the
+    //cap belongs in the action rather than the pane when it does — said here so
+    //the next person meets it as a decision rather than as a slow pane.
+
     //---- the diff ----------------------------------------------------------
     //
     //A unified diff arrives already marked up: the first character of every line
@@ -451,7 +459,7 @@ module.exports = function changes(theme, okc, remember) {
                                     return (
                                         <div key={r.repo}>
                                             <div className="change-repo">
-                                                {r.repo + ' — ' + r.files.length + (r.moreFiles ? '+' + r.moreFiles : '') + ' file(s)'}
+                                                {r.repo + ' — ' + r.files.length + ' file(s)'}
                                             </div>
                                             {r.files.map(function (f) {
                                                 var on = pick && pick.repo == r.repo && pick.file == f.file;
@@ -473,9 +481,6 @@ module.exports = function changes(theme, okc, remember) {
                                                     </button>
                                                 );
                                             })}
-                                            {r.moreFiles
-                                                ? <div className="card-sub">{'and ' + r.moreFiles + ' more not listed'}</div>
-                                                : null}
                                         </div>
                                     );
                                 }) : <Empty>No files differ.</Empty>
