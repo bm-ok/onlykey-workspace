@@ -28,9 +28,10 @@ var child = require('child_process');
 //fingerprint check written that way compared empty to empty and PASSED, and a
 //self-matching `pkill -f` killed itself. Both survived review.
 //
-//A REPO IS A NAME, NEVER A PATH. Callers say `local-repo-a`; this resolves it
-//against what is actually in the workspace. A path from a caller is a path to
-//anywhere on the disk, and this runs a program.
+//A REPO IS A NAME, NEVER A PATH. Callers say `local-repo-a`, and ../workspace is
+//the one thing that turns that into somewhere on a disk. A path from a caller is
+//a path to anywhere at all, and this runs a program in whatever it is given —
+//which is why the resolving lives with the workspace and not here.
 //
 //AND IT READS. Writing is a separate door and it is not built — see `run`. A
 //plugin that could commit, push or reset by the same call that lists branches is
@@ -54,56 +55,18 @@ var PATIENCE = 10000;
 //back sixty megabytes to be turned into a string. What is dropped is said.
 var MOST = 4 * 1024 * 1024;
 
-plugin.consumes = ['app', 'log', 'okc'];
+plugin.consumes = ['app', 'log', 'workspace'];
 plugin.provides = ['git'];
 async function plugin(imports, register) {
     var log = imports.log.on('git');
-    var okc = imports.okc;
 
-    //WHERE THE WORKSPACE IS, BORROWED FOR NOW. `core/workspaces` has not moved
-    //across, so the folder comes from the dashboard's `status` — which is the
-    //one it is actually open on, rather than a second idea of it kept here. When
-    //that plugin moves, this asks it instead and nothing else changes.
-    async function workspace() {
-        var said = await okc.call('status', {});
-        var dir = said && said.workspace && said.workspace.dir;
-        if (!dir) throw new Error('no workspace is open, so there are no repositories to read');
-        return dir;
-    }
-
-    //A FOLDER WITH A .git IN IT, one level down. That is what a repository is
-    //here, and asking the disk means the answer cannot drift from what is really
-    //there — which is the failure mode of keeping a list.
-    async function repos() {
-        var dir = await workspace();
-        var out = [];
-        var names;
-        try { names = fs.readdirSync(dir, { withFileTypes: true }); }
-        catch (e) { throw new Error('the workspace folder cannot be read: ' + e.message); }
-
-        names.forEach(function (entry) {
-            if (!entry.isDirectory() || entry.name[0] === '.') return;
-            var full = path.join(dir, entry.name);
-            if (fs.existsSync(path.join(full, '.git'))) out.push({ name: entry.name, dir: full });
-        });
-        return out;
-    }
-
-    //A NAME IN, A FOLDER OUT, and a refusal for anything that is not one of
-    //them. This is the only place a path is produced, so it is the only place
-    //that has to be right about it.
-    async function folderOf(repo) {
-        var want = String(repo == null ? '' : repo).trim();
-        if (!want) throw new Error('Which repository?');
-
-        var all = await repos();
-        var found = all.filter(function (r) { return r.name === want; })[0];
-        if (!found) {
-            throw new Error('There is no repository called "' + want + '" in this workspace. There is: '
-                + (all.map(function (r) { return r.name; }).join(', ') || 'none'));
-        }
-        return found.dir;
-    }
+    //WHICH FOLDER, ASKED OF ../workspace. This used to read the dashboard's
+    //`status` and scan for `.git` itself, which put two jobs in one plugin: this
+    //one RUNS git, and what a repository is and where the workspace lives is a
+    //fact about the workspace. The next plugin needing the same answer would have
+    //grown a second copy of the scan — which is the shape of every "second
+    //opinion about state" bug this project has had.
+    var workspace = imports.workspace;
 
     function spawnGit(cwd, args) {
         return new Promise(function (resolve) {
@@ -152,7 +115,7 @@ async function plugin(imports, register) {
                 + 'here yet, and adding it to that list is not how to build it.');
         }
 
-        var cwd = await folderOf(repo);
+        var cwd = await workspace.folderOf(repo);
         var said = await spawnGit(cwd, list);
         if (said.code !== 0 && said.stderr) log.warn(repo + ': git ' + list[0] + ' — ' + said.stderr.split('\n')[0]);
         return said;
@@ -288,8 +251,10 @@ async function plugin(imports, register) {
     await register(null, {
         onDestroy: function () { while (undo.length) undo.pop()(); },
         git: {
-            workspace: workspace,
-            repos: repos,
+            //NOT `workspace` AND NOT `repos`. Those were here while this plugin
+            //did both jobs, and re-exporting them would leave two doors to one
+            //answer — the thing that makes a second copy easy to write later.
+            //Consume ../workspace for those.
             run: run,
             branches: branches,
             head: head,

@@ -6,6 +6,7 @@ const path = require('node:path');
 const child = require('node:child_process');
 
 const plugin = require('../src/app/git/server');
+const wsPlugin = require('../src/app/workspace/server');
 
 //---------------------------------------------------------------------------
 //the one place that runs git.
@@ -53,24 +54,35 @@ after(() => {
     try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* windows may hold a handle */ }
 });
 
+//THE REAL ../workspace, NOT A STAND-IN FOR IT. It is what turns a name into a
+//path, and the tests below about paths are testing exactly that — a fake would
+//be testing the fake. Only the relayed `status` is stood in for, because a
+//workspace on this machine is not something a test may depend on.
 async function theGit() {
+    let workspace = null;
+    await wsPlugin({
+        app: { host: {} },
+        okc: { call: async () => ({ workspace: { dir: work } }) }
+    }, async (_e, s) => { workspace = s.workspace; });
+
     let git = null;
     await plugin({
         app: { host: {} },
         log: { on: () => ({ info() {}, good() {}, warn() {}, bad() {}, out() {} }) },
-        okc: { call: async () => ({ workspace: { dir: work } }) }
+        workspace: workspace
     }, async (_e, s) => { git = s.git; });
-    return git;
+
+    return { git, workspace };
 }
 
 test('a repository is a folder with a .git in it, and nothing else is offered', async () => {
-    const g = await theGit();
-    const names = (await g.repos()).map((r) => r.name);
+    const { workspace: ws } = await theGit();
+    const names = (await ws.repos()).map((r) => r.name);
     assert.deepEqual(names, ['repo-one'], 'a plain folder was offered as a repository');
 });
 
 test('a name that is not in the workspace is refused, and the refusal says what is', async () => {
-    const g = await theGit();
+    const { git: g } = await theGit();
     await assert.rejects(() => g.branches('nope'), /no repository called "nope"/);
     await assert.rejects(() => g.branches('nope'), /repo-one/);
 });
@@ -79,7 +91,7 @@ test('a name that is not in the workspace is refused, and the refusal says what 
 //it is the only place that has to be right about it — and a path from a caller
 //is a path to anywhere on a disk this runs a program against.
 test('a path is not a repository name', async () => {
-    const g = await theGit();
+    const { git: g } = await theGit();
     for (const bad of ['../repo-one', 'repo-one/.git', '/etc', 'C:\\Windows', '.']) {
         await assert.rejects(() => g.branches(bad), /no repository called/,
             'a path was accepted where a name belongs: ' + bad);
@@ -87,7 +99,7 @@ test('a path is not a repository name', async () => {
 });
 
 test('it reads the branches, and which one is out', async () => {
-    const g = await theGit();
+    const { git: g } = await theGit();
     assert.deepEqual((await g.branches('repo-one')).sort(), ['master', 'work/thing']);
     assert.equal(await g.head('repo-one'), 'master');
     assert.equal(await g.has('repo-one', 'work/thing'), true);
@@ -95,7 +107,7 @@ test('it reads the branches, and which one is out', async () => {
 });
 
 test('what one branch carries that another does not', async () => {
-    const g = await theGit();
+    const { git: g } = await theGit();
 
     const files = await g.files('repo-one', 'master', 'work/thing');
     assert.deepEqual(files.map((f) => f.file).sort(), ['added.txt', 'readme.md']);
@@ -124,7 +136,7 @@ test('what one branch carries that another does not', async () => {
 //the same call that lists branches is one where a mistake in a pane is a mistake
 //in a repository.
 test('it will not write, and says so as a door rather than a rule', async () => {
-    const g = await theGit();
+    const { git: g } = await theGit();
     for (const bad of ['commit', 'push', 'reset', 'checkout', 'clean']) {
         await assert.rejects(() => g.run('repo-one', [bad]), /is not something this reads with/,
             '`git ' + bad + '` was allowed');
@@ -143,7 +155,7 @@ test('it will not write, and says so as a door rather than a rule', async () => 
 //anything. This app has paid for that lesson twice at the other end already.
 //---------------------------------------------------------------------------
 test('a branch name cannot run a command', async () => {
-    const g = await theGit();
+    const { git: g } = await theGit();
     const sentinel = path.join(work, 'pwned.txt');
 
     const tries = [
