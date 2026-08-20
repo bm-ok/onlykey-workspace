@@ -437,6 +437,38 @@ h2:first-child { margin-top: 0; }
 label.inline > span { flex: 1 1 auto; }
 .dlg label, .form label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
 
+/* THERE AND NOT USABLE YET HAS TO LOOK IT, and until now it did not.
+
+   `buildFields` has always carried the argument -- "a field that is there and
+   cannot be used yet is a different thing from a field that is absent... shown
+   greyed out with its label saying why, it is a thing somebody can see exists
+   and find out how to turn on" -- and set `input.disabled = true` to say so.
+   Nothing in the stylesheet answered. A disabled field drew identically to a
+   live one: same border, same ground, same cursor. So the pattern read as a
+   box somebody could type in and could not, which is worse than either of the
+   two things it was choosing between.
+
+   Found by putting the kit on one screen, which is the whole reason for doing
+   that -- a disabled field beside an enabled one is obviously wrong, and one
+   on its own in a dialog is not. The same gap is in the old window.
+
+   The label dims with the control. It carries the reason ("no machine is
+   tagged yet"), so it must read as part of the same unavailable thing rather
+   than as a live heading over a dead box. */
+.dlg input:disabled, .dlg select:disabled, .dlg textarea:disabled,
+.form input:disabled, .form select:disabled, .form textarea:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  background: var(--panel);
+  border-style: dashed;
+}
+.dlg label:has(+ input:disabled),
+.dlg label:has(+ select:disabled),
+.dlg label:has(+ textarea:disabled),
+.form label:has(+ input:disabled),
+.form label:has(+ select:disabled),
+.form label:has(+ textarea:disabled) { opacity: .5; }
+
 /* ---------- layout ---------- */
 
 main { padding: 16px; }

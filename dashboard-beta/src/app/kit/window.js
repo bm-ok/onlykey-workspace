@@ -31,7 +31,7 @@ async function plugin(imports, register) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Row,
         Card, CardTitle, CardSub, Badge, Badges, Chips, Chip,
-        Button, Plus, Cog, Finder, Skeleton, Notice, Banner, Link, Spec,
+        Button, Plus, Cog, Finder, Form, Field, Skeleton, Notice, Banner, Link, Spec,
         Empty, Note, Mono, Muted, Kv, KvRow, ask
     } = theme;
 
@@ -113,6 +113,19 @@ async function plugin(imports, register) {
                             <Spec summary="folded away until asked for">
                                 <Kv><KvRow label="inside">the detail nobody needs by default</KvRow></Kv>
                             </Spec>
+                        </Group>
+
+                        <Group title="Fields" about="the same in a pane as in the gate — one set of rules, so they cannot drift">
+                            <Form>
+                                <Field f={{ name: 'a', label: 'A box' , placeholder: 'type here', hint: 'a hint under it, because where a value comes from is what somebody is missing' }} value="" onChange={function () { }} />
+                                {/* THERE AND NOT USABLE YET, which is the case
+                                    this preview exists to check. It has to look
+                                    unavailable — the pattern is only better than
+                                    hiding the field if somebody can tell. */}
+                                <Field f={{ name: 'b', label: 'There and not usable yet', disabled: true, hint: 'greyed out and still visible, so it can be found and turned on rather than appearing one day out of nowhere' }} value="" onChange={function () { }} />
+                                <Field f={{ name: 'c', label: 'A choice', options: [{ value: 'x', label: 'one' }, { value: 'y', label: 'the other' }] }} value="x" onChange={function () { }} />
+                                <Field f={{ name: 'd', type: 'checkbox', label: 'A tick', hint: 'its label goes beside it, not over it' }} value={false} onChange={function () { }} />
+                            </Form>
                         </Group>
 
                         <Group title="Waiting" about="a shape, not the word loading — it holds the layout still">

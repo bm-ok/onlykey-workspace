@@ -87,6 +87,10 @@ function Finder({ value, onChange, placeholder }) {
     );
 }
 
+//The wrapper that makes inputs inside it look like fields. `.form` and `.dlg`
+//carry the same rules, so a form in a pane and a form in the gate cannot drift.
+function Form({ children }) { return <div className="form">{children}</div>; }
+
 //---- waiting -------------------------------------------------------------
 
 //A SKELETON RATHER THAN THE WORD "LOADING".
@@ -176,6 +180,6 @@ function KvRow({ label, children }) { return <tr><th>{label}</th><td>{children}<
 module.exports = {
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip,
-    Button, Plus, Cog, Finder,
+    Button, Plus, Cog, Finder, Form,
     Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, openOut
 };

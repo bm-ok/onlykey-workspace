@@ -271,4 +271,7 @@ function Dialogs() {
     return <Dialog key={top.id} id={top.id} spec={top.spec} />;
 }
 
-module.exports = { ask, Dialogs };
+//`Field` IS EXPORTED BECAUSE FORMS EXIST OUTSIDE DIALOGS. A pane that asks for
+//a value in place -- a note, an address, a search that is more than one box --
+//should draw it the same way the gate does, not nearly the same way.
+module.exports = { ask, Dialogs, Field };
