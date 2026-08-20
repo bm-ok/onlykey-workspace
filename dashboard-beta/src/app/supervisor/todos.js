@@ -1,6 +1,3 @@
-var fs = require('fs');
-var path = require('path');
-
 //---------------------------------------------------------------------------
 //A LIST OF THINGS TO DO, kept by this host for the supervisor and the person
 //together.
@@ -82,25 +79,26 @@ function withRef(r) {
     return Object.assign({}, r, { ref: 'T' + r.number });
 }
 
-module.exports = function todos(dir) {
-    var FILE = path.join(dir, 'todo.json');
+//IT IS HANDED A DOCUMENT RATHER THAN A FOLDER, so what it means to keep
+//something is ../core/state's business and not this file's. That store writes
+//beside and moves into place; this used to write straight over the file, and a
+//list that loses power mid-write came back as no list at all — which every
+//reader here treats as "nothing on the list yet" rather than as a loss.
+module.exports = function todos(doc) {
 
     //`{ next, rows }` RATHER THAN A BARE LIST, so the counter survives a removal.
     //A bare list is still read — see nextNumber — and is what the dashboard's file
     //looks like, so one copied in by hand works and simply cannot promise the
     //number.
     function read() {
-        try {
-            var kept = JSON.parse(fs.readFileSync(FILE, 'utf8').replace(/^﻿/, ''));
-            if (Array.isArray(kept)) return { next: 0, rows: kept };
-            if (kept && Array.isArray(kept.rows)) return { next: Number(kept.next) || 0, rows: kept.rows };
-            return { next: 0, rows: [] };
-        } catch (e) { return { next: 0, rows: [] }; }
+        var kept = doc.read(null);
+        if (Array.isArray(kept)) return { next: 0, rows: kept };
+        if (kept && Array.isArray(kept.rows)) return { next: Number(kept.next) || 0, rows: kept.rows };
+        return { next: 0, rows: [] };
     }
 
     function write(kept) {
-        try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* it exists */ }
-        try { fs.writeFileSync(FILE, JSON.stringify(kept, null, 2)); } catch (e) { /* the answer still stands for this call */ }
+        try { doc.write(kept); } catch (e) { /* the answer still stands for this call */ }
         return kept;
     }
 
@@ -213,6 +211,6 @@ module.exports = function todos(dir) {
         clear: function () { var kept = read(); return write({ next: nextNumber(kept) - 1, rows: [] }); },
         read: function () { return read().rows; },
         STATES: STATES,
-        FILE: FILE
+        FILE: doc.path
     };
 };

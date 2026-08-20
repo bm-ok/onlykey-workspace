@@ -31,7 +31,7 @@ var path = require('node:path');
 //a press nobody agreed to.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['actions', 'app', 'dataDir'];
+plugin.consumes = ['actions', 'app', 'dataDir', 'state'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var actions = imports.actions;
@@ -39,8 +39,21 @@ async function plugin(imports, register) {
     //THE DATA DIRECTORY IS DERIVED FROM `name` IN package.json, which is not
     //obvious and is worked out in one place now — see ../datadir, which also
     //says what a rename costs. It used to be rebuilt here and again in ../shot.
-    var dir = imports.dataDir.path;
-    var file = imports.dataDir.at('guards.json');
+    //KEPT THROUGH ../core/state RATHER THAN BY HAND, and the reason is sharper
+    //here than anywhere else it was done by hand. That store writes beside and
+    //moves into place; a plain write over the real file has a window in which it
+    //is half a document — and a half-written guards file does not fail to parse
+    //loudly, it falls into the `catch` below and reads as NOTHING IS TURNED OFF.
+    //A permissions file that loses power mid-write and comes back as "everything
+    //is allowed" is the worst available failure for this particular file.
+    var kept = imports.state.app.doc('guards');
+
+    //WHERE IT USED TO BE. This wrote to the root of the data directory and the
+    //store keeps documents in `state/`, so moving it without carrying the file
+    //over would silently un-guard everything somebody had set — which looks
+    //exactly like a fresh install and is not one. Carried once, and only when
+    //there is nothing in the new place: a document already there is the live one.
+    var before = imports.dataDir.at('guards.json');
 
     //`off` holds the proposed guards the person has TURNED OFF, and `on` holds
     //the ones they added themselves. Storing exceptions rather than the whole
@@ -62,24 +75,37 @@ async function plugin(imports, register) {
     //brought into line when they had not.
     function key(g) { return String(g.label || '').trim().toLowerCase(); }
 
-    function load() {
-        try {
-            var raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-            state = {
-                off: Array.isArray(raw.off) ? raw.off : [],
-                on: Array.isArray(raw.on) ? raw.on : [],
-                seen: Array.isArray(raw.seen) ? raw.seen : []
-            };
-        } catch (e) {
-            //never written, or unreadable. Both mean: nothing is turned off.
-            state = { off: [], on: [], seen: [] };
-        }
+    function shaped(raw) {
+        return {
+            off: raw && Array.isArray(raw.off) ? raw.off : [],
+            on: raw && Array.isArray(raw.on) ? raw.on : [],
+            seen: raw && Array.isArray(raw.seen) ? raw.seen : []
+        };
     }
 
-    function save() {
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(file, JSON.stringify(state, null, 2));
+    function load() {
+        var raw = kept.read(null);
+
+        //ONLY WHEN THERE IS NOTHING IN THE NEW PLACE. A document already there is
+        //the live one, and taking the older copy because it happens to be in the
+        //older place is how a setting goes backwards in time.
+        if (raw === null) {
+            try {
+                raw = JSON.parse(fs.readFileSync(before, 'utf8').replace(/^﻿/, ''));
+                state = shaped(raw);
+                //WRITTEN FORWARD IMMEDIATELY, so the next run reads one place.
+                //The old file is left rather than deleted: if this move is wrong,
+                //the evidence should still be there.
+                kept.write(state);
+                return;
+            } catch (e) { raw = null; }
+        }
+
+        //never written, or unreadable. Both mean: nothing is turned off.
+        state = shaped(raw);
     }
+
+    function save() { kept.write(state); }
 
     load();
 
@@ -88,7 +114,11 @@ async function plugin(imports, register) {
             off: state.off.slice(),
             on: state.on.slice(),
             seen: state.seen.slice(),
-            file: file,
+            //WHERE IT IS NOW, asked of the document rather than remembered here.
+            //This read a `file` variable that the move to ../core/state removed,
+            //so every call to `guards` threw "file is not defined" — the whole
+            //action, for a field nothing needed to be a local.
+            file: kept.path,
             note: 'Guards are read from anywhere and set only at the window. `off` are proposed guards a person turned off; `on` are guards a person added.'
         };
     };

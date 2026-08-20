@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const makeTodos = require('../src/app/supervisor/todos');
+const statePlugin = require('../src/app/core/state/main');
 const actionsPlugin = require('../src/app/core/actions/main');
 const supervisorPlugin = require('../src/app/supervisor/server');
 
@@ -12,6 +13,15 @@ const supervisorPlugin = require('../src/app/supervisor/server');
 //is worth reading because of.
 
 const somewhere = () => fs.mkdtempSync(path.join(os.tmpdir(), 'okc-todos-'));
+
+//THE REAL ../core/state, NOT A STAND-IN. The store is what decides what keeping
+//something means — the write beside and the move into place — and a fake here
+//would be testing the fake. It is handed a temp folder rather than the app's.
+const aDoc = (dir) => {
+    let state = null;
+    statePlugin({ dataDir: { at: (...p) => path.join(dir, ...p) } }, async (_e, s) => { state = s.state; });
+    return state.app.doc('todo');
+};
 
 //THE REAL TABLE, NOT A STAND-IN. `whoAsked` lives on it, and the refusal below
 //turns on what it answers — a fake table here would be testing the fake.
@@ -23,8 +33,11 @@ async function anApp() {
     const said = [];
     const logger = { good: (t) => said.push(t), warn: (t) => said.push(t), info: () => {}, bad: () => {} };
 
+    let state = null;
+    await statePlugin({ dataDir: { at: (...p) => path.join(dir, ...p) } }, async (_e, s) => { state = s.state; });
+
     await supervisorPlugin(
-        { app: { host: { actions, dataDir: { at: (...p) => path.join(dir, ...p) } } }, log: { on: () => logger } },
+        { app: { host: { actions } }, log: { on: () => logger }, state },
         async () => {}
     );
     return { actions, dir, said };
@@ -34,7 +47,7 @@ async function anApp() {
 //not hand its number to the next thing written. Two things in a list that have
 //both been called T2 is a reference that stops meaning anything.
 test('a ref is never reused, even after the one holding it is gone', () => {
-    const todos = makeTodos(somewhere());
+    const todos = makeTodos(aDoc(somewhere()));
 
     assert.equal(todos.add('first').ref, 'T1');
     assert.equal(todos.add('second').ref, 'T2');
@@ -43,7 +56,7 @@ test('a ref is never reused, even after the one holding it is gone', () => {
 });
 
 test('it is found by whatever somebody has to hand', () => {
-    const todos = makeTodos(somewhere());
+    const todos = makeTodos(aDoc(somewhere()));
     const one = todos.add('look at the fork');
 
     assert.equal(todos.get('T1').what, 'look at the fork');
@@ -56,7 +69,7 @@ test('it is found by whatever somebody has to hand', () => {
 //WHAT IS CHANGED IS WHAT IS PASSED, so marking something done does not quietly
 //drop the reason it was written.
 test('editing one field leaves the others alone', () => {
-    const todos = makeTodos(somewhere());
+    const todos = makeTodos(aDoc(somewhere()));
     todos.add('ask about the coercion in #13', 'it changes what we recommend');
 
     const after = todos.edit('T1', { state: 'doing' });
@@ -65,7 +78,7 @@ test('editing one field leaves the others alone', () => {
 });
 
 test('when it was finished is kept, cleared on reopen, and moved when it is finished again', () => {
-    const todos = makeTodos(somewhere());
+    const todos = makeTodos(aDoc(somewhere()));
     todos.add('a thing');
 
     const first = todos.edit('T1', { state: 'done' }).done;
@@ -81,7 +94,7 @@ test('when it was finished is kept, cleared on reopen, and moved when it is fini
 });
 
 test('a state that is not one of the three is refused, not stored', () => {
-    const todos = makeTodos(somewhere());
+    const todos = makeTodos(aDoc(somewhere()));
     todos.add('a thing');
 
     assert.throws(() => todos.edit('T1', { state: 'nearly' }), /not a state/);
@@ -90,14 +103,14 @@ test('a state that is not one of the three is refused, not stored', () => {
 });
 
 test('a line nobody could read is refused rather than stored empty', () => {
-    const todos = makeTodos(somewhere());
+    const todos = makeTodos(aDoc(somewhere()));
     assert.throws(() => todos.add('   '), /Say what is to be done/);
     todos.add('real');
     assert.throws(() => todos.edit('T1', { what: '' }), /nothing in it is not a todo/);
 });
 
 test('what is stored is trimmed to what a list can show', () => {
-    const todos = makeTodos(somewhere());
+    const todos = makeTodos(aDoc(somewhere()));
     const one = todos.add('x'.repeat(500), 'y'.repeat(3000));
     assert.equal(one.what.length, 200);
     assert.equal(one.why.length, 2000);
@@ -108,9 +121,9 @@ test('what is stored is trimmed to what a list can show', () => {
 
 test('it survives being written and read again', () => {
     const dir = somewhere();
-    makeTodos(dir).add('written by one', 'and read by another');
+    makeTodos(aDoc(dir)).add('written by one', 'and read by another');
 
-    const later = makeTodos(dir).all();
+    const later = makeTodos(aDoc(dir)).all();
     assert.equal(later.length, 1);
     assert.equal(later[0].what, 'written by one');
     assert.equal(later[0].ref, 'T1');

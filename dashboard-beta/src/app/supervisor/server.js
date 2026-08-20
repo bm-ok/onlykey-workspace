@@ -26,7 +26,7 @@ var makeTodos = require('./todos');
 //button on the pane is `protected`, and both halves of the rule are real.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log'];
+plugin.consumes = ['app', 'log', 'state'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -37,8 +37,11 @@ async function plugin(imports, register) {
     //suite does exactly that. See ../core/okc/server.js.
     if (!actions) return register(null, {});
 
-    //BESIDE THE APPROVALS AND WHATEVER ELSE THIS HOST CARRIES, not per workspace.
-    var todos = makeTodos(host.dataDir ? host.dataDir.at('state') : '.');
+    //IN THE HOST'S DRAWER, NOT THE WORKSPACE'S. What somebody is carrying spans
+    //whatever folder they happened to be looking at — the same reasoning the app
+    //being ported from gives for keeping this beside the triage notebook rather
+    //than per workspace. ../core/state has both; this one is `app`.
+    var todos = makeTodos(imports.state.app.doc('todo'));
 
     //ONE SHAPE FOR EVERY ANSWER THAT RETURNS THE LIST, so the window and a model
     //are reading the same thing.
