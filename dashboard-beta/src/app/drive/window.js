@@ -256,37 +256,49 @@ async function plugin(imports, register) {
             }
 
             var before = f.kind === 'checkbox' ? f.node.checked : f.node.value;
+            var want2 = f.kind === 'checkbox'
+                ? !(want.value === false || want.value === 'false' || want.value === '' || want.value === '0')
+                : (want.value == null ? '' : String(want.value));
 
-            if (f.kind === 'checkbox') {
-                f.node.checked = !(want.value === false || want.value === 'false' || want.value === '' || want.value === '0');
-            } else {
-                f.node.value = want.value == null ? '' : String(want.value);
-                //A SELECT ONLY TAKES WHAT IT HAS. Assigning a value it has no
-                //option for leaves it empty, which reads as a real choice —
-                //"none" is a real answer in half the dropdowns here — so it is
-                //checked rather than reported as done.
-                if (f.kind === 'select' && f.node.value !== String(want.value == null ? '' : want.value)) {
-                    f.node.value = before;
-                    throw new Error('"' + f.label + '" has no option "' + want.value + '". It offers: ' +
-                        f.options.map(function (o) { return '"' + o + '"'; }).join(', ') + '.');
-                }
-            }
-
-            //THE EVENTS A PERSON'S TYPING RAISES, because that is what React is
-            //listening for. Setting `.value` alone raises neither, so a filled
-            //form looks right on screen and is empty everywhere it matters.
+            //THROUGH THE NATIVE SETTER, AND NOT AFTER AN ASSIGNMENT. This is the
+            //whole trick and the first version got it exactly backwards.
             //
-            //AND REACT NEEDS MORE THAN THAT. It keeps its own copy of the value
-            //on the DOM node and skips the change when its copy already matches
-            //what was assigned — so the native setter has to be called, past the
-            //property React installed, or the field reverts on the next render.
+            //React installs its own `value` property on the node and keeps a
+            //tracker beside it. On an `input` event it compares the tracker with
+            //what is there; if they match, nothing changed and the event is
+            //dropped. So `node.value = x` FIRST updates the tracker — and the
+            //event that follows is then a no-op.
+            //
+            //It reported success and did nothing. `windowFill` answered
+            //`now: "Show in folder"`, the box on the screen showed it, and the
+            //list it was meant to filter did not move — because React never
+            //heard. A write that lies about having happened is worse than one
+            //that fails.
+            //
+            //Calling the native setter reaches past React's property, so the
+            //tracker is left holding the OLD value and the event is real.
             var proto = f.node instanceof window.HTMLSelectElement ? window.HTMLSelectElement.prototype
                 : f.node instanceof window.HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype
                     : window.HTMLInputElement.prototype;
             var setter = Object.getOwnPropertyDescriptor(proto, f.kind === 'checkbox' ? 'checked' : 'value');
-            if (setter && setter.set) {
-                setter.set.call(f.node, f.kind === 'checkbox' ? f.node.checked : f.node.value);
+            if (setter && setter.set) setter.set.call(f.node, want2);
+            else if (f.kind === 'checkbox') f.node.checked = want2;
+            else f.node.value = want2;
+
+            //A SELECT ONLY TAKES WHAT IT HAS. Assigning a value it has no option
+            //for leaves it empty, which reads as a real choice — "none" is a
+            //real answer in half the dropdowns here — so it is checked rather
+            //than reported as done.
+            if (f.kind === 'select' && f.node.value !== want2) {
+                if (setter && setter.set) setter.set.call(f.node, before); else f.node.value = before;
+                throw new Error('"' + f.label + '" has no option "' + want.value + '". It offers: ' +
+                    f.options.map(function (o) { return '"' + o + '"'; }).join(', ') + '.');
             }
+
+            //THE EVENTS A PERSON'S TYPING RAISES, because that is what the
+            //fields are listening for. Setting a value alone raises neither, so
+            //a filled form looks right on screen and is empty everywhere it
+            //matters.
             f.node.dispatchEvent(new Event('input', { bubbles: true }));
             f.node.dispatchEvent(new Event('change', { bubbles: true }));
 
@@ -306,12 +318,13 @@ async function plugin(imports, register) {
             //to find out was to press it. Ambiguity already refuses; this is the
             //other half, an UNambiguous match that is unambiguously the wrong
             //button.
+            var byName = (want.guarded || []).indexOf(String(b.label || '').trim().toLowerCase()) >= 0;
             if (want.dry) {
                 return {
                     on: r.where, would: b.label, picks: !!b.picks,
                     disabled: b.disabled, why: b.why || null,
-                    protected: !!b.protected,
-                    note: b.protected
+                    protected: !!b.protected || byName,
+                    note: (b.protected || byName)
                         ? "Nothing was pressed, and nothing here can press it: this one is a person's."
                         : 'Nothing was pressed. Run it again without --dry to press it.'
                 };
@@ -330,9 +343,23 @@ async function plugin(imports, register) {
             //Refused even in testing mode, and refused for --dry's benefit too:
             //--dry still names it, so the button can be FOUND from here and
             //cannot be pressed from here.
-            if (b.protected) {
-                throw new Error('"' + b.label + '" is a person\'s press. It is marked protected, which is what the purple says: ' +
-                    'the point of this button is that somebody read what it is about and decided. Testing mode does not open it.');
+            //BY THE WORDS ON IT, as well as by the class. The class covers what
+            //the app proposes; this covers what a person added, including on a
+            //control whose pane never used the kit and so was never painted.
+            var byName = (want.guarded || []).indexOf(String(b.label || '').trim().toLowerCase()) >= 0;
+            if (b.protected || byName) {
+                //THE MESSAGE HAS TO BE TRUE OF THIS BUTTON. Saying "which is what
+                //the purple says" about a control that is NOT painted purple —
+                //because its pane hand-rolled the button and never consulted the
+                //theme — is a refusal describing something the person cannot
+                //see. The two are worth telling apart: one is the app's own
+                //mark, the other is a guard somebody added, and only the first
+                //is on the screen.
+                throw new Error('"' + b.label + '" is a person\'s press. '
+                    + (b.protected
+                        ? 'It is marked protected, which is what the purple says: the point of this button is that somebody read what it is about and decided.'
+                        : 'You guarded it by name in Settings → Guards. It is not painted purple, because the pane it lives on builds that button itself rather than from the kit.')
+                    + ' Testing mode does not open it.');
             }
 
             //REFUSED RATHER THAN PRESSED AND IGNORED. A disabled button does

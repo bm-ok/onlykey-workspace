@@ -152,12 +152,22 @@ async function plugin(imports, register) {
                 var k = key(g);
                 var want = !(args.on === false || args.on === 'false');
 
+                //TURNING OFF WHAT YOU TURNED ON IS A REMOVAL, NOT AN EXCEPTION.
+                //
+                //`off` means "the app proposes this guard and the person
+                //overruled it". A guard somebody ADDED has nothing to overrule,
+                //so recording it there leaves an exception to a rule that does
+                //not exist — harmless, and it accumulates, and the next reader
+                //has to work out that half the entries mean nothing.
+                //
+                //Found by adding a guard and taking it away again: the store
+                //came back with `on: []` and `off: [ the thing ]`, which reads
+                //as a decision when it is a leftover.
+                var wasMine = state.on.some(function (x) { return key(x) === k; });
                 state.off = state.off.filter(function (x) { return key(x) !== k; });
                 state.on = state.on.filter(function (x) { return key(x) !== k; });
-                //`on` and `off` are both explicit. Which list it lands in is
-                //decided by the window, which knows whether the code proposed
-                //this one — here it is only recorded.
-                (want ? state.on : state.off).push(g);
+                if (want) state.on.push(g);
+                else if (!wasMine) state.off.push(g);
                 save();
                 return Object.assign({ set: g, guarded: want }, read());
             }

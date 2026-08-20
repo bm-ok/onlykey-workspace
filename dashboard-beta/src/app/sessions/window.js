@@ -302,7 +302,7 @@ async function plugin(imports, register) {
             </>) : null}
 
             <div className="row">
-                <button className="btn small" title="Open the folder it is kept in" onClick={showInFolder}>Show in folder</button>
+                <Button kind="small" title="Open the folder it is kept in" onClick={showInFolder}>Show in folder</Button>
                 {/* THE OLD PANE HAS A "GO TO THE TASK" BUTTON HERE, drawn only
                     when the task is still on the board — offering it for an
                     orphan is a button that switches tab and lands on nothing.
@@ -318,7 +318,7 @@ async function plugin(imports, register) {
                         <Button kind="small danger" protect onClick={forget}>Yes, forget it</Button>
                         <Button kind="small" onClick={function () { setArmed(false); }}>Keep it</Button>
                     </>)
-                    : <button className="btn small danger" onClick={function () { setSaid(null); setArmed(true); }}>Forget it</button>}
+                    : <Button kind="small danger" onClick={function () { setSaid(null); setArmed(true); }}>Forget it</Button>}
             </div>
         </>);
     }
