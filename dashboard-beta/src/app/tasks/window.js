@@ -21,7 +21,7 @@ plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc, remember } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Skeleton} = theme;
 
     //the words the board itself uses, and the colour each one deserves
     var LOOK = {
@@ -64,7 +64,7 @@ async function plugin(imports, register) {
         var { state, error, reads } = useAsk(okc, 'tasks', {}, 5000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
-        if (!state) return <Pane><Empty>asking…</Empty></Pane>;
+        if (!state) return <Pane><Skeleton rows={4} /></Pane>;
 
         var rows = (state.tasks || []).slice().sort(function (a, b) { return (b.number || 0) - (a.number || 0); });
         var live = rows.filter(function (t) { return t.state == 'given' || t.state == 'queued'; });

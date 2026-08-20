@@ -52,7 +52,7 @@ plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc, remember } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono, Button } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Button, Skeleton} = theme;
 
     //RUNNING THE DRILLS IS A PERSON'S PRESS, and every button here starts one.
     //
@@ -547,7 +547,7 @@ async function plugin(imports, register) {
         useEffect(function () { tab.badge = failed ? String(failed) : null; }, [failed]);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
-        if (!state) return <Pane><Empty>asking…</Empty></Pane>;
+        if (!state) return <Pane><Skeleton rows={4} /></Pane>;
 
         //the server is the authority on whether a run is going; `busy` only
         //covers the seconds between pressing and the next read landing.

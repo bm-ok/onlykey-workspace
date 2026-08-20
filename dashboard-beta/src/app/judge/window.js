@@ -92,7 +92,7 @@ async function plugin(imports, register) {
         var { state, error, reads } = useAsk(okc, 'judging', {}, 5000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
-        if (!state) return <Pane><Empty>asking…</Empty></Pane>;
+        if (!state) return <Pane><Skeleton rows={4} /></Pane>;
 
         var rows = (state.judgements || []).slice().reverse();
         var live = rows.filter(function (j) { return j.state == 'queued' || j.state == 'given'; });

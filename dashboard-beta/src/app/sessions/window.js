@@ -34,7 +34,7 @@ plugin.consumes = ['shell', 'theme', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono, Button, ago } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Button, ago, Skeleton} = theme;
 
     //FORGETTING A SESSION IS PROPOSED AS A PERSON'S PRESS.
     //
@@ -317,7 +317,7 @@ async function plugin(imports, register) {
         var [picked, setPicked] = useState(null);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
-        if (!state) return <Pane><Empty>asking…</Empty></Pane>;
+        if (!state) return <Pane><Skeleton rows={4} /></Pane>;
 
         var rows = state.sessions || [];
         //THINGS GET FORGOTTEN AND BOARDS GET CLEARED, so a pick that is no

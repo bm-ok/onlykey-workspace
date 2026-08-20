@@ -25,7 +25,7 @@ async function plugin(imports, register) {
     //THIS PANE'S OWN LOOK, which the theme does not promise. See ./lines.scss.
     require('./lines.scss');
     var { shell, theme, okc } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Skeleton} = theme;
 
     function Line({ g }) {
         var on = g.on || [];
@@ -59,7 +59,7 @@ async function plugin(imports, register) {
         var { state, error, reads } = useAsk(okc, 'lines', {}, 10000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
-        if (!state) return <Pane><Empty>asking…</Empty></Pane>;
+        if (!state) return <Pane><Skeleton rows={4} /></Pane>;
 
         var groups = state.groups || [];
 

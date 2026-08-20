@@ -28,7 +28,7 @@ async function plugin(imports, register) {
     //THIS PANE'S OWN LOOK, which the theme does not promise. See ./github.scss.
     require('./github.scss');
     var { shell, theme, okc } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Skeleton} = theme;
 
     var day = function (s) { return s ? String(s).slice(0, 10) : null; };
 
@@ -42,7 +42,7 @@ async function plugin(imports, register) {
         var tls = useAsk(okc, 'tlsKey', {}, 30000);
 
         if (!token.state && token.error) return <Pane><Note kind="bad">{token.error}</Note></Pane>;
-        if (!token.state) return <Pane><Empty>asking…</Empty></Pane>;
+        if (!token.state) return <Pane><Skeleton rows={4} /></Pane>;
 
         var t = token.state;
         var s = ssh.state || {};

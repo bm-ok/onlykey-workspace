@@ -28,7 +28,7 @@ plugin.consumes = ['shell', 'theme', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Skeleton} = theme;
 
     //THE LAST 800 OF WHAT MATCHED, not of what arrived. Filtering to one tag
     //during an install is how somebody finds the six lines that matter in two
@@ -99,7 +99,7 @@ async function plugin(imports, register) {
         }
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
-        if (!state) return <Pane><Empty>asking…</Empty></Pane>;
+        if (!state) return <Pane><Skeleton rows={4} /></Pane>;
 
         var tags = state.tags || [];
 
@@ -191,7 +191,7 @@ async function plugin(imports, register) {
         var [find, setFind] = useState('');
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
-        if (!state) return <Pane><Empty>asking…</Empty></Pane>;
+        if (!state) return <Pane><Skeleton rows={4} /></Pane>;
 
         var all = state.actions || [];
         var q = find.toLowerCase();

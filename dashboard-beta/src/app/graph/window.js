@@ -35,7 +35,7 @@ async function plugin(imports, register) {
     //THIS PANE'S OWN LOOK, which the theme does not promise. See ./graph.scss.
     require('./graph.scss');
     var { shell, theme, okc } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Skeleton} = theme;
 
     //TONES ARRIVE AS RAW HEX AND MAP ONTO THE STYLESHEET'S OWN VARS, so a
     //colour changed in dashboard.scss changes here with it. #f778ba — the pink
@@ -210,7 +210,7 @@ async function plugin(imports, register) {
         var shut = error && /^No workspace is open/.test(error);
 
         if (!state && error) return <Note kind={shut ? 'warn' : 'bad'}>{error}</Note>;
-        if (!state) return <Empty>asking…</Empty>;
+        if (!state) return <Skeleton rows={4} />;
 
         var nodes = state.nodes || [];
         return (<>

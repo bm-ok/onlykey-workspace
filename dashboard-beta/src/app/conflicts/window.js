@@ -25,7 +25,7 @@ plugin.consumes = ['shell', 'theme', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var { shell, theme, okc } = imports;
-    var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Skeleton} = theme;
 
     function Row({ c }) {
         return (
@@ -46,7 +46,7 @@ async function plugin(imports, register) {
         var { state, error, reads } = useAsk(okc, 'conflicts', {}, 15000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
-        if (!state) return <Pane><Empty>asking…</Empty></Pane>;
+        if (!state) return <Pane><Skeleton rows={4} /></Pane>;
 
         var clashes = state.conflicts || [];
         var stuck = state.stuck || [];

@@ -186,8 +186,15 @@ function main () {
           // photographed full of libraries and chains. A reading pane has
           // nothing to press ON PURPOSE. Only a pane with neither is a fault,
           // and only that one is counted.
+          // ANYTHING AT ALL COUNTS, and the threshold that used to sit here was
+          // a guess. "Nothing has moved on both sides" plus an empty state is
+          // 183 characters, and a pane that says its answer briefly is not a
+          // broken one -- it was reported as "nothing on screen" purely for
+          // being concise. Only a pane that rendered literally nothing is a
+          // fault, and now that no pane fakes a loading state with the word
+          // "asking" there is nothing left for a threshold to filter out.
           const chars = seen.content || 0
-          if (chars > 200) {
+          if (chars > 0) {
             if (!quiet) console.log(`  ${name.padEnd(28)} no controls, ${chars} chars of content`)
           } else {
             bare.push(name)
