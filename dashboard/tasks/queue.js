@@ -1977,10 +1977,39 @@ async function adopt (actions, log) {
       try {
         const here = (await actions.vmList.run({})).vms
         const vm = here.find(v => v.name === j.machine)
+        let outcome = null
         if (vm && vm.connected) {
           // Waits if it is still going, returns at once if it finished while
           // this app was down -- which is the case this exists for.
-          await waitForRun(actions, to, j.machine, j.run)
+          outcome = await waitForRun(actions, to, j.machine, j.run)
+
+          // ---- AND THE LOG IS KEPT, WHICH IT WAS NOT ------------------------
+          //
+          // The ordinary path keeps it a few hundred lines above, "so it
+          // survives the machine", and this path threw the same answer away --
+          // so a judgement adopted after a restart came out with its findings
+          // and no account of the run that produced them, and `judgementLog`
+          // explained the absence as "judgements read before this app started
+          // keeping their logs have none". For one made four minutes earlier.
+          //
+          // THE EXIT CODE GOES WITH IT, and that is the part that matters. The
+          // record already learnt once that a crashed reading and one that read
+          // the change and found nothing are the same row without it -- and the
+          // machine is rolled back in the `finally` below, taking the answer
+          // with it. Adoption was quietly undoing that fix for every run a
+          // restart happened to interrupt.
+          try {
+            if (!archive.has(j.uid, j.run)) {
+              const out = await actions.vmRunOutput.run({ name: j.machine, run: j.run, lines: 2000 })
+              archive.keep(j.uid, j.run, {
+                output: out.output || out.text || '',
+                machine: j.machine,
+                state: outcome && outcome.state ? outcome.state : null,
+                exit: outcome && outcome.exit !== undefined ? outcome.exit : null
+              })
+              to.info(`kept the log of ${j.run}, so it survives the machine — picked up after a restart`)
+            }
+          } catch { /* the reading is recorded either way */ }
 
           // WHAT IT DECIDED, off the machine, because the record here has no
           // way to know. The run prints one `okc-result` line; the verdict and
@@ -1996,8 +2025,22 @@ async function adopt (actions, log) {
           } catch { /* the reading is recorded either way */ }
         }
 
+        // AND HOW THE RUN ENDED, ON THE ATTEMPT, for the same reason the
+        // ordinary path does it: the attempt is where "it crashed" and "it
+        // finished and said nothing" are told apart, and an adopted run was
+        // leaving both blank.
+        const marked = (judging.get(j.id).attempts || []).map(a => a.run === j.run
+          ? {
+              ...a,
+              exit: outcome && outcome.exit !== undefined ? outcome.exit : (a.exit === undefined ? null : a.exit),
+              outcome: (outcome && outcome.state) || a.outcome || null,
+              adopted: true
+            }
+          : a)
+
         judging.update(j.id, {
           state: 'done',
+          attempts: marked,
           concluded: concluded || j.concluded || null,
           read: new Date().toISOString()
         })
