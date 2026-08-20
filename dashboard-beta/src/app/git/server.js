@@ -53,6 +53,7 @@ var child = require('child_process');
 //    files(repo, b, h)   -> [{ file, added, removed, binary }]
 //    commits(repo, b, h) -> [{ sha, who, at, subject }]
 //    diff(repo, b, h, f) -> text
+//    fileAt(repo, ref, f)-> text, or null when the file is not at that ref
 //
 //`b` AND `h` ARE BASE AND HEAD, in that order, and a replacement has to mean the
 //same thing by them: what HEAD carries that BASE does not. Swapping them silently
@@ -222,6 +223,26 @@ async function plugin(imports, register) {
         });
     }
 
+    //ONE FILE AS IT IS AT ONE REF, which is what side by side is made of. A
+    //diff says what changed; two whole files say what the thing IS on each side,
+    //and those are different readings — a reviewer follows the second when the
+    //change is small and the surrounding code is the question.
+    //
+    //MISSING IS AN ANSWER, NOT A FAILURE. A file added on the head does not exist
+    //on the base and a deleted one is the other way round; both are ordinary, and
+    //both make `git show` exit non-zero. `null` says "not there", which the caller
+    //can draw as an empty side rather than as an error.
+    //
+    //`ref:path` IS ONE ARGUMENT and git parses it — the colon is git's, not a
+    //shell's. Still one array element, so a path with a space is a path with a
+    //space.
+    async function fileAt(repo, ref, file) {
+        if (!file) throw new Error('Which file?');
+        var said = await run(repo, ['show', String(ref) + ':' + String(file)]);
+        if (said.code !== 0) return null;
+        return said.cut ? said.stdout + '\n[…this file is longer than this app will read]' : said.stdout;
+    }
+
     //WHETHER A REPOSITORY HAS BOTH SIDES, which is the question that decides
     //whether a comparison means anything there. Answered per repository because
     //a line across three repositories is often only in two of them, and that is
@@ -294,6 +315,7 @@ async function plugin(imports, register) {
             diff: diff,
             files: files,
             commits: commits,
+            fileAt: fileAt,
             has: has,
             //HANDED OUT SO NOBODY GUESSES AT IT. A caller that wants to say what
             //this can do should say what this SAYS it can do.

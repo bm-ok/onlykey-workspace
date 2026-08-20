@@ -202,7 +202,10 @@ async function plugin(imports, register) {
                 lines: groups.map(function (g) {
                     return {
                         name: g.name,
-                        marked: !!g.marked,
+                        //CARRIED THROUGH AS IT IS, not flattened to a flag. A
+                        //proposal is somebody waiting on a read, and the pane
+                        //says who and why — which a boolean cannot.
+                        marked: g.marked || null,
                         broken: (g.broken || []).length > 0,
                         repos: (g.on || []).filter(function (p) { return p.stillHere !== false; })
                             .map(function (p) { return p.repo; })
@@ -226,6 +229,32 @@ async function plugin(imports, register) {
             if (!b || !h) throw new Error('"' + (b ? refs.head : refs.base) + '" does not reach ' + a.repo + '.');
             return { repo: a.repo, base: b, head: h, of: refs,
                 commits: await git.commits(a.repo, b, h) };
+        }
+    }));
+
+    //ONE FILE, BOTH SIDES, for reading them beside each other. A diff answers
+    //"what changed"; this answers "what is it now, and what was it" — which is
+    //the reading somebody wants when the change is small and the code around it
+    //is the actual question.
+    undo.push(actions.define('compareFile', {
+        about: 'One file as it is on each side of a comparison, for reading side by side',
+        takes: ['base', 'head', 'repo', 'file'],
+        run: async function (a) {
+            if (!a.file) throw new Error('Which file?');
+            var refs = twoRefs(a);
+            var groups = await lines();
+            var b = refIn(refs.base, groups)(a.repo);
+            var h = refIn(refs.head, groups)(a.repo);
+            if (!b || !h) throw new Error('"' + (b ? refs.head : refs.base) + '" does not reach ' + a.repo + '.');
+
+            //NULL MEANS THE FILE IS NOT ON THAT SIDE, which is what an added or
+            //a deleted file looks like — an ordinary answer, and the pane draws
+            //it as an empty half rather than as a failure.
+            return {
+                repo: a.repo, base: b, head: h, of: refs, file: a.file,
+                before: await git.fileAt(a.repo, b, a.file),
+                after: await git.fileAt(a.repo, h, a.file)
+            };
         }
     }));
 
