@@ -112,10 +112,10 @@ async function plugin(imports, register) {
                 {error ? <Note kind="bad">{error}</Note> : null}
                 {clearErr ? <Note kind="bad">{clearErr}</Note> : null}
 
-                <div className="sync-head">
+                <div className="head-row">
                     <h2>Live</h2>
                     <span className="muted">{'— ' + kept.length + ' of ' + entries.length + ' lines'}</span>
-                    <div className="sync-controls">
+                    <div className="head-controls">
                         <label className="inline">
                             <input type="checkbox" checked={follow}
                                 onChange={function (ev) { setFollow(ev.target.checked); }} />

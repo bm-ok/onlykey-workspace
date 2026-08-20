@@ -29,6 +29,8 @@ var useAsk = require('../okc/ask');
 plugin.consumes = ['shell', 'theme', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
+    //THIS PANE'S OWN LOOK, which the theme does not promise. See ./machines.scss.
+    require('./machines.scss');
     var { shell, theme, okc } = imports;
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,

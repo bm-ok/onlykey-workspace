@@ -24,6 +24,8 @@ var useAsk = require('../okc/ask');
 plugin.consumes = ['shell', 'theme', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
+    //THIS PANE'S OWN LOOK, which the theme does not promise. See ./repos.scss.
+    require('./repos.scss');
     var { shell, theme, okc } = imports;
     var { Pane, Panel, Badge, Empty, Note, Mono } = theme;
 

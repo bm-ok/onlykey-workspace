@@ -23,7 +23,23 @@ const path = require('node:path');
 //most of it, and the alternative is checking nothing.
 
 const ROOT = path.join(__dirname, '..', 'src');
-const SHEET = path.join(ROOT, 'app', 'theme', 'dashboard.scss');
+const APP = path.join(ROOT, 'app');
+const SHEET = path.join(APP, 'theme', 'dashboard.scss');
+
+//AND NOW THERE IS MORE THAN ONE STYLESHEET, which changes what this can check
+//into something better.
+//
+//A pane's own furniture lives in <plugin>/<plugin>.scss and the shared kit lives
+//in theme/dashboard.scss. So the question is no longer "does this name exist
+//anywhere" but "is this pane allowed to use it" — a pane may reach the shared
+//vocabulary and its OWN sheet, and nothing else. Reaching into another pane's
+//stylesheet is the leak that makes `theme` unswappable one class at a time, and
+//it is invisible to a check that pools every sheet together.
+function sheetFor(file) {
+    const rel = path.relative(APP, file).split(path.sep);
+    const own = path.join(APP, rel[0], rel[0] + '.scss');
+    return fs.existsSync(own) ? own : null;
+}
 
 //classes the browser or the framework supplies, which are correctly absent
 //from a stylesheet this app wrote
@@ -43,12 +59,13 @@ function walk(dir, out = []) {
 //every `.thing` in the stylesheet. A superset of what is really defined —
 //it would count a class named inside a comment — which errs toward letting
 //something through rather than failing a name that is genuinely there.
-function defined() {
-    const css = fs.readFileSync(SHEET, 'utf8');
+function classesIn(sheet) {
+    const css = fs.readFileSync(sheet, 'utf8');
     const found = new Set();
     for (const m of css.matchAll(/\.(-?[A-Za-z_][\w-]*)/g)) found.add(m[1]);
     return found;
 }
+function defined() { return classesIn(SHEET); }
 
 //`className="a b"` and `className={ anything }` — from the second, every
 //string literal inside it, because that is the part a person typed.
@@ -90,16 +107,21 @@ test('every class the window uses exists in the stylesheet', () => {
     const have = defined();
     const missing = [];
 
-    for (const file of walk(path.join(ROOT, 'app'))) {
+    for (const file of walk(APP)) {
+        const own = sheetFor(file);
+        const mine = own ? classesIn(own) : null;
         for (const [name, where] of used(file)) {
-            if (!have.has(name)) {
-                missing.push(`"${name}" in ${path.relative(ROOT, where)}`);
-            }
+            if (have.has(name)) continue;
+            if (mine && mine.has(name)) continue;
+            missing.push(`"${name}" in ${path.relative(ROOT, where)}`
+                + (own
+                    ? ` — not in the theme, and not in ${path.basename(own)} either`
+                    : ' — not in the theme, and this plugin has no stylesheet of its own'));
         }
     }
 
     assert.deepStrictEqual(missing, [],
-        'these class names are used and are not in dashboard.scss, so they will render as nothing:\n  ' +
+        'these class names are used and are defined nowhere this plugin may reach, so they will render as nothing:\n  ' +
         missing.join('\n  ') +
         '\n\nCSS has no undefined-name error — markup with a misspelt class works and looks dead.');
 });
@@ -140,7 +162,7 @@ test('a class that hides itself is never used without what un-hides it', () => {
     assert.ok(hidden.size, 'no self-hiding classes were found at all, so this check is inert');
 
     const wrong = [];
-    for (const file of walk(path.join(ROOT, 'app'))) {
+    for (const file of walk(APP)) {
         const src = fs.readFileSync(file, 'utf8');
         //ONLY THE PLAIN `className="a b"` FORM. In `className={...}` the pieces
         //are assembled from separate literals and this cannot tell which end up

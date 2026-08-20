@@ -1,0 +1,32 @@
+//---------------------------------------------------------------------------
+//graph's own furniture.
+//
+//NOT THE THEME. These class names describe this pane and nothing else uses
+//them — they sat in the shared stylesheet only because there was one
+//stylesheet. Kept here so that deleting this plugin deletes its look with it,
+//and so the shared kit stays swappable: what `theme` is required to provide is
+//what the Kit pane shows, and it is not this.
+//
+//See ../../THEME.md.
+//---------------------------------------------------------------------------
+
+/* ---------- a graph ----------
+
+   A canvas has no natural size and does not grow with its contents, so it is
+   given one by its holder and resized in code when the pane is shown. A
+   canvas sized by CSS alone is drawn at one resolution and stretched to
+   another, which looks like a blurry mistake rather than a deliberate one. */
+.graph-holder {
+  position: relative;
+  width: 100%;
+  /* Tall enough to be worth drawing, and bounded so the pane does not run
+     past the bottom of the window -- the mistake this file has made before
+     with a branch list and with a dialog. */
+  height: calc(100vh - 220px);
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.graph-holder canvas { display: block; }

@@ -91,6 +91,12 @@ function Finder({ value, onChange, placeholder }) {
 //carry the same rules, so a form in a pane and a form in the gate cannot drift.
 function Form({ children }) { return <div className="form">{children}</div>; }
 
+//A heading with whatever chooses what is being looked at beside it, pushed
+//right. The bigger cousin of TitleRow: that one is a line, this one wraps and
+//dresses the inputs in it.
+function HeadRow({ children }) { return <div className="head-row">{children}</div>; }
+function Controls({ children }) { return <div className="head-controls">{children}</div>; }
+
 //---- waiting -------------------------------------------------------------
 
 //A SKELETON RATHER THAN THE WORD "LOADING".
@@ -180,6 +186,6 @@ function KvRow({ label, children }) { return <tr><th>{label}</th><td>{children}<
 module.exports = {
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip,
-    Button, Plus, Cog, Finder, Form,
+    Button, Plus, Cog, Finder, Form, HeadRow, Controls,
     Skeleton, Notice, Banner, Link, Spec, Kv, KvRow, openOut
 };

@@ -1,0 +1,27 @@
+//---------------------------------------------------------------------------
+//machines's own furniture.
+//
+//NOT THE THEME. These class names describe this pane and nothing else uses
+//them — they sat in the shared stylesheet only because there was one
+//stylesheet. Kept here so that deleting this plugin deletes its look with it,
+//and so the shared kit stays swappable: what `theme` is required to provide is
+//what the Kit pane shows, and it is not this.
+//
+//See ../../THEME.md.
+//---------------------------------------------------------------------------
+
+/* Snapshots, drawn as the tree they are. The indent comes from the depth
+   VirtualBox reports; the rule on the left is what makes an indent read as a
+   branch rather than as a margin. */
+.card.snap { position: relative; }
+.card.snap[style*="margin-left"]::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 8px;
+  border-top: 1px solid var(--line);
+}
+/* Where the machine actually is: the end of the tree, and not a snapshot. */
+.card.snap.current { border-style: dashed; }
+.card.snap.current.changed { border-color: var(--warn); }
