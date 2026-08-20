@@ -670,17 +670,31 @@ module.exports = {
       // Found by reading test/claims.md: this refusal was one of 242 the code
       // makes that no drill watches. Writing the check is what showed that the
       // check could not have been written honestly without this.
-      if (key === 'testsEnabled' && (_overTheWire || _driven || _fromTest)) {
-        throw new Error('The drills are switched on in the window, by somebody who knows what folder is open. They write a task and take a credential off a machine — that is a decision about somebody\'s repository, not a flag to be set down a pipe.')
+      //
+      // AND IT IS THE WHOLE GATE, NOT ITS SWITCH. This read `key ===
+      // 'testsEnabled'`, which left the other half of the same predicate open:
+      // `testsFor` is a setting too, so a caller refused the switch could point
+      // the FOLDER at whatever was open instead and arm the drills without ever
+      // touching the guarded key. See ATTHEWINDOW in core/settings.js.
+      if (settings.ATTHEWINDOW.includes(key) && (_overTheWire || _driven || _fromTest)) {
+        // THE SWITCH KEEPS ITS OWN SENTENCE, WORD FOR WORD. A drill in
+        // test/suites/02-the-refusals reads this message, and a refusal whose
+        // wording drifts is a check that goes red for a reason that is not the
+        // one it is about.
+        throw new Error(key === 'testsEnabled'
+          ? 'The drills are switched on in the window, by somebody who knows what folder is open. They write a task and take a credential off a machine — that is a decision about somebody\'s repository, not a flag to be set down a pipe.'
+          : `"${key}" is the other half of that same permission. The drills are allowed when testsEnabled is on AND testsFor is the folder open now — so moving the folder arms them against whatever is in front of you without the switch ever being touched. It is decided in the same place, in the window, by somebody who can see which folder that is. Ask with testsAsk instead.`)
       }
 
-      const on = value === true || value === 'true' || value === 1 || value === '1'
+      const on = settings.truth(value)
       const patch = key === 'testsEnabled'
         // Enabled is always enabled FOR the folder open right now, written in
         // the same act. Two calls to set two fields is two chances to end up
         // enabled for nowhere, or for whatever was open last week.
         ? { testsEnabled: on, testsFor: on ? (workspaces.dir() || null) : null }
-        : { [key]: value }
+        // AND IN THE SHAPE ITS DEFAULT DECLARES. `--value false` is the string
+        // "false", which is truthy — see shaped() in core/settings.js.
+        : { [key]: settings.shaped(key, value) }
 
       const now = settings.write(patch)
       log.on('app').warn(key === 'testsEnabled'

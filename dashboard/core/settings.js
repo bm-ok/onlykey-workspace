@@ -108,6 +108,52 @@ const DEFAULTS = {
   supervisorKey: null
 }
 
+// ---------------------------------------------------------------------------
+// THE SETTINGS THAT ARE A PERSON'S, AND IT IS THE WHOLE GATE RATHER THAN ITS
+// SWITCH.
+//
+// settingSet guarded one key, `testsEnabled`, and that was not enough. The
+// predicate below is `testsEnabled && testsFor === the folder open now` — two
+// settings, both writable, and only one of them refused.
+//
+// SO THE WAY ROUND IT WAS TO MOVE THE FOLDER INSTEAD OF THE SWITCH. Leave
+// `testsEnabled` alone, which is very often already true — turned on last week
+// against the scaffolding, never turned off — and write `testsFor` to whatever
+// is open now. The guarded key is never touched, nothing refuses, and
+// testsAllowed comes back true against somebody's real work. That is the exact
+// state `testsFor` exists to make safe, defeated by the setter for `testsFor`.
+//
+// `testsAsked` is here for a smaller reason: forging a raised hand changes
+// nothing on its own, but it is a sentence that appears in a dialog somebody is
+// about to read and trust, attributed to a request that was never made. testsAsk
+// is the door — it takes a reason and stamps the folder itself.
+//
+// WRITTEN AS A LIST rather than as a check inside one branch, so the next
+// setting that joins this gate is a name added here rather than a second `if`
+// somebody has to remember.
+const ATTHEWINDOW = ['testsEnabled', 'testsFor', 'testsAsked']
+
+const truth = v => v === true || v === 'true' || v === 1 || v === '1' || v === 'on' || v === 'yes'
+
+// A VALUE ARRIVES AS A STRING AND HAS TO BE PUT BACK INTO THE SHAPE ITS DEFAULT
+// DECLARES.
+//
+// A command line has no types. `okc.js settingSet --name watchGitHub --value
+// false` hands over the STRING "false", which is truthy — so the one command
+// anybody would type to turn OFF a standing network call against somebody else's
+// service TURNS IT ON, silently, answering "Saved."
+//
+// An object is left alone: it has already said what it means, and String({...})
+// is "[object Object]", which for `testsAsked` would be a corrupt request that
+// still renders.
+function shaped (key, v) {
+  if (typeof DEFAULTS[key] === 'boolean') return truth(v)
+  if (v === null || v === undefined) return null
+  if (typeof v === 'object') return v
+  const s = String(v).trim()
+  return s === '' ? null : s
+}
+
 function read () {
   let kept = {}
   try {
@@ -153,4 +199,4 @@ function testsAllowed (openDir) {
   return { allowed: true, why: null }
 }
 
-module.exports = { read, write, testsAllowed, DEFAULTS, FILE }
+module.exports = { read, write, testsAllowed, DEFAULTS, FILE, ATTHEWINDOW, shaped, truth }
