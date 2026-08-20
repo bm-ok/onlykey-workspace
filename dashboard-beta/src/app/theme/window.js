@@ -51,39 +51,34 @@ async function plugin(imports, register, config) {
     //`margin-left: auto`. The dot is the one-glance answer to "is this thing
     //connected", which is why it is first and why it is a colour rather than a
     //word.
-    function Topbar({ brand, sub, live, tabs, on, onPick, right, brandTab, brandBadge, onBrand }) {
-        //`.brand` IS THE CONTAINER, NOT THE BUTTON, and the first version of this
-        //got it backwards. Over there the brand is a flex row holding the dot,
-        //then a `<button class="tab brand-tab">`, then whatever else belongs at
-        //the far left. Making the whole row one button put a dashed border
-        //around the dot and the version number, and dropped `.tab`, so it got
-        //none of the styling every other tab has.
+    function Topbar({ brand, sub, live, tabs, on, onPick, right, brandTabs, onBrand }) {
+        //`.brand` IS THE CONTAINER, NOT THE BUTTON. It is a flex row holding the
+        //dot and then real `<button class="tab brand-tab">`s — monospace,
+        //accent-coloured, dashed border, truncated. Being real tabs is the
+        //point: the same switching drives them and the active styling is the
+        //same styling as everywhere else.
         //
-        //`brand-tab` IS A MODIFIER OF `tab`: monospace, accent-coloured, dashed
-        //border, and truncated because a workspace path is long. It is a real
-        //tab so the same switching and the same active styling drive it.
+        //WHAT SITS HERE RATHER THAN IN THE ROW. Two things, and neither is "one
+        //more thing to look at": what is WAITING on you, and what all of this is
+        //ABOUT. The second is the subject of every other tab — a branch, a task,
+        //a line and a verdict are each a statement about one folder.
         return (
             <div className="topbar">
                 <div className="brand">
                     <span className="dot" style={live ? { background: 'var(--ok)' } : undefined}
                         title={live ? 'connected' : 'not connected'} />
 
-                    {/* THE TITLE IS THE WAY IN, because it was the one thing in
-                        this chrome that did nothing. What is behind it answers
-                        "what is waiting on me" — the question somebody asks
-                        after finding out the hard way that something sat for a
-                        day. Every other badge in this window is one corner of
-                        it. */}
-                    {brandTab
-                        ? <button className={'tab brand-tab' + (on == brandTab ? ' active' : '')}
-                            title={'what is waiting on you'}
-                            onClick={function () { if (onBrand) onBrand(brandTab); }}>
-                            <strong>{brand}</strong>
-                            {brandBadge ? <span className="tab-badge">{brandBadge}</span> : null}
-                        </button>
-                        : <strong>{brand}</strong>}
-
-                    {sub ? <span className="mono muted">{sub}</span> : null}
+                    {(brandTabs || []).map(function (t) {
+                        return (
+                            <button key={t.name}
+                                className={'tab brand-tab' + (t.none ? ' none' : '') + (on == t.name ? ' active' : '')}
+                                title={t.title || t.name}
+                                onClick={function () { if (onBrand) onBrand(t.name); }}>
+                                {t.strong ? <strong>{t.label}</strong> : t.label}
+                                {t.badge ? <span className="tab-badge">{t.badge}</span> : null}
+                            </button>
+                        );
+                    })}
                 </div>
                 <div className="tabs">
                     {(tabs || []).map(function (t) {
@@ -103,7 +98,7 @@ async function plugin(imports, register, config) {
                             //There is a check for it now. test/classes.test.js knows
                             //which modifiers the stylesheet gives each base, and says
                             //`"on" is not a modifier of "tab"; it gives "active"`.
-                            <button key={name}
+                            <button key={name} disabled={!!t.stopped} title={t.stopped || undefined}
                                 className={'tab' + (name == on ? ' active' : '')}
                                 onClick={function () { if (onPick) onPick(name); }}>
                                 {name}

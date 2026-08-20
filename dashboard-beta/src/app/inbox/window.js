@@ -62,11 +62,6 @@ async function plugin(imports, register) {
         var [only, setOnly] = remember.use('inbox', 'only', null);
         var [went, setWent] = useState(null);
 
-        //THE COUNT IS PUSHED TO THE BRAND, because that is the whole point of it
-        //being counted here: it has to be visible from somewhere else.
-        var count = state ? state.count : null;
-        useEffect(function () { shell.badge('Inbox', count || 0); }, [count]);
-
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;
 
@@ -168,8 +163,33 @@ async function plugin(imports, register) {
     //`chrome: true` KEEPS IT OUT OF THE ROW. It is reached from the brand, which
     //is where it is over there and is the right place for it: somewhere you are
     //sent, not somewhere you browse to.
-    shell.tab({ name: 'Inbox', order: 0, chrome: true, Component: Inbox });
+    //`strong` because it is the app's own name, and `label` because the tab is
+    //called Inbox while what it reads is "Dashboard" — the title IS the way in.
+    shell.tab({ name: 'Inbox', order: 0, chrome: true, strong: true, label: 'Dashboard', Component: Inbox });
 
-    await register(null, {});
+    //---- the count, asked for OUTSIDE the pane ------------------------------
+    //
+    //THIS IS THE WHOLE POINT AND THE FIRST VERSION GOT IT BACKWARDS. The badge
+    //existed only while the Inbox was open — which is precisely when nobody
+    //needs it. A count whose job is to be seen from another tab cannot be
+    //produced by a pane that only runs while you are looking at it.
+    //
+    //So it is asked for here, at plugin scope, for as long as the app is up. It
+    //is one small action and the only thing in this app polling while its own
+    //tab is shut, which is the exception that proves the rule rather than a
+    //crack in it.
+    var stop = null;
+    function count() {
+        okc.call('inbox', {}).then(
+            function (d) { shell.badge('Inbox', (d && d.count) || 0); },
+            function () { /* the pipe may be down; the badge simply does not move */ }
+        );
+    }
+    count();
+    stop = setInterval(count, 20000);
+
+    await register(null, {
+        onDestroy: function () { if (stop) clearInterval(stop); }
+    });
 }
 module.exports = plugin;

@@ -51,12 +51,28 @@ async function plugin(imports, register) {
     //open asks nothing — exactly right for a panel and exactly wrong for a
     //count whose job is to be seen from another tab. So the count is pushed
     //here by whoever knows it, and the shell holds it.
+    //Three things a tab can be told from outside, one watcher between them:
+    //a count, a label, and whether it may be used at all.
     var badges = {};
+    var labels = {};
+    var stopped = {};
     var badgeWatchers = new Set();
+    function poke() { badgeWatchers.forEach(function (f) { f(); }); }
     function setBadge(name, value) {
         if (badges[name] === value) return;
-        badges[name] = value;
-        badgeWatchers.forEach(function (f) { f(); });
+        badges[name] = value; poke();
+    }
+    function setLabel(name, value) {
+        if (labels[name] === value) return;
+        labels[name] = value; poke();
+    }
+    //WHICH TABS STOP WORKING IS THE CLEAREST STATEMENT OF WHAT A WORKSPACE IS.
+    //Dimmed and unclickable rather than removed: a row that silently loses half
+    //its buttons reads as a broken window rather than as a state. `why` becomes
+    //the title, so the answer is on the thing that refused.
+    function setStopped(name, why) {
+        if (stopped[name] === why) return;
+        stopped[name] = why; poke();
     }
 
     //`chrome: true` KEEPS A TAB OUT OF THE ROW WITHOUT MAKING IT UNREACHABLE.
@@ -66,9 +82,16 @@ async function plugin(imports, register) {
     //Repositories would say the opposite.
     function inRow(t) { return !t.chrome; }
 
+    //`order: 0` IS FALSY AND `|| 50` ATE IT. The Inbox asked for 0 to be first
+    //and was given 50, so the workspace tab — asking for 1 — came out ahead of
+    //it, and the brand read "workspace Dashboard" instead of "Dashboard
+    //workspace". A default written with `||` cannot tell "not given" from
+    //"given, and zero".
+    function at(t) { return t.order == null ? 50 : t.order; }
+
     function panesIn(tab) {
         return panes.filter(function (p) { return p.tab == tab; })
-            .sort(function (a, b) { return (a.order || 50) - (b.order || 50) || a.name.localeCompare(b.name); });
+            .sort(function (a, b) { return at(a) - at(b) || a.name.localeCompare(b.name); });
     }
 
     function App() {
@@ -133,6 +156,15 @@ async function plugin(imports, register) {
             return function () { okc.io.off('shell:show', asked); };
         }, [on]);
 
+        //STANDING ON A TAB THAT JUST SWITCHED OFF. Moved rather than left
+        //showing the last workspace's branches under a heading that no longer
+        //means anything.
+        useEffect(function () {
+            if (!stopped[on]) return;
+            var home = tabs.filter(function (t) { return t.chrome && t.home; })[0];
+            if (home) setOn(home.name);
+        }, [on, stopped[on]]);
+
         var showing = tabs.find(function (t) { return t.name == on; });
         var mine = panesIn(on);
 
@@ -144,16 +176,33 @@ async function plugin(imports, register) {
         var picked = mine.find(function (p) { return p.name == pane; }) || mine[0];
         var Body = mine.length ? (picked && picked.Component) : (showing && showing.Component);
 
+        //THE VERSION USED TO SIT BESIDE THE TITLE and it is the wrong thing for
+        //that corner. `beta 0.1.0` never changes and nobody needs to read it
+        //twice — the same argument the old window makes about the path to
+        //VBoxManage, which is what its title bar used to carry. What belongs
+        //there is what all of this is ABOUT: the folder of repositories. The
+        //version is on the About tab for anybody who wants it.
+        //
+        //(A `{/* */}` comment cannot sit between attributes — that is for
+        //children. Between attributes it is a `//` line, as here. Learned twice.)
         return (<>
             <Topbar
                 brand="Dashboard"
-                sub={'beta ' + appPackage.version}
                 live={up}
-                tabs={tabs.filter(inRow).map(function (t) { return { name: t.name, badge: badges[t.name] }; })}
+                tabs={tabs.filter(inRow).map(function (t) {
+                    return { name: t.name, badge: badges[t.name], stopped: stopped[t.name] };
+                })}
                 on={on}
                 onPick={setOn}
-                brandTab={(tabs.filter(function (t) { return t.chrome; })[0] || {}).name}
-                brandBadge={badges[(tabs.filter(function (t) { return t.chrome; })[0] || {}).name]}
+                brandTabs={tabs.filter(function (t) { return t.chrome; }).map(function (t) {
+                    return {
+                        name: t.name,
+                        label: labels[t.name] === undefined ? (t.label || t.name) : labels[t.name],
+                        badge: badges[t.name],
+                        strong: !!t.strong,
+                        none: !!t.none && !labels[t.name]
+                    };
+                })}
                 onBrand={setOn}
             />
 
@@ -199,7 +248,7 @@ async function plugin(imports, register) {
 
     //the tabs register during the graph; this renders once it is up
     app.on('start', function () {
-        tabs.sort(function (a, b) { return (a.order || 50) - (b.order || 50) || a.name.localeCompare(b.name); });
+        tabs.sort(function (a, b) { return at(a) - at(b) || a.name.localeCompare(b.name); });
         react.root.render(<App />);
     });
 
@@ -210,8 +259,11 @@ async function plugin(imports, register) {
             tab: function (t) { tabs.push(t); },
             pane: function (p) { panes.push(p); },
 
-            //Pushed by whoever counts it. `null` or 0 takes it off.
-            badge: setBadge
+            //Pushed by whoever knows. `null` or 0 takes a badge off; a falsy
+            //`why` lets a tab be used again.
+            badge: setBadge,
+            label: setLabel,
+            stop: setStopped
         }
     });
 }
