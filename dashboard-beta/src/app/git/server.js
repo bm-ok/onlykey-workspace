@@ -233,6 +233,24 @@ async function plugin(imports, register) {
 
     //---- every branch here, and how it stands against origin ---------------
     //
+    //WHERE TWO BRANCHES LAST AGREED.
+    //
+    //It is what a three-dot diff reads from, and the reason to have it by name is
+    //that a side-by-side view cannot express three dots: showing a file as it was
+    //and as it is now needs an actual commit for "as it was", and the base's
+    //current tip is the wrong one — it has moved on since, and the left-hand
+    //column would show changes the branch never touched as though it had reverted
+    //them.
+    //
+    //UNRELATED HISTORIES ARE NOT AN ERROR, they are two things with no common
+    //commit. `null` says so; a throw would make the caller treat it as a failure
+    //to read rather than as an answer.
+    async function mergeBase(repo, a, b) {
+        var said = await run(repo, ['merge-base', a, b]);
+        if (said.code !== 0) return null;
+        return lines(said.stdout)[0] || null;
+    }
+
     //ONE PROCESS FOR THE WHOLE REPOSITORY, not one per branch. A pane draws this
     //on a timer and a `git` per branch is how a panel comes to spawn forty
     //processes a minute.
@@ -866,6 +884,7 @@ async function plugin(imports, register) {
             has: has,
             origin: origin,
             tracked: tracked,
+            mergeBase: mergeBase,
             unlanded: unlanded,
             countBetween: countBetween,
             wouldConflict: wouldConflict,

@@ -861,12 +861,64 @@ async function plugin(imports, register) {
         }));
     }
 
+    //---- what a branch is measured against, asked from outside --------------
+    //
+    //`baseFor` above takes the notes and the baselines because it is called once
+    //per repository per branch inside a board draw, and reading them again each
+    //time is the cost that made the board slow. Anything OUTSIDE this plugin has
+    //one branch and no context, so it gets a form that reads them itself.
+    //
+    //IT LIVES HERE BECAUSE THE CUT NOTE DOES. What a branch was cut from is
+    //written down at the moment it is cut, by the door in this file, and git
+    //stops being able to say afterwards — a branch that has been merged into
+    //looks identical to one cut somewhere else. Two plugins keeping their own
+    //answer to "measured against what" is two boards that disagree about how far
+    //along the same work is.
+    async function baseOf(branch, repo) {
+        var notes = (await (await cuts()).read({})) || {};
+        return await baseFor(branch, repo, notes, await baselines());
+    }
+
+    //WHICH REPOSITORIES A BRANCH IS ABOUT, which is what its line says.
+    //
+    //A branch scoped to two of three reported with a third row reading "not in
+    //this repository" is true and reads as a gap in the work rather than as the
+    //shape somebody chose — a reviewer counting three rows and finding two is
+    //looking for a problem that does not exist.
+    async function scopeOf(branch) {
+        var found = await workspace.repos();
+        var here = found.map(function (r) { return r.name; });
+        var note = ((await (await cuts()).read({})) || {})[branch] || null;
+        if (!note || !note.group) return { group: null, repos: here, whole: true, gone: [] };
+
+        var found2 = ((await groups()) || []).filter(function (g) { return g.name === note.group; })[0];
+        //A LINE FORGOTTEN SINCE IS NOT A REASON TO WIDEN A BRANCH'S REACH. What
+        //it named is recorded on the branch itself, and that record outlives the
+        //line precisely so this question stays answerable.
+        var named = found2
+            ? found2.on.map(function (p) { return p.repo; })
+            : Object.keys(note.from || {});
+
+        var scoped = here.filter(function (n) { return named.indexOf(n) >= 0; });
+        return {
+            group: note.group,
+            repos: scoped.length ? scoped : here,
+            whole: !scoped.length || scoped.length === here.length,
+            //Repositories the line named that are not in this workspace any
+            //more. Reported rather than dropped: a task that spanned three
+            //repositories and can now only reach two is a different task.
+            gone: named.filter(function (n) { return here.indexOf(n) < 0; })
+        };
+    }
+
     await register(null, {
         lines: {
             all: groups,
             protectedOf: protectedOf,
             whyProtected: whyProtected,
-            baselines: baselines
+            baselines: baselines,
+            baseOf: baseOf,
+            scopeOf: scopeOf
         },
         onDestroy: function () { while (undo.length) undo.pop()(); }
     });
