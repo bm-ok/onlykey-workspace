@@ -182,6 +182,130 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- naming a line -------------------------------------------------
+        //
+        //TAKING THE CURRENT STATE AS THE DEFAULT IS DELIBERATE. A line is usually
+        //something somebody has just finished arranging one repository at a time,
+        //and asking them to type it all again is how the two drift apart.
+        undo.push(actions.define('lineSave', {
+            about: 'Name a line: one branch per repository, so work can be cut from that point',
+            takes: ['name', 'why', 'on'],
+            run: async function (args) {
+                var a = args || {};
+                var title = String(a.name || '').trim();
+                if (!title) throw new Error('Give the line a name — it is what a task will be based on.');
+
+                var on = a.on;
+                if (typeof on === 'string') {
+                    try { on = JSON.parse(on); } catch (e) { throw new Error('`on` is a name-to-branch object, or leave it out to take what each repository is on now.'); }
+                }
+
+                if (!on || !Object.keys(on).length) {
+                    var here = await baselines();
+                    on = {};
+                    here.forEach(function (r) { if (r.on) on[r.repo] = r.on; });
+                }
+                if (!Object.keys(on).length) throw new Error('There are no repositories to name, so there is no line to make.');
+
+                var doc = await kept();
+                var all = doc.read({}) || {};
+                var was = all[title] || {};
+
+                all[title] = {
+                    on: on,
+                    why: a.why ? String(a.why).trim() : (was.why || null),
+                    made: was.made || new Date().toISOString(),
+                    //A LINE BEING REWRITTEN KEEPS WHAT IT WAS MARKED AS, because
+                    //marking is a statement about the LINE and not about the
+                    //particular branches in it today.
+                    marked: was.marked || null
+                };
+                doc.write(all);
+
+                log.good('line "' + title + '" — ' + Object.keys(on).map(function (r) { return r + ':' + on[r]; }).join(', '));
+                var now = (await groups() || []).filter(function (g) { return g.name === title; })[0] || null;
+                return Object.assign({ name: title }, now || {}, {
+                    note: '"' + title + '" names ' + Object.keys(on).length + ' branch(es). Work cut from it is measured against it.'
+                });
+            }
+        }));
+
+        undo.push(actions.define('lineForget', {
+            about: 'Forget a line. Its branches are untouched, and stop being protected by it',
+            takes: ['name'],
+            run: async function (args) {
+                var a = args || {};
+                var title = String(a.name || '').trim();
+                if (!title) throw new Error('Say which line.');
+
+                var doc = await kept();
+                var all = doc.read({}) || {};
+                if (!(title in all)) {
+                    var have = Object.keys(all);
+                    throw new Error('There is no line called "' + title + '".'
+                        + (have.length ? ' There is: ' + have.join(', ') + '.' : ' There are none.'));
+                }
+
+                var was = all[title];
+                delete all[title];
+                doc.write(all);
+
+                log.warn('line "' + title + '" forgotten — its branches are untouched');
+                return {
+                    forgotten: title,
+                    was: was,
+                    //THE BRANCHES ARE UNTOUCHED AND STOP BEING PROTECTED, and both
+                    //halves matter. Somebody forgetting a line to tidy up has
+                    //also just made its branches writable, and that is not
+                    //obvious from the word "forget".
+                    note: '"' + title + '" is gone. Its branches are untouched — and they stop being protected by it, so work can be done directly on them again.'
+                };
+            }
+        }));
+
+        //---- a line that is finished, and up to be landed -------------------
+        //
+        //MARKING IS THE DIFFERENCE BETWEEN "work happens here" AND "this is what
+        //we are proposing". It changes nothing about the branches; it changes
+        //which side of a comparison the line appears on.
+        undo.push(actions.define('linePropose', {
+            about: 'Propose a line for landing. It appears on the left of a comparison and stays protected',
+            takes: ['name', 'why'],
+            run: async function (args) {
+                var a = args || {};
+                var title = String(a.name || '').trim();
+                if (!title) throw new Error('Say which line.');
+
+                var doc = await kept();
+                var all = doc.read({}) || {};
+                if (!(title in all)) throw new Error('There is no line called "' + title + '".');
+
+                //A LINE WITH A BRANCH MISSING FROM IT IS NOT A THING ANYBODY CAN
+                //READ, and proposing one is proposing to land something that is
+                //not all there. Refused with the missing part named.
+                var now = (await groups() || []).filter(function (g) { return g.name === title; })[0] || null;
+                if (now && now.broken.length) {
+                    throw new Error('"' + title + '" cannot be proposed: ' + now.broken.join('; ')
+                        + '. A line with a branch missing from it is not a thing anybody can read.');
+                }
+
+                all[title] = Object.assign({}, all[title], {
+                    marked: {
+                        at: new Date().toISOString(),
+                        by: actions.whoAsked(a),
+                        why: a.why ? String(a.why).trim() : null
+                    }
+                });
+                doc.write(all);
+
+                log.good('"' + title + '" is proposed for landing' + (a.why ? ' — ' + String(a.why).trim() : ''));
+                var after = (await groups() || []).filter(function (g) { return g.name === title; })[0] || null;
+                return Object.assign({ name: title }, after || {}, {
+                    note: '"' + title + '" is up to be landed. Compare it against the line it would go into, and withdraw it to carry on working.'
+                });
+            }
+        }));
+
         undo.push(actions.define('lineWithdraw', {
             about: 'Take a line back out of being proposed, so work on it can continue',
             takes: ['name'],

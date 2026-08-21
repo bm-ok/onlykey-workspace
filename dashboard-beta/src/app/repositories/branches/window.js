@@ -30,7 +30,7 @@ async function plugin(imports, register) {
     var { shell, theme, okc, remember } = imports;
 
     shell.pane({ tab: 'Repositories', name: 'Branches Cut', order: 60, Component: makeCut(theme, okc, remember) });
-    shell.pane({ tab: 'Repositories', name: 'Branches Lines', order: 70, Component: makeLines(theme, okc) });
+    shell.pane({ tab: 'Repositories', name: 'Branches Lines', order: 70, Component: makeLines(theme, okc, shell, remember) });
     shell.pane({ tab: 'Repositories', name: 'Protected', order: 90, Component: makeProtected(theme, okc) });
 
     await register(null, {});
