@@ -214,6 +214,107 @@ async function plugin(imports, register) {
     //was cut FROM is only knowable if it was written down at the time.
     async function cuts() { return state.here.doc('cuts'); }
 
+    //---- what a branch is measured against ---------------------------------
+    //
+    //THE LINE IT WAS CUT FROM, RECORDED WHEN IT WAS MADE — and the default only
+    //when there is no record. "3 commits ahead" is a statement about a branch, so
+    //it must depend on that branch and nothing else; measuring against whatever
+    //the default happens to be today re-interprets every number on the board the
+    //moment somebody moves one.
+    async function baseFor(branch, repo, notes, here) {
+        var note = notes[branch];
+        if (note && note.from && note.from[repo]) return note.from[repo];
+        if (note && note.cutFrom) return note.cutFrom;
+        if (note && note.group) {
+            var g = (await groups() || []).filter(function (x) { return x.name === note.group; })[0];
+            if (g) {
+                var p = g.on.filter(function (x) { return x.repo === repo; })[0];
+                if (p) return p.branch;
+            }
+        }
+        var row = here.filter(function (r) { return r.repo === repo; })[0];
+        return row ? row.on : null;
+    }
+
+    //---- what a branch carries, per repository ------------------------------
+    //
+    //`base..branch` IS WHAT THIS BRANCH ADDS, which is the reviewer's question —
+    //not what it DIFFERS from, which would also count anything the base gained
+    //meanwhile and read as though the worker had reverted it.
+    //
+    //CACHED ON THE PAIR OF COMMITS, WITH NO CLOCK IN IT — the same shape as
+    //`unlanded` and `wouldConflict` in ../../git, and for the same reason. What
+    //a branch carries is a pure function of two commits: if neither has moved it
+    //cannot have changed, and if either has, the key is different.
+    //
+    //THIS ONE WAS NOT OPTIONAL. `branchBoard` asks for every branch in every
+    //repository — eleven branches across three is up to sixty-six git processes
+    //— and the pane draws it every ten seconds. Without this the board took long
+    //enough to watch it arrive, which is the same fault the app being ported
+    //from traced to 39% of its samples inside `spawn` with the window idle.
+    var carried = {};
+    var carriedCount = 0;
+
+    async function carries(branch, notes, here) {
+        var found = await workspace.repos();
+        var out = [];
+
+        for (var i = 0; i < found.length; i++) {
+            var repo = found[i].name;
+            if (!(await git.has(repo, branch))) continue;
+
+            var base = await baseFor(branch, repo, notes, here);
+            //A BASE THAT IS NOT THERE IS NOT THE SAME AS A BRANCH THAT IS NOT
+            //THERE, and saying so is the difference between "nothing to land"
+            //and "there is nowhere to land it".
+            if (!base || !(await git.has(repo, base))) {
+                out.push({ repo: repo, branch: branch, base: base, noBase: true, ahead: 0, files: 0, added: 0, removed: 0 });
+                continue;
+            }
+
+            //THE TWO COMMITS, WHICH ARE THE KEY. Two `rev-parse` calls to save
+            //up to four heavier ones, and they are what makes the cache exact
+            //rather than approximate.
+            var a = await git.run(repo, ['rev-parse', base]);
+            var b = await git.run(repo, ['rev-parse', branch]);
+            var key = repo + '|' + String(a.stdout || '').trim() + '|' + String(b.stdout || '').trim();
+
+            if (key in carried) { out.push(carried[key]); continue; }
+
+            var commits = [];
+            var files = [];
+            try { commits = await git.commits(repo, base, branch); } catch (e) { /* said as none */ }
+            try { files = await git.files(repo, base, branch); } catch (e) { /* said as none */ }
+
+            var row = {
+                repo: repo, branch: branch, base: base, noBase: false,
+                ahead: commits.length,
+                commits: commits,
+                files: files.length,
+                added: files.reduce(function (n, f) { return n + (f.added || 0); }, 0),
+                removed: files.reduce(function (n, f) { return n + (f.removed || 0); }, 0)
+            };
+
+            //BOUNDED, because the key contains commits and commits keep being
+            //made. Far more than a session needs, and nothing here is expensive
+            //to recompute once.
+            if (carriedCount > 500) { carried = {}; carriedCount = 0; }
+            carried[key] = row;
+            carriedCount++;
+            out.push(row);
+        }
+        return out;
+    }
+
+    //ASKED BY NAME, because machines and the task board have not been ported and
+    //this must work whether or not they answer. Same shape as the `lines` lookup
+    //in ../conflicts — a lookup resolves at call time and is not a graph edge.
+    async function relayed(name, args) {
+        if (!actions) return null;
+        try { return await actions.call(name, args || {}); }
+        catch (e) { return null; }
+    }
+
     var undo = [];
     if (actions) {
         undo.push(actions.define('lines', {
@@ -238,6 +339,169 @@ async function plugin(imports, register) {
                             ? stuck.length + ' of ' + all.length + ' have a part that moved on both sides — see Conflicts.'
                             : all.length + ' line' + (all.length === 1 ? '' : 's') + '.'
                 };
+            }
+        }));
+
+        //---- every branch, and what is true of it ---------------------------
+        //
+        //THREE THINGS THIS CANNOT ANSWER ITSELF, asked of the action table by
+        //name because machines, tasks and handed-over files have not been
+        //ported. Each arrives as null when nothing answers, and the row says so
+        //rather than claiming a branch is spare because nothing could be asked.
+        undo.push(actions.define('branchBoard', {
+            about: 'Every branch: who claims it, what is on it, and whether it can be deleted',
+            run: async function () {
+                var found = await workspace.repos();
+                var notes = (await (await cuts()).read({})) || {};
+                var here = await baselines();
+                var guarded = await protectedOf();
+
+                //WHICH REPOSITORIES HAVE IT, AND WHERE IT IS CHECKED OUT. One
+                //pass, because this is drawn on a timer.
+                var seen = {};
+                for (var i = 0; i < found.length; i++) {
+                    var repo = found[i].name;
+                    var head = null;
+                    try { head = await git.head(repo); } catch (e) { /* said as null */ }
+                    var names = [];
+                    try { names = await git.branches(repo); } catch (e) { /* said as none */ }
+                    for (var j = 0; j < names.length; j++) {
+                        var b = names[j];
+                        if (!seen[b]) seen[b] = { name: b, in: [], head: [] };
+                        seen[b].in.push(repo);
+                        if (b === head) seen[b].head.push(repo);
+                    }
+                }
+
+                //THE LIVE LIST, NOT THE REGISTRY. A claim outlives the machine
+                //being on — which is why "claimed by a machine that is off" is a
+                //separate thing to say — but WHETHER it is on comes from the
+                //machine layer, and reading `running` off a stored record gets
+                //`undefined` every time. A machine somebody was working in then
+                //reports itself as off, which is the exact lie the distinction
+                //exists to stop telling.
+                var vms = await relayed('vmList');
+                var machines = (vms && (vms.vms || vms)) || [];
+                var board = await relayed('tasks');
+                var claimsOn = (board && (board.tasks || board)) || [];
+
+                var rows = [];
+                var all = Object.keys(seen).sort(function (x, y) { return x.localeCompare(y); });
+
+                for (var k = 0; k < all.length; k++) {
+                    var name = all[k];
+                    var row = seen[name];
+                    var p = guarded[name] || null;
+                    var note = notes[name] || null;
+
+                    var held = machines.filter(function (v) { return v.branch === name; })[0] || null;
+                    //EVERY TASK THAT NAMED THIS BRANCH, not the first. Two tasks
+                    //on one branch is a mistake worth seeing rather than a case
+                    //to pick a winner in.
+                    var claims = claimsOn.filter(function (t) { return t.branch === name; });
+
+                    //A DEFAULT IS NEVER MEASURED AGAINST ITSELF.
+                    var isDefault = !!(p && p.asDefault.length);
+                    var art = isDefault ? null : await carries(name, notes, here);
+                    var carrying = art ? art.filter(function (a) { return !a.noBase; }) : [];
+
+                    rows.push(Object.assign({}, row, {
+                        cut: !!note,
+                        note: note,
+                        group: note ? note.group : null,
+                        protected: !!p,
+                        asDefault: p ? p.asDefault : [],
+                        why: p ? await whyProtected(name) : null,
+
+                        heldBy: held ? held.name : null,
+                        heldRunning: !!(held && held.running),
+                        tasks: claims.map(function (t) {
+                            return { id: t.id, number: t.number, title: t.title, state: t.state };
+                        }),
+
+                        commits: carrying.reduce(function (n, a) { return n + a.ahead; }, 0),
+                        files: carrying.reduce(function (n, a) { return n + a.files; }, 0),
+                        on: art,
+                        summary: isDefault
+                            ? 'a default branch — where work lands, never measured against itself'
+                            : carrying.length
+                                ? carrying.reduce(function (n, a) { return n + a.ahead; }, 0) + ' commit(s) in '
+                                    + carrying.filter(function (a) { return a.ahead; }).length + ' repositor'
+                                    + (carrying.filter(function (a) { return a.ahead; }).length === 1 ? 'y' : 'ies')
+                                : 'nothing beyond what it was cut from',
+                        //EVERYTHING IT CARRIES IS ALREADY IN ITS BASE.
+                        contained: art ? (carrying.length > 0 && carrying.every(function (a) { return a.ahead === 0; })) : null,
+
+                        //SPARE AND ORPHANED ARE DIFFERENT, and both need all
+                        //three answers. `null` where nothing could be asked, so
+                        //an unreachable machine layer cannot make a held branch
+                        //read as free.
+                        spare: (vms && board)
+                            ? (!p && !claims.length && !held && !!art && carrying.every(function (a) { return a.ahead === 0; }))
+                            : null,
+                        removable: !p && !held && !claims.length
+                    }));
+                }
+
+                var cutRows = rows.filter(function (r) { return r.cut; });
+                return {
+                    repos: found.map(function (r) { return r.name; }),
+                    branches: rows,
+                    //WHAT COULD NOT BE ASKED, SAID RATHER THAN IMPLIED.
+                    asked: { machines: !!vms, tasks: !!board },
+                    note: cutRows.length + ' cut, ' + rows.length + ' branch(es) in all'
+                        + ((!vms || !board) ? ' — who holds them could not be asked, so nothing is reported as spare.' : '.')
+                };
+            }
+        }));
+
+        //---- a cut becomes a line -------------------------------------------
+        //
+        //THE MOMENT WORK STOPS BEING A BRANCH AND BECOMES A THING. A cut is
+        //where work happens; naming it a line is saying it is now the point
+        //other work is measured against — and from then on it is protected.
+        undo.push(actions.define('branchAsLine', {
+            about: 'Name a cut as a line, so it becomes a point work can be measured against',
+            takes: ['branch', 'name', 'why'],
+            run: async function (args) {
+                var a = args || {};
+                var branch = String(a.branch || '').trim();
+                if (!branch) throw new Error('Say which branch.');
+
+                var found = await workspace.repos();
+                var on = {};
+                for (var i = 0; i < found.length; i++) {
+                    if (await git.has(found[i].name, branch)) on[found[i].name] = branch;
+                }
+                if (!Object.keys(on).length) {
+                    throw new Error('No repository here has a branch called "' + branch + '", so there is nothing to name.');
+                }
+
+                var title = String(a.name || branch).trim();
+                var doc = await kept();
+                var lines = doc.read({}) || {};
+                var was = lines[title] || {};
+
+                //WHY IT EXISTS, TAKEN FROM THE CUT WHEN NOTHING ELSE IS SAID.
+                //The reason somebody cut it is usually the reason it is a line,
+                //and asking them to type it again is how the two drift apart.
+                var note = ((await (await cuts()).read({})) || {})[branch] || null;
+                lines[title] = {
+                    on: on,
+                    why: a.why ? String(a.why).trim() : (was.why || (note && note.reason) || null),
+                    made: was.made || new Date().toISOString(),
+                    marked: was.marked || null
+                };
+                doc.write(lines);
+
+                log.good('"' + title + '" is a line, naming ' + branch + ' in ' + Object.keys(on).length + ' repositor'
+                    + (Object.keys(on).length === 1 ? 'y' : 'ies'));
+                var now = (await groups() || []).filter(function (g) { return g.name === title; })[0] || null;
+                return Object.assign({ name: title }, now || {}, {
+                    note: '"' + title + '" is a line now, naming ' + branch + ' in ' + Object.keys(on).length
+                        + ' repositor' + (Object.keys(on).length === 1 ? 'y' : 'ies')
+                        + '. Its branches are protected from here on — work goes onto its own branch and is merged in.'
+                });
             }
         }));
 
