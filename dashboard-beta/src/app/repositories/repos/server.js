@@ -597,6 +597,86 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- catching branches up to origin ---------------------------------
+        //
+        //ONLY FAST-FORWARDS, AND THAT IS THE WHOLE PROMISE THE BUTTON MAKES.
+        //Anything that has moved here as well is reported and left alone — the
+        //fast-forward could not help it, and choosing what to do instead is a
+        //decision rather than a retry. See ../../git's write door.
+        //
+        //A PROTECTED BRANCH IS FINE HERE, and that is not a hole in the gate.
+        //Protection means work is not BUILT on it; catching it up to origin is
+        //the opposite — it is how a default stays the thing everything else is
+        //measured against.
+        async function catchUp(repo, only) {
+            var got = await git.fetch(repo);
+            if (!got.fetched) return [{ repo: repo, branch: only || null, moved: false, why: got.why }];
+
+            var rows = await git.tracked(repo);
+            var names = only ? [String(only)] : Object.keys(rows);
+            var out = [];
+
+            for (var i = 0; i < names.length; i++) {
+                var b = rows[names[i]];
+                if (!b) { out.push({ repo: repo, branch: names[i], moved: false, why: 'there is no branch by that name here' }); continue; }
+                //ONLY WHERE BOTH SIDES HAVE IT. A branch that exists only here
+                //has nothing to catch up TO, and reporting that as a failure is
+                //how "3 out of step" got counted wrong in the first place.
+                if (!b.local || !b.remote) continue;
+                if (b.state === 'same') continue;
+
+                var said = await git.fastForward(repo, b.branch, 'refs/remotes/origin/' + b.branch);
+                out.push({ repo: repo, branch: b.branch, moved: !!said.moved, why: said.why || null });
+            }
+            return out;
+        }
+
+        function syncSaid(done) {
+            var moved = done.filter(function (d) { return d.moved; }).length;
+            var stuck = done.filter(function (d) { return d.why; });
+            return {
+                on: done, moved: moved, stuck: stuck.length,
+                note: moved
+                    ? moved + ' branch(es) moved.' + (stuck.length ? ' ' + stuck.map(function (d) { return d.repo + '/' + d.branch + ' — ' + d.why; }).join('; ') : '')
+                    : stuck.length
+                        ? 'Nothing moved. ' + stuck.map(function (d) { return d.repo + '/' + d.branch + ' — ' + d.why; }).join('; ')
+                        : 'Everything origin also has already matches it.'
+            };
+        }
+
+        undo.push(actions.define('repoSync', {
+            about: 'Fetch from origin and fast-forward every default branch. Only fast-forwards',
+            run: async function () {
+                var found = await workspace.repos();
+                var done = [];
+                for (var i = 0; i < found.length; i++) {
+                    var here = await localOf(found[i].name);
+                    if (!here.default) continue;
+                    var said = await catchUp(found[i].name, here.default);
+                    done = done.concat(said);
+                }
+                return syncSaid(done);
+            }
+        }));
+
+        undo.push(actions.define('repoSyncBranch', {
+            about: 'Fetch from origin and fast-forward one branch, or every branch in a repository',
+            takes: ['repo', 'branch'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.repo || '').trim();
+                if (!name) throw new Error('Say which repository.');
+
+                var found = await workspace.repos();
+                if (!found.some(function (r) { return r.name === name; })) {
+                    throw new Error('There is no repository called "' + name + '" here. This workspace has: '
+                        + found.map(function (r) { return r.name; }).join(', ') + '.');
+                }
+
+                return syncSaid(await catchUp(name, a.branch ? String(a.branch).trim() : null));
+            }
+        }));
+
         //WHERE A CHANGE FROM THIS REPOSITORY SHOULD GO, chosen once and stuck to.
         //
         //A FORK OF A FORK MAKES THIS A DECISION RATHER THAN A FACT — see the

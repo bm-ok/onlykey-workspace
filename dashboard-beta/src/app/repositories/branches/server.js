@@ -155,6 +155,65 @@ async function plugin(imports, register) {
         return out;
     }
 
+    //=======================================================================
+    //THE POLICY GATE, WHICH ../../git DELIBERATELY DOES NOT HAVE.
+    //
+    //That plugin knows what git will accept. This one knows what this app is
+    //FOR, and the rule is: work goes onto its own branch and is merged into a
+    //line afterwards, so nothing is built directly on a protected one.
+    //
+    //TWO WAYS TO BE PROTECTED, and a branch can be both:
+    //  · it is a repository's own DEFAULT, read from git
+    //  · it is a link in a LINE, which is a statement somebody made
+    //
+    //FAST-FORWARDING A PROTECTED BRANCH IS STILL ALLOWED, and that is not a hole.
+    //Protection is about building ON it; catching it up to origin is the
+    //opposite — it is how a line stays the thing everything else is measured
+    //against. The `⟳` on the Lines pane does exactly this, on purpose.
+    //=======================================================================
+    async function protectedOf() {
+        var out = {};
+        var all = await groups();
+        (all || []).forEach(function (g) {
+            (g.on || []).forEach(function (p) {
+                out[p.branch] = out[p.branch] || { branch: p.branch, asDefault: [], asLine: [] };
+                if (out[p.branch].asLine.indexOf(g.name) < 0) out[p.branch].asLine.push(g.name);
+            });
+        });
+
+        var here = await baselines();
+        here.forEach(function (r) {
+            if (!r.on) return;
+            out[r.on] = out[r.on] || { branch: r.on, asDefault: [], asLine: [] };
+            out[r.on].asDefault.push(r.repo);
+        });
+
+        return out;
+    }
+
+    //THE SENTENCE, NOT A BOOLEAN. A refusal that says "that is protected" leaves
+    //somebody to work out WHY, and the why is the useful half — being a link in
+    //a line somebody named is a different situation from being a default branch,
+    //and they are undone in different places.
+    async function whyProtected(branch) {
+        var p = (await protectedOf())[String(branch)];
+        if (!p) return null;
+        var parts = [];
+        if (p.asDefault.length) parts.push('the default branch of ' + p.asDefault.join(', '));
+        if (p.asLine.length) {
+            parts.push('a link in ' + p.asLine.map(function (n) { return '"' + n + '"'; }).join(', '));
+        }
+        return '"' + branch + '" is ' + parts.join(' and ')
+            + '. Work goes onto its own branch and is merged here afterwards, so nothing is built directly on it.';
+    }
+
+    //---- what was recorded when a branch was cut ---------------------------
+    //
+    //PER WORKSPACE, and kept because git stops being able to say. A branch that
+    //has been merged into looks identical to one cut somewhere else, so what it
+    //was cut FROM is only knowable if it was written down at the time.
+    async function cuts() { return state.here.doc('cuts'); }
+
     var undo = [];
     if (actions) {
         undo.push(actions.define('lines', {
@@ -178,6 +237,206 @@ async function plugin(imports, register) {
                         : stuck.length
                             ? stuck.length + ' of ' + all.length + ' have a part that moved on both sides — see Conflicts.'
                             : all.length + ' line' + (all.length === 1 ? '' : 's') + '.'
+                };
+            }
+        }));
+
+        //---- cutting a branch across the repositories a line touches --------
+        //
+        //A REASON IS REQUIRED, and so is a named starting point. Both refusals
+        //are the same rule: a branch nobody can say the reason or the origin of
+        //is a branch whose "3 commits ahead" means nothing in particular six
+        //weeks later.
+        //
+        //FROM A LINE OR FROM A BRANCH, NEVER BOTH. They are two different
+        //starting points and only one of them can be true — and a line names a
+        //DIFFERENT branch in each repository, which is the whole reason cutting
+        //from one is not the same as cutting from a branch name.
+        undo.push(actions.define('branchCreate', {
+            about: 'Cut a branch across every repository, from a named line or from another branch',
+            takes: ['branch', 'reason', 'group', 'from'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.branch || '').trim();
+                if (!name) throw new Error('Say what the branch is called.');
+                if (!String(a.reason || '').trim()) {
+                    throw new Error('Say what "' + name + '" is for. A branch with no reason on it is one nobody can account for later.');
+                }
+
+                var guarded = await whyProtected(name);
+                if (guarded) throw new Error(guarded);
+
+                var line = a.group ? String(a.group).trim() : null;
+                var from = a.from ? String(a.from).trim() : null;
+                if (line && from) {
+                    throw new Error('Say either which line "' + name + '" is cut from or which branch, not both — they are two different starting points and only one of them can be true.');
+                }
+                if (!line && !from) {
+                    throw new Error('Say where "' + name + '" is cut from — a line, or a branch. A workspace with no named lines has not decided what work is measured against.');
+                }
+                if (from === name) throw new Error('"' + name + '" cannot be cut from itself.');
+
+                //WHERE, AND FROM WHAT IN EACH. From a line this is per
+                //repository; from a branch it is the same name everywhere it
+                //exists.
+                var where = [];
+                if (line) {
+                    var g = (await groups() || []).filter(function (x) { return x.name === line; })[0];
+                    if (!g) throw new Error('There is no line called "' + line + '".');
+                    g.on.forEach(function (p) {
+                        if (p.stillHere && p.there) where.push({ repo: p.repo, from: p.branch });
+                    });
+                    if (!where.length) throw new Error('"' + line + '" names nothing that is still here, so there is nowhere to cut from.');
+                } else {
+                    var found = await workspace.repos();
+                    for (var i = 0; i < found.length; i++) {
+                        if (await git.has(found[i].name, from)) where.push({ repo: found[i].name, from: from });
+                    }
+                    if (!where.length) {
+                        throw new Error('There is no branch called "' + from + '" in any repository here, so there is nowhere to cut "' + name + '" from.');
+                    }
+                }
+
+                var made = [];
+                for (var j = 0; j < where.length; j++) {
+                    var w = where[j];
+                    var said = await git.makeBranch(w.repo, name, w.from);
+                    made.push({ repo: w.repo, branch: name, from: w.from, created: !!said.made, already: !!said.already, why: said.why || null });
+                }
+
+                //RECORDED ONCE, AND NOT OVERWRITTEN. Cutting the same name again
+                //in a fourth repository must not rewrite why it was cut the
+                //first time.
+                var doc = await cuts();
+                var notes = doc.read({}) || {};
+                if (!notes[name]) {
+                    var from2 = {};
+                    made.filter(function (m) { return m.created; }).forEach(function (m) { from2[m.repo] = m.from; });
+                    notes[name] = {
+                        reason: String(a.reason).trim(),
+                        by: actions.whoAsked(a),
+                        made: new Date().toISOString(),
+                        cutIn: made.filter(function (m) { return m.created; }).map(function (m) { return m.repo; }),
+                        group: line,
+                        cutFrom: from,
+                        from: from2
+                    };
+                    doc.write(notes);
+                }
+
+                var n = made.filter(function (m) { return m.created; }).length;
+                var stuck = made.filter(function (m) { return m.why; });
+                log.good('cut ' + name + ' in ' + n + ' repositor' + (n === 1 ? 'y' : 'ies'));
+                return {
+                    branch: name, on: made, created: n,
+                    note: n
+                        ? 'Cut in ' + n + ' repositor' + (n === 1 ? 'y' : 'ies') + '.'
+                            + (stuck.length ? ' ' + stuck.length + ' could not be: ' + stuck.map(function (m) { return m.repo + ' — ' + m.why; }).join('; ') : '')
+                        : 'Nothing was cut — it was already there everywhere it would have gone.'
+                };
+            }
+        }));
+
+        //---- and removing one ----------------------------------------------
+        //
+        //REFUSED WHILE IT IS PROTECTED, which is the same rule as cutting onto
+        //one. A line's branches stop being protected when the line is forgotten,
+        //and the message for that is on `lineForget`.
+        undo.push(actions.define('branchDelete', {
+            about: 'Delete a branch from every repository that has it',
+            takes: ['branch', 'force'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.branch || '').trim();
+                if (!name) throw new Error('There is no branch to delete.');
+
+                var guarded = await whyProtected(name);
+                if (guarded) throw new Error(guarded);
+
+                var force = a.force === true || a.force === 'true' || a.force === 1 || a.force === '1';
+                var found = await workspace.repos();
+                var done = [];
+
+                for (var i = 0; i < found.length; i++) {
+                    var repo = found[i].name;
+                    if (!(await git.has(repo, name))) continue;
+                    var said = await git.removeBranch(repo, name, { force: force });
+                    done.push({ repo: repo, removed: !!said.removed, unmerged: !!said.unmerged, why: said.why || null });
+                }
+
+                if (!done.length) throw new Error('No repository here has a branch called "' + name + '".');
+
+                var gone = done.filter(function (d) { return d.removed; }).length;
+                var kept = done.filter(function (d) { return !d.removed; });
+
+                //THE NOTE GOES WHEN THE LAST COPY DOES, and not before. A branch
+                //deleted from two of three repositories still exists, and why it
+                //was cut is still the answer to a question somebody has.
+                if (gone && !kept.length) {
+                    var doc = await cuts();
+                    var notes = doc.read({}) || {};
+                    if (notes[name]) { delete notes[name]; doc.write(notes); }
+                }
+
+                log.warn('deleted ' + name + ' from ' + gone + ' repositor' + (gone === 1 ? 'y' : 'ies'));
+                return {
+                    branch: name, on: done, removed: gone,
+                    //UNMERGED IS ITS OWN ANSWER, because the fix for it is a
+                    //decision rather than a retry.
+                    unmerged: kept.some(function (k) { return k.unmerged; }),
+                    note: kept.length
+                        ? gone + ' of ' + done.length + ' deleted. ' + kept.map(function (k) { return k.repo + ' — ' + k.why; }).join('; ')
+                            + (kept.some(function (k) { return k.unmerged; }) ? ' Deleting it anyway needs `force`, and what it carries goes with it.' : '')
+                        : 'Gone from ' + gone + ' repositor' + (gone === 1 ? 'y' : 'ies') + '.'
+                };
+            }
+        }));
+
+        //---- catching a line up to origin -----------------------------------
+        //
+        //ONE ACT ACROSS SEVERAL REPOSITORIES, which is the whole reason a line
+        //has its own sync rather than three. It only ever fast-forwards: a part
+        //that has moved on both sides is REPORTED and left alone, because a
+        //fast-forward cannot help it and this is not the place that decides.
+        undo.push(actions.define('lineSync', {
+            about: 'Fetch from origin and fast-forward every branch a line names, as one act',
+            takes: ['name'],
+            run: async function (args) {
+                var a = args || {};
+                var want = String(a.name || '').trim();
+                if (!want) throw new Error('Say which line.');
+
+                var line = (await groups() || []).filter(function (g) { return g.name === want; })[0];
+                if (!line) throw new Error('There is no line called "' + want + '".');
+
+                var done = [];
+                for (var i = 0; i < line.on.length; i++) {
+                    var p = line.on[i];
+                    if (!p.stillHere || !p.there) {
+                        done.push({ repo: p.repo, branch: p.branch, moved: false, why: 'it is not here' });
+                        continue;
+                    }
+                    await git.fetch(p.repo);
+                    //ASKED AFTER THE FETCH, because what origin has is the thing
+                    //that just changed.
+                    if (!(await git.has(p.repo, 'refs/remotes/origin/' + p.branch))) {
+                        done.push({ repo: p.repo, branch: p.branch, moved: false, why: 'origin has no branch by this name' });
+                        continue;
+                    }
+                    var said = await git.fastForward(p.repo, p.branch, 'refs/remotes/origin/' + p.branch);
+                    done.push({ repo: p.repo, branch: p.branch, moved: !!said.moved, already: !!said.already, why: said.why || null });
+                }
+
+                var moved = done.filter(function (d) { return d.moved; }).length;
+                var stuck = done.filter(function (d) { return d.why; });
+                return {
+                    name: want, on: done, moved: moved, stuck: stuck.length,
+                    note: moved
+                        ? moved + ' of ' + done.length + ' moved.'
+                            + (stuck.length ? ' ' + stuck.map(function (d) { return d.repo + ' — ' + d.why; }).join('; ') : '')
+                        : stuck.length
+                            ? 'Nothing moved. ' + stuck.map(function (d) { return d.repo + ' — ' + d.why; }).join('; ')
+                            : 'Every branch this line names already matches origin.'
                 };
             }
         }));
@@ -341,6 +600,8 @@ async function plugin(imports, register) {
     await register(null, {
         lines: {
             all: groups,
+            protectedOf: protectedOf,
+            whyProtected: whyProtected,
             baselines: baselines
         },
         onDestroy: function () { while (undo.length) undo.pop()(); }
