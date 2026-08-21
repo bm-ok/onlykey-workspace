@@ -1,5 +1,4 @@
 var makeBoard = require('./board');
-var makeAdd = require('./add');
 
 //the Tasks tab: what has been written, what is running, and what came back.
 //
@@ -48,7 +47,6 @@ async function plugin(imports, register) {
 
     shell.tab({ name: 'Tasks', order: 20 });
     shell.pane({ tab: 'Tasks', name: 'Board', order: 10, Component: makeBoard(theme, okc, remember) });
-    shell.pane({ tab: 'Tasks', name: 'Add task', order: 20, Component: makeAdd(theme, okc, remember) });
 
     //---- AND THE SET OF THINGS A WORKER MAY BE GIVEN ---------------------
     //

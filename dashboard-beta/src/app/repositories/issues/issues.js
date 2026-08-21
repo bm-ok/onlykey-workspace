@@ -41,7 +41,7 @@ module.exports = function issues(theme, okc, remember, shell) {
             brief: (i.body ? i.body.trim() + '\n\n' : '')
                 + 'From ' + (i.on || '') + ' issue #' + i.number + ' — ' + i.url
         });
-        shell.go('Tasks', 'Add task');
+        shell.go('Queue', 'Add task');
     }
 
     return function Issues({ r }) {
