@@ -425,14 +425,20 @@ async function plugin(imports, register) {
     //commit whose changes are already applied — squashed, rebased, cherry-picked,
     //however it got there — is marked `-`, and only genuinely new work is `+`.
     //
-    //CACHED ON THE PAIR OF COMMITS, WITH NO CLOCK IN IT. The answer is a pure
-    //function of two commits: if neither has moved it cannot have changed, and if
-    //either has, the key is different. So a panel that asks every few seconds
-    //spawns nothing at all in the steady state, and recomputes the moment
-    //something actually moves — which no time-based cache can promise.
-    var landed = {};
-    var landedCount = 0;
-
+    //THE CACHING FOR THIS LIVES IN ../repositories/refs, NOT HERE, and that is
+    //the whole reason it now saves anything.
+    //
+    //It was here, keyed on the pair of commits with no clock in it, which is the
+    //right key. And it cost TWO `rev-parse` PROCESSES TO BUILD, run on a hit as
+    //well as a miss — so a panel asking every few seconds spawned eighteen
+    //processes per repository per draw to be told it already knew the answer. A
+    //cache that costs what it saves is not a cache, and it read as one: the
+    //heavy call really was skipped and the timing never moved.
+    //
+    //../repositories/refs has both shas in hand from the ref read it already
+    //did, so the key is free there. Two caches for one answer is one that
+    //drifts, and the drifted one is whichever nobody reads — so this keeps
+    //none.
     async function unlanded(repo, base, branch) {
         var a = await run(repo, ['rev-parse', String(base)]);
         var b = await run(repo, ['rev-parse', String(branch)]);
@@ -441,9 +447,6 @@ async function plugin(imports, register) {
         var at = String(a.stdout || '').trim();
         var to = String(b.stdout || '').trim();
         if (at === to) return 0;
-
-        var key = repo + '|' + at + '|' + to;
-        if (key in landed) return landed[key];
 
         var out = null;
         var said = await run(repo, ['cherry', String(base), String(branch)]);
@@ -454,11 +457,6 @@ async function plugin(imports, register) {
                 .filter(function (l) { return l.trim().indexOf('+') === 0; }).length;
         }
 
-        //BOUNDED, because the key includes commits and commits keep being made.
-        //Far more than a session needs, and nothing here is expensive to redo.
-        if (landedCount > 500) { landed = {}; landedCount = 0; }
-        landed[key] = out;
-        landedCount++;
         return out;
     }
 

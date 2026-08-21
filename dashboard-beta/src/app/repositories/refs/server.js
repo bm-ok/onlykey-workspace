@@ -190,6 +190,75 @@ async function plugin(imports, register) {
         return at;
     }
 
+    //---- the two expensive answers, keyed on the commits they are about -----
+    //
+    //BOTH ARE PURE FUNCTIONS OF TWO COMMITS: if neither has moved the answer
+    //cannot have changed, and if either has, the key is different. So they are
+    //`byContent` — no clock, and the one kind worth keeping across a restart,
+    //because `merge-tree` on a real repository is not cheap and its answer for
+    //two given commits is true for ever.
+    //
+    //THEY LIVE HERE BECAUSE THIS IS WHERE THE SHAS ALREADY ARE, and that is the
+    //whole point rather than a convenience.
+    //
+    //`git.unlanded` USED TO CACHE ITSELF AND PAID MORE FOR ITS KEY THAN IT
+    //SAVED: two `rev-parse` processes to resolve the pair, run on a cache HIT as
+    //well as a miss. Nine branches in three repositories is eighteen processes
+    //per draw that bought nothing, for ever. ../branches carries a note about
+    //being cured of exactly this and `unlanded` was simply missed.
+    //
+    //`wouldConflict` HAD NO CACHE AT ALL, while a comment in ../branches said it
+    //did — three processes per diverged branch, every fifteen seconds, on the
+    //pane most likely to sit unchanged for days.
+    //
+    //THE MEMO CAME OUT OF ../../git TOO. Two caches for one answer is one that
+    //drifts, and the drifted one is whichever nobody reads.
+    var landed = imports.cached.byContent('landed');
+    var merges = imports.cached.byContent('merges');
+
+    //A BRANCH NAME TO WHERE IT IS, out of the read this plugin already did.
+    //Null for anything that is not a branch of this repository — a tag, a sha,
+    //`HEAD~3` — which is the signal to hand the whole question back to
+    //../../git rather than guess at it.
+    function shaIn(rows, ref) {
+        var name = String(ref).replace(/^refs\/remotes\/origin\//, '');
+        var row = rows[name];
+        if (!row) return null;
+        return String(ref).indexOf('refs/remotes/origin/') === 0 ? row.remote : row.local;
+    }
+
+    //HOW MUCH OF `branch` IS GENUINELY NOT IN `base`, BY CONTENT. See the long
+    //note in ../../git: GitHub squashes, so counting by sha says a branch
+    //carries work that landed a week ago.
+    async function unlanded(repo, base, branch) {
+        var name = String(repo);
+        var rows = await of(name);
+        var at = shaIn(rows, base), to = shaIn(rows, branch);
+
+        //NOT SOMETHING THIS CAN KEY. ../../git resolves any ref and is asked to.
+        if (!at || !to) return await git.unlanded(name, base, branch);
+        if (at === to) return 0;
+
+        return await landed.get(name + '|' + at + '|' + to, function () {
+            return git.unlanded(name, base, branch);
+        });
+    }
+
+    //WOULD THESE TWO CONFLICT, AND WHERE. Three answers, and `clean: null` means
+    //"could not tell" — kept like any other, because re-running merge-tree to be
+    //told again that it cannot tell is the most expensive way to learn nothing.
+    async function wouldConflict(repo, ours, theirs) {
+        var name = String(repo);
+        var rows = await of(name);
+        var a = shaIn(rows, ours), b = shaIn(rows, theirs);
+
+        if (!a || !b) return await git.wouldConflict(name, ours, theirs);
+
+        return await merges.get(name + '|' + a + '|' + b, function () {
+            return git.wouldConflict(name, ours, theirs);
+        });
+    }
+
     //---- when to stop believing any of it ----------------------------------
 
     function forget(repo) {
@@ -337,6 +406,11 @@ async function plugin(imports, register) {
             origin: origin,
             hasBranch: hasBranch,
             hasRemote: hasRemote,
+
+            //THE TWO EXPENSIVE ONES, keyed on the commits they are about. See
+            //the block above them.
+            unlanded: unlanded,
+            wouldConflict: wouldConflict,
 
             //FOR A CALLER THAT JUST WROTE THROUGH SOMETHING THAT IS NOT
             //../../git — the GitHub half, a person pressing sync. Ordinary

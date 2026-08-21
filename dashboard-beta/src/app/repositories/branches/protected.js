@@ -72,7 +72,12 @@ module.exports = function protectedPane(theme, okc) {
     }
 
     return function Protected() {
-        var q = okc.use('branchBoard', {}, 8000);
+        //ITS OWN QUESTION, NOT THE WHOLE BOARD. This read one field of
+        //`branchBoard` and waited on everything else in it — a relayed machine
+        //list that shells out to VirtualBox, a relayed task board, and the
+        //per-branch artifact walk — to draw a list of names. See
+        //`branchProtected` in ./server.js.
+        var q = okc.use('branchProtected', {}, 8000);
 
         if (q.error && !q.state) return <Pane><Note kind="bad">{q.error}</Note></Pane>;
         if (!q.state) return <Pane><Skeleton rows={4} /></Pane>;

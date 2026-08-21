@@ -518,7 +518,10 @@ async function plugin(imports, register) {
                         continue;
                     }
                     var behind = await git.countBetween(name, b.branch, def);
-                    var left = await git.unlanded(name, def, b.branch);
+                    //THROUGH ../refs. Asking git directly cost two rev-parse
+                    //processes to build the cache key, on a HIT as well as a
+                    //miss — and the shas are already in `rows` above.
+                    var left = await refs.unlanded(name, def, b.branch);
                     out.push(Object.assign({}, b, {
                         against: {
                             base: def,

@@ -44,7 +44,17 @@ function repoAt(where, branch) {
     fs.writeFileSync(path.join(where, 'readme.md'), 'one\n');
     git(['add', '.'], where);
     git(['commit', '-q', '-m', 'first'], where);
-    if (branch) git(['branch', branch], where);
+    //THE BRANCH CARRIES SOMETHING. Cutting it at master's commit leaves the two
+    //pointing at the same place, and "what does this branch still carry" is then
+    //answerable as zero without asking git anything -- which is correct, and
+    //makes a fixture that cannot exercise the answer at all.
+    if (branch) {
+        git(['checkout', '-q', '-b', branch], where);
+        fs.writeFileSync(path.join(where, 'work.txt'), 'work\n');
+        git(['add', '.'], where);
+        git(['commit', '-q', '-m', 'work on the branch'], where);
+        git(['checkout', '-q', 'master'], where);
+    }
     return where;
 }
 
@@ -101,12 +111,14 @@ async function build() {
 
     //COUNTED, so a claim about how many git processes run is measured rather
     //than reasoned about. Everything else is the real plugin.
-    const ran = { tracked: 0, branches: 0, head: 0, origin: 0 };
+    const ran = { tracked: 0, branches: 0, head: 0, origin: 0, unlanded: 0, wouldConflict: 0 };
     const counting = Object.assign({}, realGit, {
         tracked: (r) => { ran.tracked++; return realGit.tracked(r); },
         branches: (r) => { ran.branches++; return realGit.branches(r); },
         head: (r) => { ran.head++; return realGit.head(r); },
-        origin: (r) => { ran.origin++; return realGit.origin(r); }
+        origin: (r) => { ran.origin++; return realGit.origin(r); },
+        unlanded: (r, b, br) => { ran.unlanded++; return realGit.unlanded(r, b, br); },
+        wouldConflict: (r, a, b) => { ran.wouldConflict++; return realGit.wouldConflict(r, a, b); }
     });
 
     const app = { on: () => {} };
@@ -116,7 +128,7 @@ async function build() {
 
     return {
         refs, git: realGit, workspace, ran, destroy, cached,
-        reset: () => { ran.tracked = 0; ran.branches = 0; ran.head = 0; ran.origin = 0; }
+        reset: () => { Object.keys(ran).forEach((k) => { ran[k] = 0; }); }
     };
 }
 
@@ -315,4 +327,82 @@ test('asking where a repository came from does not throw away its refs', async (
 
     assert.equal(it.ran.tracked, after,
         'a read announced itself as a write and emptied the drawer it had just filled');
+});
+
+//---------------------------------------------------------------------------
+//THE TWO EXPENSIVE ANSWERS, AND THE CLAIM THAT MATTERS ABOUT THEM.
+//
+//It is NOT that they are cached — they were, in ../../src/app/git, on exactly
+//the right key. It is that the key is FREE here. Over there it cost two
+//rev-parse processes to build, run on a hit as well as a miss, so the heavy
+//call really was skipped and the timing never moved.
+//---------------------------------------------------------------------------
+
+test('what a branch still carries is worked out once per pair of commits', async () => {
+    const first = await it.refs.unlanded('repo-one', 'master', 'work/thing');
+    const again = await it.refs.unlanded('repo-one', 'master', 'work/thing');
+
+    assert.equal(first, again);
+    assert.equal(it.ran.unlanded, 1, 'the second ask must not run git cherry again');
+});
+
+test('and asking again spawns nothing at all, which is the whole point', async () => {
+    await it.refs.of('repo-one');
+    await it.refs.unlanded('repo-one', 'master', 'work/thing');
+
+    const after = { ...it.ran };
+    await it.refs.unlanded('repo-one', 'master', 'work/thing');
+    await it.refs.unlanded('repo-one', 'master', 'work/thing');
+
+    //NOT ONE PROCESS. Not `unlanded`, and not a rev-parse to build its key —
+    //the shas came out of the ref read this plugin had already done.
+    assert.deepEqual(it.ran, after,
+        'building the key cost a git process, which is the fault this move was for');
+});
+
+test('a moved branch is a different pair of commits, so it is worked out again', async () => {
+    await it.refs.unlanded('repo-one', 'master', 'work/thing');
+    const before = it.ran.unlanded;
+
+    git(['checkout', '-q', 'work/thing'], one);
+    git(['commit', '-q', '--allow-empty', '-m', 'more work'], one);
+    git(['checkout', '-q', 'master'], one);
+    it.refs.forget('repo-one');
+
+    await it.refs.unlanded('repo-one', 'master', 'work/thing');
+    assert.equal(it.ran.unlanded, before + 1, 'a moved branch must not be answered from the old key');
+});
+
+test('whether two branches would conflict is worked out once, then costs nothing', async () => {
+    const said = await it.refs.wouldConflict('repo-one', 'master', 'work/thing');
+    assert.ok(said && 'clean' in said);
+
+    await it.refs.of('repo-one');
+    const after = { ...it.ran };
+    await it.refs.wouldConflict('repo-one', 'master', 'work/thing');
+
+    assert.deepEqual(it.ran, after, 'merge-tree ran again for the same two commits');
+});
+
+test('a ref this cannot key is handed back to git rather than guessed at', async () => {
+    //TWO DIFFERENT TAGS, AND THAT IS THE POINT OF THE TEST.
+    //
+    //Asking about ONE proves nothing: a `shaIn` that invented a sha for
+    //anything it did not recognise would still cause exactly one git call, and
+    //the check would pass. The damage only shows with a second unkeyable ref —
+    //it would share the invented key and be answered with the first one's
+    //result, which is a wrong answer rather than a slow one.
+    git(['tag', 'v9.9', 'master'], one);
+    git(['tag', 'v8.8', 'work/thing'], one);
+    it.refs.forget('repo-one');
+
+    //A TAG IS NOT IN A LIST OF BRANCHES, so there is no sha here to key on —
+    //and answering "cannot tell" would be worse than asking. It asks.
+    const a = await it.refs.wouldConflict('repo-one', 'master', 'v9.9');
+    const b = await it.refs.wouldConflict('repo-one', 'master', 'v8.8');
+
+    assert.ok(a && 'clean' in a);
+    assert.ok(b && 'clean' in b);
+    assert.equal(it.ran.wouldConflict, 2,
+        'two different refs were pooled under one key and the second got the first one’s answer');
 });

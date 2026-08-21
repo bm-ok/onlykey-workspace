@@ -75,7 +75,10 @@ async function plugin(imports, register) {
                 //pane already has a button for it.
                 if (b.state !== 'diverged') continue;
 
-                var would = await git.wouldConflict(repo, b.branch, 'refs/remotes/origin/' + b.branch);
+                //THROUGH ../refs, which already holds both shas from the read
+                //above — so the key costs nothing and `merge-tree` runs once per
+                //pair of commits rather than once every fifteen seconds.
+                var would = await refs.wouldConflict(repo, b.branch, 'refs/remotes/origin/' + b.branch);
                 out.push({
                     repo: repo,
                     branch: b.branch,

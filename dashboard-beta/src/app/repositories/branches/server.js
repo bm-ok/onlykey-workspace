@@ -300,6 +300,32 @@ async function plugin(imports, register) {
         //name because machines, tasks and handed-over files have not been
         //ported. Each arrives as null when nothing answers, and the row says so
         //rather than claiming a branch is spare because nothing could be asked.
+        //---- what may not be built on, and nothing else --------------------
+        //
+        //ITS OWN ACTION BECAUSE THE PANE ASKS ITS OWN QUESTION. Protected drew
+        //from `branchBoard` and read exactly one field of it — `protected` — so
+        //every eight seconds it paid for the entire board to list some names:
+        //a relayed `vmList`, which shells out to VBoxManage in the app being
+        //ported from and takes between 0.7 and 3.5 seconds; a relayed `tasks`;
+        //and `carries()` for every branch in every repository.
+        //
+        //MEASURED, BECAUSE THE GUESS WOULD HAVE BEEN git. After ../refs landed,
+        //the local half of the board is about 160ms and `vmList` on its own is
+        //1423ms — so the pane that felt slowest was the one asking for the least
+        //and waiting on machines it never mentions.
+        //
+        //THIS IS `groups()` AND `baselines()`, both of which now read through
+        //../refs, so it spawns nothing at all in the steady state.
+        undo.push(actions.define('branchProtected', {
+            about: 'Every branch that may not be built on, and whether that could be changed',
+            run: async function () {
+                var guarded = await protectedOf();
+                return {
+                    protected: Object.keys(guarded).sort().map(function (b) { return guarded[b]; })
+                };
+            }
+        }));
+
         undo.push(actions.define('branchBoard', {
             about: 'Every branch: who claims it, what is on it, and whether it can be deleted',
             run: async function () {
