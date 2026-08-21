@@ -51,34 +51,52 @@ async function aGit() {
     return g;
 }
 
+let holder, template;
+
+//BUILT ONCE AND COPIED PER TEST, NOT REBUILT.
+//
+//A FRESH WORKSPACE PER TEST IS STILL THE RULE — these WRITE, and a shared one
+//would make the order of the tests part of what they assert. What changed is
+//only how the fresh one is made: rebuilding was nine git processes plus a
+//clone, twenty-two times over, and clone is the most expensive of them.
+//
+//THE REMOTES ARE RELATIVE, which is what makes copying sound. An absolute path
+//would leave every copy pushing into the TEMPLATE's bare repository — which is
+//precisely the contamination a fresh workspace exists to prevent, reintroduced
+//by the thing meant to speed it up. Relative, each copy talks only to its own.
 before(() => {
-    work = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-writes-'));
-    origin = path.join(work, 'origin.git');
-    fs.mkdirSync(origin);
-    git(['init', '-q', '--bare', '-b', 'master'], origin);
+    holder = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-writes-'));
+    template = path.join(holder, 'template');
+    fs.mkdirSync(template);
+
+    const bare = path.join(template, 'origin.git');
+    fs.mkdirSync(bare);
+    git(['init', '-q', '--bare', '-b', 'master'], bare);
+
+    const one = path.join(template, 'repo-one');
+    fs.mkdirSync(one);
+    git(['init', '-q', '-b', 'master'], one);
+    git(['remote', 'add', 'origin', '../origin.git'], one);
+    fs.writeFileSync(path.join(one, 'readme.md'), 'one\n');
+    git(['add', '.'], one);
+    git(['commit', '-q', '-m', 'first'], one);
+    git(['push', '-q', '--force', 'origin', 'master'], one);
+    git(['fetch', '-q', 'origin'], one);
+
+    git(['clone', '-q', 'origin.git', 'elsewhere'], template);
+    git(['remote', 'set-url', 'origin', '../origin.git'], path.join(template, 'elsewhere'));
 });
 
-//A FRESH REPOSITORY PER TEST. These change things, and a shared fixture would
-//make the order of the tests part of what they assert.
 beforeEach(() => {
+    work = fs.mkdtempSync(path.join(holder, 'w-'));
+    fs.cpSync(template, work, { recursive: true });
+    origin = path.join(work, 'origin.git');
     repo = path.join(work, 'repo-one');
-    fs.rmSync(repo, { recursive: true, force: true });
-    fs.mkdirSync(repo);
-    git(['init', '-q', '-b', 'master'], repo);
-    git(['remote', 'add', 'origin', origin], repo);
-    fs.writeFileSync(path.join(repo, 'readme.md'), 'one\n');
-    git(['add', '.'], repo);
-    git(['commit', '-q', '-m', 'first'], repo);
-    git(['push', '-q', '--force', 'origin', 'master'], repo);
-    git(['fetch', '-q', 'origin'], repo);
-
     elsewhere = path.join(work, 'elsewhere');
-    fs.rmSync(elsewhere, { recursive: true, force: true });
-    git(['clone', '-q', origin, elsewhere], work);
 });
 
 after(() => {
-    try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* windows may hold a handle */ }
+    try { fs.rmSync(holder, { recursive: true, force: true }); } catch { /* windows may hold a handle */ }
 });
 
 //---------------------------------------------------------------------------

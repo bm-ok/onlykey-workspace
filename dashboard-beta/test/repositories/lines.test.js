@@ -40,7 +40,11 @@ function aRepo(name) {
     const at = path.join(work, name);
     fs.mkdirSync(at);
     git(['init', '-q', '-b', 'master'], at);
-    git(['remote', 'add', 'origin', bare], at);
+    //A RELATIVE REMOTE, so the whole workspace can be COPIED rather than rebuilt.
+    //An absolute path here would leave every copy pushing into the template's
+    //bare repository, which is the cross-test contamination the fresh workspace
+    //exists to prevent. Relative, each copy pushes to its own.
+    git(['remote', 'add', 'origin', '../' + name + '.git'], at);
     fs.writeFileSync(path.join(at, 'readme.md'), 'one\n');
     git(['add', '.'], at);
     git(['commit', '-q', '-m', 'first'], at);
@@ -61,14 +65,32 @@ function aRepo(name) {
 //there in the next, and a ref moved by a sync changed what a later read saw.
 //Three repositories cost about half a second to build; a test that depends on
 //the one before it costs an afternoon the first time it fails.
-let holder;
-before(() => { holder = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-lines-')); });
+let holder, template;
 
-beforeEach(() => {
-    work = fs.mkdtempSync(path.join(holder, 'w-'));
+//BUILT ONCE AND COPIED, NOT REBUILT THIRTY TIMES.
+//
+//`aRepo` is ten git processes and there are three of them, so rebuilding per
+//test was thirty processes before a single assertion — three to six seconds
+//each, twenty-one times, which was the whole wall time of `npm test`.
+//
+//THE GUARANTEE IS UNCHANGED, and it is the one that matters: every test still
+//gets a workspace nothing else has touched. What changed is how it is made.
+//A directory copy is one bulk filesystem operation; the remotes are relative,
+//so each copy talks to its own bare repositories and never the template's.
+before(() => {
+    holder = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-lines-'));
+    template = path.join(holder, 'template');
+    fs.mkdirSync(template);
+
+    work = template;
     aRepo('one');
     aRepo('two');
     aRepo('three');
+});
+
+beforeEach(() => {
+    work = fs.mkdtempSync(path.join(holder, 'w-'));
+    fs.cpSync(template, work, { recursive: true });
 });
 
 after(() => {
