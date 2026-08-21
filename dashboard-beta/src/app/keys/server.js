@@ -128,6 +128,27 @@ async function plugin(imports, register) {
         return { OKC_GIT_TOKEN: token() };
     }
 
+    //---- and the other half of that exit -----------------------------------
+    //
+    //A PATH, NOT AN EXIT. `envForPush` hands the token to a child's environment;
+    //this says which program reads it out again. Git asks a credential helper
+    //for a username and password on stdout, and that is the ONLY way to
+    //authenticate a push that does not put the secret somewhere another process
+    //can read:
+    //
+    //  in the URL              https://TOKEN@github.com/… lands in .git/config,
+    //                          in reflogs, and in every error message git prints
+    //  in -c http.extraheader  the token is in argv, which anything running as
+    //                          this user can read out of the process list
+    //  the helper              the token is in the child's environment, inherited
+    //                          from the process that spawned it, gone when it exits
+    //
+    //It is a filename and not a secret, so it is not in EXITS — but it only
+    //means anything alongside `envForPush`, which is why it lives here rather
+    //than in ../git. See ./credential-helper.js for why it answers `get` and
+    //nothing else.
+    var HELPER = path.join(__dirname, 'credential-helper.js');
+
     //EVERY WAY A SECRET CAN LEAVE, IN ONE LIST. The test asserts this matches
     //what the service actually offers, so a new way out cannot be added quietly.
     var EXITS = ['sign', 'envForPush'];
@@ -276,6 +297,9 @@ async function plugin(imports, register) {
                 //---- capabilities ------------------------------------------
                 sign: sign,
                 envForPush: envForPush,
+                //THE PROGRAM THAT READS WHAT envForPush WROTE. A path, not a
+                //secret — see the block where it is defined.
+                credentialHelper: HELPER,
                 //---- facts, which are not the secret -----------------------
                 has: has,
                 held: held,

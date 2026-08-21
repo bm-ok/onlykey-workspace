@@ -87,22 +87,25 @@ after(() => {
 
 test('the declared writes are exactly the ones that are callable', async () => {
     const g = await aGit();
-    assert.deepEqual(g.WRITES.slice().sort(), ['fastForward', 'fetch', 'makeBranch', 'removeBranch'],
+    assert.deepEqual(g.WRITES.slice().sort(), ['fastForward', 'fetch', 'makeBranch', 'push', 'removeBranch'],
         'the set of ways this plugin can change a repository changed — that is a thing to argue for in a diff');
     for (const name of g.WRITES) {
         assert.equal(typeof g[name], 'function', name + ' is declared as a write and is not callable');
     }
 });
 
-//THE ONES THAT ARE NOT THERE ARE THE POINT. A push, a commit, a merge, a reset
-//or a checkout would each be a way for a mistake in a pane to become a mistake
-//in somebody's work.
-test('there is no push, commit, merge, rebase, reset or checkout', async () => {
+//THE ONES THAT ARE NOT THERE ARE THE POINT. A commit, a merge, a reset or a
+//checkout would each be a way for a mistake in a pane to become a mistake in
+//somebody's work.
+//
+//`push` USED TO BE ON THIS LIST and is now a named write of its own — see the
+//block below for what it cannot do, which is where its narrowness is asserted.
+test('there is no commit, merge, rebase, reset or checkout', async () => {
     const g = await aGit();
-    for (const nope of ['push', 'commit', 'merge', 'rebase', 'reset', 'checkout', 'clean', 'stash', 'cherryPick']) {
+    for (const nope of ['commit', 'merge', 'rebase', 'reset', 'checkout', 'clean', 'stash', 'cherryPick']) {
         assert.equal(g[nope], undefined, 'the git service now offers `' + nope + '`');
     }
-    //and `run` still refuses them by name
+    //and `run` still refuses every one of them by name, push included
     for (const nope of ['push', 'commit', 'reset', 'checkout', 'clean']) {
         await assert.rejects(() => g.run('repo-one', [nope]), /is not something this reads with/);
     }
@@ -357,6 +360,100 @@ test('a repository with no origin says so rather than throwing', async () => {
     const said = await g.fetch('repo-one');
     assert.equal(said.fetched, false);
     assert.ok(said.why, 'it failed silently');
+});
+
+//---------------------------------------------------------------------------
+//PUSH: THE ONE WRITE WITH EFFECTS OUTSIDE THIS HOST.
+//
+//The other four move a ref on this disk and the worst a mistake costs is a local
+//branch. This one PUBLISHES, and there is no undo for that — so what is asserted
+//is how NARROW it is, not that it works.
+//
+//The bare origin is on this disk, so these are real pushes.
+//---------------------------------------------------------------------------
+
+test('a push sends one branch, to the same name, and nothing else', async () => {
+    const g = await aGit();
+    await g.makeBranch('repo-one', 'work/send-me', 'master');
+
+    //something to send
+    const tree = git(['rev-parse', 'master^{tree}'], repo).trim();
+    const made = git(['commit-tree', tree, '-p', 'master', '-m', 'to send'], repo).trim();
+    git(['update-ref', 'refs/heads/work/send-me', made], repo);
+
+    //A SECOND BRANCH THAT MUST NOT TRAVEL. Without one, an argv of `--all` or
+    //`--mirror` produces exactly the same origin as the correct one and the
+    //assertion below cannot tell them apart — which is how the first version of
+    //this test passed against a sabotage that pushed everything.
+    await g.makeBranch('repo-one', 'work/keep-me-here', 'master');
+    const secret = git(['commit-tree', tree, '-p', 'master', '-m', 'not for sending'], repo).trim();
+    git(['update-ref', 'refs/heads/work/keep-me-here', secret], repo);
+
+    const said = await g.push('repo-one', 'work/send-me');
+    assert.equal(said.pushed, true, said.why || '');
+    assert.equal(git(['rev-parse', 'refs/heads/work/send-me'], origin).trim(), made);
+
+    //AND NOTHING ELSE WENT. A bare `push origin` sends whatever the push
+    //configuration says, and `--all` sends the lot; the refspec is written out
+    //in full so neither can happen.
+    const there = git(['for-each-ref', '--format=%(refname:short)', 'refs/heads/'], origin)
+        .split('\n').map((s) => s.trim()).filter(Boolean).sort();
+    assert.deepEqual(there, ['master', 'work/send-me'],
+        'a branch nobody named was published — origin now has: ' + there.join(', '));
+});
+
+//NEVER FORCED, AND THE FAR END'S REFUSAL IS THE FEATURE. It means this can only
+//ever ADD commits to a branch, never remove one somebody else pushed.
+test('a push that would drop a commit at the far end is refused', async () => {
+    const g = await aGit();
+
+    //origin gains a commit this repository does not have
+    fs.writeFileSync(path.join(elsewhere, 'theirs.txt'), 'x\n');
+    git(['add', '.'], elsewhere);
+    git(['commit', '-q', '-m', 'theirs'], elsewhere);
+    git(['push', '-q', 'origin', 'master'], elsewhere);
+    const theirs = git(['rev-parse', 'master'], elsewhere).trim();
+
+    //and this side moves differently, without fetching
+    const tree = git(['rev-parse', 'master^{tree}'], repo).trim();
+    const mine = git(['commit-tree', tree, '-p', 'master', '-m', 'ours'], repo).trim();
+    git(['update-ref', 'refs/heads/master', mine], repo);
+
+    const said = await g.push('repo-one', 'master');
+    assert.equal(said.pushed, false, 'it force-pushed over a commit at the far end');
+    assert.equal(said.rejected, true, 'a rejection was not reported as one, so nobody is told to fetch');
+    assert.equal(git(['rev-parse', 'master'], origin).trim(), theirs,
+        'the commit somebody else pushed is gone from origin');
+});
+
+test('a branch that is not here is refused before anything is sent', async () => {
+    const g = await aGit();
+    assert.equal((await g.push('repo-one', 'no-such-branch')).pushed, false);
+    assert.match((await g.push('repo-one', 'no-such-branch')).why, /no branch called/);
+    assert.equal((await g.push('repo-one', '')).pushed, false);
+});
+
+//THE TOKEN IS NEVER AN ARGUMENT. It reaches git through a credential helper
+//reading the child's environment — a URL lands in .git/config and in every error
+//git prints, and `-c http.extraheader` puts it in argv where anything running as
+//this user can read it out of the process list.
+test('a credential never reaches the command line or the repository config', async () => {
+    const g = await aGit();
+    await g.makeBranch('repo-one', 'work/with-a-token', 'master');
+
+    const helper = path.join(__dirname, '..', 'src', 'app', 'keys', 'credential-helper.js');
+    await g.push('repo-one', 'work/with-a-token', {
+        env: { OKC_GIT_TOKEN: 'ghp_notARealTokenJustForADrill0123456789' },
+        helper
+    });
+
+    //NOT IN THE CONFIG, which is where a URL-embedded credential ends up.
+    const conf = fs.readFileSync(path.join(repo, '.git', 'config'), 'utf8');
+    assert.ok(!conf.includes('ghp_notARealToken'), 'the token was written into .git/config');
+
+    //NOT IN THE REFLOG OR ANY REMOTE URL EITHER.
+    const url = git(['remote', 'get-url', 'origin'], repo).trim();
+    assert.ok(!url.includes('ghp_notARealToken'), 'the token was written into the remote URL');
 });
 
 //---------------------------------------------------------------------------

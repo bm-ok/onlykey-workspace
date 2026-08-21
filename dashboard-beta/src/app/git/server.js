@@ -37,11 +37,15 @@ var child = require('child_process');
 //commit, push or reset by the same call that lists branches is one where a
 //mistake in a pane is a mistake in a repository.
 //
-//THE DOOR IS BUILT NOW, and it is four named functions rather than a second
-//allowlist — see the block above `WRITES`. What holds across all four: nothing
-//touches the working tree, nothing creates a commit, and nothing moves a ref in
-//a way that loses commits unless a caller asked for that by name. There is no
-//push, no merge, no rebase and no reset behind any of them.
+//THE DOOR IS BUILT NOW, and it is five named functions rather than a second
+//allowlist — see the block above `WRITES`. What holds across all of them:
+//nothing touches the working tree, nothing creates a commit, and nothing moves a
+//ref in a way that loses commits unless a caller asked for that by name. There
+//is no merge, no rebase and no reset behind any of them.
+//
+//FOUR OF THE FIVE ONLY MOVE A REF ON THIS DISK. `push` is the exception and has
+//its own block, because it PUBLISHES — and the worst a mistake in it costs is
+//not a local branch.
 //
 //---- the surface, which is a contract --------------------------------------
 //
@@ -444,7 +448,7 @@ async function plugin(imports, register) {
     //EVERY WAY THIS PLUGIN CAN CHANGE A REPOSITORY, IN ONE LIST, so a test can
     //assert the list matches what is callable and a new one has to be argued for
     //in a diff. Same shape as EXITS in ../keys/server.js, for the same reason.
-    var WRITES = ['fetch', 'fastForward', 'makeBranch', 'removeBranch'];
+    var WRITES = ['fetch', 'fastForward', 'makeBranch', 'removeBranch', 'push'];
 
     //A NAME GIT WILL ACCEPT, CHECKED BEFORE ANYTHING IS CREATED. Asked of git
     //itself rather than guessed at with a regex — the rules are genuinely
@@ -574,6 +578,116 @@ async function plugin(imports, register) {
 
         log.warn(repo + ': deleted ' + name + (force ? ', forced' : ''));
         return { removed: true, why: null };
+    }
+
+    //=======================================================================
+    //PUSH: THE ONE WRITE WITH EFFECTS OUTSIDE THIS HOST.
+    //
+    //The other four move a ref on this disk, and the worst a mistake in them
+    //costs is a local branch. This one PUBLISHES — it puts commits somewhere
+    //other people read, and there is no undo button here for that.
+    //
+    //SO IT IS NARROWER THAN THE OTHERS, and the narrowing is in the argv:
+    //
+    //  ONE BRANCH, TO THE SAME NAME. The refspec is written out in full —
+    //  `refs/heads/X:refs/heads/X` — so there is no branch this can reach that
+    //  the caller did not name, and no chance of git's own guessing rules
+    //  choosing a destination. `push origin X` is not the same command.
+    //
+    //  NEVER FORCED. No `--force`, no `--force-with-lease`, no `+` on the
+    //  refspec. The far end refuses a non-fast-forward and THAT REFUSAL IS THE
+    //  FEATURE: it means this can only ever ADD commits to a branch, never
+    //  remove one that somebody else pushed.
+    //
+    //  NOTHING ELSE. No `--delete`, no `--tags`, no `--mirror`, no `--all`.
+    //  Each of those is a way to remove something at the far end, which is the
+    //  category this refuses to be in.
+    //
+    //  ONLY `origin`. Not a URL, not a caller-named remote — a URL from a caller
+    //  is somewhere else entirely, and a remote name is one `set-url` away from
+    //  being one.
+    //
+    //---- and the token is not an argument ---------------------------------
+    //
+    //IT ARRIVES IN THE CHILD'S ENVIRONMENT AND IS READ BY A HELPER. `env` and
+    //`helper` come from the caller, which got them from ../keys — this plugin
+    //never asks for a credential, never holds one, and could not tell you what
+    //is in the object it is handed. See `envForPush` and `credentialHelper`
+    //there for why the other two ways are worse.
+    //
+    //`credential.helper=` IS CLEARED FIRST, and that empty value matters: it
+    //resets the list, so a credential manager configured on this machine cannot
+    //answer instead with somebody else's account. Appending without clearing
+    //would leave the machine's helper first in line.
+    //
+    //`GIT_TERMINAL_PROMPT=0` so a wrong credential fails instead of stopping to
+    //ask a person who is not there — which, unattended, is a call that hangs
+    //until it times out.
+    //=======================================================================
+    async function push(repo, branch, opts) {
+        var o = opts || {};
+        var name = String(branch || '').trim();
+        if (!name) return { pushed: false, why: 'there is no branch to push' };
+        if (!(await has(repo, name))) return { pushed: false, why: 'there is no branch called "' + name + '" here' };
+
+        var helper = o.helper ? String(o.helper).split('\\').join('/') : null;
+        var args = ['-C', await workspace.folderOf(repo)];
+        if (helper) {
+            args.push('-c', 'credential.helper=');
+            args.push('-c', 'credential.helper=!node "' + helper + '"');
+        }
+        args.push('push', 'origin', 'refs/heads/' + name + ':refs/heads/' + name);
+
+        var said = await spawnAt(args, Object.assign({}, o.env || {}, {
+            OKC_GIT_USER: 'x-access-token',
+            GIT_TERMINAL_PROMPT: '0'
+        }));
+
+        if (said.code !== 0) {
+            var text = String(said.stderr || '') + '\n' + String(said.stdout || '');
+            var first = text.split('\n').filter(Boolean)[0] || 'git would not say why';
+            return {
+                pushed: false,
+                //A REJECTION IS AN ANSWER, NOT A FAILURE. It means the far end
+                //has commits this does not, and the fix is to fetch rather than
+                //to try harder.
+                rejected: /non-fast-forward|rejected|fetch first/i.test(text),
+                why: first
+            };
+        }
+
+        log.good(repo + ': pushed ' + name + ' onward');
+        return { pushed: true, why: null };
+    }
+
+    //THE ONLY SPAWN THAT TAKES AN ENVIRONMENT, and it exists for `push` alone.
+    //Kept separate from `spawnGit` so that adding an env to anything else is a
+    //deliberate act rather than a parameter that was already there.
+    function spawnAt(args, env) {
+        return new Promise(function (resolve) {
+            var p = child.spawn('git', args, {
+                windowsHide: true,
+                //A PUSH IS A NETWORK ROUND TRIP and can honestly take a while;
+                //ten seconds is right for a local read and wrong here.
+                env: Object.assign({}, process.env, env || {})
+            });
+            var out = '', err = '', done = false;
+            var timer = setTimeout(function () {
+                if (done) return;
+                try { p.kill(); } catch (e) { /* already gone */ }
+                resolve({ code: null, stdout: out, stderr: 'git did not answer within 120s' });
+            }, 120000);
+            p.stdout.on('data', function (b) { if (out.length < 64000) out += b; });
+            p.stderr.on('data', function (b) { if (err.length < 64000) err += b; });
+            p.on('error', function (e) {
+                done = true; clearTimeout(timer);
+                resolve({ code: null, stdout: '', stderr: 'git could not be started: ' + e.message });
+            });
+            p.on('close', function (code) {
+                done = true; clearTimeout(timer);
+                resolve({ code: code, stdout: out, stderr: err.trim() });
+            });
+        });
     }
 
     function lines(text) {
@@ -762,6 +876,7 @@ async function plugin(imports, register) {
             fastForward: fastForward,
             makeBranch: makeBranch,
             removeBranch: removeBranch,
+            push: push,
             //HANDED OUT SO NOBODY GUESSES AT IT. A caller that wants to say what
             //this can do should say what this SAYS it can do.
             READS: READS
