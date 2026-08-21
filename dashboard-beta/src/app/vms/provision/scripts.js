@@ -1,0 +1,221 @@
+var fs = require('fs');
+var path = require('path');
+
+var header = require('./header');
+var q = header.q;
+
+//---------------------------------------------------------------------------
+//WHICH FILE A MACHINE GETS FOR A STAGE.
+//
+//THE SCRIPTS ARE FILES RATHER THAN STRINGS IN HERE ON PURPOSE: they are meant
+//to be swapped. A machine's spec can name a different file for any stage, so
+//making a different KIND of machine is editing or replacing a script rather
+//than changing this app.
+//
+//READ FRESH ON EVERY REQUEST, NEVER CACHED, so editing one takes effect on the
+//next boot with nothing to restart. That is the one place in this app where not
+//caching is the point rather than an omission.
+//---------------------------------------------------------------------------
+
+//THE STAGES, and which file each uses unless a machine says otherwise. Adding
+//one here is the only place a new stage needs registering.
+//
+//ROOT AND USER ARE SEPARATE STAGES, not one script switching user mid-flight.
+//Which of the two something needs is not a detail: packages and /etc are root's,
+//a shell file or a per-user install is the user's, and mixing them is how a home
+//directory ends up owned by root.
+var STAGES = {
+    firstBoot: 'first-boot.sh',
+    toolchain: 'toolchain.sh',
+    toolchainUser: 'toolchain-user.sh',
+    normalBoot: 'normal-boot.sh',
+
+    //A SCREEN, ONLY IF THE MACHINE WAS BUILT TO HAVE ONE. Every machine is
+    //installed from the same server image, which has no desktop at all — so a
+    //desktop is ADDED by this rather than something a machine is born with and a
+    //runner has to have stripped out.
+    desktop: 'desktop.sh',
+    //The picture on it, which is the one part that is taste rather than plumbing.
+    wallpaper: 'wallpaper.sh',
+
+    //THE PROJECT'S ADDITIONS, run after the app's. A machine works perfectly
+    //well without either.
+    //
+    //NOT RUN ON A SUPERVISOR. A supervisor takes no tasks, so the project's half
+    //— its repositories, its build inputs, its devices — is setup for work that
+    //will never happen there.
+    extra: 'extra.sh',
+    extraUser: 'extra-user.sh',
+
+    //WHAT A SUPERVISOR GETS INSTEAD, and it is the app's own rather than a
+    //project's: Claude Code, and nothing else. A supervisor is a machine this
+    //app knows the purpose of, so what it needs is not a project's business.
+    //
+    //The root half builds the SIGN-IN DESK — a second user whose only job is to
+    //hold a sign-in conversation, so asking for a login URL never touches the
+    //credential the supervisor is working with.
+    supervisor: 'supervisor.sh',
+    supervisorUser: 'supervisor-user.sh',
+
+    //NOT SHELL, and served without a header for that reason — its values arrive
+    //through the service unit first-boot.sh writes for it.
+    agent: 'agent.py',
+
+    //---- what a supervisor's model is given -------------------------------
+    //
+    //THE TOOL SERVER IS THE WHOLE SURFACE. It speaks MCP on stdin and stdout and
+    //offers one tool per verb of the supervisor API — no shell, no file, no
+    //fetch. A server rather than a permission, deliberately.
+    mcp: 'okc-mcp.js',
+    //And how to use it: the loop, what a task has to say, what it may never do.
+    skill: 'supervisor-skill.md',
+    //And the one a WORKER gets. Different audience entirely: the supervisor's is
+    //about deciding what work there is, this one is about doing a piece of it on
+    //a machine that will be rolled back underneath you.
+    workerSkill: 'runner-skill.md',
+    //AND THE GATE IN FRONT OF EVERY TOOL CALL. Deny by default: only the
+    //dashboard's own tools are let through, so anything a future Claude Code
+    //adds is refused the day it ships rather than the day somebody notices.
+    toolGate: 'okc-only-hook.js'
+};
+
+//FOUR KINDS: shell and python are run, a node program is run, and a markdown
+//file is read by a model. The guard is about what may be SERVED from these
+//folders, so it grows with them rather than meaning "scripts only".
+var SERVABLE = /\.(sh|py|js|md)$/;
+
+module.exports = function scripts(deps) {
+    var d = deps || {};
+
+    //WHAT THE APP SHIPS, and WHAT THE PROJECT BRINGS.
+    //
+    //Two ways to use the second, different on purpose. `extra.sh` runs AFTER the
+    //app's toolchain and ADDS to it — the usual one, where the app guarantees a
+    //baseline and the project adds only what it needs. Any other name REPLACES
+    //the app's file of that name outright, for when the baseline itself is wrong
+    //for a project.
+    //
+    //THE PROJECT'S IS FIRST, so a replacement wins.
+    var appDir = d.appDir;
+    var workspaceDir = d.workspaceDir || null;
+
+    var there = d.there || function (p) {
+        try { return fs.existsSync(p); } catch (e) { return false; }
+    };
+    var readFile = d.readFile || function (p) { return fs.readFileSync(p, 'utf8'); };
+    var readDir = d.readDir || function (p) { return fs.readdirSync(p); };
+
+    function searchPath() {
+        return [workspaceDir, appDir].filter(function (dir) { return dir && there(dir); });
+    }
+
+    //ONLY EVER A PLAIN FILENAME, AND ONLY INSIDE ONE OF THOSE DIRECTORIES.
+    //
+    //A spec is configuration, but it is still not allowed to name a PATH:
+    //"../../something" would otherwise serve any file on this host to a guest.
+    //The basename is the whole guard, and it is taken before anything is joined
+    //— a check done after joining is a check that has already lost.
+    function resolve(wanted) {
+        var name = path.basename(String(wanted == null ? '' : wanted));
+
+        if (!SERVABLE.test(name)) {
+            throw new Error('"' + wanted + '" is not a provisioning file.');
+        }
+
+        var dirs = searchPath();
+        for (var i = 0; i < dirs.length; i++) {
+            var file = path.join(dirs[i], name);
+
+            //THE SECOND CHECK CANNOT FAIL WHILE THE FIRST IS THERE, and that is
+            //worth saying rather than leaving it to look load-bearing.
+            //
+            //`path.basename` has already reduced this to one segment, so joining
+            //it to a directory can only land inside that directory — it was
+            //tried as a sabotage and nothing changed, because there is nothing
+            //there to break. It stays because it is the check somebody would
+            //look for, and because it is what would catch the basename above
+            //being weakened by an edit that looked harmless.
+            if (file.indexOf(dirs[i]) === 0 && there(file)) return file;
+        }
+
+        throw new Error('There is no provisioning script called "' + name + '".');
+    }
+
+    //WHICH FILE A MACHINE GETS FOR A STAGE: its own choice, or the default.
+    function fileFor(vm, stage) {
+        var chosen = (((vm && vm.spec) || {}).scripts || {})[stage];
+        return resolve(chosen || STAGES[stage] || stage);
+    }
+
+    //DOES A STAGE EXIST AT ALL? `extra.sh` usually only exists for a project,
+    //and its absence is NORMAL rather than a problem — which is why this is a
+    //question anything can ask instead of an error anything has to catch.
+    function has(vm, stage) {
+        try { fileFor(vm, stage); return true; } catch (e) { return false; }
+    }
+
+    //EVERY SCRIPT AVAILABLE, and which copy of it would actually be used.
+    function list() {
+        var seen = {};
+        var out = [];
+
+        searchPath().forEach(function (dir) {
+            readDir(dir).filter(function (f) { return SERVABLE.test(f); }).sort().forEach(function (f) {
+                //FIRST DIRECTORY WINS, and the workspace is first.
+                if (Object.prototype.hasOwnProperty.call(seen, f)) return;
+                seen[f] = true;
+                out.push({ file: f, from: sourceOf(path.join(dir, f)) });
+            });
+        });
+
+        return out;
+    }
+
+    //WHERE A SCRIPT CAME FROM, so the log can say whose copy ran.
+    function sourceOf(file) {
+        return (workspaceDir && String(file).indexOf(workspaceDir) === 0) ? 'the project' : 'the app';
+    }
+
+    //WHICH STAGE A REQUESTED FILENAME BELONGS TO, so a request for one by name
+    //works with either the stage's default or a swapped-in one.
+    function stageOfFile(name) {
+        var found = null;
+        Object.keys(STAGES).forEach(function (s) { if (!found && STAGES[s] === name) found = s; });
+        return found;
+    }
+
+    //SERVED EXACTLY AS IT IS ON DISK, for anything that is not shell.
+    function raw(vm, stage) { return readFile(fileFor(vm, stage)); }
+
+    //THE HEADER, THE SCRIPT, AND THEN THE MACHINE'S OWN EXTRA STEPS if it
+    //declared any — so a small addition does not need a whole new file.
+    //
+    //THE SCRIPT GOES IN UNCHANGED, between the two. That is what keeps it
+    //runnable by hand on the machine: the header only defines things, and the
+    //steps only come after.
+    function render(stage, vm, where) {
+        var body = readFile(fileFor(vm, stage));
+
+        var steps = (((vm && vm.spec) || {}).setup || []).map(function (s, i) {
+            //THE LABEL IS QUOTED AND THE STEP IS NOT. A step IS shell — that is
+            //what somebody typed it as — but what we say ABOUT it is a value.
+            return 'say ' + q('extra step ' + (i + 1) + ': ' + (s.name || s.run)) + '\n' + s.run + '\n';
+        }).join('\n');
+
+        return [
+            header(vm, where),
+            body,
+            steps ? '\n# --- this machine\'s own setup steps -------------------------------\n' + steps : ''
+        ].join('\n');
+    }
+
+    return {
+        resolve: resolve, fileFor: fileFor, has: has, list: list,
+        sourceOf: sourceOf, stageOfFile: stageOfFile, raw: raw, render: render,
+        searchPath: searchPath,
+        STAGES: STAGES
+    };
+};
+
+module.exports.STAGES = STAGES;
+module.exports.SERVABLE = SERVABLE;
