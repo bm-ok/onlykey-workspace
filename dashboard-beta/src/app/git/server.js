@@ -65,7 +65,22 @@ var child = require('child_process');
 //here is a capability somebody has to decide to add.
 var READS = [
     'diff', 'log', 'branch', 'show', 'status',
-    'rev-parse', 'merge-base', 'for-each-ref', 'ls-files', 'cat-file'
+    'rev-parse', 'rev-list', 'merge-base', 'for-each-ref', 'ls-files', 'cat-file',
+
+    //`merge-tree` IS HERE AND IT IS THE ONE ENTRY THAT NEEDS AN ARGUMENT.
+    //
+    //`git merge-tree --write-tree a b` answers "would these conflict, and in
+    //which files" without merging anything — and the flag says `write`, so it
+    //belongs on this list only if what it writes is harmless. It is: it writes
+    //TREE AND BLOB OBJECTS into the object database and nothing else. It moves
+    //no ref, touches no working tree, and changes nothing any command would
+    //read back. The objects it leaves are unreferenced and are collected like
+    //any other garbage.
+    //
+    //That is a different kind of thing from `commit`, `push` or `reset`, each of
+    //which changes what a repository IS. If that distinction ever stops holding
+    //— a future flag that updates a ref, say — this entry comes off the list.
+    'merge-tree'
 ];
 
 //---------------------------------------------------------------------------
@@ -204,6 +219,133 @@ async function plugin(imports, register) {
             repo: name,
             kind: host === 'github.com' ? 'github' : (host || 'unknown')
         };
+    }
+
+    //---- every branch here, and how it stands against origin ---------------
+    //
+    //ONE PROCESS FOR THE WHOLE REPOSITORY, not one per branch. A pane draws this
+    //on a timer and a `git` per branch is how a panel comes to spawn forty
+    //processes a minute.
+    async function tracked(repo) {
+        var rows = {};
+
+        var local = await run(repo, ['for-each-ref',
+            '--format=%(refname:short)\t%(objectname:short)\t%(upstream:short)\t%(upstream:track)',
+            'refs/heads/']);
+        String(local.stdout || '').split('\n').forEach(function (line) {
+            if (!line.trim()) return;
+            var bits = line.split('\t');
+            if (!bits[0]) return;
+            rows[bits[0]] = {
+                branch: bits[0], local: bits[1] || null,
+                upstream: bits[2] || null, track: bits[3] || '', remote: null
+            };
+        });
+
+        //MATCHED BY NAME. A repository with no origin has none of these, and
+        //every branch then reads "only here", which is exactly what it is.
+        var remotes = { stdout: '' };
+        try {
+            //THE FULL REFNAME, NOT THE SHORT ONE. `%(refname:short)` turns
+            //`refs/remotes/origin/HEAD` into `origin` — git's shortening rule,
+            //not a typo — so stripping an `origin/` prefix left the string
+            //"origin" and a phantom branch by that name appeared in the panel,
+            //sitting on whatever commit the default was at.
+            remotes = await run(repo, ['for-each-ref', '--format=%(refname)\t%(objectname:short)', 'refs/remotes/origin/']);
+        } catch (e) { /* no origin, or no fetch has ever happened */ }
+
+        String(remotes.stdout || '').split('\n').forEach(function (line) {
+            if (!line.trim()) return;
+            var bits = line.split('\t');
+            var name = String(bits[0] || '').replace(/^refs\/remotes\/origin\//, '');
+            //A SYMBOLIC REF, NOT A BRANCH. Listing it would put a duplicate of
+            //the default branch in the panel under a name nobody has.
+            if (!name || name === 'HEAD') return;
+            if (rows[name]) rows[name].remote = bits[1] || null;
+            else rows[name] = { branch: name, local: null, upstream: null, track: '', remote: bits[1] || null };
+        });
+
+        var names = Object.keys(rows);
+        for (var i = 0; i < names.length; i++) {
+            var r = rows[names[i]];
+            var ahead = /ahead (\d+)/.exec(r.track);
+            var behind = /behind (\d+)/.exec(r.track);
+            r.ahead = ahead ? Number(ahead[1]) : null;
+            r.behind = behind ? Number(behind[1]) : null;
+
+            //COUNTED FROM THE COMMITS WHEN GIT HAS NOTHING TO SAY.
+            //
+            //`%(upstream:track)` is empty for a branch with no upstream
+            //configured, which is EVERY branch this app makes — so a genuinely
+            //diverged branch fell through to "different", the panel painted it
+            //amber, and amber means "the button will move it". The button would
+            //then refuse, correctly and after the fact, on a promise the colour
+            //had already made.
+            if (r.local && r.remote && r.local !== r.remote && r.ahead === null && r.behind === null) {
+                r.ahead = await countBetween(repo, 'refs/remotes/origin/' + r.branch, r.branch);
+                r.behind = await countBetween(repo, r.branch, 'refs/remotes/origin/' + r.branch);
+            }
+
+            r.state = !r.remote ? 'only here'
+                : !r.local ? 'only on origin'
+                    : r.local === r.remote ? 'same'
+                        : (r.ahead && r.behind) ? 'diverged'
+                            : r.ahead ? 'ahead'
+                                : r.behind ? 'behind'
+                                    //NEITHER SIDE HAS A COMMIT THE OTHER LACKS AND YET THE SHAS
+                                    //DIFFER — a rebase, an amend, a squash. Said as itself rather
+                                    //than guessed at.
+                                    : 'different';
+        }
+
+        return rows;
+    }
+
+    //HOW MANY COMMITS `to` HAS THAT `from` HAS NOT.
+    async function countBetween(repo, from, to) {
+        try {
+            var said = await run(repo, ['rev-list', '--count', from + '..' + to]);
+            if (said.code !== 0) return null;
+            var n = Number(String(said.stdout || '').trim());
+            return isNaN(n) ? null : n;
+        } catch (e) { return null; }
+    }
+
+    //---- would these two conflict, and where -------------------------------
+    //
+    //ASKED WITHOUT MERGING ANYTHING. See `merge-tree` in READS for why a flag
+    //called `--write-tree` is allowed on a plugin that refuses to write.
+    //
+    //THREE ANSWERS, NOT TWO. `clean: null` is "could not tell" — an unrelated
+    //history, a missing object, a ref that will not resolve — and it must not
+    //read as clean. A pane that paints "no conflicts" over an unanswerable
+    //question is worse than one that says it does not know.
+    async function wouldConflict(repo, ours, theirs) {
+        var a = await run(repo, ['rev-parse', String(ours)]);
+        var b = await run(repo, ['rev-parse', String(theirs)]);
+        if (a.code !== 0 || b.code !== 0) {
+            return { clean: null, files: [], why: 'one of the two could not be read' };
+        }
+
+        var said = await run(repo, ['merge-tree', '--write-tree',
+            String(a.stdout || '').trim(), String(b.stdout || '').trim()]);
+        if (said.code === 0) return { clean: true, files: [], why: null };
+
+        //A NON-ZERO EXIT HERE IS THE ANSWER rather than a failure, and the paths
+        //are in what it printed.
+        var text = String(said.stdout || '') + '\n' + String(said.stderr || '');
+        var seen = {};
+        text.split('\n').forEach(function (l) {
+            var m = /^\d{6} [0-9a-f]+ [123]\t(.+)$/.exec(l.trim());
+            if (m) seen[m[1]] = 1;
+        });
+        var files = Object.keys(seen);
+        if (files.length) return { clean: false, files: files, why: null };
+
+        //NON-ZERO WITH NOTHING THAT LOOKS LIKE A CONFLICT LISTING is a real
+        //failure, and is reported as not knowing rather than as "clean".
+        var last = text.split('\n').filter(function (l) { return l.trim(); }).pop();
+        return { clean: null, files: [], why: last || 'git would not say' };
     }
 
     function lines(text) {
@@ -381,6 +523,8 @@ async function plugin(imports, register) {
             fileAt: fileAt,
             has: has,
             origin: origin,
+            tracked: tracked,
+            wouldConflict: wouldConflict,
             //HANDED OUT SO NOBODY GUESSES AT IT. A caller that wants to say what
             //this can do should say what this SAYS it can do.
             READS: READS
