@@ -15,7 +15,8 @@
     "dist": "node tools/build.js && node tools/pack.js",
     "test": "node --test",
     "walk": "node tools/walk.js",
-    "test-profile": "node tools/test-profile.js"
+    "test-profile": "node tools/test-profile.js",
+    "sabotage": "node tools/sabotage.js"
   },
   "browserslist": [
     "chrome >= 120"
