@@ -293,16 +293,20 @@ test('a modifier used on a base is one the stylesheet gives that base', () => {
             else if (name.endsWith('.scss') && full !== SHEET) sheets.push(full);
         }
     })(APP);
-    //WAS 7, AND A SHEET WAS LEGITIMATELY DELETED. `github/github.scss` went with
-    //the plugin whose panes moved into ../src/app/keys — and it turned out to
-    //define only `.sync-*` classes that nothing in the app has ever used, so it
-    //was dead furniture inherited by a plugin that never drew a sync button.
+    //WAS 7, THEN 6, AND BOTH REDUCTIONS WERE DEAD SHEETS FOUND AND DELETED.
+    //`github/github.scss` defined only `.sync-*` classes that nothing in the app
+    //has ever used — furniture inherited by a plugin that never drew a sync
+    //button. `repos/repos.scss` defined exactly one class, `.head-state`, used by
+    //nothing anywhere, and did not survive the move into ./repositories.
     //
-    //This floor is a guard against the WALK breaking, not a census: it exists so
-    //that a scan which silently finds nothing cannot pass. Lowering it when a
-    //sheet is genuinely removed is the maintenance it asks for; lowering it
-    //because the number went down is how it stops guarding anything.
-    assert.ok(sheets.length >= 6,
+    //THIS FLOOR GUARDS THE WALK, NOT THE COUNT. It exists so a scan that silently
+    //finds nothing cannot pass. Lowering it alongside a deletion in the same
+    //commit is the maintenance it asks for.
+    //
+    //LOWERING IT WITHOUT ONE IS THE SIGNAL. If this goes red and no stylesheet
+    //was removed, the walk has stopped reaching somewhere — which is what it is
+    //here to catch, and which looks exactly like this failure.
+    assert.ok(sheets.length >= 5,
         'fewer stylesheets were found than there are on disk, so the scan is not reaching into the groups');
     const css = sheets.map(f => fs.readFileSync(f, 'utf8')).join('\n');
     const mods = modifiersFor(css);

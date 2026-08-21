@@ -68,6 +68,22 @@ var READS = [
     'rev-parse', 'merge-base', 'for-each-ref', 'ls-files', 'cat-file'
 ];
 
+//---------------------------------------------------------------------------
+//AND `remote` IS DELIBERATELY NOT IN THAT LIST.
+//
+//../repositories needs to know where a repository came from before it can ask
+//GitHub anything, and the obvious move is to add `remote` above. That would be
+//wrong, and the way it is wrong is worth writing down: `run` gates on the
+//SUBCOMMAND, and `git remote add`, `git remote set-url` and `git remote remove`
+//all have the same one. One word in that list would open three writes — and
+//`set-url` is the one that quietly points a repository somewhere else, which is
+//the whole trust chain this app has with GitHub.
+//
+//So the capability is "tell me where origin is", not "run git remote". Fixed
+//argv, no caller input in it at all, and nothing to widen later by accident.
+//---------------------------------------------------------------------------
+var ORIGIN = ['remote', 'get-url', 'origin'];
+
 //A COMMAND THAT NEVER RETURNS WOULD TAKE THE PANE WITH IT. `git log` on a
 //repository being written to by something else can block on a lock; ten seconds
 //is far past anything this asks for and far short of somebody giving up.
@@ -141,6 +157,53 @@ async function plugin(imports, register) {
         var said = await spawnGit(cwd, list);
         if (said.code !== 0 && said.stderr) log.warn(repo + ': git ' + list[0] + ' — ' + said.stderr.split('\n')[0]);
         return said;
+    }
+
+    //---- where a repository came from --------------------------------------
+    //
+    //THE URL IS PARSED HERE AND NOWHERE ELSE, because there are four spellings
+    //of the same thing and every caller that parses it itself gets three of them
+    //right. All four are `owner/repo` on github.com:
+    //
+    //    https://github.com/o/r.git      git@github.com:o/r.git
+    //    https://github.com/o/r          ssh://git@github.com/o/r.git
+    //
+    //ANYTHING THAT IS NOT GITHUB IS SAID RATHER THAN GUESSED AT. `kind` is
+    //'github' or the host it actually is, so ../repositories can report "origin
+    //is gitlab.com, which this cannot ask about" instead of building a GitHub
+    //API path out of it and getting a 404 that means nothing.
+    //
+    //A URL CAN CARRY A CREDENTIAL — `https://user:token@github.com/o/r` is a
+    //perfectly ordinary remote — so `url` is NOT returned. What comes back is
+    //the host, the owner and the repository, which is what anybody actually
+    //wanted, and the one shape that cannot leak what somebody pasted into a
+    //remote three months ago.
+    async function origin(repo) {
+        var cwd = await workspace.folderOf(repo);
+        var said = await spawnGit(cwd, ORIGIN);
+        if (said.code !== 0) return null;
+
+        var url = String(said.stdout || '').trim();
+        if (!url) return null;
+
+        var host = null, owner = null, name = null;
+        var m = url.match(/^[a-z+]+:\/\/(?:[^@/]*@)?([^/:]+)(?::\d+)?\/(.+)$/i)
+            || url.match(/^(?:[^@]*@)?([^:/]+):(.+)$/);
+        if (m) {
+            host = m[1].toLowerCase();
+            var rest = m[2].replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '').split('/');
+            if (rest.length >= 2) {
+                name = rest.pop();
+                owner = rest.pop();
+            }
+        }
+
+        return {
+            host: host,
+            owner: owner,
+            repo: name,
+            kind: host === 'github.com' ? 'github' : (host || 'unknown')
+        };
     }
 
     function lines(text) {
@@ -317,6 +380,7 @@ async function plugin(imports, register) {
             commits: commits,
             fileAt: fileAt,
             has: has,
+            origin: origin,
             //HANDED OUT SO NOBODY GUESSES AT IT. A caller that wants to say what
             //this can do should say what this SAYS it can do.
             READS: READS

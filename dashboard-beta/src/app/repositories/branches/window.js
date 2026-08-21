@@ -1,37 +1,37 @@
-var React = require('react');
-var makeBranches = require('./branches');
-var { useState } = React;
+var makeCut = require('./branch-cut');
+var makeLines = require('./branch-lines');
+var makeProtected = require('./protected');
 
 //---------------------------------------------------------------------------
-//Branch cuts: what work is done on, and what each one carries.
+//BRANCHES: what work is done on.
 //
-//A CUT IS A BRANCH THIS APP MADE, with a reason and a starting point, for work
-//to be done on. A LINE is the same thing protected — what work is measured
-//against, and what a PR cut is proposed into, which is why nothing may be built
-//directly on one. The two used to live under one heading here, which is where
-//the word stopped meaning anything; lines are next door under Lines.
+//    Branches Cut     a CUT is a branch this app made, with a reason and a
+//                     starting point, for work that has not left yet
+//    Branches Lines   a LINE is the named thing spanning repositories — the idea
+//                     the whole app is arranged around
+//    Protected        which branches nothing here may write to, including this app
 //
-//CUTTING ONE IS A DELIBERATE ACT WITH A REASON. It used to happen as a side
-//effect of setting a machine up, from whatever string a task carried — so a typo
-//made a branch rather than an error, and the branch list filled with names
-//nobody recognised and nobody dared delete.
+//THE FIRST TWO ARE THE SAME NOUN AT TWO SCALES, which is why they are one plugin
+//and why their names both begin with the word. A cut is one branch in one
+//repository; a line is what several cuts are called together once they are work.
 //
-//WHAT IT CARRIES IS THE THIRD COLUMN AND THE REASON THE PANE IS THIS SHAPE. A
-//branch used to mean commits and nothing else. A run can now hand over a file a
-//branch cannot hold, and the session that produced the work is the third thing
-//worth keeping with it — so "what is on this branch" is three questions, and
-//answering only the first is how work gets thrown away as empty.
+//PROTECTED IS HERE BECAUSE IT IS ABOUT BRANCHES, and it is deliberately NOT on
+//the repository chassis the way Repos and Issues are: it is about the workspace
+//as a whole rather than about a repository somebody picked, and a repository
+//list beside it would be a selection that changes nothing.
 //---------------------------------------------------------------------------
 
 plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
 plugin.provides = [];
 async function plugin(imports, register) {
+    //THESE PANES' OWN LOOK, which the theme does not promise. One sheet for the
+    //plugin, named after its folder — see ./branches.scss and ../../THEME.md.
+    require('./branches.scss');
     var { shell, theme, okc, remember } = imports;
 
-    //---- the left column ---------------------------------------------------
-
-
-    shell.pane({ tab: 'Repositories', name: 'Branches Cut', order: 60, Component: makeBranches(theme, okc, remember) });
+    shell.pane({ tab: 'Repositories', name: 'Branches Cut', order: 60, Component: makeCut(theme, okc, remember) });
+    shell.pane({ tab: 'Repositories', name: 'Branches Lines', order: 70, Component: makeLines(theme, okc) });
+    shell.pane({ tab: 'Repositories', name: 'Protected', order: 90, Component: makeProtected(theme, okc) });
 
     await register(null, {});
 }
