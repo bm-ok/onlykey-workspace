@@ -69,7 +69,7 @@ var makeAttempts = require('./attempts');
 //from there — a board reporting "nothing running" while a machine is running
 //something is the confident wrong report this whole app is arranged against.
 //---------------------------------------------------------------------------
-plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact'];
+plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact', 'archive'];
 plugin.provides = ['queue'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -319,6 +319,15 @@ async function plugin(imports, register) {
     //judge and the repositories panes all ask it and none of them owns it.
     var artifact = imports.artifact;
 
+    //AND WHAT A RUN HANDED OVER THAT A BRANCH COULD NOT HOLD. ../core/archive
+    //owns where those are kept and how they are read back; this plugin only
+    //knows that a task's are filed under its uid.
+    //
+    //THE SAME DRAWER THE JUDGE OPENS. A judgement's findings are handed over the
+    //same way and filed the same way, so both ask ../core/archive for
+    //`artifacts` rather than one of them owning it and the other reaching in.
+    var artifacts = imports.archive.store('artifacts');
+
     var undo = [];
     if (actions) {
         //=================================================================
@@ -452,6 +461,102 @@ async function plugin(imports, register) {
             takes: ['id'],
             run: async function (args) {
                 return await doors.remove((args || {}).id);
+            }
+        }));
+
+        //---- what a run handed over, which a branch could not hold ---------
+        //
+        //NOT EVERY TASK PRODUCES SOURCE. A branch is the artefact for anything
+        //that IS source, and it is the better one — reviewable, diffable, and
+        //already the thing a verdict is about. A firmware build produces a
+        //`.bin` that is the point of the task and whose source is only how it
+        //got made; a packaging task produces an archive. The branch holds what
+        //went in and nothing held what came out.
+        //
+        //THE OLD ANSWER WAS THAT THESE DO NOT SURVIVE, stated as a rule rather
+        //than a gap: only git and the session outlive a machine, because the
+        //machine goes back to its base snapshot. That is still true — what
+        //changed is that a run can HAND SOMETHING OVER before that happens,
+        //instead of leaving it on a disk about to be rolled back.
+        //
+        //WHERE IT IS KEPT IS ../core/archive'S BUSINESS, not this plugin's. The
+        //name safety, the size cap, the binary refusal and the never-silently-
+        //replaced rule are all over there, shared with the other things that
+        //hand bytes to this host.
+        undo.push(actions.define('taskFiles', {
+            about: 'Files a task handed over — a built binary, an archive, anything a branch cannot hold',
+            takes: ['id'],
+            run: async function (args) {
+                var id = (args || {}).id;
+
+                //NO ID IS A DIFFERENT QUESTION: what is on this host in total,
+                //including what belongs to tasks the board has forgotten.
+                if (!id) {
+                    var all = await artifacts.everything();
+                    var board = {};
+                    (await store.read()).forEach(function (t) { board[t.uid] = t; });
+
+                    return {
+                        tasks: all.map(function (a) {
+                            var t = board[a.uid] || null;
+                            return Object.assign({}, a, {
+                                task: t ? t.id : null,
+                                number: t ? t.number : null,
+                                title: t ? t.title : null,
+                                //WHAT WAS PRODUCED OUTLIVES THE NOTE ABOUT IT,
+                                //and saying which rows those are is the point of
+                                //asking without an id.
+                                orphaned: !t
+                            });
+                        }),
+                        bytes: all.reduce(function (n, a) { return n + (a.bytes || 0); }, 0),
+                        where: await artifacts.root()
+                    };
+                }
+
+                var task = await store.get(id);
+                var kept = await artifacts.list(task.uid);
+
+                return {
+                    task: task.id,
+                    number: task.number,
+                    branch: task.branch,
+                    files: kept,
+                    bytes: kept.reduce(function (n, f) { return n + (f.bytes || 0); }, 0),
+                    where: await artifacts.dirFor(task.uid),
+                    note: kept.length
+                        ? 'These are on this host, not on the machine — the machine was rolled back.'
+                        : 'Nothing was handed over. A run hands a file over by calling "okc-artifact <file>", '
+                            + 'which is on its PATH.'
+                };
+            }
+        }));
+
+        undo.push(actions.define('taskFileRead', {
+            about: 'Read a file a task handed over, as text',
+            takes: ['id', 'file'],
+            //THE REFUSALS ARE ../core/archive'S: a binary is refused rather than
+            //rendered as replacement characters, and something enormous is
+            //refused with its size rather than loaded into a panel.
+            run: async function (args) {
+                var a = args || {};
+                var task = await store.get(a.id);
+                var said = await artifacts.read(task.uid, String(a.file || ''));
+                return Object.assign({}, said, { task: task.id, number: task.number });
+            }
+        }));
+
+        undo.push(actions.define('taskFileForget', {
+            about: 'Throw away one file a task handed over. The task and its branch are untouched',
+            takes: ['id', 'file'],
+            run: async function (args) {
+                var a = args || {};
+                var task = await store.get(a.id);
+                var gone = await artifacts.forget(task.uid, String(a.file || ''));
+                log.warn('threw away "' + gone.name + '" from #' + task.number);
+                return Object.assign({}, gone, {
+                    note: 'Only the file. The task, its branch and its log are untouched.'
+                });
             }
         }));
 

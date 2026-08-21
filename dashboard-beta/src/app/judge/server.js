@@ -29,16 +29,15 @@ var gate = require('./gate');
 //one place answers it, and a second reader is a second chance to get the
 //staleness rule slightly different.
 //
-//WHAT IS NOT HERE: `judgementFindings` and `judgementSay`.
+//`judgementFindings` IS WHAT A RUN HANDED BACK, and it is the SUPERVISOR'S ONE
+//WINDOW ONTO THE CODE. A supervisor is not given the diff or the files a task
+//delivered; it decides what to do next from what a judge said. Where those files
+//are kept is ../core/archive's business — the same drawer ../queue opens for a
+//task's, because they arrive the same way and are filed the same way.
 //
-//  findings  is what a run handed back, filed under the judgement — and it is
-//            the SUPERVISOR'S ONE WINDOW ONTO THE CODE. A supervisor is not
-//            given the diff or the files a task delivered; it decides what to
-//            do next from what a judge said. That store has not been ported.
-//
-//  say       posts a review to somebody else's repository, under a person's
-//            name. It is refused over the wire and refused to a driven click,
-//            and it needs the GitHub half.
+//WHAT IS NOT HERE: `judgementSay`. It posts a review to somebody else's
+//repository, under a person's name. It is refused over the wire and refused to a
+//driven click, and it needs the GitHub half.
 //
 //UNTIL THOSE MOVE THEY RELAY, which is the migration path this app is built on
 //— see ../../../CLAUDE.md. What is here shadows the relayed ones the moment it
@@ -68,7 +67,7 @@ function trim(s, n) {
     return t.length > n ? t.slice(0, n) + '…' : t;
 }
 
-plugin.consumes = ['app', 'log', 'state', 'prcuts', 'refs'];
+plugin.consumes = ['app', 'log', 'state', 'prcuts', 'refs', 'archive'];
 plugin.provides = ['judge'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -84,6 +83,11 @@ async function plugin(imports, register) {
     //AND WHERE A REPOSITORY CAME FROM, and what each is at now — through
     //../repositories/refs, the group's one reader.
     var refs = imports.refs;
+
+    //WHAT A JUDGEMENT HANDED BACK. ../core/archive owns where these are kept
+    //and how they are read; the same drawer ../queue opens for a task's, because
+    //they arrive the same way and are filed the same way.
+    var artifacts = imports.archive.store('artifacts');
 
     var store = makeJudgements({
         judging: function () { return state.here.doc('judging'); },
@@ -143,6 +147,35 @@ async function plugin(imports, register) {
             if (at[repo] && at[repo][branch]) out[repo] = at[repo][branch];
         });
         return out;
+    }
+
+    //WHAT A ROW SAYS ABOUT ITSELF, on every answer about one judgement, so
+    //nothing reading a finding has to go and fetch the judgement to know what it
+    //was about or what it was held to.
+    function whose(it) {
+        return {
+            ref: it.ref,
+            reads: it.subject && it.subject.name,
+            state: it.state,
+            verdict: it.verdict || null,
+            note: it.note || null,
+            contractName: it.contractName || null
+        };
+    }
+
+    //HOW IT ENDED, FROM THE ATTEMPTS. Three values and not two: null is "nothing
+    //was recorded", which is not evidence of a clean run.
+    function exits(it) {
+        return (it.attempts || []).map(function (a) { return a.exit; })
+            .filter(function (x) { return x != null; });
+    }
+    function crashed(it) {
+        var said = exits(it);
+        return said.length ? said.some(function (x) { return x !== 0; }) : false;
+    }
+    function lastExit(it) {
+        var said = exits(it);
+        return said.length ? said[said.length - 1] : 'unknown';
     }
 
     var undo = [];
@@ -362,6 +395,102 @@ async function plugin(imports, register) {
                             + subject.name + '.'
                         : made.ref + ' is a draft with no job, so nothing can run it yet. Give it one — a '
                             + 'judgement without a chain is an opinion with nothing behind it.'
+                });
+            }
+        }));
+
+        //=================================================================
+        //WHAT A JUDGEMENT HANDED BACK.
+        //
+        //THE ONLY WAY A JUDGE CAN SAY ANYTHING. It may not push to what it
+        //reads — that is refused on the host, in the git route — so everything
+        //it found arrives as files filed under the judgement.
+        //
+        //AND THIS IS THE SUPERVISOR'S ONE WINDOW ONTO THE CODE, which is the
+        //whole reason it is worth being careful about. A supervisor decides
+        //what to do next on a line from what a JUDGE says about it, not from
+        //reading the repositories: it is not given the diff, the files a task
+        //delivered, or a change to read. So what a judge hands back is not a
+        //convenience — it is the channel, and if a judge says nothing the
+        //supervisor knows nothing, which is the correct outcome rather than a
+        //gap to route around.
+        //
+        //THE SAME DRAWER ../queue OPENS. Filed under a uid by ../core/archive,
+        //which owns where these are kept and every refusal about reading one.
+        //=================================================================
+        undo.push(actions.define('judgementFindings', {
+            about: 'What a judgement handed back: the files it wrote, and one of them in full',
+            takes: ['ref', 'id', 'file'],
+            run: async function (args) {
+                var a = args || {};
+                var it = await store.get(a.ref || a.id);
+                var handed = await artifacts.list(it.uid);
+
+                if (!a.file) {
+                    return Object.assign(whose(it), {
+                        files: handed.map(function (f) {
+                            return { name: f.file, bytes: f.bytes, kept: f.kept || null };
+                        }),
+                        //A RUN THAT CRASHED IS NOT A JUDGE THAT FOUND NOTHING,
+                        //and saying so is the whole of this branch. It said "it
+                        //read the change and handed nothing back. That is an
+                        //answer" about a job that died at `require` before
+                        //reading a line — which sends whoever asked looking at
+                        //the code for a fault that is in the judge.
+                        //
+                        //FROM THE ATTEMPT'S EXIT CODE, which the queue records.
+                        //Absent on judgements from before that was kept, and
+                        //absent reads as the old sentence, which is right.
+                        note: handed.length
+                            ? 'Ask again with a file name to read one in full.'
+                            : it.state !== 'done'
+                                ? 'Nothing yet — it has not finished reading.'
+                                : crashed(it)
+                                    ? 'The run FAILED — it did not read the change. Nothing here is a finding '
+                                        + 'about the code. Look at what it said before the machine was put '
+                                        + 'away. Exit ' + lastExit(it) + '.'
+                                    : 'It read the change and handed nothing back. That is an answer: there is '
+                                        + 'no finding, and nothing about the code is known from it.'
+                    });
+                }
+
+                //---- BY THE NAME SOMEBODY WOULD USE, not only the one on disk
+                //
+                //A handed-back file is stored as `<run>--<name>`, so the run it
+                //came from is part of its identity and two runs of one
+                //judgement cannot overwrite each other. That prefix is this
+                //app's bookkeeping, and asking for "CLAIM.md" is what anybody
+                //reading the contract would do — a supervisor did exactly that
+                //and was refused for naming the file the job was told to write.
+                //
+                //ONLY WHERE IT IS UNAMBIGUOUS. If two runs both handed back a
+                //CLAIM.md the short name names two things, and the refusal is
+                //right — so it lists them and asks for the one that is meant,
+                //rather than picking the newer and being quietly wrong about
+                //which reading is being read.
+                var want = String(a.file);
+                var ends = handed.filter(function (f) {
+                    return f.file === want || String(f.file).indexOf('--' + want) === String(f.file).length - want.length - 2;
+                });
+                var one = ends.length === 1 ? ends[0]
+                    : handed.filter(function (f) { return f.file === want; })[0];
+
+                if (!one && ends.length > 1) {
+                    throw new Error(it.ref + ' handed back ' + ends.length + ' files called "' + want + '", from '
+                        + 'different runs. Name the one that is meant: '
+                        + ends.map(function (f) { return f.file; }).join(', ') + '.');
+                }
+                if (!one) {
+                    throw new Error(it.ref + ' handed back nothing called "' + a.file + '". It handed back: '
+                        + (handed.map(function (f) { return f.file; }).join(', ') || 'nothing at all') + '.');
+                }
+
+                //THE REFUSALS FOR A BINARY AND FOR SOMETHING ENORMOUS ARE
+                //../core/archive'S, and are the right answer to pass straight
+                //through rather than to soften.
+                var body = await artifacts.read(it.uid, one.file);
+                return Object.assign(whose(it), {
+                    file: one.file, bytes: one.bytes, text: body.text
                 });
             }
         }));
