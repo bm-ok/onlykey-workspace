@@ -24,7 +24,8 @@ var { useState } = React;
 module.exports = function lines(theme, okc, shell, remember) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Plus, Card, CardTitle,
-        Badge, Button, Empty, Note, Notice, Mono, Kv, KvRow, Skeleton, ask
+        Badge, Button, Empty, Note, Notice, Mono, Muted, Kv, KvRow, Group, Part,
+        Skeleton, ask
     } = theme;
 
     var short = function (s) { return s ? String(s).slice(0, 7) : null; };
@@ -44,6 +45,7 @@ module.exports = function lines(theme, okc, shell, remember) {
         var { state, error, reads, again } = okc.use('lines', {}, 10000);
         var [picked, setPicked] = remember.use('lines', 'line', null);
         var [said, setSaid] = useState(null);
+        var [busy, setBusy] = useState(null);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;
@@ -57,6 +59,36 @@ module.exports = function lines(theme, okc, shell, remember) {
                 function (r) { setSaid({ text: r.note }); again(); },
                 function (e) { setSaid({ bad: true, text: e.message }); }
             );
+        }
+
+        //---- fetching, and it only ever fast-forwards ----------------------
+        //
+        //THE ONLY THING ON THIS PANE THAT WRITES TO A REPOSITORY, and it writes
+        //in the one direction that cannot lose anything: a branch that has moved
+        //HERE is reported and left alone. A line that has moved on both sides
+        //cannot be helped by this at all — the button says so rather than trying
+        //and failing.
+        //
+        //STILL RELAYED. `lineSync` and `repoSync` run in the app being ported
+        //from, because ../../git refuses every write and the door for them is
+        //not built yet. Pressing these does the real thing, through the relay,
+        //exactly as it does over there — and nothing here changes when they move.
+        function syncLine(g) {
+            setBusy(g.name);
+            setSaid(null);
+            return okc.call('lineSync', { name: g.name }).then(
+                function (r) { setSaid({ bad: !!r.stuck, text: r.note }); again(); },
+                function (e) { setSaid({ bad: true, text: e.message }); }
+            ).then(function () { setBusy(null); });
+        }
+
+        function syncDefaults() {
+            setBusy('*');
+            setSaid(null);
+            return okc.call('repoSync', {}).then(
+                function (r) { setSaid({ bad: !r.moved, text: r.note }); again(); },
+                function (e) { setSaid({ bad: true, text: e.message }); }
+            ).then(function () { setBusy(null); });
         }
 
         //NAMED FROM WHAT EACH REPOSITORY IS ON NOW, which is what `lineSave`
@@ -147,7 +179,14 @@ module.exports = function lines(theme, okc, shell, remember) {
                                 git rather than stored. Not a line, and first,
                                 because it is what a new one would be made of. */}
                             <Card>
-                                <CardTitle>Default branches</CardTitle>
+                                <CardTitle>
+                                    Default branches
+                                    <Grow />
+                                    <Plus disabled={busy === '*'} onClick={syncDefaults}
+                                        title="Fetch from origin and fast-forward every default branch. Only fast-forwards: anything that has moved on here is reported and left alone.">
+                                        {busy === '*' ? '…' : '⟳'}
+                                    </Plus>
+                                </CardTitle>
                                 <Kv>
                                     {repos.map(function (r) {
                                         return <KvRow key={r.repo} label={r.repo}><Mono>{r.on || '(none)'}</Mono></KvRow>;
@@ -181,30 +220,56 @@ module.exports = function lines(theme, okc, shell, remember) {
                         <TitleRow>{'What a line is — ' + all.length}<Grow /></TitleRow>
                         {!on ? <Panel><Empty>nothing picked</Empty></Panel> : (
                             <Panel>
+                                {/* NAME, WHY AND THE SYNC ON ONE LINE, which is
+                                    how the app being ported from draws it. The
+                                    reason a line exists is the thing worth
+                                    reading, and putting it on its own row below
+                                    the name made the panel a stack of short
+                                    lines hugging the left edge of a full-width
+                                    column. */}
                                 <CardTitle>
                                     <Mono>{on.name}</Mono>{' '}
                                     <Sync g={on} />
                                     {on.marked ? <span>{' '}<Badge kind="run">proposed</Badge></span> : null}
+                                    {on.why ? <span>{' '}<Muted>{on.why}</Muted></span> : null}
+                                    <Grow />
+                                    <Plus disabled={busy === on.name}
+                                        onClick={function () { syncLine(on); }}
+                                        title={on.sync === 'conflict'
+                                            ? 'Part of this line has moved on both sides. A fast-forward cannot help — see Conflicts.'
+                                            : on.sync === 'behind'
+                                                ? 'Fetch from origin and fast-forward every branch "' + on.name + '" names, as one act'
+                                                : 'Every branch this line names already matches origin'}>
+                                        {busy === on.name ? '…' : '⟳'}
+                                    </Plus>
                                 </CardTitle>
-                                {on.why ? <div className="muted">{on.why}</div> : null}
 
-                                <Kv>
+                                {/* NAME LEFT, FACTS RIGHT, and the facts travel
+                                    together. `Part` is the kit's row for exactly
+                                    this and its own comment says it was paid for
+                                    once already IN THIS LIST — a `Kv` table
+                                    hugs the left, which in a full-width column
+                                    puts the branch three inches from the
+                                    repository it belongs to and nowhere near the
+                                    edge a reader scans down. */}
+                                <Group>
                                     {(on.on || []).map(function (p) {
                                         return (
-                                            <KvRow key={p.repo} label={p.repo}>
-                                                <Mono>{p.branch}</Mono>
-                                                {/* WHERE IT IS, AND WHERE ORIGIN HAS IT. A
-                                                    branch that is gone reads differently from
-                                                    one that is there and has never moved. */}
-                                                <span className="muted">{p.at ? '  ' + short(p.at) : ''}</span>
-                                                {!p.there ? <span>{' '}<Badge kind="bad">gone</Badge></span> : null}
-                                                {p.there && p.state && p.state !== 'same'
-                                                    ? <span>{' '}<Badge kind={p.state === 'diverged' ? 'bad' : 'warn'}>{p.state}</Badge></span>
-                                                    : null}
-                                            </KvRow>
+                                            <Part key={p.repo} right={
+                                                <span>
+                                                    <Mono>{p.branch}</Mono>
+                                                    {p.at ? <span>{'  '}<Muted>{short(p.at)}</Muted></span> : null}
+                                                    {/* GONE READS DIFFERENTLY FROM
+                                                        NEVER MOVED. */}
+                                                    {!p.there ? <span>{' '}<Badge kind="bad">gone</Badge></span> : null}
+                                                    {p.there && p.state && p.state !== 'same'
+                                                        ? <span>{' '}<Badge kind={p.state === 'diverged' ? 'bad' : 'warn'}>{p.state}</Badge></span>
+                                                        : null}
+                                                </span>
+                                            }>{p.repo}</Part>
                                         );
                                     })}
-                                </Kv>
+                                </Group>
 
                                 {on.broken.length ? <Note kind="bad">{on.broken.join('; ')}</Note> : null}
                                 {on.missing.length ? (
