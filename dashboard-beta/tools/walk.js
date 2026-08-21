@@ -103,16 +103,95 @@ function okc (args) {
 // nothing here" and "nothing has arrived yet" are different answers, and only
 // one of them is worth acting on. The app now SAYS which, by reporting whether a
 // skeleton is on the screen, so this waits on a fact rather than on a guess.
+// WAITED IN SECONDS, NOT IN TRIES, and that is the fix.
+//
+// FORTY TRIES SOUNDED PATIENT AND WAS NOT. Each look is a subprocess, so forty
+// of them is six or seven seconds — while the comment directly above says the
+// Cuts pane takes about SIXTEEN. The three slowest panes in this app were
+// therefore never once checked by this tool: Branches Cut, Protected and PR cuts
+// came back "still arriving" every single run, and the summary counted them as
+// walked.
+//
+// A COUNT IS A CLAIM. "walked 44, 0 did not come up" while four of them had not
+// finished arriving is this tool making, again, exactly the mistake it exists to
+// catch: a number that reads as coverage and is not.
+//
+// AND A DEADLINE SURVIVES A SLOW HOST. Tries measure how fast subprocesses
+// spawn on this machine; a deadline measures the thing anybody actually cares
+// about.
+// AND IT PAUSES BETWEEN LOOKS, WHICH MATTERS MORE THAN THE DEADLINE DOES.
+//
+// This polled in a tight loop with no gap at all — a subprocess spawned and a
+// round trip to the page, as fast as the machine could manage, for as long as
+// the pane said it was loading. So the tool waiting for a pane to finish was
+// competing for the CPU with the pane it was waiting for, and asking it to
+// describe itself several times a second while it tried to fetch its data.
+//
+// THAT IS WHY THE SLOW PANES WERE ALWAYS THE SLOW ONES. Branches Cut, Protected
+// and PR cuts are the three that reach furthest for their data, so they are the
+// three this hammered hardest and the three it gave up on — a measurement that
+// changed what it measured, and then reported the result as a fact about the
+// app.
+//
+// Simply raising the deadline would have made that worse: the same tight loop,
+// running five times longer. The gap is the fix; the deadline only decides when
+// to stop.
+var HOW_LONG = Number(process.env.OKC_WALK_PATIENCE || 30000)
+var BETWEEN = 400
+
+// A SYNCHRONOUS PAUSE, because everything in this file is synchronous — `okc`
+// shells out and blocks, and the walk reads top to bottom. Atomics.wait on a
+// buffer nothing will ever notify is the way to hold a thread still without
+// spinning it.
+function pause (ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
 function look (patience) {
+  var until = Date.now() + (patience == null ? HOW_LONG : patience)
   var seen = okc(['windowControls'])
-  var tries = patience == null ? 40 : patience
-  while (seen.loading && tries-- > 0) seen = okc(['windowControls'])
+  while (seen.loading && Date.now() < until) {
+    pause(BETWEEN)
+    seen = okc(['windowControls'])
+  }
   return seen
 }
 
 function main () {
   const args = process.argv.slice(2)
   const quiet = args.includes('--quiet')
+
+  // ---- WALKING ONE THING, WHICH IS MOST OF WHAT THIS IS FOR ---------------
+  //
+  // A full walk is forty-seven panes and several minutes, and the usual reason
+  // to run one is a change to ONE of them. So anything that is not a flag is a
+  // pattern, matched against `Tab` and `Tab/Pane`, case-insensitively, as a
+  // substring:
+  //
+  //     npm run walk -- protected          the pane, wherever it lives
+  //     npm run walk -- repositories       the tab, every pane in it
+  //     npm run walk -- tasks/jobs judge   more than one, any of them
+  //
+  // TABS ARE STILL ENTERED TO FIND OUT WHAT IS IN THEM — a pane is not listed
+  // anywhere this can read until its tab is on screen — but a tab that cannot
+  // match anything is left after one look rather than walked through.
+  //
+  // AND THE SUMMARY SAYS IT WAS NARROWED. A count that came from a filter and
+  // reads like a count of everything is the same fault as the one that let four
+  // panes go unchecked; see `slow`.
+  const only = args.filter(a => !a.startsWith('--')).map(a => a.toLowerCase())
+  const wanted = (tab, pane) => {
+    if (!only.length) return true
+    const full = (tab + (pane ? '/' + pane : '')).toLowerCase()
+    return only.some(w => full.includes(w))
+  }
+  // A tab is worth entering if it might hold something wanted: either its own
+  // name matches, or a pattern names a pane and could be about any tab.
+  const worthOpening = (tab) => {
+    if (!only.length) return true
+    const t = tab.toLowerCase()
+    return only.some(w => t.includes(w) || w.includes('/') ? w.split('/')[0] === '' || t.includes(w.split('/')[0]) || !t.includes(w) : true)
+  }
 
   let where
   try {
@@ -223,7 +302,21 @@ function main () {
     }
   }
 
-  console.log(`\nwalked ${walked}, ${bad.length} did not come up, ${broke.length} crashed, ${bare.length} had nothing on screen`)
+  // THE SUMMARY SAYS EVERYTHING THE WALK DID NOT SETTLE, or it is not a summary.
+  // `slow` was left out of this line, so a pane this tool gave up on was reported
+  // once in the body and then quietly absent from the count — which reads as
+  // "checked and fine" to anybody scanning the last line, which is everybody.
+  // AND IT SAYS WHEN IT WAS NARROWED, always. A count that came from a filter
+  // and reads like a count of everything is the same fault as the one that let
+  // four panes go unchecked while this line called them walked.
+  console.log(`\nwalked ${walked}${only.length ? ' (only ' + only.join(', ') + ')' : ''}, ${bad.length} did not come up, ${broke.length} crashed, ${bare.length} had nothing on screen`
+    + (slow.length ? `, ${slow.length} NEVER FINISHED LOADING and were not checked` : ''))
+
+  if (slow.length) {
+    console.error(`\nthese were still arriving after ${Math.round(HOW_LONG / 1000)}s, so nothing above is a statement about them:`)
+    for (const n of slow) console.error('  ' + n)
+    console.error('give it longer with OKC_WALK_PATIENCE=60000, or find out why they are slow')
+  }
 
   //A CRASH EXITS NON-ZERO, like a pane that did not come up at all. It used to
   //be invisible: the boundary's own message satisfied every check this tool
