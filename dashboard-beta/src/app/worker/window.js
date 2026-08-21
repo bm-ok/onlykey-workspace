@@ -3,6 +3,19 @@ var makeAdd = require('./add');
 
 //the Tasks tab: what has been written, what is running, and what came back.
 //
+//---- the folder is `worker` and the tab is `Tasks`, and both are right ------
+//
+//A TASK IS A RECORD; A WORKER IS THE THING THAT RUNS IT. The supervisor skill
+//uses both words and means different things by them — "write a task and queue
+//it", "watch a worker's Claude session" — and this half of the app is the second
+//one: the harness, the session, the contract, and what a worker is doing NOW.
+//The tab shows the records, so the tab is still Tasks.
+//
+//AND THE ACTIONS KEEP THEIR NAMES. `taskCreate`, `taskProgress`, `tasks` are
+//typed every day, are written into the supervisor skill, and half the drills
+//match on them. A folder name is organisational and costs nothing to change; an
+//action name is the surface the whole operation is driven through.
+//
 //`reads` IS THE FIELD TO TRUST, not `state`. The board computes it from the
 //branch rather than from what somebody last wrote down, and where the two
 //disagree the branch wins — a task can be marked done and have delivered
