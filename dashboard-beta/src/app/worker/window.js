@@ -27,10 +27,10 @@ var makeAdd = require('./add');
 //before it, and wrong about the run that had just lost its work. So this shows
 //what the dashboard now computes and does not try to be clever about it.
 
-plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
+plugin.consumes = ['shell', 'theme', 'okc', 'remember', 'library'];
 plugin.provides = [];
 async function plugin(imports, register) {
-    var { shell, theme, okc, remember } = imports;
+    var { shell, theme, okc, remember, library } = imports;
 
     //NO "Recent" PANE UNDER EITHER TAB, and its removal is the point rather
     //than a tidy-up.
@@ -49,6 +49,21 @@ async function plugin(imports, register) {
     shell.tab({ name: 'Tasks', order: 20 });
     shell.pane({ tab: 'Tasks', name: 'Board', order: 10, Component: makeBoard(theme, okc, remember) });
     shell.pane({ tab: 'Tasks', name: 'Add task', order: 20, Component: makeAdd(theme, okc, remember) });
+
+    //---- AND THE SET OF THINGS A WORKER MAY BE GIVEN ---------------------
+    //
+    //THIS IS WHAT A WORKER IS. Not the harness and not the machine — those are
+    //the queue's, because a work item's whole life is task management. A worker
+    //is a set of jobs, prompts and contracts, and it uses them to ASK for a
+    //task.
+    //
+    //THE JUDGE HAS ITS OWN SET, under its own tab, painted by the same code —
+    //see ../library. Kept apart because a worker's contract governs WRITING and
+    //a judge's governs READING, and the account that says whether work holds
+    //must not be the account that wrote it.
+    shell.pane({ tab: 'Tasks', name: 'Jobs', order: 30, Component: library('job', 'task') });
+    shell.pane({ tab: 'Tasks', name: 'Prompts', order: 40, Component: library('prompt', 'task') });
+    shell.pane({ tab: 'Tasks', name: 'Contracts', order: 50, Component: library('contract', 'task') });
 
     await register(null, {});
 }

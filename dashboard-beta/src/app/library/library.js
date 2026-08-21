@@ -60,20 +60,44 @@ module.exports = function library(theme, okc, remember) {
         );
     }
 
-    function LibraryFor(which) {
+    //---- TWO AXES, AND THEY ARE DIFFERENT QUESTIONS -------------------------
+    //
+    //`which` is WHAT THIS IS — a job, a prompt, a contract. `forWhom` is WHO IT
+    //IS FOR — a worker doing work, or a judge reading it.
+    //
+    //THEY WERE ONE PANE WITH A FILTER, and the filter is what made it wrong.
+    //The worker and the judge are two libraries, not one list with a chip
+    //pressed: a judge's contract governs READING and a worker's governs WRITING,
+    //and the whole reason they are kept apart is that the account which says
+    //whether work holds must not be the account that wrote it. A chip is a thing
+    //somebody forgets is pressed.
+    //
+    //`forWhom` NULL IS EVERYTHING, which is what the chips were for and is kept
+    //for a pane that genuinely wants the lot.
+    function LibraryFor(which, forWhom) {
         var K = KINDS[which];
+        var mine = forWhom === 'task' || forWhom === 'judge' ? forWhom : null;
 
         return function Library() {
             var { state, error, reads, again } = okc.use(K.list, {}, 20000);
             var [find, setFind] = useState('');
-            var [only, setOnly] = remember.use('library-' + which, 'only', null);
-            var [picked, setPicked] = remember.use('library-' + which, 'picked', null);
+            //SCOPED PER SET, so picking a job on one tab does not move the
+            //selection on the other. They are two libraries; a shared memory
+            //would make them one list again in the only way that matters.
+            var where = 'library-' + which + (mine ? '-' + mine : '');
+            var [only, setOnly] = remember.use(where, 'only', null);
+            var [picked, setPicked] = remember.use(where, 'picked', null);
             var [said, setSaid] = useState(null);
 
             if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
             if (!state) return <Pane><Skeleton rows={4} /></Pane>;
 
-            var all = state[K.list] || [];
+            //NARROWED BEFORE THE COUNTS, not after. Counted from the whole list
+            //and shown from a filtered one, the number above a pane says how
+            //many exist and the pane shows how many are yours — and the two
+            //disagreeing on screen is the fault this port keeps finding.
+            var everything = state[K.list] || [];
+            var all = mine ? everything.filter(function (x) { return (x.kind || 'task') == mine; }) : everything;
             var counts = {
                 waiting: all.filter(function (x) { return !x.approved && !x.lapsed; }).length,
                 lapsed: all.filter(function (x) { return x.lapsed; }).length,
@@ -200,7 +224,14 @@ module.exports = function library(theme, okc, remember) {
                                         plain: [
                                             'Written at the window it is approved by whoever wrote it. Written over the wire it waits to be read.',
                                             'That is not this pane being lenient — being here IS the reading, because somebody is.',
-                                            'The editor for this is not ported yet, so use the command line: ' + (which == 'job' ? 'jobSave' : which == 'prompt' ? 'promptSave' : 'contractSave') + '. Anything written that way waits here to be read.'
+                                            'The editor for this is not ported yet, so use the command line: '
+                                                + (which == 'job' ? 'jobSave' : which == 'prompt' ? 'promptSave' : 'contractSave')
+                                                + (mine ? ' --kind ' + mine : '')
+                                                + '. Anything written that way waits here to be read.',
+                                            //WITHOUT THE KIND IT LANDS IN THE OTHER LIBRARY, silently.
+                                            //A job written from here and filed as a worker's is a job
+                                            //that never appears on this pane again.
+                                            mine ? 'The kind matters: written without it, it goes to the other library and does not appear here.' : null
                                         ],
                                         confirm: 'I see'
                                     });
@@ -210,8 +241,8 @@ module.exports = function library(theme, okc, remember) {
                             <Chips>
                                 {chip('waiting', 'waiting to be read')}
                                 {chip('lapsed', 'edited since')}
-                                {chip('task', 'task')}
-                                {chip('judge', 'judge')}
+                                {mine ? null : chip('task', 'task')}
+                                {mine ? null : chip('judge', 'judge')}
                             </Chips>
                             <Stack>
                                 {rows.length

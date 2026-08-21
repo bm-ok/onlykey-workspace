@@ -30,19 +30,23 @@ var { useState } = React;
 //that survived an edit would be an approval of something nobody read.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
-plugin.provides = [];
+//---- ONE PAINTER, TWO LIBRARIES, AND NO TAB OF ITS OWN ---------------------
+//
+//This registered an "Actions" tab holding all three lists with a chip to filter
+//by who they were for. The chip is what made it wrong: a worker's contract
+//governs WRITING and a judge's governs READING, and the reason those are kept
+//apart is that the account which says whether work holds must not be the account
+//that wrote it. One list with a chip pressed is one library, and a chip is a
+//thing somebody forgets is set.
+//
+//So the panes live under the two tabs that own them — see ../worker/window.js
+//and ../judge/window.js — and this hands out the painter. Two placements, one
+//implementation: the alternative is two copies that drift, which is the fault
+//this port keeps finding from the other direction.
+plugin.consumes = ['theme', 'okc', 'remember'];
+plugin.provides = ['library'];
 async function plugin(imports, register) {
-    var { shell, theme, okc, remember } = imports;
-
-    var LibraryFor = makeLibrary(theme, okc, remember);
-
-
-    shell.tab({ name: 'Actions', order: 50 });
-    shell.pane({ tab: 'Actions', name: 'Jobs', order: 10, Component: LibraryFor('job') });
-    shell.pane({ tab: 'Actions', name: 'Prompts', order: 20, Component: LibraryFor('prompt') });
-    shell.pane({ tab: 'Actions', name: 'Contracts', order: 30, Component: LibraryFor('contract') });
-
-    await register(null, {});
+    var { theme, okc, remember } = imports;
+    await register(null, { library: makeLibrary(theme, okc, remember) });
 }
 module.exports = plugin;

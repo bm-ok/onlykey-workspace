@@ -25,10 +25,10 @@ var makeJudges = require('./judges');
 //looked" and "somebody looked and would not say" — and half of the ones on this
 //host that said nothing said nothing because they CRASHED.
 
-plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
+plugin.consumes = ['shell', 'theme', 'okc', 'remember', 'library'];
 plugin.provides = [];
 async function plugin(imports, register) {
-    var { shell, theme, okc, remember } = imports;
+    var { shell, theme, okc, remember, library } = imports;
 
     //NO "Recent" PANE UNDER EITHER TAB, and its removal is the point rather
     //than a tidy-up.
@@ -47,6 +47,18 @@ async function plugin(imports, register) {
     shell.tab({ name: 'Judge', order: 40 });
     shell.pane({ tab: 'Judge', name: 'Judgement', order: 10, Component: makeJudgements(theme, okc, remember) });
     shell.pane({ tab: 'Judge', name: 'Judges', order: 20, Component: makeJudges(theme, okc) });
+
+    //---- AND THE SET OF THINGS A JUDGE MAY BE GIVEN ----------------------
+    //
+    //The same three lists the worker has, filtered to what is for READING — and
+    //the separation is the whole point rather than tidiness. A judge is lent a
+    //JUDGE's sign-in and a runner a worker's, so which account signs a piece of
+    //work depends on where it ran; keeping the rules it runs under in a
+    //different library is the same property one layer up. A judge job handed to
+    //a task is already refused by the door that writes one.
+    shell.pane({ tab: 'Judge', name: 'Jobs', order: 30, Component: library('job', 'judge') });
+    shell.pane({ tab: 'Judge', name: 'Prompts', order: 40, Component: library('prompt', 'judge') });
+    shell.pane({ tab: 'Judge', name: 'Contracts', order: 50, Component: library('contract', 'judge') });
 
     await register(null, {});
 }
