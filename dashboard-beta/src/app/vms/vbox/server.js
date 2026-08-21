@@ -5,6 +5,7 @@ var child = require('child_process');
 var makeGate = require('./gate');
 var makeReading = require('./reading');
 var makeDoing = require('./doing');
+var makeNetwork = require('./network');
 
 //---------------------------------------------------------------------------
 //VirtualBox, AND NOTHING ABOUT ANY PROJECT.
@@ -34,9 +35,9 @@ var makeDoing = require('./doing');
 //changes something real, which is why they landed on a gate that was already
 //proven rather than beside one that was not.
 //
-//NOT THE HOST'S NETWORK: the bridges, the host-only interfaces, the DHCP lease
-//and this host's own address. Those are about where a machine can be REACHED,
-//which is the next thing up rather than part of driving one.
+//AND THE NETWORK: the bridges, the host-only interfaces, the DHCP lease and
+//this host's own address. Two networks, and the difference decides what can be
+//asked — see ./network.js.
 //
 //AND NOT THE REGISTRY. Which machines this app is ALLOWED to touch is ../ours,
 //and it is a separate plugin on purpose: this one knows how to drive VirtualBox,
@@ -129,6 +130,8 @@ async function plugin(imports, register) {
         when: imports.cached.byStamp('vbox-snapshot-times')
     });
 
+    var net = makeNetwork(gate.run, { available: available, there: there });
+
     await register(null, {
         vbox: {
             //WHETHER THERE IS A VirtualBox HERE AT ALL. Asked rather than
@@ -163,7 +166,14 @@ async function plugin(imports, register) {
             restoreSnapshot: doIt.restoreSnapshot,
             deleteSnapshot: doIt.deleteSnapshot,
             destroy: doIt.destroy,
-            machineFolder: doIt.machineFolder
+            machineFolder: doIt.machineFolder,
+
+            isos: net.isos,
+            bridges: net.bridges,
+            hostOnlyIfs: net.hostOnlyIfs,
+            makeHostOnlyIf: net.makeHostOnlyIf,
+            leaseFor: net.leaseFor,
+            hostAddress: net.hostAddress
         }
     });
 }
