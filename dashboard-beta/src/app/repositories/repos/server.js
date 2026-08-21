@@ -424,6 +424,179 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- one repository's branches ------------------------------------
+        //
+        //TWO QUESTIONS, AND THE SECOND IS THE ONE NOTHING COULD ANSWER. The
+        //remote columns answer "is my copy current". `against` answers the
+        //question somebody actually has — "am I done with this branch" — and it
+        //is measured BY CONTENT, because a squashed pull request leaves work
+        //that has landed and looks unmerged. See `unlanded` in ../../git.
+        undo.push(actions.define('repoBranches', {
+            about: 'The branches in one repository: where each is here, where origin has it, and which are out of step',
+            takes: ['repo'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.repo || '').trim();
+                if (!name) throw new Error('Say which repository.');
+
+                var found = await workspace.repos();
+                if (!found.some(function (r) { return r.name === name; })) {
+                    throw new Error('There is no repository called "' + name + '" here. This workspace has: '
+                        + found.map(function (r) { return r.name; }).join(', ') + '.');
+                }
+
+                var here = await localOf(name);
+                var def = here.default;
+                var rows = await git.tracked(name);
+
+                var out = [];
+                var names = Object.keys(rows).sort(function (x, y) { return x.localeCompare(y); });
+                for (var i = 0; i < names.length; i++) {
+                    var b = rows[names[i]];
+                    if (!def || b.branch === def || !b.local) {
+                        out.push(Object.assign({}, b, { against: null }));
+                        continue;
+                    }
+                    var behind = await git.countBetween(name, b.branch, def);
+                    var left = await git.unlanded(name, def, b.branch);
+                    out.push(Object.assign({}, b, {
+                        against: {
+                            base: def,
+                            behind: behind || 0,
+                            unlanded: left,
+                            //THREE STATES, AND THE MIDDLE ONE IS THE POINT.
+                            //  live      it has work the default branch has not
+                            //  landed    its changes ARE there, under other shas
+                            //  unknown   the comparison could not be made
+                            state: left === null ? 'unknown' : (left > 0 ? 'live' : 'landed')
+                        }
+                    }));
+                }
+
+                //OUT OF STEP MEANS BOTH SIDES HAVE IT AND THEY DISAGREE.
+                //
+                //Counting every branch that is not identical to origin made this
+                //read "3 out of step" for a repository where one branch differed
+                //and two had simply never been pushed. A branch that exists only
+                //here is not a problem to be fixed — it is work that has not gone
+                //anywhere yet, and there is nothing to catch it up TO.
+                var off = out.filter(function (r) { return r.local && r.remote && r.state !== 'same'; });
+                var onlyHere = out.filter(function (r) { return r.local && !r.remote; });
+
+                return {
+                    repo: name,
+                    default: def,
+                    branches: out,
+                    outOfStep: off.length,
+                    onlyHere: onlyHere.length,
+                    //SAID PLAINLY, BECAUSE THE ANSWER IS OLDER THAN IT LOOKS.
+                    //These remote shas are `refs/remotes/origin/*` — what origin
+                    //had when somebody last fetched. A panel that shows a remote
+                    //column without saying so reports "in step" about a
+                    //repository nobody has asked about for a week.
+                    note: [
+                        off.length ? off.length + ' branch(es) differ from origin' : 'Every branch origin also has matches it',
+                        onlyHere.length ? onlyHere.length + ' exist only here' : '',
+                        'as of the last fetch — sync to ask again'
+                    ].filter(Boolean).join(', ') + '.'
+                };
+            }
+        }));
+
+        //---- the fork chain, walked one link at a time --------------------
+        //
+        //WHERE WORK COULD GO. A fork of a fork makes "upstream" a choice rather
+        //than a fact, and GitHub reports only two of the chain — one level up
+        //and the root — so the middle of a longer one has to be walked.
+        //
+        //BOUNDED AND CYCLE-SAFE, because a loop up there would be somebody
+        //else's mistake becoming an infinite loop in here.
+        undo.push(actions.define('repoChain', {
+            about: 'The fork chain above a repository, walked one link at a time — where work could go, and which of them this host may open a pull request in',
+            takes: ['repo'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.repo || '').trim();
+                if (!name) throw new Error('Say which repository to walk from.');
+
+                var remote = await git.origin(name);
+                if (!remote || remote.kind !== 'github') {
+                    throw new Error('"' + name + '" has no GitHub remote, so there is no chain to walk.');
+                }
+
+                var links = [];
+                var at = remote.owner + '/' + remote.repo;
+                var stopped = null;
+                var seen = {};
+
+                for (var step = 0; step < 12; step++) {
+                    if (seen[at]) { stopped = '"' + at + '" appears twice, so the walk stopped rather than going round.'; break; }
+                    seen[at] = 1;
+
+                    var bits = at.split('/');
+                    var r = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1]);
+                    if (r.status !== 200) {
+                        stopped = at + ' could not be read (' + r.status + '), so anything above it is unknown.';
+                        break;
+                    }
+
+                    //PROBED, NOT READ OFF `permissions` — the same trap the check
+                    //above is written for. `permissions` describes THE ACCOUNT; a
+                    //fine-grained token reports push and admin there and is then
+                    //refused the moment it asks. Choosing where work goes on that
+                    //basis is choosing somewhere it will fail at the last moment.
+                    var probe = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/pulls?state=open&per_page=1');
+
+                    links.push({
+                        on: at,
+                        fork: !!r.body.fork,
+                        private: !!r.body.private,
+                        defaultBranch: r.body.default_branch || null,
+                        openIssues: r.body.open_issues_count == null ? null : r.body.open_issues_count,
+                        //WHETHER THIS HOST MAY OPEN A PULL REQUEST THERE, which
+                        //is the whole point of picking one and is a different
+                        //question from reachability.
+                        mayOpen: probe.status === 200,
+                        //KEPT AND CLEARLY LABELLED as the account's claim, so the
+                        //two can be seen to differ rather than one standing in
+                        //for the other.
+                        accountMayPush: !!(r.body.permissions && r.body.permissions.push),
+                        //ONLY THE IMMEDIATE PARENT SYNCS WITH ONE CALL.
+                        immediate: links.length === 1
+                    });
+
+                    if (!r.body.fork || !r.body.parent) break;
+                    at = r.body.parent.full_name;
+                }
+
+                var notes = await read();
+                var now = targetOf((notes || {})[name] || null, remote);
+
+                log.on('github', name).info('walked ' + links.length + ' link(s) above ' + name);
+                return {
+                    repo: name,
+                    //WHICH LINK IS THE ONE IN USE, marked on the walk rather than
+                    //left for the reader to match strings.
+                    links: links.map(function (l) {
+                        return Object.assign({}, l, {
+                            self: l.on === now.self,
+                            target: l.on === now.on,
+                            syncsCheaply: !!l.immediate
+                        });
+                    }),
+                    deep: links.length,
+                    stopped: stopped,
+                    target: now,
+                    walked: new Date().toISOString(),
+                    note: stopped
+                        ? stopped
+                        : links.length === 1
+                            ? name + ' is not a fork — work from it goes to its own remote.'
+                            : links.length + ' repositories in the chain above ' + name + '. Work goes to ' + now.on + '.'
+                };
+            }
+        }));
+
         //WHERE A CHANGE FROM THIS REPOSITORY SHOULD GO, chosen once and stuck to.
         //
         //A FORK OF A FORK MAKES THIS A DECISION RATHER THAN A FACT — see the

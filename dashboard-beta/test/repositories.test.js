@@ -147,7 +147,17 @@ test('repositories does not consume keys, and cannot reach a credential', () => 
 
     assert.ok(!/\bsecret\b/.test(code), 'it names the sealing module');
     assert.ok(!/['"]credentials['"]/.test(code), 'it names the credentials folder');
-    assert.ok(!/\btoken\b/.test(code.replace(/'[^']*'/g, '')), 'it handles something called a token outside a message');
+    //THE STRING-STRIPPER HAS TO KNOW ABOUT ESCAPES, and it did not. `'One
+    //repository\'s branches'` ended the match at the escaped apostrophe, so the
+    //strip ran past the end of the string, swallowed the next line, and left a
+    //mangled fragment that happened to contain the word this looks for. The test
+    //went red about a sentence in an `about:` field.
+    //
+    //A regex cannot really parse a string literal, and this one does not have to
+    //be perfect — it has to not be fooled by the one construction that is
+    //everywhere in this codebase.
+    assert.ok(!/\btoken\b/.test(code.replace(/'(?:[^'\\]|\\.)*'/g, '')),
+        'it handles something called a token outside a message');
 });
 
 //---------------------------------------------------------------------------
@@ -462,6 +472,183 @@ test('a target that is not owner and repository is refused', async () => {
     const { actions } = await anApp(REPO_OK);
     await assert.rejects(() => actions.call('repoTargetSet', { repo: 'repo-one', on: 'nonsense' }), /owner/);
     await assert.rejects(() => actions.call('repoTargetSet', { on: 'a/b' }), /Which repository/);
+});
+
+//---------------------------------------------------------------------------
+//6. AM I DONE WITH THIS BRANCH — measured by CONTENT, not by sha.
+//
+//The single most confusing thing about working through pull requests. GitHub
+//squashes a merge: the branch's commits become one new commit with a new sha on
+//the target, and the originals still sit on the branch. Every `rev-list --count`
+//then truthfully reports unmerged work about work that landed a week ago — so a
+//board says "1 commit no default branch has" and deleting the branch demands
+//`force` as though something were about to be lost.
+//---------------------------------------------------------------------------
+
+test('a branch whose work was squashed onto the default reads as landed, not live', async () => {
+    const { actions } = await anApp(REPO_OK);
+
+    //a branch with real work on it
+    git(['checkout', '-q', '-b', 'feature']);
+    fs.writeFileSync(path.join(repo, 'feature.txt'), 'work\n');
+    git(['add', '.']);
+    git(['commit', '-q', '-m', 'the work']);
+
+    //SQUASHED ONTO master, exactly as GitHub would: same change, new sha, and
+    //the branch is left untouched.
+    git(['checkout', '-q', 'master']);
+    git(['merge', '-q', '--squash', 'feature']);
+    git(['commit', '-q', '-m', 'the work, squashed']);
+
+    const said = await actions.call('repoBranches', { repo: 'repo-one' });
+    const row = said.branches.find((b) => b.branch === 'feature');
+
+    assert.equal(row.against.base, 'master');
+    assert.equal(row.against.unlanded, 0, 'it counted by sha, so squashed work reads as unmerged');
+    assert.equal(row.against.state, 'landed',
+        'the branch reads as live, and deleting it would demand force over work that is already in');
+
+    git(['checkout', '-q', 'master']);
+    git(['branch', '-D', 'feature']);
+    git(['reset', '-q', '--hard', 'HEAD~1']);
+});
+
+test('a branch with work that is genuinely not in the default reads as live', async () => {
+    const { actions } = await anApp(REPO_OK);
+
+    git(['checkout', '-q', '-b', 'unmerged']);
+    fs.writeFileSync(path.join(repo, 'new.txt'), 'not in master\n');
+    git(['add', '.']);
+    git(['commit', '-q', '-m', 'genuinely new']);
+    git(['checkout', '-q', 'master']);
+
+    const row = (await actions.call('repoBranches', { repo: 'repo-one' }))
+        .branches.find((b) => b.branch === 'unmerged');
+
+    assert.equal(row.against.unlanded, 1);
+    assert.equal(row.against.state, 'live');
+
+    git(['branch', '-D', 'unmerged']);
+});
+
+//OUT OF STEP MEANS BOTH SIDES HAVE IT AND THEY DISAGREE. Counting every branch
+//that is not identical to origin made this read "3 out of step" where one branch
+//differed and two had never been pushed — which is work that has not gone
+//anywhere, not a problem to be fixed.
+test('a branch that exists only here is counted separately, not as out of step', async () => {
+    const { actions } = await anApp(REPO_OK);
+
+    git(['checkout', '-q', '-b', 'never-pushed']);
+    git(['checkout', '-q', 'master']);
+
+    const said = await actions.call('repoBranches', { repo: 'repo-one' });
+    assert.ok(said.onlyHere >= 1, 'a branch that has never been pushed was not counted as only-here');
+    assert.equal(said.outOfStep, 0, 'a branch that has never been pushed was reported as out of step');
+    assert.match(said.note, /exist only here/);
+    assert.match(said.note, /as of the last fetch/, 'the note does not say how old the remote column is');
+
+    git(['branch', '-D', 'never-pushed']);
+});
+
+test('the default branch itself has nothing to say about itself', async () => {
+    const { actions } = await anApp(REPO_OK);
+    const row = (await actions.call('repoBranches', { repo: 'repo-one' }))
+        .branches.find((b) => b.branch === 'master');
+    assert.equal(row.against, null, 'it compared the default branch against itself');
+});
+
+//---------------------------------------------------------------------------
+//7. THE FORK CHAIN.
+//---------------------------------------------------------------------------
+
+const CHAIN = {
+    '/repos/anowner/arepo': {
+        status: 200,
+        body: { fork: true, default_branch: 'main', parent: { full_name: 'middle/arepo' }, permissions: { push: true } }
+    },
+    '/repos/middle/arepo': {
+        status: 200,
+        body: { fork: true, default_branch: 'main', parent: { full_name: 'root/arepo' }, permissions: { push: true } }
+    },
+    //THE ROOT CLAIMS PUSH AND REFUSES IT, which is the whole trap. A fixture
+    //where `permissions` and the probe agree cannot tell the two apart, so a
+    //plugin that read the wrong one would pass — which is what happened the
+    //first time this was written.
+    '/repos/root/arepo': { status: 200, body: { fork: false, default_branch: 'main', permissions: { push: true } } }
+};
+
+test('a fork of a fork is walked to the root, one link at a time', async () => {
+    const { actions } = await anApp(Object.assign({}, CHAIN, {
+        '/repos/anowner/arepo/pulls': { status: 200, body: [] },
+        '/repos/middle/arepo/pulls': { status: 200, body: [] },
+        //THE ROOT REFUSES, which is the ordinary case in a chain.
+        '/repos/root/arepo/pulls': { status: 403, body: { message: 'Resource not accessible by personal access token' } }
+    }));
+
+    const said = await actions.call('repoChain', { repo: 'repo-one' });
+    assert.deepEqual(said.links.map((l) => l.on), ['anowner/arepo', 'middle/arepo', 'root/arepo']);
+    assert.equal(said.deep, 3);
+    assert.equal(said.stopped, null);
+
+    //ONLY THE IMMEDIATE PARENT SYNCS WITH ONE CALL.
+    assert.deepEqual(said.links.map((l) => l.immediate), [false, true, false]);
+    assert.equal(said.links[0].self, true, 'it did not mark which link is this repository');
+});
+
+//PROBED, NOT READ OFF `permissions` — the same trap the check is written for.
+test('whether a pull request may be opened in a link is asked, not assumed', async () => {
+    const { actions } = await anApp(Object.assign({}, CHAIN, {
+        '/repos/anowner/arepo/pulls': { status: 200, body: [] },
+        '/repos/middle/arepo/pulls': { status: 200, body: [] },
+        '/repos/root/arepo/pulls': { status: 403, body: { message: 'Resource not accessible by personal access token' } }
+    }));
+
+    const said = await actions.call('repoChain', { repo: 'repo-one' });
+    const root = said.links.find((l) => l.on === 'root/arepo');
+    const mid = said.links.find((l) => l.on === 'middle/arepo');
+
+    assert.equal(mid.mayOpen, true);
+    assert.equal(root.mayOpen, false, 'a link that refuses was reported as usable');
+
+    //AND THE ACCOUNT'S CLAIM IS KEPT SEPARATELY, so the two can be SEEN to
+    //differ rather than one silently standing in for the other. The root claims
+    //push and refuses it — read `permissions` here and somebody picks a target
+    //that fails at the last possible moment.
+    assert.equal(root.accountMayPush, true, 'the fixture no longer sets up the disagreement');
+    assert.notEqual(root.mayOpen, root.accountMayPush,
+        'the probed answer equals the account claim, so this test cannot tell which one was read');
+});
+
+//A CYCLE UP THERE WOULD BE SOMEBODY ELSE'S MISTAKE BECOMING AN INFINITE LOOP IN
+//HERE.
+test('a chain that loops stops and says so', async () => {
+    const { actions } = await anApp({
+        '/repos/anowner/arepo': { status: 200, body: { fork: true, parent: { full_name: 'middle/arepo' } } },
+        '/repos/middle/arepo': { status: 200, body: { fork: true, parent: { full_name: 'anowner/arepo' } } }
+    });
+
+    const said = await actions.call('repoChain', { repo: 'repo-one' });
+    assert.match(said.stopped, /appears twice/);
+    assert.ok(said.links.length <= 3, 'it went round more than once before stopping');
+});
+
+test('a link that cannot be read stops the walk and says what is unknown', async () => {
+    const { actions } = await anApp({
+        '/repos/anowner/arepo': { status: 200, body: { fork: true, parent: { full_name: 'private/arepo' } } },
+        '/repos/anowner/arepo/pulls': { status: 200, body: [] },
+        '/repos/private/arepo': { status: 404, body: { message: 'Not Found' } }
+    });
+
+    const said = await actions.call('repoChain', { repo: 'repo-one' });
+    assert.equal(said.deep, 1);
+    assert.match(said.stopped, /could not be read \(404\)/);
+    assert.match(said.stopped, /anything above it is unknown/);
+});
+
+test('a repository with no GitHub remote has no chain, and says so', async () => {
+    const { actions } = await anApp(REPO_OK);
+    await assert.rejects(() => actions.call('repoChain', { repo: 'repo-two' }), /no GitHub remote/);
+    await assert.rejects(() => actions.call('repoChain', {}), /Say which repository/);
 });
 
 //GITHUB RETURNS PULL REQUESTS FROM THE ISSUES ENDPOINT, so a list drawn from it

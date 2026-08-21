@@ -65,7 +65,7 @@ var child = require('child_process');
 //here is a capability somebody has to decide to add.
 var READS = [
     'diff', 'log', 'branch', 'show', 'status',
-    'rev-parse', 'rev-list', 'merge-base', 'for-each-ref', 'ls-files', 'cat-file',
+    'rev-parse', 'rev-list', 'merge-base', 'for-each-ref', 'ls-files', 'cat-file', 'cherry',
 
     //`merge-tree` IS HERE AND IT IS THE ONE ENTRY THAT NEEDS AN ARGUMENT.
     //
@@ -311,6 +311,59 @@ async function plugin(imports, register) {
         } catch (e) { return null; }
     }
 
+    //---- what a branch still carries, BY CONTENT rather than by sha ---------
+    //
+    //THE SINGLE MOST CONFUSING THING ABOUT WORKING THROUGH PULL REQUESTS, and
+    //the app being ported from got it wrong everywhere in the same way.
+    //
+    //GitHub usually SQUASHES a merge: the commits on the branch become one new
+    //commit, with a new sha, on the target. The original commits still sit on
+    //the branch, untouched. Every `rev-list --count base..branch` then says the
+    //branch carries unmerged work — truthfully, by sha — about work that landed
+    //a week ago. So a board says "1 commit no default branch has", and deleting
+    //the branch demands `force` as though something were about to be lost.
+    //
+    //`git cherry` is the tool for exactly this. It compares PATCH IDS, so a
+    //commit whose changes are already applied — squashed, rebased, cherry-picked,
+    //however it got there — is marked `-`, and only genuinely new work is `+`.
+    //
+    //CACHED ON THE PAIR OF COMMITS, WITH NO CLOCK IN IT. The answer is a pure
+    //function of two commits: if neither has moved it cannot have changed, and if
+    //either has, the key is different. So a panel that asks every few seconds
+    //spawns nothing at all in the steady state, and recomputes the moment
+    //something actually moves — which no time-based cache can promise.
+    var landed = {};
+    var landedCount = 0;
+
+    async function unlanded(repo, base, branch) {
+        var a = await run(repo, ['rev-parse', String(base)]);
+        var b = await run(repo, ['rev-parse', String(branch)]);
+        if (a.code !== 0 || b.code !== 0) return null;
+
+        var at = String(a.stdout || '').trim();
+        var to = String(b.stdout || '').trim();
+        if (at === to) return 0;
+
+        var key = repo + '|' + at + '|' + to;
+        if (key in landed) return landed[key];
+
+        var out = null;
+        var said = await run(repo, ['cherry', String(base), String(branch)]);
+        if (said.code === 0) {
+            //`+` IS A COMMIT WHOSE CHANGE IS NOT IN BASE. `-` is one that is,
+            //under a different sha. An empty answer means the branch adds nothing.
+            out = String(said.stdout || '').split('\n')
+                .filter(function (l) { return l.trim().indexOf('+') === 0; }).length;
+        }
+
+        //BOUNDED, because the key includes commits and commits keep being made.
+        //Far more than a session needs, and nothing here is expensive to redo.
+        if (landedCount > 500) { landed = {}; landedCount = 0; }
+        landed[key] = out;
+        landedCount++;
+        return out;
+    }
+
     //---- would these two conflict, and where -------------------------------
     //
     //ASKED WITHOUT MERGING ANYTHING. See `merge-tree` in READS for why a flag
@@ -524,6 +577,8 @@ async function plugin(imports, register) {
             has: has,
             origin: origin,
             tracked: tracked,
+            unlanded: unlanded,
+            countBetween: countBetween,
             wouldConflict: wouldConflict,
             //HANDED OUT SO NOBODY GUESSES AT IT. A caller that wants to say what
             //this can do should say what this SAYS it can do.
