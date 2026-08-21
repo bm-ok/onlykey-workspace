@@ -180,6 +180,56 @@ test('everything available is listed, with whose copy would be used', () => {
     assert.equal(by['notes.txt'], undefined);
 });
 
+//---- what the app actually ships -------------------------------------------
+//
+//THE TABLE AND THE FOLDER HAVE TO AGREE. A stage naming a file nobody shipped
+//is silent until a machine is halfway through being built: the install reaches
+//that stage, asks for a script, and gets "there is no provisioning script
+//called X" twenty minutes in.
+
+const SHIPPED = path.join(__dirname, '..', '..', 'src', 'app', 'vms', 'provision', 'scripts');
+
+test('every stage the app owns has a file in the folder the app ships', () => {
+    const app = makeScripts({ appDir: SHIPPED });
+
+    //`extra` AND `extraUser` ARE THE PROJECT'S, and their absence is normal —
+    //that is the whole difference between the two folders.
+    const ours = Object.keys(STAGES).filter((s) => s !== 'extra' && s !== 'extraUser');
+
+    for (const stage of ours) {
+        assert.ok(app.has({ name: 'r1' }, stage),
+            stage + ' names ' + STAGES[stage] + ', which the app does not ship');
+    }
+
+    //INERTNESS: there are stages, and the loop above ran over them.
+    assert.ok(ours.length >= 12, String(ours.length));
+});
+
+test('and they are sent byte for byte, with the line endings a guest needs', () => {
+    //A SHEBANG WITH A CARRIAGE RETURN IS `bad interpreter: /bin/bash^M`, and it
+    //is a failure that appears only in a fresh clone — never on the machine the
+    //files were written on, and never in a diff. See .gitattributes.
+    const runnable = fs.readdirSync(SHIPPED)
+        .filter((f) => /\.(sh|py|js)$/.test(f) || f === 'autoinstall-user-data');
+
+    for (const f of runnable) {
+        const text = fs.readFileSync(path.join(SHIPPED, f), 'utf8');
+        assert.equal(text.includes('\r'), false, f + ' has carriage returns in it');
+    }
+
+    assert.ok(runnable.length >= 10, String(runnable.length));
+});
+
+test('the installer seed is shipped but not servable, which is deliberate', () => {
+    //IT IS HANDED TO VirtualBox's UNATTENDED INSTALLER rather than fetched by a
+    //guest, so it has no extension and does not belong on the served list.
+    assert.ok(fs.existsSync(path.join(SHIPPED, 'autoinstall-user-data')));
+
+    const app = makeScripts({ appDir: SHIPPED });
+    assert.throws(() => app.resolve('autoinstall-user-data'), /is not a provisioning file/);
+    assert.equal(app.list().some((f) => f.file === 'autoinstall-user-data'), false);
+});
+
 //---- the header, the script, and the machine's own steps --------------------
 
 const where = {

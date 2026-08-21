@@ -17,6 +17,31 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 
+# EVERYTHING IN A provision FOLDER, whatever it is called.
+#
+# The rules above go by extension, and four of the files here have none that
+# matches while still being RUN on the guest:
+#
+#   autoinstall-user-data   no extension at all. It is the seed the unattended
+#                           installer is handed, and its late-commands run
+#                           `/bin/bash` -- so carriage returns land inside the
+#                           command strings.
+#   okc-mcp.js              `#!/usr/bin/env node`, and so are okc-only-hook.js
+#                           and okc-credential.js. A shebang with a carriage
+#                           return is `bad interpreter: ...^M`, the same failure
+#                           the note above describes for /bin/bash.
+#
+# `git ls-files --eol provision/` showed `attr/` empty for all six, which is how
+# this was found. They are LF in the index and LF in this working copy, so
+# nothing is broken HERE -- and with core.autocrlf=true a fresh clone would
+# check them out CRLF, which is precisely the failure that appears only in a
+# clone and never in a diff.
+#
+# By folder rather than by name, so a file added later is covered by having been
+# put in the right place rather than by somebody remembering this file exists.
+dashboard/provision/* text eol=lf
+dashboard-beta/src/app/vms/provision/scripts/* text eol=lf
+
 # Git hooks, which have no extension by design -- git looks for `pre-receive`,
 # not `pre-receive.sh`. So the rules above miss them entirely, and the first
 # clone would hand git a shell script full of carriage returns. This one runs on

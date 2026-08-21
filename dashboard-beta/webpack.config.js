@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
@@ -102,10 +103,54 @@ module.exports = (env, argv = {}) => {
         ]
     };
 
+    //---- files that are SENT rather than bundled ---------------------------
+    //
+    //A payload is not a module. These are handed to something else to run — a
+    //Linux guest, or git as a credential helper — so they must arrive BYTE FOR
+    //BYTE, with their shebang and their line endings intact. Bundling one would
+    //rewrite it into something only this process can load.
+    //
+    //They land beside the server bundle because that is what `__dirname`
+    //resolves to once packaged — see `node: { __dirname: false }` below.
+    //
+    //THIS EXISTS BECAUSE ONE OF THEM WAS ALREADY MISSING. `keys/server.js`
+    //points at `path.join(__dirname, 'credential-helper.js')`, nothing ever
+    //copied it, and `dist/credential-helper.js` did not exist — so a push using
+    //the helper would have failed with ENOENT at the moment it mattered, with a
+    //message about a file rather than about a sign-in.
+    const PAYLOADS = [
+        { from: path.join(__dirname, 'src', 'app', 'keys', 'credential-helper.js'), to: 'credential-helper.js' },
+        { from: path.join(__dirname, 'src', 'app', 'vms', 'provision', 'scripts'), to: 'provision' }
+    ];
+
+    //Copied on every emit, including every watch rebuild, so editing a script
+    //takes effect on the next boot with nothing to restart — which is the whole
+    //promise vms/provision/scripts.js makes about reading them fresh.
+    const copyPayloads = {
+        apply(compiler) {
+            compiler.hooks.afterEmit.tapAsync('copy-payloads', (compilation, done) => {
+                try {
+                    const out = compiler.options.output.path;
+                    for (const { from, to } of PAYLOADS) {
+                        if (!fs.existsSync(from)) continue;
+                        fs.cpSync(from, path.join(out, to), { recursive: true });
+                    }
+                    done();
+                } catch (e) {
+                    //LOUD, because the failure it prevents is silent: a missing
+                    //payload only shows up as ENOENT deep in something else.
+                    compilation.errors.push(new Error('could not copy payloads: ' + e.message));
+                    done();
+                }
+            });
+        }
+    };
+
     const server = {
         name: 'server',
         target: 'node',
         mode,
+        plugins: [copyPayloads],
         entry: path.join(__dirname, 'src', 'server.js'),
         resolve,
         output: {
