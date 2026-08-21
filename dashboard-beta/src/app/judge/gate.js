@@ -151,6 +151,42 @@ function whyNotCommission(subject, mine, stale, overTheWire) {
         + 'wrong, say so and let them decide.';
 }
 
+//---- does a reading still describe what is there? --------------------------
+//
+//A judgement records `tips` — what each repository was at when it was read.
+//That is what lets a verdict say later whether it still describes the code, and
+//it is what the rule above means by "nothing has changed there since".
+//
+//    kept   the judgement's own record of the tips it read
+//    now    what those repositories are at now
+//
+//IDENTICAL OR IT IS STALE, and that includes the SET of repositories and not
+//only the shas. A repository appearing means there is code in the change that
+//nobody read; one disappearing means part of what was read is gone. Either way
+//the reading no longer describes what is there.
+//
+//NO TIPS RECORDED READS AS NOT STALE, and the direction is deliberate. This
+//answer is used to decide whether a model may commission a re-read of a
+//decision a person made, so the question is really "may I overrule the reason
+//not to". Not being able to tell whether the code moved is not a reason to
+//assume it did — an old record from before tips were kept goes on being
+//protected, and a person can always ask for another reading themselves.
+function staleAgainst(kept, now) {
+    var was = (kept && kept.tips) || null;
+    if (!was) return false;
+
+    var here = now || {};
+    var mine = Object.keys(was).sort();
+    var theirs = Object.keys(here).sort();
+
+    if (mine.length !== theirs.length) return true;
+    for (var i = 0; i < mine.length; i++) {
+        if (mine[i] !== theirs[i]) return true;
+        if (String(was[mine[i]]) !== String(here[mine[i]])) return true;
+    }
+    return false;
+}
+
 //---- 4: the chain it will be read under ------------------------------------
 //
 //APPROVED OR IT DOES NOT RUN. A judging job is a job — same library, same
@@ -270,6 +306,7 @@ function askedWithNoJudge(canRun) {
 
 module.exports = {
     whyNotRead: whyNotRead,
+    staleAgainst: staleAgainst,
     whyNotCommission: whyNotCommission,
     chainFor: chainFor,
     withQuestion: withQuestion,

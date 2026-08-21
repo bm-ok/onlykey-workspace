@@ -269,3 +269,66 @@ test('and says so plainly when nothing is approved to run', () => {
     assert.match(why, /No judging chain is approved yet/);
     assert.doesNotMatch(why, /For example/);
 });
+
+//---------------------------------------------------------------------------
+//DOES A READING STILL DESCRIBE WHAT IS THERE?
+//
+//This is what "nothing has changed there since" means above, so it decides
+//whether a model may commission a re-read of a person's decision.
+//---------------------------------------------------------------------------
+
+const readAt = (tips) => ({ ref: 'J1', tips });
+
+test('a reading of the same commits still describes what is there', () => {
+    assert.equal(gate.staleAgainst(
+        readAt({ 'repo-a': 'aaa1111', 'repo-b': 'bbb2222' }),
+        { 'repo-a': 'aaa1111', 'repo-b': 'bbb2222' }), false);
+});
+
+test('a commit that moved makes it stale', () => {
+    assert.equal(gate.staleAgainst(
+        readAt({ 'repo-a': 'aaa1111', 'repo-b': 'bbb2222' }),
+        { 'repo-a': 'ccc3333', 'repo-b': 'bbb2222' }), true);
+});
+
+test('a repository that has appeared makes it stale — there is code nobody read', () => {
+    assert.equal(gate.staleAgainst(
+        readAt({ 'repo-a': 'aaa1111', 'repo-b': 'bbb2222' }),
+        { 'repo-a': 'aaa1111', 'repo-b': 'bbb2222', 'repo-c': 'ddd4444' }), true);
+});
+
+test('a repository that has gone makes it stale — part of what was read is not there', () => {
+    assert.equal(gate.staleAgainst(
+        readAt({ 'repo-a': 'aaa1111', 'repo-b': 'bbb2222' }),
+        { 'repo-a': 'aaa1111' }), true);
+});
+
+test('the same count of repositories under different names is stale', () => {
+    //A LENGTH CHECK ALONE WOULD PASS THIS, and it is two different changes.
+    assert.equal(gate.staleAgainst(
+        readAt({ 'repo-a': 'aaa1111' }),
+        { 'repo-b': 'aaa1111' }), true);
+});
+
+test('a reading with no tips recorded is not treated as stale', () => {
+    //THE DIRECTION IS DELIBERATE. This answer decides whether a model may
+    //overrule the reason not to second-guess a person. Not being able to tell
+    //whether the code moved is not a reason to assume it did.
+    assert.equal(gate.staleAgainst(readAt(null), { 'repo-a': 'aaa1111' }), false);
+    assert.equal(gate.staleAgainst({ ref: 'J1' }, {}), false);
+});
+
+test('and it plugs into the commissioning rule as the thing that lifts it', () => {
+    const settledWithTips = {
+        ref: 'J1', state: 'done', by: 'person', verdict: 'accepted',
+        subject: { name: 'fix/the-thing' }, tips: { 'repo-a': 'aaa1111' }
+    };
+    const subject = subjectFrom({ kind: 'branch', branch: 'fix/the-thing' });
+
+    const unchanged = (j) => gate.staleAgainst(j, { 'repo-a': 'aaa1111' });
+    const moved = (j) => gate.staleAgainst(j, { 'repo-a': 'ccc3333' });
+
+    assert.match(gate.whyNotCommission(subject, [settledWithTips], unchanged, true),
+        /not yours to commission/);
+    assert.equal(gate.whyNotCommission(subject, [settledWithTips], moved, true), null);
+});
