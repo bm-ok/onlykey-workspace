@@ -25,7 +25,7 @@
     "@babel/core": "^7.29.7",
     "@babel/preset-env": "^7.29.7",
     "@babel/preset-react": "^7.29.7",
-    "@bmatusiak/rectify": "github:bmatusiak/rectify",
+    "@bmatusiak/rectify": "github:bmatusiak/rectify#legacy",
     "babel-loader": "^10.1.1",
     "css-loader": "^7.1.4",
     "express": "^5.2.1",
