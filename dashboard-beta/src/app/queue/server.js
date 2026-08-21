@@ -69,7 +69,7 @@ var makeAttempts = require('./attempts');
 //from there — a board reporting "nothing running" while a machine is running
 //something is the confident wrong report this whole app is arranged against.
 //---------------------------------------------------------------------------
-plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret'];
+plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact'];
 plugin.provides = ['queue'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -263,8 +263,198 @@ async function plugin(imports, register) {
         }
     }, log);
 
+    //---- which machines are busy, and whose tick says so --------------------
+    //
+    //WHAT THIS HOST IS RUNNING, from the record that outlives a save — empty
+    //until the tick lands here, which is why the other half is asked when it is.
+    //
+    //ASKED OF THE OTHER HALF BY NAME, which needs `elsewhere` rather than
+    //`call`: `queueState` IS defined here, and `call` tries this table first, so
+    //it would call itself until the stack ends — looking from outside like the
+    //app simply hanging.
+    //
+    //THIS HOST'S FIRST, THE OTHER HALF'S ONLY WHILE THERE IS NOTHING OF ITS OWN.
+    //The day the tick lands here this fills and stops looking anywhere else,
+    //without a second edit, and without a moment where a machine is in both.
+    //
+    //ONE FUNCTION BECAUSE TWO ANSWERS TO "IS THAT MACHINE FREE" IS THE BUG. The
+    //board shows a pool and the door below plans work into it; worked out twice,
+    //the board can call a machine free while the door has already given it away.
+    async function busyNow() {
+        var mine = engine.inFlight();
+        if (mine.length) {
+            return mine.map(function (r) { return { machine: r.machine, task: r.doing }; });
+        }
+        var there = null;
+        if (actions && actions.elsewhere) {
+            try { there = await actions.elsewhere('queueState', {}); } catch (e) { there = null; }
+        }
+        return (there && there.inFlight) || [];
+    }
+
+    function busyAs(inFlight) {
+        return (inFlight || []).reduce(function (n, r) {
+            n[r.machine] = r.task || r.doing;
+            return n;
+        }, {});
+    }
+
+    //THE RULE THE TICK DISPATCHES BY, ASKED ABOUT ONE ENTRY.
+    //
+    //HANDED TO ./doors.js RATHER THAN REBUILT IN IT, so "4 machine(s) can take
+    //it" and what a tick would actually do are the same sentence. Counting free
+    //machines instead once answered that about a task tagged for a kind of
+    //machine this host has none of.
+    async function planFor(entry) {
+        var machines = await relayed('vmList');
+        var vms = (machines && machines.vms) || [];
+        var said = policy.plan([entry], vms, { inFlight: busyAs(await busyNow()), signIns: null });
+        return {
+            canTakeIt: said.dispatch.map(function (d) { return d.machine; }),
+            why: said.waiting.map(function (w) { return w.why; })
+        };
+    }
+
+    //WHAT A BRANCH ACTUALLY DELIVERED. Its own plugin, because the worker, the
+    //judge and the repositories panes all ask it and none of them owns it.
+    var artifact = imports.artifact;
+
     var undo = [];
     if (actions) {
+        //=================================================================
+        //THE TASK DOORS, WHICH ARE THE QUEUE'S AND NOT THE WORKER'S.
+        //
+        //A JOB, A PROMPT AND A CONTRACT BELONG TO WHOEVER RUNS THEM — the
+        //worker, the judge — and what those two do with them is ASK FOR A
+        //TASK. Writing one down, putting it in the queue and throwing it away
+        //are task management, so they live with the task management, and
+        //../worker and ../judge call them rather than each owning a copy.
+        //
+        //THE LOGIC IS ALREADY IN ./doors.js AND WAS BEFORE THIS. What was
+        //missing is only that nothing here answered to those names, so every
+        //one of them relayed to the app being ported from — which means the
+        //pane was reading THAT app's tasks while this one kept its own.
+        //=================================================================
+        //THE BOARD, AND IT MOVES WITH THE DOORS RATHER THAN AFTER THEM.
+        //
+        //A READ THAT RELAYS WHILE THE WRITES DO NOT IS WORSE THAN EITHER END.
+        //`actions.call` tries this table first, so the moment `taskQueue` was
+        //defined here it acted on THIS app's store — while the board went on
+        //listing the other app's tasks. You would see #5, press Queue, and be
+        //told there is no such task. Nothing about that reads as a migration
+        //in progress; it reads as a broken button.
+        //
+        //SO THIS APP'S BOARD STARTS EMPTY, which is the deliberate cost written
+        //down in ../../../CLAUDE.md: state lives in this app's own data folder,
+        //so a moved subsystem starts with nothing and cannot corrupt the real
+        //tasks. The pane says so rather than looking broken.
+        undo.push(actions.define('tasks', {
+            about: 'The board: every task, newest first, and whether its branch has anything on it yet',
+            run: async function () {
+                //NEWEST FIRST, AND SORTED HERE so the window and the command
+                //line agree. The file is append-ordered because that is how it
+                //is written; what order it should be READ in is a different
+                //question, and answering it in two places is how two views of
+                //one board come to disagree.
+                //
+                //BY NUMBER RATHER THAN A TIMESTAMP: it is the creation order by
+                //definition, it cannot tie, and it does not depend on a clock.
+                var list = (await store.read()).slice()
+                    .sort(function (a, b) { return (b.number || 0) - (a.number || 0); });
+
+                var out = [];
+                for (var i = 0; i < list.length; i++) {
+                    var t = list[i];
+
+                    //READ PER TASK, because each delivers on its own branch —
+                    //and through ../artifact, which is its own plugin exactly
+                    //because the worker, the judge and the repositories panes
+                    //all ask this and none of them owns it.
+                    var art = { delivered: false, summary: null, commits: [] };
+                    try { art = await artifact.read(t.branch); }
+                    catch (e) { /* a branch that is gone has delivered nothing, which is an answer */ }
+
+                    out.push(Object.assign({}, t, {
+                        delivered: art.delivered,
+                        artifact: art.summary,
+                        commits: art.commits,
+
+                        //THE STORED NAME, WITH NO LOOKUP BEHIND IT. The app being
+                        //ported from falls back to asking the library, for tasks
+                        //written before the name was carried on the task. There
+                        //are none of those here and there never can be: this
+                        //store is new, and everything written into it carries it.
+                        jobName: t.jobName || null,
+
+                        //WHAT THE BOARD SHOWS. The stored state says what a
+                        //person decided; this says what is true, and where they
+                        //disagree THE BRANCH WINS.
+                        //
+                        //DELIVERED OUTRANKS DONE, because it is the more
+                        //informative of two true statements: a done task that
+                        //delivered nothing and a done task that delivered are
+                        //the same state and opposite outcomes.
+                        //
+                        //AND WHETHER THIS RUN PUT IT THERE. `delivered` says the
+                        //BRANCH carries something, which stays true from the run
+                        //before — so a task whose push was refused read as
+                        //"delivered" beside the commit its predecessor made.
+                        //`arrived` is recorded from the branch either side of the
+                        //run, and only the queue can know it, because only the
+                        //queue saw the before.
+                        //
+                        //COMPARED AGAINST false RATHER THAN TRUSTED AS A FLAG,
+                        //because it is undefined for anything written before it
+                        //was recorded, and "not known" must read as it always did.
+                        reads: t.verdict ? t.state
+                            : t.arrived === false && t.state === 'done' ? 'done, nothing arrived'
+                                : art.delivered ? 'delivered'
+                                    : t.state === 'given' ? 'working'
+                                        : t.state === 'queued' ? 'queued'
+                                            : t.state === 'done' ? 'done, nothing delivered'
+                                                : 'draft'
+                    }));
+                }
+
+                return { tasks: out };
+            }
+        }));
+
+        undo.push(actions.define('taskCreate', {
+            about: 'Write a task: what the work is, and the branch it delivers on. '
+                + 'Over the wire it also names the judgement that established the work is real',
+            takes: ['task', 'becauseOf'],
+            //THE GATE IS INSIDE ./doors.js AND NOT HERE, because it is a rule
+            //about what a task IS rather than about this table. `_overTheWire`
+            //is the only thing this half knows that the door cannot.
+            run: async function (args) {
+                var a = args || {};
+                return await doors.create(a.task, {
+                    overTheWire: !!a._overTheWire,
+                    becauseOf: a.becauseOf
+                });
+            }
+        }));
+
+        undo.push(actions.define('taskQueue', {
+            about: 'Put a task in the queue. The next free machine takes it, runs it, and shuts down',
+            takes: ['id'],
+            //`planFor` IS HANDED IN so the answer the door gives — "3 machine(s)
+            //can take it" — is the same rule a tick would dispatch by, rather
+            //than a second opinion written beside it.
+            run: async function (args) {
+                return await doors.queue((args || {}).id, planFor);
+            }
+        }));
+
+        undo.push(actions.define('taskRemove', {
+            about: 'Throw a task away. Its branch, and the logs kept for it, are untouched',
+            takes: ['id'],
+            run: async function (args) {
+                return await doors.remove((args || {}).id);
+            }
+        }));
+
         //=================================================================
         //STARTING THE QUEUE IS A PERSON'S PRESS.
         //
@@ -392,34 +582,9 @@ async function plugin(imports, register) {
                 //running something — so it is read from the app being ported
                 //from, and `tickHere` says whose it is. When the tick moves, this
                 //reads its own and that flag flips.
-                //WHAT THIS HOST IS RUNNING, from the record that outlives a save.
-                //Empty until the tick lands here, which is why the other half is
-                //asked below and said to be the other half's.
-                var mine = engine.inFlight();
-
-                var there = null;
-                //ASKED OF THE OTHER HALF BY NAME, which needs `elsewhere` rather
-                //than `call`: this action IS `queueState` here, and `call` tries
-                //this table first — so it would call itself until the stack ends,
-                //looking from outside like the app simply hanging.
-                if (actions.elsewhere) {
-                    try { there = await actions.elsewhere('queueState', {}); } catch (e) { there = null; }
-                }
-                //THIS HOST'S FIRST, THE OTHER HALF'S ONLY WHILE THERE IS NOTHING
-                //OF ITS OWN. The day the tick lands here, `mine` fills and this
-                //stops looking anywhere else — without a second edit, and without
-                //a moment where a machine is in both lists.
-                var inFlight = mine.length
-                    ? mine.map(function (r) { return { machine: r.machine, task: r.doing }; })
-                    : ((there && there.inFlight) || []);
-
-                //ONE ANSWER TO "WHICH MACHINES ARE BUSY", used by both the pool
-                //and the plan. Worked out twice, the board could show a machine
-                //free and plan work onto one it had already given away.
-                var doing = inFlight.reduce(function (n, r) {
-                    n[r.machine] = r.task || r.doing;
-                    return n;
-                }, {});
+                //WHAT IS RUNNING, whoever's tick is running it. See `busyNow`.
+                var inFlight = await busyNow();
+                var doing = busyAs(inFlight);
 
                 return {
                     inFlight: inFlight,

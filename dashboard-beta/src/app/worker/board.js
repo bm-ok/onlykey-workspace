@@ -194,7 +194,27 @@ module.exports = function board(theme, okc, remember) {
                                     return <Row key={t.number} t={t} on={String(t.number) == String(picked)}
                                         onPick={function () { setPicked(String(t.number)); }} />;
                                 })
-                                : <Empty>{all.length ? 'nothing matches' : 'no task has been written yet'}</Empty>}
+                                : <Empty>{all.length ? 'nothing matches' : (
+                                    //EMPTY BECAUSE THE STORE MOVED, said rather
+                                    //than left to read as data loss.
+                                    //
+                                    //The board now answers from THIS app, whose
+                                    //state lives in its own data folder — so a
+                                    //workspace with tasks in the dashboard being
+                                    //ported from shows nothing here, and "no task
+                                    //has been written yet" is true of this store
+                                    //and reads as though something was lost.
+                                    //
+                                    //That separation is the point rather than a
+                                    //snag: nothing done here can touch the real
+                                    //tasks while the port is unfinished. See
+                                    //CLAUDE.md, which asks for exactly this
+                                    //sentence wherever a moved subsystem starts
+                                    //empty.
+                                    'no task has been written here yet — this board reads '
+                                    + 'this app’s own tasks, which start empty and are separate '
+                                    + 'from the dashboard being ported from'
+                                )}</Empty>}
                         </Stack>
                     </Col>
 
