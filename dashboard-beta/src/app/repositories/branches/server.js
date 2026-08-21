@@ -255,29 +255,58 @@ async function plugin(imports, register) {
     var carried = {};
     var carriedCount = 0;
 
-    async function carries(branch, notes, here) {
+    //WHERE EVERY BRANCH IN EVERY REPOSITORY IS, IN ONE PROCESS PER REPOSITORY.
+    //
+    //THE CACHE BELOW WAS PAYING MORE FOR ITS KEY THAN IT SAVED. Building it cost
+    //four git processes per branch per repository — two `has` and two
+    //`rev-parse` — and every one of them ran on a cache HIT as well as a miss.
+    //Eleven branches across three repositories is 132 processes before a single
+    //answer is reused, which is fifteen seconds, which is what the board took on
+    //every draw whether or not anything had moved.
+    //
+    //A CACHE THAT COSTS WHAT IT SAVES IS NOT A CACHE, and it read as one: the
+    //heavy calls really were being skipped, the timing never changed, and
+    //nothing said why.
+    //
+    //`tracked` ALREADY ANSWERS THIS. One `for-each-ref` per repository lists
+    //every head and its commit, which is both halves of the question — does this
+    //branch exist here, and what is it pointing at. See its own note in ../../git
+    //about a panel spawning forty processes a minute.
+    async function headsIn(repos) {
+        var at = {};
+        for (var i = 0; i < repos.length; i++) {
+            var name = repos[i].name;
+            at[name] = {};
+            try {
+                var rows = await git.tracked(name);
+                Object.keys(rows).forEach(function (b) { at[name][b] = rows[b].local || null; });
+            } catch (e) { /* a repository with no refs yet answers nothing, which is correct */ }
+        }
+        return at;
+    }
+
+    async function carries(branch, notes, here, at) {
         var found = await workspace.repos();
+        var heads = at || await headsIn(found);
         var out = [];
 
         for (var i = 0; i < found.length; i++) {
             var repo = found[i].name;
-            if (!(await git.has(repo, branch))) continue;
+            var mine = heads[repo] || {};
+            if (!mine[branch]) continue;
 
             var base = await baseFor(branch, repo, notes, here);
             //A BASE THAT IS NOT THERE IS NOT THE SAME AS A BRANCH THAT IS NOT
             //THERE, and saying so is the difference between "nothing to land"
             //and "there is nowhere to land it".
-            if (!base || !(await git.has(repo, base))) {
+            if (!base || !mine[base]) {
                 out.push({ repo: repo, branch: branch, base: base, noBase: true, ahead: 0, files: 0, added: 0, removed: 0 });
                 continue;
             }
 
-            //THE TWO COMMITS, WHICH ARE THE KEY. Two `rev-parse` calls to save
-            //up to four heavier ones, and they are what makes the cache exact
-            //rather than approximate.
-            var a = await git.run(repo, ['rev-parse', base]);
-            var b = await git.run(repo, ['rev-parse', branch]);
-            var key = repo + '|' + String(a.stdout || '').trim() + '|' + String(b.stdout || '').trim();
+            //THE TWO COMMITS, WHICH ARE THE KEY — now read out of the one list
+            //above rather than asked for one at a time.
+            var key = repo + '|' + mine[base] + '|' + mine[branch];
 
             if (key in carried) { out.push(carried[key]); continue; }
 
@@ -356,20 +385,34 @@ async function plugin(imports, register) {
                 var here = await baselines();
                 var guarded = await protectedOf();
 
-                //WHICH REPOSITORIES HAVE IT, AND WHERE IT IS CHECKED OUT. One
-                //pass, because this is drawn on a timer.
+                //ONE READ PER REPOSITORY FOR THE WHOLE DRAW. Every branch's row
+                //needs to know where it is and where its base is, and asking per
+                //branch is what made this board take fifteen seconds whether or
+                //not anything had moved. See `headsIn`.
+                var heads = await headsIn(found);
+
+                //WHICH REPOSITORIES HAVE IT, AND WHERE IT IS CHECKED OUT.
+                //
+                //BUILT FROM WHAT HAS ALREADY BEEN READ. This asked git for every
+                //repository's HEAD and branch list — which `baselines()` had
+                //fetched thirty lines above and `headsIn` had fetched again in
+                //between. Three reads of one fact per repository, in one call,
+                //on a pane that redraws on a timer.
+                //
+                //Nothing was wrong with any of them individually, which is how
+                //it survived: each one is a reasonable line where it stands, and
+                //only reading the whole function shows the same question asked
+                //three times.
                 var seen = {};
                 for (var i = 0; i < found.length; i++) {
                     var repo = found[i].name;
-                    var head = null;
-                    try { head = await git.head(repo); } catch (e) { /* said as null */ }
-                    var names = [];
-                    try { names = await git.branches(repo); } catch (e) { /* said as none */ }
+                    var row = here.filter(function (r) { return r.repo === repo; })[0] || { on: null, branches: [] };
+                    var names = row.branches || [];
                     for (var j = 0; j < names.length; j++) {
                         var b = names[j];
                         if (!seen[b]) seen[b] = { name: b, in: [], head: [] };
                         seen[b].in.push(repo);
-                        if (b === head) seen[b].head.push(repo);
+                        if (b === row.on) seen[b].head.push(repo);
                     }
                 }
 
@@ -402,7 +445,7 @@ async function plugin(imports, register) {
 
                     //A DEFAULT IS NEVER MEASURED AGAINST ITSELF.
                     var isDefault = !!(p && p.asDefault.length);
-                    var art = isDefault ? null : await carries(name, notes, here);
+                    var art = isDefault ? null : await carries(name, notes, here, heads);
                     var carrying = art ? art.filter(function (a) { return !a.noBase; }) : [];
 
                     rows.push(Object.assign({}, row, {
@@ -447,6 +490,30 @@ async function plugin(imports, register) {
                 return {
                     repos: found.map(function (r) { return r.name; }),
                     branches: rows,
+
+                    //WHAT MAY NOT BE BUILT ON, AS ITS OWN LIST.
+                    //
+                    //THIS WAS MISSING AND THE PANE READ IT ANYWAY. Protected asks
+                    //for `branchBoard` and takes `state.protected`, which was
+                    //never in the answer — so it drew the empty case, and the
+                    //empty case does not say "nothing to show". It says "no
+                    //repository here has a default branch — worth looking at",
+                    //in red, about three repositories that all have one.
+                    //
+                    //THAT IS THE WORST SHAPE THIS PARTICULAR PANE CAN FAIL IN.
+                    //It is the policy gate's own display: it exists to show what
+                    //is refused, and it was telling somebody that nothing was —
+                    //while the gate itself was working perfectly and refusing
+                    //exactly what it should. An alarming lie about a working
+                    //guard is how a working guard gets "fixed".
+                    //
+                    //A PANE NAMING A FIELD AN ACTION DOES NOT HAVE IS INVISIBLE
+                    //to every check here: it compiles, it renders, the walk
+                    //counts it as a pane with content, and React draws
+                    //`undefined` as nothing at all. The same shape as a misspelt
+                    //class and a misspelt action name — this port has now found
+                    //one of each.
+                    protected: Object.keys(guarded).sort().map(function (b) { return guarded[b]; }),
                     //WHAT COULD NOT BE ASKED, SAID RATHER THAN IMPLIED.
                     asked: { machines: !!vms, tasks: !!board },
                     note: cutRows.length + ' cut, ' + rows.length + ' branch(es) in all'

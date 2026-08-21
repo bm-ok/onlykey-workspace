@@ -54,16 +54,16 @@ module.exports = function protectedPane(theme, okc) {
                     <span className="muted">
                         {fact
                             ? 'the default branch of ' + p.asDefault.join(', ')
-                            : 'named in ' + once(p.asGroup).join(', ')}
+                            : 'named in ' + once(p.asLine).join(', ')}
                     </span>
                 </CardSub>
                 {/* THE WEAKER REASON, SAID ANYWAY. Forgetting the line will not
                     give this one back, and finding that out by trying is how a
                     refusal gets read as a fault. */}
-                {fact && p.asGroup && p.asGroup.length ? (
+                {fact && p.asLine && p.asLine.length ? (
                     <CardSub>
                         <span className="muted">
-                            {'also a link in ' + once(p.asGroup).join(', ') + ' — forgetting that line would not unprotect it'}
+                            {'also a link in ' + once(p.asLine).join(', ') + ' — forgetting that line would not unprotect it'}
                         </span>
                     </CardSub>
                 ) : null}
