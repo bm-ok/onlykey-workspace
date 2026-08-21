@@ -12,10 +12,10 @@
 //reach it — a `require('webpack')` in an unreachable function is still bundled,
 //and dragging webpack into a packaged app is exactly what this avoids.
 
-plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir', 'state', 'secret'];
+plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir', 'state', 'secret', 'queue'];
 plugin.provides = ['build'];
 async function plugin(imports, register) {
-    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir, state, secret } = imports;
+    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir, state, secret, queue } = imports;
 
     //what the node half is handed. the window and the tray are passed as
     //controllers rather than objects, because they outlive the bundle.
@@ -38,6 +38,14 @@ async function plugin(imports, register) {
         //written by the old bundle and a line written by the new one land in the
         //same stream, in order, and the record of a reload is not a gap.
         log: log,
+
+        //THE QUEUE'S CLOCK AND ITS IN-FLIGHT RECORD, for the same reason and
+        //with the sharpest version of it. A queue that forgot which machine is
+        //holding which task on every save would hand that machine a second one,
+        //on top of a worker still running in a repository it is still writing
+        //to. What to DO on a tick is in the bundle and is replaced; this is the
+        //part that must not be.
+        queue: queue,
 
         //SEALING, AND WHAT A SECRET LOOKS LIKE. Handed over rather than required
         //again on the other side so there is ONE answer to both — a second copy
@@ -132,7 +140,13 @@ async function plugin(imports, register) {
         //one reload at a time. watch() fires again while a load is still
         //awaiting, and two overlapping loads are the double registration all of
         //this exists to prevent.
-        var queue = Promise.resolve();
+        //
+        //NAMED `reloads` AND NOT `queue`, which it was until the queue plugin
+        //arrived. `var` hoists to the whole function, so a local called `queue`
+        //shadowed the SERVICE of that name for every line above it — including
+        //the one handing it to the node half, which would have been handed
+        //undefined. It never was the app's queue; it is a lock on the reload.
+        var reloads = Promise.resolve();
 
         var first = null;
         ready = new Promise(function (resolve, reject) { first = { resolve, reject }; });
@@ -145,7 +159,7 @@ async function plugin(imports, register) {
             }
             console.log('server bundle built in ' + (stats.endTime - stats.startTime) + 'ms');
 
-            queue = queue.then(function () {
+            reloads = reloads.then(function () {
                 return load().then(function () {
                     if (first) { first.resolve(); first = null; }
                     else console.log('server half reloaded');

@@ -47,9 +47,32 @@ async function plugin(imports, register) {
     var actions = host && host.actions;
     var log = imports.log.on('queue');
 
-    //HOW OFTEN THIS HOST WOULD LOOK. Carried here rather than in the tick,
-    //because the board says it out loud and the two must not be able to differ.
-    var TICK = 15000;
+    //THE CLOCK AND THE IN-FLIGHT RECORD, FROM ./main.js. They outlive this
+    //bundle, which is rebuilt every time a file is saved — see the header there
+    //for what a queue that forgot in-flight on every save would do to a machine.
+    //
+    //ABSENT WHEN THIS HALF IS BUILT AGAINST A BARE HOST, which the test suite
+    //does. A stand-in that is permanently stopped and holding nothing is the
+    //right answer there: every method exists, and none of them reaches a machine.
+    var engine = (host && host.queue) || {
+        TICK: 15000,
+        running: function () { return false; },
+        since: function () { return null; },
+        start: function () { return false; },
+        stop: function () { return false; },
+        does: function () { return function () {}; },
+        inFlight: function () { return []; },
+        doing: function () { return {}; },
+        claim: function () { return false; },
+        release: function () { return false; },
+        armed: function () { return false; },
+        held: function () { return null; }
+    };
+
+    //HOW OFTEN THIS HOST LOOKS, taken from the clock rather than written again.
+    //The board says it out loud, and a second number here would be a board
+    //describing a cadence that is not the one running.
+    var TICK = engine.TICK;
 
     //A QUEUE THAT CANNOT BE READ IS NOT AN EMPTY QUEUE.
     //
@@ -125,6 +148,72 @@ async function plugin(imports, register) {
 
     var undo = [];
     if (actions) {
+        //=================================================================
+        //STARTING THE QUEUE IS A PERSON'S PRESS.
+        //
+        //It is not a setting and it is not a preference: switching this on
+        //means this host will roll a machine back to its base snapshot, hand
+        //it a credential, and run somebody's instructions on it unattended,
+        //again and again, without asking. Nothing that can be reached over a
+        //socket may decide that.
+        //
+        //THE SAME BOUNDARY AS APPROVING A JOB, and the same standing rule
+        //behind it: the command line needs approvals because a model runs
+        //them, and it must not be able to create work that runs by itself.
+        //Starting the thing that RUNS the work is the same act one level up.
+        //
+        //STOPPING IS NOT SYMMETRICAL AND IS DELIBERATELY NOT REFUSED. Anything
+        //that can see something going wrong should be able to stop new work
+        //being picked up. The cost of a stop nobody meant is a queue somebody
+        //restarts; the cost of a start nobody meant is a machine running a
+        //stranger's code.
+        //=================================================================
+        undo.push(actions.define('queueStart', {
+            about: 'Start handing queued work to machines on this host',
+            takes: ['why'],
+            run: function (args) {
+                var a = args || {};
+                if (a._overTheWire) {
+                    throw new Error('Starting the queue is done in the window, by a person. It gives real machines '
+                        + 'real work — rolled back, handed a credential, and run unattended — and a model may not '
+                        + 'decide that this host should begin doing that.');
+                }
+                var was = engine.running();
+                engine.start(actions.whoAsked(a));
+                return {
+                    running: engine.running(),
+                    since: engine.since(),
+                    note: was
+                        ? 'The queue was already running.'
+                        : 'The queue is running. It looks every ' + (TICK / 1000) + 's and gives waiting work to '
+                            + 'free machines. Stop it to have it pick nothing new up.'
+                };
+            }
+        }));
+
+        undo.push(actions.define('queueStop', {
+            about: 'Stop giving new work to machines. Anything already running is not interrupted',
+            takes: ['why'],
+            run: function (args) {
+                var a = args || {};
+                var was = engine.running();
+                engine.stop(a.why ? String(a.why) : null);
+                var held = engine.inFlight();
+                return {
+                    running: false,
+                    stillWorking: held,
+                    note: (was ? 'The queue is stopped. ' : 'The queue was not running. ')
+                        + (held.length
+                            //A STOP THAT READ AS "EVERYTHING HAS STOPPED" WOULD BE
+                            //THE WRONG SENTENCE. The machines carry on; what
+                            //stopped is anything NEW being picked up.
+                            ? held.length + ' machine(s) are still working and are not interrupted — '
+                                + held.map(function (r) { return r.machine + ' (' + r.doing + ')'; }).join(', ') + '.'
+                            : 'Nothing was in flight.')
+                };
+            }
+        }));
+
         undo.push(actions.define('queueState', {
             about: 'What the queue is doing: what is waiting, in what order, and which machines could take it',
             run: async function () {
@@ -186,6 +275,11 @@ async function plugin(imports, register) {
                 //running something — so it is read from the app being ported
                 //from, and `tickHere` says whose it is. When the tick moves, this
                 //reads its own and that flag flips.
+                //WHAT THIS HOST IS RUNNING, from the record that outlives a save.
+                //Empty until the tick lands here, which is why the other half is
+                //asked below and said to be the other half's.
+                var mine = engine.inFlight();
+
                 var there = null;
                 //ASKED OF THE OTHER HALF BY NAME, which needs `elsewhere` rather
                 //than `call`: this action IS `queueState` here, and `call` tries
@@ -194,10 +288,21 @@ async function plugin(imports, register) {
                 if (actions.elsewhere) {
                     try { there = await actions.elsewhere('queueState', {}); } catch (e) { there = null; }
                 }
-                var inFlight = (there && there.inFlight) || [];
+                //THIS HOST'S FIRST, THE OTHER HALF'S ONLY WHILE THERE IS NOTHING
+                //OF ITS OWN. The day the tick lands here, `mine` fills and this
+                //stops looking anywhere else — without a second edit, and without
+                //a moment where a machine is in both lists.
+                var inFlight = mine.length
+                    ? mine.map(function (r) { return { machine: r.machine, task: r.doing }; })
+                    : ((there && there.inFlight) || []);
 
                 return {
                     inFlight: inFlight,
+                    //WHOSE CLOCK IS RUNNING, AND WHETHER IT IS. Two different
+                    //facts: this host can own the tick and have it switched off,
+                    //which is what it does on every start.
+                    ticking: engine.running(),
+                    startedBy: engine.since(),
                     waiting: waiting,
                     history: past,
                     //COUNTED PER KIND, because "four waiting" says nothing about
@@ -213,7 +318,7 @@ async function plugin(imports, register) {
                     }, {})),
                     order: policy.ORDER,
                     every: (TICK / 1000) + 's',
-                    tickHere: false,
+                    tickHere: engine.armed(),
 
                     //AND WHAT COULD NOT BE READ, NAMED. An empty board with this
                     //list on it is a different sentence from an empty board
