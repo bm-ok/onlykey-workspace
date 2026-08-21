@@ -296,6 +296,14 @@ async function plugin(imports, register) {
                     ? mine.map(function (r) { return { machine: r.machine, task: r.doing }; })
                     : ((there && there.inFlight) || []);
 
+                //ONE ANSWER TO "WHICH MACHINES ARE BUSY", used by both the pool
+                //and the plan. Worked out twice, the board could show a machine
+                //free and plan work onto one it had already given away.
+                var doing = inFlight.reduce(function (n, r) {
+                    n[r.machine] = r.task || r.doing;
+                    return n;
+                }, {});
+
                 return {
                     inFlight: inFlight,
                     //WHOSE CLOCK IS RUNNING, AND WHETHER IT IS. Two different
@@ -312,10 +320,36 @@ async function plugin(imports, register) {
                         n[e.kind] = (n[e.kind] || 0) + 1;
                         return n;
                     }, {}),
-                    machines: policy.availability(vms, inFlight.reduce(function (n, r) {
-                        n[r.machine] = r.task;
-                        return n;
-                    }, {})),
+                    machines: policy.availability(vms, doing),
+                    //---- AND WHAT WOULD GO WHERE, IF THE TICK WERE ON --------
+                    //
+                    //THE DECIDING, ANSWERABLE WITHOUT THE ACTING. While this
+                    //lived inside the tick the only way to find out what it
+                    //would do was to let it do it — on real machines. Now the
+                    //board can say what is about to happen, and it says it by
+                    //running the same function a tick dispatches by rather than
+                    //by describing it.
+                    //
+                    //THE SIGN-IN CHECK IS NOT APPLIED HERE, and that is said
+                    //rather than quietly skipped. Whether a credential is free
+                    //is a rule about sign-ins and it lives with them — over in
+                    //the app being ported from, until the Runners half moves. A
+                    //second copy of it here is how two answers to "can this go
+                    //out" come to disagree, and the one that decides is not the
+                    //one anybody is reading.
+                    plan: (function () {
+                        var p = policy.plan(waiting, vms, { inFlight: doing, signIns: null });
+                        return {
+                            next: p.dispatch,
+                            waiting: p.waiting.map(function (w) { return { ref: w.ref, why: w.why }; }),
+                            free: p.free,
+                            signInCheck: false,
+                            about: 'What the tick would do with what is waiting now. The sign-in check is NOT part of '
+                                + 'this — whether a credential is free is a rule that lives with the sign-ins, which '
+                                + 'have not moved here yet, so a row shown as going out may still wait for one.'
+                        };
+                    })(),
+
                     order: policy.ORDER,
                     every: (TICK / 1000) + 's',
                     tickHere: engine.armed(),

@@ -258,7 +258,162 @@ function order(entries) {
 var ORDER = 'Judgements first, then tasks; oldest first within each. A judgement reads work that is already '
     + 'waiting to land, so it goes ahead of work that makes more.';
 
+//---- what was stranded by this app stopping --------------------------------
+//
+//THE DECIDING, SEPARATED FROM THE ACTING, and the separation is not tidiness:
+//the deciding is the part that was wrong twice, and while it lived inside the
+//startup routine there was no way to ask it anything. Proving its rule meant
+//restarting the app and arranging for the restart to land inside a twenty-second
+//window — which is how the fault was found in the first place, by accident.
+//
+//THE RULE. Work sitting in `given` with no run was being SET UP when this
+//stopped and never started. Nothing was dispatched, so nothing happened and
+//there is nothing to judge; putting it back in the queue loses nothing and
+//re-running it is exactly what was wanted.
+//
+//EXCEPT A PERSON'S, and that exception is the whole reason the rule needs a
+//name. A task somebody took by hand sits in `given` with no run for as long as
+//they are working in it — there is no run because there is no worker process,
+//and the exit code is a human saying "finished". So this re-queued every one of
+//them on every restart and handed it to a second machine while the person was
+//still in the first. Two machines on one branch, and the work taken from
+//underneath somebody with an editor open.
+//
+//The rule it was written to is still right: `given` with no run means nothing is
+//RUNNING. What changed is that "nothing is running" stopped meaning "nothing is
+//happening".
+//
+//`whose` IS A FUNCTION RATHER THAN A FIELD NAME, because the two kinds of work
+//say it differently — a task has `worker`, a judgement has `by` — and a rule
+//that read one field would silently stop applying to whichever kind was added
+//next. That is exactly how judging came to be missed: all of this was written
+//when tasks were the only work there was.
+function stranded(rows, whose) {
+    return (rows || []).filter(function (x) {
+        return x && x.state === 'given' && !x.run && whose(x) !== 'person';
+    });
+}
+
+//---- and what would go where, right now ------------------------------------
+//
+//THE WHOLE DISPATCH DECISION, WITH NOTHING DONE ABOUT IT. Which entry goes to
+//which machine, and for everything that goes nowhere, the real reason.
+//
+//SEPARATED FOR THE SAME REASON AS `stranded`, and it is the same lesson one size
+//up: while this lived inside the tick, the only way to ask "what would happen"
+//was to let it happen. The Queue tab reports what is waiting and why; the tick
+//dispatches. Two readings of one paragraph is how a board comes to say a
+//judgement is next while a task goes out.
+//
+//BY MATCH RATHER THAN BY POSITION. A tagged entry waiting for a machine it
+//cannot have does not hold up the ones behind it that would take anything.
+//
+//AND THE REASON HAS TO BE THE REAL REASON. Three sentences here once described a
+//host where every machine had a role, because until that day every machine did.
+//With the roles taken off, all three lied at once: "no machine is tagged judge,
+//so judgements go to ordinary runners" (there were no runners either), "every
+//judge machine is busy" (none was busy; none existed), and "wants a machine
+//tagged test and none is free" — while two machines tagged `test` sat there
+//free, wanting nothing but a role.
+//
+//A WAIT THAT NAMES THE WRONG CAUSE IS WORSE THAN SILENCE, because somebody acts
+//on it: they go looking for the busy machine, or they add a tag that is already
+//there. So the roleless case is asked FIRST — it is the one that explains a host
+//where nothing can run at all.
+function plan(entries, machines, opts) {
+    var o = opts || {};
+    var all = machines || [];
+    var pool = availability(all, o.inFlight || {});
+    var free = pool.filter(function (m) { return m.free; });
+    var roleless = pool.filter(function (m) { return m.roleless; });
+
+    var tagsOf = function (name) {
+        var vm = all.filter(function (v) { return v.name === name; })[0];
+        return (vm && vm.tags) || [];
+    };
+
+    //WHETHER THERE IS AN IDENTITY TO GIVE IT, ASKED BEFORE THE MACHINE IS
+    //CLAIMED — which is the whole point. Every run gets a credential, so work
+    //dispatched with none available boots a machine, rolls it forward, fails at
+    //the handover and rolls it back. That happened, and the refusal it produced
+    //said "Nothing will spend a machine on these until then" immediately after
+    //spending one.
+    //
+    //WAITING IS THE SAME SHAPE AS WAITING FOR A MACHINE. It is not a failure and
+    //must not be filed as one — a paused sign-in is fixed by a person at a login
+    //page, and the work should be there waiting when they have done it.
+    //
+    //ASKED OF THE WORK, NOT OF THE MACHINE. Asked of the machine it answered
+    //null for one tagged worker and judge, so a dual machine looked like it
+    //needed a sign-in of no kind at all.
+    var signIns = o.signIns || null;
+
+    var dispatch = [];
+    var waiting = [];
+
+    order(entries).forEach(function (entry) {
+        var ref = entry.ref || String(entry.number);
+        var narrowed = ofItsOwnKind(entry, free, all);
+        var may = narrowed.machines;
+        var pick = -1;
+        for (var i = 0; i < may.length; i++) {
+            if (takes(entry, tagsOf(may[i].name))) { pick = i; break; }
+        }
+
+        if (pick < 0) {
+            var why;
+            if (!may.length && roleless.length) {
+                why = ref + ' waits: ' + roleless.map(function (m) { return m.name; }).join(', ') + ' '
+                    + (roleless.length === 1 ? 'is' : 'are') + ' free and '
+                    + (roleless.length === 1 ? 'has' : 'have') + ' not been told what '
+                    + (roleless.length === 1 ? 'it is' : 'they are') + ' for. The queue hands a machine a sign-in '
+                    + 'and picks which one by the machine\'s role, so it will not send work to a machine that has '
+                    + 'not said. Give one the "' + (entry.kind === 'judgement' ? JUDGE : WORKER)
+                    + '" tag with vmTags and this goes straight out.';
+            } else if (String(entry.tag || '').trim()) {
+                why = ref + ' wants a machine tagged "' + entry.tag + '" and none is free — it waits';
+            } else if (entry.kind === 'judgement' && !may.length) {
+                why = ref + ' is a judgement and every judge machine is busy — it waits rather than being read by a runner';
+            } else if (may.length < free.length) {
+                why = ref + ' will not go to a judge machine — it waits for a runner';
+            } else {
+                why = ref + ' waits: no machine is free';
+            }
+            waiting.push({ entry: entry, ref: ref, why: why, fellBack: narrowed.fellBack });
+            return;
+        }
+
+        var needs = entry.kind === 'judgement' ? 'judge' : 'worker';
+        if (signIns) {
+            var held = signIns[needs] || { free: 0, paused: [] };
+            if (!held.free) {
+                waiting.push({
+                    entry: entry, ref: ref, needs: needs,
+                    why: (held.paused || []).length
+                        ? ref + ' needs a ' + needs + ' sign-in and every one this host holds is paused ('
+                            + held.paused.map(function (n) { return '"' + n + '"'; }).join(', ')
+                            + ') — it waits, and no machine is spent on it. Sign in again on the Runners tab'
+                        : ref + ' needs a ' + needs + ' sign-in and none is free — it waits'
+                });
+                return;
+            }
+        }
+
+        //TAKEN OUT OF THE POOL FOR THE REST OF THIS PASS, so one machine is
+        //never planned for two pieces of work. The claim itself happens in the
+        //clock — see ../queue/main.js — and this is the same decision made once,
+        //here, where it can be read.
+        var chosen = may[pick];
+        free = free.filter(function (m) { return m.name !== chosen.name; });
+        dispatch.push({ entry: entry, ref: ref, machine: chosen.name, needs: needs, fellBack: narrowed.fellBack });
+    });
+
+    return { dispatch: dispatch, waiting: waiting, free: free.map(function (m) { return m.name; }) };
+}
+
 module.exports = {
+    stranded: stranded,
+    plan: plan,
     SUPERVISOR: SUPERVISOR, JUDGE: JUDGE, WORKER: WORKER,
     kindsOf: kindsOf, canBe: canBe, kindSaid: kindSaid,
     availability: availability,
