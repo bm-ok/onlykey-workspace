@@ -26,6 +26,45 @@ var plugins = found.keys().map(found);
 
 plugins.config = Config();
 
+//---- A HOT UPDATE CAN ONLY EVER MEAN "RELOAD" HERE -------------------------
+//
+//THE PLUGIN GRAPH IS BUILT ONCE, at the bottom of this file. Every pane, tab and
+//service comes from that one pass — so swapping a module in the registry after
+//it has run changes nothing anybody can see: the components already registered
+//are the old ones, and the new module is never called.
+//
+//WHICH IS EXACTLY WHAT HAPPENED, silently, for most of a day. webpack rebuilt,
+//the client applied the update, no module accepted it, and the console said
+//"[HMR] Nothing hot updated." — a SUCCESS. `reload=true` reloads when an update
+//FAILS, and this one did not fail; it did nothing. So the served bundle held the
+//change, curl proved it, and the window kept rendering code from hours earlier
+//while every tool used to check it agreed with the window.
+//
+//SERVER-HALF CHANGES WERE FINE THROUGHOUT, which is what made it so hard to see:
+//../src/app/core/build/main.js tears the node bundle down and rebuilds it on
+//every save, so half the app reloaded properly and half did not.
+//
+//SO THIS ACCEPTS EVERY UPDATE AND ANSWERS IT WITH A FULL RELOAD. It is not a
+//workaround for HMR — it is the honest thing for an app whose window is a graph
+//built at startup. There is no hot-swap that could be correct here.
+//ON `apply`, WHICH IS THE MOMENT MODULES ARE ACTUALLY SWAPPED. `idle` is also
+//the resting state and would fire more often than there are updates; `apply`
+//happens once per update, including the one that goes on to report that it
+//changed nothing — which is precisely the case this exists for.
+//
+//AND IT DOES NOT self-accept. Re-running this file would build a SECOND plugin
+//graph on top of the first: every pane registered twice, every service replaced
+//under the panes already holding the old one. A reload is the only correct
+//answer, so it is the only one offered.
+if (module.hot) {
+  var reloading = false;
+  module.hot.addStatusHandler(function (status) {
+    if (status !== 'apply' || reloading) return;
+    reloading = true;
+    location.reload();
+  });
+}
+
 (async function starter() {
   var app = rectify.build(plugins, { isWindow: true })
 
