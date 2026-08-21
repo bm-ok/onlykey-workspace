@@ -1,0 +1,223 @@
+const { test, before, after } = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const child = require('node:child_process');
+
+const plugin = require('../../src/app/git/server');
+const wsPlugin = require('../../src/app/workspace/server');
+
+//---------------------------------------------------------------------------
+//the one place that runs git.
+//
+//Built against a real repository rather than a stand-in: what this plugin does
+//IS run git, so a fake git would be testing the fake. The workspace is a temp
+//folder with one repository in it, two branches, and one changed file.
+//
+//THE TEST THAT MATTERS IS THE LAST ONE. Everything else here is behaviour; that
+//one is the reason the code is shaped the way it is — `spawn` with an ARRAY and
+//never a shell, so a branch name is a branch name however it is spelt.
+//---------------------------------------------------------------------------
+
+let work, repo, ran;
+
+//git needs an identity to commit, and this must not read the machine's.
+const git = (args, cwd) => child.execFileSync('git', [
+    '-c', 'user.email=drill@example.invalid',
+    '-c', 'user.name=drill',
+    '-c', 'commit.gpgsign=false'
+].concat(args), { cwd: cwd || repo, stdio: 'pipe' }).toString();
+
+before(() => {
+    work = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-git-'));
+    repo = path.join(work, 'repo-one');
+    fs.mkdirSync(repo);
+
+    git(['init', '-q', '-b', 'master']);
+    fs.writeFileSync(path.join(repo, 'readme.md'), 'one\n');
+    git(['add', '.']);
+    git(['commit', '-q', '-m', 'first']);
+
+    git(['checkout', '-q', '-b', 'work/thing']);
+    fs.writeFileSync(path.join(repo, 'readme.md'), 'one\ntwo\n');
+    fs.writeFileSync(path.join(repo, 'added.txt'), 'new\n');
+    git(['add', '.']);
+    git(['commit', '-q', '-m', 'a change to send out']);
+    git(['checkout', '-q', 'master']);
+
+    //AND THE BASE MOVES ON AFTERWARDS, which is the whole point of the fixture.
+    //Without a commit on master AFTER the branch was cut, two dots and three dots
+    //agree and the test below cannot tell them apart — which is exactly how the
+    //bug it exists for got written.
+    fs.writeFileSync(path.join(repo, 'elsewhere.txt'), 'moved on\n');
+    git(['add', '.']);
+    git(['commit', '-q', '-m', 'something else entirely']);
+
+    //a folder that is not a repository, to prove it is not offered as one
+    fs.mkdirSync(path.join(work, 'not-a-repo'));
+});
+
+after(() => {
+    try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* windows may hold a handle */ }
+});
+
+//THE REAL ../workspace, NOT A STAND-IN FOR IT. It is what turns a name into a
+//path, and the tests below about paths are testing exactly that — a fake would
+//be testing the fake. Only the relayed `status` is stood in for, because a
+//workspace on this machine is not something a test may depend on.
+async function theGit() {
+    let workspace = null;
+    await wsPlugin({
+        app: { host: {} },
+        okc: { call: async () => ({ workspace: { dir: work } }) },
+        //KEPT IN MEMORY HERE. What these tests are about is paths and git, not
+        //what survives a restart — core/state has its own test for that — and a
+        //real one would leave documents in the app's data folder every run.
+        state: {
+            app: { doc: () => { let held = null; return {
+                read: (fallback) => (held === null ? fallback : held),
+                write: (v) => { held = v; return v; },
+                forget: () => { held = null; return true; }
+            }; } },
+            //workspace hands its own `dir` in so core/state knows which drawer
+            //is current; nothing here reads it back, and core/state has its own
+            //test for what it does with it.
+            follow: () => () => {}
+        }
+    }, async (_e, s) => { workspace = s.workspace; });
+
+    let git = null;
+    await plugin({
+        app: { host: {} },
+        log: { on: () => ({ info() {}, good() {}, warn() {}, bad() {}, out() {} }) },
+        workspace: workspace
+    }, async (_e, s) => { git = s.git; });
+
+    return { git, workspace };
+}
+
+test('a repository is a folder with a .git in it, and nothing else is offered', async () => {
+    const { workspace: ws } = await theGit();
+    const names = (await ws.repos()).map((r) => r.name);
+    assert.deepEqual(names, ['repo-one'], 'a plain folder was offered as a repository');
+});
+
+test('a name that is not in the workspace is refused, and the refusal says what is', async () => {
+    const { git: g } = await theGit();
+    await assert.rejects(() => g.branches('nope'), /no repository called "nope"/);
+    await assert.rejects(() => g.branches('nope'), /repo-one/);
+});
+
+//A REPO IS A NAME, NEVER A PATH. This is the only place a path is produced, so
+//it is the only place that has to be right about it — and a path from a caller
+//is a path to anywhere on a disk this runs a program against.
+test('a path is not a repository name', async () => {
+    const { git: g } = await theGit();
+    for (const bad of ['../repo-one', 'repo-one/.git', '/etc', 'C:\\Windows', '.']) {
+        await assert.rejects(() => g.branches(bad), /no repository called/,
+            'a path was accepted where a name belongs: ' + bad);
+    }
+});
+
+test('it reads the branches, and which one is out', async () => {
+    const { git: g } = await theGit();
+    assert.deepEqual((await g.branches('repo-one')).sort(), ['master', 'work/thing']);
+    assert.equal(await g.head('repo-one'), 'master');
+    assert.equal(await g.has('repo-one', 'work/thing'), true);
+    assert.equal(await g.has('repo-one', 'no/such/branch'), false);
+});
+
+test('what one branch carries that another does not', async () => {
+    const { git: g } = await theGit();
+
+    const files = await g.files('repo-one', 'master', 'work/thing');
+    assert.deepEqual(files.map((f) => f.file).sort(), ['added.txt', 'readme.md']);
+    const readme = files.find((f) => f.file === 'readme.md');
+    assert.equal(readme.added, 1);
+    assert.equal(readme.removed, 0);
+    assert.equal(readme.binary, false);
+
+    const log = await g.commits('repo-one', 'master', 'work/thing');
+    assert.equal(log.length, 1, 'the first commit is on both sides and is not part of the change');
+    assert.equal(log[0].subject, 'a change to send out');
+    assert.equal(log[0].who, 'drill');
+
+    const diff = await g.diff('repo-one', 'master', 'work/thing');
+    assert.match(diff, /\+two/);
+    assert.match(diff, /added\.txt/);
+
+    //ONE FILE, AND `--` IS WHAT MAKES IT A FILE. Without it a file named like a
+    //branch is read as a revision.
+    const one = await g.diff('repo-one', 'master', 'work/thing', 'added.txt');
+    assert.match(one, /added\.txt/);
+    assert.ok(!/readme\.md/.test(one), 'asking for one file gave the whole diff');
+});
+
+//TWO DOTS FOR A LOG, THREE FOR A DIFF, AND THEY ARE NOT INTERCHANGEABLE.
+//
+//`git log base...head` is SYMMETRIC — commits on either side the other does not
+//have — so it hands back the base's commits too. `git diff base..head` compares
+//against where base is NOW, so it grows when somebody else commits there.
+//
+//This only shows up once the base has moved on after the branch was cut, which
+//is why the fixture commits to master afterwards. On the real workspace the
+//first version reported twenty commits for a one-line change.
+test('the base moving on does not change what the branch is carrying', async () => {
+    const { git: g } = await theGit();
+
+    const log = await g.commits('repo-one', 'master', 'work/thing');
+    assert.deepEqual(log.map((c) => c.subject), ['a change to send out'],
+        'the log is symmetric — it is handing back what the base carries as well');
+
+    const files = await g.files('repo-one', 'master', 'work/thing');
+    assert.deepEqual(files.map((f) => f.file).sort(), ['added.txt', 'readme.md'],
+        'the diff is against where the base is now, so it grew when the base moved on');
+
+    const diff = await g.diff('repo-one', 'master', 'work/thing');
+    assert.ok(!/elsewhere\.txt/.test(diff),
+        'the diff carries a file the branch never touched, because the base moved');
+});
+
+//WRITING IS A SEPARATE DOOR AND IT IS NOT BUILT. A plugin that could commit by
+//the same call that lists branches is one where a mistake in a pane is a mistake
+//in a repository.
+test('it will not write, and says so as a door rather than a rule', async () => {
+    const { git: g } = await theGit();
+    for (const bad of ['commit', 'push', 'reset', 'checkout', 'clean']) {
+        await assert.rejects(() => g.run('repo-one', [bad]), /is not something this reads with/,
+            '`git ' + bad + '` was allowed');
+    }
+    //the sentence has to point at the door rather than sound like a permission
+    await assert.rejects(() => g.run('repo-one', ['push']), /door that is not built/);
+});
+
+//---------------------------------------------------------------------------
+//THE ONE THAT SHAPES THE CODE.
+//
+//`spawn` with an ARRAY and no shell, so a branch called `x; touch pwned` is a
+//branch called `x; touch pwned` — an argument, handed to git, which says there
+//is no such ref. The moment anything here builds a command out of a string,
+//every branch name in the workspace becomes something a person could type to run
+//anything. This app has paid for that lesson twice at the other end already.
+//---------------------------------------------------------------------------
+test('a branch name cannot run a command', async () => {
+    const { git: g } = await theGit();
+    const sentinel = path.join(work, 'pwned.txt');
+
+    const tries = [
+        'master; echo x > ' + sentinel,
+        'master && echo x > ' + sentinel,
+        'master | echo x > ' + sentinel,
+        '$(echo x > ' + sentinel + ')',
+        '`echo x > ' + sentinel + '`',
+        'master\n echo x > ' + sentinel
+    ];
+
+    for (const bad of tries) {
+        //it may refuse or answer nothing; what it may NOT do is run anything
+        try { await g.diff('repo-one', 'master', bad); } catch { /* expected */ }
+        try { await g.files('repo-one', bad, 'master'); } catch { /* expected */ }
+        assert.equal(fs.existsSync(sentinel), false, 'a branch name ran a command: ' + bad);
+    }
+});

@@ -14,7 +14,8 @@
     "build": "echo build is for buiding a packaged version, use npm run restart or npm run start for development, use webpack for debugging builds",
     "dist": "node tools/build.js && node tools/pack.js",
     "test": "node --test",
-    "walk": "node tools/walk.js"
+    "walk": "node tools/walk.js",
+    "test-profile": "node tools/test-profile.js"
   },
   "browserslist": [
     "chrome >= 120"
