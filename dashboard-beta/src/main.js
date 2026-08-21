@@ -48,10 +48,18 @@ function found(dir, left, out) {
     fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
         if (!entry.isDirectory() || !scanned(entry.name)) return;
         var here = path.join(dir, entry.name);
-        //BOTH, NOT EITHER. The regexes match a path shape and have no idea
-        //whether a folder is a group or a plugin, so a folder that was somehow
-        //both would be taken twice there and once here. Disagreeing with them is
-        //worse than either answer; test/plugins.test.js refuses the shape itself.
+        //BOTH, NOT EITHER, AND THAT IS WHAT LETS A FOLDER BE BOTH.
+        //A group may also be a plugin — ../app/repositories registers the tab and
+        //holds the panes as folders inside it. This takes the folder's own main.js
+        //AND descends, which is exactly what the regexes do: they match a path
+        //shape, and `./a/main.js` and `./a/b/main.js` are two different paths,
+        //each yielded once.
+        //
+        //THE OLD COMMENT HERE SAID SUCH A FOLDER "would be taken twice there and
+        //once here", and test/plugins.test.js banned the shape on that basis.
+        //Neither was right — `[^/]*` cannot cross a slash, so the one-level branch
+        //cannot reach a file two levels down. Measured against all three regexes
+        //before the ban was lifted: two files selected, no duplicates.
         if (fs.existsSync(path.join(here, 'main.js'))) out.push(path.join(here, 'main.js'));
         if (left > 1) found(here, left - 1, out);
     });

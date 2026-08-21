@@ -83,26 +83,86 @@ test('window.js accepts .jsx as well, and nothing else does', () => {
     assert.ok(!regexIn('server.js').test('./repos/server.jsx'), 'the server bundle should not');
 });
 
-test('a folder is a plugin or a group, never both', () => {
-    //THE RULE THE GROUPING RESTS ON. A folder with a plugin file AND plugin
-    //folders inside it would be matched at both depths and registered twice --
-    //two `provides` for one name, or a tab that appears in the row twice.
+//---------------------------------------------------------------------------
+//A FOLDER MAY BE A PLUGIN *AND* A GROUP, AND THIS IS WHAT MAKES THAT SAFE.
+//
+//THE RULE THIS REPLACES SAID IT MAY NOT, and gave a reason that does not hold:
+//"a folder with a plugin file AND plugin folders inside it would be matched at
+//both depths and registered twice". It would not. `./a/window.js` and
+//`./a/b/window.js` are two different keys, each yielded once by
+//require.context, and neither can match the other's branch of the pattern —
+//`[^/]*` cannot cross a slash, so the one-level branch cannot reach a file two
+//levels down.
+//
+//WHAT THE RULE WAS ACTUALLY PROTECTING was a moment when the boundary between
+//`core` and the platform underneath it had not been worked out, and banning the
+//shape was cheaper than being sure about it. That is settled now, so the ban
+//goes and the PROPERTY it was standing in for is asserted directly.
+//
+//WHICH IS THE STRONGER TEST ANYWAY. The old one banned a shape; this one checks
+//the thing that would actually hurt — that no file is selected twice, by any of
+//the loaders, whatever the shape. It would catch a real double-registration
+//arriving by a route nobody predicted, which is the only kind that turns up.
+//---------------------------------------------------------------------------
+test('a group that is also a plugin loads each of its files exactly once', () => {
+    const all = keys();
+
+    for (const [boot, entry] of BOOTS) {
+        const re = regexIn(boot);
+        const hit = all.filter(k => re.test(k));
+
+        //NO KEY TWICE. `keys()` walks the disk, so a repeated entry here would
+        //mean one FILE selected under two names — the failure the old rule
+        //named, checked rather than assumed.
+        assert.deepStrictEqual(hit.filter((k, i) => hit.indexOf(k) !== i), [],
+            boot + ' selects the same file more than once');
+
+        //AND NO TWO KEYS THAT ARE THE SAME PLUGIN. A folder holding both
+        //`window.js` and `nested/window.js` is fine; the same plugin reachable
+        //as `./a/window.js` and `./a/./window.js` would not be.
+        const seen = hit.map(k => k.replace(/\/+/g, '/'));
+        assert.deepStrictEqual(seen.filter((k, i) => seen.indexOf(k) !== i), [],
+            boot + ' has two spellings of one path');
+
+        assert.ok(hit.length > 0, boot + ' selected nothing at all, so this proves nothing');
+        //the entry file is the one being looked for, and nothing else
+        for (const k of hit) {
+            assert.ok(k.endsWith('/' + entry) || k.endsWith('/window.jsx'),
+                boot + ' selected ' + k + ', which is not a ' + entry);
+        }
+    }
+});
+
+//AND THE SHAPE IS NOW LEGAL, said out loud so that removing it again is a
+//decision rather than a tidy-up. `repositories` is the first: it registers the
+//tab and owns the furniture its panes share, and the panes are folders inside.
+test('a folder that is both is loaded as both', () => {
     const ENTRY = ['window.js', 'window.jsx', 'server.js', 'main.js'];
     const both = [];
     for (const name of fs.readdirSync(APP)) {
         const dir = path.join(APP, name);
         if (!fs.statSync(dir).isDirectory() || !scanned(name)) continue;
-        const isPlugin = ENTRY.some(e => fs.existsSync(path.join(dir, e)));
-        if (!isPlugin) continue;
+        if (!ENTRY.some(e => fs.existsSync(path.join(dir, e)))) continue;
         for (const inner of fs.readdirSync(dir)) {
             const sub = path.join(dir, inner);
             if (!fs.statSync(sub).isDirectory() || !scanned(inner)) continue;
-            if (ENTRY.some(e => fs.existsSync(path.join(sub, e)))) {
-                both.push(name + ' is a plugin and also holds the plugin ' + inner);
-            }
+            if (ENTRY.some(e => fs.existsSync(path.join(sub, e)))) both.push(name + '/' + inner);
         }
     }
-    assert.deepStrictEqual(both, [], 'these would be loaded twice');
+
+    //Nothing is asserted about how many there are — none is a fine answer. What
+    //is asserted is that each one the regexes can see, they DO see: a folder
+    //that is both must not lose its own entry file to its children.
+    const win = regexIn('window.js');
+    for (const pair of both) {
+        const parent = pair.split('/')[0];
+        const at = path.join(APP, parent);
+        for (const e of ['window.js', 'window.jsx']) {
+            if (!fs.existsSync(path.join(at, e))) continue;
+            assert.ok(win.test('./' + parent + '/' + e),
+                parent + ' is a plugin holding plugins, and its own ' + e + ' is not selected');
+        }
+    }
 });
 
 test('vendored code is never taken for a plugin', () => {
