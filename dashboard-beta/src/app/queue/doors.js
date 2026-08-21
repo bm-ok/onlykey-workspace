@@ -1,0 +1,257 @@
+//---------------------------------------------------------------------------
+//WRITING A WORK ITEM DOWN, PUTTING IT IN THE QUEUE, AND THROWING IT AWAY.
+//
+//The three acts that decide whether a piece of work EXISTS and whether it is
+//waiting. What running it looks like is the worker's, over in ../worker — see
+//the note in ./store.js for why the record lives on this side of that line.
+//
+//EVERY GATE HERE IS ABOUT SOMETHING THAT COSTS A MACHINE. A task written against
+//a branch nobody cut, or asking for a tag nothing carries, or naming a job that
+//does not exist, is a task the queue picks up and fails on — twenty minutes of a
+//machine booted, rolled back, handed a credential and pointed at nothing. The
+//moment it is written is the cheap moment to find that out.
+//
+//AND ONE OF THEM IS ABOUT SOMETHING WORSE. See `becauseOf`.
+//
+//---- what it is given, rather than what it reaches for ---------------------
+//
+//Every lookup arrives as a function. That is not ceremony: these gates decide
+//whether real work is created, and a gate that can only be exercised by creating
+//real work is a gate nobody tests. It is the same arrangement as ./policy.js and
+//for the same reason — the deciding is the part that goes wrong.
+//---------------------------------------------------------------------------
+
+module.exports = function doors(store, ask, log) {
+    var say = log || { good: function () {}, warn: function () {}, bad: function () {}, info: function () {} };
+
+    //---- the branch a task delivers on -------------------------------------
+    //
+    //TWO CHECKS, AND THEY FAIL FOR DIFFERENT REASONS. One is whether git will
+    //accept the name at all; the other is whether anybody has cut it. A task
+    //delivers on a branch, and one nobody has cut is work with nowhere to land.
+    async function branchIsReady(branch) {
+        var name = String(branch || '').trim();
+        if (!name) return 'A branch needs a name.';
+
+        var ok = await ask.branchNameIsOk(name);
+        if (ok) return ok;
+
+        if (!(await ask.branchExists(name))) {
+            return 'There is no branch called "' + name + '" in this workspace. Cut it first, on the Branches tab '
+                + '— a task delivers on a branch, and one nobody has cut is work with nowhere to land.';
+        }
+        return null;
+    }
+
+    //=======================================================================
+    //WRITE A TASK.
+    //=======================================================================
+    async function create(input, how) {
+        var it = typeof input === 'string' ? JSON.parse(input) : input;
+        if (!it || typeof it !== 'object') throw new Error('Pass the task as an object.');
+        it = Object.assign({}, it);
+        var over = !!(how && how.overTheWire);
+
+        //---- THE JUDGE IS THE GATE BETWEEN A SUPERVISOR AND A TASK --------
+        //
+        //A supervisor cannot see the code. Everything it believes about this
+        //codebase, a judge told it — so a task it writes on any other basis is
+        //work commissioned from a rumour: an issue filed about a version that no
+        //longer exists, a claim about a different project, its own recollection
+        //of a finding from a fortnight ago.
+        //
+        //THE COST OF THAT IS NOT ABSTRACT. It is a machine booted, rolled back,
+        //handed a credential and pointed at a branch for twenty minutes to fix
+        //something that was never wrong — and then a second judgement to find
+        //out that nothing was.
+        //
+        //SO WORK OVER THE WIRE NAMES THE JUDGEMENT THAT ESTABLISHED IT IS REAL,
+        //and that judgement has to have FINISHED. A queued one has established
+        //nothing yet.
+        //
+        //NOT AT THE WINDOW. A person writing a task has read the code, or has
+        //decided they do not need to, and either is their business — the same
+        //boundary as approving a job, which is refused down the pipe and
+        //ordinary at the window.
+        if (over) {
+            var ref = String((how && how.becauseOf) || it.becauseOf || '').trim();
+            if (!ref) {
+                throw new Error('Say which judgement established this work is real — pass becauseOf with its ref, '
+                    + 'like "J4". You cannot see the code, so a task written without one is work commissioned from '
+                    + 'a rumour. Ask for a judgement first, read what it handed back, and write the task from that.');
+            }
+            var found = await ask.judgement(ref);
+            if (!found) {
+                throw new Error('There is no judgement "' + ref + '". Ask for "judging" to see what has been asked '
+                    + 'for — becauseOf names the judgement whose findings this work comes from.');
+            }
+            if (found.state !== 'done') {
+                throw new Error(found.ref + ' is "' + found.state + '" and has not finished reading yet, so it has '
+                    + 'established nothing. Wait for it, read what it handed back with judgementFindings, and then '
+                    + 'write the task.');
+            }
+            //KEPT ON THE TASK. Six weeks later "why was this done" is answerable
+            //by reading the judgement it came from rather than by asking whoever
+            //was supervising that afternoon.
+            it.becauseOf = found.ref;
+            it.becauseOfId = found.id;
+        }
+
+        //WHAT IS IMPOSSIBLE, BEFORE WHAT IS MERELY NOT READY YET.
+        //
+        //Checked here as well as in the store, and the reason is the ORDER a
+        //person meets these in. The branch checks below are about the workspace
+        //as it stands: cut the branch and the task is fine. This one is about
+        //the task itself and is true whatever anybody cuts, so being told about
+        //the branch first sends somebody off to fix something that was never the
+        //problem. The store keeps its own copy as the backstop for every other
+        //way a task can be written.
+        if (String(it.tag || '').trim().toLowerCase() === 'supervisor') {
+            throw new Error('A task cannot ask for a machine tagged "supervisor". Those are out of the pool for '
+                + 'good — a supervisor decides what work to give and is never given any — so this task would sit '
+                + 'queued for ever waiting for one.');
+        }
+
+        var branchWhy = await branchIsReady(it.branch);
+        if (branchWhy) throw new Error(branchWhy);
+
+        //---- THE RULES ARE COPIED IN, THE SAME WAY THE BRIEF IS -----------
+        //
+        //`contractId` names one from the library and what gets stored is its
+        //WORDS. Every arrow carries a copy, and it is what makes a finished task
+        //readable: a name proves nothing months later about what the worker was
+        //actually held to, and the library it named has moved on since.
+        //
+        //BOTH AT ONCE IS REFUSED rather than silently preferring one — otherwise
+        //which rules a run was under depends on which line of code read it first.
+        if (it.contractId) {
+            if (it.contract) {
+                throw new Error('Give it either a contract from the library or a file on this host, not both — '
+                    + 'otherwise which rules a run was under depends on which line of code read it first.');
+            }
+            var one = await ask.contract(String(it.contractId));
+            if (!one) throw new Error('There is no contract called "' + it.contractId + '".');
+            if (!one.approved) {
+                throw new Error(one.lapsed
+                    ? 'The contract "' + one.name + '" has been edited since it was approved. Read it and approve '
+                        + 'it again before writing a task under it.'
+                    //WHAT A WORKER MAY NOT DO IS READ BEFORE IT IS SENT, the
+                    //same as what it is told to do.
+                    : 'The contract "' + one.name + '" is not approved. What a worker may not do is read before it '
+                        + 'is sent, the same as what it is told to do.');
+            }
+            it.rules = one.text;
+            it.contractName = one.name;
+        } else if (it.contract) {
+            if (!(await ask.contractFileExists(String(it.contract)))) {
+                throw new Error('There is no contract at ' + it.contract + '. It is read from this host when the '
+                    + 'task is given out.');
+            }
+        }
+
+        //A TASK NAMING A JOB THAT DOES NOT EXIST is a task the queue will pick
+        //up and fail on, and the moment it is written is the cheap moment to
+        //find that out.
+        if (it.job) {
+            var job = await ask.job(String(it.job));
+            if (!job) throw new Error('There is no job called "' + it.job + '". Ask for "jobs" to see what there is.');
+            //AND IT IS A JOB FOR DOING WORK. The judging library is kept apart,
+            //and the refusal runs in both directions: a judge given to a task
+            //would send a machine to READ a change under rules written for
+            //reading, on a branch it was told to deliver on.
+            if (job.kind === 'judge') {
+                throw new Error('"' + job.id + '" is a judge — it reads a change and says whether it holds. A task '
+                    + 'makes one. Pick a job from the work library, or ask for a judgement instead with '
+                    + 'judgementCreate.');
+            }
+            it.jobName = job.name;
+        }
+
+        var made = await store.add(it);
+
+        //A TAG NOTHING CARRIES IS WORK THAT WAITS FOR EVER, and the board shows
+        //it as queued rather than as wrong. The queue waits by design — a tag
+        //that quietly meant "prefer" would send work to the wrong machine on a
+        //busy afternoon — so the place to notice a typo is here, where it was
+        //written.
+        //
+        //SAID, NOT REFUSED. A machine can be tagged after the task is written,
+        //and that is an ordinary way to work: write the task, then tag the
+        //machine that will take it. What is not ordinary is not knowing.
+        if (made.tag) {
+            var carried = {};
+            (await ask.machines()).forEach(function (vm) {
+                ((vm && vm.tags) || []).forEach(function (t) { carried[String(t).toLowerCase()] = true; });
+            });
+            if (!carried[made.tag]) {
+                var have = Object.keys(carried);
+                made.warning = 'No machine carries the tag "' + made.tag + '", so this waits in the queue until one '
+                    + 'does. What is there: ' + (have.length ? have.join(', ') : 'no tags at all') + '.';
+                say.warn('#' + made.number + ' asks for a machine tagged "' + made.tag + '" and none carries it — it will wait');
+            }
+        }
+        return made;
+    }
+
+    //=======================================================================
+    //PUT IT IN THE QUEUE.
+    //
+    //Work waits for a machine; a machine does not wait for work. A queued task
+    //names no machine — the first one that is free takes it, and which one did
+    //the work is recorded afterwards rather than decided in advance.
+    //=======================================================================
+    async function queue(ref, plan) {
+        var task = await store.get(ref);
+
+        if (task.verdict) {
+            throw new Error('#' + task.number + ' has already been judged. Write a new task rather than reopening '
+                + 'a decided one.');
+        }
+
+        //REFUSED AT THE DOOR, NOT IGNORED INSIDE. The tick skips a person's task
+        //anyway — but a task sitting queued that nothing will ever pick up looks
+        //exactly like one that is merely waiting its turn, which is the whole
+        //thing this door exists to avoid.
+        if (task.worker === 'person') {
+            throw new Error('#' + task.number + ' is written for a person — the queue would roll a machine back and '
+                + 'run Claude over the top of it. Take it yourself, or write it for a worker instead.');
+        }
+
+        var branchWhy = await branchIsReady(task.branch);
+        if (branchWhy) throw new Error(branchWhy);
+
+        var queued = await store.update(task.id, { state: 'queued' });
+        say.good('#' + task.number + ' queued');
+
+        //SAID NOW RATHER THAN DISCOVERED IN FIFTEEN MINUTES' TIME. A task that
+        //can never be picked up looks exactly like one that is merely waiting,
+        //and the difference matters most when somebody has gone home.
+        //
+        //BY THE SAME RULE THE TICK DISPATCHES BY. Counting free machines alone
+        //answered "4 machine(s) can take it" about a task tagged for a kind of
+        //machine this host has none of — the exact sentence the paragraph above
+        //says this exists to avoid, written by the code under it. `plan` is that
+        //rule, handed in, so there is one of it.
+        var said = await plan(Object.assign({ kind: 'task', ref: '#' + queued.number }, queued));
+
+        return Object.assign({}, queued, {
+            waitingFor: said.canTakeIt.length ? null : said.why,
+            note: said.canTakeIt.length
+                ? said.canTakeIt.length + ' machine(s) can take it; the next tick picks it up.'
+                : task.tag
+                    ? 'Nothing tagged "' + task.tag + '" is free. It stays queued until something is — a tagged '
+                        + 'task waits rather than taking a machine of another kind.'
+                    : 'Nothing can take it yet. It stays queued until something can.'
+        });
+    }
+
+    //=======================================================================
+    //THROW IT AWAY.
+    //
+    //The branch and the kept logs are untouched, and the store says so — see
+    //./store.js. Removing a task throws away what was ASKED, not what came back.
+    //=======================================================================
+    async function remove(ref) { return await store.remove(ref); }
+
+    return { create: create, queue: queue, remove: remove, branchIsReady: branchIsReady };
+};

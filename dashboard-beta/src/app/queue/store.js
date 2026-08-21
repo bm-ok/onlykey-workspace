@@ -13,6 +13,21 @@
 //machine on a branch name that means something else in the folder now being
 //served.
 //
+//---- why the RECORD lives with the queue -----------------------------------
+//
+//A work item's EXISTENCE AND POSITION belong here — written, queued, forgotten —
+//and its EXECUTION belongs to the worker: the harness, the session, what it
+//delivered. That is the line, and it is drawn by something harder than taste.
+//
+//The worker consumes the queue as a service. If the door that writes a task
+//lived over there and this store lived with it, the queue would have to consume
+//the worker to queue anything — and the plugin graph would not build at all,
+//because each would be waiting on the other. A cycle is not a style problem; it
+//is an app that does not start.
+//
+//SO THE TWO HALVES MEET AT ONE POINT, where a work item is GIVEN to a machine,
+//and everything flows one way across it.
+//
 //---- it is not wired to the action table, and that is deliberate -----------
 //
 //Nothing here is reachable as an action yet. The app being ported from still

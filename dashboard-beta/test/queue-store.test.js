@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const statePlugin = require('../src/app/core/state/main');
-const makeTasks = require('../src/app/worker/store');
+const makeTasks = require('../src/app/queue/store');
 
 //---------------------------------------------------------------------------
 //what was asked, who it went to, and what a human decided.

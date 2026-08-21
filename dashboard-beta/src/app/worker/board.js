@@ -150,7 +150,17 @@ module.exports = function board(theme, okc, remember) {
                 confirm: 'Throw it away',
                 danger: true,
                 onYes: function () {
-                    return tell(okc.call('taskForget', { id: t.id || t.number })).then(function () { setPicked(null); });
+                    //`taskRemove`, AND IT WAS `taskForget` UNTIL TODAY — a name
+                    //nothing has ever answered to. The gate opened, the dialog
+                    //confirmed, and the call came back "No action called
+                    //taskForget"; the button has never once worked.
+                    //
+                    //A PANE CANNOT MISSPELL AN ACTION AND HAVE ANYTHING NOTICE.
+                    //`npm run walk` counts buttons and finds this one present;
+                    //the class checker only looks at CSS. It is the same shape
+                    //of quiet failure as a misspelt class, one layer further in,
+                    //and the only thing that finds it is pressing the button.
+                    return tell(okc.call('taskRemove', { id: t.id || t.number })).then(function () { setPicked(null); });
                 }
             });
         }
