@@ -33,9 +33,15 @@ var child = require('child_process');
 //a path to anywhere at all, and this runs a program in whatever it is given —
 //which is why the resolving lives with the workspace and not here.
 //
-//AND IT READS. Writing is a separate door and it is not built — see `run`. A
-//plugin that could commit, push or reset by the same call that lists branches is
-//one where a mistake in a pane is a mistake in a repository.
+//AND WRITING IS A SEPARATE DOOR. `run` reads and only reads; a plugin that could
+//commit, push or reset by the same call that lists branches is one where a
+//mistake in a pane is a mistake in a repository.
+//
+//THE DOOR IS BUILT NOW, and it is four named functions rather than a second
+//allowlist — see the block above `WRITES`. What holds across all four: nothing
+//touches the working tree, nothing creates a commit, and nothing moves a ref in
+//a way that loses commits unless a caller asked for that by name. There is no
+//push, no merge, no rebase and no reset behind any of them.
 //
 //---- the surface, which is a contract --------------------------------------
 //
@@ -401,6 +407,175 @@ async function plugin(imports, register) {
         return { clean: null, files: [], why: last || 'git would not say' };
     }
 
+    //=======================================================================
+    //THE WRITE DOOR.
+    //
+    //NOT AN ALLOWLIST, AND THAT IS THE WHOLE DESIGN. `run` gates on a
+    //subcommand, and a subcommand is not a capability: adding `branch` to READS
+    //would open `branch -D` along with `branch --list`, and `remote` would open
+    //`set-url`. So every write is ITS OWN FUNCTION WITH ITS OWN GATE, fixed
+    //argv, and nothing here takes a command from a caller.
+    //
+    //THREE THINGS ARE TRUE OF EVERY ONE OF THEM, and together they are what
+    //makes this safe rather than merely careful:
+    //
+    //  1. NOTHING TOUCHES THE WORKING TREE. No checkout, no reset, no merge, no
+    //     stash, no clean. Every write below moves a REF and nothing else — so
+    //     no act of this app can destroy uncommitted work, on any branch, ever.
+    //     That is a property of the argv, not a promise in a comment.
+    //
+    //  2. NOTHING CREATES OR REWRITES A COMMIT. History is made by people and
+    //     by workers on machines; this app moves labels around.
+    //
+    //  3. NOTHING MOVES A REF THAT WOULD LOSE COMMITS, unless the caller asked
+    //     for that in so many words. `fastForward` refuses anything that is not
+    //     one, and `removeBranch` will not use `-D` unless `force` is passed.
+    //
+    //WHAT IS NOT HERE IS AS MUCH THE POINT. There is no push, no commit, no
+    //merge, no rebase, no `reset`. `pr` will need a push and it will get its own
+    //function and its own argument, added deliberately.
+    //
+    //AND THE POLICY GATE IS NOT HERE EITHER. Whether a branch may be written to
+    //— a line is protected, a default is protected — is a question about what
+    //this app is FOR, and it belongs with the thing that knows what a line is.
+    //This plugin knows what git will accept. See ../repositories/branches.
+    //=======================================================================
+
+    //EVERY WAY THIS PLUGIN CAN CHANGE A REPOSITORY, IN ONE LIST, so a test can
+    //assert the list matches what is callable and a new one has to be argued for
+    //in a diff. Same shape as EXITS in ../keys/server.js, for the same reason.
+    var WRITES = ['fetch', 'fastForward', 'makeBranch', 'removeBranch'];
+
+    //A NAME GIT WILL ACCEPT, CHECKED BEFORE ANYTHING IS CREATED. Asked of git
+    //itself rather than guessed at with a regex — the rules are genuinely
+    //intricate (no `..`, no trailing `.lock`, no `@{`, no control characters,
+    //no component starting with a dot) and a home-made check is one that is
+    //subtly wrong in a way nobody notices until a name is refused deep inside
+    //something else.
+    async function nameIsOk(repo, name) {
+        var said = await spawnGit(await workspace.folderOf(repo),
+            ['check-ref-format', '--branch', String(name)]);
+        return said.code === 0;
+    }
+
+    //---- fetch --------------------------------------------------------------
+    //
+    //THE ONLY ONE THAT TALKS TO A NETWORK, and it writes nothing but
+    //`refs/remotes/origin/*`. No local branch moves, so a fetch can never be the
+    //thing that loses work — it only changes what this app KNOWS.
+    //
+    //`--prune` MATTERS AND IS ON. Without it a branch deleted on the far end
+    //stays in `refs/remotes/origin/` for ever, and every pane that compares
+    //against origin goes on reporting a branch that is gone as one that is
+    //behind.
+    async function fetch(repo) {
+        var cwd = await workspace.folderOf(repo);
+        var said = await spawnGit(cwd, ['fetch', '--quiet', '--prune', 'origin']);
+        if (said.code !== 0) {
+            var why = String(said.stderr || '').split('\n').filter(Boolean)[0] || 'git would not say why';
+            //NO ORIGIN IS NOT A FAILURE, it is an answer. A repository nobody has
+            //given a remote is an ordinary thing to have in a workspace.
+            return { fetched: false, why: why };
+        }
+        log.info(repo + ': fetched from origin');
+        return { fetched: true, why: null };
+    }
+
+    //---- fast-forward -------------------------------------------------------
+    //
+    //ONLY EVER A FAST-FORWARD, checked twice and by two different means.
+    //
+    //FIRST, IS IT ONE. `merge-base --is-ancestor here there` asks git whether the
+    //current tip is contained in the target. If it is not, the branch has
+    //commits the target has not got and moving it would drop them — refused,
+    //named, and the caller is told to look at Conflicts.
+    //
+    //SECOND, THE COMPARE-AND-SWAP. `update-ref <ref> <new> <old>` refuses unless
+    //the ref is still at `<old>`. So a branch that moved between the check and
+    //the write — a worker pushing, somebody committing — loses the race safely
+    //rather than being overwritten. Without the third argument this would be a
+    //`git push --force` with extra steps.
+    async function fastForward(repo, branch, toRef) {
+        var here = await run(repo, ['rev-parse', String(branch)]);
+        var there = await run(repo, ['rev-parse', String(toRef)]);
+        if (here.code !== 0) return { moved: false, why: 'there is no branch called "' + branch + '" here' };
+        if (there.code !== 0) return { moved: false, why: 'there is nothing at "' + toRef + '" to move to' };
+
+        var was = String(here.stdout || '').trim();
+        var want = String(there.stdout || '').trim();
+        if (was === want) return { moved: false, was: was, why: null, already: true };
+
+        var contained = await run(repo, ['merge-base', '--is-ancestor', was, want]);
+        if (contained.code !== 0) {
+            return {
+                moved: false, was: was,
+                why: 'it has moved here as well, so this is not a fast-forward — nothing was touched. See Conflicts.'
+            };
+        }
+
+        var said = await spawnGit(await workspace.folderOf(repo),
+            ['update-ref', 'refs/heads/' + String(branch), want, was]);
+        if (said.code !== 0) {
+            return { moved: false, was: was, why: String(said.stderr || '').split('\n')[0] || 'the ref moved underneath this' };
+        }
+
+        log.good(repo + ': ' + branch + ' fast-forwarded to ' + want.slice(0, 7));
+        return { moved: true, was: was, now: want, why: null };
+    }
+
+    //---- making a branch ----------------------------------------------------
+    //
+    //`git branch <name> <start>` AND NOT `checkout -b`. The second would move the
+    //working tree, which rule 1 above forbids — and this app makes branches in
+    //repositories somebody may be working in.
+    async function makeBranch(repo, name, from) {
+        if (!(await nameIsOk(repo, name))) {
+            return { made: false, why: '"' + name + '" is not a name git will accept for a branch' };
+        }
+        if (await has(repo, String(name))) {
+            //ALREADY THERE IS NOT AN ERROR when this is called across several
+            //repositories: two of three having it is the ordinary way a cut gets
+            //finished after being interrupted.
+            return { made: false, already: true, why: null };
+        }
+
+        var start = await run(repo, ['rev-parse', String(from)]);
+        if (start.code !== 0) return { made: false, why: 'there is nothing at "' + from + '" to cut from' };
+
+        var said = await spawnGit(await workspace.folderOf(repo),
+            ['branch', String(name), String(from)]);
+        if (said.code !== 0) {
+            return { made: false, why: String(said.stderr || '').split('\n')[0] || 'git would not say why' };
+        }
+
+        log.good(repo + ': cut ' + name + ' from ' + from);
+        return { made: true, at: String(start.stdout || '').trim(), why: null };
+    }
+
+    //---- removing one -------------------------------------------------------
+    //
+    //`-d` REFUSES A BRANCH THAT IS NOT MERGED, and that refusal is the feature.
+    //`-D` is only reached when a caller passes `force`, which is a word somebody
+    //had to type — and the pane that offers it says what is being given up.
+    //
+    //THE WORKING TREE AGAIN: git refuses to delete the branch that is checked
+    //out, and that refusal is left to speak for itself rather than being
+    //pre-empted here, because git's message names the branch and the repository.
+    async function removeBranch(repo, name, opts) {
+        var force = !!(opts && opts.force);
+        if (!(await has(repo, String(name)))) return { removed: false, already: true, why: null };
+
+        var said = await spawnGit(await workspace.folderOf(repo),
+            ['branch', force ? '-D' : '-d', String(name)]);
+        if (said.code !== 0) {
+            var why = String(said.stderr || '').split('\n').filter(Boolean)[0] || 'git would not say why';
+            return { removed: false, why: why, unmerged: /not fully merged/i.test(why) };
+        }
+
+        log.warn(repo + ': deleted ' + name + (force ? ', forced' : ''));
+        return { removed: true, why: null };
+    }
+
     function lines(text) {
         return String(text || '').split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
     }
@@ -580,6 +755,13 @@ async function plugin(imports, register) {
             unlanded: unlanded,
             countBetween: countBetween,
             wouldConflict: wouldConflict,
+
+            //---- the write door. See the block above it. ----------------
+            WRITES: WRITES,
+            fetch: fetch,
+            fastForward: fastForward,
+            makeBranch: makeBranch,
+            removeBranch: removeBranch,
             //HANDED OUT SO NOBODY GUESSES AT IT. A caller that wants to say what
             //this can do should say what this SAYS it can do.
             READS: READS
