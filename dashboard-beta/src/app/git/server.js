@@ -131,7 +131,77 @@ async function plugin(imports, register) {
     //opinion about state" bug this project has had.
     var workspace = imports.workspace;
 
+    //---- saying that a repository changed ----------------------------------
+    //
+    //ANYTHING THAT IS NOT A READ HAS WRITTEN, decided from the argv rather than
+    //remembered by each write function. The app being ported from puts the
+    //reason in one sentence worth keeping: "A cache that has to be invalidated
+    //by hand is a cache that is stale exactly where somebody forgot, and the
+    //forgetting happens in the change that adds the seventh writer, months
+    //later." Its own version of this line is at ../../../../dashboard/repos/branches.js.
+    //
+    //AND IT IS PHRASED THE SAFE WAY ROUND. `READS` is the explicit list, so a
+    //write door added later announces itself with nobody remembering to make it
+    //— whereas a list of WRITES to match against is a list that can be missing
+    //the newest one, silently, in exactly the case that matters.
+    //
+    //THIS PLUGIN KNOWS NOTHING ABOUT CACHING, and that is deliberate. It says
+    //what it did; who cares is somebody else's business. ../repositories/refs
+    //is the subscriber today, and it is the only thing that has to know a drawer
+    //exists. Putting `cached` in this plugin's `consumes` would have made git
+    //the keeper of somebody else's memo.
+    var told = [];
+    function wrote(fn) {
+        told.push(fn);
+        return function () {
+            var at = told.indexOf(fn);
+            if (at >= 0) told.splice(at, 1);
+        };
+    }
+
+    //A FAILED WRITE IS STILL ANNOUNCED. `git push` can move a ref and then fail
+    //to report it, `fetch --prune` can drop half of what it meant to; the only
+    //safe reading of a non-zero exit from a write is that it may have written.
+    //What it costs to be wrong is a re-read.
+    function moved(cwd, what) {
+        for (var i = 0; i < told.length; i++) {
+            try { told[i]({ dir: cwd, did: String(what) }); }
+            catch (e) { log.warn('something listening for a git write threw: ' + e.message); }
+        }
+    }
+
+    //WAS THIS A READ? The safe default is no — see above — but `READS` alone is
+    //the wrong test, and getting it wrong here is silent.
+    //
+    //`ORIGIN` IS A READ WITH A SUBCOMMAND TOO COARSE TO PUT IN `READS`. That is
+    //not an oversight, it is the decision two blocks up: `remote` in that list
+    //would open `remote set-url` along with `remote get-url`, and set-url is the
+    //whole trust chain this app has with GitHub. So the capability is fixed argv
+    //instead — and fixed argv is exactly what makes it safe to name here.
+    //
+    //WHAT IT COST TO GET WRONG, because the shape is worth remembering: every
+    //`origin()` announced a write, so anything listening dropped what it knew
+    //about that repository — including the read it had just done. ../repositories
+    //asks for origin four times per draw. The cache would have held nothing,
+    //ever, while every part of it reported working perfectly: the drawer filled,
+    //the counters looked healthy, and the timing never moved.
+    //
+    //THAT IS THE SAME FAILURE ../../../dashboard/repos/branches.js carries a scar
+    //for, arrived at from the opposite direction, and it is why an exception here
+    //is written as an exception rather than by widening the list.
+    function isRead(args) {
+        var list = args || [];
+        if (READS.indexOf(String(list[0])) >= 0) return true;
+        return String(list[0]) === 'remote' && String(list[1]) === 'get-url';
+    }
+
     function spawnGit(cwd, args) {
+        var said = spawnRaw(cwd, args);
+        if (isRead(args)) return said;
+        return said.then(function (r) { moved(cwd, (args || [])[0]); return r; });
+    }
+
+    function spawnRaw(cwd, args) {
         return new Promise(function (resolve) {
             //NO `shell: true`, AND NO STRING. See the header. If this ever needs
             //to become a string, it does not.
@@ -891,6 +961,11 @@ async function plugin(imports, register) {
 
             //---- the write door. See the block above it. ----------------
             WRITES: WRITES,
+
+            //WHO TO TELL WHEN THIS CHANGED A REPOSITORY. Returns the way to
+            //stop listening. See `wrote` above for why this is an
+            //announcement rather than a call into somebody's cache.
+            wrote: wrote,
             fetch: fetch,
             fastForward: fastForward,
             makeBranch: makeBranch,
