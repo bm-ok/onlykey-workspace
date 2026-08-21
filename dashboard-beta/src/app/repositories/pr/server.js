@@ -22,7 +22,7 @@
 //reads it on a timer.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'git', 'github', 'keys', 'workspace', 'state', 'settings'];
+plugin.consumes = ['app', 'log', 'git', 'github', 'keys', 'workspace', 'state', 'settings', 'refs'];
 plugin.provides = ['prcuts'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -33,6 +33,22 @@ async function plugin(imports, register) {
     var keys = imports.keys;
     var workspace = imports.workspace;
     var state = imports.state;
+    //---- REFS FOR READING ---------------------------------------------------
+    //
+    //../refs reads each repository once for the whole group and knows when to
+    //stop believing it -- through ../../git's own announcement of a write, and
+    //through a watch on .git for the branch somebody cut in a terminal.
+    //
+    //ASKING git DIRECTLY FOR THESE WAS A SECOND READ of what a sibling pane had
+    //already just done, on this pane's own timer. `origin` is the one worth
+    //naming: it cannot change through this app at all -- ../../git's url read is
+    //fixed argv with no set-url door -- so it is the cheapest thing here to stop
+    //re-reading, and it was being asked four times a draw.
+    //
+    //EVERYTHING THAT IS NOT A REF READ STAYS ON git: the diffs, the commit
+    //counts, and every write.
+    var refs = imports.refs;
+
     var settings = imports.settings;
 
     //---- the three stores, all per workspace -------------------------------
@@ -158,7 +174,7 @@ async function plugin(imports, register) {
                     if (r.status === 200 && r.body) found = shapePull(r.body);
                 }
                 if (!found) {
-                    var remote = await git.origin(p.repo);
+                    var remote = await refs.origin(p.repo);
                     if (remote && remote.owner) {
                         var r2 = await github.call('GET', '/repos/' + remote.owner + '/' + remote.repo + '/pulls/' + p.number);
                         if (r2.status === 200 && r2.body) found = shapePull(r2.body);
@@ -285,7 +301,7 @@ async function plugin(imports, register) {
     //watching. That is the worst shape a bug can have here, and it is why the
     //target is asked for rather than assumed.
     async function openOne(repo, want) {
-        var remote = await git.origin(repo);
+        var remote = await refs.origin(repo);
         if (!remote || remote.kind !== 'github') {
             return { repo: repo, opened: false, why: '"' + repo + '" has no GitHub remote to open a pull request on.' };
         }
@@ -811,7 +827,7 @@ async function plugin(imports, register) {
                     var p = open[i];
                     var bits = String(p.into || '').split('/');
                     if (bits.length !== 2) {
-                        var remote = await git.origin(p.repo);
+                        var remote = await refs.origin(p.repo);
                         bits = [remote.owner, remote.repo];
                     }
                     var r = await github.call('PUT', '/repos/' + bits[0] + '/' + bits[1] + '/pulls/' + p.number + '/merge',
@@ -863,7 +879,7 @@ async function plugin(imports, register) {
                     if (!p.number) continue;
                     var bits = String(p.into || '').split('/');
                     if (bits.length !== 2) {
-                        var remote = await git.origin(p.repo);
+                        var remote = await refs.origin(p.repo);
                         bits = [remote.owner, remote.repo];
                     }
                     var r = await github.call('PATCH', '/repos/' + bits[0] + '/' + bits[1] + '/pulls/' + p.number, fields);

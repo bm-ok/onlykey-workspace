@@ -38,7 +38,7 @@
 
 var LINES = require('./lines');
 
-plugin.consumes = ['app', 'log', 'git', 'workspace', 'state'];
+plugin.consumes = ['app', 'log', 'git', 'workspace', 'state', 'refs'];
 plugin.provides = ['lines'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -47,6 +47,21 @@ async function plugin(imports, register) {
     var git = imports.git;
     var workspace = imports.workspace;
     var state = imports.state;
+
+    //---- REFS FOR READING, git FOR WRITING AND FOR RESOLVING ---------------
+    //
+    //../refs reads each repository once for the whole group and knows when to
+    //stop believing it. Everything here that asked git.tracked, git.head or
+    //git.branches was a second read of the same thing on this pane's own timer.
+    //
+    //`git.has` IS NOT REPLACED WHOLESALE, and that is the careful part. It
+    //resolves ANY ref -- a sha, a tag, HEAD~3 -- and refs cannot answer that
+    //from a list of branches. The dangerous half is the NEGATIVE: a tag is a
+    //real ref and is not in that list, so a derived "no" would refuse something
+    //that is really there. Where the question is genuinely about a BRANCH,
+    //refs.hasBranch and refs.hasRemote say so by name; where it is about a
+    //start point somebody typed, it stays on git.
+    var refs = imports.refs;
 
     async function kept() { return state.here.doc('lines'); }
 
@@ -77,7 +92,7 @@ async function plugin(imports, register) {
             var repos = Object.keys(on);
             for (var j = 0; j < repos.length; j++) {
                 if (repos[j] in tracked) continue;
-                try { tracked[repos[j]] = await git.tracked(repos[j]); }
+                try { tracked[repos[j]] = await refs.of(repos[j]); }
                 catch (e) { tracked[repos[j]] = {}; }
             }
         }
@@ -92,9 +107,9 @@ async function plugin(imports, register) {
         for (var i = 0; i < found.length; i++) {
             var name = found[i].name;
             var def = null;
-            try { def = await git.head(name); } catch (e) { /* said as null */ }
+            try { def = await refs.head(name); } catch (e) { /* said as null */ }
             var all = [];
-            try { all = await git.branches(name); } catch (e) { /* said as empty */ }
+            try { all = await refs.branches(name); } catch (e) { /* said as empty */ }
             out.push({ repo: name, on: def, branches: all });
         }
         return out;
@@ -189,18 +204,9 @@ async function plugin(imports, register) {
     //every head and its commit, which is both halves of the question — does this
     //branch exist here, and what is it pointing at. See its own note in ../../git
     //about a panel spawning forty processes a minute.
-    async function headsIn(repos) {
-        var at = {};
-        for (var i = 0; i < repos.length; i++) {
-            var name = repos[i].name;
-            at[name] = {};
-            try {
-                var rows = await git.tracked(name);
-                Object.keys(rows).forEach(function (b) { at[name][b] = rows[b].local || null; });
-            } catch (e) { /* a repository with no refs yet answers nothing, which is correct */ }
-        }
-        return at;
-    }
+    //NOW ONE CALL, because ../refs answers exactly this shape for the whole
+    //workspace and holds the reads behind it.
+    function headsIn(repos) { return refs.heads(repos); }
 
     async function carries(branch, notes, here, at) {
         var found = await workspace.repos();
@@ -455,7 +461,7 @@ async function plugin(imports, register) {
                 var found = await workspace.repos();
                 var on = {};
                 for (var i = 0; i < found.length; i++) {
-                    if (await git.has(found[i].name, branch)) on[found[i].name] = branch;
+                    if (await refs.hasBranch(found[i].name, branch)) on[found[i].name] = branch;
                 }
                 if (!Object.keys(on).length) {
                     throw new Error('No repository here has a branch called "' + branch + '", so there is nothing to name.');
@@ -607,7 +613,7 @@ async function plugin(imports, register) {
 
                 for (var i = 0; i < found.length; i++) {
                     var repo = found[i].name;
-                    if (!(await git.has(repo, name))) continue;
+                    if (!(await refs.hasBranch(repo, name))) continue;
                     var said = await git.removeBranch(repo, name, { force: force });
                     done.push({ repo: repo, removed: !!said.removed, unmerged: !!said.unmerged, why: said.why || null });
                 }
@@ -667,7 +673,12 @@ async function plugin(imports, register) {
                     await git.fetch(p.repo);
                     //ASKED AFTER THE FETCH, because what origin has is the thing
                     //that just changed.
-                    if (!(await git.has(p.repo, 'refs/remotes/origin/' + p.branch))) {
+                    //
+                    //AND THE FETCH IS WHAT MAKES THAT SAFE TO ASK ../refs. A
+                    //fetch is a write as far as ../../git is concerned, so it
+                    //announces itself and refs drops this repository — the read
+                    //below is of what just arrived, not of what was there before.
+                    if (!(await refs.hasRemote(p.repo, p.branch))) {
                         done.push({ repo: p.repo, branch: p.branch, moved: false, why: 'origin has no branch by this name' });
                         continue;
                     }

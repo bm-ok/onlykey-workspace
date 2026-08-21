@@ -9,6 +9,7 @@ const actionsPlugin = require('../../src/app/core/actions/main');
 const statePlugin = require('../../src/app/core/state/main');
 const gitPlugin = require('../../src/app/git/server');
 const reposPlugin = require('../../src/app/repositories/repos/server');
+const { refsFor } = require('../../tools/test-parts');
 
 const APP = path.join(__dirname, '..', '..', 'src', 'app');
 
@@ -115,16 +116,22 @@ async function anApp(answers, open) {
     await gitPlugin({ app: { host: {} }, log: { on: () => logger }, workspace }, async (_e, s) => { git_ = s.git; });
 
     const gh = aGitHub(answers || {});
+
+    //THE REAL ../../src/app/repositories/repositories/refs. This pane reads
+    //through it now, so a stand-in would check the stand-in.
+    const { refs, stop } = await refsFor({ git: git_, workspace, log: { on: () => logger } });
+
     await reposPlugin({
         app: { host: { actions } },
         log: { on: () => logger },
         git: git_,
         github: gh.github,
         workspace,
-        state
+        state,
+        refs
     }, async () => {});
 
-    return { actions, asked: gh.asked, said, git: git_, go: (to) => { where = to; } };
+    return { actions, asked: gh.asked, said, git: git_, refs, stop, go: (to) => { where = to; } };
 }
 
 const REPO_OK = {
@@ -304,7 +311,8 @@ test('no token held is reported per repository rather than thrown', async () => 
         apiHost: () => 'api.github.com'
     };
 
-    await reposPlugin({ app: { host: { actions } }, log: { on: () => logger }, git: git_, github, workspace, state }, async () => {});
+    const { refs } = await refsFor({ git: git_, workspace, log: { on: () => logger } });
+    await reposPlugin({ app: { host: { actions } }, log: { on: () => logger }, git: git_, github, workspace, state, refs }, async () => {});
 
     const said = await actions.call('repositoriesCheck', {});
     assert.equal(said.repos[0].reachable, false);

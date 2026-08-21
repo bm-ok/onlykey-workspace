@@ -57,12 +57,6 @@ var path = require('path');
 //blink rather than a wrong board.
 var FRESH = 2000;
 
-//WHERE A REPOSITORY CAME FROM changes when somebody edits `.git/config`, which
-//the watch below sees. It cannot change through this app at all — ../../git's
-//`ORIGIN` is `remote get-url` with fixed argv and there is no set-url door — so
-//this is the one read here that a longer window genuinely fits.
-var ORIGIN_FRESH = 60000;
-
 //A GIT WRITE TOUCHES MANY FILES. One `fetch --prune` rewrites packed-refs, a
 //dozen loose refs and FETCH_HEAD; invalidating per event would empty the drawer
 //a dozen times and, worse, do it while the same write is still going.
@@ -76,7 +70,7 @@ async function plugin(imports, register) {
     var log = imports.log.on('refs');
 
     var rows = imports.cached.whileFresh('refs', FRESH);
-    var origins = imports.cached.whileFresh('origins', ORIGIN_FRESH);
+    var origins = imports.cached.byStamp('origins');
 
     var undo = [];
 
@@ -89,9 +83,49 @@ async function plugin(imports, register) {
         return await rows.get(name, function () { return git.tracked(name); });
     }
 
+    //---- where a repository came from --------------------------------------
+    //
+    //KEYED ON `.git/config`, NOT ON A CLOCK, and the difference is one a test
+    //caught rather than one anybody reasoned out.
+    //
+    //THIS WAS A SIXTY-SECOND WINDOW, argued for on the grounds that origin
+    //cannot change through this app at all — ../../git's url read is fixed argv
+    //with no set-url door. That is true and it is not the question. A PERSON can
+    //change it, in a terminal, and ../repos has a whole panel about noticing:
+    //what it knows about a remote goes stale the moment origin moves, and its
+    //own comment says the dangerous shape is not an empty panel but a FULL one
+    //describing somewhere else. A window makes that panel wrong for a minute.
+    //
+    //LEANING ON THE WATCH FOR IT WOULD BE WORSE. The watch does see `config`,
+    //so this would have worked in the running app and failed exactly where the
+    //watch had not been set up — the case this file's own header warns about: a
+    //number that only looks safe while the watcher works is a number that hides
+    //the day the watcher stops.
+    //
+    //SO IT IS KEYED ON THE FILE THE ANSWER COMES FROM. A stat is a fraction of
+    //a millisecond against a git process, so a draw asking four times still
+    //spawns once — and the answer cannot be stale, because a changed remote is
+    //a changed file is a different key. See `byStamp` in ../../core/cached, and
+    //note it is the kind that is never written to disk.
+    async function stampOf(repo) {
+        var dir = await workspace.folderOf(repo);
+        var st = fs.statSync(path.join(dir, '.git', 'config'));
+        return st.mtimeMs + ':' + st.size;
+    }
+
     async function origin(repo) {
         var name = String(repo);
-        return await origins.get(name, function () {
+
+        var stamp = null;
+        try { stamp = await stampOf(name); }
+        catch (e) {
+            //NO STAMP MEANS NO KEY, AND NO KEY MEANS NO CACHE. A repository
+            //mid-clone, a `.git` that is a file, a permission — any of them
+            //would otherwise pool every repository under one constant key.
+            return await git.origin(name).catch(function () { return null; });
+        }
+
+        return await origins.get(name + '|' + stamp, function () {
             return git.origin(name).catch(function () { return null; });
         });
     }
@@ -163,7 +197,9 @@ async function plugin(imports, register) {
         var name = String(repo);
         rows.forget(name);
         rows.forget('head:' + name);
-        origins.forget(name);
+        //ORIGIN IS KEYED ON `.git/config`, so there is nothing here to forget:
+        //a changed remote is already a different key. Emptying it on every ref
+        //write would throw away a correct answer for nothing.
     }
 
     //A FOLDER, BACK TO THE NAME THIS APP CALLS IT. ../../git announces where it

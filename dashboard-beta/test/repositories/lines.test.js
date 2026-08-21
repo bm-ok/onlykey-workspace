@@ -9,6 +9,7 @@ const actionsPlugin = require('../../src/app/core/actions/main');
 const statePlugin = require('../../src/app/core/state/main');
 const gitPlugin = require('../../src/app/git/server');
 const linesPlugin = require('../../src/app/repositories/branches/server');
+const { refsFor } = require('../../tools/test-parts');
 
 //---------------------------------------------------------------------------
 //a line: one branch per repository, named, so it can be talked about as one
@@ -126,13 +127,17 @@ async function anApp(stored) {
     let git_ = null;
     await gitPlugin({ app: { host: {} }, log: { on: () => logger }, workspace }, async (_e, s) => { git_ = s.git; });
 
+    //THE REAL ../../src/app/repositories/refs. The pane reads refs now, so a
+    //stand-in here would check the stand-in.
+    const { refs, stop } = await refsFor({ git: git_, workspace, log: { on: () => logger } });
+
     let lines = null;
     await linesPlugin({
         app: { host: { actions } }, log: { on: () => logger },
-        git: git_, workspace, state
+        git: git_, workspace, state, refs
     }, async (_e, s) => { lines = s.lines; });
 
-    return { actions, lines, said, state, go: (to) => { where = to; } };
+    return { actions, lines, said, state, refs, stop, go: (to) => { where = to; } };
 }
 
 //where a branch is, in a named repository
@@ -344,9 +349,11 @@ test('each repository is asked once, however many lines name it', async () => {
         tracked: (repo) => { asked.push(repo); return real.tracked(repo); }
     });
 
+    const { refs } = await refsFor({ git: counting, workspace, log: { on: () => logger } });
+
     await linesPlugin({
         app: { host: { actions } }, log: { on: () => logger },
-        git: counting, workspace, state
+        git: counting, workspace, state, refs
     }, async () => {});
 
     const said = await actions.call('lines', {});

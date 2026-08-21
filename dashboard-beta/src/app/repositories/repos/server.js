@@ -44,7 +44,7 @@
 //describing an account and describing what will actually work.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'git', 'github', 'workspace', 'state'];
+plugin.consumes = ['app', 'log', 'git', 'github', 'workspace', 'state', 'refs'];
 plugin.provides = ['repositories'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -54,6 +54,22 @@ async function plugin(imports, register) {
     var github = imports.github;
     var workspace = imports.workspace;
     var state = imports.state;
+    //---- REFS FOR READING ---------------------------------------------------
+    //
+    //../refs reads each repository once for the whole group and knows when to
+    //stop believing it -- through ../../git's own announcement of a write, and
+    //through a watch on .git for the branch somebody cut in a terminal.
+    //
+    //ASKING git DIRECTLY FOR THESE WAS A SECOND READ of what a sibling pane had
+    //already just done, on this pane's own timer. `origin` is the one worth
+    //naming: it cannot change through this app at all -- ../../git's url read is
+    //fixed argv with no set-url door -- so it is the cheapest thing here to stop
+    //re-reading, and it was being asked four times a draw.
+    //
+    //EVERYTHING THAT IS NOT A REF READ STAYS ON git: the diffs, the commit
+    //counts, and every write.
+    var refs = imports.refs;
+
 
     //IN THE WORKSPACE'S DRAWER, NOT THE HOST'S. What GitHub says about
     //`local-repo-a` is a fact about the folder of repositories that is open —
@@ -126,7 +142,7 @@ async function plugin(imports, register) {
     //---- one repository, asked ---------------------------------------------
     async function ask(name, note) {
         var remote = null;
-        try { remote = await git.origin(name); }
+        try { remote = await refs.origin(name); }
         catch (e) { return unasked(name, null, 'this is not a repository this workspace knows about: ' + e.message, false); }
 
         if (!remote || !remote.owner || !remote.repo) {
@@ -337,7 +353,7 @@ async function plugin(imports, register) {
         try { out.path = await workspace.folderOf(name); } catch (e) { return out; }
 
         try {
-            var all = await git.branches(name);
+            var all = await refs.branches(name);
             out.branches = all.length;
         } catch (e) { /* an empty repository has none, which is not an error */ }
 
@@ -345,7 +361,7 @@ async function plugin(imports, register) {
         //remembered from then on — the same answer the app being ported from
         //gives, and for the same reason: there is no local record of a default
         //branch, only of what HEAD points at.
-        try { out.default = await git.head(name); } catch (e) { /* said as null */ }
+        try { out.default = await refs.head(name); } catch (e) { /* said as null */ }
 
         if (out.default) {
             try {
@@ -376,7 +392,7 @@ async function plugin(imports, register) {
                     //THE REMOTE IS READ NOW, NOT REMEMBERED. It is a local fact
                     //and it is the thing `stale` below compares against.
                     var remote = null;
-                    try { remote = await git.origin(name); } catch (e) { /* said as null */ }
+                    try { remote = await refs.origin(name); } catch (e) { /* said as null */ }
 
                     var about = note.about || null;
                     var mine = remote && remote.owner ? remote.owner + '/' + remote.repo : null;
@@ -491,7 +507,7 @@ async function plugin(imports, register) {
 
                 var here = await localOf(name);
                 var def = here.default;
-                var rows = await git.tracked(name);
+                var rows = await refs.of(name);
 
                 var out = [];
                 var names = Object.keys(rows).sort(function (x, y) { return x.localeCompare(y); });
@@ -563,7 +579,7 @@ async function plugin(imports, register) {
                 var name = String(a.repo || '').trim();
                 if (!name) throw new Error('Say which repository to walk from.');
 
-                var remote = await git.origin(name);
+                var remote = await refs.origin(name);
                 if (!remote || remote.kind !== 'github') {
                     throw new Error('"' + name + '" has no GitHub remote, so there is no chain to walk.');
                 }
@@ -656,7 +672,7 @@ async function plugin(imports, register) {
             var got = await git.fetch(repo);
             if (!got.fetched) return [{ repo: repo, branch: only || null, moved: false, why: got.why }];
 
-            var rows = await git.tracked(repo);
+            var rows = await refs.of(repo);
             var names = only ? [String(only)] : Object.keys(rows);
             var out = [];
 
@@ -745,7 +761,7 @@ async function plugin(imports, register) {
                 var notes = doc.read({}) || {};
                 var note = notes[name] || {};
                 var remote = null;
-                try { remote = await git.origin(name); } catch (e) { /* said below */ }
+                try { remote = await refs.origin(name); } catch (e) { /* said below */ }
 
                 var on = a.on == null ? '' : String(a.on).trim();
                 //UNSETTING IS SETTING IT BACK TO YOUR OWN, and it is how somebody

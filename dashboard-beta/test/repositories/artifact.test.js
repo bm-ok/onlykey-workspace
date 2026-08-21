@@ -9,6 +9,7 @@ const actionsPlugin = require('../../src/app/core/actions/main');
 const statePlugin = require('../../src/app/core/state/main');
 const gitPlugin = require('../../src/app/git/server');
 const linesPlugin = require('../../src/app/repositories/branches/server');
+const { refsFor } = require('../../tools/test-parts');
 const artifactPlugin = require('../../src/app/artifact/server');
 
 //---------------------------------------------------------------------------
@@ -115,10 +116,12 @@ async function anApp({ cuts = null, lines: stored = null } = {}) {
     let git_ = null;
     await gitPlugin({ app: { host: {} }, log: { on: () => logger }, workspace }, async (_e, s) => { git_ = s.git; });
 
+    const { refs } = await refsFor({ git: git_, workspace, log: { on: () => logger } });
+
     let lines = null;
     await linesPlugin({
         app: { host: { actions } }, log: { on: () => logger },
-        git: git_, workspace, state
+        git: git_, workspace, state, refs
     }, async (_e, s) => { lines = s.lines; });
 
     let artifact = null;

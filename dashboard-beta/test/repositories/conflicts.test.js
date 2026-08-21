@@ -8,6 +8,8 @@ const child = require('node:child_process');
 const actionsPlugin = require('../../src/app/core/actions/main');
 const gitPlugin = require('../../src/app/git/server');
 const conflictsPlugin = require('../../src/app/repositories/conflicts/server');
+const cachedPlugin = require('../../src/app/core/cached/server');
+const refsPlugin = require('../../src/app/repositories/refs/server');
 
 //---------------------------------------------------------------------------
 //which branches have moved on both sides, and which would actually conflict.
@@ -116,9 +118,26 @@ async function anApp(lines) {
 
     let git_ = null;
     await gitPlugin({ app: { host: {} }, log: { on: () => logger }, workspace }, async (_e, s) => { git_ = s.git; });
-    await conflictsPlugin({ app: { host: { actions } }, log: { on: () => logger }, git: git_, workspace }, async () => {});
 
-    return { actions, git: git_ };
+    //THE REAL ../../src/app/repositories/refs, not a stand-in. What this pane
+    //now depends on is that refs answers the same thing git.tracked did, so a
+    //fake here would be testing the fake. Nowhere to keep anything: everything
+    //refs holds is clock-keyed and core/cached never writes that kind down.
+    let cached = null;
+    await cachedPlugin({
+        app: {}, log: { on: () => logger },
+        state: { here: { where: async () => null, doc: async () => { throw new Error('nowhere'); } } }
+    }, async (_e, s) => { cached = s.cached; });
+
+    let refs = null, unwatch = null;
+    await refsPlugin({ app: { on: () => {} }, log: { on: () => logger }, git: git_, workspace, cached },
+        async (_e, s) => { refs = s.refs; unwatch = s.onDestroy; });
+
+    await conflictsPlugin({
+        app: { host: { actions } }, log: { on: () => logger }, git: git_, workspace, refs
+    }, async () => {});
+
+    return { actions, git: git_, refs, unwatch };
 }
 
 //---------------------------------------------------------------------------

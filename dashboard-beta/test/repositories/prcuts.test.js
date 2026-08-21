@@ -7,6 +7,7 @@ const path = require('node:path');
 const actionsPlugin = require('../../src/app/core/actions/main');
 const statePlugin = require('../../src/app/core/state/main');
 const prPlugin = require('../../src/app/repositories/pr/server');
+const { refsFor } = require('../../tools/test-parts');
 
 //---------------------------------------------------------------------------
 //a PR cut: one act, one pull request per repository, held together.
@@ -61,8 +62,21 @@ async function anApp(opts) {
         origin: async (repo) => ({ host: 'github.com', owner: 'anowner', repo: repo, kind: 'github' }),
         commits: async () => [{ sha: 'abc1234', subject: 'a change' }],
         has: async () => true,
+        //THE REAL ../../src/app/git HAS THIS, and ../../src/app/repositories/refs
+        //subscribes to it — so a stand-in without it is a stand-in that could
+        //not stand in. It returns the way to stop listening.
+        wrote: () => () => {},
+        tracked: async () => ({}),
+        head: async () => 'master',
+        branches: async () => [],
         push: async (repo, branch, opts2) => { pushes.push({ repo, branch, opts: opts2 }); return { pushed: true }; }
     };
+
+    const { refs } = await refsFor({
+        git,
+        workspace: { dir: async () => 'C:/work/alpha', repos: async () => [{ name: 'one' }] },
+        log: { on: () => logger }
+    });
 
     let prcuts = null;
     await prPlugin({
@@ -72,7 +86,8 @@ async function anApp(opts) {
         keys: { github: { envForPush: () => ({ OKC_GIT_TOKEN: 'ghp_notReal' }), credentialHelper: 'C:\\helper.js' } },
         workspace: { dir: async () => 'C:\\work\\alpha', repos: async () => [{ name: 'one' }] },
         state,
-        settings: { allowed: async () => o.testing || { allowed: false, why: 'The drills are switched off.' } }
+        settings: { allowed: async () => o.testing || { allowed: false, why: 'The drills are switched off.' } },
+        refs
     }, async (_e, s) => { prcuts = s.prcuts; });
 
     return { actions, prcuts, state, said, asked: gh.asked, pushes };

@@ -32,13 +32,19 @@
 //nothing about this file changes.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'git', 'workspace'];
+plugin.consumes = ['app', 'log', 'git', 'workspace', 'refs'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
     var actions = host && host.actions;
     var git = imports.git;
     var workspace = imports.workspace;
+
+    //REFS FOR READING, git FOR THE REST. ../refs reads each repository once for
+    //the whole group and knows when to stop believing it; asking git.tracked
+    //here directly is a second read of the same thing on this pane's own timer.
+    //`wouldConflict` stays on git — it is not a ref read.
+    var refs = imports.refs;
 
     //WHICH LINES NAME THIS BRANCH. Empty when nothing can answer, which is a
     //true answer and not a failure — see the header.
@@ -58,7 +64,7 @@ async function plugin(imports, register) {
         for (var i = 0; i < found.length; i++) {
             var repo = found[i].name;
             var rows;
-            try { rows = await git.tracked(repo); }
+            try { rows = await refs.of(repo); }
             catch (e) { continue; }
 
             var names = Object.keys(rows);
