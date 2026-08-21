@@ -4,6 +4,7 @@ var child = require('child_process');
 
 var makeGate = require('./gate');
 var makeReading = require('./reading');
+var makeDoing = require('./doing');
 
 //---------------------------------------------------------------------------
 //VirtualBox, AND NOTHING ABOUT ANY PROJECT.
@@ -29,9 +30,13 @@ var makeReading = require('./reading');
 //— one at a time, identical reads shared, a session lock retried — and
 //./reading.js is what it says about a machine and how to wait for it to mean it.
 //
-//NOT THE DOING: starting, stopping, snapshots, deleting. Those change real
-//machines, and they are worth landing on top of a gate that is already proven
-//rather than beside one that is not.
+//AND THE DOING: starting, stopping, snapshots, deleting. Every one of those
+//changes something real, which is why they landed on a gate that was already
+//proven rather than beside one that was not.
+//
+//NOT THE HOST'S NETWORK: the bridges, the host-only interfaces, the DHCP lease
+//and this host's own address. Those are about where a machine can be REACHED,
+//which is the next thing up rather than part of driving one.
 //
 //AND NOT THE REGISTRY. Which machines this app is ALLOWED to touch is ../ours,
 //and it is a separate plugin on purpose: this one knows how to drive VirtualBox,
@@ -113,6 +118,17 @@ async function plugin(imports, register) {
     var gate = makeGate(spawn, { asked: asked, say: log });
     var read = makeReading(gate.run, { say: log });
 
+    //WHEN EACH SNAPSHOT WAS TAKEN comes out of the machine's own `.vbox` file,
+    //which is XML — and reading it per draw is what once put 94% of a window
+    //inside `spawn`. Keyed on that file's stamp rather than on a clock: it
+    //changes when a snapshot is taken or thrown away, and its size and modified
+    //time say so, so there is no window during which the file is new and the
+    //answer is old.
+    var doIt = makeDoing(gate.run, gate.retrying, read, {
+        say: log,
+        when: imports.cached.byStamp('vbox-snapshot-times')
+    });
+
     await register(null, {
         vbox: {
             //WHETHER THERE IS A VirtualBox HERE AT ALL. Asked rather than
@@ -136,7 +152,18 @@ async function plugin(imports, register) {
             waitUntilOff: read.waitUntilOff,
             waitUntilUnlocked: read.waitUntilUnlocked,
 
-            OFF: read.OFF
+            OFF: read.OFF,
+
+            start: doIt.start,
+            stop: doIt.stop,
+            setLink: doIt.setLink,
+            screenshot: doIt.screenshot,
+            snapshots: doIt.snapshots,
+            takeSnapshot: doIt.takeSnapshot,
+            restoreSnapshot: doIt.restoreSnapshot,
+            deleteSnapshot: doIt.deleteSnapshot,
+            destroy: doIt.destroy,
+            machineFolder: doIt.machineFolder
         }
     });
 }
