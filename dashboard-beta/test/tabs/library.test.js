@@ -62,8 +62,8 @@ const aPrompt = (extra) => Object.assign({
 //AN APPROVAL IS AGAINST THE WORDS.
 //---------------------------------------------------------------------------
 
-test('writing one at the window approves it, because writing it there is the reading', () => {
-    const made = prompts.save(aPrompt());
+test('writing one at the window approves it, because writing it there is the reading', async () => {
+    const made = await prompts.save(aPrompt());
 
     assert.equal(made.created, true);
     assert.equal(made.id, 'read-the-readme');
@@ -72,17 +72,17 @@ test('writing one at the window approves it, because writing it there is the rea
     assert.equal(made.lapsed, false);
 });
 
-test('writing one down the pipe does not, because a model may not ratify its own', () => {
-    const made = prompts.save(aPrompt(), 'the command line');
+test('writing one down the pipe does not, because a model may not ratify its own', async () => {
+    const made = await prompts.save(aPrompt(), 'the command line');
 
     assert.equal(made.approved, false);
     assert.equal(made.approval, null);
     assert.equal(made.lapsed, false, 'never read is not the same as read and then changed');
 });
 
-test('editing the words down the pipe lapses the approval', () => {
-    prompts.save(aPrompt());
-    const now = prompts.save(aPrompt({ id: 'read-the-readme', text: 'do something else entirely' }), 'the command line');
+test('editing the words down the pipe lapses the approval', async () => {
+    await prompts.save(aPrompt());
+    const now = await prompts.save(aPrompt({ id: 'read-the-readme', text: 'do something else entirely' }), 'the command line');
 
     assert.equal(now.approved, false);
     //A job read and approved in January must not be handed a rewritten
@@ -90,10 +90,10 @@ test('editing the words down the pipe lapses the approval', () => {
     assert.equal(now.text, 'do something else entirely');
 });
 
-test('a rewrite down the pipe leaves nothing anybody read', () => {
-    prompts.save(aPrompt());
-    prompts.save(aPrompt({ id: 'read-the-readme', text: 'changed' }), 'the command line');
-    const it = prompts.get('read-the-readme');
+test('a rewrite down the pipe leaves nothing anybody read', async () => {
+    await prompts.save(aPrompt());
+    await prompts.save(aPrompt({ id: 'read-the-readme', text: 'changed' }), 'the command line');
+    const it = await prompts.get('read-the-readme');
 
     //THE APPROVAL GOES RATHER THAN LAPSING, and the difference is worth being
     //exact about. `lapsed` means somebody read a version that is still on the
@@ -106,16 +106,16 @@ test('a rewrite down the pipe leaves nothing anybody read', () => {
     assert.equal(it.approvedAt, null);
 });
 
-test('LAPSED is for a body that moved underneath the record', () => {
+test('LAPSED is for a body that moved underneath the record', async () => {
     //WHICH IS THE JOB CASE, AND THE REAL ONE. A job's body is its code on disk,
     //so it can change with nothing about the record changing at all — and the
     //approval has to notice, because the code is what will run.
     code['build-it'] = 'module.exports = () => 1';
-    jobs.save({ name: 'build it' });
-    assert.equal(jobs.get('build-it').approved, true);
+    await jobs.save({ name: 'build it' });
+    assert.equal((await jobs.get('build-it')).approved, true);
 
     code['build-it'] = 'module.exports = () => 999';
-    const it = jobs.get('build-it');
+    const it = await jobs.get('build-it');
 
     //Somebody read this and said so, and then it changed. That is a different
     //situation from never having been read, and it asks for a different action.
@@ -124,20 +124,20 @@ test('LAPSED is for a body that moved underneath the record', () => {
     assert.ok(it.approvedAt, 'it no longer says when it was read');
 });
 
-test('changing which contract it runs under lapses it too', () => {
-    prompts.save(aPrompt({ contractId: 'read-only' }));
-    assert.equal(prompts.get('read-the-readme').approved, true);
+test('changing which contract it runs under lapses it too', async () => {
+    await prompts.save(aPrompt({ contractId: 'read-only' }));
+    assert.equal((await prompts.get('read-the-readme')).approved, true);
 
-    const now = prompts.save(aPrompt({ id: 'read-the-readme', contractId: 'anything-goes' }), 'the command line');
+    const now = await prompts.save(aPrompt({ id: 'read-the-readme', contractId: 'anything-goes' }), 'the command line');
 
     //MORE THAN A REWRITE, not less: the words look identical afterwards.
     assert.equal(now.approved, false);
     assert.equal(now.contractId, 'anything-goes');
 });
 
-test('a rename does not count as a change and does not unbind the rules', () => {
-    prompts.save(aPrompt({ contractId: 'read-only' }));
-    const now = prompts.save({ id: 'read-the-readme', name: 'a better name' }, 'the command line');
+test('a rename does not count as a change and does not unbind the rules', async () => {
+    await prompts.save(aPrompt({ contractId: 'read-only' }));
+    const now = await prompts.save({ id: 'read-the-readme', name: 'a better name' }, 'the command line');
 
     assert.equal(now.name, 'a better name');
     assert.equal(now.approved, true, 'renaming it lapsed the approval');
@@ -149,9 +149,9 @@ test('a rename does not count as a change and does not unbind the rules', () => 
 //READING IT AND PRESSING SAVE IS THE APPROVAL.
 //---------------------------------------------------------------------------
 
-test('a person saving an unapproved one, unchanged, approves it', () => {
-    prompts.save(aPrompt(), 'the command line');
-    assert.equal(prompts.get('read-the-readme').approved, false);
+test('a person saving an unapproved one, unchanged, approves it', async () => {
+    await prompts.save(aPrompt(), 'the command line');
+    assert.equal((await prompts.get('read-the-readme')).approved, false);
 
     //THE BUG THIS IS FOR COST AN HOUR. Saving only stamped when something had
     //CHANGED — so a person opening an unapproved entry, reading it, and pressing
@@ -159,62 +159,62 @@ test('a person saving an unapproved one, unchanged, approves it', () => {
     //waiting to be read" exactly as designed. The only way through was to edit
     //it first, which nobody would guess and which makes reading-then-approving
     //impossible without altering what you read.
-    const now = prompts.save(aPrompt({ id: 'read-the-readme' }));
+    const now = await prompts.save(aPrompt({ id: 'read-the-readme' }));
     assert.equal(now.approved, true);
 });
 
-test('and saving it down the pipe twice still does not', () => {
-    prompts.save(aPrompt(), 'the command line');
-    prompts.save(aPrompt({ id: 'read-the-readme' }), 'the command line');
-    assert.equal(prompts.get('read-the-readme').approved, false);
+test('and saving it down the pipe twice still does not', async () => {
+    await prompts.save(aPrompt(), 'the command line');
+    await prompts.save(aPrompt({ id: 'read-the-readme' }), 'the command line');
+    assert.equal((await prompts.get('read-the-readme')).approved, false);
 });
 
 //---------------------------------------------------------------------------
 //SETTING ASIDE, AND THE DIRECTION THAT MATTERS.
 //---------------------------------------------------------------------------
 
-test('absent means in use, because everything written before this existed must keep working', () => {
-    prompts.save(aPrompt());
-    assert.equal(prompts.get('read-the-readme').setAside, false);
+test('absent means in use, because everything written before this existed must keep working', async () => {
+    await prompts.save(aPrompt());
+    assert.equal((await prompts.get('read-the-readme')).setAside, false);
 
     //The question asked everywhere is "has it been set aside", never "has it
     //been marked usable".
-    const raw = prompts.read()[0];
+    const raw = (await prompts.read())[0];
     assert.equal(raw.setAside, undefined, 'a fresh entry should carry no flag at all');
 });
 
-test('setting aside is harmless from anywhere and keeps the approval', () => {
-    prompts.save(aPrompt());
-    const aside = prompts.use('read-the-readme', false, { by: 'the command line' });
+test('setting aside is harmless from anywhere and keeps the approval', async () => {
+    await prompts.save(aPrompt());
+    const aside = await prompts.use('read-the-readme', false, { by: 'the command line' });
 
     assert.equal(aside.setAside, true);
     assert.equal(aside.approved, true, 'taking it out of play cost it its approval');
 });
 
-test('bringing one back over the wire costs its approval', () => {
-    prompts.save(aPrompt());
-    prompts.use('read-the-readme', false, { by: 'the command line' });
+test('bringing one back over the wire costs its approval', async () => {
+    await prompts.save(aPrompt());
+    await prompts.use('read-the-readme', false, { by: 'the command line' });
 
     //WITHOUT THIS THE GATE HAS A DOOR BESIDE IT: anything that could set aside
     //and restore could take an approved entry, park it, and bring it back
     //whenever it liked.
-    const back = prompts.use('read-the-readme', true, { by: 'the command line' });
+    const back = await prompts.use('read-the-readme', true, { by: 'the command line' });
     assert.equal(back.setAside, false);
     assert.equal(back.approved, false, 'it came back approved without anybody reading it');
 });
 
-test('and at the window it does not, because a person is the one doing it', () => {
-    prompts.save(aPrompt());
-    prompts.use('read-the-readme', false, { by: 'the command line' });
+test('and at the window it does not, because a person is the one doing it', async () => {
+    await prompts.save(aPrompt());
+    await prompts.use('read-the-readme', false, { by: 'the command line' });
 
-    const back = prompts.use('read-the-readme', true);
+    const back = await prompts.use('read-the-readme', true);
     assert.equal(back.approved, true);
 });
 
-test('setting aside one already aside is not a restore', () => {
-    prompts.save(aPrompt());
-    prompts.use('read-the-readme', false);
-    const again = prompts.use('read-the-readme', false, { by: 'the command line' });
+test('setting aside one already aside is not a restore', async () => {
+    await prompts.save(aPrompt());
+    await prompts.use('read-the-readme', false);
+    const again = await prompts.use('read-the-readme', false, { by: 'the command line' });
     assert.equal(again.approved, true, 'it was never brought back');
 });
 
@@ -222,86 +222,86 @@ test('setting aside one already aside is not a restore', () => {
 //TWO LIBRARIES IN ONE STORE.
 //---------------------------------------------------------------------------
 
-test('what an entry is FOR is carried, so a judging chain cannot be picked for work', () => {
-    prompts.save(aPrompt({ name: 'for working', kind: 'task' }));
-    prompts.save(aPrompt({ name: 'for judging', kind: 'judge' }));
+test('what an entry is FOR is carried, so a judging chain cannot be picked for work', async () => {
+    await prompts.save(aPrompt({ name: 'for working', kind: 'task' }));
+    await prompts.save(aPrompt({ name: 'for judging', kind: 'judge' }));
 
-    assert.equal(prompts.get('for-working').kind, 'task');
-    assert.equal(prompts.get('for-judging').kind, 'judge');
+    assert.equal((await prompts.get('for-working')).kind, 'task');
+    assert.equal((await prompts.get('for-judging')).kind, 'judge');
 });
 
-test('anything written before there were two is for work', () => {
-    prompts.save(aPrompt());
-    assert.equal(prompts.get('read-the-readme').kind, 'task');
+test('anything written before there were two is for work', async () => {
+    await prompts.save(aPrompt());
+    assert.equal((await prompts.get('read-the-readme')).kind, 'task');
 
     //An entry that predates the field answers rather than answering undefined.
-    const list = prompts.read();
+    const list = await prompts.read();
     delete list[0].kind;
-    prompts.write(list);
-    assert.equal(prompts.get('read-the-readme').kind, 'task');
+    await prompts.write(list);
+    assert.equal((await prompts.get('read-the-readme')).kind, 'task');
 });
 
-test('a save that does not mention kind keeps the one it had', () => {
-    prompts.save(aPrompt({ kind: 'judge' }));
-    const now = prompts.save({ id: 'read-the-readme', name: 'read the readme' }, 'the command line');
+test('a save that does not mention kind keeps the one it had', async () => {
+    await prompts.save(aPrompt({ kind: 'judge' }));
+    const now = await prompts.save({ id: 'read-the-readme', name: 'read the readme' }, 'the command line');
     assert.equal(now.kind, 'judge');
 });
 
-test('anything that is not judge is task', () => {
-    assert.equal(prompts.save(aPrompt({ kind: 'something-else' })).kind, 'task');
+test('anything that is not judge is task', async () => {
+    assert.equal((await prompts.save(aPrompt({ kind: 'something-else' }))).kind, 'task');
 });
 
 //---------------------------------------------------------------------------
 //THE ID, AND WHAT IS REFUSED.
 //---------------------------------------------------------------------------
 
-test('the id never changes once made, because something may be pointing at it', () => {
-    prompts.save(aPrompt());
-    const now = prompts.save({ id: 'read-the-readme', name: 'a completely different name' });
+test('the id never changes once made, because something may be pointing at it', async () => {
+    await prompts.save(aPrompt());
+    const now = await prompts.save({ id: 'read-the-readme', name: 'a completely different name' });
 
     assert.equal(now.id, 'read-the-readme');
     assert.equal(now.created, false);
-    assert.equal(prompts.all().length, 1, 'a rename made a second entry');
+    assert.equal((await prompts.all()).length, 1, 'a rename made a second entry');
 });
 
-test('one with no name is refused, because nobody would find it again', () => {
-    assert.throws(() => prompts.save({ text: 'words' }), /Give it a name/);
-    assert.throws(() => prompts.save({ name: '   ', text: 'words' }), /Give it a name/);
+test('one with no name is refused, because nobody would find it again', async () => {
+    await assert.rejects(async () => await prompts.save({ text: 'words' }), /Give it a name/);
+    await assert.rejects(async () => await prompts.save({ name: '   ', text: 'words' }), /Give it a name/);
 });
 
-test('a name with no letters or numbers in it is refused', () => {
-    assert.throws(() => prompts.save({ name: '!!!', text: 'words' }), /no letters or numbers/);
+test('a name with no letters or numbers in it is refused', async () => {
+    await assert.rejects(async () => await prompts.save({ name: '!!!', text: 'words' }), /no letters or numbers/);
 });
 
-test('an empty body is refused, because it would be handed over as an empty instruction', () => {
-    assert.throws(() => prompts.save({ name: 'empty' }), /Write the prompt/);
-    assert.throws(() => prompts.save({ name: 'empty', text: '   ' }), /Write the prompt/);
+test('an empty body is refused, because it would be handed over as an empty instruction', async () => {
+    await assert.rejects(async () => await prompts.save({ name: 'empty' }), /Write the prompt/);
+    await assert.rejects(async () => await prompts.save({ name: 'empty', text: '   ' }), /Write the prompt/);
 });
 
-test('one that is not there is refused by name, and the refusal says which kind', () => {
-    assert.throws(() => prompts.approve('nothing'), /There is no prompt called "nothing"/);
-    assert.throws(() => prompts.forget('nothing'), /There is no prompt called "nothing"/);
-    assert.throws(() => prompts.use('nothing', true), /There is no prompt called "nothing"/);
-    assert.throws(() => prompts.withdraw('nothing'), /There is no prompt called "nothing"/);
-    assert.throws(() => jobs.approve('nothing'), /There is no job called "nothing"/);
+test('one that is not there is refused by name, and the refusal says which kind', async () => {
+    await assert.rejects(async () => await prompts.approve('nothing'), /There is no prompt called "nothing"/);
+    await assert.rejects(async () => await prompts.forget('nothing'), /There is no prompt called "nothing"/);
+    await assert.rejects(async () => await prompts.use('nothing', true), /There is no prompt called "nothing"/);
+    await assert.rejects(async () => await prompts.withdraw('nothing'), /There is no prompt called "nothing"/);
+    await assert.rejects(async () => await jobs.approve('nothing'), /There is no job called "nothing"/);
 });
 
 //---------------------------------------------------------------------------
 //APPROVING, WITHDRAWING, FORGETTING.
 //---------------------------------------------------------------------------
 
-test('approving is against the body as it is now', () => {
-    prompts.save(aPrompt(), 'the command line');
-    const now = prompts.approve('read-the-readme', 'I read it');
+test('approving is against the body as it is now', async () => {
+    await prompts.save(aPrompt(), 'the command line');
+    const now = await prompts.approve('read-the-readme', 'I read it');
 
     assert.equal(now.approved, true);
     assert.equal(now.approval.note, 'I read it');
-    assert.equal(now.approval.hash, prompts.get('read-the-readme').hash);
+    assert.equal(now.approval.hash, (await prompts.get('read-the-readme')).hash);
 });
 
-test('withdrawing takes the approval and leaves everything else', () => {
-    prompts.save(aPrompt({ contractId: 'read-only' }));
-    const now = prompts.withdraw('read-the-readme');
+test('withdrawing takes the approval and leaves everything else', async () => {
+    await prompts.save(aPrompt({ contractId: 'read-only' }));
+    const now = await prompts.withdraw('read-the-readme');
 
     assert.equal(now.approved, false);
     assert.equal(now.lapsed, false, 'withdrawn is not lapsed');
@@ -309,39 +309,39 @@ test('withdrawing takes the approval and leaves everything else', () => {
     assert.equal(now.contractId, 'read-only');
 });
 
-test('forget deletes, and says what went', () => {
-    prompts.save(aPrompt());
-    const gone = prompts.forget('read-the-readme');
+test('forget deletes, and says what went', async () => {
+    await prompts.save(aPrompt());
+    const gone = await prompts.forget('read-the-readme');
 
     assert.deepEqual(gone, { forgotten: 'read-the-readme', name: 'read the readme' });
-    assert.deepEqual(prompts.all(), []);
+    assert.deepEqual(await prompts.all(), []);
 });
 
 //---------------------------------------------------------------------------
 //A BODY THE STORE DOES NOT HOLD.
 //---------------------------------------------------------------------------
 
-test('a job is approved against its CODE, which is not in the record', () => {
+test('a job is approved against its CODE, which is not in the record', async () => {
     code['build-it'] = 'module.exports = () => 1';
-    const made = jobs.save({ name: 'build it', promptId: 'p1' });
+    const made = await jobs.save({ name: 'build it', promptId: 'p1' });
     assert.equal(made.approved, true);
 
     //The code changes on disk and nothing about the record does — and the
     //approval has to notice, because the code is what will run.
     code['build-it'] = 'module.exports = () => 999';
-    const now = jobs.get('build-it');
+    const now = await jobs.get('build-it');
     assert.equal(now.approved, false);
     assert.equal(now.lapsed, true);
 });
 
-test('the hash is of the body and nothing else', () => {
+test('the hash is of the body and nothing else', async () => {
     assert.equal(makeLibrary.hash('abc'), makeLibrary.hash('abc'));
     assert.notEqual(makeLibrary.hash('abc'), makeLibrary.hash('abd'));
     //SHORT, STABLE, AND ABOUT THE TEXT rather than about when it was written.
     assert.match(makeLibrary.hash('abc'), /^[0-9a-f]+-3$/);
 });
 
-test('an id is made from a name the way a person would write it', () => {
+test('an id is made from a name the way a person would write it', async () => {
     assert.equal(makeLibrary.idFor('Read the README!'), 'read-the-readme');
     assert.equal(makeLibrary.idFor('  spaces  everywhere  '), 'spaces-everywhere');
     assert.equal(makeLibrary.idFor('!!!'), '');

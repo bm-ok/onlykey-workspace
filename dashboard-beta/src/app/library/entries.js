@@ -54,8 +54,20 @@ function idFor(name) {
         .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 }
 
+//---- one of the three is not like the other two ---------------------------
+//
+//A JOB IS KEPT PER WORKSPACE; a prompt and a contract are kept per computer.
+//That is not an oversight to tidy up. A job is a SCRIPT that runs against the
+//folder of repositories that is open — "the jobs this workspace has" — while
+//"read the README against the code and say where they disagree" names no
+//repository at all.
+//
+//SO THE DOCUMENT IS AWAITED. `state.here.doc` is async and `state.app.doc` is
+//not, and awaiting covers both.
+//
 //    what   the word this uses in its refusals: 'prompt', 'job', 'contract'
-//    doc    () => the ../core/state document these are kept in
+//    doc    () => the ../core/state document these are kept in, or a promise
+//                 for one
 //    opts   bodyOf(entry)         what the approval is against. A prompt's own
 //                                 text; a job's CODE, which lives on disk
 //           writes                the fields a save may set, beyond name/about
@@ -64,21 +76,27 @@ module.exports = function library(what, doc, opts) {
     var bodyOf = o.bodyOf || function (e) { return e.text; };
     var writes = o.writes || [];
 
-    function read() {
-        var kept = doc().read([]);
+    async function read() {
+        var kept = (await doc()).read([]);
         return Array.isArray(kept) ? kept : [];
     }
 
-    function write(list) { doc().write(list); return list; }
+    async function write(list) { (await doc()).write(list); return list; }
+
+    //ANYTHING THE BODY NEEDS THAT HAS TO BE FETCHED, worked out ONCE per call
+    //rather than per entry. A job's body is a file on disk under the workspace's
+    //own folder, and finding that folder is a question for ../core/state.
+    async function context() { return o.context ? await o.context() : null; }
 
     //EVERY ONE, WITH WHAT IT IS APPROVED AGAINST COMPARED TO WHAT IT SAYS NOW.
     //
     //`kind` IS FILLED AT READ TIME, so an entry written before there were two
     //libraries answers rather than answering undefined. Everything written
     //before there were two was written for work.
-    function all() {
-        return read().map(function (e) {
-            var now = hash(bodyOf(e));
+    async function all() {
+        var ctx = await context();
+        return (await read()).map(function (e) {
+            var now = hash(bodyOf(e, ctx));
             return Object.assign({}, e, {
                 kind: e.kind === 'judge' ? 'judge' : 'task',
                 hash: now,
@@ -98,8 +116,8 @@ module.exports = function library(what, doc, opts) {
         });
     }
 
-    function get(id) {
-        return all().filter(function (e) { return e.id === String(id); })[0] || null;
+    async function get(id) {
+        return (await all()).filter(function (e) { return e.id === String(id); })[0] || null;
     }
 
     function mustFind(list, id) {
@@ -119,7 +137,7 @@ module.exports = function library(what, doc, opts) {
     //approved by whoever wrote it — writing it there IS the reading. Written
     //down the pipe it waits for a person, because a model may write one and may
     //not ratify its own.
-    function save(input, by) {
+    async function save(input, by) {
         var it = input || {};
         var who = by || 'the window';
         var atWindow = who === 'the window';
@@ -129,7 +147,8 @@ module.exports = function library(what, doc, opts) {
             throw new Error('Give it a name. A ' + what + ' with no name is one nobody finds again.');
         }
 
-        var list = read();
+        var list = await read();
+        var ctx = await context();
         var key = it.id || idFor(title);
         if (!key) throw new Error('That name has no letters or numbers in it.');
 
@@ -165,7 +184,7 @@ module.exports = function library(what, doc, opts) {
         });
 
         var was = at === -1 ? null : list[at];
-        var body = bodyOf(made);
+        var body = bodyOf(made, ctx);
         if (o.needsBody && !String(body == null ? '' : body).trim()) {
             throw new Error(o.needsBody);
         }
@@ -173,7 +192,7 @@ module.exports = function library(what, doc, opts) {
         //WHAT COUNTS AS A CHANGE. The body, and anything the caller says is part
         //of what was approved — the contract a prompt runs under is, because
         //changing which rules it is held to changes what somebody agreed to.
-        var changed = !was || hash(bodyOf(was)) !== hash(body)
+        var changed = !was || hash(bodyOf(was, ctx)) !== hash(body)
             || (o.approvedWith || []).some(function (f) { return (was[f] || null) !== (made[f] || null); });
 
         if (!was) {
@@ -207,35 +226,39 @@ module.exports = function library(what, doc, opts) {
             list[at] = made;
         }
 
-        write(list);
-        return Object.assign({}, get(key), { created: at === -1 });
+        //WRITTEN FIRST, so anything the body lives outside the record in — a
+        //job's script — is already on disk when the record naming it is.
+        if (o.onSave) await o.onSave(made, it, ctx);
+        await write(list);
+        return Object.assign({}, await get(key), { created: at === -1 });
     }
 
     //---- a person says they read it ----------------------------------------
     //
     //AGAINST THE BODY AS IT IS NOW, which is what makes the approval mean
     //something later: the next edit lapses it.
-    function approve(id, note) {
-        var list = read();
+    async function approve(id, note) {
+        var list = await read();
+        var ctx = await context();
         var at = mustFind(list, id);
         list[at] = Object.assign({}, list[at], {
             approval: {
                 at: new Date().toISOString(),
                 by: 'the window',
                 note: String(note == null ? '' : note).trim() || null,
-                hash: hash(bodyOf(list[at]))
+                hash: hash(bodyOf(list[at], ctx))
             }
         });
-        write(list);
-        return get(id);
+        await write(list);
+        return await get(id);
     }
 
-    function withdraw(id) {
-        var list = read();
+    async function withdraw(id) {
+        var list = await read();
         var at = mustFind(list, id);
         list[at] = Object.assign({}, list[at], { approval: null });
-        write(list);
-        return get(id);
+        await write(list);
+        return await get(id);
     }
 
     //---- in play, or kept and out of the way -------------------------------
@@ -257,9 +280,9 @@ module.exports = function library(what, doc, opts) {
     //with a door beside it. At the window it is a person doing it and the
     //approval stands; over the wire it waits to be read again, exactly like a
     //rewrite.
-    function use(id, on, how) {
+    async function use(id, on, how) {
         var by = (how && how.by) || 'the window';
-        var list = read();
+        var list = await read();
         var at = mustFind(list, id);
 
         var wanted = on !== false && on !== 'false';
@@ -269,15 +292,18 @@ module.exports = function library(what, doc, opts) {
         if (wanted && wasAside && by !== 'the window') next.approval = null;
 
         list[at] = next;
-        write(list);
-        return get(id);
+        await write(list);
+        return await get(id);
     }
 
-    function forget(id) {
-        var list = read();
+    async function forget(id) {
+        var list = await read();
         var at = mustFind(list, id);
         var found = list[at];
-        write(list.filter(function (e) { return e.id !== found.id; }));
+        await write(list.filter(function (e) { return e.id !== found.id; }));
+        //AND WHATEVER THE BODY LIVED IN. A record naming a script that is still
+        //on disk is a script nothing points at.
+        if (o.onForget) await o.onForget(found, await context());
         return { forgotten: found.id, name: found.name };
     }
 
