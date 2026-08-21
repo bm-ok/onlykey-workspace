@@ -34,6 +34,7 @@ async function plugin(imports, register) {
     //than a tidy-up.
     //
     //The old window has Tasks: Board, Add task — and Judge: Judgement, Judges.
+    //(Those are its names; here the board is under Worker and Add task under Queue.)
     //There is no Recent in either, and there never was. It was scaffolding from
     //early in this port, written before Board and Judgement existed, and it
     //outlived them: two panes showing the same list as the pane next door, with

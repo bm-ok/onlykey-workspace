@@ -1,14 +1,24 @@
 var makeBoard = require('./board');
 
-//the Tasks tab: what has been written, what is running, and what came back.
+//the Worker tab: the library a worker is run under, and what it has done.
 //
-//---- the folder is `worker` and the tab is `Tasks`, and both are right ------
+//---- the folder and the tab agree now, and they did not before -------------
 //
 //A TASK IS A RECORD; A WORKER IS THE THING THAT RUNS IT. The supervisor skill
 //uses both words and means different things by them — "write a task and queue
 //it", "watch a worker's Claude session" — and this half of the app is the second
 //one: the harness, the session, the contract, and what a worker is doing NOW.
-//The tab shows the records, so the tab is still Tasks.
+//
+//THIS TAB WAS CALLED "Tasks" AND THE ARGUMENT FOR IT WAS THAT IT SHOWED THE
+//RECORDS. That was true while a task was the only kind of work there was, and
+//while one folder held both the work and the library describing it. Judging
+//broke both halves: a judgement is work too, and it needs its own jobs, prompts
+//and contracts — so ../judge is the same shape as this, and the tasks they both
+//ask for are ../queue's.
+//
+//SO THE TAB NAMES WHAT IT IS A LIBRARY FOR. `Add task` went with the door that
+//writes one; the board of what this worker has done stays here, because it is
+//about the worker rather than about what is waiting.
 //
 //AND THE ACTIONS KEEP THEIR NAMES. `taskCreate`, `taskProgress`, `tasks` are
 //typed every day, are written into the supervisor skill, and half the drills
@@ -35,6 +45,7 @@ async function plugin(imports, register) {
     //than a tidy-up.
     //
     //The old window has Tasks: Board, Add task — and Judge: Judgement, Judges.
+    //(Those are its names; here the board is under Worker and Add task under Queue.)
     //There is no Recent in either, and there never was. It was scaffolding from
     //early in this port, written before Board and Judgement existed, and it
     //outlived them: two panes showing the same list as the pane next door, with
@@ -45,8 +56,9 @@ async function plugin(imports, register) {
     //to open decides what they believe. The Repositories/Supervisor Graph split
     //was the same shape from the other direction.
 
-    shell.tab({ name: 'Tasks', order: 20 });
-    shell.pane({ tab: 'Tasks', name: 'Board', order: 10, Component: makeBoard(theme, okc, remember) });
+    //THE TAB IS THE PLUGIN'S NAME NOW — see the header for why it was not.
+    shell.tab({ name: 'Worker', order: 20 });
+    shell.pane({ tab: 'Worker', name: 'Board', order: 10, Component: makeBoard(theme, okc, remember) });
 
     //---- AND THE SET OF THINGS A WORKER MAY BE GIVEN ---------------------
     //
@@ -59,9 +71,9 @@ async function plugin(imports, register) {
     //see ../library. Kept apart because a worker's contract governs WRITING and
     //a judge's governs READING, and the account that says whether work holds
     //must not be the account that wrote it.
-    shell.pane({ tab: 'Tasks', name: 'Jobs', order: 30, Component: library('job', 'task') });
-    shell.pane({ tab: 'Tasks', name: 'Prompts', order: 40, Component: library('prompt', 'task') });
-    shell.pane({ tab: 'Tasks', name: 'Contracts', order: 50, Component: library('contract', 'task') });
+    shell.pane({ tab: 'Worker', name: 'Jobs', order: 30, Component: library('job', 'task') });
+    shell.pane({ tab: 'Worker', name: 'Prompts', order: 40, Component: library('prompt', 'task') });
+    shell.pane({ tab: 'Worker', name: 'Contracts', order: 50, Component: library('contract', 'task') });
 
     await register(null, {});
 }

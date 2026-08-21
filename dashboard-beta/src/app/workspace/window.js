@@ -62,7 +62,7 @@ async function plugin(imports, register) {
             var name = d && d.current ? d.current.name : null;
             shell.label('Workspace', name || 'no workspace');
             var why = open ? null : 'Needs a workspace. Open a folder of repositories from the button beside the title.';
-            ['Repositories', 'Tasks'].forEach(function (t) { shell.stop(t, why); });
+            ['Repositories', 'Worker'].forEach(function (t) { shell.stop(t, why); });
         }, function () { /* the pipe may be down; the chrome stays as it was */ });
     }
     chrome();

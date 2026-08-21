@@ -12,7 +12,7 @@ module.exports = function inbox(theme, okc, remember) {
     //`chat`, `repos`, `tasks` — the ids over there. Mapped here, in one table,
     //rather than by each item guessing.
     var VIEWS = {
-        chat: 'Supervisor', repos: 'Repositories', tasks: 'Tasks', queue: 'Queue',
+        chat: 'Supervisor', repos: 'Repositories', tasks: 'Worker', queue: 'Queue',
         judge: 'Judge', actions: 'Actions', runners: 'Runners', live: 'Live',
         keys: 'Keys', tests: 'Test', settings: 'Settings'
     };

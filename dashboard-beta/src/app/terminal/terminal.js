@@ -49,7 +49,7 @@ module.exports = function terminal(theme, okc, shell) {
                         </Note>
                     ) : null}
 
-                    <Button onClick={function () { shell.go('Tasks', 'Board'); }}>Go to the tasks</Button>
+                    <Button onClick={function () { shell.go('Worker', 'Board'); }}>Go to the tasks</Button>
                 </Panel>
 
                 {/* NOT BUILT, AND THE REASON IS NOT "IT WAS FIDDLY".
