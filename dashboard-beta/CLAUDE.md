@@ -16,6 +16,21 @@ five seconds. Do not build. Do not restart.
     edit → poll `node tools/okc.js windowControls --json` until it reflects the
            change → verify
 
+**That promise was false for most of a day and nothing said so.** A hot update
+that nobody accepts is a SUCCESS as far as `reload=true` is concerned — the
+console says `[HMR] Nothing hot updated.` and the page keeps running the old
+code. The window's plugin graph is built once at startup, so no module ever
+accepts one, so every window-side edit landed in the bundle and stopped there.
+
+The server half reloaded correctly throughout, which is what made it so hard to
+see: half the app updated and half did not, and the half that did not was the
+half you look at.
+
+`src/window.js` now reloads the page on any hot update, because for a graph
+built at startup there is no hot swap that could be correct. If a window edit
+ever again fails to appear, check `nw.log` for `Nothing hot updated` before
+touching the code.
+
 **`npm run restart` is only for what does not reload:**
 
 * `src/app/**/main.js` — the process that never reloads
