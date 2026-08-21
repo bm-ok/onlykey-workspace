@@ -8,6 +8,59 @@ module.exports = function branches(theme, okc, remember) {
         Kv, KvRow, Notice, ask
     } = theme;
 
+    //---- what was recorded when this branch was cut ------------------------
+    //
+    //TWO SENTENCES, AND THE SECOND IS THE ONE THAT CANNOT BE RECOVERED LATER.
+    //Why somebody cut it is a note; what it was cut FROM is a fact that stops
+    //being knowable the moment anything is merged into it — a branch cut from a
+    //line looks identical to one cut from somewhere else.
+    //
+    //`from` IS PER REPOSITORY, because a line names a different branch in each
+    //and "cut from default" is three different starting points.
+    function Cut({ note }) {
+        if (!note) return null;
+        //A STRING IS A REAL POSSIBILITY. Older records — and anything a
+        //replacement for this action might return — carry a plain sentence, and
+        //the object shape is what broke this pane once already.
+        if (typeof note === 'string') return <Note>{note}</Note>;
+
+        var from = note.from || {};
+        var pairs = Object.keys(from).map(function (r) { return r + ':' + from[r]; });
+
+        return (
+            <div>
+                {note.reason
+                    ? <Note>
+                        {note.reason}
+                        {note.by || note.made
+                            ? <span className="muted">{' — ' + [note.by, ago(note.made)].filter(Boolean).join(' ')}</span>
+                            : null}
+                    </Note>
+                    : null}
+                {pairs.length ? (
+                    <Note>
+                        {note.group ? 'Cut from the "' + note.group + '" line — ' : 'Cut from '}
+                        <Mono>{pairs.join(', ')}</Mono>
+                    </Note>
+                ) : null}
+            </div>
+        );
+    }
+
+    //WHEN, IN WORDS. A date on a branch card is a date somebody has to subtract
+    //from today; "6 days ago" is the thing they were working out.
+    function ago(at) {
+        if (!at) return null;
+        var ms = Date.now() - new Date(at).getTime();
+        if (!(ms >= 0)) return 'just now';
+        var m = Math.round(ms / 60000);
+        if (m < 1) return 'moments ago';
+        if (m < 60) return m + ' minute' + (m === 1 ? '' : 's') + ' ago';
+        var h = Math.round(m / 60);
+        if (h < 48) return h + ' hour' + (h === 1 ? '' : 's') + ' ago';
+        return Math.round(h / 24) + ' days ago';
+    }
+
     function Row({ b, on, onPick }) {
         return (
             <Card pick on={on} onClick={onPick}>
@@ -330,7 +383,22 @@ module.exports = function branches(theme, okc, remember) {
                                         ? <KvRow label="is the default in">{on.asDefault.join(', ')}</KvRow>
                                         : null}
                                 </Kv>
-                                {on.note ? <Note>{on.note}</Note> : null}
+                                {/* `note` IS THE CUT RECORD, NOT A SENTENCE —
+                                    {reason, by, made, cutIn, group, from} — and
+                                    this rendered it straight into a <Note>,
+                                    which React refuses: "Objects are not valid
+                                    as a React child". The whole pane went to the
+                                    error boundary the moment anything was
+                                    selected, because nothing is selected on
+                                    first draw.
+
+                                    WHAT IT IS FOR is the two sentences the app
+                                    being ported from writes: why somebody cut
+                                    it, and what it was cut FROM. The second is
+                                    the one that cannot be worked out later — a
+                                    branch that has been merged into looks
+                                    identical to one cut from somewhere else. */}
+                                <Cut note={on.note} />
                             </Panel>
                         ) : null}
                     </Col>

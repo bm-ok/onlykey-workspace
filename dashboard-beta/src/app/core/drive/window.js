@@ -231,6 +231,22 @@ async function plugin(imports, register) {
                 //Reported rather than inferred. Anything reading this from
                 //outside would otherwise have to guess from an empty list, which
                 //is exactly the guess that goes wrong.
+                //WHETHER THE PANE CRASHED, WHICH IS NOT THE SAME AS BEING EMPTY
+                //AND IS NOT THE SAME AS BEING FINE.
+                //
+                //../../ui/shell's error boundary renders TEXT when a pane throws
+                //— so `content` below counted it, and the walk reported a pane
+                //that had blown up as "came up, has something on screen". Every
+                //check this app has for a broken pane was satisfied by the
+                //message saying it was broken.
+                //
+                //The boundary stamps `data-broke` with the message; this reads
+                //the attribute rather than the sentence, because a sentence gets
+                //reworded and an attribute is a decision.
+                broke: (function () {
+                    var at = [].slice.call(document.querySelectorAll('[data-broke]')).filter(seen)[0];
+                    return at ? (at.getAttribute('data-broke') || 'the pane threw, with no message') : null;
+                })(),
                 loading: !![].slice.call(document.querySelectorAll('.skel'))
                     .filter(seen)
                     //A SPECIMEN IS NOT A WAIT. The Kit pane exhibits a skeleton

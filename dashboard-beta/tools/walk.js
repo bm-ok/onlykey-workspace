@@ -143,6 +143,7 @@ function main () {
 
   const bad = []
   const bare = []
+  const broke = []
   const slow = []
   let walked = 0
 
@@ -180,6 +181,17 @@ function main () {
           // reported as fine.
           slow.push(name)
           if (!quiet) console.log(`  ${name.padEnd(28)} still arriving`)
+        } else if (seen.broke) {
+          // A PANE THAT CRASHED IS NOT A PANE THAT CAME UP, and until now this
+          // tool could not tell the difference. The error boundary renders TEXT,
+          // so `content` counted it and every check below was satisfied by the
+          // message saying the pane was broken -- 44 of 44 reported fine while
+          // one had blown up the moment anything was selected in it.
+          //
+          // CHECKED FIRST, because a crashed pane has both content and controls
+          // and would otherwise be caught by whichever branch matched first.
+          broke.push(`${name} — ${seen.broke}`)
+          if (!quiet) console.log(`  ${name.padEnd(28)} CRASHED: ${seen.broke}`)
         } else if (!anything) {
           // NO CONTROLS IS NOT NO CONTENT, and conflating them is how this tool
           // reported "nothing on screen" for a pane that had just been
@@ -211,9 +223,18 @@ function main () {
     }
   }
 
-  console.log(`\nwalked ${walked}, ${bad.length} did not come up, ${bare.length} had nothing on screen`)
+  console.log(`\nwalked ${walked}, ${bad.length} did not come up, ${broke.length} crashed, ${bare.length} had nothing on screen`)
 
-  if (bad.length) {
+  //A CRASH EXITS NON-ZERO, like a pane that did not come up at all. It used to
+  //be invisible: the boundary's own message satisfied every check this tool
+  //had, so a pane that blew up counted towards "44 of 44 fine".
+  if (broke.length) {
+    console.error('\nthese crashed while rendering:')
+    for (const b of broke) console.error('  ' + b)
+    console.error('\nThe pane is caught by its boundary, so the window stays up and the message is on screen where the pane was.')
+  }
+
+  if (bad.length || broke.length) {
     console.error('\nthese did not come up:')
     for (const b of bad) console.error('  ' + b)
     console.error('\nA pane that throws while rendering leaves a blank page and no error anywhere a file check can see it.')

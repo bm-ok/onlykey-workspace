@@ -161,7 +161,16 @@ async function plugin(imports, register) {
         render() {
             if (!this.state.err) return this.props.children;
             return (
-                <div className="pane active">
+                //MARKED SO SOMETHING OUTSIDE CAN SEE IT, and this is not
+                //decoration. The boundary renders TEXT, so `windowControls`
+                //counted it as content and `npm run walk` reported a pane that
+                //had crashed as "came up, has something on screen" — which is
+                //the exact failure the walk exists to catch, passing the walk.
+                //
+                //Found by a person opening the pane and it going blank, after
+                //the walk had said 44 of 44 were fine. An attribute is read
+                //rather than the sentence, because a sentence gets reworded.
+                <div className="pane active" data-broke={String((this.state.err && this.state.err.message) || this.state.err)}>
                     <p className="note bad">
                         <strong>{(this.props.what || 'This') + ' could not be drawn. '}</strong>
                         {String(this.state.err && this.state.err.message || this.state.err)}
