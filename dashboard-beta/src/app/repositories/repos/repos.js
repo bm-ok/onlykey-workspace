@@ -316,10 +316,29 @@ module.exports = function repos(theme, okc) {
                         <Mono>{r.default || '(none)'}</Mono>
                         <span className="muted">{r.head ? '  at ' + String(r.head).slice(0, 8) : ''}</span>
                     </KvRow>
+                    {/* THE HOST AND THE NAME, NOT THE URL, and that is a rule
+                        rather than a shortening. A remote can carry a
+                        credential — `https://someone:ghp_…@github.com/o/r` is a
+                        perfectly ordinary origin — and this window is
+                        photographed several times a day, by this app, on
+                        purpose. ../../git's `origin()` does not return the URL
+                        at all for that reason, so there is nothing here to
+                        leak; this row said nothing until it stopped asking for
+                        one.
+
+                        Nothing is lost: the host answers "is this GitHub", the
+                        owner and name answer "which repository", and the URL
+                        only ever added a way for a token to end up in a
+                        screenshot. */}
                     <KvRow label="origin">
-                        {rem
-                            ? <Mono>{rem.url}</Mono>
-                            : <span className="bad">no remote called origin — nothing here can be pushed onward</span>}
+                        {rem && rem.owner
+                            ? <span>
+                                <Mono>{rem.owner + '/' + rem.repo}</Mono>
+                                <span className="muted">{'  on ' + (rem.host || 'somewhere')}</span>
+                            </span>
+                            : rem
+                                ? <span className="bad">{'origin is ' + (rem.host || 'somewhere') + ', and this cannot tell which repository — nothing here can be pushed onward'}</span>
+                                : <span className="bad">no remote called origin — nothing here can be pushed onward</span>}
                     </KvRow>
                     {asked && r.may ? (
                         <KvRow label="this token may">

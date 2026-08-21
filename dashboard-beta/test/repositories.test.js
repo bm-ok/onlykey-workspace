@@ -196,7 +196,11 @@ test('a repository the token may use reads as usable, with what is open', async 
     assert.equal(row.reachable, true);
     assert.deepEqual(row.may, { code: true, pulls: true });
     assert.equal(row.openPulls, 2);
-    assert.equal(row.defaultBranch, 'main');
+    //NAMED `upstreamDefault` RATHER THAN `defaultBranch`, because the row also
+    //carries the LOCAL default and they are different questions — the branch
+    //this checkout is on, and the one GitHub calls default. Conflating them is
+    //how "behind by 3" gets measured against the wrong thing.
+    assert.equal(row.upstreamDefault, 'main');
     assert.equal(row.why, null);
     assert.match(said.note, /reachable/);
 });
@@ -323,20 +327,7 @@ test('a name that is not in the workspace is refused, and the refusal says what 
 //without the rest of the shape: if it IS defined here, its rows must carry what
 //the pane reads off them.
 //---------------------------------------------------------------------------
-test('if the read is defined here at all, it carries what the pane reads', async () => {
-    const { actions } = await anApp(REPO_OK);
-    const mine = actions.list().map((a) => a.name);
 
-    if (!mine.includes('repositories')) return;   // still relayed, which is the state this was written in
-
-    const said = await actions.call('repositories', {});
-    const row = (said.repos || [])[0] || {};
-    for (const field of ['repo', 'path', 'default', 'head', 'branches', 'remote',
-        'reachable', 'why', 'may', 'openPulls', 'openIssues', 'target', 'inStep', 'stale']) {
-        assert.ok(field in row,
-            'repositories now shadows the relayed action but its rows have no `' + field + '` — the pane reads that');
-    }
-});
 
 //WHAT IS KEPT IS PER WORKSPACE, which is what state.here is for.
 test('what a check learns is kept, and kept per workspace', async () => {
@@ -348,4 +339,148 @@ test('what a check learns is kept, and kept per workspace', async () => {
     await assert.rejects(() => actions.call('repositoriesCheck', {}),
         /no repositories|No workspace|nowhere/i,
         'with no workspace open it went and asked about repositories nobody had opened');
+});
+
+//---------------------------------------------------------------------------
+//5. THE READ, WHICH IS WHAT THE PANE DRAWS.
+//
+//IT SHADOWS THE RELAYED ACTION NOW, so every field the pane reads off a row has
+//to be here. A thinner one would blank two thirds of the pane with `undefined`,
+//which renders as nothing rather than as an error — the worst available failure
+//for a port, because it looks like it worked.
+//---------------------------------------------------------------------------
+
+const PANE_READS = [
+    'repo', 'path', 'default', 'head', 'branches', 'remote',
+    'checked', 'gathered', 'about', 'knownFor', 'stale',
+    'reachable', 'why', 'may', 'accountMay',
+    'parent', 'source', 'chained', 'intoParent', 'intoSource',
+    'branchesThere', 'privateRepo', 'fork', 'upstreamDefault', 'upstreamHead',
+    'openPulls', 'pulls', 'issues', 'openIssues', 'issuesOn', 'target', 'inStep'
+];
+
+test('every field the pane reads off a row is on the row', async () => {
+    const { actions } = await anApp(REPO_OK);
+    const said = await actions.call('repositories', {});
+    const row = said.repos.find((r) => r.repo === 'repo-one');
+
+    assert.ok(row, 'the workspace repository is not in the list at all');
+    for (const field of PANE_READS) {
+        assert.ok(field in row, 'the row has no `' + field + '`, and the pane reads it');
+    }
+});
+
+test('the local half is there before anybody has asked GitHub anything', async () => {
+    const { actions, asked } = await anApp(REPO_OK);
+    const said = await actions.call('repositories', {});
+    const row = said.repos.find((r) => r.repo === 'repo-one');
+
+    assert.ok(row.path, 'no path');
+    assert.equal(row.default, 'master', 'the local default branch is wrong');
+    assert.match(row.head, /^[0-9a-f]{7,}$/, 'the local head is not a sha');
+    assert.equal(row.branches, 1);
+    assert.equal(row.remote.owner, 'anowner');
+
+    //AND NOTHING WAS ASKED. This is drawn on a timer.
+    assert.equal(asked.length, 0, 'reading the list spent a round trip');
+    assert.equal(row.checked, null, 'it claimed to have asked when it had not');
+});
+
+test('reading the list asks GitHub nothing, even after a check', async () => {
+    const { actions, asked } = await anApp(REPO_OK);
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const before = asked.length;
+    assert.ok(before > 0, 'the check asked nothing, so this proves nothing');
+
+    await actions.call('repositories', {});
+    await actions.call('repositories', {});
+    assert.equal(asked.length, before, 'reading the list spent a round trip');
+});
+
+//---------------------------------------------------------------------------
+//A NOTE FULL OF CONFIDENT FACTS ABOUT A REPOSITORY THIS ONE NO LONGER IS.
+//
+//The dangerous shape is not an empty panel, it is a FULL one describing
+//somewhere else. `about` is recorded on the way out so `stale` can compare it
+//against wherever origin points now.
+//---------------------------------------------------------------------------
+test('moving origin makes what was learnt read as stale, not as current', async () => {
+    const { actions } = await anApp(REPO_OK);
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    let row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+    assert.equal(row.stale, false);
+    assert.equal(row.knownFor, 'this remote');
+
+    git_setRemote('https://github.com/somebody/else.git');
+    row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+    assert.equal(row.stale, true, 'facts about the old remote are being shown as current');
+    assert.equal(row.knownFor, 'anowner/arepo', 'it does not say what the facts are actually about');
+
+    git_setRemote('https://github.com/anowner/arepo.git');
+});
+
+//---------------------------------------------------------------------------
+//WHERE WORK GOES, WHICH IS A DECISION AND NOT A FACT.
+//---------------------------------------------------------------------------
+
+test('unset means your own remote, and it says which it is showing', async () => {
+    const { actions } = await anApp(REPO_OK);
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+
+    assert.equal(row.target.on, 'anowner/arepo');
+    assert.equal(row.target.chosen, false, 'it claimed somebody picked this');
+    assert.equal(row.target.upstream, false);
+    assert.equal(row.issuesOn, 'anowner/arepo');
+});
+
+test('a chosen target is kept, said with who and why, and can be cleared', async () => {
+    const { actions } = await anApp(REPO_OK);
+
+    const set = await actions.call('repoTargetSet', { repo: 'repo-one', on: 'upstream/theirs', why: 'we send work up the chain' });
+    assert.equal(set.target.on, 'upstream/theirs');
+    assert.equal(set.target.chosen, true);
+    assert.equal(set.target.upstream, true);
+    assert.equal(set.target.by, 'the window');
+    assert.match(set.target.why, /up the chain/);
+
+    let row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+    assert.equal(row.issuesOn, 'upstream/theirs', 'issues are still read from the fork');
+
+    //A CHECK MUST NOT RESET IT. It is a person's choice, not something GitHub
+    //answered, and rewriting the note wholesale would quietly undo it.
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+    assert.equal(row.target.on, 'upstream/theirs', 'a check threw away where work goes');
+
+    const cleared = await actions.call('repoTargetSet', { repo: 'repo-one', on: '' });
+    assert.equal(cleared.target.chosen, false);
+    assert.equal(cleared.target.on, 'anowner/arepo', 'clearing left it pointed at nowhere');
+});
+
+test('a target that is not owner and repository is refused', async () => {
+    const { actions } = await anApp(REPO_OK);
+    await assert.rejects(() => actions.call('repoTargetSet', { repo: 'repo-one', on: 'nonsense' }), /owner/);
+    await assert.rejects(() => actions.call('repoTargetSet', { on: 'a/b' }), /Which repository/);
+});
+
+//GITHUB RETURNS PULL REQUESTS FROM THE ISSUES ENDPOINT, so a list drawn from it
+//without filtering shows every pull request twice — once as itself, once as an
+//issue.
+test('a pull request is not counted as an issue', async () => {
+    const { actions } = await anApp(Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/issues': {
+            status: 200,
+            body: [
+                { number: 7, title: 'a real issue', user: { login: 'someone' } },
+                { number: 8, title: 'actually a pull request', pull_request: { url: 'x' }, user: { login: 'someone' } }
+            ]
+        }
+    }));
+
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+
+    assert.equal(row.openIssues, 1, 'a pull request was counted as an issue');
+    assert.equal(row.issues[0].number, 7);
 });
