@@ -144,6 +144,28 @@ async function plugin(imports, register) {
             return { actions: mine, missing: missing };
         },
 
+        //THE SAME NAME, ASKED OF THE OTHER HALF ON PURPOSE.
+        //
+        //`call` tries this table first, which is what makes a moved action shadow
+        //the one it replaces and is the whole migration path. It also means an
+        //action that relays ITS OWN NAME calls itself: `queueState` here asking
+        //`call('queueState')` for the half it has not taken over yet recurses
+        //until the stack ends, and what it looks like from outside is the app
+        //hanging with no error at all.
+        //
+        //So this skips the table and goes straight to the pipe. It is for one
+        //situation and should stay rare: an action that has moved in, needs part
+        //of the answer the old half still owns, and cannot ask for it by any
+        //other name. Anything else should be reaching for a name it does NOT own,
+        //where `call` does the right thing on its own.
+        elsewhere: async function (name, args) {
+            for (var i = 0; i < fallbacks.length; i++) {
+                var answered = await fallbacks[i](name, args || {});
+                if (answered !== undefined) return answered;
+            }
+            throw new Error('Nothing beyond this app answers "' + name + '".');
+        },
+
         call: async function (name, args) {
             var spec = table.get(name);
             if (spec) return spec.run(args || {});
