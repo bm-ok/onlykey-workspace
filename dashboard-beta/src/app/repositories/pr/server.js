@@ -22,7 +22,7 @@
 //reads it on a timer.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'git', 'github', 'keys', 'workspace', 'state'];
+plugin.consumes = ['app', 'log', 'git', 'github', 'keys', 'workspace', 'state', 'settings'];
 plugin.provides = ['prcuts'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -33,6 +33,7 @@ async function plugin(imports, register) {
     var keys = imports.keys;
     var workspace = imports.workspace;
     var state = imports.state;
+    var settings = imports.settings;
 
     //---- the three stores, all per workspace -------------------------------
     async function landings() { return state.here.doc('landings'); }
@@ -208,6 +209,127 @@ async function plugin(imports, register) {
         };
     }
 
+    //=======================================================================
+    //SENDING A CHANGE OUT, WHICH IS THE ONE ACT WITH CONSEQUENCES OUTSIDE THIS
+    //HOST.
+    //
+    //THE GATE IN THE APP BEING PORTED FROM IS A JUDGEMENT. Over the pipe,
+    //`prCutMake` requires that something has read the code — a judgement of the
+    //line or of any branch it is made of, done, not stale against what it read,
+    //and not rejected. Without it, the one step where a change leaves this host
+    //and reaches somebody else's repository would be the only step taken on
+    //nothing but a model's own confidence.
+    //
+    //THAT GATE CANNOT BE PORTED YET, BECAUSE THE JUDGE HAS NOT BEEN. Staleness
+    //is measured by `staleAgainst` and `tipsFor`, which are internals of the
+    //judging half rather than actions anything can ask for — so a port today
+    //could check that a judgement EXISTS and could not check that it describes
+    //what is there NOW.
+    //
+    //SO THE PIPE IS REFUSED OUTRIGHT INSTEAD. That is stricter than the original,
+    //deliberately: a gate ported at two thirds is worse than no gate, because it
+    //reads as the whole one. A person at the window may still send — they have
+    //read the change, or decided they need not, which is the same boundary as
+    //approving a job.
+    //
+    //WHEN THE JUDGE PORTS, this becomes the three-part check and not before.
+    function notFromThePipe(a) {
+        if (!a || !a._overTheWire) return;
+        throw new Error(
+            'A change is sent out from the window, by a person. Over the pipe this needs a judgement — '
+            + 'something that has read the code, is not stale against what it read, and did not reject it — '
+            + 'and the judging half has not been ported here yet, so that check cannot be made honestly. '
+            + 'It is refused rather than half-checked: a gate that only asks whether a judgement EXISTS '
+            + 'would pass a judgement of an earlier state, which is exactly as useful as none.');
+    }
+
+    //WHICH REPOSITORIES ACTUALLY CARRY SOMETHING. A cut that opens a pull request
+    //in a repository with nothing in it is noise in three places at once — a
+    //reviewer's list, the cut's own state, and the branch board.
+    async function carrying(source, target) {
+        var lines = await relayed('lines');
+        var all = (lines && (lines.lines || lines.groups)) || [];
+        var from = all.filter(function (g) { return g.name === source; })[0];
+        var into = all.filter(function (g) { return g.name === target; })[0];
+        if (!from) throw new Error('There is no line called "' + source + '".');
+        if (!into) throw new Error('There is no line called "' + target + '".');
+
+        var out = [];
+        for (var i = 0; i < from.on.length; i++) {
+            var p = from.on[i];
+            if (!p.stillHere || !p.there) continue;
+            var base = (into.on.filter(function (x) { return x.repo === p.repo; })[0] || {}).branch;
+            if (!base) continue;
+
+            var ahead = 0;
+            try { ahead = (await git.commits(p.repo, base, p.branch)).length; } catch (e) { ahead = 0; }
+            if (ahead > 0) out.push({ repo: p.repo, head: p.branch, base: base, ahead: ahead });
+        }
+        return { from: from, into: into, on: out };
+    }
+
+    async function relayed(name, args) {
+        if (!actions) return null;
+        try { return await actions.call(name, args || {}); }
+        catch (e) { return null; }
+    }
+
+    //---- opening one, in the right place ------------------------------------
+    //
+    //IN THE PARENT, WHEN THERE IS ONE. A pull request from a fork is created in
+    //the repository being merged INTO, with the head written `owner:branch`.
+    //
+    //GETTING THIS WRONG DOES NOT FAIL LOUDLY. It opens a pull request inside the
+    //fork, from the fork's branch into the fork's own default — which looks
+    //perfectly normal, reports success, and lands the work nowhere anybody is
+    //watching. That is the worst shape a bug can have here, and it is why the
+    //target is asked for rather than assumed.
+    async function openOne(repo, want) {
+        var remote = await git.origin(repo);
+        if (!remote || remote.kind !== 'github') {
+            return { repo: repo, opened: false, why: '"' + repo + '" has no GitHub remote to open a pull request on.' };
+        }
+
+        var known = await relayed('repositories');
+        var row = ((known && known.repos) || []).filter(function (r) { return r.repo === repo; })[0];
+        var target = want.into || (row && row.target && row.target.on) || (remote.owner + '/' + remote.repo);
+        var bits = String(target).split('/');
+        var crossing = target !== (remote.owner + '/' + remote.repo);
+        var head = crossing ? remote.owner + ':' + want.head : want.head;
+
+        //DOES THE BASE EVEN EXIST THERE, asked before anything is sent. GitHub
+        //answers this with `PullRequest base invalid` in a 422, which is accurate
+        //and says nothing a person can act on — it does not name the base and it
+        //does not say where it was looked for.
+        var there = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/branches/' + encodeURIComponent(want.base));
+        if (there.status === 404) {
+            return {
+                repo: repo, opened: false,
+                why: target + ' has no branch called "' + want.base + '", so a pull request cannot be opened against it.'
+                    + (row && row.target && row.target.chosen
+                        ? ' That is where "' + repo + '" sends work.'
+                        : ' Nothing has been picked for "' + repo + '", so work stays on your own remote — walk the fork chain and say where work goes.')
+            };
+        }
+
+        var body = { title: want.title, body: want.body, head: head, base: want.base };
+        if (want.draft) body.draft = true;
+        if (crossing) body.head_repo = remote.owner + '/' + remote.repo;
+
+        var r = await github.call('POST', '/repos/' + bits[0] + '/' + bits[1] + '/pulls', body);
+        if (r.status === 201) {
+            return {
+                repo: repo, opened: true, number: r.body.number, url: r.body.html_url,
+                state: r.body.state, into: target, head: head, base: want.base
+            };
+        }
+        return {
+            repo: repo, opened: false,
+            why: (r.body && r.body.message) || ('GitHub answered ' + r.status)
+                + (r.body && r.body.errors ? ' — ' + JSON.stringify(r.body.errors) : '')
+        };
+    }
+
     var undo = [];
     if (actions) {
         undo.push(actions.define('prCuts', {
@@ -323,6 +445,230 @@ async function plugin(imports, register) {
 
                 var row = (await blocksOn()).filter(function (b) { return b.id === id; })[0];
                 return { blocks: await blocksOn(), note: '"' + row.label + '" is ' + (want ? 'added' : 'not added') + '.' };
+            }
+        }));
+
+        //---- sending it out --------------------------------------------------
+        //
+        //ONE LANDING, N PULL REQUESTS. Each repository that carries something
+        //gets its branch pushed and a pull request opened, and the whole thing is
+        //recorded under one key so it can be read as one change afterwards.
+        //
+        //PUSHED FIRST, THEN OPENED. A pull request against a branch the far end
+        //has never seen is a 422 with nothing useful in it.
+        //
+        //AND THE CROSSLINKS ARE WRITTEN LAST, in a second pass, because the
+        //numbers do not exist until every one of them is open.
+        undo.push(actions.define('prCutMake', {
+            about: 'Push a line onward and open a pull request per repository, tracked together as one landing',
+            takes: ['source', 'target', 'title', 'body', 'into', 'draft'],
+            run: async function (args) {
+                var a = args || {};
+                notFromThePipe(a);
+
+                var source = String(a.source || '').trim();
+                var target = String(a.target || '').trim();
+                if (!source || !target) throw new Error('Say which line is being proposed and which it would go into.');
+                if (!String(a.title || '').trim()) throw new Error('Give it a title — it is the first thing a reviewer reads.');
+
+                var pair = await carrying(source, target);
+                if (!pair.on.length) {
+                    throw new Error('"' + source + '" carries nothing that "' + target + '" does not already have.');
+                }
+
+                //THE CREDENTIAL COMES FROM ../../keys AND IS NOT LOOKED AT HERE.
+                //`env` and `helper` go straight to git; this file never reads
+                //either, and could not say what is in them.
+                var env = keys.github.envForPush();
+                var helper = keys.github.credentialHelper;
+
+                var doc = await landings();
+                var opened = [];
+
+                for (var i = 0; i < pair.on.length; i++) {
+                    var w = pair.on[i];
+
+                    var sent = await git.push(w.repo, w.head, { env: env, helper: helper });
+                    if (!sent.pushed) {
+                        opened.push({ repo: w.repo, opened: false, head: w.head, base: w.base, why: 'it could not be pushed — ' + sent.why });
+                        continue;
+                    }
+
+                    var note = ((await relayed('branchBoard')) || {});
+                    var row = ((note.branches) || []).filter(function (b) { return b.name === w.head; })[0] || null;
+
+                    var body = await compose(a.body, {
+                        branch: w.head, me: w.repo,
+                        repos: pair.on.map(function (x) { return x.repo; }),
+                        note: row ? row.note : null,
+                        carries: row ? row.on : [],
+                        pulls: opened
+                    });
+
+                    opened.push(await openOne(w.repo, {
+                        head: w.head, base: w.base, title: String(a.title).trim(),
+                        body: body, into: a.into || null, draft: !!a.draft
+                    }));
+                }
+
+                //RECORDED WHATEVER HAPPENED, including the ones that did not
+                //open. A cut where two of three went out is the state somebody
+                //most needs to see, and losing the record of it would leave two
+                //pull requests nothing here knows about.
+                var all = doc.read({}) || {};
+                var k = key(source, target);
+                var was = all[k] || { source: source, target: target, opened: new Date().toISOString(), by: actions.whoAsked(a), pulls: [] };
+                var merged = was.pulls.slice();
+                opened.forEach(function (p) {
+                    var at = merged.map(function (x) { return x.repo; }).indexOf(p.repo);
+                    if (at < 0) merged.push(p); else merged[at] = Object.assign({}, merged[at], p);
+                });
+                all[k] = Object.assign({}, was, { pulls: merged, touched: new Date().toISOString() });
+                doc.write(all);
+
+                //AND THE DRAFT IS DONE WITH, because it has been sent.
+                try {
+                    var dd = await drafts();
+                    var written = dd.read({}) || {};
+                    if (written[k]) { delete written[k]; dd.write(written); }
+                } catch (e) { /* nothing was written for it */ }
+
+                var went = opened.filter(function (p) { return p.opened; });
+                var stuck = opened.filter(function (p) { return !p.opened; });
+                log.good('cut "' + source + '" into "' + target + '" — ' + went.length + ' pull request(s) opened');
+
+                return {
+                    source: source, target: target, pulls: opened, opened: went.length,
+                    note: went.length + ' of ' + opened.length + ' opened.'
+                        + (stuck.length ? ' ' + stuck.map(function (p) { return p.repo + ' — ' + p.why; }).join('; ') : '')
+                };
+            }
+        }));
+
+        //---- landing it ------------------------------------------------------
+        //
+        //A PERSON PRESSING THE BUTTON IN THE WINDOW IS THAT PERSON LANDING THEIR
+        //OWN CHANGE. Anything else is a model merging into somebody's repository,
+        //and that has to have been said out loud first — which is what testing
+        //mode being on for this workspace means.
+        undo.push(actions.define('prCutLand', {
+            about: 'Merge every pull request in a cut, so the change lands as one thing',
+            takes: ['source', 'target', 'how'],
+            run: async function (args) {
+                var a = args || {};
+                if (a._overTheWire) {
+                    var may = await settings.allowed();
+                    if (!may.allowed) {
+                        throw new Error('Landing a cut from outside the window is only done while testing mode is on for this workspace. '
+                            + may.why + ' A person pressing the button in the window is that person landing their own change; '
+                            + 'this is a model merging into somebody\'s repository, and that needs to have been said out loud first.');
+                    }
+                }
+
+                var all = await read(landings);
+                if (all === null) throw new Error('No workspace is open.');
+                var rec = all[key(a.source, a.target)];
+                if (!rec) throw new Error('Nothing has been cut from "' + a.source + '" into "' + a.target + '" from here.');
+
+                var at = await stateOf(rec);
+                var open = at.pulls.filter(function (p) { return p.number && p.state !== 'merged' && p.state !== 'closed'; });
+                var already = at.pulls.filter(function (p) { return p.state === 'merged'; });
+
+                if (!open.length) {
+                    return {
+                        merged: [], note: already.length
+                            ? 'Already landed: all ' + already.length + ' pull request(s) are merged.'
+                            : 'There is nothing open to merge in this cut.'
+                    };
+                }
+
+                var how = String(a.how || 'squash');
+                var done = [];
+                for (var i = 0; i < open.length; i++) {
+                    var p = open[i];
+                    var bits = String(p.into || '').split('/');
+                    if (bits.length !== 2) {
+                        var remote = await git.origin(p.repo);
+                        bits = [remote.owner, remote.repo];
+                    }
+                    var r = await github.call('PUT', '/repos/' + bits[0] + '/' + bits[1] + '/pulls/' + p.number + '/merge',
+                        { merge_method: how });
+                    done.push({
+                        repo: p.repo, number: p.number,
+                        merged: r.status === 200,
+                        why: r.status === 200 ? null : ((r.body && r.body.message) || ('GitHub answered ' + r.status))
+                    });
+                }
+
+                var went = done.filter(function (d) { return d.merged; });
+                log.warn('landed ' + went.length + ' of ' + done.length + ' in "' + a.source + '"');
+                return {
+                    merged: done, landed: went.length,
+                    //PARTLY LANDED IS THE STATE WORTH SAYING LOUDEST. The whole
+                    //point of a cut is that it lands as one thing, and half of it
+                    //being in is the situation somebody has to deal with by hand.
+                    note: went.length === done.length
+                        ? 'Landed: ' + went.length + ' pull request(s) merged.'
+                        : went.length + ' of ' + done.length + ' merged — this change is PARTLY IN. '
+                            + done.filter(function (d) { return !d.merged; })
+                                .map(function (d) { return d.repo + ' #' + d.number + ' — ' + d.why; }).join('; ')
+                };
+            }
+        }));
+
+        undo.push(actions.define('prCutUpdate', {
+            about: 'Change the title, the description, or the state of every pull request in a cut at once',
+            takes: ['source', 'target', 'title', 'body', 'state'],
+            run: async function (args) {
+                var a = args || {};
+                notFromThePipe(a);
+
+                var all = await read(landings);
+                if (all === null) throw new Error('No workspace is open.');
+                var rec = all[key(a.source, a.target)];
+                if (!rec) throw new Error('Nothing has been cut from "' + a.source + '" into "' + a.target + '" from here.');
+
+                var fields = {};
+                if (a.title != null) fields.title = String(a.title);
+                if (a.body != null) fields.body = String(a.body);
+                if (a.state != null) fields.state = String(a.state);
+                if (!Object.keys(fields).length) throw new Error('Say what to change — a title, a description, or the state.');
+
+                var done = [];
+                for (var i = 0; i < (rec.pulls || []).length; i++) {
+                    var p = rec.pulls[i];
+                    if (!p.number) continue;
+                    var bits = String(p.into || '').split('/');
+                    if (bits.length !== 2) {
+                        var remote = await git.origin(p.repo);
+                        bits = [remote.owner, remote.repo];
+                    }
+                    var r = await github.call('PATCH', '/repos/' + bits[0] + '/' + bits[1] + '/pulls/' + p.number, fields);
+                    done.push({
+                        repo: p.repo, number: p.number, changed: r.status === 200,
+                        why: r.status === 200 ? null : ((r.body && r.body.message) || ('GitHub answered ' + r.status))
+                    });
+                }
+
+                //WHAT WAS SAID IS KEPT, so the next thing that composes a body
+                //starts from what is actually on the pull requests.
+                var doc = await landings();
+                var now = doc.read({}) || {};
+                var k = key(a.source, a.target);
+                if (now[k]) {
+                    now[k] = Object.assign({}, now[k], {
+                        said: Object.assign({}, now[k].said || {}, fields, { at: new Date().toISOString() })
+                    });
+                    doc.write(now);
+                }
+
+                var went = done.filter(function (d) { return d.changed; });
+                return {
+                    on: done, changed: went.length,
+                    note: went.length + ' of ' + done.length + ' changed.'
+                        + (went.length === done.length ? '' : ' ' + done.filter(function (d) { return !d.changed; })
+                            .map(function (d) { return d.repo + ' #' + d.number + ' — ' + d.why; }).join('; '))
+                };
             }
         }));
 
