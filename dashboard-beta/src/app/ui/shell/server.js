@@ -17,7 +17,7 @@
 //the line between "show me that" and "do that for me" is one to keep on purpose
 //rather than by accident.
 
-plugin.consumes = ['app'];
+plugin.consumes = ['app', 'pages'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -35,8 +35,9 @@ async function plugin(imports, register) {
             var want = { tab: args && args.tab, pane: args && args.pane };
             if (!want.tab && !want.pane) throw new Error('say which: --tab, or --pane, or both');
 
-            var pages = [...io.sockets.sockets.values()];
+            var pages = imports.pages.all();
             if (!pages.length) throw new Error('no page is connected — the window may be closed, or still loading');
+            var live = imports.pages.live();
 
             //ASKED OF EVERY PAGE, and the answer comes back from each. A browser
             //tab and the window are both real clients here; showing something in
@@ -50,11 +51,34 @@ async function plugin(imports, register) {
                 });
             }));
 
+            //MOVED IN EVERY PAGE, ANSWERED BY ONE — and it has to be the SAME
+            //one everything else reads, or the answer describes a page nobody is
+            //looking at.
+            //
+            //THIS TOOK THE FIRST PAGE THAT SAID YES, and the tab list in that
+            //answer is what `npm run walk` builds its whole run from. With an
+            //abandoned page still connected — a browser tab from an earlier run,
+            //holding a plugin graph three edits old — the walk enumerated ITS
+            //tabs and then navigated the live one, which refused a tab that no
+            //longer exists. The walk did not report a difference; it crashed
+            //with a stack trace, which is the third form this one fault has
+            //taken.
+            //
+            //WHICH PAGE IS LIVE IS ../../core/io's ANSWER, so `show`,
+            //`windowControls` and `capture` cannot disagree about it.
+            var at = live ? pages.indexOf(live) : -1;
+            var mine = at >= 0 && said[at] && said[at].ok ? said[at] : null;
+
             var worked = said.filter(function (s) { return s && s.ok; });
             if (!worked.length) {
-                throw new Error((said[0] && said[0].error) || 'no page could show that');
+                //THE LIVE PAGE'S REFUSAL, not the first one's. Its list of tabs
+                //is the one that matches what a person is looking at, and a
+                //refusal naming somebody else's tabs sends the reader hunting
+                //for a pane that is on screen in front of them.
+                var why = (at >= 0 && said[at] && said[at].error) || (said[0] && said[0].error);
+                throw new Error(why || 'no page could show that');
             }
-            return worked[0];
+            return mine || worked[0];
         }
     });
 

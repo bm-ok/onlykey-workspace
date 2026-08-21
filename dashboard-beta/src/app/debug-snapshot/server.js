@@ -115,6 +115,9 @@ async function plugin(imports, register) {
         //is guarding against was silent for an hour: an edit lands, the bundle
         //serves it, the capture does not show it, and every symptom points at the
         //code rather than at the camera.
+        //THE SAME RULE ../core/io APPLIES for `windowControls`, and the last
+        //socket is what it returns — kept in step by asking for it rather than
+        //by both files agreeing to write the same line.
         var use = all[all.length - 1];
         var window = all.filter(function (a) { return a && a.window; });
         if (window.length === 1) use = window[0];

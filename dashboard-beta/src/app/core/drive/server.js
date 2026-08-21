@@ -37,11 +37,15 @@
 //wrong.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app'];
+plugin.consumes = ['app', 'pages'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
     var io = host.io;
+
+    //ASKED OF ../io, so there is ONE answer to "which page is somebody looking
+    //at". This file had its own and it was the wrong one; see `livePage` there.
+    var pageNow = imports.pages.live;
     var actions = host.actions;
 
     //absent when built against a bare host — the test suite does that
@@ -117,15 +121,14 @@ async function plugin(imports, register) {
     //---- asking the page ---------------------------------------------------
 
     async function drive(want) {
-        var pages = [...io.sockets.sockets.values()];
-        if (!pages.length) throw new Error('no page is connected — the window may be closed, or still loading');
-
-        //ONE PAGE, NOT ALL OF THEM, and this differs from `show` deliberately.
-        //Showing something in every page is right: they should all be looking at
-        //the same thing. PRESSING a button in every page is pressing it several
-        //times, which for anything that is not idempotent is a different act
-        //from the one that was asked for.
-        var page = pages[0];
+        //ONE PAGE, NOT ALL OF THEM, and which one is asked of ../io rather than
+        //decided here — see `livePage` there for why "the page" has a wrong
+        //answer available and why this file had it. Showing something in every
+        //page is right; PRESSING a button in every page is pressing it several
+        //times, which for anything not idempotent is a different act from the
+        //one that was asked for.
+        var page = pageNow();
+        if (!page) throw new Error('no page is connected — the window may be closed, or still loading');
         var answer = await new Promise(function (resolve) {
             page.timeout(15000).emit('drive:do', want, function (err, a) {
                 resolve(err ? { error: 'the page did not answer' } : a);
