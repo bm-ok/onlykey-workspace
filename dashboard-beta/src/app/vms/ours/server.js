@@ -37,9 +37,10 @@ var records = require('./records');
 //the machines would still be running.
 //
 //A READ THAT RELAYS WHILE ITS WRITES DO NOT IS WORSE THAN EITHER END. So this
-//registers a SERVICE and no actions: ../channel, ../provision and the create
-//path come across next, and `vmList` lands with them, in one step, pointing at a
-//register that has something in it.
+//registers a SERVICE and no actions. ../channel is across, so `connected` is a
+//real answer now rather than a placeholder; ../provision and the create path are
+//what is left, and `vmList` lands with them, in one step, pointing at a register
+//that has something in it.
 //---------------------------------------------------------------------------
 
 //CONSUMING ../vbox IS THE RIGHT DIRECTION AND NOT A CYCLE. The register asks the
@@ -47,7 +48,7 @@ var records = require('./records');
 //it consumes app, log and cached, and nothing else. Which is exactly the
 //guarantee this plugin exists for: there is no path by which the driver can
 //learn about a machine except through the list this one keeps.
-plugin.consumes = ['app', 'log', 'state', 'vbox'];
+plugin.consumes = ['app', 'log', 'state', 'vbox', 'channel'];
 plugin.provides = ['ours'];
 async function plugin(imports, register) {
     var state = imports.state;
@@ -62,12 +63,18 @@ async function plugin(imports, register) {
         //were lost.
         vbox: imports.vbox,
 
-        //WHETHER ITS AGENT IS TALKING TO US. ../channel is not across yet, so
-        //this answers no — and `stageOf` therefore tops out at `ready`, which is
-        //the honest answer for an app that has no channel rather than a machine
-        //that is not connected.
-        connected: function () { return false; },
-        agentFor: function () { return null; }
+        //WHETHER ITS AGENT IS TALKING TO US, which is a different question from
+        //whether VirtualBox says it is powered on.
+        connected: imports.channel.connected,
+
+        //AND THE ROSTER'S OWN ENTRY, which carries the facts a machine reports
+        //about itself. `list()` rather than the roster's internal record, on
+        //purpose: what comes back here is decorated onto a card, drawn in the
+        //window and photographed by `capture`, and the internal one holds the
+        //socket.
+        agentFor: function (name) {
+            return imports.channel.list().filter(function (a) { return a.vm === name; })[0] || null;
+        }
     });
 
     await register(null, {
