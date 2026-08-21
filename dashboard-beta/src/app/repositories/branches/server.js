@@ -36,6 +36,8 @@
 //fifteen of the eighteen processes one board read cost were this.
 //---------------------------------------------------------------------------
 
+var LINES = require('./lines');
+
 plugin.consumes = ['app', 'log', 'git', 'workspace', 'state'];
 plugin.provides = ['lines'];
 async function plugin(imports, register) {
@@ -55,6 +57,10 @@ async function plugin(imports, register) {
     }
 
     //---- every line, with where its parts actually are ----------------------
+    //
+    //WHAT A LINE IS LIVES IN ./lines.js, which has no git in it and nothing to
+    //read. This half is only the fetching: which repositories are here, and
+    //where each ref is. See that file for why they are separate.
     async function groups() {
         var all = await stored();
         if (all === null) return null;
@@ -64,80 +70,19 @@ async function plugin(imports, register) {
 
         //ONE READ PER REPOSITORY, REUSED ACROSS EVERY LINE THAT NAMES IT. See
         //the header for what this cost before.
-        //
-        //`tracked` RATHER THAN A BRANCH LIST, because a line has to stay in step
-        //ACROSS repositories and "in step with what" is the remote — so this
-        //needs the same answer the Repositories tab shows, from the same read.
-        var seen = {};
-        async function trackedIn(repo) {
-            if (repo in seen) return seen[repo];
-            var at = {};
-            try { at = await git.tracked(repo); } catch (e) { at = {}; }
-            seen[repo] = at;
-            return at;
-        }
-
-        var names = Object.keys(all);
-        var out = [];
-
-        for (var i = 0; i < names.length; i++) {
-            var name = names[i];
-            var g = all[name] || {};
-            var on = g.on || {};
+        var tracked = {};
+        var named = Object.keys(all);
+        for (var i = 0; i < named.length; i++) {
+            var on = (all[named[i]] || {}).on || {};
             var repos = Object.keys(on);
-            var parts = [];
-
             for (var j = 0; j < repos.length; j++) {
-                var repo = repos[j];
-                var branch = on[repo];
-                var rows = await trackedIn(repo);
-                var track = rows[branch] || null;
-
-                parts.push({
-                    repo: repo,
-                    branch: branch,
-                    there: !!track,
-                    //WHERE IT IS, not just that it exists. Null when the branch
-                    //is gone, which is the one case with no honest answer — and
-                    //it reads differently from a branch that is there and has
-                    //never moved.
-                    at: track ? track.local : null,
-                    remote: track ? track.remote : null,
-                    state: track ? track.state : null,
-                    stillHere: here.indexOf(repo) >= 0
-                });
+                if (repos[j] in tracked) continue;
+                try { tracked[repos[j]] = await git.tracked(repos[j]); }
+                catch (e) { tracked[repos[j]] = {}; }
             }
-
-            out.push({
-                name: name,
-                why: g.why || null,
-                made: g.made || null,
-                on: parts,
-                //MISSING REPOSITORIES ARE NOT A FAULT: a line made when there
-                //were three repositories still describes those three when a
-                //fourth arrives.
-                missing: here.filter(function (r) { return !(r in on); }),
-                broken: parts.filter(function (p) { return p.stillHere && !p.there; })
-                    .map(function (p) { return p.branch + ' is gone from ' + p.repo; }),
-
-                //WHERE THE LINE AS A WHOLE STANDS, which is the WORST of its
-                //parts — see the header for why this is never an average.
-                //
-                //  conflict  some part has moved on both sides. A fast-forward
-                //            cannot help and somebody has to decide
-                //  behind    some part can be caught up, and the button will
-                //  ok        every part that origin also has matches it
-                sync: parts.some(function (p) { return p.state === 'diverged'; }) ? 'conflict'
-                    : parts.some(function (p) { return p.state === 'behind' || p.state === 'different' || p.state === 'ahead'; }) ? 'behind'
-                        : parts.some(function (p) { return p.state === 'same'; }) ? 'ok'
-                            : null,
-                behind: parts.filter(function (p) { return p.state && p.state !== 'same' && p.state !== 'only here'; }),
-                //PROPOSED FOR LANDING: `{ at, by, why }`, or null.
-                marked: g.marked || null
-            });
         }
 
-        return out.sort(function (a, b) { return a.name.localeCompare(b.name); });
+        return LINES.board(all, here, tracked);
     }
 
     //WHAT EACH REPOSITORY COUNTS FROM, which is what a new line defaults to.
@@ -172,39 +117,11 @@ async function plugin(imports, register) {
     //against. The `⟳` on the Lines pane does exactly this, on purpose.
     //=======================================================================
     async function protectedOf() {
-        var out = {};
-        var all = await groups();
-        (all || []).forEach(function (g) {
-            (g.on || []).forEach(function (p) {
-                out[p.branch] = out[p.branch] || { branch: p.branch, asDefault: [], asLine: [] };
-                if (out[p.branch].asLine.indexOf(g.name) < 0) out[p.branch].asLine.push(g.name);
-            });
-        });
-
-        var here = await baselines();
-        here.forEach(function (r) {
-            if (!r.on) return;
-            out[r.on] = out[r.on] || { branch: r.on, asDefault: [], asLine: [] };
-            out[r.on].asDefault.push(r.repo);
-        });
-
-        return out;
+        return LINES.protectedIn(await groups(), await baselines());
     }
 
-    //THE SENTENCE, NOT A BOOLEAN. A refusal that says "that is protected" leaves
-    //somebody to work out WHY, and the why is the useful half — being a link in
-    //a line somebody named is a different situation from being a default branch,
-    //and they are undone in different places.
     async function whyProtected(branch) {
-        var p = (await protectedOf())[String(branch)];
-        if (!p) return null;
-        var parts = [];
-        if (p.asDefault.length) parts.push('the default branch of ' + p.asDefault.join(', '));
-        if (p.asLine.length) {
-            parts.push('a link in ' + p.asLine.map(function (n) { return '"' + n + '"'; }).join(', '));
-        }
-        return '"' + branch + '" is ' + parts.join(' and ')
-            + '. Work goes onto its own branch and is merged here afterwards, so nothing is built directly on it.';
+        return LINES.whyProtected(branch, await protectedOf());
     }
 
     //---- what was recorded when a branch was cut ---------------------------
