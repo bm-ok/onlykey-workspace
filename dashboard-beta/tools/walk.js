@@ -185,12 +185,20 @@ function main () {
     const full = (tab + (pane ? '/' + pane : '')).toLowerCase()
     return only.some(w => full.includes(w))
   }
-  // A tab is worth entering if it might hold something wanted: either its own
-  // name matches, or a pattern names a pane and could be about any tab.
+  // A tab is worth entering if it might hold something wanted.
+  //
+  //   `protected`               no slash, so it could name a pane in ANY tab
+  //   `repositories/protected`  names the tab, so only that tab is opened
+  //
+  // THIS WAS A TERNARY THAT COULD NOT SAY NO. `a || b ? c : true` binds as
+  // `(a || b) ? c : true`, so a pattern matching neither fell to `true` and
+  // every tab was opened — which, together with the filter below never being
+  // called at all, is why `npm run walk -- protected` walked all forty-seven
+  // and reported "(only protected)" over the top of it.
   const worthOpening = (tab) => {
     if (!only.length) return true
     const t = tab.toLowerCase()
-    return only.some(w => t.includes(w) || w.includes('/') ? w.split('/')[0] === '' || t.includes(w.split('/')[0]) || !t.includes(w) : true)
+    return only.some(w => (w.includes('/') ? t.includes(w.split('/')[0]) : true) || t.includes(w))
   }
 
   let where
@@ -227,6 +235,11 @@ function main () {
   let walked = 0
 
   for (const tab of tabs) {
+    // NARROWED BEFORE THE TAB IS EVEN OPENED, which is most of what makes a
+    // targeted walk quick — and is the half that was written and then never
+    // wired to anything.
+    if (!worthOpening(tab)) continue
+
     okc(['show', '--tab', tab])
 
     // The panes of this tab, by the same trick.
@@ -241,6 +254,7 @@ function main () {
 
     for (const stop of stops) {
       const name = stop.tab + (stop.pane ? '/' + stop.pane : '')
+      if (!wanted(stop.tab, stop.pane)) continue
       walked++
       try {
         okc(stop.pane ? ['show', '--tab', stop.tab, '--pane', stop.pane] : ['show', '--tab', stop.tab])
