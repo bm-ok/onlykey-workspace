@@ -74,14 +74,59 @@ async function plugin(imports, register) {
     //window called it would be an action in the table that the table's own
     //command line could not use, which is the one property this app's actions
     //are supposed to have.
-    async function markup() {
-        var pages = io ? [...io.sockets.sockets.values()] : [];
-        if (!pages.length) throw new Error('no page is connected — the window may be closed, or still loading');
-        return await new Promise(function (resolve) {
-            pages[0].timeout(15000).emit('snapshot:markup?', {}, function (err, a) {
+    //ASKS EVERY CONNECTED PAGE, AND SAYS WHEN THERE IS MORE THAN ONE.
+    //
+    //This took `pages[0]` — the socket that connected FIRST — and the argument
+    //for it was that there is one window. There is not: a browser tab left open
+    //at this address is a page, and it stays connected for as long as it is
+    //open. When one is, `capture` photographs THAT page: the picture comes from
+    //the nw window and the markup comes from somewhere else entirely, and the
+    //pair that is supposed to describe one instant describes two windows.
+    //
+    //IT IS THE WORST SHAPE A VERIFICATION TOOL CAN HAVE. Every symptom points at
+    //the code: an edit lands, the bundle serves it, the capture does not show
+    //it. Hours can go into the edit before anybody suspects the camera. So this
+    //prefers the nw window — the page a person is actually looking at — and when
+    //it cannot tell which, it REFUSES rather than picking one, because a capture
+    //of an unknown page is worse than no capture.
+    function ask(page) {
+        return new Promise(function (resolve) {
+            page.timeout(15000).emit('snapshot:markup?', {}, function (err, a) {
                 resolve(err ? { error: 'the page did not answer' } : a);
             });
         });
+    }
+
+    async function markup() {
+        var pages = io ? [...io.sockets.sockets.values()] : [];
+        if (!pages.length) throw new Error('no page is connected — the window may be closed, or still loading');
+        if (pages.length === 1) return await ask(pages[0]);
+
+        var all = await Promise.all(pages.map(ask));
+
+        //THE NEWEST ONE, and it is not a coin toss. A page that reloaded a
+        //moment ago connected a moment ago; a page that has been sitting there
+        //since before the last three edits connected first. `pages[0]` picked
+        //that one — the oldest — which is the single worst choice available, and
+        //an abandoned socket answers for as long as it is open.
+        //
+        //It is still a guess when somebody genuinely has two windows up, so it
+        //SAYS SO in what it returns rather than quietly picking. The failure this
+        //is guarding against was silent for an hour: an edit lands, the bundle
+        //serves it, the capture does not show it, and every symptom points at the
+        //code rather than at the camera.
+        var use = all[all.length - 1];
+        var window = all.filter(function (a) { return a && a.window; });
+        if (window.length === 1) use = window[0];
+
+        if (use && use.html && all.length > 1) {
+            use = Object.assign({}, use, {
+                pages: all.length,
+                others: all.filter(function (a) { return a !== use; })
+                    .map(function (a) { return (a && a.on) || 'nowhere'; })
+            });
+        }
+        return use;
     }
 
     var undo = [actions.define('capture', {
@@ -131,7 +176,19 @@ async function plugin(imports, register) {
                 bytes: said.html.length,
                 image: shot.file,
                 on: said.on || null,
-                of: shot.of || null
+                of: shot.of || null,
+
+                //HOW MANY PAGES WERE LISTENING, said whenever it was more than
+                //one. The picture is of the app window and the markup is of a
+                //page; when only one page is connected those are the same thing
+                //and this is silent. When they might not be, it says so on the
+                //answer rather than leaving somebody to trust a pair that may
+                //describe two different windows.
+                pages: said.pages || undefined,
+                note: said.pages
+                    ? said.pages + ' pages were connected (' + said.others.join(', ') + ' as well) — the markup is of '
+                        + 'the newest one, and the picture is of the app window. Close the extras if they disagree.'
+                    : undefined
             };
         }
     })];

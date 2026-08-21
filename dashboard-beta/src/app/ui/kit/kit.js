@@ -15,7 +15,7 @@ module.exports = function kit(theme) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Row,
         Card, CardTitle, CardSub, Badge, Badges, Chips, Chip,
-        Button, Toggle, Views, Linky, Plus, Cog, Finder, Form, Field, Skeleton, Notice, Banner, Link, Spec,
+        Button, Toggle, Views, Linky, Plus, Cog, Finder, Sorter, Form, Field, Skeleton, Notice, Banner, Link, Spec,
         Empty, Note, Mono, Muted, Kv, KvRow, Part, PartWhy, Group, Head, Markdown, Code, Term, ask
     } = theme;
 
@@ -172,6 +172,11 @@ module.exports = function kit(theme) {
                     <Col narrow>
                         <TitleRow>A master column<Grow /><Plus title="what the + looks like" /></TitleRow>
                         <Finder value="" onChange={function () { }} placeholder="find a thing" />
+                        {/* WHICH OF IT, AND IN WHAT ORDER — two questions, two
+                            shapes. Several chips can be on at once; exactly one
+                            entry of the sorter is. */}
+                        <Sorter value="newest" onChange={function () { }}
+                            options={[['newest', 'newest first'], ['oldest', 'oldest first'], ['kind', 'by kind']]} />
                         <Chips>
                             <Chip count={4} on>picked</Chip>
                             <Chip count={11}>another</Chip>

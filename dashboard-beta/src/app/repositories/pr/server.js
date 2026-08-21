@@ -330,8 +330,231 @@ async function plugin(imports, register) {
         };
     }
 
+    //=======================================================================
+    //WHICH INCOMING PULL REQUESTS A JUDGE MAY READ, AND AT WHICH COMMIT.
+    //
+    //Everything else this app judges is its own: a branch cut here, or a cut this
+    //host made. A pull request that ARRIVES is different in kind — it is somebody
+    //else's code, and judging it means fetching that code onto a machine holding
+    //a Claude credential, a token that can push, and this app's own ssh key.
+    //Rolling the machine back afterwards does not help: anything sent out during
+    //the run has already gone.
+    //
+    //SO A PERSON SAYS WHICH ONES, ONE AT A TIME, AND NOTHING ELSE CAN.
+    //
+    //KEYED TO THE COMMIT, NOT TO THE PULL REQUEST, and that is the whole reason
+    //this is a record rather than a flag on a row. A pull request is a moving
+    //target: its author can push again a second after it is allowed, and an
+    //approval naming only the number would carry silently onto code nobody read.
+    //The head sha is recorded and an allowance stops applying the moment the head
+    //moves.
+    //
+    //WHAT IT DOES NOT SAY. That a judge may READ this commit. It is not a
+    //statement that the code is safe to RUN, and nothing should ever read it as
+    //one.
+    //
+    //IN THE HOST'S DRAWER, NOT THE WORKSPACE'S. It names `owner/name#number`,
+    //which is true wherever the folder is, and a person's decision about
+    //somebody else's code should not quietly stop applying because a different
+    //workspace was opened.
+    //
+    //`prFetch` HAS NOT MOVED, and it reads the app being ported from — so an
+    //allowance given here does not reach it and it refuses. That is the safe
+    //direction and it is temporary: bringing an arrived pull request into the
+    //workspace is a git FETCH of `pull/<n>/head`, which is a door the write half
+    //of `git` does not have yet, and there is nothing to bring one here FOR
+    //until a judge can read it.
+    //=======================================================================
+    function allowKey(on, number) { return String(on || '').trim() + '#' + Number(number); }
+
+    function allowances() { return state.app.doc('pr-allowed'); }
+
+    //THREE ANSWERS, BECAUSE THEY NEED THREE DIFFERENT THINGS DONE ABOUT THEM.
+    //`stale` is the one worth having a word for: it is not "no" — a person has
+    //looked and formed a view — and it is emphatically not "yes", because the
+    //thing they looked at is gone.
+    function allowCheck(on, number, sha) {
+        var said = (allowances().read({}) || {})[allowKey(on, number)] || null;
+        var now = String(sha || '').trim();
+        if (!said) return { allowed: false, stale: false, said: null, why: 'nobody has allowed this pull request to be judged' };
+        if (!now) return { allowed: false, stale: false, said: said, why: 'this host does not know which commit the pull request is at, so an allowance cannot be matched to it' };
+        if (said.sha !== now) {
+            return {
+                allowed: false, stale: true, said: said,
+                why: 'it was allowed at ' + said.sha.slice(0, 7) + ' and is now at ' + now.slice(0, 7)
+                    + ' — the author has pushed since, so what was read is not what is there'
+            };
+        }
+        return { allowed: true, stale: false, said: said, why: null };
+    }
+
     var undo = [];
     if (actions) {
+        //ASKS GITHUB, unlike the same question on the Overview row, which is
+        //answered from the last gathering because it is redrawn every few
+        //seconds. This one is pressed on purpose and the answer that matters is
+        //about the commit the pull request is on NOW.
+        undo.push(actions.define('prJudging', {
+            about: 'Pull requests that have arrived, who wrote them, and whether a judge may read them',
+            run: async function () {
+                var known = await relayed('repositories');
+                var mine = (known && known.repos) || [];
+                var rows = [];
+
+                //WHOSE REMOTES ARE OURS, worked out once, and the test is where
+                //the branch LIVES rather than who typed it. A cut this host made
+                //pushes to a fork this host owns, so its head repository is one
+                //of ours; anything else came from somewhere this app does not
+                //control.
+                var ours = {};
+                mine.forEach(function (r) {
+                    if (r.remote && r.remote.owner) ours[r.remote.owner + '/' + r.remote.repo] = true;
+                });
+
+                for (var i = 0; i < mine.length; i++) {
+                    var r = mine[i];
+                    var on = r.issuesOn || (r.remote && r.remote.owner ? r.remote.owner + '/' + r.remote.repo : null);
+                    if (!on) continue;
+                    var bits = on.split('/');
+                    var said = null;
+                    try { said = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/pulls?state=open&per_page=100'); }
+                    catch (e) { continue; }
+                    if (said.status !== 200 || !Array.isArray(said.body)) continue;
+
+                    said.body.forEach(function (p) {
+                        var from = String((p.head && p.head.repo && p.head.repo.full_name) || '').trim();
+                        var sha = (p.head && p.head.sha) || null;
+                        var isOurs = from ? !!ours[from] : false;
+                        var may = allowCheck(on, p.number, sha);
+                        rows.push({
+                            on: on, repo: r.repo, number: p.number, title: p.title, url: p.html_url,
+                            author: (p.user && p.user.login) || null,
+                            //GitHub's own word for how close the author is to the
+                            //repository. Reported rather than interpreted — "is
+                            //this person trusted" is not this app's judgement to
+                            //make, and the answer it would give is somebody's
+                            //GitHub permissions rather than their intentions.
+                            association: p.author_association || null,
+                            headRepo: from || null, headSha: sha,
+                            ours: isOurs,
+                            allowed: isOurs ? true : may.allowed,
+                            stale: isOurs ? false : may.stale,
+                            why: isOurs ? null : may.why,
+                            said: may.said || null
+                        });
+                    });
+                }
+
+                var waiting = rows.filter(function (x) { return !x.ours && !x.allowed; });
+                return {
+                    pulls: rows,
+                    waiting: waiting.length,
+                    note: rows.length
+                        ? (waiting.length
+                            ? waiting.length + ' pull request(s) arrived from outside and cannot be judged until you allow it. '
+                                + 'Allowing names the commit: if the author pushes again it has to be allowed again.'
+                            : 'Every open pull request here is either this host\'s own or has been allowed at the commit it is on.')
+                        : 'No open pull requests.'
+                };
+            }
+        }));
+
+        undo.push(actions.define('prAllowJudging', {
+            about: 'Allow a judge to read an incoming pull request, at the commit it is on now',
+            takes: ['repo', 'number', 'note'],
+            run: async function (args) {
+                var a = args || {};
+                //A MODEL MAY NOT DECIDE THAT SOMEBODY ELSE'S CODE IS FIT TO BE
+                //READ HERE. This is the same boundary as approving a job, and it
+                //is the one the standing rule about incoming pull requests is
+                //about.
+                if (a._overTheWire) {
+                    throw new Error('Allowing a pull request to be judged is done in the window, by a person who has looked at it. '
+                        + 'A model may not decide that somebody else\'s code is fit to be read here.');
+                }
+
+                var repo = String(a.repo || '').trim();
+                var number = Number(a.number);
+                if (!repo || !number) throw new Error('Say which repository and which pull request.');
+
+                var known = await relayed('repositories');
+                var row = ((known && known.repos) || []).filter(function (r) { return r.repo === repo; })[0];
+                if (!row) throw new Error('There is no repository called "' + repo + '" in this workspace.');
+
+                var on = row.issuesOn || (row.remote && row.remote.owner ? row.remote.owner + '/' + row.remote.repo : null);
+                if (!on) throw new Error('"' + repo + '" has no GitHub remote this host can read from.');
+
+                var bits = on.split('/');
+                var r = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/pulls/' + number);
+                if (r.status !== 200 || !r.body) throw new Error(on + ' has no pull request #' + number + '.');
+
+                //WITHOUT A COMMIT THERE IS NOTHING TO RECORD IT AGAINST, and an
+                //allowance with no commit is one that carries onto whatever the
+                //author pushes next.
+                var sha = r.body.head && r.body.head.sha;
+                if (!sha) {
+                    throw new Error('GitHub did not say which commit ' + on + '#' + number + ' is at, so there is nothing to record an allowance against.');
+                }
+
+                var doc = allowances();
+                var all = doc.read({}) || {};
+                all[allowKey(on, number)] = {
+                    on: on, number: number, sha: sha,
+                    //WHO ALLOWED A STRANGER'S CODE TO BE READ HERE is exactly the
+                    //question somebody asks afterwards, and the answer must not
+                    //be reconstructed from memory.
+                    by: actions.whoAsked(a),
+                    note: a.note ? String(a.note) : null,
+                    at: new Date().toISOString()
+                };
+                doc.write(all);
+
+                log.good('#' + number + ' on ' + on + ' may be judged at ' + sha.slice(0, 7));
+                return {
+                    allowed: all[allowKey(on, number)],
+                    note: on + '#' + number + ' may be read at ' + sha.slice(0, 7) + '. '
+                        + 'This says a judge may READ that commit — it is not a statement that the code is safe to run, '
+                        + 'and the allowance stops applying the moment the author pushes again.'
+                };
+            }
+        }));
+
+        undo.push(actions.define('prForbidJudging', {
+            about: 'Take back an allowance to judge an incoming pull request',
+            takes: ['repo', 'number'],
+            run: async function (args) {
+                var a = args || {};
+                //IN THE WINDOW, LIKE GIVING ONE. Taking one back is the safe
+                //direction and could be argued either way — but an allowance is
+                //a person's statement, and something that can be withdrawn from
+                //outside can be withdrawn at a moment nobody notices, which is
+                //how a judging job fails in a way that reads as a bug.
+                if (a._overTheWire) throw new Error('Taking an allowance back is done in the window, like giving one.');
+
+                var repo = String(a.repo || '').trim();
+                var number = Number(a.number);
+                if (!repo || !number) throw new Error('Say which repository and which pull request.');
+
+                var known = await relayed('repositories');
+                var row = ((known && known.repos) || []).filter(function (r) { return r.repo === repo; })[0];
+                if (!row) throw new Error('There is no repository called "' + repo + '" in this workspace.');
+                var on = row.issuesOn || (row.remote && row.remote.owner ? row.remote.owner + '/' + row.remote.repo : null);
+                if (!on) throw new Error('"' + repo + '" has no GitHub remote this host can read from.');
+
+                var id = allowKey(on, number);
+                var doc = allowances();
+                var all = doc.read({}) || {};
+                var had = all[id] || null;
+                if (had) { delete all[id]; doc.write(all); log.warn('#' + number + ' on ' + on + ' may no longer be judged'); }
+                return {
+                    forgotten: had,
+                    note: had
+                        ? on + '#' + number + ' may no longer be judged. A judgement already running is not stopped by this — '
+                            + 'it stops the next one being asked for.'
+                        : 'Nothing was allowing ' + on + '#' + number + '.'
+                };
+            }
+        }));
         undo.push(actions.define('prCuts', {
             about: 'Every PR cut: one act, one pull request per repository, and how far each has got',
             run: async function () {
@@ -705,7 +928,12 @@ async function plugin(imports, register) {
             stateOf: stateOf,
             compose: compose,
             blocks: blocksOn,
-            key: key
+            key: key,
+            //ONE PLACE ANSWERS "MAY THIS BE READ HERE", and everything that
+            //leads to the same room asks it here rather than reading the store
+            //itself. A second reader is a second chance to get the staleness
+            //rule slightly different.
+            allowed: { check: allowCheck, all: function () { return allowances().read({}) || {}; } }
         },
         onDestroy: function () { while (undo.length) undo.pop()(); }
     });

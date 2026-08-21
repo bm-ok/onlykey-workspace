@@ -236,7 +236,21 @@ async function plugin(imports, register) {
             var got = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/issues?state=open&per_page=100');
             if (got.status === 200 && Array.isArray(got.body)) {
                 issues = got.body.filter(function (x) { return !x.pull_request; }).map(function (x) {
-                    return { number: x.number, title: x.title, at: x.created_at, by: x.user && x.user.login, url: x.html_url, on: on };
+                    return {
+                        number: x.number, title: x.title, at: x.created_at, updated: x.updated_at,
+                        by: x.user && x.user.login, url: x.html_url, on: on,
+                        //ONLY OPEN ONES ARE ASKED FOR, which is exactly why the
+                        //state has to be written down rather than assumed. A row
+                        //with no state is not "open" to anything reading it
+                        //later: the Overview pane filters on it, and every issue
+                        //vanished from a list that said it had one.
+                        state: x.state || 'open',
+                        labels: (x.labels || []).map(function (l) { return typeof l == 'string' ? l : l.name; }),
+                        //Carried so a task can be written from the Overview list
+                        //without going back to the per-repository tab to find the
+                        //words again.
+                        body: x.body || null
+                    };
                 });
             }
         }
@@ -271,8 +285,27 @@ async function plugin(imports, register) {
             pulls: canReadPulls && Array.isArray(pulls.body) ? pulls.body.map(function (p) {
                 return {
                     number: p.number, title: p.title, state: p.state, draft: !!p.draft,
+                    merged: !!p.merged_at,
                     head: p.head && p.head.ref, base: p.base && p.base.ref,
-                    by: p.user && p.user.login, at: p.created_at, url: p.html_url
+                    by: p.user && p.user.login, at: p.created_at, updated: p.updated_at,
+                    url: p.html_url,
+
+                    //WHOSE CODE, AND WHICH COMMIT. Fine to drop while every pull
+                    //request here is one this host cut; it stops being fine the
+                    //moment one ARRIVES. Deciding whether a judge may read
+                    //somebody else's change needs to know whose it is, and an
+                    //allowance to read it names the commit or it carries onto
+                    //whatever the author pushes next.
+                    headRepo: (p.head && p.head.repo && p.head.repo.full_name) || null,
+                    headSha: (p.head && p.head.sha) || null,
+
+                    //GitHub's own word for how close the author is to the
+                    //repository: OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, NONE.
+                    //Carried and never interpreted — "is this person trusted" is
+                    //not a question this app should answer, and the answer it
+                    //could give is somebody's permissions rather than their
+                    //intent.
+                    association: p.author_association || null
                 };
             }) : null,
             openPulls: canReadPulls && Array.isArray(pulls.body) ? pulls.body.length : null,
@@ -402,7 +435,18 @@ async function plugin(imports, register) {
                         //NULL UNTIL SOMEBODY ASKS, which is different from an
                         //empty list, and the panes say so.
                         pulls: note.pulls || null,
-                        issues: note.issues || null,
+                        //THE ONE PLACE A NOTE BECOMES ROWS, so the fallback for
+                        //an OLD note lives here and nowhere else. Notes written
+                        //before the state was recorded have none, and a row with
+                        //no state is not "open" to anything filtering on it —
+                        //which made every issue vanish from a list whose own
+                        //chip said it had one. Only the open ones are ever
+                        //gathered, so that is what a silent one is.
+                        issues: note.issues
+                            ? note.issues.map(function (i) {
+                                return i.state ? i : Object.assign({}, i, { state: 'open' });
+                            })
+                            : null,
                         openIssues: note.issues ? note.issues.length : null,
 
                         //WHERE ISSUES ARE READ FROM, which is the target and not

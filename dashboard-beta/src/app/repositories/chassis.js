@@ -28,10 +28,33 @@ module.exports = function chassis(theme, okc, remember) {
         Badge, Badges, Button, Skeleton, Empty, Note, Mono, Notice
     } = theme;
 
+    //THE HEAD IS ITS OWN PIECE, because one pane on this tab does not ride the
+    //chassis and still has to carry it. Overview is full width and has no
+    //repository picker — it is the one pane that is not about a repository you
+    //chose — but it is still a reading of what was last gathered, and "how old
+    //is this and how do I ask again" is the same question there. The old window
+    //had this as one block of markup ABOVE all of them with the picker hidden
+    //underneath; this is that, as a component.
+    function Head({ lead, dir, count, note, said, setSaid, askGitHub }) {
+        return (
+            <>
+                <Note>{lead}</Note>
+                <TitleRow>
+                    <span>Repositories</span>
+                    <span className="muted">{count ? '— ' + count + ' in ' + dir : '— none'}</span>
+                    <Grow />
+                    <Button onClick={function () { askGitHub(null); }}>Ask GitHub</Button>
+                </TitleRow>
+                <Note>{note}</Note>
+                {said ? <Notice kind={said.kind} onClose={function () { setSaid(null); }}>{said.text}</Notice> : null}
+            </>
+        );
+    }
+
     //`lead` is the sentence the pane opens with — it differs per pane and is the
     //one thing that says what this half is for. `Right` is given the selected
     //repository, a way to say something, and a way to ask again.
-    return function paneOf(lead, Right) {
+    function paneOf(lead, Right) {
         return function ReposPane() {
             var q = okc.use('repositories', {}, 8000);
             var [picked, setPicked] = remember.use('repos', 'repo', null);
@@ -58,18 +81,8 @@ module.exports = function chassis(theme, okc, remember) {
 
             return (
                 <Pane>
-                    <Note>{lead}</Note>
-
-                    <TitleRow>
-                        <span>Repositories</span>
-                        <span className="muted">
-                            {repos.length ? '— ' + repos.length + ' in ' + q.state.dir : '— none'}
-                        </span>
-                        <Grow />
-                        <Button onClick={function () { askGitHub(null); }}>Ask GitHub</Button>
-                    </TitleRow>
-                    <Note>{q.state.note}</Note>
-                    {said ? <Notice kind={said.kind} onClose={function () { setSaid(null); }}>{said.text}</Notice> : null}
+                    <Head lead={lead} dir={q.state.dir} count={repos.length} note={q.state.note}
+                        said={said} setSaid={setSaid} askGitHub={askGitHub} />
 
                     <Cols>
                         <Col narrow>
@@ -105,4 +118,9 @@ module.exports = function chassis(theme, okc, remember) {
             );
         };
     };
+
+    //TWO WAYS IN: the whole chassis for a pane that picks a repository, and the
+    //head on its own for one that does not.
+    paneOf.Head = Head;
+    return paneOf;
 };

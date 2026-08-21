@@ -22,12 +22,25 @@ five seconds. Do not build. Do not restart.
 * `webpack.config.js`
 * a new npm dependency or anything vendored
 
-It builds on the way, so `npm run build` before it is redundant. Run it
+It builds on the way, so building before it is redundant. Run it
 **backgrounded** — in the foreground it hangs on the child's stdout and killing
 the call takes the app with it.
 
-**`npm run build` on its own** is for a compile check that HMR would swallow,
-and before `npm test` or a commit. That is all.
+**`npm run check` is the compile check**, and it is the only one. webpack over
+both halves, in memory: it writes nothing, packages nothing, and takes a few
+seconds. Run it after an edit HMR would swallow, and before `npm test` or a
+commit.
+
+It answers exactly one question — *does it compile* — and says so on the way
+out, because that is the question it kept getting mistaken for the other one. A
+pane that compiles perfectly and draws nothing is a pane that compiles. Whether
+it WORKS comes from the window: `okc.js show`, `okc.js capture`, `npm run walk`.
+
+**`npm run build` and `npm run build-prod` are the PACKAGED build.** They are not
+a compile check — they are slower, they clear and fill `dist/`, and `build-prod`
+goes on to nwjc and stages `build/app`. Reaching for one to find out whether the
+source parses is the drift this file already warns about, one rung down: 90
+seconds and a rebuilt package to answer what `npm run check` answers in five.
 
 Roughly: 5 seconds versus 90. Reaching for build+restart on a UI change is an
 hour a day of nothing.
@@ -93,6 +106,23 @@ place it shows.
 
 Ctrl+Shift+D does the same thing from the window and offers the two paths for
 copying. It is `src/app/debug-snapshot`, which is deletable in one piece.
+
+**The picture is of the app window; the markup is of a PAGE.** Those are the same
+thing only while one page is connected, and a browser tab left open at
+`localhost:7317` is a page. It answers the request for markup for as long as it
+is open — including a tab from a previous run that has stopped reloading and is
+serving a DOM from an hour ago.
+
+`capture` used to take the socket that connected FIRST, which is reliably the
+oldest and therefore the most likely to be dead. It now takes the newest and
+**says `pages: n` on the answer** whenever more than one was listening. If that
+field is there, close the extras before believing anything in the file.
+
+This is worth knowing because of the shape it fails in. The edit lands, `npm run
+check` is green, `curl localhost:7317/window.js` contains the change, the log
+says `[HMR] Reloading page` — and the capture does not show it. Every one of
+those points at the code. None of them points at the camera, and an hour went
+into the code before the camera was suspected.
 
 `windowControls` reports `loading` (a skeleton is visible) and `content` (how
 many characters are on the pane) separately from the button and field counts —

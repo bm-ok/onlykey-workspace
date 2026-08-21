@@ -7,9 +7,11 @@
   "main": "main.js",
   "scripts": {
     "start": "node tools/nw.js",
+    "check": "node tools/check.js",
     "stop": "node tools/stop.js",
     "restart": "node tools/restart.js",
-    "build": "node tools/build.js",
+    "build-prod": "node tools/build.js",
+    "build": "echo build is for buiding a packaged version, use npm run restart or npm run start for development, use webpack for debugging builds",
     "dist": "node tools/build.js && node tools/pack.js",
     "test": "node --test",
     "walk": "node tools/walk.js"

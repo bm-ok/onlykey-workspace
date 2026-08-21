@@ -189,6 +189,28 @@ function Finder({ value, onChange, placeholder }) {
     );
 }
 
+//WHICH ORDER A LIST IS IN, beside the box that says which of it to show.
+//
+//A select rather than chips on purpose: these are five answers to ONE question
+//and exactly one of them is true at a time, which is the one thing a row of
+//chips cannot say. Chips are for "which kinds am I looking at", where any
+//combination is meaningful.
+//
+//Controlled, like Finder, and for the same reason — what order a list is in is
+//the list's business.
+function Sorter({ value, onChange, options, title }) {
+    return (
+        <select className="sorter" value={value} title={title}
+            onChange={function (e) { onChange(e.target.value); }}>
+            {(options || []).map(function (o) {
+                var id = Array.isArray(o) ? o[0] : o;
+                var label = Array.isArray(o) ? o[1] : o;
+                return <option key={id} value={id}>{label}</option>;
+            })}
+        </select>
+    );
+}
+
 //The wrapper that makes inputs inside it look like fields. `.form` and `.dlg`
 //carry the same rules, so a form in a pane and a form in the gate cannot drift.
 function Form({ children }) { return <div className="form">{children}</div>; }
@@ -379,7 +401,12 @@ function openOut(href) {
 }
 function Link({ href, children, chip }) {
     return (
-        <a className={chip ? 'linky-chip' : 'linky'} href={href} target="_blank" rel="noreferrer"
+        //`linky-chip` IS A MODIFIER, NOT A SHAPE. Its rule is a cursor and a
+        //hover colour and nothing else — the border, the padding and the size
+        //are `.chip`, which it was always written to sit beside. On its own it
+        //draws as bare text that happens to be clickable, which is the quiet
+        //kind of wrong: it renders, it works, and it looks like nothing.
+        <a className={chip ? 'chip linky-chip' : 'linky'} href={href} target="_blank" rel="noreferrer"
             onClick={function (e) { if (openOut(href)) e.preventDefault(); }}>
             {children || href}
         </a>
@@ -467,6 +494,6 @@ module.exports = {
     setGuardCheck, guardsChanged, useGuard,
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip, Views,
-    Button, Toggle, Plus, Cog, Finder, Form, HeadRow, Controls,
+    Button, Toggle, Plus, Cog, Finder, Sorter, Form, HeadRow, Controls,
     Skeleton, Notice, Banner, Link, Linky, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Act, ago, openOut
 };

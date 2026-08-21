@@ -564,7 +564,12 @@ main { padding: 16px; }
    row added since. The class EXISTS, which is why the check in npm test passed
    -- it can tell a class that is defined from one that is not, and cannot tell
    one that applies here from one that applies somewhere else. */
-.panel .row, .card .row { display: flex; flex-wrap: wrap; gap: 6px; }
+/* AND IT SITS UNDER SOMETHING, always. A row of buttons is the last thing in a
+   card, below the words it acts on — with no gap it touches the sentence above
+   and reads as part of it. Written here rather than as an inline style on every
+   pane that has one, which is how the old window did it and how six of them came
+   to disagree by two pixels. */
+.panel .row, .card .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .empty { color: var(--muted); font-size: 12px; }
 /* An emptiness that should not be possible. `bad` existed only as a modifier of
    .badge and .card-sub, so <p class="empty bad"> matched a class name that
@@ -1048,6 +1053,18 @@ table.kv td .ok { color: var(--ok); }
   font: inherit;
   font-size: 12px;
   margin-bottom: 8px;
+}
+/* Beside the finder, and dressed the same so the pair reads as one control
+   rather than as a box and a stray browser widget. No bottom margin: it sits in
+   a head row, where the finder's own margin is what pushes the list down. */
+.sorter {
+  background: #0d1117;
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
 }
 .titlerow .mine { font-size: 11px; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
 

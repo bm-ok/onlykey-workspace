@@ -64,7 +64,21 @@ async function plugin(imports, register) {
 
     io.on('snapshot:markup?', function (_args, reply) {
         if (typeof reply != 'function') return;
-        try { reply({ html: markupNow(), on: whereWeAre() }); }
+        //WHICH PAGE THIS IS, so the asker can tell the app window from a
+        //browser tab left open at the same address. Both are pages, both answer,
+        //and only one of them is the window the picture is taken of.
+        //WHICH PAGE THIS IS, and the test is the user agent rather than whether
+        //`nw` is defined. The app's own window does not always get the nw
+        //bindings injected — this same page runs with `nw` undefined, which is
+        //why `openOut` in the theme guards on it — but the runtime always stamps
+        //itself into the agent string. A browser tab at this address never
+        //carries it, whichever browser it is.
+        try {
+            reply({
+                html: markupNow(), on: whereWeAre(), at: location.href, agent: navigator.userAgent,
+                window: /nwjs/i.test(navigator.userAgent) || (typeof nw != 'undefined' && !!nw.Window)
+            });
+        }
         catch (e) { reply({ error: 'the page could not read its own markup: ' + e.message }); }
     });
 
