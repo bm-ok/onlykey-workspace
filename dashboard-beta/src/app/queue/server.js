@@ -1,4 +1,8 @@
 var policy = require('./policy');
+var makeStore = require('./store');
+var makeArchive = require('./archive');
+var makeDoors = require('./doors');
+var makeAttempts = require('./attempts');
 
 //---------------------------------------------------------------------------
 //THE QUEUE, AS A THING OF ITS OWN.
@@ -17,6 +21,31 @@ var policy = require('./policy');
 //SO WHAT IS QUEUED IS AN ENTRY, and its `kind` says what it is. The ordering,
 //the machines that could take it, and the reasons they cannot are the same
 //question for both, which is the argument for one queue.
+//
+//---- what this plugin is, and what the other two are ----------------------
+//
+//THIS IS TASK MANAGEMENT, WHOLE. The record, its numbers, its states, its
+//attempts, and the log each run left behind:
+//
+//    ./store.js      the record — three identities, and what is never stored
+//    ./doors.js      writing one down, queueing it, throwing it away
+//    ./attempts.js   every attempt at one, and how one ends by hand
+//    ./archive.js    what a run left behind, kept where the machine cannot
+//                    take it away
+//    ./policy.js     who is free, what goes next, and what would go where
+//    ./main.js       the clock and the in-flight record, which outlive a save
+//
+//THE WORKER AND THE JUDGE ARE THE TWO LIBRARIES — a set of jobs, prompts and
+//contracts each — and they use those to ASK for a task. They do not own one once
+//it exists.
+//
+//THAT IS THE LINE THE OLD ARRANGEMENT DID NOT HAVE, and the cost of not having
+//it is written all over the app being ported from: the task logic and the job
+//library were one folder called `tasks`, so "what a worker is" and "what a task
+//is" were the same thing — and when judging arrived it needed both halves and
+//could reach neither cleanly. Everything that went wrong in adoption came
+//through that gap: the rules were written when tasks were the only work there
+//was, and judging inherited none of them.
 //
 //---- and it depends on neither of them ------------------------------------
 //
@@ -40,12 +69,15 @@ var policy = require('./policy');
 //from there — a board reporting "nothing running" while a machine is running
 //something is the confident wrong report this whole app is arranged against.
 //---------------------------------------------------------------------------
-plugin.consumes = ['app', 'log'];
+plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret'];
 plugin.provides = ['queue'];
 async function plugin(imports, register) {
     var host = imports.app.host;
     var actions = host && host.actions;
     var log = imports.log.on('queue');
+    var state = imports.state;
+    var dataDir = imports.dataDir;
+    var secret = imports.secret;
 
     //THE CLOCK AND THE IN-FLIGHT RECORD, FROM ./main.js. They outlive this
     //bundle, which is rebuilt every time a file is saved — see the header there
@@ -145,6 +177,91 @@ async function plugin(imports, register) {
     //said neither.
     var ENDED = { done: true, accepted: true, rejected: true, failed: true };
     function when(r) { return r.read || r.updated || r.touched || r.created || r.written || ''; }
+
+    //=======================================================================
+    //THE TASK FUNCTIONS, WHICH ARE WHAT THE WORKER AND THE JUDGE CALL.
+    //
+    //Task management is this plugin: tracking one, its progress, creating one,
+    //and stopping one. The other two are LIBRARIES — a set of jobs, prompts and
+    //contracts each — and they use these to ask for a task rather than keeping
+    //one of their own.
+    //
+    //WIRED AS A SERVICE, AND STILL NOT AS ACTIONS. The seam has to be real
+    //before anything can be written against it, and it costs nothing to be:
+    //nothing here dispatches, and no action reads or writes this store, so the
+    //app being ported from stays the one that owns the live board. The flip is
+    //`actions.define`, later, at a moment somebody picks.
+    var store = makeStore({
+        tasks: function () { return state.here.doc('tasks'); },
+        counter: function () { return state.here.doc('tasks-highest'); }
+    }, log);
+
+    //REDACTED THROUGH THE ONE ANSWER TO WHAT A SECRET LOOKS LIKE. A second copy
+    //of that list is the exact fault ../core/secret/looks-like.js was written to
+    //end — and this is the boundary where a machine's output is KEPT, so it is
+    //the one place a token stops being a moment and becomes a filing.
+    var archive = makeArchive(
+        function () { return dataDir.at('task-logs'); },
+        function (text) { return secret.redact(text || ''); }
+    );
+
+    //WHAT THE DOORS ARE GIVEN RATHER THAN WHAT THEY REACH FOR. Every one of
+    //these still lives in the app being ported from, so each is a relay today
+    //and a service edge the day its half moves — and the doors do not change
+    //either way, which is the point of handing them in.
+    var doors = makeDoors(store, {
+        branchNameIsOk: async function (name) {
+            var said = await relayed('branchNameOk', { branch: name });
+            return said && said.why ? said.why : null;
+        },
+        branchExists: async function (name) {
+            var said = await relayed('branchBoard');
+            var rows = (said && (said.branches || said.board)) || [];
+            return rows.some(function (b) { return b.name === name; });
+        },
+        judgement: async function (ref) {
+            var said = await relayed('judging');
+            var all = (said && (said.judgements || said.judging)) || [];
+            return all.filter(function (j) { return j.ref === ref || j.id === ref; })[0] || null;
+        },
+        contract: async function (id) {
+            var said = await relayed('contracts');
+            var all = (said && said.contracts) || [];
+            return all.filter(function (c) { return c.id === id; })[0] || null;
+        },
+        contractFileExists: async function () { return true; },
+        job: async function (id) {
+            var said = await relayed('jobs');
+            var all = (said && said.jobs) || [];
+            return all.filter(function (j) { return j.id === id; })[0] || null;
+        },
+        machines: async function () {
+            var said = await relayed('vmList');
+            return (said && said.vms) || [];
+        }
+    }, log);
+
+    var attempts = makeAttempts(store, archive, {
+        connected: async function (name) {
+            var said = await relayed('vmList');
+            var vm = ((said && said.vms) || []).filter(function (v) { return v.name === name; })[0];
+            return !!(vm && vm.connected);
+        },
+        runs: async function (name) {
+            var said = await relayed('vmRuns', { name: name });
+            return (said && said.runs) || [];
+        },
+        runOutput: async function (name, run, lines) {
+            return await relayed('vmRunOutput', { name: name, run: run, lines: lines });
+        },
+        sessions: async function (name) { return await relayed('vmSessions', { name: name }); },
+        sessionTail: async function (name, session, limit) {
+            return await relayed('vmSessionTail', { name: name, session: session, since: 0, limit: limit });
+        },
+        returnMachine: async function (name, keep) {
+            return await actions.call('vmReturn', { name: name, keep: !!keep });
+        }
+    }, log);
 
     var undo = [];
     if (actions) {
@@ -373,6 +490,31 @@ async function plugin(imports, register) {
 
     await register(null, {
         queue: {
+            //---- the task functions ------------------------------------
+            //
+            //TRACKING, PROGRESS, CREATING, STOPPING. What the worker and the
+            //judge reach for, and the only way either of them touches a task.
+            task: {
+                all: store.read,
+                get: store.get,
+                update: store.update,
+                create: doors.create,
+                queue: doors.queue,
+                remove: doors.remove,
+                progress: attempts.progress,
+                finished: attempts.finished,
+                //AND WHAT EACH RUN LEFT BEHIND. Kept by the queue because the
+                //queue is what put the work on a machine, and read by both.
+                log: {
+                    list: archive.list,
+                    read: archive.read,
+                    has: archive.has,
+                    everything: archive.everything
+                },
+                STORED: store.STORED,
+                WORKERS: store.WORKERS
+            },
+
             //THE POLICY, HANDED OUT WHOLE. Anything that TELLS somebody what
             //will happen applies the same rule the tick will dispatch by — that
             //is the entire reason this is a service and not a private function.
