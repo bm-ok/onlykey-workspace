@@ -55,7 +55,20 @@ beforeEach(() => {
             ranArgs = args;
             asked.push('unattended');
             if (runFails) throw new Error(runFails);
-            return 'Machine: one\npassword = a-long-password\nusing a-long-password in a-long-password-file\n';
+
+            //SHAPED LIKE WHAT VBoxManage ACTUALLY ECHOES: the password on its
+            //own field line, the password loose in another line, AND two names
+            //that merely BEGIN with "okc". Those last two are the whole reason
+            //a short password is not blanked everywhere, so the output has to
+            //contain them or the test cannot tell the two behaviours apart —
+            //which it could not, until a sabotage walked straight through it.
+            return [
+                'Machine: one',
+                'password = ' + record.spec.password,
+                'using ' + record.spec.password + ' to seed the installer',
+                'fetching okc-bootstrap.sh',
+                'hostname okc-flow.local'
+            ].join('\n') + '\n';
         }
     };
 
@@ -211,12 +224,17 @@ test('a short password is not blanked everywhere, because it makes the log lie a
     record.spec.password = 'okc';
     await run();
 
-    //"okc" TURNED okc-flow.local INTO <hidden>-flow.local and okc-bootstrap.sh
-    //into <hidden>-bootstrap.sh, for no security gain. The field line is still
-    //redacted, which is where it actually appears.
+    //THE FIELD LINE IS STILL REDACTED, which is where it actually appears.
     assert.ok(out.some((l) => /password\s*=\s*<hidden>/.test(l)), out.join(' | '));
-    assert.ok(out.some((l) => l.includes('a-long-password')),
-        'a value that is not this password was blanked: ' + out.join(' | '));
+
+    //AND NOTHING ELSE IS. "okc" turned okc-flow.local into <hidden>-flow.local
+    //and okc-bootstrap.sh into <hidden>-bootstrap.sh — a log that lies about
+    //names, for no security gain, because a three-letter password is not
+    //distinctive enough to find safely.
+    assert.ok(out.includes('fetching okc-bootstrap.sh'),
+        'a filename was mangled by a password too short to be found safely: ' + out.join(' | '));
+    assert.ok(out.includes('hostname okc-flow.local'),
+        'a hostname was mangled by a password too short to be found safely: ' + out.join(' | '));
 });
 
 test('a failure takes the installing flag back off', async () => {
