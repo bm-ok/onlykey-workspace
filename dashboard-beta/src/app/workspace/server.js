@@ -40,10 +40,13 @@ var path = require('path');
 
 var HELD = 3000;
 
-plugin.consumes = ['app', 'okc', 'state'];
+plugin.consumes = ['app', 'okc', 'state', 'log'];
 plugin.provides = ['workspace'];
 async function plugin(imports, register) {
     var okc = imports.okc;
+    var log = imports.log.on('workspace');
+    var state = imports.state;
+    var actions = imports.app.host && imports.app.host.actions;
     //WHICH FOLDER IS OPEN IS A FACT ABOUT THIS HOST, not about a workspace —
     //so it goes in the app's drawer. Putting it in the workspace's would be a
     //workspace remembering that it is the one open, which is circular and, on a
@@ -55,10 +58,30 @@ async function plugin(imports, register) {
 
     //WHAT THE DASHBOARD IS OPEN ON. Not an error when it cannot be reached —
     //this is a default, and a default that throws is not one.
+    //
+    //AND IT SAYS WHEN IT IS BORROWING, which it did not, and that silence cost a
+    //whole session of not knowing. Nothing here had ever chosen a workspace, so
+    //EVERY call to `dir()` went down the relay to `status` — and because the
+    //relay was always up, nothing ever hinted at it. The board, the drill
+    //results, the task store, anything through `state.here`: all of it was
+    //standing on one relayed answer, and none of it was in the count of relayed
+    //ACTIONS because it is not an action anybody calls.
+    //
+    //It surfaced by turning the other app off and watching a pane go dark that
+    //had no business going dark. A dependency that only shows up when it breaks
+    //is one that should announce itself while it works.
+    var saidBorrowing = false;
     async function borrowed() {
         try {
             var said = await okc.call('status', {});
-            return (said && said.workspace && said.workspace.dir) || null;
+            var open = (said && said.workspace && said.workspace.dir) || null;
+            if (open && !saidBorrowing) {
+                saidBorrowing = true;
+                log.warn('no workspace has been chosen here, so this app is using the one the '
+                    + 'dashboard has open: ' + open + '. Everything kept per workspace depends on '
+                    + 'that app answering. Choose one in the Workspace tab to stand on its own.');
+            }
+            return open;
         } catch (e) { return null; }
     }
 
@@ -88,10 +111,110 @@ async function plugin(imports, register) {
         if (!fs.existsSync(want)) throw new Error('There is no folder at "' + want + '".');
         if (!fs.statSync(want).isDirectory()) throw new Error('"' + want + '" is a file, not a folder.');
 
-        kept.write({ dir: want, at: new Date().toISOString() });
+        //KEPT ALONGSIDE THE ONES SEEN BEFORE. Choosing is also remembering: a
+        //list of two folders somebody switches between is the ordinary case, and
+        //making them type the path again each time is how one gets typed wrong.
+        var mine = shaped(kept.read({}));
+        kept.write({ dir: want, at: new Date().toISOString(), known: withOne(mine.known, want) });
         was = want;
         at = Date.now();
+        saidBorrowing = false;
         return want;
+    }
+
+    //---- the ones this app knows about --------------------------------------
+    //
+    //A LIST OF FOLDERS SOMEBODY CHOSE, not a scan of the disk. Nothing goes
+    //looking for workspaces: one is a folder a person points at, and a scan
+    //would offer folders nobody meant.
+    function shaped(raw) {
+        return {
+            dir: (raw && raw.dir) || null,
+            at: (raw && raw.at) || null,
+            known: (raw && Array.isArray(raw.known)) ? raw.known : []
+        };
+    }
+
+    function withOne(known, want) {
+        var out = known.filter(function (k) { return k && k.dir !== want; });
+        var had = known.filter(function (k) { return k && k.dir === want; })[0];
+        return out.concat([{ dir: want, added: (had && had.added) || new Date().toISOString() }]);
+    }
+
+    //HOW MANY REPOSITORIES ARE IN ONE, asked of the disk. A count kept in the
+    //list would be a number that is right on the day it was written.
+    function reposIn(where) {
+        try {
+            return fs.readdirSync(where, { withFileTypes: true }).filter(function (e) {
+                return e.isDirectory() && e.name[0] !== '.'
+                    && fs.existsSync(path.join(where, e.name, '.git'));
+            }).length;
+        } catch (e) { return null; }
+    }
+
+    //EVERY ONE THIS APP KNOWS, AND WHICH IS OPEN.
+    //
+    //`borrowed` IS ON THE ANSWER, and it is the field this whole thing was
+    //written for: it says the folder is the other app's rather than one chosen
+    //here, which is the difference between an app that stands on its own and one
+    //that looks like it does.
+    async function all() {
+        var mine = shaped(kept.read({}));
+        var open = null;
+        try { open = await dir(); } catch (e) { open = null; }
+
+        var known = mine.known.slice();
+        //THE BORROWED ONE IS SHOWN, and shown as borrowed. Leaving it out would
+        //make the list disagree with every other pane in the window.
+        if (open && !known.some(function (k) { return k.dir === open; })) {
+            known = known.concat([{ dir: open, added: null }]);
+        }
+
+        return {
+            open: !!open,
+            borrowed: !!open && open !== mine.dir,
+            current: open ? { name: path.basename(open), dir: open } : null,
+            where: open ? await state.here.where().catch(function () { return null; }) : null,
+            known: known.map(function (k) {
+                var there = false;
+                try { there = fs.existsSync(k.dir) && fs.statSync(k.dir).isDirectory(); } catch (e) { there = false; }
+                return {
+                    name: path.basename(k.dir),
+                    dir: k.dir,
+                    added: k.added,
+                    current: k.dir === open,
+                    //CHOSEN HERE, or standing in for one. A person looking at
+                    //two rows needs to know which of them this app actually owns.
+                    mine: k.dir === mine.dir,
+                    there: there,
+                    repos: there ? reposIn(k.dir) : null
+                };
+            })
+        };
+    }
+
+    //CLOSING IS NOT FORGETTING. It puts down the folder that is open and leaves
+    //it on the list, because the ordinary reason to close one is to open another
+    //and come back.
+    function close() {
+        var mine = shaped(kept.read({}));
+        kept.write({ dir: null, at: new Date().toISOString(), known: mine.known });
+        was = null;
+        at = 0;
+        return { open: false };
+    }
+
+    function forgetOne(which) {
+        var want = String(which == null ? '' : which).trim();
+        var mine = shaped(kept.read({}));
+        var left = mine.known.filter(function (k) { return k.dir !== want; });
+
+        //FORGETTING THE ONE THAT IS OPEN CLOSES IT TOO, because a workspace that
+        //is open and not on the list is a state with no way back to it.
+        var stillOpen = mine.dir === want ? null : mine.dir;
+        kept.write({ dir: stillOpen, at: new Date().toISOString(), known: left });
+        if (!stillOpen) { was = null; at = 0; }
+        return { forgotten: mine.known.length - left.length, open: !!stillOpen };
     }
 
     //A FOLDER WITH A .git IN IT, one level down. Asked of the disk rather than
@@ -144,10 +267,68 @@ async function plugin(imports, register) {
     //subscribing and nothing reloading.
     imports.state.follow(function () { return dir().catch(function () { return null; }); });
 
+    //---- the surface --------------------------------------------------------
+    //
+    //THIS PLUGIN HAD NO ACTIONS AT ALL, which is why the borrowing above could
+    //not be ended: the service could be told which folder to use and nothing
+    //could tell it. Every workspace verb in the window went down the relay, so
+    //picking one HERE was not a thing the app could do.
+    var undo = [];
+    if (actions) {
+        undo.push(actions.define('workspaces', {
+            about: 'Every workspace this app knows, which one is open, and whether it chose it',
+            run: all
+        }));
+
+        undo.push(actions.define('workspaceUse', {
+            about: 'Open a workspace — a folder of git repositories',
+            takes: ['dir'],
+            run: async function (args) {
+                var a = args || {};
+                use(a.dir);
+                return all();
+            }
+        }));
+
+        //ADDING IS OPENING. There is no state where a folder is on the list and
+        //not the one being used, because nobody adds a workspace they did not
+        //want to look at.
+        undo.push(actions.define('workspaceAdd', {
+            about: 'Add a folder of repositories and open it',
+            takes: ['dir'],
+            run: async function (args) {
+                var a = args || {};
+                var open = use(a.dir);
+                log.good('workspace: ' + open);
+                return all();
+            }
+        }));
+
+        undo.push(actions.define('workspaceClose', {
+            about: 'Put down the workspace that is open, leaving it on the list',
+            run: async function () { close(); return all(); }
+        }));
+
+        undo.push(actions.define('workspaceForget', {
+            about: 'Take a workspace off this app\'s list. The folder itself is untouched',
+            takes: ['dir'],
+            run: async function (args) {
+                var a = args || {};
+                //THE FOLDER IS NOT TOUCHED, and the message says so, because
+                //"forget" beside a path is a word somebody can read as delete.
+                var out = forgetOne(a.dir);
+                log.info('forgot "' + a.dir + '". The folder itself was not changed.');
+                return Object.assign(out, await all());
+            }
+        }));
+    }
+
     await register(null, {
         workspace: {
             dir: dir,
             use: use,
+            all: all,
+            close: close,
             repos: repos,
             folderOf: folderOf,
             //WHETHER THIS IS THIS APP'S CHOICE OR THE OTHER APP'S, which the
@@ -159,7 +340,8 @@ async function plugin(imports, register) {
             //this in ordinary use; it exists because a cache with no way to drop
             //it is a cache somebody works around.
             forget: function () { was = null; at = 0; }
-        }
+        },
+        onDestroy: function () { while (undo.length) undo.pop()(); }
     });
 }
 module.exports = plugin;

@@ -71,6 +71,11 @@ async function theGit() {
     await wsPlugin({
         app: { host: {} },
         okc: { call: async () => ({ workspace: { dir: work } }) },
+        //THE PLUGIN DECLARES `log`, so a stand-in has to supply one. It says out
+        //loud when it is borrowing a workspace from the other app rather than
+        //using one chosen here, and a check that builds it by hand is exactly
+        //the caller that would otherwise crash on the line that says so.
+        log: { on: () => ({ good() {}, warn() {}, bad() {}, info() {} }) },
         //KEPT IN MEMORY HERE. What these tests are about is paths and git, not
         //what survives a restart — core/state has its own test for that — and a
         //real one would leave documents in the app's data folder every run.
