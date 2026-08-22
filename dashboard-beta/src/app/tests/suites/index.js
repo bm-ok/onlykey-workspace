@@ -63,6 +63,19 @@ const { group, describe, it } = require('../harness')
 
 let loaded = false
 
+// WHICH DRILLS WOULD NOT LOAD, AND WHY.
+//
+// Kept as well as registered as a failing check, because the two answer
+// different questions. The failing check is what you get when you RUN it; this
+// is what the board can say WITHOUT running anything — and "not run" against a
+// drill that cannot run is the same sentence as "nobody has got round to it".
+//
+// That distinction is the whole reason the tree has three levels and the loader
+// refuses loose files: a drill quietly not being there is the failure this
+// structure exists to make impossible, and a board that cannot tell it from an
+// idle one has let it happen anyway.
+const broken = []
+
 // `00-the-order` is "the order", `01-a-cut-comes-first.js` is "a cut comes
 // first". The prefix orders, the rest names, and neither has to be repeated
 // inside the file.
@@ -118,6 +131,7 @@ function load () {
             require(path.join(full, file))
           } catch (e) {
             const why = String((e && e.message) || e).split('\n')[0]
+            broken.push({ group: titleOf(entry), test: titleOf(file), why })
             it('this drill loads at all', () => {
               throw new Error('it could not be loaded, so none of its checks exist: ' + why)
             })
@@ -128,4 +142,4 @@ function load () {
   }
 }
 
-module.exports = { load, titleOf }
+module.exports = { load, titleOf, broken }

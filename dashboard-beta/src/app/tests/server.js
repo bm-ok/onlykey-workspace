@@ -93,7 +93,8 @@ async function plugin(imports, register) {
 
             kit = {
                 harness: req(path.join(__dirname, 'harness.js')),
-                titleOf: loader.titleOf
+                titleOf: loader.titleOf,
+                broken: loader.broken || []
             };
         } catch (e) {
             //SAID ONCE AND KEPT, because a kit that cannot be loaded is not a
@@ -120,6 +121,15 @@ async function plugin(imports, register) {
         var registered = it.harness.getRegisteredSuites();
         var seen = await runs.all();
 
+        //WHICH DRILLS WOULD NOT LOAD, SAID WITHOUT RUNNING ANYTHING.
+        //
+        //Each of those registers a check that fails when run — but until
+        //somebody runs it, "not run" is what the board says, and that is the same
+        //sentence it gives a drill nobody has got round to. One of those is a
+        //queue of work; the other is a drill that is not there.
+        var wontLoad = {};
+        (it.broken || []).forEach(function (b) { wontLoad[b.group + ' / ' + b.test] = b.why; });
+
         //ONE READ OF THE RECORD FOR THE WHOLE BOARD. Asking per check is 236
         //reads and 236 parses of the same document to draw one screen.
         var groups = {};
@@ -131,6 +141,8 @@ async function plugin(imports, register) {
                 groups[file.group] = { name: file.group, tests: [] };
                 order.push(file.group);
             }
+
+            var cannotLoad = wontLoad[file.group + ' / ' + file.name] || null;
 
             var checks = (file.tests || []).map(function (check) {
                 //TAKEN FROM THE REGISTRY, NOT RECOMPUTED.
@@ -174,10 +186,13 @@ async function plugin(imports, register) {
                     //The pane's own note said "`suites` takes no arguments so
                     //there is no lighter listing to ask for". There is now.
                     lines: String(check.source || '').split('\n').length,
-                    state: stale ? 'changed' : ((had && had.state) || 'not run'),
+                    //A DRILL THAT WILL NOT LOAD SAYS SO BEFORE IT IS ASKED TO.
+                    state: cannotLoad ? 'broken'
+                        : stale ? 'changed'
+                            : ((had && had.state) || 'not run'),
                     ms: (had && !stale) ? had.ms : null,
                     at: (had && !stale) ? had.at : null,
-                    why: (had && !stale) ? had.why : null,
+                    why: cannotLoad || ((had && !stale) ? had.why : null),
                     log: (had && !stale) ? (had.log || []) : [],
                     fromBefore: !!had && !stale
                 };

@@ -35,6 +35,11 @@ module.exports = function tests(theme, okc, remember, shell) {
     //  draft        not an outcome at all. Something somebody meant to write,
     //               counted apart, and muted so it can never read as a fault.
     var LOOK = {
+        //WILL NOT LOAD AT ALL, which is not the same as never having been run.
+        //A drill whose file throws on require registers nothing, so the board
+        //would otherwise say 'not run' about a drill that CANNOT run — the same
+        //sentence it gives one nobody has got round to.
+        broken: { kind: 'bad', word: 'will not load' },
         passed: { kind: 'ok', word: 'passed' },
         failed: { kind: 'bad', word: 'failed' },
         unrunnable: { kind: 'warn', word: 'not tried' },
@@ -60,7 +65,7 @@ module.exports = function tests(theme, okc, remember, shell) {
     //line worth reading — and `running` outranks everything but a failure so
     //that a suite halfway through actually says so instead of reading "not run"
     //because most of its checks have not been reached yet.
-    var RANK = ['failed', 'running', 'interrupted', 'asks you', 'changed', 'unrunnable', 'carried', 'passed', 'not run', 'draft'];
+    var RANK = ['broken', 'failed', 'running', 'interrupted', 'asks you', 'changed', 'unrunnable', 'carried', 'passed', 'not run', 'draft'];
     //WHERE THE FINDINGS STOP. Everything ranked before `passed` is a finding;
     //the three after it are absences. So this is a boundary, and it is named for
     //the boundary rather than for what lies on one side of it -- `rank(s) <
@@ -99,7 +104,7 @@ module.exports = function tests(theme, okc, remember, shell) {
 
     //Only the counts that are not zero. A row of three zeroes is three things to
     //read past on every suite that is simply fine.
-    var COUNTED = ['failed', 'running', 'interrupted', 'asks you', 'changed', 'unrunnable', 'carried', 'passed', 'draft'];
+    var COUNTED = ['broken', 'failed', 'running', 'interrupted', 'asks you', 'changed', 'unrunnable', 'carried', 'passed', 'draft'];
     function Counts({ states }) {
         return (<>
             {COUNTED.map(function (k) {
