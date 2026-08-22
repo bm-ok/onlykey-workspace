@@ -1,6 +1,7 @@
 var path = require('path');
 var makeLifecycle = require('./lifecycle');
 var makeSpeaking = require('./speaking');
+var makeRestoring = require('./restoring');
 
 //---------------------------------------------------------------------------
 //THE MACHINES, AS ACTIONS.
@@ -89,6 +90,14 @@ async function plugin(imports, register) {
         vbox: vbox
     });
 
+    var restoring = makeRestoring({
+        ours: ours,
+        vbox: vbox,
+        busy: imports.busy,
+        channel: imports.channel,
+        say: function (who, name) { return log.on(who, name); }
+    });
+
     var lifecycle = makeLifecycle({
         ours: ours,
         vbox: vbox,
@@ -131,6 +140,15 @@ async function plugin(imports, register) {
                 var name = (args || {}).name;
                 ours.get(name);
                 return await vbox.snapshots(name);
+            }
+        }));
+
+        undo.push(actions.define('vmSnapshotRestore', {
+            about: 'Go back to a snapshot, discarding everything since',
+            takes: ['name', 'title', 'keepBorrow'],
+            run: async function (args) {
+                var a = args || {};
+                return await restoring.toSnapshot(a.name, a.title, { keepBorrow: a.keepBorrow });
             }
         }));
 
