@@ -209,7 +209,21 @@ module.exports = function openEditor(deps) {
                 fn(value);
             }
 
+            //THE GUARD IS AT THE TOP, NOT INSIDE `finish`.
+            //
+            //Two routes reach here — the grace window and a clean exit — and
+            //resolving an already-resolved promise is a NO-OP in JS, so a guard
+            //that only wraps the resolve protects nothing a caller can see. What
+            //it has to protect is the LINE: with the check one call further down,
+            //a launch where the grace fired and the process then exited cleanly
+            //said "VS Code was asked to open it" TWICE for one press.
+            //
+            //Carried over from the version this comes from, which has the same
+            //shape and the same duplicate. Found by a sabotage that removed the
+            //guard and SURVIVED, because the only thing it changed was something
+            //no test was reading.
             var done = function () {
+                if (settled) return;
                 to.good('VS Code was asked to open it.');
                 finish(resolve, { opened: it.dir, on: it.remote || null, using: exe, found: found.from });
             };

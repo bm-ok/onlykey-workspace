@@ -58,6 +58,20 @@ function editor(over) {
     }, over || {}));
 }
 
+//A BOUND ON EVERY WAIT. An unsettled promise HANGS rather than fails, and a hang
+//cannot be reported: the sabotage that stops a failed launch being reported was
+//caught only because the sweep has a sixty-second timeout of its own, and
+//"caught (hung)" is a minute spent to learn what a failed assertion says at
+//once. The bound belongs in the test, not in the harness around it.
+function within(what, p) {
+    return Promise.race([
+        p,
+        new Promise((_, no) => setTimeout(
+            () => no(new Error(what + ' never settled — nothing resolved it and nothing rejected it')),
+            2000).unref())
+    ]);
+}
+
 const fire = (ms) => {
     const t = clock.find((x) => x.live && x.ms === ms);
     assert.ok(t, 'nothing was waiting ' + ms + 'ms');
@@ -180,7 +194,7 @@ test('it resolves on the grace window, because the editor outlives this call', (
     const p = editor({ platform: 'linux', env: {} }).open({ dir: '/a' });
 
     fire(1500);
-    return p.then((r) => {
+    return within('open()', p).then((r) => {
         assert.deepEqual(r, { opened: '/a', on: null, using: '/snap/bin/code', found: 'found where it installs' });
         assert.equal(fake.child.unreffed, true, 'it held the process it does not own');
     });
@@ -191,7 +205,7 @@ test('a clean exit resolves at once rather than waiting out the grace', () => {
     const p = editor({ platform: 'linux', env: {} }).open({ dir: '/a' });
 
     fake.child.emit('exit', 0);
-    return p.then(() => {
+    return within('open()', p).then(() => {
         assert.equal(clock.find((t) => t.ms === 1500).live, false, 'the grace timer was left running');
     });
 });
@@ -204,7 +218,7 @@ test('a synchronous EINVAL becomes something readable, which is the only place i
         exec: () => { const err = new Error('spawn EINVAL'); err.code = 'EINVAL'; throw err; }
     });
 
-    return e.open({ dir: 'C:/work' }).then(
+    return within('open()', e.open({ dir: 'C:/work' })).then(
         () => assert.fail('it reported success for a spawn that threw'),
         (err) => {
             assert.match(err.message, /Could not start the editor/);
@@ -224,7 +238,7 @@ test('spawning is not opening: a non-zero exit is reported with what it said', (
     err.code = 1;
     fake.cb(err, '', "'code' is not recognized as an internal or external command\nmore noise");
 
-    return p.then(
+    return within('open()', p).then(
         () => assert.fail('a failed launch resolved'),
         (e) => {
             assert.match(e.message, /it said: 'code' is not recognized/);
@@ -240,9 +254,27 @@ test('a missing binary says where the editor was looked for', () => {
     err.code = 'ENOENT';
     fake.cb(err, '', '');
 
-    return p.then(
+    return within('open()', p).then(
         () => assert.fail('a missing editor resolved'),
         (x) => assert.match(x.message, /that was not found\. The editor was guessed/));
+});
+
+test('it says it opened once, not once per route that could have said so', () => {
+    //WHAT THE `settled` GUARD ACTUALLY PROTECTS, which is not the promise.
+    //Resolving or rejecting an already-settled promise is a no-op in JS, so
+    //removing the guard changes nothing a caller can see — and a sabotage that
+    //removed it SURVIVED for exactly that reason. What it does change is the
+    //LOG: two routes reach `done`, and both would write the line.
+    files.add('/snap/bin/code');
+    const p = editor({ platform: 'linux', env: {} }).open({ dir: '/a' });
+
+    fire(1500);                      //the grace window resolves it
+    fake.child.emit('exit', 0);      //and then the process exits cleanly too
+
+    return within('open()', p).then(() => {
+        const good = said.filter((m) => /^good VS Code was asked to open it/.test(m));
+        assert.equal(good.length, 1, 'it reported opening ' + good.length + ' times for one press');
+    });
 });
 
 test('it settles exactly once, whatever arrives afterwards', () => {
@@ -257,7 +289,7 @@ test('it settles exactly once, whatever arrives afterwards', () => {
     const err = new Error('also too late'); err.code = 1;
     fake.cb(err, '', 'nope');
 
-    return p.then((r) => assert.equal(r.opened, '/a'));
+    return within('open()', p).then((r) => assert.equal(r.opened, '/a'));
 });
 
 test('what it says names the folder and the far end', () => {
@@ -265,7 +297,7 @@ test('what it says names the folder and the far end', () => {
     const p = editor({ platform: 'linux', env: {} }).open({ dir: '/a', remote: 'okc@h' });
     fire(1500);
 
-    return p.then(() => {
+    return within('open()', p).then(() => {
         assert.ok(said.some((m) => /Opening \/a on okc@h in VS Code/.test(m)), said.join(' | '));
         assert.ok(said.some((m) => /good VS Code was asked to open it/.test(m)), said.join(' | '));
     });
