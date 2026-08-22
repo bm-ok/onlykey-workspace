@@ -43,7 +43,7 @@ var makeSession = require('./session');
 //enough and short enough to paste into an install script.
 function newToken() { return crypto.randomBytes(24).toString('hex'); }
 
-plugin.consumes = ['app', 'log', 'tls'];
+plugin.consumes = ['app', 'log', 'tls', 'cron'];
 plugin.provides = ['channel'];
 async function plugin(imports, register) {
     var log = imports.log;
@@ -73,7 +73,30 @@ async function plugin(imports, register) {
     });
 
     var server = null;
-    var sweeper = null;
+
+    //---- noticing a machine that stopped answering -------------------------
+    //
+    //TCP WILL NOT DO IT FOR US: one killed mid-sentence leaves a socket on this
+    //side that looks perfectly healthy, forever. So somebody has to look.
+    //
+    //A CRON JOB RATHER THAN A TIMER OF ITS OWN — see ../../core/cron. It used to
+    //be a `setInterval` started inside listen(), which worked and could not be
+    //asked a single question: not whether it was running, not when it last swept,
+    //not what it found. It runs from startup whether or not anything is listening,
+    //because sweeping an empty roster is a no-op and "is the sweep running" should
+    //not have a different answer before and after the first machine.
+    imports.cron.add({
+        name: 'channel-silence',
+        every: 15000,
+        autoStart: true,
+        about: 'Notices a machine that has stopped answering, which TCP never will'
+    });
+    var stopSweeping = imports.cron.does('channel-silence', function () {
+        var gone = roster.sweep();
+        //WHAT IT FOUND, HANDED BACK, so the board can show a sweep that is doing
+        //something rather than only that it ran.
+        return gone.length ? { dropped: gone } : null;
+    });
 
     //---- a socket ----------------------------------------------------------
     //
@@ -104,13 +127,6 @@ async function plugin(imports, register) {
         //against the authority it was given when it was built.
         var creds = imports.tls.ensure();
 
-        //A MACHINE THAT STOPS ANSWERING HAS TO BE NOTICED, because TCP will not
-        //do it for us. `unref` so this never holds the process open.
-        if (!sweeper) {
-            sweeper = setInterval(function () { roster.sweep(); }, 15000);
-            if (sweeper.unref) sweeper.unref();
-        }
-
         return new Promise(function (resolve, reject) {
             server = tls.createServer({ key: creds.key, cert: creds.cert }, onConnection);
             server.once('error', reject);
@@ -123,7 +139,6 @@ async function plugin(imports, register) {
 
     function close() {
         roster.dropAll('this host is shutting down');
-        if (sweeper) { clearInterval(sweeper); sweeper = null; }
         return new Promise(function (done) {
             if (!server) return done();
             server.close(function () { server = null; done(); });
@@ -131,6 +146,7 @@ async function plugin(imports, register) {
     }
 
     await register(null, {
+        onDestroy: stopSweeping,
         channel: {
             listen: listen,
             close: close,

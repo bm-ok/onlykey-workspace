@@ -33,7 +33,8 @@ var makeAttempts = require('./attempts');
 //    ./archive.js    what a run left behind, kept where the machine cannot
 //                    take it away
 //    ./policy.js     who is free, what goes next, and what would go where
-//    ./main.js       the clock and the in-flight record, which outlive a save
+//    ./main.js       the in-flight record, which outlives a save. The clock is
+//                    a job in ../core/cron
 //
 //THE WORKER AND THE JUDGE ARE THE TWO LIBRARIES — a set of jobs, prompts and
 //contracts each — and they use those to ASK for a task. They do not own one once
@@ -69,7 +70,7 @@ var makeAttempts = require('./attempts');
 //from there — a board reporting "nothing running" while a machine is running
 //something is the confident wrong report this whole app is arranged against.
 //---------------------------------------------------------------------------
-plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact', 'archive'];
+plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact', 'archive', 'cron'];
 plugin.provides = ['queue'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -79,32 +80,72 @@ async function plugin(imports, register) {
     var dataDir = imports.dataDir;
     var secret = imports.secret;
 
-    //THE CLOCK AND THE IN-FLIGHT RECORD, FROM ./main.js. They outlive this
-    //bundle, which is rebuilt every time a file is saved — see the header there
-    //for what a queue that forgot in-flight on every save would do to a machine.
+    //THE IN-FLIGHT RECORD, FROM ./main.js. It outlives this bundle, which is
+    //rebuilt every time a file is saved — see the header there for what a queue
+    //that forgot in-flight on every save would do to a machine.
     //
     //ABSENT WHEN THIS HALF IS BUILT AGAINST A BARE HOST, which the test suite
     //does. A stand-in that is permanently stopped and holding nothing is the
     //right answer there: every method exists, and none of them reaches a machine.
     var engine = (host && host.queue) || {
         TICK: 15000,
-        running: function () { return false; },
-        since: function () { return null; },
-        start: function () { return false; },
-        stop: function () { return false; },
-        does: function () { return function () {}; },
         inFlight: function () { return []; },
         doing: function () { return {}; },
         claim: function () { return false; },
         release: function () { return false; },
-        armed: function () { return false; },
-        held: function () { return null; }
+        held: function () { return null; },
+        busy: function () { return 0; }
     };
 
-    //HOW OFTEN THIS HOST LOOKS, taken from the clock rather than written again.
+    //HOW OFTEN THIS HOST LOOKS, taken from the record rather than written again.
     //The board says it out loud, and a second number here would be a board
     //describing a cadence that is not the one running.
     var TICK = engine.TICK;
+
+    //---- the clock, which is a cron job ------------------------------------
+    //
+    //The timer used to be the queue's own — see ../core/cron for why every
+    //repeating job in this app now shares one. What is queue-shaped is the two
+    //RULES the switch carries, and they are declared here because this is where
+    //they are true:
+    //
+    //IT COMES UP STOPPED. Always, on every start, with no setting that can
+    //change it. This is the piece that gives real machines real work: it rolls
+    //one back to its base snapshot, hands it a credential, and runs somebody's
+    //instructions on it unattended. A thing that does that is STARTED by
+    //somebody, every time, rather than found already running by whoever opened
+    //the app. `autoStart` is simply not asked for.
+    //
+    //AND ONLY A PERSON MAY START IT. One sentence, said in one place, so the
+    //generic `cronStart` and the queue's own `queueStart` refuse with the same
+    //words — a second copy is how the two come to disagree about what is
+    //allowed.
+    var cron = imports.cron;
+    var JOB = 'queue';
+    var ONLY_A_PERSON = 'Starting the queue is done in the window, by a person. It gives real machines '
+        + 'real work — rolled back, handed a credential, and run unattended — and a model may not '
+        + 'decide that this host should begin doing that.';
+
+    cron.add({
+        name: JOB,
+        every: TICK,
+        about: 'Gives waiting work to free machines on this host',
+        humanOnly: ONLY_A_PERSON
+    });
+
+    //ASKED OF THE JOB EACH TIME RATHER THAN REMEMBERED. This half is rebuilt on
+    //every save and the job is not, so a copy taken here would be a copy of how
+    //things were the last time somebody pressed save.
+    var clock = {
+        running: function () { var j = cron.get(JOB); return !!(j && j.running); },
+        since: function () {
+            var j = cron.get(JOB);
+            return (j && j.running) ? { by: j.startedBy, at: j.startedAt } : null;
+        },
+        armed: function () { var j = cron.get(JOB); return !!(j && j.run); },
+        start: function (by) { return cron.start(JOB, by); },
+        stop: function (why) { return cron.stop(JOB, why); }
+    };
 
     //A QUEUE THAT CANNOT BE READ IS NOT AN EMPTY QUEUE.
     //
@@ -585,16 +626,12 @@ async function plugin(imports, register) {
             takes: ['why'],
             run: function (args) {
                 var a = args || {};
-                if (a._overTheWire) {
-                    throw new Error('Starting the queue is done in the window, by a person. It gives real machines '
-                        + 'real work — rolled back, handed a credential, and run unattended — and a model may not '
-                        + 'decide that this host should begin doing that.');
-                }
-                var was = engine.running();
-                engine.start(actions.whoAsked(a));
+                if (a._overTheWire) throw new Error(ONLY_A_PERSON);
+                var was = clock.running();
+                clock.start(actions.whoAsked(a));
                 return {
-                    running: engine.running(),
-                    since: engine.since(),
+                    running: clock.running(),
+                    since: clock.since(),
                     note: was
                         ? 'The queue was already running.'
                         : 'The queue is running. It looks every ' + (TICK / 1000) + 's and gives waiting work to '
@@ -608,8 +645,8 @@ async function plugin(imports, register) {
             takes: ['why'],
             run: function (args) {
                 var a = args || {};
-                var was = engine.running();
-                engine.stop(a.why ? String(a.why) : null);
+                var was = clock.running();
+                clock.stop(a.why ? String(a.why) : null);
                 var held = engine.inFlight();
                 return {
                     running: false,
@@ -696,8 +733,8 @@ async function plugin(imports, register) {
                     //WHOSE CLOCK IS RUNNING, AND WHETHER IT IS. Two different
                     //facts: this host can own the tick and have it switched off,
                     //which is what it does on every start.
-                    ticking: engine.running(),
-                    startedBy: engine.since(),
+                    ticking: clock.running(),
+                    startedBy: clock.since(),
                     waiting: waiting,
                     history: past,
                     //COUNTED PER KIND, because "four waiting" says nothing about
@@ -739,7 +776,7 @@ async function plugin(imports, register) {
 
                     order: policy.ORDER,
                     every: (TICK / 1000) + 's',
-                    tickHere: engine.armed(),
+                    tickHere: clock.armed(),
 
                     //AND WHAT COULD NOT BE READ, NAMED. An empty board with this
                     //list on it is a different sentence from an empty board
