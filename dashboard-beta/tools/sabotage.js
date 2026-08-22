@@ -70,6 +70,22 @@ process.on('SIGINT', function () { restore(); process.exit(130); });
 process.on('uncaughtException', function (e) { restore(); throw e; });
 
 console.log(it.file + '  against  ' + it.test);
+
+//THE RUNNING APP WILL FLAP WHILE THIS GOES, and it is worth a line because the
+//first time it happens it looks like a real fault.
+//
+//This breaks a REAL SOURCE FILE, once per break, and the dev server is watching
+//that folder — so each edit rebuilds the server bundle and reloads the server
+//half against deliberately broken code. The window prints a stack trace, and it
+//is a trace of a sabotage rather than of anything wrong with the app.
+//
+//It puts itself right: the restore below triggers one last rebuild, and the app
+//comes back on the real file. Nothing has to be done about it except know.
+//
+//THE CHECKS THEMSELVES DO NOT GO NEAR THE RUNNING APP — `node --test` reads the
+//source directly. The app is a bystander that happens to share the file.
+console.log('the window will report reload failures while this runs — it is watching this file,');
+console.log('and each break is a real edit to it. It comes back on the last restore.');
 console.log('');
 
 var clean = true;
@@ -126,9 +142,32 @@ it.breaks.forEach(function (b) {
 
 restore();
 
-console.log('');
-console.log(clean
-    ? 'every sabotage was caught — these tests can fail'
-    : 'SOMETHING GOT THROUGH — a test above is a sentence rather than a check');
+//AND THEN WAIT FOR THE WATCHER TO NOTICE, which is the difference between an app
+//that comes back and one left sitting on a failed reload.
+//
+//THIS EXITED THE MOMENT IT HAD WRITTEN THE FILE BACK. webpack was still building
+//the LAST break at that point, so the sequence the app saw was: broken file →
+//build → reload fails → rectify keeps the last good graph and prints the failure
+//→ and then nothing, because the restore had already happened and there was no
+//further change to rebuild from.
+//
+//The file was correct on disk and the window showed a ReferenceError for a
+//variable that was plainly declared two lines up. It cost a real investigation
+//to find that the code was never wrong.
+//
+//SO THE RESTORED FILE IS TOUCHED AGAIN AFTER A PAUSE. A second write with a
+//different mtime is a change the watcher cannot miss, and it is the LAST one —
+//so whatever raced before it, the app's final rebuild is from the real file.
+//AND THE TIMER IS NOT UNREF'D, deliberately. Holding the process open for that
+//second and a half IS the fix; letting node exit early would put the write back
+//exactly where it was.
+setTimeout(function () {
+    try { fs.writeFileSync(FILE, onDisk); } catch (e) { /* nothing else to try */ }
 
-process.exitCode = clean ? 0 : 1;
+    console.log('');
+    console.log(clean
+        ? 'every sabotage was caught — these tests can fail'
+        : 'SOMETHING GOT THROUGH — a test above is a sentence rather than a check');
+
+    process.exitCode = clean ? 0 : 1;
+}, 1500);
