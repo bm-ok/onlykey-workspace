@@ -71,7 +71,12 @@ beforeEach(async () => {
 
     await provisionPlugin({
         app: { host: {} }, log, ours, channel, vbox,
-        dataDir: { at: (...p) => path.join(dataDir, ...p) }
+        dataDir: { at: (...p) => path.join(dataDir, ...p) },
+        //THE TWO THIS PLUGIN NEEDS TO LOAD BUT NOT TO CREATE ANYTHING. The
+        //repairs are scheduled at load — see ./provision-repairs.test.js, which
+        //is where what they do is checked.
+        cron: { add: () => {}, does: () => () => {} },
+        tls: { ensure: () => ({ fingerprint: 'aabbcc' }) }
     }, async (_e, s) => { provision = s.provision; });
 });
 
@@ -109,7 +114,9 @@ test('no VirtualBox at all is refused, rather than half-writing a record', async
         async (_e, s) => { theirs = s.ours; });
     await provisionPlugin({
         app: { host: {} }, log, ours: theirs, channel: { newToken: () => 't' }, vbox: gone,
-        dataDir: { at: (...p) => path.join(dataDir, ...p) }
+        dataDir: { at: (...p) => path.join(dataDir, ...p) },
+        cron: { add: () => {}, does: () => () => {} },
+        tls: { ensure: () => ({ fingerprint: 'aabbcc' }) }
     }, async (_e, s) => { theirProvision = s.provision; });
 
     await assert.rejects(() => theirProvision.create({ name: 'one' }),

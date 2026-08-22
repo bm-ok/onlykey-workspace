@@ -30,6 +30,14 @@ module.exports = function building(deps) {
     //../../keys and ../../../queue pass a thunk for the same reason.
     var serialDir = d.serialDir;
 
+    //WHERE ONE PARTICULAR MACHINE'S CONSOLE GOES, decided HERE and asked for
+    //everywhere else. ./repairs.js gives a console to machines built before the
+    //port was attached to every one, and it has to land on the same file this
+    //does — two opinions about that is a record naming a file nothing writes to.
+    function serialFor(name) {
+        return path.join(serialDir(), name + '.log');
+    }
+
     var there = d.there || function (p) {
         try { return fs.existsSync(p); } catch (e) { return false; }
     };
@@ -178,7 +186,7 @@ module.exports = function building(deps) {
         var serial = null;
         try {
             var where = serialDir();
-            serial = path.join(where, spec.name + '.log');
+            serial = serialFor(spec.name);
             makeDir(where);
             await vbox.setSerial(spec.name, serial);
         } catch (e) {
@@ -299,6 +307,7 @@ module.exports = function building(deps) {
         pickBridge: pickBridge,
         hostOnlyAdapter: hostOnlyAdapter,
         buildInVbox: buildInVbox,
-        blankTheDisk: blankTheDisk
+        blankTheDisk: blankTheDisk,
+        serialFor: serialFor
     };
 };

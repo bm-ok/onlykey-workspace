@@ -5,6 +5,7 @@ var makeScripts = require('./scripts');
 var makeBuilding = require('./building');
 var makeSettling = require('./settling');
 var makeInstalling = require('./installing');
+var makeRepairs = require('./repairs');
 var makeAutoinstall = require('./autoinstall');
 var header = require('./header');
 
@@ -57,7 +58,7 @@ var header = require('./header');
 //them, so the plugin that owns those ports can hand them over when it arrives.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir', 'tls'];
+plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir', 'tls', 'cron'];
 plugin.provides = ['provision'];
 async function plugin(imports, register) {
     var log = imports.log.on('vm');
@@ -163,7 +164,52 @@ async function plugin(imports, register) {
         return vm;
     }
 
+    //---- the machines that already existed when a rule arrived --------------
+    //
+    //JOBS RATHER THAN A STARTUP STEP, and the version this comes from made the
+    //argument itself: "a machine that is up right now gets its port the next
+    //time it is off, and this is called again on the next start". VirtualBox
+    //will not add a serial port to a RUNNING machine, so the machine that most
+    //needs one is exactly the one a startup sweep always skips — and the repair
+    //then waited for somebody to restart the app.
+    //
+    //AND THEY BECOME ANSWERABLE. ../../core/cron can say when each last ran,
+    //what it found and whether it is failing, which a startup step could not be
+    //asked. That is the whole point of rounding these up.
+    var fix = makeRepairs({
+        vbox: vbox,
+        ours: ours,
+        say: imports.log.on,
+        //THE SAME FILE ./building.js WOULD HAVE CHOSEN. Two opinions about where
+        //a console goes is a record naming a file nothing writes to.
+        serialFor: build.serialFor
+    });
+
+    //AUTOSTARTED, because both only read the register and repair configuration
+    //on a machine that is switched off. Neither gives a machine work — that is
+    //the line ../../core/cron/schedule.js draws, and the queue's job is on the
+    //other side of it.
+    imports.cron.add({
+        name: 'machine-consoles',
+        every: 300000,
+        autoStart: true,
+        about: 'Gives a console to a machine built before every machine had one, once it is off'
+    });
+    var stopConsoles = imports.cron.does('machine-consoles', function () { return fix.consoles(); });
+
+    imports.cron.add({
+        name: 'machine-pools',
+        every: 300000,
+        autoStart: true,
+        about: 'Puts a machine that carries no tag into the ordinary pool — every machine is in one'
+    });
+    var stopPools = imports.cron.does('machine-pools', function () { return fix.pools(); });
+
     await register(null, {
+        //THE NODE BUNDLE IS REBUILT ON EVERY SAVE, so what this registered has
+        //to come off again or a save leaves two of it — see ../channel/server.js.
+        onDestroy: function () { stopConsoles(); stopPools(); },
+
         provision: {
             fill: spec.fill,
             create: create,
