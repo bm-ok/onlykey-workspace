@@ -178,9 +178,53 @@ async function plugin(imports, register) {
                 if (answered !== undefined) return answered;
             }
 
-            throw new Error('No action called "' + name + '"');
+            //NOTHING ANSWERED, AND THERE ARE TWO VERY DIFFERENT REASONS.
+            //
+            //"No action called X" was said for both, and for most of this app's
+            //names it was the wrong one. Two hundred and fifty-eight actions
+            //exist; this half answers seventy-one. The rest are relayed — so
+            //with the other app stopped, seventeen panes reported a MISSING
+            //CAPABILITY about things that are merely somewhere else, and read
+            //exactly like a port that had lost them.
+            //
+            //A fallback that is down returns `undefined`, which is the same
+            //thing it returns for a name it does not own — deliberately, since
+            //it cannot know. But the CATALOGUE beside it can tell the two apart:
+            //it throws when the pipe is down, with a sentence about the pipe.
+            //Nothing was asking it.
+            throw await whyNot(name);
         }
     };
+
+    //WHY A NAME WENT UNANSWERED, worked out only once one has.
+    //
+    //ASKED AT THE MOMENT OF FAILURE rather than remembered, because a cache of
+    //"what the far end knows" would be a second opinion about somebody else's
+    //table, and it would be wrong in exactly the case that matters: just after
+    //an action moves. This runs on a path that has already failed, so one round
+    //trip to say something true is cheap.
+    async function whyNot(name) {
+        var down = [];
+
+        for (var i = 0; i < catalogues.length; i++) {
+            try { await catalogues[i](); }
+            catch (e) {
+                //THE FALL-THROUGH ITSELF SAYS WHY IT CANNOT ANSWER, in its own
+                //words, and its words are better than any this file could
+                //invent — it knows what it relays to and this does not.
+                down.push((e && e.message) ? e.message : String(e));
+            }
+        }
+
+        if (down.length) {
+            return new Error('Nothing here answers "' + name + '", and it may be one of the many '
+                + 'this app still relays: ' + down.join('; '));
+        }
+
+        //EVERY FALL-THROUGH ANSWERED AND NONE OF THEM HAD IT. Now the original
+        //sentence is the true one.
+        return new Error('No action called "' + name + '"');
+    }
 
     await register(null, { actions: actions });
 }
