@@ -109,9 +109,13 @@ test('and a machine VirtualBox cannot be asked about is treated as off', async (
     assert.ok(true, 'it refused to start on a question it could not ask');
 });
 
-test('a RUNNER is not affected, whatever else is running', async () => {
-    //TWO, FOUR, TEN RUNNERS AT ONCE is the point of the queue — they are told
+test('a runner tagged worker is not affected, whatever else is running', async () => {
+    //TWO, FOUR, TEN OF THOSE AT ONCE is the point of the queue — they are told
     //what to do and cannot decide anything.
+    //
+    //A RUNNER IS A VIRTUAL MACHINE IN THE POOL, and the tag says what it is for.
+    //Supervisors are runners too — runners tagged supervisor — so the rule above
+    //is about the TAG rather than about machines in general.
     machines = [VM('kit-1'), VM('kit-2')];
     off = { 'kit-2': false };
 

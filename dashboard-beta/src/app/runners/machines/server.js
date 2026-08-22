@@ -36,6 +36,22 @@ var makeSpeaking = require('./speaking');
 //
 //NOR MAKING OR DESTROYING ONE. `vmCreate`, `vmInstall` and `vmRemove` are
 //../../vms/provision's subject and are the largest thing left on this tab.
+//
+//NOR `vmTags`, AND IT CARRIES A RULE THAT HAS TO COME WITH IT. The `supervisor`
+//tag may not be ADDED and may not be TAKEN OFF — it is decided when the machine
+//is built, because a supervisor is a different BUILD: permanently out of the
+//queue, holding no repositories, with a slim setup of node and Claude Code. The
+//dialog that makes one says "this cannot be changed later", and the app being
+//ported from refuses both directions, for the two failures each causes:
+//
+//  typed on    a machine with a full build and repositories joins the set of
+//              things nothing may queue work to, reading as a queue gone quiet
+//  typed off   a supervisor joins the pool, and the first queued task rolls it
+//              back to its base snapshot while it is working
+//
+//./lifecycle.js READS THAT TAG and refuses to bring a second supervisor up. That
+//is only sound while the tag cannot move, so whoever ports `vmTags` is porting
+//this rule with it — not as tidiness, but because the check above depends on it.
 //---------------------------------------------------------------------------
 
 //A FILENAME THAT SORTS, and has nothing in it a filesystem objects to.

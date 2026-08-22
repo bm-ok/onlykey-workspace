@@ -5,6 +5,29 @@
 //cost the host most: a machine coming up pulls on the disk and every core for a
 //minute, and one going down may or may not be listening.
 //
+//---- the words, because two of them are easy to swap ----------------------
+//
+//A RUNNER IS A VIRTUAL MACHINE IN THE POOL. That is all it means. What a runner
+//is FOR is a tag on it — worker, judge, supervisor — and work asks for a tag
+//rather than for a name.
+//
+//SO "a runner" IS NOT A SYNONYM FOR "a worker machine", and writing it that way
+//makes the sentence below read as though supervisors were something other than
+//runners. They are runners; they are runners tagged supervisor.
+//
+//AND THAT TAG IS DECIDED WHEN THE MACHINE IS MADE. It is not a label somebody
+//puts on afterwards: a supervisor is a different BUILD — permanently out of the
+//queue, holding no repositories, with a slim setup of node and Claude Code —
+//and the dialog that makes one says "this cannot be changed later". `vmTags`
+//refuses to add it and refuses to take it off, for the two failures either
+//direction causes: a machine tagged on would join the pool of what it is not,
+//and a machine tagged off would be rolled back to base by the first queued task
+//while it was working.
+//
+//That is why reading the tag here is safe. It cannot have been changed under a
+//running machine, so what it says about a machine is what that machine was
+//built as.
+//
 //---- one supervisor runs at a time, and that is a rule about WHAT THEY ARE --
 //
 //A supervisor decides what work there is: it reads the board, writes tasks and
@@ -17,8 +40,9 @@
 //remembers. The refusal NAMES the one already running, because "stop that one
 //first" is the only thing to do about it.
 //
-//A RUNNER IS NOT AFFECTED. Two, four, ten runners at once is the point of the
-//queue — they are told what to do and cannot decide anything.
+//A RUNNER TAGGED WORKER OR JUDGE IS NOT AFFECTED. Two, four, ten of those at
+//once is the point of the queue — they are told what to do and cannot decide
+//anything.
 //
 //---- and pressing the power button is a REQUEST ---------------------------
 //
