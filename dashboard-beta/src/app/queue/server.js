@@ -307,6 +307,14 @@ async function plugin(imports, register) {
             var all = (said && said.jobs) || [];
             return all.filter(function (j) { return j.id === id; })[0] || null;
         },
+        //THE PROMPT A BRIEF CAME FROM, so an edited task can still say where its
+        //words started. Relayed like the rest of the library, and it goes the
+        //day ../library's writes do.
+        prompt: async function (id) {
+            var said = await relayed('prompts');
+            var all = (said && said.prompts) || [];
+            return all.filter(function (p) { return p.id === id; })[0] || null;
+        },
         machines: async function () {
             var said = await relayed('vmList');
             return (said && said.vms) || [];
@@ -622,6 +630,26 @@ async function plugin(imports, register) {
             //than a second opinion written beside it.
             run: async function (args) {
                 return await doors.queue((args || {}).id, planFor);
+            }
+        }));
+
+        //---- CHANGING ONE, AND THE TWO CALLERS THAT DO -----------------------
+        //
+        //A PERSON EDITING A DRAFT and the queue recording what happened to a run
+        //go through the same door, because the identity pinning and the library
+        //copying have to be true of both — see ./doors.edit.
+        //
+        //AND DEFINING IT HERE IS WHAT LETS THIS HOST DISPATCH AT ALL. Until now
+        //the tick read this app's board through `tasks` and every write relayed
+        //to the app being ported from: two boards, with every write landing on
+        //the live one. ./tick refuses to dispatch while that is true and asks the
+        //action table each time, so this line is what clears it.
+        undo.push(actions.define('taskUpdate', {
+            about: 'Change a task: what it says while it is a draft, and what happened to it once it has run',
+            takes: ['id', 'task'],
+            run: async function (args) {
+                var a = args || {};
+                return await doors.edit(a.id, a.task);
             }
         }));
 

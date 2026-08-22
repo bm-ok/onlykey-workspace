@@ -162,62 +162,39 @@ test('it comes up STOPPED, with no setting that can change it', async () => {
     assert.match(jobs.queue.humanOnly, /a model may not decide that this host should begin doing that/);
 });
 
-//---- and it refuses to dispatch while the board is split ----------------------
+//---- and it owns both ends of the board ---------------------------------------
+//
+//THE HAZARD THIS WAS ARMED AGAINST. Before `taskUpdate` was defined here, the
+//tick READ this app's board and every write RELAYED to the app being ported from
+//— the one actually running work on real machines. Adoption reads a stranded
+//task here and re-queues it over there; a dispatch marks `given` on a board it
+//did not read from.
+//
+//../../src/app/queue/tick refuses to dispatch while that is true, and asks the
+//action table each time rather than carrying a flag — so defining the action is
+//what cleared it, with nothing turned on. The refusal itself is tested in
+//./queue-tick.test.js, where it can be asked about directly.
 
-test('nothing is dispatched while it reads here and writes elsewhere', async () => {
-    //THE HAZARD THIS GUARD EXISTS FOR. The queue defines `tasks` and does not
-    //define `taskUpdate`, so during the port every write RELAYS to the app being
-    //ported from — the one actually running work on real machines. Two boards,
-    //and every write lands on the live one.
-    const { queue } = await aQueue();
-
-    //`tasks` IS DEFINED BY THE PLUGIN and `taskUpdate` is not, which is the real
-    //state of this app today — so this is not a contrived condition.
-    const out = await jobs.queue.run();
-
-    assert.equal(out.skipped, 'the board is read here and written elsewhere');
-    assert.ok(said.some((l) => /nothing is dispatched from this host/.test(l)), said.join(' | '));
-    assert.ok(said.some((l) => /This clears itself when taskUpdate moves here/.test(l)));
-});
-
-test('and it says so once, not four times a minute', async () => {
-    await aQueue();
-    await jobs.queue.run();
-    await jobs.queue.run();
-    await jobs.queue.run();
-
-    assert.equal(said.filter((l) => /nothing is dispatched from this host/.test(l)).length, 1);
-});
-
-test('adoption is held back by it too, because adoption is all writes', async () => {
-    //ITS WHOLE JOB IS TO WRITE — re-queueing what a restart stranded — so a
-    //split board makes it the one pass that does nothing but land on the wrong
-    //app.
-    tasks = [{ id: 't1', uid: 'u7', number: 7, state: 'given', machine: 'kit-1', attempts: [] }];
-
-    const { board } = await aQueue();
-    await jobs.queue.run();
-
-    assert.equal(board()[0].state, 'given', 'adoption wrote to a board it does not own');
-});
-
-test('and the day both ends are here, it dispatches without anything being turned on', async () => {
-    //ASKED OF THE ACTION TABLE rather than carried as a flag, so this becomes
-    //true on its own.
+test('both ends of the board are answered by this app', async () => {
     const { actions } = await aQueue();
-    actions.define('taskUpdate', { run: (a) => { called.push(['taskUpdate', a]); return {}; } });
 
+    assert.equal(actions.has('tasks'), true);
+    assert.equal(actions.has('taskUpdate'), true,
+        'the tick would read this board and write to the app being ported from');
+});
+
+test('so the tick is not held back', async () => {
+    const { actions } = await aQueue();
     const out = await jobs.queue.run();
 
-    assert.equal(out.skipped, undefined, 'it still refused once it owned both ends');
-    assert.deepEqual(out.dispatched, []);
+    assert.equal(out.skipped, undefined, 'it refused to dispatch on a host that owns both ends');
+    assert.ok(said.every((l) => !/nothing is dispatched from this host/.test(l)), said.join(' | '));
 });
 
 //---- and the tick runs, without touching anything ----------------------------
 
 test('a tick with nothing queued does its guards and stops', async () => {
-    const { actions } = await aQueue();
-    actions.define('taskUpdate', { run: () => ({}) });
+    await aQueue();
 
     const out = await jobs.queue.run();
 
@@ -230,10 +207,9 @@ test('and one with no workspace open does not even look', async () => {
     //async shape of that question is actually exercised: workspace.dir() throws
     //when nothing is open, which is the right answer for a caller that needs the
     //folder and the wrong one for a caller asking whether there is one.
-    const { actions } = await aQueue({
+    await aQueue({
         workspace: { dir: async () => { throw new Error('no workspace is open'); }, repos: async () => [] }
     });
-    actions.define('taskUpdate', { run: () => ({}) });
 
     const out = await jobs.queue.run();
 
@@ -249,16 +225,9 @@ test('adoption happens once, before the first dispatch and never again', async (
     //had just dispatched.
     tasks = [{ id: 't1', uid: 'u7', number: 7, state: 'given', machine: 'kit-1', attempts: [] }];
 
-    //A `taskUpdate` THAT WRITES WHERE THE QUEUE READS, which is the whole point
-    //of the guard above: with both ends here, adoption's write lands on the
-    //board it read the task from.
-    const { board, actions, writeBoard } = await aQueue();
-    actions.define('taskUpdate', {
-        run: (a) => {
-            writeBoard(board().map((t) => (t.id === a.id ? Object.assign({}, t, a.task) : t)));
-            return {};
-        }
-    });
+    //THE PLUGIN'S OWN `taskUpdate` DOES THE WRITING, which is the point of the
+    //guard above: adoption's write lands on the board it read the task from.
+    const { board } = await aQueue();
 
     await jobs.queue.run();
 
@@ -282,13 +251,12 @@ test('adoption happens once, before the first dispatch and never again', async (
 test('and an adoption that throws does not stop this host dispatching for ever', async () => {
     //A RESTART THAT COULD NOT BE TIDIED UP is a reason to say so, not a reason
     //to give up.
-    const { actions } = await aQueue({
+    await aQueue({
         judge: {
             all: () => { throw new Error('the judging store is gone'); },
             get: () => null, update: () => {}, refOf: (n) => 'J' + n
         }
     });
-    actions.define('taskUpdate', { run: () => ({}) });
 
     //THE SAME THROW REACHES THE TICK A MOMENT LATER, where ../core/cron catches
     //it and records the failure on the job. What is checked here is that

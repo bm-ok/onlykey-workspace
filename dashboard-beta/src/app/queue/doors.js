@@ -43,6 +43,130 @@ module.exports = function doors(store, ask, log) {
         return null;
     }
 
+    //---- WHAT THE LIBRARY SAYS, COPIED IN ----------------------------------
+    //
+    //ONE FUNCTION, BECAUSE WRITING A TASK AND EDITING ONE ARE THE SAME ACT HERE.
+    //
+    //The app being ported from had this in `taskCreate` and then again in
+    //`taskUpdate`, and the second copy was written AFTER a run proved it was
+    //missing: changing which contract a task ran under changed the NAME and left
+    //the WORDS, so the board said one contract and the worker was held to
+    //another — the exact failure the copying exists to prevent, arriving through
+    //the one door that did not do it.
+    //
+    //A rule with two implementations has one that is wrong, and which one is
+    //discovered by a machine.
+    //
+    //---- the rules are copied in, the same way the brief is ----------------
+    //
+    //`contractId` names one from the library and what gets STORED is its WORDS.
+    //Every arrow carries a copy, and it is what makes a finished task readable: a
+    //name proves nothing months later about what the worker was actually held to,
+    //and the library it named has moved on since.
+    //
+    //BOTH AT ONCE IS REFUSED rather than silently preferring one — otherwise
+    //which rules a run was under depends on which line of code read it first.
+    //
+    //---- and `in` rather than truthy, when editing ------------------------
+    //
+    //Most callers on that path are the queue and the panel sending a two-field
+    //patch. Treating a MISSING key as "set it to none" would strip the rules off
+    //every task the queue touched — so a key that is not there is not a change,
+    //and a key that is there and empty is a removal.
+    async function fromTheLibrary(it, how) {
+        var o = how || {};
+        var editing = o.when === 'editing';
+        var said = editing ? 'putting a task under it' : 'writing a task under it';
+
+        if (!editing || ('contractId' in it)) {
+            var wanted = String(it.contractId || '').trim();
+
+            if (wanted) {
+                //WHEN EDITING, THE OTHER HALF MAY ALREADY BE ON THE RECORD. So
+                //"both at once" asks what the task carries as well as what the
+                //patch says — otherwise naming a library contract on a task that
+                //already carries a file leaves both, which is the state this
+                //refuses to create.
+                var alsoAFile = editing
+                    ? (it.contract || (!('contract' in it) && o.carries))
+                    : it.contract;
+
+                if (alsoAFile) {
+                    throw new Error('Give it either a contract from the library or a file on this host, not both — '
+                        + 'otherwise which rules a run was under depends on which line of code read it first.');
+                }
+
+                var one = await ask.contract(wanted);
+                if (!one) throw new Error('There is no contract called "' + wanted + '".');
+                if (!one.approved) {
+                    throw new Error(one.lapsed
+                        ? 'The contract "' + one.name + '" has been edited since it was approved. Read it and '
+                            + 'approve it again before ' + said + '.'
+                        //WHAT A WORKER MAY NOT DO IS READ BEFORE IT IS SENT, the
+                        //same as what it is told to do.
+                        : 'The contract "' + one.name + '" is not approved. What a worker may not do is read '
+                            + 'before it is sent, the same as what it is told to do.');
+                }
+
+                it.contractId = wanted;
+                it.rules = one.text;
+                it.contractName = one.name;
+            } else if (editing) {
+                //TAKEN OFF, AND TAKEN OFF COMPLETELY. Leaving the words behind
+                //would read as "no contract" everywhere the id is checked and
+                //"these rules" everywhere the text is, which is worse than
+                //either.
+                it.contractId = null;
+                it.rules = null;
+                it.contractName = null;
+            } else if (it.contract) {
+                if (!(await ask.contractFileExists(String(it.contract)))) {
+                    throw new Error('There is no contract at ' + it.contract + '. It is read from this host when '
+                        + 'the task is given out.');
+                }
+            }
+        }
+
+        //A TASK NAMING A JOB THAT DOES NOT EXIST is a task the queue will pick
+        //up and fail on, and the moment it is written is the cheap moment to
+        //find that out.
+        if (editing ? ('job' in it) : !!it.job) {
+            var named = String(it.job || '').trim();
+            var job = named ? await ask.job(named) : null;
+
+            if (named && !job) {
+                throw new Error('There is no job called "' + named + '". Ask for "jobs" to see what there is.');
+            }
+            //AND IT IS A JOB FOR DOING WORK. The judging library is kept apart,
+            //and the refusal runs in both directions: a judge given to a task
+            //would send a machine to READ a change under rules written for
+            //reading, on a branch it was told to deliver on.
+            if (job && job.kind === 'judge') {
+                throw new Error('"' + job.id + '" is a judge — it reads a change and says whether it holds. A task '
+                    + 'makes one. Pick a job from the work library, or ask for a judgement instead with '
+                    + 'judgementCreate.');
+            }
+
+            it.job = named || null;
+            it.jobName = job ? job.name : null;
+        }
+
+        //THE PROMPT'S NAME TRAVELS WITH ITS ID for the same reason the contract's
+        //words do: the library entry may be gone by the time anybody reads the
+        //task, and the task should still be able to say where its brief came
+        //from.
+        if ('promptId' in it) {
+            var whose = String(it.promptId || '').trim();
+            var from = whose && ask.prompt ? await ask.prompt(whose) : null;
+            if (whose && !from) throw new Error('There is no prompt called "' + whose + '".');
+
+            it.promptId = whose || null;
+            it.promptName = from ? from.name : null;
+        }
+
+        return it;
+    }
+
     //=======================================================================
     //WRITE A TASK.
     //=======================================================================
@@ -115,57 +239,7 @@ module.exports = function doors(store, ask, log) {
         var branchWhy = await branchIsReady(it.branch);
         if (branchWhy) throw new Error(branchWhy);
 
-        //---- THE RULES ARE COPIED IN, THE SAME WAY THE BRIEF IS -----------
-        //
-        //`contractId` names one from the library and what gets stored is its
-        //WORDS. Every arrow carries a copy, and it is what makes a finished task
-        //readable: a name proves nothing months later about what the worker was
-        //actually held to, and the library it named has moved on since.
-        //
-        //BOTH AT ONCE IS REFUSED rather than silently preferring one — otherwise
-        //which rules a run was under depends on which line of code read it first.
-        if (it.contractId) {
-            if (it.contract) {
-                throw new Error('Give it either a contract from the library or a file on this host, not both — '
-                    + 'otherwise which rules a run was under depends on which line of code read it first.');
-            }
-            var one = await ask.contract(String(it.contractId));
-            if (!one) throw new Error('There is no contract called "' + it.contractId + '".');
-            if (!one.approved) {
-                throw new Error(one.lapsed
-                    ? 'The contract "' + one.name + '" has been edited since it was approved. Read it and approve '
-                        + 'it again before writing a task under it.'
-                    //WHAT A WORKER MAY NOT DO IS READ BEFORE IT IS SENT, the
-                    //same as what it is told to do.
-                    : 'The contract "' + one.name + '" is not approved. What a worker may not do is read before it '
-                        + 'is sent, the same as what it is told to do.');
-            }
-            it.rules = one.text;
-            it.contractName = one.name;
-        } else if (it.contract) {
-            if (!(await ask.contractFileExists(String(it.contract)))) {
-                throw new Error('There is no contract at ' + it.contract + '. It is read from this host when the '
-                    + 'task is given out.');
-            }
-        }
-
-        //A TASK NAMING A JOB THAT DOES NOT EXIST is a task the queue will pick
-        //up and fail on, and the moment it is written is the cheap moment to
-        //find that out.
-        if (it.job) {
-            var job = await ask.job(String(it.job));
-            if (!job) throw new Error('There is no job called "' + it.job + '". Ask for "jobs" to see what there is.');
-            //AND IT IS A JOB FOR DOING WORK. The judging library is kept apart,
-            //and the refusal runs in both directions: a judge given to a task
-            //would send a machine to READ a change under rules written for
-            //reading, on a branch it was told to deliver on.
-            if (job.kind === 'judge') {
-                throw new Error('"' + job.id + '" is a judge — it reads a change and says whether it holds. A task '
-                    + 'makes one. Pick a job from the work library, or ask for a judgement instead with '
-                    + 'judgementCreate.');
-            }
-            it.jobName = job.name;
-        }
+        await fromTheLibrary(it, { when: 'writing' });
 
         var made = await store.add(it);
 
@@ -253,5 +327,52 @@ module.exports = function doors(store, ask, log) {
     //=======================================================================
     async function remove(ref) { return await store.remove(ref); }
 
-    return { create: create, queue: queue, remove: remove, branchIsReady: branchIsReady };
+    //=======================================================================
+    //CHANGE ONE.
+    //
+    //TWO CALLERS THAT LOOK NOTHING ALIKE. A person editing a draft on the board,
+    //and the queue marking a task as given, run, done — and they go through one
+    //door because the identity pinning and the library copying have to be true
+    //of both. The frozen app's `taskUpdate` is titled "Change a task that has not
+    //been given out yet" and is also what every line of the tick writes through.
+    //
+    //---- what cannot change once it has been given out ------------------
+    //
+    //THE BRIEF AND THE BRANCH are what a worker was TOLD and WHERE it delivered.
+    //Editing either after the fact rewrites the question a piece of work was the
+    //answer to, and a verdict then refers to something that was never asked.
+    //
+    //THE STATE IS NOT AMONG THEM, and that is the whole reason this door is
+    //shared: the queue moves a given task to `done` on every run. What is refused
+    //is rewriting what it was for, not recording what happened to it.
+    //=======================================================================
+    async function edit(ref, changes) {
+        var it = typeof changes === 'string' ? JSON.parse(changes) : (changes || {});
+        var now = await store.get(ref);
+
+        if (now.machine && (it.brief || it.branch || it.contract)) {
+            throw new Error('"' + (now.id || ref) + '" has already been given to ' + now.machine + '. What it was '
+                + 'asked and where it delivers cannot change now — that would rewrite the question its work '
+                + 'answers. Write a new task, or take the verdict on this one first.');
+        }
+
+        //A BRANCH IS CHECKED THE SAME WAY WRITING ONE IS. Without it the order
+        //holds at the door and not at the window beside it: write the task
+        //correctly, then edit the branch to one nobody has cut.
+        if (it.branch) {
+            var why = await branchIsReady(String(it.branch).trim());
+            if (why) throw new Error(why);
+        }
+
+        //`carries` IS WHAT THE TASK ALREADY HAS, so "a library contract and a
+        //file at once" is asked of the result rather than of the patch.
+        await fromTheLibrary(it, { when: 'editing', carries: now.contract });
+
+        return await store.update(ref, it);
+    }
+
+    return {
+        create: create, queue: queue, remove: remove, edit: edit,
+        branchIsReady: branchIsReady, fromTheLibrary: fromTheLibrary
+    };
 };

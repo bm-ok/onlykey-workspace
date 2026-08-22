@@ -84,31 +84,44 @@ test('nothing, and nothing readable, are both null', () => {
 
 //---- across everything that came back --------------------------------------
 
-test('the first file that concludes anything is the answer', () => {
+test('the first file that concludes anything is the answer', async () => {
     const files = { 'survey.md': 'a lot of prose', 'verdict.md': 'RECOMMENDATION: reject', 'notes.md': 'CLAIM: true' };
-    const got = concludedAcross(
+    const got = await concludedAcross(
         [{ file: 'survey.md' }, { file: 'verdict.md' }, { file: 'notes.md' }],
-        (f) => files[f]);
+        async (f) => files[f]);
 
     //READING ON PAST THE FIRST would let a later file's discussion overwrite it.
     assert.equal(got, 'reject');
 });
 
-test('a file that cannot be read is skipped, not fatal', () => {
-    const got = concludedAcross(
+test('a file that cannot be read is skipped, not fatal', async () => {
+    //AND A READER THAT REJECTS, not only one that throws — the store answers off
+    //disk, so "it is not there" arrives as a failed promise.
+    const got = await concludedAcross(
         [{ file: 'gone.md' }, { file: 'verdict.md' }],
-        (f) => { if (f === 'gone.md') throw new Error('it is not there'); return 'RECOMMEND: NO'; });
+        async (f) => { if (f === 'gone.md') throw new Error('it is not there'); return 'RECOMMEND: NO'; });
 
     assert.equal(got, 'reject', 'one unreadable file lost a conclusion sitting in the next one');
 });
 
-test('nothing handed back is no conclusion', () => {
-    assert.equal(concludedAcross([], () => ''), null);
-    assert.equal(concludedAcross(null, () => ''), null);
+test('nothing handed back is no conclusion', async () => {
+    assert.equal(await concludedAcross([], async () => ''), null);
+    assert.equal(await concludedAcross(null, async () => ''), null);
 });
 
-test('files that say nothing are no conclusion, not an empty string', () => {
+test('files that say nothing are no conclusion, not an empty string', async () => {
     //`null` AND `''` ARE DIFFERENT DOWNSTREAM: one is "it would not say", the
     //other is a value.
-    assert.strictEqual(concludedAcross([{ file: 'a' }], () => 'prose'), null);
+    assert.strictEqual(await concludedAcross([{ file: 'a' }], async () => 'prose'), null);
+});
+
+test('and it stops at the first answer rather than reading everything', async () => {
+    //THE STORE ANSWERS OFF DISK, and a judgement can hand back a dozen files.
+    //The question is usually settled by the first.
+    const read = [];
+    await concludedAcross(
+        [{ file: 'verdict.md' }, { file: 'survey.md' }, { file: 'notes.md' }],
+        async (f) => { read.push(f); return f === 'verdict.md' ? 'CLAIM: true' : 'prose'; });
+
+    assert.deepEqual(read, ['verdict.md']);
 });
