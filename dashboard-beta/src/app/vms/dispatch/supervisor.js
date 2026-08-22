@@ -77,9 +77,16 @@ module.exports = function supervisor(deps) {
             watcher.watcherFor(SUPERVISOR, SUPERVISOR + '/current.log'),
 
             //QUOTED THROUGH ./quoting.js RATHER THAN BY HAND. The value is
-            //base64 and cannot contain a quote, which is what made the hand-written
-            //version safe — but that is a fact about the CALLER, and the check
-            //above is what makes it a fact about this function.
+            //base64 and cannot contain a quote, which is what made the
+            //hand-written version safe — but that is a fact about the CALLER,
+            //and the check above is what makes it a fact about this function.
+            //
+            //WITH THAT CHECK IN PLACE THIS CALL CHANGES NOTHING, and that is
+            //worth saying rather than leaving it to look load-bearing: pasting
+            //the value in by hand produces a byte-identical line. It was tried
+            //as a sabotage and survived, exactly as ./runs.js records for its
+            //`..` check. It stays because it is what would catch the guard above
+            //being weakened by an edit that looked harmless.
             'printf %s ' + q(brief) + ' | base64 -d > /tmp/okc-wake.txt',
 
             'ln -sfn ' + log + ' ' + SUPERVISOR + '/current.log',

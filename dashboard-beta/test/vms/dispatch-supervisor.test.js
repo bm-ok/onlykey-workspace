@@ -30,6 +30,19 @@ beforeEach(() => {
     sup = makeSupervisor({ watcher: makeWatcher({ payloads }) });
 });
 
+//WHERE A LINE IS, HAVING FIRST INSISTED THAT IT IS THERE.
+//
+//`indexOf` RETURNS -1, AND -1 IS LESS THAN EVERYTHING. An ordering assertion
+//written on two raw indexes passes when the earlier line has been DELETED, which
+//is the strongest version of the thing it was checking for. Two sabotages walked
+//through this file that way, and the same hole has been found once before in
+//test/vms/provision-building.js.
+function at(s, what) {
+    const i = s.indexOf(what);
+    assert.ok(i >= 0, JSON.stringify(what) + ' is not in the script at all');
+    return i;
+}
+
 const B64 = Buffer.from("wake up. there's work, and it's yours.").toString('base64');
 const of = (over) => sup.turn(Object.assign({
     stamp: '2026-08-22T04-08-57', brief: B64, refresh: 'echo okc-skill-refreshed'
@@ -41,30 +54,35 @@ test('it refreshes the skill before it does anything else', () => {
     const s = of();
     //SO IT SUPERVISES BY THIS HOST'S CURRENT RULES. A supervisor is never rolled
     //back, so without this it works to whatever it was built with.
-    assert.ok(s.indexOf('okc-skill-refreshed') < s.indexOf('okc-supervisor -p'), s);
+    assert.ok(at(s, 'okc-skill-refreshed') < at(s, 'okc-supervisor -p'), s);
     assert.match(s, /^cd ~ && echo okc-skill-refreshed$/m);
 });
 
 test('the brief is decoded, used, and removed', () => {
     const s = of();
 
-    const write = s.indexOf('base64 -d > /tmp/okc-wake.txt');
-    const read = s.indexOf('cat /tmp/okc-wake.txt');
-    const gone = s.indexOf('rm -f /tmp/okc-wake.txt');
-
-    assert.ok(write >= 0 && read >= 0 && gone >= 0, s);
-    assert.ok(write < read, 'it reads the brief before writing it');
-    assert.ok(read < gone, 'it removes the brief before reading it');
+    assert.ok(at(s, 'base64 -d > /tmp/okc-wake.txt') < at(s, 'cat /tmp/okc-wake.txt'),
+        'it reads the brief before writing it');
+    assert.ok(at(s, 'cat /tmp/okc-wake.txt') < at(s, 'rm -f /tmp/okc-wake.txt'),
+        'it removes the brief before reading it');
 });
 
 test('the log is relinked before the turn runs, not after', () => {
     const s = of();
     //A TERMINAL ALREADY OPEN FOLLOWS current.log. Relinking after the turn
     //started would show the previous wake for the length of this one.
-    assert.ok(s.indexOf('ln -sfn') < s.indexOf('okc-supervisor -p'), s);
-    //AND IT FOLLOWS current.log RATHER THAN THIS TURN'S FILE, so a terminal left
-    //open shows every wake instead of one and then silence.
-    assert.ok(s.includes('$HOME/.okc-supervisor/current.log'), s);
+    assert.ok(at(s, 'ln -sfn') < at(s, 'okc-supervisor -p'), s);
+
+    //AND THE WATCHER FOLLOWS current.log RATHER THAN THIS TURN'S FILE, so a
+    //terminal left open shows every wake instead of one and then silence.
+    //
+    //ASKED OF THE `tail` LINE SPECIFICALLY. `ln -sfn <turn> <current>` also
+    //mentions current.log, so a test looking for that string anywhere is
+    //satisfied by the symlink even when the watcher has been pointed at the
+    //turn's own file — which is how this survived a sabotage.
+    assert.match(s, /tail -n \+1 -F "\$HOME\/\.okc-supervisor\/current\.log"/);
+    assert.equal(/tail -n \+1 -F "[^"]*turns\//.test(s), false,
+        'the watcher follows this one turn, and then nothing');
 });
 
 test("the turn's transcript goes to a file, not back down the channel", () => {

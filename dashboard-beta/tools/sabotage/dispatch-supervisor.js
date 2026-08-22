@@ -76,9 +76,16 @@ module.exports = {
             'var BASE64 = /^[A-Za-z0-9+/=\\r\\n]*$/;',
             'var BASE64 = /^[\\s\\S]*$/;'],
 
-        ['the brief is pasted in by hand rather than quoted',
-            "            'printf %s ' + q(brief) + ' | base64 -d > /tmp/okc-wake.txt',",
-            '            \'printf %s \\\'\' + brief + \'\\\' | base64 -d > /tmp/okc-wake.txt\','],
+        //NO BREAK FOR q(brief) ITSELF, and that is a finding rather than an
+        //omission. With the BASE64 check above it, a brief cannot contain the
+        //one character quoting would deal with — so pasting it in by hand
+        //produces a byte-identical line and nothing observable changes. It was
+        //tried, it SURVIVED, and the honest response is to say so rather than
+        //keep a break that proves nothing.
+        //
+        //The call stays for the reason ../../src/app/vms/dispatch/runs.js keeps
+        //its `..` check: it is what would catch the guard above being weakened
+        //by an edit that looked harmless.
 
         //---- and the refusals say which thing was wrong --------------------------
 
