@@ -36,6 +36,10 @@
 //which is how the property stays unchecked.
 var HOW_LONG_OUT_OF_TOUCH = 10 * 60000;
 
+//ONE PLACE SAYS HOW LONG SOMETHING TOOK. Three copies of `Math.round(ms/1000)`
+//is three chances for one of them to start saying minutes.
+var howLong = require('./waiting').secs;
+
 //WHETHER A MACHINE LAST HEARD FROM AT `lostSince` HAS BEEN QUIET LONG ENOUGH.
 //`now` is a parameter rather than a call to Date.now() for exactly one reason:
 //it is what lets this be asked about eleven minutes ago without eleven minutes
@@ -55,7 +59,7 @@ module.exports = function running(deps) {
     var ticking = d.ticking;
     var now = d.now || function () { return Date.now(); };
     var sleep = d.sleep || function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
-    var secs = d.secs || function (ms) { return Math.round(ms / 1000) + 's'; };
+    var secs = d.secs || howLong;
 
     var LOOK = d.lookEvery == null ? 15000 : d.lookEvery;
 
