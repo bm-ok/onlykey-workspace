@@ -209,10 +209,46 @@ module.exports = function scripts(deps) {
         ].join('\n');
     }
 
+    //---- files this HOST reads, which are never served to a guest ----------
+    //
+    //SERVABLE IS THE WRONG GATE FOR THESE, and deliberately so: it governs what
+    //may go down the wire to a machine, and the autoinstall template never does.
+    //It is read here and handed to VBoxManage on this host.
+    //
+    //SO IT IS ASKED FOR BY A NAME THIS FILE KNOWS, not by a filename a caller
+    //supplies. `resolve` can afford to take a name from a spec because
+    //`path.basename` plus SERVABLE fences it in; this has neither, so there is
+    //nothing for a spec to reach through. The key is a constant in the code.
+    //
+    //IT STILL USES THE SEARCH PATH, so a project can replace the template the
+    //same way it can replace any script — that is the point of having one.
+    var HOST_FILES = {
+        //VirtualBox's own autoinstall template plus one block: the installer's
+        //journal streamed to the serial port, and ssh into the installer
+        //environment. Between "installing" and "it dialled in" there was no
+        //evidence of any kind, and a machine that hangs in that window looks
+        //exactly like one that is working.
+        autoinstall: 'autoinstall-user-data'
+    };
+
+    function hostFile(which) {
+        var name = HOST_FILES[which];
+        if (!name) throw new Error('"' + which + '" is not a file this host reads.');
+
+        var dirs = searchPath();
+        for (var i = 0; i < dirs.length; i++) {
+            var file = path.join(dirs[i], name);
+            if (there(file)) return file;
+        }
+        throw new Error('There is no "' + name + '" in ' + (dirs.join(' or ') || 'any provisioning directory') + '.');
+    }
+
     return {
         resolve: resolve, fileFor: fileFor, has: has, list: list,
         sourceOf: sourceOf, stageOfFile: stageOfFile, raw: raw, render: render,
         searchPath: searchPath,
+        hostFile: hostFile, readFile: readFile,
+        HOST_FILES: HOST_FILES,
         STAGES: STAGES
     };
 };
