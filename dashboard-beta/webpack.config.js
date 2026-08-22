@@ -120,7 +120,23 @@ module.exports = (env, argv = {}) => {
     //message about a file rather than about a sign-in.
     const PAYLOADS = [
         { from: path.join(__dirname, 'src', 'app', 'keys', 'credential-helper.js'), to: 'credential-helper.js' },
-        { from: path.join(__dirname, 'src', 'app', 'vms', 'provision', 'scripts'), to: 'provision' }
+        { from: path.join(__dirname, 'src', 'app', 'vms', 'provision', 'scripts'), to: 'provision' },
+
+        //THE DRILLS AND THE HARNESS, for two reasons beyond the one above.
+        //
+        //The board shows each check's SOURCE and fingerprints it, both from
+        //`fn.toString()` — bundled, that would be babel's output rather than
+        //what somebody wrote, and every fingerprint would move the day a preset
+        //changed. And the loader walks a directory and requires what it finds,
+        //which webpack cannot follow at all: bundling would have produced an
+        //empty kit rather than an error.
+        //
+        //THE TWO MUST LAND SUCH THAT `../../harness` STILL RESOLVES from inside
+        //a suite folder — which is why the harness goes to the top of dist and
+        //the suites go one level under it, exactly as they sit in src.
+        { from: path.join(__dirname, 'src', 'app', 'tests', 'harness.js'), to: 'harness.js' },
+        { from: path.join(__dirname, 'src', 'app', 'tests', 'helpers.js'), to: 'helpers.js' },
+        { from: path.join(__dirname, 'src', 'app', 'tests', 'suites'), to: 'suites' }
     ];
 
     //Copied on every emit, including every watch rebuild, so editing a script

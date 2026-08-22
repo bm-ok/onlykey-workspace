@@ -59,7 +59,7 @@ const path = require('node:path')
 // Found by writing a probe suite that way. It ran, it registered, and
 // `suiteRun --suite probe` answered "0 passed, 0 failed" about a suite sitting
 // in the directory.
-const { group, describe } = require('../harness')
+const { group, describe, it } = require('../harness')
 
 let loaded = false
 
@@ -95,7 +95,34 @@ function load () {
     group(titleOf(entry), () => {
       for (const file of ordered(fs.readdirSync(full))) {
         if (!file.endsWith('.js')) continue
-        describe(titleOf(file), () => { require(path.join(full, file)) })
+
+        describe(titleOf(file), () => {
+          // A DRILL THAT WILL NOT LOAD IS ONE BROKEN DRILL, NOT A BROKEN KIT.
+          //
+          // Registration is a side effect of requiring, so a single bad require
+          // used to take the whole enumeration down with it: `suites` threw, the
+          // board drew nothing, and the sixty-odd drills that were fine were
+          // invisible along with the one that was not.
+          //
+          // That is the wrong trade for a kit whose job is to tell you what is
+          // and is not working. It matters most DURING A PORT, which is when it
+          // came up: eighteen of these reach past the action surface into
+          // modules that have not moved yet, and the other forty-six are ready
+          // to run today.
+          //
+          // SO THE FAILURE BECOMES A CHECK THAT FAILS, with the reason on it.
+          // It is red in the board, it is red in `suiteRun`, and it says which
+          // module it could not find — which is the same information the crash
+          // carried, delivered somewhere it can be read next to everything else.
+          try {
+            require(path.join(full, file))
+          } catch (e) {
+            const why = String((e && e.message) || e).split('\n')[0]
+            it('this drill loads at all', () => {
+              throw new Error('it could not be loaded, so none of its checks exist: ' + why)
+            })
+          }
+        })
       }
     })
   }
