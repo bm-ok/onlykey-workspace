@@ -73,7 +73,12 @@ beforeEach(async () => {
     await libraryPlugin({ app: { host: { actions } }, log: quiet, state },
         async (_e, s) => { library = s.library; });
 
-    await carryPlugin({ app: { host: { actions } }, log: quiet, library }, async () => {});
+    //`ours` IS THE MACHINE REGISTER, which this plugin also writes to — see
+    //src/app/carryover/machines.js. What it does with it is checked in
+    //test/vms/carryover-machines.test.js against a real one; here it only
+    //has to exist, because the library half never touches it.
+    var ours = { has: function () { return false; }, add: function () {}, update: function () {}, read: function () { return []; } };
+    await carryPlugin({ app: { host: { actions } }, log: quiet, library, ours }, async () => {});
 });
 
 const carry = (args) => defined.carryOver.run(args || {});
@@ -181,7 +186,11 @@ test('one kind at a time, if that is what was asked', async () => {
 });
 
 test('a kind that is not one is refused, and the refusal lists them', async () => {
-    await assert.rejects(() => carry({ what: 'machines' }), /There is: contract, prompt, job/);
+    //NOT `machines`, WHICH IS ONE NOW. This test used that as its example of a
+    //name that means nothing, and the day the machines could be carried across
+    //the example quietly became valid — which the suite caught, and which is
+    //the whole reason the refusal lists what there IS rather than just saying no.
+    await assert.rejects(() => carry({ what: 'sandwiches' }), /There is: contract, prompt, job, machine/);
 });
 
 test('a library that could not be read is not an empty library', async () => {

@@ -1,3 +1,5 @@
+var makeMachines = require('./machines');
+
 //---------------------------------------------------------------------------
 //BRINGING THE LIBRARY ACROSS FROM THE APP BEING PORTED FROM.
 //
@@ -50,13 +52,19 @@
 //not here yet — which reads as "its contract is gone" until the next one lands.
 var ORDER = ['contract', 'prompt', 'job'];
 
+//THE MACHINES ARE THEIR OWN THING and are not in ORDER above: they have no
+//chain to carry in order, they go through ../vms/ours rather than the
+//library, and the rule about what must not cross is a different rule. See
+//./machines.js, which holds it.
+var MACHINES = 'machine';
+
 var FROM = {
     contract: { list: 'contracts', of: function (said) { return (said && said.contracts) || []; } },
     prompt: { list: 'prompts', of: function (said) { return (said && said.prompts) || []; } },
     job: { list: 'jobs', of: function (said) { return (said && said.jobs) || []; } }
 };
 
-plugin.consumes = ['app', 'log', 'library'];
+plugin.consumes = ['app', 'log', 'library', 'ours'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -78,20 +86,36 @@ async function plugin(imports, register) {
         catch (e) { return null; }
     }
 
+    //../vms/ours IS THE REGISTER, and this is the only thing outside vms/ that
+    //writes to it — which is the point of this plugin being deletable in one
+    //piece. When the relay goes, this goes, and nothing else has a line to
+    //take out.
+    var carryMachines = makeMachines({ ours: imports.ours, there: there });
+
     var undo = [];
 
     undo.push(actions.define('carryOver', {
         about: 'Bring the jobs, prompts and contracts across from the dashboard being ported from. '
-            + 'Nothing arrives approved, and nothing already here is touched',
+            + 'Nothing arrives approved, and nothing already here is touched. '
+            + '--what machine brings the machines across instead, which is a bigger thing',
         takes: ['what', 'dry'],
         run: async function (args) {
             var a = args || {};
             var only = a.what ? String(a.what).replace(/s$/, '') : null;
             var dry = a.dry === true || a.dry === 'true';
 
+            //THE MACHINES ARE ASKED FOR BY NAME AND NEVER COME ALONG WITH THE
+            //REST. Bringing the library across is a convenience that cannot put
+            //anything into play; bringing the machines across is the moment this
+            //app stops shadowing the other one — see ./machines.js. A person
+            //asks for that, on purpose, and does not arrive at it by leaving an
+            //argument off.
+            if (only === MACHINES) return await carryMachines.carry(dry);
+
             var kinds = only ? ORDER.filter(function (k) { return k === only; }) : ORDER;
             if (only && !kinds.length) {
-                throw new Error('"' + a.what + '" is not one of these. There is: ' + ORDER.join(', ') + '.');
+                throw new Error('"' + a.what + '" is not one of these. There is: '
+                    + ORDER.concat([MACHINES]).join(', ') + '.');
             }
 
             var out = { brought: [], already: [], couldNot: [], dry: dry };
