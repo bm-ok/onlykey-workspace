@@ -288,6 +288,17 @@ test('a folder with a space in it survives, which is the bug that started all th
     //that argument, so bash received `cd` with the rest as positional parameters.
     //A folder without spaces reassembled by accident and hid it.
     const s = of({ folder: '/home/okc/my work' });
-    assert.ok(s.includes("cd '/home/okc/my work'"), s);
+
+    //BOTH OF THEM, COUNTED. The folder is changed to twice — once by the
+    //dispatch and once inside run.sh — and asserting only that the quoted form
+    //appears SOMEWHERE is satisfied by either one alone. Two sabotages walked
+    //through this line for exactly that reason, and `sh -n` cannot help:
+    //`cd /home/okc/my work` is perfectly valid shell, it is just `cd` with two
+    //arguments, landing somewhere nobody asked for.
+    const quoted = s.split("cd '/home/okc/my work'").length - 1;
+    assert.equal(quoted, 2,
+        'the folder is quoted ' + quoted + ' times out of the two places it is used');
+    assert.equal(s.indexOf('cd /home/okc/my work'), -1, 'an unquoted folder reached the machine');
+
     assert.equal(s.indexOf('bash -c'), -1, s);
 });

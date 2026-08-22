@@ -137,7 +137,7 @@ module.exports = {
             ''],
 
         ['the run directory is not on PATH, so okc-artifact is not a command',
-            "            lines.push('PATH=' + dir + ':$PATH');",
+            "        lines.push('PATH=' + dir + ':$PATH');",
             ''],
 
         //BEST EFFORT, ALWAYS EXITS 0. A line that could not be delivered must
@@ -147,8 +147,11 @@ module.exports = {
             "            '  \"' + base + '/provision/say\"',"],
 
         //A MACHINE BUILT LAST MONTH would otherwise work to last month's rules.
+        //THE FETCH ITSELF, not the mkdir beside it. Removing only the mkdir
+        //leaves the curl line — and the url in it — sitting there for a test to
+        //find, which is how this break SURVIVED the first sweep of this file.
         ['the skill is never fetched, so a worker runs to whatever it was built with',
-            '        lines.push(\'mkdir -p "$HOME/.claude/skills/working-here"\');',
+            '        lines.push(\'  "\' + base + \'/provision/runner-skill.md?vm=${OKC_VM}" 2>/dev/null || true\');',
             '']
     ]
 };
