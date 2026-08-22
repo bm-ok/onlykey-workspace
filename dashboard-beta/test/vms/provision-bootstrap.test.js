@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { bootstrapLine, normalFingerprint } = require('../../src/app/vms/provision/bootstrap');
+const { bootstrapLine, normalFingerprint, examine } = require('../../src/app/vms/provision/bootstrap');
 
 //---------------------------------------------------------------------------
 //THE ONE COMMAND LINE AN INSTALL IS TRUSTED WITH.
@@ -168,4 +168,70 @@ test('the fingerprint is compared in the form the pipeline produces', () => {
     const l = line();
     assert.ok(l.includes("grep -q 'aabbccddeeff"), l.slice(l.indexOf('grep -q'), l.indexOf('grep -q') + 90));
     assert.equal(l.indexOf('AA:BB'), -1, 'the stored form reached the line and would match nothing');
+});
+
+//---- the guards, held against a line they were built to catch ----------------
+//
+//EVERY CHECK ABOVE IS UNREACHABLE THROUGH bootstrapLine, because the builder
+//does not produce a line that breaks any of them — which is the point of it. But
+//a guard nothing can reach is a guard nothing can TEST: a sabotage that disabled
+//the ordering check SURVIVED the first sweep of this file, because no test could
+//tell the difference.
+//
+//They exist to catch a future edit to the builder, so they are handed a bad line
+//directly. Each of these is what that edit would look like.
+
+const PRINT_N = normalFingerprint(PRINT);
+const ok = (over) =>
+    "curl '" + CA + "' -o /etc/okc/ca.pem; wget -qO /etc/okc/ca.pem '" + CA + "'; "
+    + "grep -q '" + PRINT_N + "'; "
+    + "curl --cacert /etc/okc/ca.pem '" + SCRIPT + "'; wget --ca-certificate=/etc/okc/ca.pem '" + SCRIPT + "'"
+    + (over || '');
+
+const look = (l) => () => examine(l, CA, SCRIPT, PRINT_N);
+
+test('the guards pass a line that is built correctly', () => {
+    assert.doesNotThrow(look(ok()));
+});
+
+test('a builder edit that fetched the secret first would be refused', () => {
+    //THE ONE THAT SURVIVED. If the order ever reverses, the check is decoration
+    //and the token in that script goes to whoever answered.
+    const backwards =
+        "curl --cacert /etc/okc/ca.pem '" + SCRIPT + "'; wget --ca-certificate=/etc/okc/ca.pem '" + SCRIPT + "'; "
+        + "curl '" + CA + "' -o /etc/okc/ca.pem; wget -qO /etc/okc/ca.pem '" + CA + "'; "
+        + "grep -q '" + PRINT_N + "'";
+    assert.throws(look(backwards), /before checking the authority/);
+});
+
+test('a builder edit that dropped a fetch tool would be refused', () => {
+    const noWget = ok().replace("wget --ca-certificate=/etc/okc/ca.pem '" + SCRIPT + "'", '');
+    assert.throws(look(noWget), /wget is never used to fetch/);
+
+    const noCurl = ok().replace("curl '" + CA + "' -o /etc/okc/ca.pem; ", '');
+    assert.throws(look(noCurl), /curl is never used to fetch/);
+});
+
+test('a builder edit that stopped checking the secret against the authority would be refused', () => {
+    assert.throws(look(ok().replace('--cacert /etc/okc/ca.pem', '')), /curl does not check the setup script/);
+    assert.throws(look(ok().replace('--ca-certificate=/etc/okc/ca.pem', '')), /wget does not check the setup script/);
+});
+
+test('a builder edit that let a substitution through would be refused', () => {
+    assert.throws(look(ok('; echo $HOME')), /expands it before/);
+    assert.throws(look(ok(' --insecure')), /turns off the verification/);
+});
+
+test('a builder edit that stopped comparing anything would be refused', () => {
+    assert.throws(look(ok().replace(PRINT_N, '')), /fingerprint is not in it/);
+});
+
+test('a builder edit that never fetched the script would be refused', () => {
+    assert.throws(look(ok().split(SCRIPT).join('')), /setup script is never fetched/);
+});
+
+test('a line starting with a parenthesis would be refused', () => {
+    //VirtualBox pastes it unquoted, so this is a bash syntax error and the
+    //install dies at the very end with nothing saying why.
+    assert.throws(look('(' + ok()), /starts with a parenthesis/);
 });

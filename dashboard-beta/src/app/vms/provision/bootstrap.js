@@ -195,4 +195,17 @@ function check(line, caUrl, scriptUrl, print) {
     if (line.indexOf('--ca-certificate=/etc/okc/ca.pem') < 0) no('wget does not check the setup script against the authority');
 }
 
-module.exports = { bootstrapLine: bootstrapLine, normalFingerprint: normalFingerprint };
+//`examine` IS EXPORTED SO THE GUARDS CAN BE PROVEN, and that is worth a line.
+//
+//Every check above is unreachable through `bootstrapLine` — the builder does not
+//produce a line that breaks any of them, which is the point of it. But a guard
+//nothing can reach is a guard nothing can TEST: a sabotage that disabled the
+//ordering check survived, because no test could tell the difference.
+//
+//These exist to catch a FUTURE edit to the builder, so the honest way to hold
+//them is to hand them a bad line directly. See ../../../test/vms/provision-bootstrap.test.js.
+module.exports = {
+    bootstrapLine: bootstrapLine,
+    normalFingerprint: normalFingerprint,
+    examine: check
+};
