@@ -133,7 +133,22 @@ async function plugin(imports, register) {
             }
 
             var checks = (file.tests || []).map(function (check) {
-                var print = it.harness.fingerprint(check.fn);
+                //TAKEN FROM THE REGISTRY, NOT RECOMPUTED.
+                //
+                //getRegisteredSuites() does not hand out the function. It hands
+                //out its fingerprint and its source, and that is deliberate: a
+                //DRAFT has no function at all, and hashing `undefined` would give
+                //every draft the same number and call it a check whose code has
+                //not changed. The harness says so where it does it.
+                //
+                //Recomputing here did that to EVERY check rather than only to
+                //drafts. `check.fn` is undefined on all of them, so all 236
+                //fingerprinted as the hash of the word "undefined" — 9c327aff-9,
+                //four times over in a screenshot of the board, which is how it
+                //was caught. Every "has this check been edited" comparison was
+                //then one constant against the same constant, so a remembered
+                //result could never go stale.
+                var print = check.fingerprint;
                 var key = runs.keyOf(file.group, file.name, check.name);
                 var had = seen.checks[key] || null;
 
@@ -147,7 +162,18 @@ async function plugin(imports, register) {
                     draft: !!check.draft,
                     note: check.note || null,
                     fingerprint: print,
-                    source: String(check.fn),
+
+                    //HOW MUCH CODE, NOT THE CODE.
+                    //
+                    //The board polls every five seconds while it is showing, and
+                    //carrying every check's source made that answer 570 KB — for
+                    //text that is FOLDED AWAY behind a line you click. So the
+                    //listing says how many lines are behind the fold, and the
+                    //source itself is one action away: see `suiteSource`.
+                    //
+                    //The pane's own note said "`suites` takes no arguments so
+                    //there is no lighter listing to ask for". There is now.
+                    lines: String(check.source || '').split('\n').length,
                     state: stale ? 'changed' : ((had && had.state) || 'not run'),
                     ms: (had && !stale) ? had.ms : null,
                     at: (had && !stale) ? had.at : null,
@@ -358,7 +384,40 @@ async function plugin(imports, register) {
         })[0];
         if (!file) return null;
         var found = (file.tests || []).filter(function (c) { return c.name === check; })[0];
-        return found ? it.harness.fingerprint(found.fn) : null;
+        return found ? found.fingerprint : null;
+    }
+
+    //ONE CHECK'S SOURCE, KEYED ON ITS FINGERPRINT.
+    //
+    //THE FINGERPRINT IS A HASH OF THE SOURCE, which makes it the one key worth
+    //having: the answer is a pure function of it, so it is true for ever and a
+    //check that has been edited has a different key rather than a stale entry.
+    //That is exactly what ../core/cached's `byContent` drawer is for, and this is
+    //the honest use of it — the RESULTS are a record and stay in ./runs.js,
+    //because a cache drawer wipes itself at five hundred entries and starts empty
+    //on every restart, which is the half-hour of ISO evidence that record exists
+    //to keep.
+    var sources = imports.cached.byContent('drill-sources');
+
+    async function sourceOf(args) {
+        var a = args || {};
+        var print = fingerprintOf(a.suite, a.test, a.check);
+        if (!print) {
+            throw new Error('There is no check called "' + a.check + '" in "' + a.test + '".');
+        }
+
+        return sources.get(print, function () {
+            var it = theKit();
+            var file = it.harness.getRegisteredSuites().filter(function (f) {
+                return f.group === a.suite && f.name === a.test;
+            })[0];
+            var found = (file.tests || []).filter(function (c) { return c.name === a.check; })[0];
+            return {
+                suite: a.suite, test: a.test, check: a.check,
+                fingerprint: print,
+                source: String(found.source)
+            };
+        });
     }
 
     //---- the surface -------------------------------------------------------
@@ -368,6 +427,12 @@ async function plugin(imports, register) {
         undo.push(actions.define('suites', {
             about: 'Every drill there is, and what happened last time each one ran',
             run: board
+        }));
+
+        undo.push(actions.define('suiteSource', {
+            about: 'What one check actually does, which is the only way to know what its tick means',
+            takes: ['suite', 'test', 'check'],
+            run: sourceOf
         }));
 
         undo.push(actions.define('suiteRun', {

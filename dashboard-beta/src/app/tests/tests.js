@@ -219,7 +219,26 @@ module.exports = function tests(theme, okc, remember, shell) {
         //a draft's why IS its note; showing both would print the same 1,200
         //characters twice.
         var whySeparate = c.why && c.why !== c.note;
-        var lines = String(c.source || '').split('\n').length;
+        //HOW MANY LINES COMES WITH THE LISTING; the lines themselves do not.
+        var lines = c.lines || 0;
+
+        //FETCHED WHEN THE FOLD IS OPENED, AND NOT BEFORE.
+        //
+        //Carrying every check's source in the listing made it 570 KB, polled
+        //every five seconds, for text that is folded away behind a line you
+        //click. One check's source is a few hundred bytes and is asked for once:
+        //the answer is keyed on the check's FINGERPRINT, which is a hash of the
+        //source, so it is true for ever and a check that has been edited has a
+        //different key rather than a stale entry.
+        var [code, setCode] = useState(null);
+        useEffect(function () {
+            if (!open || code !== null) return;
+            var alive = true;
+            okc.call('suiteSource', { suite: suiteName, test: testName, check: c.name })
+                .then(function (got) { if (alive) setCode(got.source); },
+                    function (e) { if (alive) setCode('could not read it: ' + e.message); });
+            return function () { alive = false; };
+        }, [open, suiteName, testName, c.name]);
 
         return (
             <div className={'card' + (now ? ' on' : '')} style={{ marginTop: '10px' }}>
@@ -294,7 +313,7 @@ module.exports = function tests(theme, okc, remember, shell) {
                     onClick={onFold}>
                     {(open ? '▾ ' : '▸ ') + 'the code it runs — ' + count(lines, 'line')}
                 </div>
-                {open ? <pre className="console short">{String(c.source || '')}</pre> : null}
+                {open ? <pre className="console short">{code === null ? 'reading it…' : code}</pre> : null}
 
                 {/* WHAT IT SAID WHILE IT RAN. Half these drills log what they
                     ARRANGED — "taking runner1's credential for the duration, and
@@ -616,7 +635,7 @@ module.exports = function tests(theme, okc, remember, shell) {
                 </div>
 
                 <Note>{'read ' + reads + ' time(s), every 5s · '
-                    + count(everyCheck.length, 'check') + ', and every one of their sources arrives on each read, which is why this asks only while it is showing'}</Note>
+                    + count(everyCheck.length, 'check') + '. The sources are not on it — each is asked for when its fold is opened, and keyed on its own fingerprint.'}</Note>
             </Pane>
         );
     }

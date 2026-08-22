@@ -20,61 +20,52 @@ var React = require('react');
 //switch would put this banner over a workspace the drills may not touch, which
 //is the opposite of what it is for.
 //
-//---- TWO PERMISSIONS EXIST RIGHT NOW, AND THIS SAYS SO ---------------------
+//---- THERE WAS ONCE A SECOND PERMISSION, AND THERE IS NOT NOW --------------
 //
-//../../settings/server.js has been ported and `suites` has not. So `settings`
-//is answered HERE and `suites` is still relayed to the app being ported from —
-//two settings files, two answers, and they can disagree.
+//`settings` was answered here while `suites` and `suiteRun` were relayed to the
+//app being ported from: two settings files, two answers, and they could
+//disagree. So this named which was saying yes, because the RELAY was the one
+//that decided and a banner that is right and confusing beats one that is wrong
+//and tidy. It said that block would go the moment those two moved.
 //
-//THE RELAY IS THE ONE THAT DECIDES, and that is why it is still what raises this
-//banner. `suiteRun` is relayed too: press Run in the Test tab and the OTHER
-//app's gate is what is consulted, whatever this one says. Switching this banner
-//over to the local answer would have made the screen agree with itself by
-//deleting a warning that is true — the drills would still run, and nothing on
-//screen would say so.
+//THEY HAVE MOVED — see ../../tests/server.js — so there is one permission again
+//and this reads it.
 //
-//SO IT SHOWS WHEN EITHER SAYS YES, and names which when they differ. A banner
-//that is right and confusing beats one that is wrong and tidy; this stops being
-//necessary the moment `suites` and `suiteRun` move, and the whole block goes
-//with them.
+//IT WAS STILL DRAWING THE OLD SENTENCE THIS MORNING, which is worth writing
+//down because of HOW. It read `allowed` off the `suites` answer, and the ported
+//`suites` does not carry that field: `!!undefined` is `false`, and `false` was
+//exactly the value that meant "the other app says no". A missing field read as
+//a settled refusal, and the screen said nothing would run while it ran fine.
+//A boolean absent and a boolean false must never be the same answer.
+//
+//AND IT NO LONGER POLLS `suites` AT ALL. That answer is the whole board — every
+//drill, every result — asked every eight seconds to read one flag off it.
 //---------------------------------------------------------------------------
 
 module.exports = function testing(theme, okc, shell) {
     var { Banner, Linky } = theme;
 
     return function Testing() {
-        var q = okc.use('suites', {}, 8000);
         //THE FOLDER'S NAME IS THE POINT, so it comes from the answer that knows
         //which folder the permission is FOR rather than from whatever happens to
         //be open. `settings` carries both, and they can differ.
         var where = okc.use('settings', {}, 30000);
 
         var t = (where.state && where.state.tests) || {};
-        //THE RELAYED GATE IS UNDEFINED UNTIL THAT READ LANDS, and undefined is
-        //not "no". Only a settled `false` counts as the other app saying no.
-        var relayed = q.state ? !!q.state.allowed : null;
-        var local = where.state ? !!t.allowed : null;
-        if (!relayed && !local) return null;
+
+        //UNDEFINED IS NOT "no". Until the read lands there is no answer, and no
+        //answer is not a permission — so nothing is drawn rather than a banner
+        //that flickers on and off with the poll.
+        if (!where.state || !t.allowed) return null;
 
         var dir = t.forDir || t.openDir || '';
         var name = dir ? dir.split(/[\\/]/).filter(Boolean).pop() : 'this workspace';
-
-        //WHICH ONE IS SAYING YES, said only when they disagree. With both
-        //agreeing this is the line it has always been; the extra sentence is the
-        //answer to "the card says off, so why is this here".
-        var split = null;
-        if (relayed && local === false) {
-            split = ' That is the dashboard’s own permission — Run in the Test tab is still relayed to it. Settings → General here says off, and this app’s answer does not govern that press yet.';
-        } else if (local && relayed === false) {
-            split = ' That is this app’s permission. Run in the Test tab is still relayed to the dashboard, which says no — so nothing runs until that one is turned on too.';
-        }
 
         return (
             <Banner kind="testing">
                 <strong>Testing mode</strong>
                 <span>
                     {' — ' + name + '. The drills may write a task and take a credential off a machine here.'}
-                    {split}
                 </span>
                 <Linky onClick={function () { shell.go('Settings', 'General'); }}>Switch it off</Linky>
             </Banner>
