@@ -37,7 +37,17 @@ module.exports = function terminal(theme, okc, shell) {
                         the machine signed in. Then type <Mono>claude</Mono>, or anything else.
                     </Empty>
 
-                    {!q.state ? <Skeleton rows={1} /> : null}
+                    {/* A SPINNER THAT NEVER STOPS IS WORSE THAN AN ERROR.
+                        Keyed on `!q.state` alone, a call that FAILED looked
+                        exactly like one still on its way: `vmList` is relayed,
+                        so with the other app stopped this pane sat on a skeleton
+                        for ever and `npm run walk` could only report it as
+                        "still arriving" — the one pane in forty-eight it could
+                        say nothing about at all.
+                        `okc.use` hands back the error beside the answer; this
+                        was reading one of the two. */}
+                    {!q.state && !q.error ? <Skeleton rows={1} /> : null}
+                    {!q.state && q.error ? <Note kind="warn">{q.error}</Note> : null}
                     {dark.length ? (
                         <Note kind="warn">
                             {dark.join(', ') + (dark.length === 1 ? ' is' : ' are')

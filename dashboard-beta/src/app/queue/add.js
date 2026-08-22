@@ -90,6 +90,14 @@ module.exports = function add(theme, okc, remember) {
             });
         }, [draft && draft.promptId, prompts.state]);
 
+        //AN ERROR BEFORE THE SPINNER, or a call that failed is indistinguishable
+        //from one still on its way and the pane sits on a skeleton for ever.
+        //`okc.use` hands back both; reading only `state` throws half of it away.
+        //
+        //This and ../terminal were the two panes `npm run walk` could say
+        //nothing about — "still arriving" after thirty seconds — and they were
+        //the only two in the app missing this line.
+        if (!board.state && board.error) return <Pane><Note kind="bad">{board.error}</Note></Pane>;
         if (!board.state) return <Pane><Skeleton rows={4} /></Pane>;
 
         //A CUT, AND NOT A LINE. `protected` wins over `cut`: making a branch a
