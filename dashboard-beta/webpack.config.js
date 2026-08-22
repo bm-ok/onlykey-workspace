@@ -122,6 +122,16 @@ module.exports = (env, argv = {}) => {
         { from: path.join(__dirname, 'src', 'app', 'keys', 'credential-helper.js'), to: 'credential-helper.js' },
         { from: path.join(__dirname, 'src', 'app', 'vms', 'provision', 'scripts'), to: 'provision' },
 
+        //WHAT A JOB IS HANDED, AND THE WATCHER, which run ON A MACHINE and not
+        //here. They are read as text and written into a guest, so what must
+        //arrive is what somebody wrote — bundled, a guest would receive babel's
+        //output, with this app's own module graph folded into it.
+        //
+        //They are real files rather than strings in a source file for the same
+        //reason: both can then be linted, syntax-checked and read like the code
+        //they are.
+        { from: path.join(__dirname, 'src', 'app', 'vms', 'dispatch', 'guest'), to: 'guest' },
+
         //THE DRILLS AND THE HARNESS, for two reasons beyond the one above.
         //
         //The board shows each check's SOURCE and fingerprints it, both from
