@@ -3,6 +3,7 @@ var path = require('path');
 var makeSpec = require('./spec');
 var makeScripts = require('./scripts');
 var makeBuilding = require('./building');
+var makeSettling = require('./settling');
 var header = require('./header');
 
 //---------------------------------------------------------------------------
@@ -101,6 +102,13 @@ async function plugin(imports, register) {
         serialDir: function () { return imports.dataDir.at('serial'); }
     });
 
+    //AND WHAT HAPPENS AFTER IT IS BUILT, which is not part of building it: the
+    //guest talking back while it installs, and the first clean snapshot taken at
+    //the moment it dials in. Nothing here is on the path that creates anything.
+    //`imports.log.on` AND NOT `log.on`: `log` is already scoped to 'vm', and its
+    //`.on` APPENDS — so the scoped one would tag every line 'vm','vm',<name>.
+    var settle = makeSettling({ vbox: vbox, ours: ours, say: imports.log.on });
+
     async function create(input) {
         if (!vbox.available()) {
             throw new Error('VirtualBox is not installed, or not where this expected to find it.');
@@ -145,6 +153,14 @@ async function plugin(imports, register) {
             //path rather than a second one that drifts.
             buildInVbox: build.buildInVbox,
             blankTheDisk: build.blankTheDisk,
+
+            //AFTER IT IS BUILT — see ./settling.js. `base` is also what the
+            //vmBaseSnapshot button will call, so a person pressing it and a
+            //machine dialling in for the first time go through one function
+            //rather than two that drift.
+            report: settle.report,
+            base: settle.base,
+            firstSnapshotIfItNeedsOne: settle.firstSnapshotIfItNeedsOne,
             resolveISO: build.resolveISO,
             pickBridge: build.pickBridge,
             hostOnlyAdapter: build.hostOnlyAdapter,

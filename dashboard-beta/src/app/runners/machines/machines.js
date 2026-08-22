@@ -11,7 +11,11 @@ module.exports = function machines(theme, okc, remember) {
 
     function state(v) {
         if (v.running) return { kind: 'ok', word: v.connected ? 'running' : 'running, not dialled in' };
-        if (v.installing) return { kind: 'run', word: 'installing' + (v.stage ? ' — ' + v.stage : '') };
+        //`said` IS THE GUEST'S OWN WORD, and `stage` is this app's — see
+        //../../vms/ours/store.js, which derives `stage` on every read. This line
+        //asked for `stage` and got "installing — installing"; the step the
+        //installer is actually on only exists in what the machine reported.
+        if (v.installing) return { kind: 'run', word: 'installing' + (v.said ? ' — ' + v.said : '') };
         return { kind: '', word: v.state || 'off' };
     }
 
