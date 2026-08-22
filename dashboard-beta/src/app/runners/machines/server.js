@@ -2,6 +2,7 @@ var path = require('path');
 var makeLifecycle = require('./lifecycle');
 var makeSpeaking = require('./speaking');
 var makeRestoring = require('./restoring');
+var makeAwaiting = require('./awaiting');
 
 //---------------------------------------------------------------------------
 //THE MACHINES, AS ACTIONS.
@@ -98,6 +99,22 @@ async function plugin(imports, register) {
         say: function (who, name) { return log.on(who, name); }
     });
 
+    var awaiting = makeAwaiting({
+        ours: ours,
+        vbox: vbox,
+        channel: imports.channel,
+        speaking: speaking,
+        //WORKED OUT RATHER THAN READ OFF THE REGISTER, which is what the app
+        //being ported from does here and is NOT the same as ./speaking's
+        //question — see the note in ./awaiting.js. ../../vms/provision decides
+        //this path and records it; this composes the same one.
+        consoleFor: function (name) {
+            return path.join(imports.dataDir.at('serial'), name + '.log');
+        },
+        readFile: function (file) { return require('fs').readFileSync(file, 'utf8'); },
+        say: function (who, name) { return log.on(who, name); }
+    });
+
     var lifecycle = makeLifecycle({
         ours: ours,
         vbox: vbox,
@@ -140,6 +157,18 @@ async function plugin(imports, register) {
                 var name = (args || {}).name;
                 ours.get(name);
                 return await vbox.snapshots(name);
+            }
+        }));
+
+        undo.push(actions.define('vmAwait', {
+            about: 'Wait until a machine speaks on its console, says something in particular, '
+                + 'has dialled in, or is off',
+            takes: ['name', 'for', 'seconds', 'tries', 'find'],
+            run: async function (args) {
+                var a = args || {};
+                return await awaiting.until(a.name, {
+                    for: a.for, seconds: a.seconds, tries: a.tries, find: a.find
+                });
             }
         }));
 
