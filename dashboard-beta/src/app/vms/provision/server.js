@@ -4,6 +4,8 @@ var makeSpec = require('./spec');
 var makeScripts = require('./scripts');
 var makeBuilding = require('./building');
 var makeSettling = require('./settling');
+var makeInstalling = require('./installing');
+var makeAutoinstall = require('./autoinstall');
 var header = require('./header');
 
 //---------------------------------------------------------------------------
@@ -49,11 +51,13 @@ var header = require('./header');
 //and on no list anybody can see. The pair is a decision about what the Runners
 //tab shows, not a step in porting a function.
 //
-//AND THE INSTALL, which is the long one: an unattended install, twenty-five
-//minutes, watched on the console this build attaches.
+//AND NO `vmInstall` ACTION EITHER, for the same reason and one more: an install
+//tells the machine two ports to come back to, and the half that LISTENS on them
+//has not moved yet. `install` takes them as arguments rather than deciding
+//them, so the plugin that owns those ports can hand them over when it arrives.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir'];
+plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir', 'tls'];
 plugin.provides = ['provision'];
 async function plugin(imports, register) {
     var log = imports.log.on('vm');
@@ -109,6 +113,22 @@ async function plugin(imports, register) {
     //`.on` APPENDS — so the scoped one would tag every line 'vm','vm',<name>.
     var settle = makeSettling({ vbox: vbox, ours: ours, say: imports.log.on });
 
+    //AND GETTING AN OPERATING SYSTEM ONTO ONE, which is an ORDER rather than a
+    //set of commands — see ./installing.js. Every piece it needs is built above;
+    //what it adds is the sequence.
+    var installer = makeInstalling({
+        vbox: vbox,
+        ours: ours,
+        channel: imports.channel,
+        tls: imports.tls,
+        build: build,
+        //THE TEMPLATE COMES OFF THE SAME SEARCH PATH AS EVERY OTHER
+        //PROVISIONING FILE, so a project can replace it — but it is never
+        //served to a guest, which is why it is `hostFile` and not `resolve`.
+        template: makeAutoinstall({ find: scripts.hostFile, read: scripts.readFile }),
+        say: imports.log.on
+    });
+
     async function create(input) {
         if (!vbox.available()) {
             throw new Error('VirtualBox is not installed, or not where this expected to find it.');
@@ -161,6 +181,12 @@ async function plugin(imports, register) {
             report: settle.report,
             base: settle.base,
             firstSnapshotIfItNeedsOne: settle.firstSnapshotIfItNeedsOne,
+
+            //THE LONG ONE: an unattended install, twenty-five minutes, watched
+            //on the console ./building.js attached. It takes the two ports it
+            //should tell the machine to come back to, because the half that
+            //LISTENS on them is not this plugin's.
+            install: installer.install,
             resolveISO: build.resolveISO,
             pickBridge: build.pickBridge,
             hostOnlyAdapter: build.hostOnlyAdapter,
