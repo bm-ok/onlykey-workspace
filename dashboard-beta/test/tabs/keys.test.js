@@ -111,14 +111,56 @@ test('nothing outside the declared exits returns the token', async () => {
 });
 
 //---------------------------------------------------------------------------
-//2. NOTHING OUTSIDE keys/ OPENS A CREDENTIAL.
+//2. NOTHING OUTSIDE A DECLARED CREDENTIAL STORE OPENS A CREDENTIAL.
 //
 //A source scan, because this is a claim about the whole app rather than about
 //one call. It is the check that would have caught the second module to decide it
 //needed the token "just this once".
+//
+//---- and it now names TWO stores, which is a widening ---------------------
+//
+//This read "only keys/", and that was true while the only credential was a
+//GitHub token — which never leaves this host, so keys hands out capabilities
+//instead of secrets.
+//
+//A CLAUDE SIGN-IN IS A DIFFERENT KIND OF SECRET. It has to arrive, as bytes, on
+//a machine that is not this one, because that is where the worker runs. There is
+//no capability form of "be signed in on another computer", so runners/guests has
+//a door — and the widening is only honest if the door is held to the same rule
+//as keys's.
+//
+//SO THE LIST IS PAIRED WITH ITS BOUNDARY TEST. A folder may only be in `STORES`
+//if something asserts its exits, and the last check in this block is that the
+//pairing itself has not been quietly edited to add a folder and nothing else.
+//That is what stops this list becoming the place a third module writes its name.
 //---------------------------------------------------------------------------
 
-test('only the keys plugin reads a credential off the disk', () => {
+const STORES = [
+    { folder: 'keys/', boundary: 'tabs/keys.test.js' },
+    { folder: 'runners/guests/', boundary: 'runners/guests-boundary.test.js' },
+    //core/secret IS the sealing, so it is not a store — it is the thing stores
+    //are built out of, and it holds nothing of its own.
+    { folder: 'core/secret/', boundary: null }
+];
+
+test('every folder allowed to open a credential has a test asserting its exits', () => {
+    //THE PAIRING, CHECKED. Adding a folder above is adding a way for a secret to
+    //leave the app, and this is what makes that cost a boundary test rather than
+    //one line.
+    const TEST = path.join(__dirname, '..');
+
+    for (const s of STORES) {
+        if (!s.boundary) continue;
+        assert.ok(fs.existsSync(path.join(TEST, s.boundary)),
+            s.folder + ' is allowed to open a credential and ' + s.boundary + ' does not exist');
+
+        const src = fs.readFileSync(path.join(TEST, s.boundary), 'utf8');
+        assert.match(src, /EXITS/,
+            s.boundary + ' does not assert the declared exits of ' + s.folder);
+    }
+});
+
+test('only a declared credential store reads a credential off the disk', () => {
     const guilty = [];
 
     (function under(dir) {
@@ -129,8 +171,9 @@ test('only the keys plugin reads a credential off the disk', () => {
             if (!name.endsWith('.js')) continue;
 
             const rel = path.relative(APP, full).split(path.sep).join('/');
-            //keys owns them; core/secret IS the sealing; the test folder is not app code
-            if (rel.startsWith('keys/') || rel.startsWith('core/secret/')) continue;
+            //A DECLARED STORE, OR THE SEALING ITSELF. Everything else asks one of
+            //them for a capability — see the header of keys/server.js.
+            if (STORES.some((s) => rel.startsWith(s.folder))) continue;
 
             const src = fs.readFileSync(full, 'utf8');
             //THE TWO WAYS IN: opening a sealed file, or naming the folder they
