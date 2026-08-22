@@ -1,5 +1,7 @@
 var makeStore = require('./store');
+var makeLend = require('./lend');
 var shape = require('./shape');
+var lending = require('./lending');
 
 //---------------------------------------------------------------------------
 //THE CLAUDE IDENTITIES THIS HOST HOLDS, as actions and as a service.
@@ -15,18 +17,13 @@ var shape = require('./shape');
 //
 //---- what is here, and what is not yet -------------------------------------
 //
-//THE LIST AND THE LABELS ARE HERE. Reading it, adding one, relabelling one,
-//throwing one away, and which supervisor sign-in is in use.
+//THE LIST, THE LABELS AND THE LENDING. Reading it, adding one, relabelling one,
+//throwing one away, which supervisor sign-in is in use — and putting one ON a
+//machine and taking it back, which is ./lend.
 //
-//THE LENDING IS NOT, and it is deliberately the last thing to move. `guestLend`
-//and `guestBack` are the two calls that put a credential ON a machine and take
-//it off again, and they need the sealed handover, the channel and the runs
-//directory — none of which is here yet. Until they move, the pane's Lend and
-//Take back buttons relay to the app being ported from, which still owns the
-//machines they would touch.
-//
-//Neither is the backup pair, which needs sealing to a PASSPHRASE rather than to
-//this Windows account, and that is a piece of its own.
+//NOT THE BACKUP PAIR, which needs sealing to a PASSPHRASE rather than to this
+//Windows account so a backup can be restored somewhere else. That is a piece of
+//its own, and it is the last of this plugin still relaying.
 //
 //---- but the SERVICE is here, because the queue is waiting on it ------------
 //
@@ -36,7 +33,12 @@ var shape = require('./shape');
 //list, and they do not wait on the handover.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'secret', 'dataDir', 'settings'];
+//`sealed`, `channel`, `ours` AND `dispatch` ARE THE LENDING'S. A credential
+//reaches a machine sealed to a key that machine made — see ../../vms/sealed — and
+//the means to watch what it does with it goes over in the same round trip, which
+//is what ../../vms/dispatch knows where to put.
+plugin.consumes = ['app', 'log', 'secret', 'dataDir', 'settings',
+    'sealed', 'channel', 'ours', 'dispatch'];
 plugin.provides = ['guests'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -90,6 +92,23 @@ async function plugin(imports, register) {
             + 'they are not read from here: this app keeps its own, so that porting it cannot damage a '
             + 'credential a machine is using.';
     }
+
+    //---- putting one on a machine, and taking it back -----------------------
+    //
+    //THE ORDER OF ITS CHECKS IS THE DESIGN — see ./lend, which is where they are
+    //and where they are tested. Handed the pieces rather than reaching for them,
+    //so the sequence can be exercised without a machine.
+    var lend = makeLend({
+        store: store,
+        ours: imports.ours,
+        channel: imports.channel,
+        sealed: imports.sealed,
+        dispatch: imports.dispatch,
+        say: function (who, machine) { return log.on(who, machine); },
+        paused: shape.paused,
+        whyNotOn: lending.whyNotOn,
+        roleFrom: shape.roleFrom
+    });
 
     var undo = [];
 
@@ -194,6 +213,24 @@ async function plugin(imports, register) {
             }
         }));
 
+        undo.push(actions.define('guestLend', {
+            about: 'Lend a guest to a machine, so a worker on it can authenticate',
+            takes: ['name', 'machine'],
+            run: async function (args) {
+                var a = args || {};
+                return await lend.toMachine(a.name, a.machine);
+            }
+        }));
+
+        undo.push(actions.define('guestBack', {
+            about: 'Take a guest back off a machine, keeping whatever the worker refreshed',
+            takes: ['name', 'machine'],
+            run: async function (args) {
+                var a = args || {};
+                return await lend.fromMachine(a.name, a.machine);
+            }
+        }));
+
         undo.push(actions.define('supervisorKey', {
             about: 'Which supervisor sign-in this host uses, and switching it. Pass nothing to read it',
             takes: ['name'],
@@ -253,6 +290,13 @@ async function plugin(imports, register) {
             //until somebody replaces it — which is a different act from deciding
             //it is gone, and the user's rule is that revoking is never
             //automatic.
+            //AND LENDING, on the service as well as as actions — ../../queue
+            //hands a machine a credential on every run, and going through the
+            //action table for it would be the queue calling a door it also
+            //defines.
+            toMachine: lend.toMachine,
+            fromMachine: lend.fromMachine,
+
             checked: store.checked,
             pause: function (name, how) {
                 return store.checked(name, Object.assign({ ready: false }, how || {}));
