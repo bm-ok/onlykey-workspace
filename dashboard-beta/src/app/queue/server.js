@@ -33,8 +33,10 @@ var makeAttempts = require('./attempts');
 //    ./archive.js    what a run left behind, kept where the machine cannot
 //                    take it away
 //    ./policy.js     who is free, what goes next, and what would go where
-//    ./main.js       the in-flight record, which outlives a save. The clock is
-//                    a job in ../core/cron
+//
+//IT HAS NO MAIN HALF. The two things that had to outlive a save both belong to
+//somebody else now: the clock is a job in ../core/cron, and which machine is
+//busy is ../vms/busy. What is left is all bundle-shaped, and reloads with it.
 //
 //THE WORKER AND THE JUDGE ARE THE TWO LIBRARIES — a set of jobs, prompts and
 //contracts each — and they use those to ASK for a task. They do not own one once
@@ -66,11 +68,12 @@ var makeAttempts = require('./attempts');
 //THE TICK IS NOT. Nothing on this host dispatches yet, which is deliberate:
 //the queue drives real machines, and a half-ported app that started handing out
 //work would be doing it with half of the checks. What runs the work today is the
-//app being ported from, and `inFlight` below is read from there and SAID to be
-//from there — a board reporting "nothing running" while a machine is running
-//something is the confident wrong report this whole app is arranged against.
+//app being ported from, so what is in flight is asked of ../vms/busy first and
+//of that app second — and which of the two answered is SAID. A board reporting
+//"nothing running" while a machine is running something is the confident wrong
+//report this whole app is arranged against.
 //---------------------------------------------------------------------------
-plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact', 'archive', 'cron'];
+plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact', 'archive', 'cron', 'busy'];
 plugin.provides = ['queue'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -80,27 +83,28 @@ async function plugin(imports, register) {
     var dataDir = imports.dataDir;
     var secret = imports.secret;
 
-    //THE IN-FLIGHT RECORD, FROM ./main.js. It outlives this bundle, which is
-    //rebuilt every time a file is saved — see the header there for what a queue
-    //that forgot in-flight on every save would do to a machine.
+    //---- what is in flight, which is ../vms/busy's -------------------------
     //
-    //ABSENT WHEN THIS HALF IS BUILT AGAINST A BARE HOST, which the test suite
-    //does. A stand-in that is permanently stopped and holding nothing is the
-    //right answer there: every method exists, and none of them reaches a machine.
-    var engine = (host && host.queue) || {
-        TICK: 15000,
-        inFlight: function () { return []; },
-        doing: function () { return {}; },
-        claim: function () { return false; },
-        release: function () { return false; },
-        held: function () { return null; },
-        busy: function () { return 0; }
-    };
+    //THE QUEUE HAD ITS OWN MAP OF THIS, in a main half of its own, for the right
+    //reason: the node bundle is rebuilt on every save, and a queue that forgot
+    //which machine was holding which task would hand that machine a SECOND one,
+    //on top of a worker still running in a repository it is still writing to.
+    //
+    //../vms/busy holds exactly that fact, for exactly that reason, and it is on
+    //the host for exactly that lifetime. Two maps of "which machine is busy" is
+    //two answers to one question, and the day it would have mattered is the day
+    //the tick lands: a queued task and a snapshot would each believe they held
+    //the same machine, and neither would be wrong about its own record.
+    //
+    //SO THE QUEUE ASKS RATHER THAN REMEMBERS. What it takes a machine FOR is the
+    //queue's business; whether the machine is free is not.
+    var busy = imports.busy;
 
-    //HOW OFTEN THIS HOST LOOKS, taken from the record rather than written again.
-    //The board says it out loud, and a second number here would be a board
-    //describing a cadence that is not the one running.
-    var TICK = engine.TICK;
+    //HOW OFTEN THIS HOST LOOKS. Declared here because here is where the job is
+    //registered — the cadence and the thing it paces are one edit apart, and the
+    //board reads it from this same constant so it cannot describe a cadence that
+    //is not the one running.
+    var TICK = 15000;
 
     //---- the clock, which is a cron job ------------------------------------
     //
@@ -322,9 +326,12 @@ async function plugin(imports, register) {
     //board shows a pool and the door below plans work into it; worked out twice,
     //the board can call a machine free while the door has already given it away.
     async function busyNow() {
-        var mine = engine.inFlight();
+        //`all()` GIVES {name, job}; the board's word for those is machine and
+        //task. Renamed here rather than in ../vms/busy, because what a
+        //machine is being held FOR is this plugin's vocabulary.
+        var mine = busy.all();
         if (mine.length) {
-            return mine.map(function (r) { return { machine: r.machine, task: r.doing }; });
+            return mine.map(function (r) { return { machine: r.name, task: r.job }; });
         }
         var there = null;
         if (actions && actions.elsewhere) {
@@ -647,7 +654,7 @@ async function plugin(imports, register) {
                 var a = args || {};
                 var was = clock.running();
                 clock.stop(a.why ? String(a.why) : null);
-                var held = engine.inFlight();
+                var held = busy.all().map(function (r) { return { machine: r.name, task: r.job }; });
                 return {
                     running: false,
                     stillWorking: held,

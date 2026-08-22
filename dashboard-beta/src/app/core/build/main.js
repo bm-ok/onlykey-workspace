@@ -12,10 +12,10 @@
 //reach it — a `require('webpack')` in an unreachable function is still bundled,
 //and dragging webpack into a packaged app is exactly what this avoids.
 
-plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir', 'state', 'secret', 'queue', 'cron', 'busy'];
+plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir', 'state', 'secret', 'cron', 'busy'];
 plugin.provides = ['build'];
 async function plugin(imports, register) {
-    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir, state, secret, queue, cron, busy } = imports;
+    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir, state, secret, cron, busy } = imports;
 
     //what the node half is handed. the window and the tray are passed as
     //controllers rather than objects, because they outlive the bundle.
@@ -47,16 +47,6 @@ async function plugin(imports, register) {
         //It is also the only place this app says out loud what it does on its
         //own, unwatched — see Settings → Cron.
         cron: cron,
-
-        //AND WHAT THE QUEUE HAS IN FLIGHT, which is the sharpest version of the
-        //same argument and is NOT a timer. A queue that forgot which machine is
-        //holding which task on every save would hand that machine a second one,
-        //on top of a worker still running in a repository it is still writing
-        //to.
-        //
-        //ITS CLOCK IS A CRON JOB NOW; this record stays its own, because "which
-        //machine is busy" is a fact about the queue rather than about time.
-        queue: queue,
 
         //AND WHICH MACHINE IS HALF-WAY THROUGH SOMETHING, which is the same
         //argument again at the machine rather than the task.

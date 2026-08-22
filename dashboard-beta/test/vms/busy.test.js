@@ -35,6 +35,14 @@ function within(what, p) {
 let doing;
 beforeEach(() => { doing = makeDoing(); });
 
+test('it holds nothing to begin with', () => {
+    //THE STARTING STATE IS THE ONE EVERY OTHER CLAIM HERE IS MEASURED FROM, and
+    //a record that came up believing a machine was busy would refuse the first
+    //piece of work this host was ever asked to do.
+    assert.deepEqual(doing.all(), []);
+    assert.equal(doing.what('one'), null);
+});
+
 test('a machine in the middle of something refuses the second thing, by name', () => {
     doing.claim('runner1', 'being installed');
 
