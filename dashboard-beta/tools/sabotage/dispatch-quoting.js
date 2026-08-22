@@ -55,8 +55,16 @@ module.exports = {
         //THE MARKER IS QUOTED — `<<'TAG'` — which is what stops the shell
         //expanding $, backticks and backslashes in somebody's task on the way in.
         ['the marker is unquoted, so the body is expanded on the way in',
-            '    return \'cat > \' + path + " <<\'" + name + "\'\\n" + text + \'\\n\' + name;',
-            "    return 'cat > ' + path + ' <<' + name + '\\n' + text + '\\n' + name;"],
+            '    return prefix + " <<\'" + name + "\'\\n" + text + \'\\n\' + name;',
+            "    return prefix + ' <<' + name + '\\n' + text + '\\n' + name;"],
+
+        //`heredoc` IS `into` WITH A `cat >` IN FRONT OF IT, and the whole point
+        //of that is one guard rather than two implementations. Writing the file
+        //case out again is how the app came to have heredocs the marker check
+        //did not apply to.
+        ['writing a file goes round the guard instead of through it',
+            "    return into('cat > ' + path, body, tag);",
+            "    return 'cat > ' + path + \" <<'\" + String(tag) + \"'\\n\" + String(body) + '\\n' + String(tag);"],
 
         //A TAG THAT COULD NOT SURVIVE BEING QUOTED fails as a shell syntax error
         //a long way from here.

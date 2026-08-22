@@ -26,10 +26,10 @@ module.exports = {
         //A SESSION ID ARRIVES FROM A CALLER. The only byte that can end the
         //quoting is a single quote, and an unquoted one puts the rest of it in
         //the command.
-        ['the arguments are not quoted',
-            '            .concat([CLIP]);',
-            "            .concat([CLIP]).map(String);"],
-
+        //NO SEPARATE BREAK FOR "the arguments are not stringified". The first
+        //attempt at one inserted `.map(String)` before `.map(q)`, which is a
+        //no-op — `q` stringifies anyway — so it SURVIVED while having broken
+        //nothing. The break below is the real version of that claim.
         ['the arguments are pasted in rather than quoted',
             "        return into('node - ' + argv.map(q).join(' '), payloads.session(), 'OKC_SESSION_EOF');",
             "        return into('node - ' + argv.join(' '), payloads.session(), 'OKC_SESSION_EOF');"],

@@ -93,6 +93,18 @@ test('a half-written line before the answer does not become the answer', () => {
     assert.deepEqual(answer(out), { ok: true, sessions: [] });
 });
 
+test('a line that is valid json but not an object is not the answer', () => {
+    //THE `{` CHECK EARNS ITS KEEP HERE AND NOWHERE ELSE. A motd or an nvm
+    //notice does not parse at all, so it falls through on its own — what does
+    //parse is a bare number or a quoted word, and `JSON.parse('42')` is 42.
+    //Taking that would hand the caller a number where it expected a session.
+    const out = ['{"ok":true,"sessions":[]}', '42'].join('\n');
+    assert.deepEqual(answer(out), { ok: true, sessions: [] });
+
+    assert.deepEqual(answer(['{"ok":true,"sessions":[]}', '"done"'].join('\n')), { ok: true, sessions: [] });
+    assert.deepEqual(answer(['{"ok":true,"sessions":[]}', 'null'].join('\n')), { ok: true, sessions: [] });
+});
+
 test('nothing readable is said plainly rather than thrown', () => {
     assert.deepEqual(answer('Permission denied\nconnection closed'),
         { ok: false, error: 'the machine did not answer with anything readable' });
