@@ -1,7 +1,111 @@
 var React = require('react');
+var { useState, useEffect, useRef } = React;
 
 module.exports = function terminal(theme, okc, shell) {
-    var { Pane, Panel, TitleRow, Grow, Button, Skeleton, Empty, Note, Mono } = theme;
+    var { Pane, Panel, TitleRow, Grow, Row, Button, Badge, Skeleton, Empty, Note, Mono, Term } = theme;
+
+    //---- a machine's console -------------------------------------------------
+    //
+    //A CONSOLE IS NOT A SHELL, and the difference is why one of them can be here
+    //and the other cannot. A shell is bytes travelling both ways on their own
+    //websocket, which this half does not relay. A console is a FILE — VirtualBox
+    //copies the guest's serial port into it, and reading a file is an ordinary
+    //action like any other.
+    //
+    //SO THIS IS THE ONE TERMINAL THIS TAB CAN HONESTLY SHOW, and it happens to be
+    //the one worth the most: it is the only way to watch a boot that never
+    //finishes. There is no agent yet during an install, so nothing else in this
+    //app can say anything about a machine for twenty-five minutes.
+    //
+    //READ-ONLY ON PURPOSE. No `onData`, so ../ui/xterm gives it no cursor and no
+    //stdin — a blinking cursor on a captured log is a promise that a keystroke
+    //goes somewhere.
+    function Console({ vms }) {
+        var [on, setOn] = useState(null);
+        var [err, setErr] = useState(null);
+        var [note, setNote] = useState(null);
+        var term = useRef(null);
+        var seen = useRef(0);
+
+        //ONLY WHAT IS NEW, WRITTEN ONCE. The whole file is up to a megabyte of a
+        //boot; rewriting it every poll would flicker, lose the scroll position,
+        //and destroy a selection somebody is mid-copy of.
+        useEffect(function () {
+            if (!on) return;
+
+            var alive = true;
+            seen.current = 0;
+            if (term.current) term.current.clear();
+
+            async function read() {
+                try {
+                    //A GENEROUS TAIL. `of` says how long the file is, so what has
+                    //arrived since last time is the difference — and asking for
+                    //more than that costs nothing but is the only way to be sure
+                    //a burst was not missed.
+                    var got = await okc.call('vmLog', { name: on, which: 'console', lines: 800 });
+                    if (!alive) return;
+
+                    var lines = got.lines || [];
+                    var total = got.of || lines.length;
+                    var fresh = seen.current === 0 ? lines : lines.slice(Math.max(0, lines.length - (total - seen.current)));
+
+                    //A BURST BIGGER THAN THE WINDOW IS SAID, not silently
+                    //dropped. A console that skipped a thousand lines without
+                    //mentioning it is a console nobody can reason from.
+                    if (seen.current && total - seen.current > lines.length) {
+                        setNote((total - seen.current - lines.length) + ' lines went by faster than this could read them');
+                    }
+
+                    seen.current = total;
+                    setErr(null);
+                    if (fresh.length && term.current) term.current.write(fresh.join('\r\n') + '\r\n');
+                } catch (e) {
+                    if (alive) setErr(e.message);
+                }
+            }
+
+            read();
+            var t = setInterval(read, 2000);
+            return function () { alive = false; clearInterval(t); };
+        }, [on]);
+
+        var watchable = (vms || []).filter(function (v) { return v.serial; });
+
+        return (
+            <Panel>
+                <TitleRow>
+                    <span>A machine&rsquo;s console</span>
+                    <Grow />
+                    {on ? <Badge kind="run">{on}</Badge> : null}
+                </TitleRow>
+
+                {!watchable.length
+                    ? <Empty>No machine here has its console captured, so there is nothing to watch.</Empty>
+                    : <Row>
+                        {watchable.map(function (v) {
+                            return (
+                                <Button key={v.name} kind={v.name === on ? 'ok' : undefined}
+                                    onClick={function () { setOn(v.name === on ? null : v.name); setNote(null); }}>
+                                    {v.name}
+                                </Button>
+                            );
+                        })}
+                    </Row>}
+
+                {err ? <Note kind="bad">{err}</Note> : null}
+                {note ? <Note kind="warn">{note}</Note> : null}
+
+                {on
+                    ? <Term ref={term} height={420} />
+                    : watchable.length
+                        ? <Note>Pick a machine to read what it wrote to its serial port. This is the only
+                            view of a machine that works before its agent exists &mdash; during an install,
+                            or when a boot does not finish.</Note>
+                        : null}
+            </Panel>
+        );
+    }
 
     function Terminal() {
         var q = okc.use('vmList', {}, 8000);
@@ -61,6 +165,8 @@ module.exports = function terminal(theme, okc, shell) {
 
                     <Button onClick={function () { shell.go('Worker', 'Board'); }}>Go to the tasks</Button>
                 </Panel>
+
+                <Console vms={(q.state && q.state.vms) || []} />
 
                 {/* NOT BUILT, AND THE REASON IS NOT "IT WAS FIDDLY".
                     //
