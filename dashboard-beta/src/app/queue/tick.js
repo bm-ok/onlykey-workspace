@@ -33,7 +33,35 @@ module.exports = function tick(deps) {
     var call = d.call;
     var say = d.say;
 
-    var workspaceOpen = d.workspaceOpen || function () { return true; };
+    //ASYNC, BECAUSE ASKING IS I/O. The workspace is read off disk and the
+    //answer is cached for a few seconds, not held — so this is a question with
+    //a round trip in it rather than a flag, and pretending otherwise would make
+    //the guard read as true while the answer was still coming.
+    var workspaceOpen = d.workspaceOpen || async function () { return true; };
+
+    //---- AND WHETHER THIS APP OWNS BOTH ENDS OF THE BOARD -------------------
+    //
+    //THE HAZARD THIS EXISTS FOR, found by assembling the plugin and firing the
+    //tick: the queue defines `tasks` and does NOT define `taskUpdate`. So during
+    //the port the tick READS this app's board and every write RELAYS to the app
+    //being ported from — which is the app actually running work on real
+    //machines.
+    //
+    //WHAT THAT WOULD DO. Adoption reads a task from here, finds it stranded, and
+    //re-queues a task of that id over THERE. A dispatch marks a task `given` on
+    //a board it did not read it from. Two boards, and every write lands on the
+    //one that is live.
+    //
+    //SO IT REFUSES TO DISPATCH AT ALL until both ends are the same app. Not a
+    //warning and not a best effort: a queue whose writes go somewhere else is
+    //not a degraded queue, it is a queue writing into somebody else's running
+    //system.
+    //
+    //IT UNARMS ITSELF. The day `taskUpdate` is defined here this answers true
+    //and nothing else has to change — which is the point of asking rather than
+    //carrying a flag somebody has to remember to flip.
+    var ownsTheBoard = d.ownsTheBoard || function () { return true; };
+    var splitSaid = false;
     var machinesNow = d.machinesNow;      //async () -> [vm]
     var tasksNow = d.tasksNow;            //async () -> [task]
     var judgementsNow = d.judgementsNow;  //async () -> [judgement]
@@ -95,7 +123,7 @@ module.exports = function tick(deps) {
         //work" and "no workspace" are different sentences, and a queue that
         //cannot tell them apart is one that would happily dispatch the moment a
         //stale file answered.
-        if (!workspaceOpen()) {
+        if (!(await workspaceOpen())) {
             if (!idleSaid) {
                 idleSaid = true;
                 say('queue').info('no workspace is open — nothing is dispatched until one is');
@@ -103,6 +131,21 @@ module.exports = function tick(deps) {
             return { skipped: 'no workspace' };
         }
         idleSaid = false;
+
+        if (!ownsTheBoard()) {
+            //SAID ONCE, for the reason every other wait here is said once — this
+            //runs four times a minute and the condition lasts until somebody
+            //ports an action.
+            if (!splitSaid) {
+                splitSaid = true;
+                say('queue').warn('nothing is dispatched from this host: it reads its own task board and '
+                    + 'its writes still go to the app being ported from. Two boards, and every write would '
+                    + 'land on the one running the real machines. This clears itself when taskUpdate moves '
+                    + 'here.');
+            }
+            return { skipped: 'the board is read here and written elsewhere' };
+        }
+        splitSaid = false;
 
         running = true;
         try {

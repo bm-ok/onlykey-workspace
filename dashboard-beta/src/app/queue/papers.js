@@ -49,11 +49,11 @@ module.exports = function papers(deps) {
         var from = judging.get(judgementId);
         if (!from) return [];
 
-        var all = handedBack(from.uid) || [];
+        var all = (await handedBack(from.uid)) || [];
         var landed = [];
 
         for (var i = 0; i < all.length; i++) {
-            var body = readHanded(from.uid, all[i].file);
+            var body = await readHanded(from.uid, all[i].file);
             //A FILE THAT IS NOT TEXT IS SKIPPED, not fatal. What is being read is
             //whatever a model chose to write to disk, and one unreadable file
             //must not stop the rest arriving.

@@ -3,6 +3,7 @@ var makeStore = require('./store');
 var makeArchive = require('./archive');
 var makeDoors = require('./doors');
 var makeAttempts = require('./attempts');
+var makeDispatching = require('./dispatching');
 
 //---------------------------------------------------------------------------
 //THE QUEUE, AS A THING OF ITS OWN.
@@ -73,7 +74,25 @@ var makeAttempts = require('./attempts');
 //"nothing running" while a machine is running something is the confident wrong
 //report this whole app is arranged against.
 //---------------------------------------------------------------------------
-plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact', 'archive', 'cron', 'busy'];
+//---- WHAT THE TICK NEEDED, AND WHY EACH ONE IS HERE ----------------------
+//
+//`guests`   which sign-in is free, which is paused, and who holds one — asked
+//           BEFORE a machine is spent, because a task dispatched with no
+//           identity available boots a machine, rolls it forward, fails at the
+//           handover and rolls it back.
+//`judge`    the judgements, which share this queue and are dispatched first.
+//`ours`     the machine register, where a machine is marked as somebody's.
+//`refs`     where a branch stands, read either side of a run.
+//`channel`  talking to a machine — a judge's report going out, and a machine
+//           dialling back in saying what it still holds.
+//`workspace` whether there is anywhere to deliver at all.
+//`settings` whether the supervisor is meant to be woken.
+//
+//NOTHING CONSUMES `queue`, so none of these can be a cycle — which is worth
+//saying out loud, because an unresolved name takes down the whole graph and a
+//cycle means nothing builds at all.
+plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact', 'archive', 'cron', 'busy',
+    'guests', 'judge', 'ours', 'refs', 'channel', 'workspace', 'settings', 'repositories'];
 plugin.provides = ['queue'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -130,6 +149,14 @@ async function plugin(imports, register) {
         + 'real work — rolled back, handed a credential, and run unattended — and a model may not '
         + 'decide that this host should begin doing that.';
 
+    //THE JOB IS DECLARED BEFORE THE THING IT RUNS EXISTS, and armed after.
+    //
+    //`cron.add` is what makes the switch appear on the board and what makes
+    //`cronStart` refuse without a person; the tick is what it does when started.
+    //Declaring both here would put the whole assembly above every read in this
+    //file, so the job is registered with its rules and given its `run` at the
+    //bottom, where the pieces are built. A job with no `run` reports itself
+    //unarmed rather than pretending — see `armed` below, which the board draws.
     cron.add({
         name: JOB,
         every: TICK,
@@ -308,6 +335,91 @@ async function plugin(imports, register) {
         }
     }, log);
 
+    //---- and the dispatch itself -------------------------------------------
+    //
+    //ASSEMBLED IN ./dispatching, which is nothing but wiring — every rule it
+    //joins up lives in a file of its own and is tested there. What is decided
+    //HERE is only which service answers which question.
+    var dispatch = makeDispatching({
+        call: function (name, args) { return actions.call(name, args || {}); },
+        say: function (who, machine) { return imports.log.on(who, machine); },
+
+        busy: busy,
+        ours: imports.ours,
+        guests: imports.guests,
+        judge: imports.judge,
+        refs: imports.refs,
+        channel: imports.channel,
+        workspace: imports.workspace,
+        settings: imports.settings,
+
+        //THE RUN LOGS ARE THIS PLUGIN'S DRAWER — the same one taskProgress
+        //fills, because a judgement's log is a run's log and somebody looking
+        //for it should not have to know which kind of work produced it.
+        logs: archive,
+        //AND WHAT A JUDGEMENT HANDED BACK is ../judge's, opened here by the same
+        //name it opens it by. Two drawers, two subjects: one is what a run SAID,
+        //the other is what it DELIVERED.
+        findings: imports.archive.store('artifacts'),
+
+        //WHAT THIS HOST HAS SPENT, beside the rest of its state.
+        meterFile: function () { return dataDir.at('meter.json'); },
+
+        //WHAT A MACHINE IS FOR, left on it so it can say so if it dials back in.
+        noteFor: store.noteFor,
+
+        //WHICH REPOSITORY HERE, from the name GitHub uses. A question about
+        //remotes, which is not this plugin's subject.
+        repoFor: repoFor,
+
+        //---- WHETHER THIS APP OWNS BOTH ENDS OF THE BOARD -----------------
+        //
+        //`tasks` IS DEFINED HERE AND `taskUpdate` IS NOT, so today this answers
+        //false and nothing is dispatched. Asked of the action table rather than
+        //carried as a flag: the day taskUpdate is defined here this becomes true
+        //on its own, and nobody has to remember to turn anything on.
+        //
+        //`has` IS THIS HALF'S OWN TABLE and answers synchronously — "is this
+        //action mine" is a real question and making it wait on a socket would be
+        //the wrong trade. Which is exactly the question being asked.
+        ownsTheBoard: function () {
+            return !!(actions && actions.has && actions.has('tasks') && actions.has('taskUpdate'));
+        },
+
+        //AND A TASK BY ITS UID, for a machine dialling back in. By uid and
+        //answered by uid: looking one up by NUMBER would follow a number
+        //reissued after the task holding it was deleted.
+        taskByUid: function (uid) { return store.get(uid); }
+    });
+
+    //---- WHICH REPOSITORY A PULL REQUEST'S SUBJECT NAMES -------------------
+    //
+    //A subject carries `owner/name` because that is where a pull request lives;
+    //a repository in this workspace is called something shorter. MATCHED ON ALL
+    //THREE NAMES one can go by, because which of them a subject was written with
+    //depends on where it came from.
+    //
+    //A DECLARED FUNCTION rather than a `var`, so it can be handed in above while
+    //being defined here — a `var` would be `undefined` at the moment it is
+    //passed, and ./onejudgement would refuse every pull request with "no
+    //repository in this workspace is that".
+    async function repoFor(named) {
+        var kept = null;
+        try { kept = await imports.repositories.read(); } catch (e) { kept = null; }
+
+        //NOTHING TO ASK IS NOT AN EMPTY WORKSPACE. `read` answers null when
+        //nothing is open, and turning that into "no repository is that" would
+        //refuse a judgement for the wrong reason.
+        var rows = kept && kept.repos ? kept.repos : [];
+
+        return rows.filter(function (x) {
+            return x.repo === named
+                || x.name === named
+                || x.issuesOn === named
+                || (x.remote && (x.remote.owner + '/' + x.remote.repo) === named);
+        })[0] || null;
+    }
+
     //---- which machines are busy, and whose tick says so --------------------
     //
     //WHAT THIS HOST IS RUNNING, from the record that outlives a save — empty
@@ -427,8 +539,17 @@ async function plugin(imports, register) {
                     //and through ../artifact, which is its own plugin exactly
                     //because the worker, the judge and the repositories panes
                     //all ask this and none of them owns it.
-                    var art = { delivered: false, summary: null, commits: [] };
-                    try { art = await artifact.read(t.branch); }
+                    //THE `try` GUARDED A THROW AND NOT AN ANSWER. `art` was
+                    //overwritten with whatever came back and then read for
+                    //`.delivered`, so a reader that answered null would take the
+                    //whole board down rather than reporting one task as having
+                    //delivered nothing. ../artifact always answers with an
+                    //object today; this stops that being a thing the board
+                    //depends on. Found by assembling the plugin in a test with a
+                    //stand-in that answered null.
+                    var none = { delivered: false, summary: null, commits: [] };
+                    var art = none;
+                    try { art = (await artifact.read(t.branch)) || none; }
                     catch (e) { /* a branch that is gone has delivered nothing, which is an answer */ }
 
                     out.push(Object.assign({}, t, {
@@ -842,13 +963,60 @@ async function plugin(imports, register) {
             ORDER: policy.ORDER,
             TICK: TICK,
 
-            //AND WHETHER IT IS RUNNING, which is false until the tick lands here.
-            //A consumer asking "is this host dispatching" must get an honest no
-            //rather than an absent method.
-            running: function () { return false; }
+            //AND WHETHER IT IS RUNNING, which is now the clock's own answer
+            //rather than a standing no.
+            running: clock.running,
+
+            //WHAT A RESTART LEFT BEHIND, and a machine saying what it still
+            //holds. Both on the service rather than as actions: adoption is run
+            //by the start of the clock, and a redial is something ../vms/channel
+            //triggers when a machine dials in — neither is typed.
+            adopt: dispatch.adopt,
+            dialledIn: dispatch.dialledIn,
+
+            //WHAT THIS HOST HAS SPENT, and on whose sign-in.
+            spent: {
+                all: dispatch.meter.all,
+                byKey: dispatch.meter.byKey,
+                total: dispatch.meter.total,
+                where: dispatch.meter.where
+            }
         },
         onDestroy: function () { while (undo.length) undo.pop()(); }
     });
-    log.info && log.info('queue policy up; nothing dispatches from this host yet');
+
+    //---- AND THE CLOCK IS GIVEN THE THING IT RUNS --------------------------
+    //
+    //LAST, DELIBERATELY. Everything above is a declaration; this is the line
+    //after which this host can give a real machine real work. It stays off until
+    //a person starts it — see ONLY_A_PERSON — so arming it is not starting it.
+    //
+    //ADOPTION FIRST, ON EVERY TICK BEFORE THE FIRST DISPATCH. A restart can
+    //leave a task in `given` with no run and a machine still holding one, and
+    //handing out new work before picking those up is how one machine gets a
+    //second task on top of a worker still writing.
+    //
+    //ONCE, AND THEN NEVER AGAIN, because adoption is about what a RESTART left:
+    //running it every fifteen seconds would re-adopt work this tick had just
+    //dispatched. Guarded by a flag rather than by a separate start hook, so the
+    //two cannot get out of order.
+    var adopted = false;
+
+    //`does` HANDS BACK AN UNDO, and it goes on the same list as every action
+    //this plugin defines — the node half is rebuilt on every save, and a job
+    //still pointing at the previous build's tick is a tick running against a
+    //graph that has been thrown away.
+    undo.push(cron.does(JOB, async function () {
+        if (!adopted) {
+            adopted = true;
+            //NEVER FATAL. A restart that could not be tidied up is a reason to
+            //say so, not a reason for this host to stop dispatching for ever.
+            try { await dispatch.adopt(); }
+            catch (e) { log.warn('what the restart left could not all be picked up: ' + e.message); }
+        }
+        return await dispatch.tick.once();
+    }));
+
+    log.info('queue up — the tick is armed and stopped, as it always starts');
 }
 module.exports = plugin;

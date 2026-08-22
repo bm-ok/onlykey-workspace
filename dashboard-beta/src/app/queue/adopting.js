@@ -64,7 +64,8 @@ module.exports = function adopting(deps) {
     var call = d.call;
     var say = d.say;
 
-    var workspaceOpen = d.workspaceOpen || function () { return true; };
+    //ASYNC, for the reason ./tick gives.
+    var workspaceOpen = d.workspaceOpen || async function () { return true; };
     var machinesNow = d.machinesNow;
     var tasksNow = d.tasksNow;
     var judgementsNow = d.judgementsNow;
@@ -88,7 +89,7 @@ module.exports = function adopting(deps) {
         //NOTHING WAS IN FLIGHT IN A WORKSPACE NOBODY IS SERVING — and asking
         //would read an empty board and "recover" it, which is adoption doing the
         //one thing it exists to prevent.
-        if (!workspaceOpen()) return { skipped: 'no workspace' };
+        if (!(await workspaceOpen())) return { skipped: 'no workspace' };
 
         var tasks = (await tasksNow()) || [];
         var judgements = (await judgementsNow()) || [];

@@ -65,10 +65,16 @@ function concludedIn(text) {
 //A FILE THAT CANNOT BE READ IS SKIPPED, not fatal. What is being read is
 //whatever a model chose to write to disk, and one unreadable file must not lose
 //a conclusion sitting in the next one.
-function concludedAcross(handed, read) {
+//
+//ASYNC BECAUSE THE READING IS. What a judgement handed back lives in
+//../core/archive's drawer, which answers off disk — so this awaits each file
+//rather than being handed a bag of text somebody loaded first. Loading them all
+//up front would read every file to answer a question the first one usually
+//settles.
+async function concludedAcross(handed, read) {
     for (var i = 0; i < (handed || []).length; i++) {
         var text = '';
-        try { text = read(handed[i].file); } catch (e) { continue; }
+        try { text = await read(handed[i].file); } catch (e) { continue; }
         var said = concludedIn(text);
         if (said) return said;
     }

@@ -53,7 +53,11 @@ module.exports = function onejudgement(deps) {
 
     //WHICH REPOSITORY HERE, from the name GitHub uses — a question about
     //remotes, which is not this plugin's subject.
-    var repoFor = d.repoFor || function () { return null; };
+    //
+    //AWAITED, because the answer is a lookup over a list another plugin reads
+    //off disk. Called synchronously it would resolve a promise as truthy and
+    //fetch `undefined` into a branch nobody asked for.
+    var repoFor = d.repoFor || async function () { return null; };
 
     //WHAT CAME BACK, and how to read one of them.
     var handedBack = d.handedBack || function () { return []; };
@@ -169,8 +173,8 @@ module.exports = function onejudgement(deps) {
             //WHAT CAME BACK, before the machine is touched again — it is about
             //to be rolled back, which is exactly when nobody is watching.
             var handed = handedBack(judgement.uid) || [];
-            var concluded = concludedAcross(handed, function (file) {
-                return String((readHanded(judgement.uid, file) || {}).text || '');
+            var concluded = await concludedAcross(handed, async function (file) {
+                return String(((await readHanded(judgement.uid, file)) || {}).text || '');
             });
 
             //AND THE TIPS, so this judgement can say later whether it still
@@ -281,7 +285,7 @@ module.exports = function onejudgement(deps) {
             return { branch: branch, reading: null };
         }
 
-        var row = repoFor(subject.on);
+        var row = await repoFor(subject.on);
         if (!row) throw new Error(ref + ' reads ' + subject.on + ', and no repository in this workspace is that.');
 
         var got = await phase('fetching', function () {
