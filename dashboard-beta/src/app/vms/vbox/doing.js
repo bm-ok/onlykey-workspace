@@ -153,6 +153,41 @@ module.exports = function doing(run, retrying, read, opts) {
         return run(['controlvm', name, 'setlinkstate1', on ? 'on' : 'off']);
     }
 
+    //---- the console, written to a file this host can read ----------------
+    //
+    //A WIRE OUT OF THE GUEST THAT NEEDS NOTHING RUNNING INSIDE IT. The kernel
+    //writes to ttyS0 from its first line — before the network, before systemd,
+    //before there is any agent to dial home — and VirtualBox copies every byte
+    //to a file here. It is the only way to watch a boot that never finishes,
+    //which is the failure it was built for.
+    //
+    //0x3F8 / IRQ 4 IS COM1, which is what `console=ttyS0` means in the guest.
+    //
+    //A RAW FILE RATHER THAN A PIPE OR A SOCKET, and that is the point rather
+    //than the easy choice: a file survives the machine going away, and the whole
+    //reason to have this is reading it AFTER a boot that did not finish. A pipe
+    //with nobody on the end of it is a boot nobody can look at afterwards.
+    //
+    //AND IT CAN ONLY BE SET WHILE THE MACHINE IS OFF, which is why it is done as
+    //a machine is built rather than when somebody wants it: the one boot worth
+    //watching is the one it would be too late to ask about.
+    async function setSerial(name, file) {
+        if (!file) {
+            await run(['modifyvm', name, '--uart1', 'off'], { tags: [name] });
+            return { name: name, on: false, file: null };
+        }
+
+        //THE FOLDER FIRST. VirtualBox will not create it, and a machine that
+        //will not start because its console had nowhere to go would be a
+        //debugging aid causing the fault it exists to explain.
+        try { fs.mkdirSync(path.dirname(file), { recursive: true }); }
+        catch (e) { /* it is there, or the write below says so */ }
+
+        await run(['modifyvm', name, '--uart1', '0x3F8', '4', '--uartmode1', 'file', file],
+            { tags: [name] });
+        return { name: name, on: true, file: file };
+    }
+
     //---- what the machine has on screen, right now ------------------------
     //
     //THE ONE THING THAT ANSWERS A QUESTION NOTHING ELSE HERE CAN. An install
@@ -310,7 +345,7 @@ module.exports = function doing(run, retrying, read, opts) {
     }
 
     return {
-        start: start, stop: stop, setLink: setLink, screenshot: screenshot,
+        start: start, stop: stop, setLink: setLink, setSerial: setSerial, screenshot: screenshot,
         snapshots: snapshots, snapshotTimes: snapshotTimes,
         takeSnapshot: takeSnapshot, restoreSnapshot: restoreSnapshot, deleteSnapshot: deleteSnapshot,
         destroy: destroy, machineFolder: machineFolder, sweepUp: sweepUp,

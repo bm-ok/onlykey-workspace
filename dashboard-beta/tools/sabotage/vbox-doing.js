@@ -3,6 +3,23 @@ module.exports = {
     file: 'src/app/vms/vbox/doing.js',
     test: 'test/vms/vbox-doing.test.js',
     breaks: [
+        //THE CONSOLE IS THE ONLY WIRE OUT OF A BOOT THAT NEVER FINISHES.
+        ['the console is put on a port the guest does not write to',
+            "await run(['modifyvm', name, '--uart1', '0x3F8', '4', '--uartmode1', 'file', file],",
+            "await run(['modifyvm', name, '--uart1', '0x2F8', '3', '--uartmode1', 'file', file],"],
+
+        ['the console goes to a pipe, which nothing can read afterwards',
+            "'--uartmode1', 'file', file],",
+            "'--uartmode1', 'server', file],"],
+
+        ['the folder is not made, so a machine will not start',
+            "        try { fs.mkdirSync(path.dirname(file), { recursive: true }); }\n        catch (e) { /* it is there, or the write below says so */ }",
+            ''],
+
+        ['turning it off points it at a file called nothing instead',
+            "        if (!file) {\n            await run(['modifyvm', name, '--uart1', 'off'], { tags: [name] });\n            return { name: name, on: false, file: null };\n        }",
+            ''],
+
         //A machine that would not boot because a log could not be renamed would
         //be a debugging aid causing the fault it exists to explain.
         ['a boot log that cannot be rolled stops the machine starting',

@@ -145,6 +145,44 @@ test('the cable is pulled from outside, not from inside the guest', async () => 
     assert.deepEqual(asked, ['controlvm one setlinkstate1 off', 'controlvm one setlinkstate1 on']);
 });
 
+//---------------------------------------------------------------------------
+//THE CONSOLE, WRITTEN SOMEWHERE THIS HOST CAN READ IT.
+//---------------------------------------------------------------------------
+
+test('the console goes to a raw file on COM1, which is what the guest writes to', async () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'okc-serial-')), 'deep', 'one.log');
+    answers['modifyvm one --uart1 0x3F8 4 --uartmode1 file ' + file] = 'ok';
+
+    const said = await act.setSerial('one', file);
+
+    //0x3F8 / IRQ 4 IS COM1, which is what `console=ttyS0` means in the guest —
+    //so a different port is a console nothing writes to.
+    assert.deepEqual(said, { name: 'one', on: true, file });
+    assert.ok(asked[0].includes('--uart1 0x3F8 4'), asked[0]);
+    //A RAW FILE RATHER THAN A PIPE: a file survives the machine going away, and
+    //reading it AFTER a boot that did not finish is the whole point.
+    assert.ok(asked[0].includes('--uartmode1 file'), asked[0]);
+});
+
+test('and its folder is made first, because VirtualBox will not', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-serial-'));
+    const file = path.join(root, 'not', 'there', 'yet', 'one.log');
+    answers['modifyvm one --uart1 0x3F8 4 --uartmode1 file ' + file] = 'ok';
+
+    await act.setSerial('one', file);
+
+    //A MACHINE THAT WOULD NOT START because its console had nowhere to go would
+    //be a debugging aid causing the fault it exists to explain.
+    assert.ok(fs.existsSync(path.dirname(file)), 'the folder was not made');
+});
+
+test('and it can be turned off again, which is not the same as pointing it nowhere', async () => {
+    answers['modifyvm one --uart1 off'] = 'ok';
+
+    assert.deepEqual(await act.setSerial('one', null), { name: 'one', on: false, file: null });
+    assert.deepEqual(asked, ['modifyvm one --uart1 off']);
+});
+
 test('a machine that is off has nothing on screen, and says so in better words', async () => {
     answers['showvminfo one --machinereadable'] = 'VMState="poweroff"';
 

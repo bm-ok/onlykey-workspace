@@ -160,6 +160,7 @@ async function plugin(imports, register) {
             start: doIt.start,
             stop: doIt.stop,
             setLink: doIt.setLink,
+            setSerial: doIt.setSerial,
             screenshot: doIt.screenshot,
             snapshots: doIt.snapshots,
             takeSnapshot: doIt.takeSnapshot,
