@@ -101,17 +101,26 @@ module.exports = function registry(deps) {
     function match(method, path) {
         var want = String(method || 'GET').toUpperCase();
         var where = String(path || '');
-        var hits = [];
+        var exact = [];
+        var under = [];
 
         apis.forEach(function (a) {
             a.routes.forEach(function (r) {
                 if (r.method !== want) return;
-                var got = r.path.slice(-STAR.length) === STAR
-                    ? where.indexOf(r.path.slice(0, -1)) === 0
-                    : where === r.path;
-                if (got) hits.push({ api: a, route: r });
+                if (r.path.slice(-STAR.length) === STAR) {
+                    if (where.indexOf(r.path.slice(0, -1)) === 0) under.push({ api: a, route: r });
+                } else if (where === r.path) {
+                    exact.push({ api: a, route: r });
+                }
             });
         });
+
+        //A NAMED PATH BEATS A STAR OVER IT, which is specificity rather than a
+        //pattern language. `/provision/report` and `/provision/*` both exist and
+        //are different things: one is a guest saying where it has got to, the
+        //other is it fetching its own setup. Without this the star would answer
+        //both and the collision below would fire on every report.
+        var hits = exact.length ? exact : under;
 
         if (hits.length > 1) {
             say('https').warn(want + ' ' + where + ' is claimed by ' + hits.length + ' apis: '

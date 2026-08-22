@@ -76,7 +76,11 @@ beforeEach(async () => {
         //repairs are scheduled at load — see ./provision-repairs.test.js, which
         //is where what they do is checked.
         cron: { add: () => {}, does: () => () => {} },
-        tls: { ensure: () => ({ fingerprint: 'aabbcc' }) }
+        tls: { ensure: () => ({ fingerprint: 'aabbcc' }) },
+        //THE VERBS A MACHINE MAY ASK THIS PLUGIN FOR ARE REGISTERED AT LOAD —
+        //see src/app/vms/provision/guestapi.js, and test/vms/https-registry.test.js
+        //for what the registry does with them.
+        guestApi: { api: () => () => {}, PORT: 7317, CA_PORT: 7318, CHANNEL_PORT: 7374 }
     }, async (_e, s) => { provision = s.provision; });
 });
 
@@ -116,7 +120,11 @@ test('no VirtualBox at all is refused, rather than half-writing a record', async
         app: { host: {} }, log, ours: theirs, channel: { newToken: () => 't' }, vbox: gone,
         dataDir: { at: (...p) => path.join(dataDir, ...p) },
         cron: { add: () => {}, does: () => () => {} },
-        tls: { ensure: () => ({ fingerprint: 'aabbcc' }) }
+        tls: { ensure: () => ({ fingerprint: 'aabbcc' }) },
+        //THE VERBS A MACHINE MAY ASK THIS PLUGIN FOR ARE REGISTERED AT LOAD —
+        //see src/app/vms/provision/guestapi.js, and test/vms/https-registry.test.js
+        //for what the registry does with them.
+        guestApi: { api: () => () => {}, PORT: 7317, CA_PORT: 7318, CHANNEL_PORT: 7374 }
     }, async (_e, s) => { theirProvision = s.provision; });
 
     await assert.rejects(() => theirProvision.create({ name: 'one' }),

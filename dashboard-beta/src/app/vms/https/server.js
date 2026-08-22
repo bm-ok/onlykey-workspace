@@ -54,7 +54,7 @@ var PORT = 7317;
 var CA_PORT = 7318;
 var CHANNEL_PORT = 7374;
 
-plugin.consumes = ['app', 'log', 'tls', 'ours', 'channel', 'provision'];
+plugin.consumes = ['app', 'log', 'tls', 'ours', 'channel'];
 plugin.provides = ['guestApi'];
 async function plugin(imports, register) {
     var log = imports.log.on('https');
@@ -186,13 +186,16 @@ async function plugin(imports, register) {
                 tokenFor: function (name) {
                     return ours.has(name) ? ((ours.get(name).spec || {}).token || null) : null;
                 },
-                //A FRESHLY BUILT MACHINE DIALLING IN FOR THE FIRST TIME is the
-                //honest moment to give it a clean starting point — see
-                //../provision/settling.js for why it cannot be done when the
-                //guest says "online".
-                onHello: function (name) {
-                    imports.provision.firstSnapshotIfItNeedsOne(name);
-                }
+                //WHAT HAPPENS WHEN ONE DIALS IN ARRIVES HERE, from whoever
+                //called listen(). This plugin does not consume ../provision to
+                //get it, and that is not a style choice: ../provision consumes
+                //THIS to register its verbs, so reaching back for it would be a
+                //cycle and the graph would not build at all.
+                //
+                //../channel documents the same rule pointing the same way, and
+                //this is the second half of it: the transport knows who is
+                //asking, and nothing about what anybody wants done about it.
+                onHello: typeof o.onHello === 'function' ? o.onHello : function () {}
             });
         } catch (e) {
             out.refused.push({ what: 'channel', port: Number(o.channelPort || CHANNEL_PORT), why: e.message });

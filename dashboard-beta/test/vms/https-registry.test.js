@@ -108,6 +108,32 @@ test('and one trailing star matches beneath it, which git needs', () => {
     assert.equal(reg.match('GET', '/gitsomething'), null);
 });
 
+test('a named path beats a star over it, and does not read as a collision', () => {
+    //`/provision/report` AND `/provision/*` ARE DIFFERENT THINGS: one is a guest
+    //saying where it has got to, the other is it fetching its own setup. Without
+    //specificity the star answers both — and the collision warning fires on
+    //every single report.
+    reg.api(anAPI({
+        name: 'provision',
+        routes: [
+            { method: 'GET', path: '/provision/report', run: () => 'reported' },
+            { method: 'GET', path: '/provision/*', run: () => 'a script' }
+        ]
+    }));
+
+    assert.equal(reg.match('GET', '/provision/report').route.path, '/provision/report');
+    assert.equal(reg.match('GET', '/provision/first-boot.sh').route.path, '/provision/*');
+    assert.equal(said.some((m) => /claimed by/.test(m)), false, 'it read specificity as a collision');
+});
+
+test('two stars over the same ground is still a collision', () => {
+    reg.api(anAPI({ name: 'a', routes: [{ method: 'GET', path: '/x/*', run: () => 1 }] }));
+    reg.api(anAPI({ name: 'b', routes: [{ method: 'GET', path: '/x/*', run: () => 2 }] }));
+
+    reg.match('GET', '/x/y');
+    assert.ok(said.some((m) => /claimed by 2 apis/.test(m)), said.join(' | '));
+});
+
 test('the method is part of the match', () => {
     reg.api(anAPI());
     assert.equal(reg.match('GET', '/artifact'), null);

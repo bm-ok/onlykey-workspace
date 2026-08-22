@@ -6,6 +6,7 @@ var makeBuilding = require('./building');
 var makeSettling = require('./settling');
 var makeInstalling = require('./installing');
 var makeRepairs = require('./repairs');
+var makeGuestApi = require('./guestapi');
 var makeAutoinstall = require('./autoinstall');
 var header = require('./header');
 
@@ -58,7 +59,7 @@ var header = require('./header');
 //them, so the plugin that owns those ports can hand them over when it arrives.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir', 'tls', 'cron'];
+plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir', 'tls', 'cron', 'guestApi'];
 plugin.provides = ['provision'];
 async function plugin(imports, register) {
     var log = imports.log.on('vm');
@@ -205,10 +206,35 @@ async function plugin(imports, register) {
     });
     var stopPools = imports.cron.does('machine-pools', function () { return fix.pools(); });
 
+    //---- and what a machine may ask this plugin for ------------------------
+    //
+    //REGISTERED WITH ../https RATHER THAN SERVED HERE. That plugin owns the
+    //certificate, the port and proving which machine is asking; this one owns
+    //the verbs and the sentence about who may have them — see ./guestapi.js.
+    var stopServing = imports.guestApi.api(makeGuestApi({
+        scripts: scripts,
+        settle: settle,
+        say: imports.log.on,
+
+        //WHAT A RENDERED SCRIPT IS TOLD ABOUT THIS HOST. Asked at the moment it
+        //is rendered rather than remembered: the address can change between one
+        //machine being built and the next, and a script carrying yesterday's is
+        //a machine that cannot reach anything.
+        where: async function () {
+            return {
+                hostAddress: await vbox.hostAddress().catch(function () { return '127.0.0.1'; }),
+                port: imports.guestApi.PORT,
+                channelPort: imports.guestApi.CHANNEL_PORT,
+                caPort: imports.guestApi.CA_PORT,
+                caFingerprint: imports.tls.ensure().fingerprint
+            };
+        }
+    }));
+
     await register(null, {
         //THE NODE BUNDLE IS REBUILT ON EVERY SAVE, so what this registered has
         //to come off again or a save leaves two of it — see ../channel/server.js.
-        onDestroy: function () { stopConsoles(); stopPools(); },
+        onDestroy: function () { stopConsoles(); stopPools(); stopServing(); },
 
         provision: {
             fill: spec.fill,
