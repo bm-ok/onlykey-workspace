@@ -58,10 +58,10 @@ test('and a machine that is both takes either, one at a time', () => {
 
 //---- a supervisor sign-in, refused for being one -----------------------------
 
-test('a supervisor sign-in is refused on a runner, and no tag changes that', () => {
+test('a supervisor sign-in is refused on a runner tagged worker, and no tag changes that', () => {
     const why = whyNotOn('supervisor', 'worker', 'k1', 'kit-1');
 
-    assert.match(why, /"k1" is a supervisor sign-in and kit-1 is a runner/);
+    assert.match(why, /"k1" is a supervisor sign-in and kit-1 is a runner tagged worker/);
     assert.match(why, /the identity that decides what workers do/);
     assert.match(why, /No tag changes this/);
 });
@@ -74,7 +74,7 @@ test('and on an UNTAGGED machine it is still refused for being one', () => {
     assert.match(why, /No tag changes this/);
     assert.equal(/give it the "worker" tag/.test(why), false,
         'it told somebody to tag a machine so a supervisor sign-in could go to it');
-    assert.match(why, /kit-1 is not a supervisor machine/);
+    assert.match(why, /kit-1 is not tagged supervisor/);
 });
 
 test('and on a machine that does not exist, which is what caught it', () => {
@@ -83,9 +83,9 @@ test('and on a machine that does not exist, which is what caught it', () => {
     assert.match(why, /No tag changes this/);
 });
 
-test('a judge machine is not a supervisor machine either', () => {
+test('a runner tagged judge is not one tagged supervisor either', () => {
     const why = whyNotOn('supervisor', 'judge', 'k1', 'kit-1');
-    assert.match(why, /is a judge machine/);
+    assert.match(why, /is a runner tagged judge/);
     assert.match(why, /No tag changes this/);
 });
 
@@ -107,24 +107,25 @@ test('and the same for a judge sign-in', () => {
 
 //---- and the mismatches that are just mismatches ---------------------------------
 
-test('a worker sign-in is refused on a judge machine, because of what that costs', () => {
-    //A JUDGE MACHINE SIGNS IN AS ITSELF. This would hold one of the identities
-    //the runners draw from, and bill that machine's work to a worker.
+test('a worker sign-in is refused on a judge runner, because of what that costs', () => {
+    //A RUNNER TAGGED JUDGE SIGNS IN AS ITSELF. This would hold one of the
+    //identities the worker runners draw from, and bill that machine's work to a
+    //worker.
     const why = whyNotOn('worker', 'judge', 'k1', 'kit-1');
 
-    assert.match(why, /"k1" is a worker sign-in and kit-1 is a judge machine/);
+    assert.match(why, /"k1" is a worker sign-in and kit-1 is a runner tagged judge/);
     assert.match(why, /bill that machine's work to a worker/);
 });
 
-test('and on a supervisor machine, for the same reason said about a supervisor', () => {
+test('and on one tagged supervisor, for the same reason said about a supervisor', () => {
     assert.match(whyNotOn('worker', 'supervisor', 'k1', 'sup-1'),
-        /supervisor machine signs in as itself/);
+        /A runner tagged supervisor signs in as itself/);
 });
 
 test('a judge sign-in on a runner collapses the one distinction it exists for', () => {
     const why = whyNotOn('judge', 'worker', 'k1', 'kit-1');
 
-    assert.match(why, /"k1" is a judge sign-in and kit-1 is a runner/);
+    assert.match(why, /"k1" is a judge sign-in and kit-1 is a runner tagged worker/);
     assert.match(why, /reading a change and writing one are separate accounts/);
 });
 

@@ -5,9 +5,9 @@
 //
 //  worker      lent to a machine that does the work
 //  judge       lent to a machine that READS work and never writes it
-//  supervisor  never lent to a runner. It is the sign-in this host decides
-//              with — the model that chooses what work to give rather than the
-//              one doing it.
+//  supervisor  never lent to a worker or a judge. It is the sign-in this host
+//              decides with — the model that chooses what work to give rather
+//              than the one doing it.
 //
 //WHY A JUDGE HAS ITS OWN. A judge says whether work holds, and a worker writes
 //the work. Sharing one identity between them makes "who said this is good" and
@@ -36,10 +36,20 @@ var SAYS = {
     supervisor: 'a supervisor sign-in'
 };
 
+//---- and what a machine is called, which is the same word three times ------
+//
+//A RUNNER IS A VIRTUAL MACHINE IN THE POOL. All three of these are runners; the
+//TAG says what one is for, and work asks for a tag rather than for a name.
+//
+//This said "a runner" for a worker machine and "a judge machine" for a judge,
+//which reads as though only one of the three were a runner. The app being ported
+//from words it that way — its create dialog offers "an ordinary runner that
+//takes tasks" — and the shape underneath is the one written here: one kind of
+//machine, three tags.
 var MACHINE_SAYS = {
-    worker: 'a runner',
-    judge: 'a judge machine',
-    supervisor: 'a supervisor machine'
+    worker: 'a runner tagged worker',
+    judge: 'a runner tagged judge',
+    supervisor: 'a runner tagged supervisor'
 };
 
 //---- what the machine may be, as a LIST -------------------------------------
@@ -68,8 +78,8 @@ function whyNotOn(role, machineKind, name, machine) {
     //---- A SUPERVISOR IS REFUSED FOR BEING ONE, BEFORE ANY OF THAT ---------
     //
     //ASKED FIRST BECAUSE IT IS TRUE OF EVERY MACHINE. A supervisor sign-in
-    //belongs on a supervisor machine and nowhere else, so the state of the tags
-    //cannot change the answer — and letting the untagged branch below answer
+    //belongs on a runner tagged supervisor and nowhere else, so the state of the
+    //tags cannot change the answer — and letting the untagged branch below answer
     //first produced a refusal that was correct and gave DANGEROUS ADVICE: "give
     //it the worker tag, and then this can go to it". Tagging the machine is
     //exactly what must not fix this. The sentence invited the one action that
@@ -81,10 +91,10 @@ function whyNotOn(role, machineKind, name, machine) {
     //after the credential had already been written to the disk.
     if (want === 'supervisor' && can.indexOf('supervisor') < 0) {
         return '"' + name + '" is ' + SAYS.supervisor + ' and ' + machine + ' is '
-            + (can.length ? MACHINE_SAYS[can[0]] : 'not a supervisor machine')
+            + (can.length ? MACHINE_SAYS[can[0]] : 'not tagged supervisor')
             + '. Lending it there would let something other than the supervisor spend the identity '
             + 'that decides what workers do. No tag changes this: a supervisor sign-in goes to the '
-            + 'supervisor machine or nowhere.';
+            + 'runner tagged supervisor or nowhere.';
     }
 
     //---- A MACHINE THAT HAS NOT SAID WHAT IT IS GETS NOTHING ---------------
@@ -108,9 +118,9 @@ function whyNotOn(role, machineKind, name, machine) {
         : want === 'judge'
             ? 'A judge has its own identity so that reading a change and writing one are separate '
                 + 'accounts — lending it elsewhere collapses that back into one.'
-            : 'A ' + (is === 'supervisor' ? 'supervisor' : 'judge') + ' machine signs in as itself: '
-                + 'this would hold one of the identities the runners draw from, and bill that '
-                + 'machine\'s work to a worker.';
+            : 'A runner tagged ' + (is === 'supervisor' ? 'supervisor' : 'judge') + ' signs in as '
+                + 'itself: this would hold one of the identities the worker runners draw from, and '
+                + 'bill that machine\'s work to a worker.';
 
     return '"' + name + '" is ' + SAYS[want] + ' and ' + machine + ' is ' + MACHINE_SAYS[is] + '. ' + why;
 }

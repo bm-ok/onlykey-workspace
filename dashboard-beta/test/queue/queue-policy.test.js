@@ -132,7 +132,11 @@ test('a supervisor is never in the pool, and is not reported as merely kept back
     //Giving it a task would roll it back to its base snapshot mid-thought and
     //run a worker over the top of the thing that was handing out the work.
     assert.deepEqual(free(all), []);
-    assert.match(why(all, 'sup-1'), /supervisor machine/);
+    //SAID AS THE TAG, because that is what it is. A runner is a virtual machine
+    //in the pool and the tag says what it is for — all three kinds are runners,
+    //and calling only one of them "a machine" made the other two read as
+    //something else.
+    assert.match(why(all, 'sup-1'), /tagged supervisor/);
     //Reporting it as "kept back" would suggest a button exists.
     assert.doesNotMatch(why(all, 'sup-1'), /kept back/);
 });

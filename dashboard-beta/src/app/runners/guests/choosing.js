@@ -25,13 +25,13 @@
 //
 //---- and the choosing has to know the rule the lending enforces -----------
 //
-//./lending REFUSES a mismatch — a worker's sign-in on a judge machine, and the
-//rest — and refusing is worth nothing if the thing that CHOOSES does not know
-//the same rule. This picked any free non-supervisor sign-in, so the first
-//judgement dispatched to a judge machine was offered a worker's identity and
-//then refused it, minutes into a dispatch, for a reason that reads like a bug.
+//./lending REFUSES a mismatch — a worker's sign-in on a runner tagged judge, and
+//the rest — and refusing is worth nothing if the thing that CHOOSES does not
+//know the same rule. This picked any free non-supervisor sign-in, so the first
+//judgement dispatched to a judge runner was offered a worker's identity and then
+//refused it, minutes into a dispatch, for a reason that reads like a bug.
 //
-//Found by somebody tagging two machines: the moment a judge machine existed,
+//Found by somebody tagging two machines: the moment a judge runner existed,
 //judging was broken on a host whose only free sign-ins were workers. The refusal
 //was right and the selection had never been taught.
 //---------------------------------------------------------------------------
@@ -40,8 +40,14 @@ var shape = require('./shape');
 
 var KINDS = ['worker', 'judge', 'supervisor'];
 
-//WHAT A MACHINE OF THIS KIND IS CALLED, for a sentence somebody reads.
-var CALLED = { judge: 'a judge machine', supervisor: 'a supervisor machine', worker: 'a runner' };
+//WHAT A MACHINE OF THIS KIND IS CALLED, for a sentence somebody reads. All
+//three are RUNNERS — a runner is a virtual machine in the pool, and the tag says
+//what it is for. See ./lending, which words it the same way.
+var CALLED = {
+    worker: 'a runner tagged worker',
+    judge: 'a runner tagged judge',
+    supervisor: 'a runner tagged supervisor'
+};
 
 //---- which kind of sign-in this machine is being given ---------------------
 function kindWanted(machine, canBe, role) {

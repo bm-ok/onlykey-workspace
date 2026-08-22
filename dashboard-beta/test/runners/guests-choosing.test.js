@@ -164,7 +164,7 @@ test('and none of that kind at all is a different sentence, with a different fix
     let thrown = null;
     try { pick(VM({ tags: ['judge'] })); } catch (e) { thrown = e; }
 
-    assert.match(thrown.message, /is a judge machine and this host holds no judge sign-in/);
+    assert.match(thrown.message, /is a runner tagged judge and this host holds no judge sign-in/);
     assert.match(thrown.message, /reading a change and writing one on separate accounts/);
     assert.match(thrown.message, /Add one on the Runners tab, or change what this machine is for/);
 

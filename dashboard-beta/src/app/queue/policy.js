@@ -103,7 +103,7 @@ function availability(vms, inFlight) {
         //Checked before `forTasks`, which is a decision that CAN be changed:
         //this one cannot, and reporting it as "kept back" would suggest a button
         //exists.
-        if (tagged(v, SUPERVISOR)) return no('is a supervisor machine, so it is never given task work');
+        if (tagged(v, SUPERVISOR)) return no('is tagged supervisor, so it is never given task work');
 
         //A DECISION, CHECKED BEFORE ANY OF THE FACTS. Somebody has said keep
         //this one back, and that outranks it merely looking idle — which is
@@ -215,10 +215,11 @@ function ofItsOwnKind(entry, free, all) {
                         + 'a worker\'s identity. Make a judge machine to keep reading and writing on separate accounts.'
                     : 'no machine is tagged "' + JUDGE + '" and none is tagged "' + WORKER + '" either, so judging has '
                         + 'nowhere to go and waits. Tag a machine with vmTags — "' + JUDGE + '" to keep reading and '
-                        + 'writing on separate accounts, or "' + WORKER + '" to have judgements read on a runner.'
+                        + 'writing on separate accounts, or "' + WORKER + '" to have judgements read on a '
+                        + 'runner tagged worker.'
             };
         }
-        //One exists and is busy: wait for it rather than using a runner.
+        //One exists and is busy: wait for it rather than using a worker runner.
         return { machines: [], why: 'the judge machine is busy', fellBack: false };
     }
 
@@ -373,9 +374,10 @@ function plan(entries, machines, opts) {
             } else if (String(entry.tag || '').trim()) {
                 why = ref + ' wants a machine tagged "' + entry.tag + '" and none is free — it waits';
             } else if (entry.kind === 'judgement' && !may.length) {
-                why = ref + ' is a judgement and every judge machine is busy — it waits rather than being read by a runner';
+                why = ref + ' is a judgement and every judge runner is busy — it waits rather than being '
+                    + 'read by a worker runner';
             } else if (may.length < free.length) {
-                why = ref + ' will not go to a judge machine — it waits for a runner';
+                why = ref + ' will not go to a judge runner — it waits for one tagged worker';
             } else {
                 why = ref + ' waits: no machine is free';
             }

@@ -105,7 +105,7 @@ test('a task is never planned onto a judge machine', () => {
     const said = policy.plan([task(4)], machines, { signIns: PLENTY });
 
     assert.deepEqual(said.dispatch, []);
-    assert.match(said.waiting[0].why, /waits for a runner/);
+    assert.match(said.waiting[0].why, /waits for one tagged worker/);
 });
 
 //---------------------------------------------------------------------------
@@ -137,8 +137,8 @@ test('a judgement waiting on a busy judge machine says exactly that, and only wh
     });
 
     assert.deepEqual(said.dispatch, []);
-    assert.match(said.waiting[0].why, /every judge machine is busy/);
-    assert.match(said.waiting[0].why, /rather than being read by a runner/);
+    assert.match(said.waiting[0].why, /every judge runner is busy/);
+    assert.match(said.waiting[0].why, /rather than being read by a worker runner/);
 });
 
 test('the roleless sentence names the tag the WORK needs, not a fixed one', () => {
