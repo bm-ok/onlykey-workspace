@@ -59,6 +59,38 @@ async function plugin(imports, register) {
         }
     });
 
+    //---- and an empty list that is not an empty host ------------------------
+    //
+    //THIS STORE IS THIS APP'S OWN. State lives in a folder named after this app,
+    //so a subsystem that has just moved starts EMPTY — which is deliberate, and
+    //is what makes it impossible for the port to damage the real sign-ins. It is
+    //also indistinguishable, on screen, from having lost them.
+    //
+    //SO IT IS ASKED RATHER THAN GUESSED. If the app being ported from holds
+    //some, the empty note says so; if it holds none, nothing is said and a fresh
+    //host reads as a fresh host.
+    //
+    //ONLY WHEN THIS LIST IS EMPTY, so it costs one relay on a screen that has
+    //nothing else to draw and nothing at all the moment there is a sign-in here.
+    //
+    //`elsewhere`, NOT `call`: `guests` IS this action, and `call` tries this
+    //table first — so it would call itself until the stack ends, looking from
+    //outside like the app simply hanging. The same trap ../../queue and
+    //../../carryover both name.
+    async function alsoElsewhere(role) {
+        if (!actions || !actions.elsewhere) return '';
+        var there = null;
+        try { there = await actions.elsewhere('guests', role ? { role: role } : {}); }
+        catch (e) { return ''; }
+
+        var held = ((there && there.guests) || []).length;
+        if (!held) return '';
+
+        return ' The app this is being ported from still holds ' + held + ' — they have not been lost, and '
+            + 'they are not read from here: this app keeps its own, so that porting it cannot damage a '
+            + 'credential a machine is using.';
+    }
+
     var undo = [];
 
     if (actions) {
@@ -68,7 +100,7 @@ async function plugin(imports, register) {
             //is one question and answering half of it silently is how a
             //duplicate gets added. The panes ask for one role each.
             takes: ['role'],
-            run: function (args) {
+            run: async function (args) {
                 var role = (args && args.role) || null;
 
                 //ONCE, AND THEN NEVER AGAIN. See ./store.ensurePlans: it writes
@@ -88,7 +120,9 @@ async function plugin(imports, register) {
                     lent: all.filter(function (g) { return g.holder; }).length,
                     supervisors: all.filter(function (g) { return g.role === 'supervisor'; }).length,
                     where: store.root(),
-                    note: noteFor(role, all.length)
+                    note: all.length
+                        ? noteFor(role, all.length)
+                        : noteFor(role, 0) + (await alsoElsewhere(role))
                 };
             }
         }));

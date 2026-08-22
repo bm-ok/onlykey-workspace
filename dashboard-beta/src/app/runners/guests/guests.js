@@ -221,6 +221,20 @@ module.exports = function guests(theme, okc, remember) {
                                 })
                                 : <Empty>{all.length ? 'nothing matches' : 'this host holds no sign-ins'}</Empty>}
                         </Stack>
+
+                        {/* AN EMPTY LIST IS NOT AN EMPTY HOST, and on this pane
+                            those look identical. This app keeps its own
+                            sign-ins, in its own folder, so a subsystem that has
+                            just been ported starts with none — which is what
+                            makes porting unable to damage a credential a machine
+                            is using, and is also exactly what losing them would
+                            look like.
+
+                            THE ACTION ASKS RATHER THAN GUESSING: the sentence is
+                            only there when the app being ported from actually
+                            holds some, so a genuinely fresh host reads as a
+                            fresh host and says nothing. */}
+                        {!all.length && state.note ? <Note>{state.note}</Note> : null}
                     </Col>
 
                     <Col>

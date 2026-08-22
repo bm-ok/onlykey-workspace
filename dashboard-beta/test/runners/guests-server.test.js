@@ -182,6 +182,58 @@ test('a host that has never held one answers, rather than failing', async () => 
     assert.ok(said.where, 'it did not say where they would live');
 });
 
+//---- an empty list that is not an empty host --------------------------------
+//
+//THIS STORE IS THIS APP'S OWN, so a subsystem that has just moved starts empty
+//— deliberately, and it is what makes the port unable to damage a credential a
+//machine is using. It is also indistinguishable on screen from having lost them.
+
+test('an empty list says when the app being ported from still holds some', async () => {
+    const { actions } = await aHost();
+    actions.elsewhere = async () => ({ guests: [{ name: 'a' }, { name: 'b' }] });
+
+    const said = await actions.call('guests', {});
+
+    assert.match(said.note, /still holds 2/);
+    assert.match(said.note, /they have not been lost/);
+    assert.match(said.note, /porting it cannot damage a credential a machine is using/);
+});
+
+test('and says nothing when there are none there either', async () => {
+    //A FRESH HOST READS AS A FRESH HOST.
+    const { actions } = await aHost();
+    actions.elsewhere = async () => ({ guests: [] });
+
+    const said = await actions.call('guests', {});
+    assert.equal(/still holds/.test(said.note), false, said.note);
+    assert.match(said.note, /No worker sign-in yet/);
+});
+
+test('nor when there is nothing to ask, or asking fails', async () => {
+    const { actions } = await aHost();
+
+    //NO RELAY AT ALL — the ordinary case once the port is finished.
+    assert.equal(/still holds/.test((await actions.call('guests', {})).note), false);
+
+    actions.elsewhere = async () => { throw new Error('the pipe is gone'); };
+    const said = await actions.call('guests', {});
+    assert.match(said.note, /No worker sign-in yet/, 'a dead relay took the list with it');
+});
+
+test('and it is not asked at all once this host holds one', async () => {
+    //IT COSTS ONE RELAY ON A SCREEN WITH NOTHING ELSE TO DRAW, and nothing at
+    //all the moment there is a sign-in here — the pane polls this every fifteen
+    //seconds.
+    const { actions } = await aHost();
+    let asked = 0;
+    actions.elsewhere = async () => { asked++; return { guests: [{ name: 'a' }] }; };
+
+    await add(actions, 'w');
+    await actions.call('guests', {});
+
+    assert.equal(asked, 0, 'it relayed on a list that had something in it');
+});
+
 //---- relabelling -----------------------------------------------------------
 
 test('changing what a sign-in is for says what it was', async () => {
