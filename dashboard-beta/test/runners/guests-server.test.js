@@ -62,7 +62,16 @@ async function aHost() {
         settings: {
             read: () => written,
             write: async (patch) => { Object.assign(written, patch); return written; }
-        }
+        },
+
+        //THE LENDING'S PIECES. This file is about the list and the labels — what
+        //putting a sign-in ON a machine does is ./guests-lend.test.js, and what
+        //choosing one does is ./guests-choosing.test.js — so these are here to
+        //let the plugin assemble and are not exercised.
+        ours: { get: () => ({ name: 'kit-1', tags: ['worker'] }), read: () => [], update: () => {}, kindsOf: (vm) => ((vm && vm.tags) || []), SUPERVISOR: 'supervisor' },
+        channel: { connected: () => false, run: async () => ({ output: '' }) },
+        sealed: { toTheMachine: async () => ({ fingerprint: 'x' }), fingerprint: () => 'x' },
+        dispatch: { RUNS: '/runs', SUPERVISOR: '/turns', watcherFor: () => '' }
     }, async (_e, s) => { guests = s.guests; });
 
     return { guests, actions };

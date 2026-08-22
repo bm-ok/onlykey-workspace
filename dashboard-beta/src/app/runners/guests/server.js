@@ -1,5 +1,6 @@
 var makeStore = require('./store');
 var makeLend = require('./lend');
+var makeChoosing = require('./choosing');
 var shape = require('./shape');
 var lending = require('./lending');
 
@@ -108,6 +109,17 @@ async function plugin(imports, register) {
         paused: shape.paused,
         whyNotOn: lending.whyNotOn,
         roleFrom: shape.roleFrom
+    });
+
+    //---- and which one a machine is handed ---------------------------------
+    //
+    //THE WORK DECIDES THE KIND, not the box — see ./choosing, which is where
+    //that rule and the three different ways a host can have nothing to give both
+    //live.
+    var choosing = makeChoosing({
+        all: store.all,
+        paused: shape.paused,
+        kindsOf: imports.ours.kindsOf
     });
 
     var undo = [];
@@ -228,6 +240,36 @@ async function plugin(imports, register) {
             run: async function (args) {
                 var a = args || {};
                 return await lend.fromMachine(a.name, a.machine);
+            }
+        }));
+
+        //---- HANDING A MACHINE THE SIGN-IN FOR THE WORK IT IS ABOUT TO DO ----
+        //
+        //THE ONE ../../queue CALLS on every run. It is ./choosing and then
+        //./lend: which sign-in, and then the sealed handover — and the two are
+        //separate because the choosing is a rule about a list and the handing
+        //over is a conversation with a machine.
+        undo.push(actions.define('vmCredentialsPut', {
+            about: 'Hand a machine the sign-in for the work it is about to do. '
+                + '--role worker or judge, needed only when a machine is tagged as both',
+            //`role` NAMES THE WORK, not the machine — and is needed only for a
+            //machine tagged as more than one thing.
+            takes: ['name', 'role'],
+            run: async function (args) {
+                var a = args || {};
+
+                //THE MACHINE FIRST, because everything after this is about a
+                //machine that exists. ./lend asks again in its own order, for
+                //its own reason.
+                var vm = imports.ours.get(a.name);
+                if (!imports.channel.connected(a.name)) {
+                    throw new Error('"' + a.name + '" is not dialled in.');
+                }
+
+                var chosen = choosing.forMachine(a.name, vm, a.role || null);
+                var done = await lend.toMachine(chosen.name, a.name);
+
+                return Object.assign({}, done, { role: chosen.role, guest: chosen.name });
             }
         }));
 
