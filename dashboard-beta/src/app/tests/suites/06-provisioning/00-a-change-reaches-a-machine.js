@@ -30,7 +30,18 @@ requires('the machines')
 
 // Read from the repository rather than from the app, because the whole claim is
 // that these two agree.
-const ON_DISK = path.join(__dirname, '..', '..', '..', 'provision', 'first-boot.sh')
+//
+// THE REPOSITORY COPY, NOT THE ONE THE APP READS FROM. Those are two files here:
+// the scripts live in `src/app/vms/provision/scripts/` and webpack copies them
+// beside the server bundle, which is what the app resolves against. Pointing
+// this at the copy would compare the app to itself and pass whatever happened —
+// so it points at the source, and the copy step is now part of what this proves.
+//
+// This suite runs from the payload — `dist/suites/06-…` — so three levels up is
+// the project root, the same as it was in the app being ported from. What
+// changed is the tail.
+const ON_DISK = path.join(__dirname, '..', '..', '..',
+  'src', 'app', 'vms', 'provision', 'scripts', 'first-boot.sh')
 
 // WHAT IT SAW LAST TIME is recorded at the bottom of this file.
 
@@ -41,6 +52,14 @@ it('the app serves the script that is on disk', async ({ okc, assert, state, log
 
   const served = await okc('vmScript', { name: state.vm, stage: 'firstBoot' })
   state.served = served.script
+
+  // A PACKAGED APP HAS NO SOURCE TREE, and this check is a comparison BETWEEN
+  // the repository and the app. Without one there is nothing to compare against
+  // — said as a missing precondition rather than as a failure, because a
+  // packaged app failing this would be reporting on a file it was never
+  // supposed to have.
+  assert.needs(fs.existsSync(ON_DISK),
+    'the source tree is not beside this app, so there is no repository copy to hold the served one against')
   const here = fs.readFileSync(ON_DISK, 'utf8')
 
   // The file is the tail of what is served: the app prepends a header of OKC_*
