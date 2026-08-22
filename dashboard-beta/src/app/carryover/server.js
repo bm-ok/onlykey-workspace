@@ -1,3 +1,5 @@
+var path = require('path');
+var makeIdentity = require('./identity');
 var makeMachines = require('./machines');
 
 //---------------------------------------------------------------------------
@@ -58,13 +60,19 @@ var ORDER = ['contract', 'prompt', 'job'];
 //./machines.js, which holds it.
 var MACHINES = 'machine';
 
+//AND THE IDENTITY, which is a bigger act again — see ./identity.js. A
+//separate name because it copies two PRIVATE KEYS, and because the order
+//matters: without it this app is a stranger to every machine it just
+//brought across.
+var IDENTITY = 'identity';
+
 var FROM = {
     contract: { list: 'contracts', of: function (said) { return (said && said.contracts) || []; } },
     prompt: { list: 'prompts', of: function (said) { return (said && said.prompts) || []; } },
     job: { list: 'jobs', of: function (said) { return (said && said.jobs) || []; } }
 };
 
-plugin.consumes = ['app', 'log', 'library', 'ours'];
+plugin.consumes = ['app', 'log', 'library', 'ours', 'dataDir'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -92,13 +100,30 @@ async function plugin(imports, register) {
     //take out.
     var carryMachines = makeMachines({ ours: imports.ours, there: there });
 
+    //THE OTHER APP'S KEY FOLDER IS A SIBLING OF THIS ONE, named for the app
+    //the relay points at — which is the same name its data folder has. Taken
+    //as an argument as well, because deriving it is a convenience and being
+    //wrong about where somebody's private keys are is not.
+    var carryIdentity = function (from) {
+        //`at()` WITH NOTHING IS THE DIRECTORY, and on a process with no main
+        //half behind it that call is the refusal ../core/datadir exists to give
+        //— which is a better failure than `undefined` reaching path.dirname.
+        //`OKC_KEYS` first, because ../core/tls reads the same variable and the
+        //two must not disagree about where this host's keys are.
+        var mine = process.env.OKC_KEYS || imports.dataDir.at();
+        return makeIdentity({
+            here: mine,
+            there: from || path.join(path.dirname(mine), 'okc-dashboard')
+        });
+    };
+
     var undo = [];
 
     undo.push(actions.define('carryOver', {
         about: 'Bring the jobs, prompts and contracts across from the dashboard being ported from. '
             + 'Nothing arrives approved, and nothing already here is touched. '
             + '--what machine brings the machines across instead, which is a bigger thing',
-        takes: ['what', 'dry'],
+        takes: ['what', 'dry', 'from'],
         run: async function (args) {
             var a = args || {};
             var only = a.what ? String(a.what).replace(/s$/, '') : null;
@@ -111,11 +136,12 @@ async function plugin(imports, register) {
             //asks for that, on purpose, and does not arrive at it by leaving an
             //argument off.
             if (only === MACHINES) return await carryMachines.carry(dry);
+            if (only === IDENTITY) return carryIdentity(a.from).carry(dry);
 
             var kinds = only ? ORDER.filter(function (k) { return k === only; }) : ORDER;
             if (only && !kinds.length) {
                 throw new Error('"' + a.what + '" is not one of these. There is: '
-                    + ORDER.concat([MACHINES]).join(', ') + '.');
+                    + ORDER.concat([MACHINES, IDENTITY]).join(', ') + '.');
             }
 
             var out = { brought: [], already: [], couldNot: [], dry: dry };
