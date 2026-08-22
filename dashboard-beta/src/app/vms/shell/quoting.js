@@ -1,6 +1,17 @@
 //---------------------------------------------------------------------------
 //GETTING SOMEBODY ELSE'S TEXT ONTO A MACHINE WITHOUT IT BECOMING A COMMAND.
 //
+//IN ITS OWN FOLDER BECAUSE MORE THAN ONE PLUGIN NEEDS IT. It began inside
+//../dispatch, which was right while dispatch was the only thing building shell
+//for a guest; ../auth builds it too, and a plugin reaching into another
+//plugin's folder for a primitive is how ownership stops being answerable.
+//
+//THIS FOLDER IS NOT A PLUGIN AND HAS NO ENTRY FILE, deliberately. There is no
+//service here and no lifetime — these are pure functions with no state and no
+//dependencies, so a plugin wrapping them would add a graph edge and answer
+//nothing. Every loader looks for window.js, server.js or main.js, so a folder
+//with none is simply never selected.
+//
 //Everything this group sends crosses into a shell script, and almost none of it
 //is written by this app. A task is written by a PERSON — or by another agent —
 //so its shape is not this file's to assume, and "it will not contain that" is an

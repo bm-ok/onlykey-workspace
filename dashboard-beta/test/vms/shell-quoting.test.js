@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { q, heredoc } = require('../../src/app/vms/dispatch/quoting');
+const { q, heredoc } = require('../../src/app/vms/shell/quoting');
 
 //---------------------------------------------------------------------------
 //GETTING SOMEBODY ELSE'S TEXT ONTO A MACHINE WITHOUT IT BECOMING A COMMAND.

@@ -4,7 +4,7 @@ var makeScript = require('./script');
 var makeSupervisor = require('./supervisor');
 var makeSession = require('./session');
 var runsOf = require('./runs');
-var quoting = require('./quoting');
+var quoting = require('../shell/quoting');
 
 //---------------------------------------------------------------------------
 //GIVING A MACHINE A TASK, AND LETTING GO OF IT.

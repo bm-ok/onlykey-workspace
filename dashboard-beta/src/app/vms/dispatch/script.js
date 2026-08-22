@@ -1,4 +1,4 @@
-var quoting = require('./quoting');
+var quoting = require('../shell/quoting');
 var runsOf = require('./runs');
 
 var q = quoting.q;

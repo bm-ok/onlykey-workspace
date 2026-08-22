@@ -1,11 +1,11 @@
-//what ../../test/vms/dispatch-quoting.test.js has to be able to catch.
+//what ../../test/vms/shell-quoting.test.js has to be able to catch.
 //
 //THE FAILURE HERE IS NOT AN ERROR. Every break below produces shell that RUNS —
 //just not the shell that was meant. That is the whole reason these checks go
 //through a real `sh` rather than asserting that a string looks right.
 module.exports = {
-    file: 'src/app/vms/dispatch/quoting.js',
-    test: 'test/vms/dispatch-quoting.test.js',
+    file: 'src/app/vms/shell/quoting.js',
+    test: 'test/vms/shell-quoting.test.js',
     breaks: [
         //---- one shell word --------------------------------------------------
 
