@@ -149,6 +149,48 @@ test('a task containing the separator character does not become two runs', () =>
     assert.equal(got[0].task, task, 'the task was cut at a pipe');
 });
 
+test('a task that somehow still carries the separator comes back whole', () => {
+    //THE REJOIN, HELD DIRECTLY. The machine flattens the separator out before
+    //printing, so this cannot arrive today — which means the only way to prove
+    //the parser's half is to hand it one. A sabotage that replaced the rejoin
+    //with `f[6]` SURVIVED the first sweep of this file, because the case the
+    //rejoin exists for was the one case never fed to it.
+    const task = 'left' + R.SEP + 'right';
+    const line = ['okc-run', 'run-1', 'finished', '0', 'when', '1', task].join(R.SEP);
+
+    const got = R.runs(line);
+    assert.equal(got.length, 1, 'one run became ' + got.length);
+    assert.equal(got[0].task, task, 'the task was cut at the separator');
+    //AND THE FIELDS BEFORE IT ARE STILL THE FIELDS.
+    assert.equal(got[0].state, 'finished');
+    assert.equal(got[0].outputLines, 1);
+});
+
+test('the separator the SHELL emits is the one the parser splits on', () => {
+    //THE PAIRING THAT ACTUALLY MATTERS, and the one nothing held. Every other
+    //test here builds its lines from R.SEP and reads them with R.SEP, so both
+    //halves move together and stay self-consistent while the real pairing —
+    //machine to parser — is broken. A sabotage that changed SEP to a pipe
+    //SURVIVED the first sweep of this file for exactly that reason.
+    const printf = R.list().split('\n').find((l) => l.includes('S=$(printf'));
+    assert.ok(printf, 'the script does not define a separator at all');
+
+    const octal = printf.match(/printf "\\0([0-7]{1,3})"/);
+    assert.ok(octal, 'the separator is not an octal escape printf understands: ' + printf);
+
+    //`\0` THEN UP TO THREE OCTAL DIGITS. `\0037` is `\003` followed by a 7.
+    assert.equal(parseInt(octal[1], 8), R.SEP.charCodeAt(0),
+        'the machine emits a different character from the one the parser splits on');
+});
+
+test('the separator is a character prose cannot contain', () => {
+    //A UNIT SEPARATOR IS NOT A CHARACTER PROSE HAS. A pipe is — a shell
+    //one-liner, a table, a regex — which is what it used to be.
+    assert.equal(R.SEP.length, 1);
+    assert.ok(R.SEP.charCodeAt(0) < 32,
+        'the separator is printable (' + JSON.stringify(R.SEP) + '), so a task can contain it');
+});
+
 test('and the machine flattens the separator out of the task anyway', () => {
     //BOTH BELT AND BRACES. The shell replaces newlines and the separator before
     //printing, so one run cannot look like two even before the parser sees it.

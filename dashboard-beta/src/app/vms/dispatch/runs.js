@@ -34,6 +34,17 @@ function newId(now) {
 //it is quoted properly. Quoting cannot answer that; a shape can.
 var ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
+//THE SECOND HALF CANNOT FAIL WHILE THE FIRST IS THERE, and that is worth saying
+//rather than leaving it to look load-bearing — ../provision/scripts.js carries
+//the same note about the same shape of check.
+//
+//`ID` already forbids a slash, and a traversal needs one: `a..b` is a directory
+//called `a..b`, not a way out of the runs folder. It was tried as a sabotage and
+//nothing changed, because there is nothing there to break.
+//
+//It stays because it is the check somebody would look for, and because it is
+//what would catch the pattern above being weakened by an edit that looked
+//harmless — the day a slash is allowed, this is what stops it mattering.
 function checkId(id) {
     var name = String(id == null ? '' : id);
     if (!ID.test(name) || name.indexOf('..') >= 0) {
@@ -106,11 +117,27 @@ function output(id, lines) {
 var SEP = String.fromCharCode(31);
 var MARK = 'okc-run';
 
+//AND THE SHELL IS TOLD THE SAME CHARACTER, worked out from it rather than typed
+//again beside it.
+//
+//`list` used to carry a literal `\037` in two places while `SEP` was declared
+//separately up here, so the machine's separator and the parser's were two
+//constants that happened to agree. Changing one changed nothing observable in a
+//test — every test builds its lines from `SEP` and reads them with `SEP`, so
+//both halves moved together and stayed self-consistent while the real pairing,
+//shell to parser, was broken. It was tried as a sabotage and survived.
+//
+//One answer, derived once: there is now nothing to keep in step.
+//`\0` THEN THE OCTAL DIGITS, which is what POSIX printf takes — `\037`, not
+//`\0037`. Padding the digits to three and keeping the leading zero produces the
+//latter, which printf reads as `\003` followed by a literal `7`.
+var SEP_OCTAL = '\\0' + SEP.charCodeAt(0).toString(8);
+
 function list() {
     return [
         'set -u',
         '[ -d ' + RUNS + ' ] || exit 0',
-        'S=$(printf "\\037")',
+        'S=$(printf "' + SEP_OCTAL + '")',
         'for d in ' + RUNS + '/*/; do',
         '  [ -d "$d" ] || continue',
         '  id=$(basename "$d")',
@@ -134,7 +161,7 @@ function list() {
         '  lines=$(wc -l < "$d/out.log" 2>/dev/null || echo 0)',
         //THE FIRST LINE OF THE TASK, FLATTENED. Newlines and the separator both
         //go, because either would make one run look like two.
-        '  first=$(head -c 160 "$d/task.txt" 2>/dev/null | tr "\\n\\037" "  ")',
+        '  first=$(head -c 160 "$d/task.txt" 2>/dev/null | tr "\\n' + SEP_OCTAL + '" "  ")',
         '  echo "' + MARK + '$S$id$S$state$S$code$S$started$S$lines$S$first"',
         'done'
     ].join('\n');

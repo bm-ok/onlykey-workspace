@@ -13,12 +13,14 @@ module.exports = {
             '    if (false) {'],
 
         ['an id may contain a path',
-            "    var ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;",
-            '    var ID = /^[^\\0]*$/;'],
+            'var ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;',
+            'var ID = /^[\\s\\S]*$/;'],
 
-        ['a dotted traversal gets through the shape check',
-            "    if (!ID.test(name) || name.indexOf('..') >= 0) {",
-            '    if (!ID.test(name)) {'],
+        //NO BREAK FOR THE `..` HALF OF checkId, and that is a finding rather
+        //than an omission. It is unreachable: ID already forbids a slash and a
+        //traversal needs one, so removing it changes nothing observable. It was
+        //tried here, it SURVIVED, and the honest response is to say so in the
+        //source rather than to keep a sabotage that proves nothing.
 
         ['the refusal does not say what a run id looks like',
             "        throw new Error('\"' + name + '\" is not a run id. They look like \"'\n            + 'run-2026-08-22T04-08-57\" — letters, numbers, dots and dashes.');",
@@ -94,16 +96,24 @@ module.exports = {
 
         //THE SEPARATOR IS A CHARACTER PROSE DOES NOT HAVE. A pipe is not.
         ['the separator is a character a task can contain',
-            '    var SEP = String.fromCharCode(31);',
-            "    var SEP = '|';"],
+            "var SEP = String.fromCharCode(31);",
+            "var SEP = '|';"],
 
         ['a task containing the separator is cut short',
             '                task: f.slice(6).join(SEP).trim()',
             '                task: (f[6] || \'\').trim()'],
 
         ['the machine does not flatten the separator out of the task',
-            '        \'  first=$(head -c 160 "$d/task.txt" 2>/dev/null | tr "\\\\n\\\\037" "  ")\',',
+            '        \'  first=$(head -c 160 "$d/task.txt" 2>/dev/null | tr "\\\\n\' + SEP_OCTAL + \'" "  ")\',',
             '        \'  first=$(head -c 160 "$d/task.txt" 2>/dev/null)\','],
+
+        //THE PAIRING THAT ACTUALLY MATTERS: what the shell emits and what the
+        //parser splits on. These were two constants that happened to agree, and
+        //changing one was invisible because every test built its lines from the
+        //parser's and read them back with the parser's.
+        ['the machine is told a different separator from the one the parser uses',
+            "var SEP_OCTAL = '\\\\0' + SEP.charCodeAt(0).toString(8);",
+            "var SEP_OCTAL = '\\\\0174';"],
 
         //NEWEST FIRST, because that is the one being asked about.
         ['the runs come back oldest first',
