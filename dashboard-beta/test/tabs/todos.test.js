@@ -37,7 +37,15 @@ async function anApp() {
     await statePlugin({ dataDir: { at: (...p) => path.join(dir, ...p) } }, async (_e, s) => { state = s.state; });
 
     await supervisorPlugin(
-        { app: { host: { actions } }, log: { on: () => logger }, state },
+        {
+            app: { host: { actions } }, log: { on: () => logger }, state,
+            //THE DOOR A SUPERVISOR MACHINE COMES IN BY, registered at load — see
+            //src/app/supervisor/guestapi.js, and test/tabs/supervisor-guestapi.test.js
+            //for what it does. Nothing in this file goes near it: these are the
+            //todos as a person and an action see them.
+            ours: { canBe: function () { return false; } },
+            guestApi: { api: function () { return function () {}; } }
+        },
         async () => {}
     );
     return { actions, dir, said };

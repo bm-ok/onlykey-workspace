@@ -134,8 +134,26 @@ async function plugin(imports, register) {
             //AND IT IS SET HERE RATHER THAN TAKEN FROM THE REQUEST, which is
             //what makes it worth anything: a caller that could send
             //`_overTheWire: false` would be a caller that can call itself a
-            //person. Object.assign puts ours last.
-            var args = Object.assign({}, req.args || {}, { _overTheWire: true });
+            //person.
+            //
+            //TWO HALVES, AND THE SECOND WAS MISSING. Putting ours last stops
+            //`_overTheWire` being overridden and does nothing about any OTHER
+            //`_` key — and `_fromMachine` is read: ../actions/main.js attributes
+            //a call to it, and ../../library/server.js decides from it whether
+            //something arrived from a machine and therefore waits rather than
+            //being approved. So a caller down this pipe could sign its call as
+            //any machine it liked.
+            //
+            //Every `_` key is dropped before ours are set. What arrives over the
+            //wire is data, and data does not get to say where it came from —
+            //../../supervisor/guestapi.js does the same thing at the other door,
+            //and the app being ported from called this the half that gets
+            //forgotten.
+            var args = {};
+            Object.keys(req.args || {}).forEach(function (k) {
+                if (k.charAt(0) !== '_') args[k] = req.args[k];
+            });
+            args._overTheWire = true;
             var result = await actions.call(req.action, args);
             say(socket, { id: req.id == null ? null : req.id, ok: true, result: result });
         } catch (e) {

@@ -1,3 +1,4 @@
+var makeGuestApi = require('./guestapi');
 var makeTodos = require('./todos');
 
 //---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ var makeTodos = require('./todos');
 //button on the pane is `protected`, and both halves of the rule are real.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'state'];
+plugin.consumes = ['app', 'log', 'state', 'ours', 'guestApi'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -119,6 +120,27 @@ async function plugin(imports, register) {
             log.warn(one.ref + ' "' + one.what + '" removed');
             return Object.assign({}, one, board(), { note: one.ref + ' is gone. It was ' + one.state + '.' });
         }
+    }));
+
+    //---- the only door a supervisor has into this host ---------------------
+    //
+    //REGISTERED WITH ../vms/https RATHER THAN SERVED HERE, which owns the
+    //certificate and has proved which machine is asking. What is this plugin's
+    //is the two verbs and ./allowed.js — the fence that counts.
+    var stopServing = imports.guestApi.api(makeGuestApi({
+        ours: imports.ours,
+        say: imports.log.on,
+
+        //THE SAME `call` EVERY OTHER CALLER USES, so every refusal, every
+        //workspace gate and every record still applies. ./allowed.js decides
+        //WHETHER, never HOW.
+        call: function (what, args) { return actions.call(what, args); },
+
+        //WHAT EACH VERB TAKES, so a supervisor is not guessing argument names at
+        //the same time as choosing a verb. `all()` rather than `list()`: most of
+        //these are still answered by the app being ported from, and this app's
+        //own half of the table does not know them yet.
+        catalogue: async function () { return (await actions.all()).actions || []; }
     }));
 
     await register(null, {
