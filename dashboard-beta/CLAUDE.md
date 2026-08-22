@@ -36,10 +36,21 @@ touching the code.
 * `src/app/**/main.js` — the process that never reloads
 * `webpack.config.js`
 * a new npm dependency or anything vendored
+* **moving, adding or removing a plugin FOLDER.** The three boot files find
+  plugins with `require.context`, which enumerates at BUILD time — so a folder
+  that moves leaves the watcher holding a path that no longer exists.
 
 It builds on the way, so building before it is redundant. Run it
 **backgrounded** — in the foreground it hangs on the child's stdout and killing
 the call takes the app with it.
+
+**The folder one fails in a shape worth knowing**, because nothing points at the
+folder. The window keeps working, since it is serving the last good bundle;
+`npm test` and `npm run check` are both green, since they build from scratch; and
+`okc.js show` puts the pane up quite happily. The only sign is a red overlay on
+the window reading `Module build failed … ENOENT`, naming the old path — which
+`okc.js capture` shows and every other check misses. It is the strongest case in
+this file for looking at the picture rather than at a green tick.
 
 **`npm run check` is the compile check**, and it is the only one. webpack over
 both halves, in memory: it writes nothing, packages nothing, and takes a few
