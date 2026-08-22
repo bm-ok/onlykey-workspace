@@ -25,26 +25,31 @@ var makeTurns = require('./turns');
 //refusal would have no way to ever end.
 //---------------------------------------------------------------------------
 
-plugin.consumes = [];
+//IT PUTS ITSELF INTO ../../core/handover RATHER THAN BEING NAMED BY CORE.
+//../../core/build carries the host and knows none of the app services on it —
+//see the header there. This plugin is liftable into another project because
+//nothing in core says its name.
+plugin.consumes = ['handover'];
 plugin.provides = ['busy'];
 async function plugin(imports, register) {
     var doing = makeDoing();
     var turns = makeTurns();
 
-    await register(null, {
-        busy: {
-            //---- one long thing at a time, per machine ---------------------
-            what: doing.what,
-            claim: doing.claim,
-            release: doing.release,
-            during: doing.during,
-            all: doing.all,
+    var busy = {
+        //---- one long thing at a time, per machine ------------------------
+        what: doing.what,
+        claim: doing.claim,
+        release: doing.release,
+        during: doing.during,
+        all: doing.all,
 
-            //---- and one machine coming up at a time, across the host ------
-            comingUp: turns.comingUp,
-            booting: turns.booting,
-            queued: turns.queued
-        }
-    });
+        //---- and one machine coming up at a time, across the host ---------
+        comingUp: turns.comingUp,
+        booting: turns.booting,
+        queued: turns.queued
+    };
+
+    imports.handover.put('busy', busy);
+    await register(null, { busy: busy });
 }
 module.exports = plugin;

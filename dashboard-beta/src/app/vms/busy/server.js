@@ -20,8 +20,11 @@
 plugin.consumes = ['app'];
 plugin.provides = ['busy'];
 async function plugin(imports, register) {
+    //ASKED FOR BY NAME OFF THE HOST'S REGISTRY, not read off a field core put
+    //there. ../../core/build carries `of` and knows none of the names in it —
+    //see ../../core/handover/main.js.
     var host = imports.app.host;
-    var busy = host && host.busy;
+    var busy = host && host.of && host.of('busy');
 
     if (!busy) {
         var nothing = function () {};

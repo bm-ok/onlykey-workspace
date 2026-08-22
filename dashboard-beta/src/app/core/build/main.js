@@ -12,10 +12,10 @@
 //reach it — a `require('webpack')` in an unreachable function is still bundled,
 //and dragging webpack into a packaged app is exactly what this avoids.
 
-plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir', 'state', 'secret', 'cron', 'busy'];
+plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir', 'state', 'secret', 'cron', 'handover'];
 plugin.provides = ['build'];
 async function plugin(imports, register) {
-    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir, state, secret, cron, busy } = imports;
+    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir, state, secret, cron, handover } = imports;
 
     //what the node half is handed. the window and the tray are passed as
     //controllers rather than objects, because they outlive the bundle.
@@ -48,16 +48,17 @@ async function plugin(imports, register) {
         //own, unwatched — see Settings → Cron.
         cron: cron,
 
-        //AND WHICH MACHINE IS HALF-WAY THROUGH SOMETHING, which is the same
-        //argument again at the machine rather than the task.
+        //AND EVERYTHING AN APP PLUGIN HANDS TO ITS OWN OTHER HALF.
         //
-        //A snapshot, an install and a restore each leave a machine in an
-        //unfinished state for minutes, and a lock kept in the bundle would be
-        //thrown away and made again in the middle of one. The failure is not
-        //that a claim is lost — it is that it is lost WHILE THE WORK CONTINUES:
-        //the install goes on in the old closure, the new record is empty, and
-        //the next thing to ask is told the machine is free.
-        busy: busy,
+        //ASKED FOR BY NAME, AND THIS FILE KNOWS NONE OF THEM. Every line above
+        //is a CORE service, which core naming is core-to-core and fine; an app
+        //service named here would be a strand from core to something core does
+        //not need — and the plugin on the other end of it could no longer be
+        //lifted out for another project without bringing core's opinion of it.
+        //
+        //See ../handover/main.js. The same shape as `actions` above: this file
+        //carries the container and never reads what is in it.
+        of: handover.get,
 
         //SEALING, AND WHAT A SECRET LOOKS LIKE. Handed over rather than required
         //again on the other side so there is ONE answer to both — a second copy
@@ -113,8 +114,23 @@ async function plugin(imports, register) {
             });
         });
 
-        //no separate bundle to load, and no reason to reload it
-        ready = require('../../../server.js')(host);
+        //no separate bundle to load, and no reason to reload it.
+        //
+        //LOADED WHEN `ready()` IS ASKED FOR, NOT HERE. This used to run during
+        //this plugin's own setup, which meant the server half was built while
+        //the MAIN graph was still being resolved — so anything it asked
+        //`host.of` for depended on whether that plugin's main half happened to
+        //have been set up yet. rectify orders by dependency and has no reason to
+        //order two plugins that merely share one, so the answer would have been
+        //stable only by luck.
+        //
+        //src/boot.js resolves the whole graph and THEN awaits ready(), so by
+        //here every main half has put what it hands over. It also makes the two
+        //branches agree on WHEN the server half loads, which is the kind of
+        //dev-and-packaged divergence this file exists to prevent rather than
+        //introduce.
+        var load = function () { return require('../../../server.js')(host); };
+        ready = null;
 
     } else {
 
@@ -189,8 +205,16 @@ async function plugin(imports, register) {
     await register(null, {
         build: {
             //src/boot.js waits on this before it listens, so the handlers are
-            //up before anything can connect
-            ready: function () { return ready; }
+            //up before anything can connect.
+            //
+            //ONE PATH FOR BOTH BRANCHES. In development `ready` is already the
+            //promise the watcher resolves on its first build; packaged, it is
+            //null until this is asked, and asking is what loads the server half
+            //— once, memoised, after the main graph is complete.
+            ready: function () {
+                if (!ready) ready = load();
+                return ready;
+            }
         }
     });
 }
