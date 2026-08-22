@@ -33,7 +33,14 @@ var DIR = process.env.OKC_APP_GUEST_DIR || path.join(__dirname, 'guest');
 var FILES = {
     api: 'job-api.js',
     runner: 'job-runner.js',
-    watch: 'watch-guest.js'
+    watch: 'watch-guest.js',
+
+    //THE SESSION READER. It reaches the guest through STDIN rather than being
+    //written to disk there — nothing installed, nothing left behind — but it is
+    //the same kind of thing as the other three and belongs beside them for the
+    //same reason: as a file it can be linted and `node --check`ed, which is not
+    //something anybody does to a template string.
+    session: 'session.js'
 };
 
 module.exports = function payloads(deps) {
@@ -65,13 +72,18 @@ module.exports = function payloads(deps) {
         }
     });
 
-    return {
-        api: function () { return held.api; },
-        runner: function () { return held.runner; },
-        watch: function () { return held.watch; },
-        dir: function () { return dir; },
-        FILES: FILES
-    };
+    //AN ACCESSOR PER FILE, DERIVED FROM THE LIST rather than written out beside
+    //it. The two were separate for one edit and it showed immediately: a payload
+    //added to FILES was loaded, checked, and then unreachable, because nothing
+    //had also added a line down here. A list and a hand-kept copy of the list is
+    //the same fault this group has already fixed twice.
+    var it = { dir: function () { return dir; }, FILES: FILES };
+
+    Object.keys(FILES).forEach(function (which) {
+        it[which] = function () { return held[which]; };
+    });
+
+    return it;
 };
 
 module.exports.FILES = FILES;

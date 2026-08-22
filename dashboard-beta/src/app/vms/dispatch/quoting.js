@@ -59,7 +59,17 @@ function q(s) {
 //an app that silently rewrote somebody's task.
 var TAG = /^[A-Z][A-Z0-9_]*$/;
 
-function heredoc(path, body, tag) {
+//THE SAME DOCUMENT, HANDED TO SOMETHING OTHER THAN `cat`.
+//
+//`heredoc` writes a file, which is what almost every caller wants. One does not:
+//../dispatch/session.js feeds a whole program to the guest's `node` through
+//STDIN, so that nothing has to be installed and nothing is left behind.
+//
+//IT IS THE SAME DOCUMENT AND THEREFORE THE SAME GUARD. The version this comes
+//from wrote that one by hand, which meant the marker check — the thing standing
+//between somebody's text and the rest of it being executed as shell — applied to
+//every heredoc in the app except the two that were written out longhand.
+function into(prefix, body, tag) {
     var name = String(tag == null ? '' : tag);
 
     //THE MARKER IS THIS APP'S, NOT A CALLER'S, and holding it to a shape is what
@@ -93,7 +103,12 @@ function heredoc(path, body, tag) {
     //shell expanding $, backticks and backslashes inside the body. Without the
     //quotes every one of those in somebody's task would be evaluated on the way
     //in, and a task mentioning a variable would arrive as its value.
-    return 'cat > ' + path + " <<'" + name + "'\n" + text + '\n' + name;
+    return prefix + " <<'" + name + "'\n" + text + '\n' + name;
 }
 
-module.exports = { q: q, heredoc: heredoc, TAG: TAG };
+//AND THE ONE ALMOST EVERY CALLER WANTS: the document written to a file.
+function heredoc(path, body, tag) {
+    return into('cat > ' + path, body, tag);
+}
+
+module.exports = { q: q, heredoc: heredoc, into: into, TAG: TAG };

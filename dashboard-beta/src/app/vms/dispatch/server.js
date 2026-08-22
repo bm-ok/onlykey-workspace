@@ -2,6 +2,7 @@ var makePayloads = require('./payloads');
 var makeWatcher = require('./watcher');
 var makeScript = require('./script');
 var makeSupervisor = require('./supervisor');
+var makeSession = require('./session');
 var runsOf = require('./runs');
 var quoting = require('./quoting');
 
@@ -63,6 +64,15 @@ async function plugin(imports, register) {
 
             //---- the supervisor's own turn -----------------------------
             supervisorTurn: makeSupervisor({ watcher: watcher }).turn,
+
+            //---- and reading what a worker is doing ---------------------
+            //
+            //STRICTLY READ-ONLY, and DELTAS rather than dumps — see
+            //./session.js. `answer` takes a redactor rather than reaching for
+            //one, because what it is cleaning is about to be KEPT and the
+            //plugin that owns redaction is core/secret.
+            sessionCommand: makeSession({ payloads: payloads }).command,
+            sessionAnswer: makeSession.answer,
 
             //---- and the pieces, for whatever needs one on its own ------
             watcherFor: watcher.watcherFor,
