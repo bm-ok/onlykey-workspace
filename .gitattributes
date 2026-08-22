@@ -42,6 +42,23 @@
 dashboard/provision/* text eol=lf
 dashboard-beta/src/app/vms/provision/scripts/* text eol=lf
 
+# AND THE FILES A JOB IS HANDED, for the same reason one folder up.
+#
+# These are .js, so the extension rules above do not pin them and git's default
+# would check them out CRLF on a fresh clone. They are read as TEXT here and
+# written into a guest through a heredoc, then run by the guest's node — so a
+# carriage return does not stay a formatting detail, it travels.
+#
+# The immediate cost is smaller than a shebang with a `^M` in it, because node
+# tolerates CRLF in a .js file. What does not tolerate it is anything that
+# compares a line: `watch-guest.js` parses claude's stream-json a line at a
+# time, and a trailing `\r` on every line is the kind of fault that produces
+# almost-right output rather than an error.
+#
+# By folder, like the one above, so a payload added later is covered by being
+# put in the right place rather than by somebody remembering this file exists.
+dashboard-beta/src/app/vms/dispatch/guest/* text eol=lf
+
 # Git hooks, which have no extension by design -- git looks for `pre-receive`,
 # not `pre-receive.sh`. So the rules above miss them entirely, and the first
 # clone would hand git a shell script full of carriage returns. This one runs on
