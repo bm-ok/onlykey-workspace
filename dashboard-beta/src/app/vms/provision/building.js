@@ -21,6 +21,13 @@ module.exports = function building(deps) {
     //WHERE CONSOLES ARE KEPT. One folder for the host rather than one per
     //machine, because the question "show me what that machine said" should not
     //need to know where the machine lives.
+    //
+    //A FUNCTION, NOT A PATH, and asked only when a machine is actually being
+    //built. ../../core/datadir refuses to answer in a process with no main half
+    //behind it, and the server-graph test boots exactly that — so resolving this
+    //when the plugin loads turns a half that merely CAN write a console log into
+    //one that cannot be loaded at all, and takes the whole graph down with it.
+    //../../keys and ../../../queue pass a thunk for the same reason.
     var serialDir = d.serialDir;
 
     var there = d.there || function (p) {
@@ -168,9 +175,11 @@ module.exports = function building(deps) {
         //HERE RATHER THAN AT INSTALL, because this is the one place a VirtualBox
         //machine is built — create and the rebuild inside install both come
         //through — so there is no second path that can be forgotten.
-        var serial = path.join(serialDir, spec.name + '.log');
+        var serial = null;
         try {
-            makeDir(serialDir);
+            var where = serialDir();
+            serial = path.join(where, spec.name + '.log');
+            makeDir(where);
             await vbox.setSerial(spec.name, serial);
         } catch (e) {
             //NEVER STOPS A BUILD. A machine that would not be made because its

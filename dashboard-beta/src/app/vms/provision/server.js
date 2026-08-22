@@ -2,6 +2,7 @@ var path = require('path');
 
 var makeSpec = require('./spec');
 var makeScripts = require('./scripts');
+var makeBuilding = require('./building');
 var header = require('./header');
 
 //---------------------------------------------------------------------------
@@ -24,24 +25,39 @@ var header = require('./header');
 //               keeps a typed value from becoming a command on a machine that
 //               runs it as root.
 //
+//./building.js — making one in VirtualBox, which is not the same as making a
+//               machine. Mostly an ORDER rather than a set of commands.
+//
+//---- and making one, which is where the three meet ------------------------
+//
+//`create` IS SHORT BECAUSE THE THREE KNOW NOTHING ABOUT EACH OTHER. The spec
+//decides what it will be, the build makes it, and ../ours writes it down —
+//and the only place that has all three is here.
+//
+//IT CHECKS THE NAME AGAINST ALL OF VirtualBox rather than against our own list.
+//The collision that matters is with ANY machine on this host, especially one
+//this app must not touch: creating over somebody else's machine is the mistake
+//the whole register exists to prevent, and checking only our own would walk
+//into it while looking careful.
+//
 //---- and what is not here yet ---------------------------------------------
 //
-//THE SCRIPTS THEMSELVES. `first-boot.sh` and the rest are still only in
-//../../../../dashboard/provision, because they are project-shaped files rather
-//than code and they move with the create path that runs them.
+//NO `vmCreate` ACTION, for the reason ../ours registers no `vmList`: the two
+//have to move together. A machine made here goes in THIS app's register, and
+//with `vmList` still relayed it would be invisible everywhere — made, running,
+//and on no list anybody can see. The pair is a decision about what the Runners
+//tab shows, not a step in porting a function.
 //
-//NOTHING PRETENDS OTHERWISE: with no folder on disk, `searchPath()` is empty and
-//every resolve says "there is no provisioning script called X" — which is true.
-//The alternative, a default that quietly points at the old app's folder, would
-//make this app serve files it does not own to machines it did not build.
-//
-//AND THE BUILDING: create, install, the base snapshot. That is the half that
-//drives ../vbox and writes to ../ours, and it lands next.
+//AND THE INSTALL, which is the long one: an unattended install, twenty-five
+//minutes, watched on the console this build attaches.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'ours', 'channel'];
+plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir'];
 plugin.provides = ['provision'];
 async function plugin(imports, register) {
+    var log = imports.log.on('vm');
+    var ours = imports.ours;
+    var vbox = imports.vbox;
     //WHAT THE APP SHIPS. Beside the server bundle, because that is what survives
     //being packaged — see `node: { __dirname: false }` in webpack.config.js.
     var appDir = process.env.OKC_APP_PROVISION_DIR || path.join(__dirname, 'provision');
@@ -68,9 +84,70 @@ async function plugin(imports, register) {
         POOL: imports.ours.POOL
     });
 
+    //---- making one --------------------------------------------------------
+    //
+    //THE THREE HALVES MEET HERE AND NOWHERE ELSE: ./spec.js decides what it will
+    //be, ./building.js makes it in VirtualBox, and ../ours writes it down. Each
+    //of those knows nothing about the other two, which is why this function is
+    //short and why there is only one of it.
+    var build = makeBuilding({
+        vbox: vbox,
+        //ONE FOLDER FOR THE HOST rather than one per machine: "show me what that
+        //machine said" should not need to know where the machine lives.
+        //ASKED WHEN A MACHINE IS BUILT, NOT WHEN THIS LOADS. ../../core/datadir
+        //refuses to answer in a process with no main half behind it, and asking
+        //here took the whole server graph down in one that has none — ../../keys
+        //and ../../../queue pass a thunk for exactly this reason.
+        serialDir: function () { return imports.dataDir.at('serial'); }
+    });
+
+    async function create(input) {
+        if (!vbox.available()) {
+            throw new Error('VirtualBox is not installed, or not where this expected to find it.');
+        }
+
+        var built = spec.fill(input);
+        var to = log.on(built.name);
+
+        //CHECKED AGAINST ALL OF VirtualBox, NOT JUST AGAINST OURS.
+        //
+        //The collision that matters is with ANY machine on this host, including
+        //ones this app must not touch — and especially those: creating over
+        //somebody else's machine is the one mistake the whole register exists to
+        //make impossible, and checking only our own list would walk straight
+        //into it while looking careful.
+        if (await vbox.exists(built.name)) {
+            throw new Error('VirtualBox already has a machine called "' + built.name + '". '
+                + 'Pick another name — this app will not touch a machine it did not make.');
+        }
+
+        var made = await build.buildInVbox(built, to);
+
+        //WHAT THE BUILD DECIDED GOES INTO THE RECORD, carried out of the one
+        //place that made it. `serial` among the rest: the port was attached as
+        //the machine was built, and the register has to say so or the window
+        //will not know there is a console to read.
+        var vm = ours.add(Object.assign({}, built, {
+            iso: made.iso, bridge: made.bridge, disk: made.disk, serial: made.serial
+        }));
+
+        to.good(built.name + ' created. It has no operating system yet — install one next.');
+        return vm;
+    }
+
     await register(null, {
         provision: {
             fill: spec.fill,
+            create: create,
+
+            //THE BUILD, FOR THE ONE OTHER CALLER THERE WILL BE. An install
+            //rebuilds a machine from nothing, and it must go through the same
+            //path rather than a second one that drifts.
+            buildInVbox: build.buildInVbox,
+            blankTheDisk: build.blankTheDisk,
+            resolveISO: build.resolveISO,
+            pickBridge: build.pickBridge,
+            hostOnlyAdapter: build.hostOnlyAdapter,
 
             render: scripts.render,
             raw: scripts.raw,

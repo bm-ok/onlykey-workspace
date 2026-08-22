@@ -34,7 +34,7 @@ beforeEach(() => {
     serialDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'okc-build-')), 'serial');
 
     build = makeBuilding({
-        serialDir,
+        serialDir: function () { return serialDir; },
         there: (p) => !!answers['there:' + p],
         makeDir: (p) => dirs.push(p),
         vbox: {
@@ -194,7 +194,7 @@ test('and a host with no host-only network still builds, saying what was lost', 
     bridges = [{ name: 'Realtek', status: 'Up', ip: '192.168.51.63' }];
     hostOnlyIfs = [];
     build = makeBuilding({
-        serialDir,
+        serialDir: function () { return serialDir; },
         there: () => false,
         makeDir: () => {},
         vbox: {
@@ -234,7 +234,7 @@ test('and a console that cannot be captured does not stop the build', async () =
     withIso();
     bridges = [{ name: 'Realtek', status: 'Up', ip: '192.168.51.63' }];
     build = makeBuilding({
-        serialDir,
+        serialDir: function () { return serialDir; },
         there: () => false, makeDir: () => {},
         vbox: {
             run: async (args) => { asked.push(args.join(' ')); return ''; },
@@ -340,7 +340,7 @@ test('a machine with no disk attached says so rather than failing', async () => 
 
 test('snapshots that cannot be read do not stop the disk being blanked', async () => {
     build = makeBuilding({
-        serialDir, there: () => false, makeDir: () => {},
+        serialDir: function () { return serialDir; }, there: () => false, makeDir: () => {},
         vbox: {
             run: async (args) => { asked.push(args.join(' ')); return ''; },
             isos: async () => [], bridges: async () => [], hostOnlyIfs: async () => [],

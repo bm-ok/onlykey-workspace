@@ -82,7 +82,7 @@ module.exports = {
             ''],
 
         ['the folder for it is not made',
-            '            makeDir(serialDir);',
+            '            makeDir(where);',
             ''],
 
         ['a console that cannot be captured stops the whole build',
