@@ -12,10 +12,10 @@
 //reach it — a `require('webpack')` in an unreachable function is still bundled,
 //and dragging webpack into a packaged app is exactly what this avoids.
 
-plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir', 'state', 'secret', 'queue', 'cron'];
+plugin.consumes = ['app', 'http', 'io', 'window', 'tray', 'lifecycle', 'actions', 'log', 'dataDir', 'state', 'secret', 'queue', 'cron', 'busy'];
 plugin.provides = ['build'];
 async function plugin(imports, register) {
-    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir, state, secret, queue, cron } = imports;
+    var { app, http, io, window: win, tray, lifecycle, actions, log, dataDir, state, secret, queue, cron, busy } = imports;
 
     //what the node half is handed. the window and the tray are passed as
     //controllers rather than objects, because they outlive the bundle.
@@ -57,6 +57,17 @@ async function plugin(imports, register) {
         //ITS CLOCK IS A CRON JOB NOW; this record stays its own, because "which
         //machine is busy" is a fact about the queue rather than about time.
         queue: queue,
+
+        //AND WHICH MACHINE IS HALF-WAY THROUGH SOMETHING, which is the same
+        //argument again at the machine rather than the task.
+        //
+        //A snapshot, an install and a restore each leave a machine in an
+        //unfinished state for minutes, and a lock kept in the bundle would be
+        //thrown away and made again in the middle of one. The failure is not
+        //that a claim is lost — it is that it is lost WHILE THE WORK CONTINUES:
+        //the install goes on in the old closure, the new record is empty, and
+        //the next thing to ask is told the machine is free.
+        busy: busy,
 
         //SEALING, AND WHAT A SECRET LOOKS LIKE. Handed over rather than required
         //again on the other side so there is ONE answer to both — a second copy
