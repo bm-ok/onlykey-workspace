@@ -205,7 +205,16 @@ module.exports = function trouble(theme, okc, shell) {
                     ? 'One identity cannot be in two places, so nothing here will take it back automatically —'
                         + ' that is somebody deciding which machine is the supervisor.'
                     : 'The worker credentials here are a different identity and are refused on a supervisor.',
-                go: { label: 'Claude supervisor', at: function () { shell.go('Runners', 'Claude supervisor'); } }
+                //KEYS, NOT RUNNERS. The sign-in panes moved to the Keys tab and
+                //this went on pointing at where they used to be — Runners now
+                //has a stub that says "moved", so the one button on the one
+                //banner telling somebody to go and sign one in landed them on a
+                //signpost instead of on the thing.
+                //
+                //A `go` THAT NAMES A PANE THAT IS NOT THERE cannot fail loudly:
+                //`shell.go` finds no such pane and leaves you on the tab. It was
+                //found by following the banner's own instruction.
+                go: { label: 'Claude supervisor', at: function () { shell.go('Keys', 'Claude supervisor'); } }
             });
         });
 
