@@ -72,6 +72,31 @@ module.exports = function terminal(theme, okc, shell) {
 
         var watchable = (vms || []).filter(function (v) { return v.serial; });
 
+        //---- A CONSOLE OPENS ITSELF FOR A MACHINE THAT IS RUNNING ------------
+        //
+        //THE ONE MOMENT THIS PANE IS WORTH ANYTHING IS AN INSTALL, and an
+        //install is exactly when nobody is sitting here choosing a machine from
+        //a list. The app being ported from opens a tab by itself for the same
+        //reason, and reported the alternative as the fault it was: the Terminal
+        //tab said "no terminals are open" while a machine was booting.
+        //
+        //ONCE, AND NEVER AGAINST THE PERSON. If somebody closes it, it stays
+        //closed — a pane that reopens what you just shut is a pane you end up
+        //fighting, and this one redraws every eight seconds. `chose` records
+        //that a choice has been made, either way, so this only ever fires into
+        //an untouched pane.
+        var chose = useRef(false);
+
+        useEffect(function () {
+            if (chose.current || on) return;
+
+            var running = watchable.filter(function (v) { return v.running; })[0];
+            if (!running) return;
+
+            chose.current = true;
+            setOn(running.name);
+        }, [watchable.map(function (v) { return v.name + ':' + (v.running ? 1 : 0); }).join(',')]);
+
         return (
             <Panel>
                 <TitleRow>
