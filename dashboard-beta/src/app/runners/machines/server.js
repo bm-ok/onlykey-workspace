@@ -164,6 +164,62 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- INSTALLING ONE, WHICH HOLDS THE HOST WHILE IT STARTS -----------
+        //
+        //AN INSTALL IS THE ONE THING HERE THAT CANNOT BE TOLD APART FROM A WEDGE
+        //WHILE IT IS HAPPENING. It takes about twenty-five minutes and does not
+        //dial in until its first boot, so for most of that time there is no
+        //agent, no channel and nothing to ask.
+        //
+        //---- and the lock is on the FIRST MINUTE, not the install -----------
+        //
+        //The app being ported from got this wrong twice and says so. The lock
+        //was first held for the duration of the CALL — but `install` starts an
+        //installer and returns, with the twenty-five minutes happening inside
+        //the machine, so the host was held for about four seconds and a second
+        //install began straight over the first.
+        //
+        //REFUSING THE SECOND ONE WAS THE WRONG CORRECTION. What actually
+        //competes is the first minute: a snapshot restore and a cold kernel
+        //boot, pulling on disk and every core at once. After that an install is
+        //mostly waiting on a mirror, and two coexist perfectly well. Blocking
+        //the second for twenty-five minutes would cost most of an evening to
+        //avoid one minute of contention.
+        //
+        //SO THE TURN ENDS WHEN THIS MACHINE'S CONSOLE SAYS SOMETHING. That is
+        //the machine reporting that its kernel is up and running code — a fact
+        //rather than a guess about how long a boot takes, and exactly what the
+        //serial port was attached for.
+        //
+        //THE PORTS ARE PASSED IN because the half that LISTENS on them is not
+        //../../vms/provision's. They are baked into the machine here and now —
+        //see ../../vms/https, which explains why they are what they are.
+        undo.push(actions.define('vmInstall', {
+            about: 'Install an operating system, unattended, and run its provisioning scripts. '
+                + 'Nothing else comes up while it does',
+            takes: ['name'],
+            run: async function (args) {
+                var name = (args || {}).name;
+                ours.get(name);
+
+                return await imports.busy.during(name, 'being installed', function () {
+                    return imports.busy.comingUp(name, async function () {
+                        var started = await imports.provision.install(name, {
+                            port: imports.guestApi.PORT,
+                            caPort: imports.guestApi.CA_PORT
+                        });
+
+                        //THREE STARTS AT MOST. An installer that never reaches a
+                        //kernel is a machine that will sit there for
+                        //twenty-five minutes achieving nothing, which is exactly
+                        //how an evening was lost once already.
+                        await speaking.untilItSpeaks(name, log.on('vm', name), { tries: 3 });
+                        return started;
+                    }, { kind: 'install' });
+                });
+            }
+        }));
+
         //---- AND UNMAKING ONE, WHICH ONLY EVER MEANS ONE OF OURS ------------
         //
         //`ours.get` IS THE WHOLE GUARD AND IT IS THE FIRST LINE. It refuses
@@ -353,6 +409,91 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- WHAT A MACHINE WROTE TO ITS CONSOLE ---------------------------
+        //
+        //THE ONLY WAY TO WATCH A BOOT THAT NEVER FINISHES. There is no agent
+        //during an install, so for twenty-five minutes nothing else in this app
+        //can say a word about the machine — and this file is being written the
+        //whole time.
+        //
+        //READ HERE RATHER THAN IN ../../vms/vbox, because the console is a file
+        //THIS APP chose the name of. That plugin knows about VirtualBox's own
+        //logs and nothing about ours.
+        //
+        //AND IT HAD TO BE PORTED BEFORE THE TERMINAL TAB MEANT ANYTHING: while
+        //`vmLog` relayed, this app's Terminal read the OTHER app's serial
+        //directory. It would have shown that app's machines booting and had
+        //nothing at all to say about its own.
+        undo.push(actions.define('vmLog', {
+            about: "Read a machine's console, or the console from the boot before this one",
+            takes: ['name', 'which', 'lines', 'find'],
+            run: async function (args) {
+                var a = args || {};
+                var which = String(a.which || '');
+
+                //---- THE BOOT BEFORE THIS ONE, usually the one worth reading --
+                //
+                //STARTING A MACHINE TRUNCATES ITS CONSOLE, so the record of a
+                //boot that went wrong is destroyed by the obvious response to
+                //it. One generation is kept aside on start — see
+                //../../vms/vbox/doing.js, `keepThePreviousBoot` — and this is
+                //how it is read.
+                var back = /^(serial|console)[-.]?(previous|last|before)$/i.test(which);
+
+                //ANYTHING THIS APP DOES NOT OWN IS PASSED ON RATHER THAN
+                //REFUSED. VirtualBox's own VBox.log needs a reader that is not
+                //ported yet; `elsewhere` is how a half-moved action stays honest
+                //instead of this one pretending the question is invalid.
+                if (!back && !/^serial$|^console$/i.test(which)) {
+                    return await actions.elsewhere('vmLog', a);
+                }
+
+                ours.get(a.name);
+
+                var file = path.join(imports.dataDir.at('serial'),
+                    a.name + (back ? '.previous' : '') + '.log');
+
+                var text = null;
+                try { text = require('fs').readFileSync(file, 'utf8'); } catch (e) {
+                    //THE TWO ABSENCES ARE DIFFERENT QUESTIONS, so they are
+                    //different sentences.
+                    if (back) {
+                        throw new Error('There is no earlier console for "' + a.name + '" at ' + file
+                            + '. One is kept aside each time a machine starts, so there is none until '
+                            + 'it has been started twice with its console being captured.');
+                    }
+                    throw new Error('Nothing has been written to ' + file + '. Either the console is '
+                        + 'not being captured — vmSerial --name ' + a.name + ' turns it on, with the '
+                        + 'machine off — or the guest has not been told to use ttyS0, which is a '
+                        + 'kernel command line and needs provisioning.');
+                }
+
+                var all = text.split(/\r?\n/);
+                var rows = a.find ? all.filter(function (l) { return new RegExp(a.find, 'i').test(l); }) : all;
+                var want = Math.max(1, Math.min(Number(a.lines) || 200, 5000));
+
+                return {
+                    file: file,
+                    which: back ? 'the boot before this one' : 'this boot',
+                    lines: rows.slice(-want),
+                    //HOW LONG THE FILE IS, so a reader can ask for only what is
+                    //new next time rather than redrawing a megabyte.
+                    of: all.length,
+                    matched: a.find ? rows.length : null,
+
+                    //AN EMPTY FILE IS A DIAGNOSIS, NOT AN ABSENCE. The port is
+                    //there and the guest is not talking through it, which is a
+                    //different fault from the port not being there.
+                    note: all.length <= 1
+                        ? file + ' exists and is empty. The port is there and the guest is not '
+                            + 'talking through it — its kernel command line needs console=ttyS0,115200n8.'
+                        : 'The last ' + Math.min(want, rows.length) + ' of ' + all.length
+                            + ' lines the guest wrote to its console'
+                            + (back ? ' the time before this one' : '') + '.'
+                };
+            }
+        }));
+
         undo.push(actions.define('vmScreenshot', {
             about: 'A photograph of what is on a machine\'s screen right now',
             takes: ['name'],
@@ -368,8 +509,19 @@ async function plugin(imports, register) {
                 //NAMED BY THE MOMENT rather than by the machine, so a second
                 //photograph does not overwrite the one somebody is looking at —
                 //two shots of a machine that changed are the whole point.
-                var file = path.join(imports.dataDir.at('shots'),
-                    name + '-' + stamp() + '.png');
+                //---- THE FOLDER IS MADE, BECAUSE `at()` ONLY JOINS -----------
+                //
+                //../../core/datadir builds a path and never creates anything, so
+                //every caller makes its own directory. This one did not, and
+                //VirtualBox answered `VERR_PATH_NOT_FOUND` — at the exact moment
+                //a photograph was the only thing that could say whether a
+                //machine mid-install was working or stuck. It is the one
+                //diagnostic that answers that question, and it was the one that
+                //failed.
+                var where = imports.dataDir.at('shots');
+                require('fs').mkdirSync(where, { recursive: true });
+
+                var file = path.join(where, name + '-' + stamp() + '.png');
 
                 return { name: name, file: await vbox.screenshot(name, file) };
             }
