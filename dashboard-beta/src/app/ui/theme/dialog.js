@@ -235,6 +235,28 @@ function Dialog({ id, spec }) {
                         </div>
                     ) : null}
 
+                    {/* WHAT IS ABOUT TO GO OUT, WHERE IT CAN BE READ FIRST.
+                        For the acts whose whole risk is the CONTENT rather than
+                        the button — a comment on a stranger's pull request, a
+                        message this host publishes under somebody's name. Those
+                        cannot be unsent, so "read it afterwards and fix it" is
+                        not available the way it is nearly everywhere else.
+
+                        BOUNDED AND SCROLLING IN THE MIDDLE. The title and the
+                        buttons stay pinned; twelve thousand characters inside a
+                        dialog that grows would put the confirm button below the
+                        bottom of a fixed overlay, which the app being ported
+                        from records having done.
+
+                        `console read`, NOT `console tall`: tall is a viewport
+                        height and belongs to a pane that IS the screen. */}
+                    {spec.reads ? (
+                        <div>
+                            <div className="dlg-heading">What will be posted</div>
+                            <div className="console read">{spec.reads}</div>
+                        </div>
+                    ) : null}
+
                     {cost ? <div className="dlg-cost"><strong>Cannot be undone: </strong>{cost}</div> : null}
                     {spec.link ? <p><a className="linky" href={spec.link} target="_blank" rel="noreferrer">{spec.link}</a></p> : null}
 

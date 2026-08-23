@@ -924,6 +924,17 @@ label.inline { display: inline-flex; align-items: center; gap: 5px; font-size: 1
 /* A brief is read while it is being judged, so it gets room without taking the
    panel over. */
 .console.short { max-height: 14rem; white-space: pre-wrap; word-break: break-word; margin: 0; }
+/* INSIDE A DIALOG, where the height is not the viewport's to take. `tall` is
+   `100vh - 220px` and belongs to a pane that IS the screen; used in an overlay
+   it pushes the confirm button past the bottom of a box that does not scroll —
+   which is a dialog somebody cannot say yes to. Bounded here, scrolling in the
+   middle, with the title and the buttons pinned around it. */
+.console.read {
+  max-height: 45vh;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
 .dlg textarea, .form textarea { resize: vertical; min-height: 6rem; font-family: var(--mono); }
 .line { display: flex; gap: 10px; white-space: pre-wrap; word-break: break-word; }
 .line .t { color: var(--muted); opacity: .65; flex: none; }

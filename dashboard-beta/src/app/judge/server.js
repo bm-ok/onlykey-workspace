@@ -35,11 +35,13 @@ var gate = require('./gate');
 //are kept is ../core/archive's business — the same drawer ../queue opens for a
 //task's, because they arrive the same way and are filed the same way.
 //
-//WHAT IS NOT HERE: `judgementSay`. It posts a review to somebody else's
-//repository, under a person's name. It is refused over the wire and refused to a
-//driven click, and it needs the GitHub half.
+//`judgementSay` IS HERE NOW, and it is the only thing in this plugin that
+//PUBLISHES. It puts a review on somebody else's repository, under a person's
+//name, where it cannot be unsent — so it is two calls rather than one (`preview`
+//composes and posts nothing), and the posting half is refused over the wire and
+//refused to a driven click. This app consuming `github` at all begins here.
 //
-//UNTIL THOSE MOVE THEY RELAY, which is the migration path this app is built on
+//UNTIL THE REST MOVE THEY RELAY, which is the migration path this app is built on
 //— see ../../../CLAUDE.md. What is here shadows the relayed ones the moment it
 //is defined, and answers about THIS app's record, which starts empty.
 //
@@ -67,7 +69,7 @@ function trim(s, n) {
     return t.length > n ? t.slice(0, n) + '…' : t;
 }
 
-plugin.consumes = ['app', 'log', 'state', 'prcuts', 'refs', 'archive'];
+plugin.consumes = ['app', 'log', 'state', 'prcuts', 'refs', 'archive', 'github'];
 plugin.provides = ['judge'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -492,6 +494,169 @@ async function plugin(imports, register) {
                 return Object.assign(whose(it), {
                     file: one.file, bytes: one.bytes, text: body.text
                 });
+            }
+        }));
+
+        //---- SAYING ONE OUT LOUD, ON SOMEBODY ELSE'S PULL REQUEST ----------
+        //
+        //WHAT A JUDGEMENT OF AN ARRIVED PULL REQUEST IS FOR, IN THE END. A
+        //judgement changes nothing and may not push — so a reading of somebody
+        //else's pull request that stays on this host has told nobody anything.
+        //The author cannot see it, and answering the person who sent it is the
+        //whole point of judging an arrival.
+        //
+        //TWO CALLS, NOT ONE. `preview` composes exactly what would be posted and
+        //posts nothing; without it, it posts. A comment on somebody else's
+        //repository cannot be taken back in any way that matters — an edit
+        //leaves the original in the history and the notification has already
+        //gone — so what goes up is READ FIRST, in full, by the person whose
+        //account it will appear under.
+        //
+        //AND IT IS A PERSON. Refused over the wire and refused to a driven
+        //click, for the same reason allowing the judgement was: this is this
+        //host speaking in public, under somebody's name, about a stranger's
+        //work.
+        //
+        //THE WHOLE REVIEW, NOT A SUMMARY OF IT. Summarising twelve thousand
+        //considered characters into three sentences means a model deciding which
+        //of a judge's reservations the author gets to see — and the section a
+        //summary drops first is "what I could not check", which is the section
+        //that makes the rest honest.
+        undo.push(actions.define('judgementSay', {
+            about: 'Put a judgement of an arrived pull request on GitHub as a comment: preview it, or say it',
+            needs: 'workspace',
+            takes: ['ref', 'id', 'preview'],
+            run: async function (args) {
+                var a = args || {};
+                var it = await store.get(a.ref || a.id);
+                var ref = it.ref || store.refOf(it.number);
+                var subject = it.subject || {};
+
+                //ONLY AN ARRIVAL HAS SOMEWHERE TO BE SAID. A cut of this host's
+                //own work is answered by landing it or not.
+                if (subject.kind !== 'pull') {
+                    throw new Error(ref + ' reads ' + (subject.name || 'something that is not a pull request')
+                        + '. Only a judgement of an arrived pull request has somewhere to be said — a cut of '
+                        + "this host's own work is answered by landing it or not.");
+                }
+                if (it.state !== 'done') throw new Error(ref + ' has not finished reading yet.');
+
+                var handed = await artifacts.list(it.uid);
+                if (!handed.length) {
+                    throw new Error(ref + ' handed nothing back, so there is nothing to say. A judgement '
+                        + 'that read nothing is not a review.');
+                }
+
+                //THE FILE THE PERSON WOULD READ, which is the same file this
+                //posts. Two accounts of one judgement is one too many.
+                var body = '';
+                var from = null;
+                for (var i = 0; i < handed.length; i++) {
+                    var text = '';
+                    try { text = String(((await artifacts.read(it.uid, handed[i].file)) || {}).text || ''); }
+                    catch (e) { continue; }
+                    if (!text.trim()) continue;
+                    if (text.length > body.length) { body = text; from = handed[i].file; }
+                }
+                if (!body.trim()) {
+                    throw new Error(ref + ' handed back ' + handed.length + ' file(s) and none of them has '
+                        + 'anything in it.');
+                }
+
+                //WHAT IT RECOMMENDED, IN THE WORDS THE PROMPT ASKED FOR. Read
+                //from the FILE rather than from the record, so the line at the
+                //top cannot say one thing while the review under it says another.
+                var said = body.match(/^\s*RECOMMEND(?:ATION)?:\s*(yes|no|accept|reject)\s*$/mi);
+                var yes = said ? /^(yes|accept)$/i.test(said[1]) : null;
+                var call = yes === null ? 'UNSTATED' : (yes ? 'YES' : 'NO');
+
+                var head = [
+                    '**Recommend Pulling: ' + call + '**',
+                    '',
+                    'Read at ' + String(subject.sha || '').slice(0, 7) + ' by an automated judge on the '
+                        + "maintainer's host. It fetched this change and read it; it ran nothing from it, "
+                        + 'and changed nothing anywhere.',
+                    yes === null
+                        ? 'It did not end with a recommendation in the form it was asked for, so the answer '
+                            + 'above is not its answer — read the review.'
+                        : null,
+                    '',
+                    '---',
+                    ''
+                ].filter(function (x) { return x !== null; }).join('\n');
+
+                var full = head + body.trim() + '\n';
+
+                if (a.preview || a.preview === 'true') {
+                    return {
+                        ref: ref,
+                        on: subject.on,
+                        number: subject.number,
+                        recommend: call,
+                        from: from,
+                        body: full,
+                        characters: full.length,
+                        posted: false,
+                        note: 'This is exactly what would appear on ' + subject.on + '#' + subject.number
+                            + '. Nothing has been posted.'
+                    };
+                }
+
+                if (a._overTheWire || a._driven) {
+                    throw new Error("Saying something on somebody else's pull request is done in the "
+                        + 'window, by a person who has read what is about to be posted. It appears under an '
+                        + 'account with a name on it and a comment cannot be unsent.');
+                }
+
+                //WHERE IT GOES, RESOLVED THROUGH THE REPOSITORY LIST rather than
+                //from the judgement's own string. A pull request is named by the
+                //repository it is ON, which for a fork is the parent — and that
+                //is a different name from the workspace folder.
+                var said2 = await actions.call('repositories', {});
+                var rows = (said2 && said2.repos) || [];
+                var row = rows.filter(function (r) {
+                    return r.repo === subject.on
+                        || r.issuesOn === subject.on
+                        || (r.target && r.target.on === subject.on);
+                })[0];
+                if (!row) throw new Error(subject.on + ' is not a repository in this workspace.');
+
+                var into = String((row.target && row.target.on) || row.issuesOn || subject.on).split('/');
+
+                //THE ISSUES ENDPOINT, which is where a pull request's
+                //conversation lives — a pull request IS an issue on GitHub, and
+                //the pulls endpoint carries review comments, which are a
+                //different thing attached to lines of a diff.
+                var r = await imports.github.call('POST',
+                    '/repos/' + into[0] + '/' + into[1] + '/issues/' + Number(subject.number) + '/comments',
+                    { body: full });
+
+                if (r.status !== 201) {
+                    throw new Error('GitHub would not take the comment on ' + subject.on + '#'
+                        + subject.number + ': ' + ((r.body && r.body.message) || ('it answered ' + r.status)));
+                }
+
+                await store.update(it.id, {
+                    saidOn: {
+                        at: new Date().toISOString(),
+                        url: (r.body && r.body.html_url) || null,
+                        recommend: call
+                    }
+                });
+
+                log.on('github', row.repo).good(ref + ' said on #' + subject.number
+                    + ' — recommend pulling: ' + call);
+
+                return {
+                    ref: ref,
+                    on: into.join('/'),
+                    number: subject.number,
+                    url: (r.body && r.body.html_url) || null,
+                    recommend: call,
+                    posted: true,
+                    note: ref + ' is on ' + subject.on + '#' + subject.number + '. The author can read it; '
+                        + 'nothing was merged, changed or pushed.'
+                };
             }
         }));
 

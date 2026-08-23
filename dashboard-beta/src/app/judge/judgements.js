@@ -284,23 +284,51 @@ module.exports = function judgements(theme, okc, remember) {
                 onClick={function () { setOnly(only == key ? null : key); }}>{word}</Chip>;
         };
 
+        //---- READ IT, THEN SAY IT ------------------------------------------
+        //
+        //TWO CALLS, AND THIS PANE USED TO MAKE ONE. It opened the gate with
+        //three sentences ABOUT the comment and posted whatever the judge had
+        //written, sight unseen \u2014 which is the one thing the two-call design
+        //exists to prevent. `judgementSay` composes what would go up and posts
+        //nothing when asked to preview, and the whole reason it does is that
+        //what goes out is read first, IN FULL, by the person whose account it
+        //appears under.
+        //
+        //A COMMENT CANNOT BE UNSENT. An edit leaves the original in the history
+        //and the notification has already gone, so "read it afterwards and fix
+        //it" is not available here the way it is almost everywhere else.
+        //
+        //SO THE PREVIEW IS FETCHED BEFORE THE GATE OPENS, and the gate shows it.
+        //A dialog that cannot be filled in is not offered: if the preview fails,
+        //the reason is what appears, and nothing is posted.
         function say(j) {
-            ask({
-                title: 'Put this judgement on GitHub?',
-                plain: [
-                    'It goes on the pull request as a comment, signed by this host, where the person who opened it will read it.',
-                    'It is not a review and it approves nothing. It is what the judge found, said out loud.',
-                    'Somebody else opened that pull request. This is publishing to their repository.'
-                ],
-                cost: 'A comment on somebody else\u2019s pull request. It can be deleted on GitHub, not from here.',
-                confirm: 'Say it',
-                protect: true,
-                onYes: function () {
-                    return okc.call('judgementSay', { id: j.ref || String(j.number) }).then(
-                        function (r) { setSaid({ text: r.note || 'Said.' }); },
-                        function (e) { setSaid({ bad: true, text: e.message }); throw e; }
-                    );
-                }
+            var id = j.ref || String(j.number);
+            return okc.call('judgementSay', { ref: id, preview: true }).then(function (p) {
+                ask({
+                    title: 'Put this judgement on ' + p.on + '#' + p.number + '?',
+                    plain: [
+                        'It goes on the pull request as a comment, signed by this host, where the person who opened it will read it.',
+                        'It is not a review and it approves nothing. It is what the judge found, said out loud.',
+                        'Somebody else opened that pull request. This is publishing to their repository.',
+                        'Read it. This is exactly what will appear, and a comment cannot be unsent.'
+                    ],
+                    //THE WHOLE THING, NOT A SUMMARY OF IT. Summarising a judge's
+                    //reservations means choosing which of them the author gets
+                    //to see, and the section a summary drops first is "what I
+                    //could not check" \u2014 the one that makes the rest honest.
+                    reads: p.body,
+                    cost: 'A comment on somebody else\u2019s pull request. It can be deleted on GitHub, not from here.',
+                    confirm: 'Say it',
+                    protect: true,
+                    onYes: function () {
+                        return okc.call('judgementSay', { ref: id }).then(
+                            function (r) { setSaid({ text: r.note || 'Said.' }); },
+                            function (e) { setSaid({ bad: true, text: e.message }); throw e; }
+                        );
+                    }
+                });
+            }, function (e) {
+                setSaid({ bad: true, text: e.message });
             });
         }
 
