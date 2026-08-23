@@ -968,7 +968,20 @@ async function plugin(imports, register) {
             plan: settingUp.plan,
             script: layout.script,
             folderFor: layout.folderFor,
-            freeEverywhere: freeing.freeEverywhere
+            freeEverywhere: freeing.freeEverywhere,
+
+            //A PATH ON THE MACHINE, NOT ON THIS HOST — ./setting-up.js's, and
+            //offered here because ../../runners/runs asks the same question of
+            //`--folder` when it dispatches into one. Git Bash rewrites
+            //`/home/okc/work` into `C:/Program Files/Git/home/okc/work` on the
+            //way through, which is a real path on the wrong computer, and the
+            //guest then makes a directory with spaces in it and works there
+            //happily.
+            //
+            //Handed over as a service rather than copied, because it is a
+            //refusal with a fix written into it and two copies of a sentence
+            //like that drift. It stays tested and sabotaged where it lives.
+            guestPath: settingUp.guestPath
         },
 
         onDestroy: function () { while (undo.length) undo.pop()(); }

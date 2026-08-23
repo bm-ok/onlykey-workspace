@@ -1,4 +1,8 @@
+var fs = require('fs');
+var path = require('path');
+
 var makeAsking = require('./asking');
+var makeBriefing = require('./briefing');
 
 //---------------------------------------------------------------------------
 //WORK IN FLIGHT ON A MACHINE: GIVING IT OUT, FOLLOWING IT, STOPPING IT.
@@ -27,7 +31,13 @@ var makeAsking = require('./asking');
 //appears here and nowhere in a transcript. Those two are ../sessions'.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'dispatch', 'ours', 'channel', 'secret'];
+plugin.consumes = ['app', 'log', 'dispatch', 'ours', 'channel', 'secret',
+    //FOR `vmDispatch` ONLY, and each for one question:
+    //  whatIsOn        whether this is a continuation, and of what
+    //  sessions        where that conversation is filed, and what it must be told
+    //  vbox, guestApi  where a guest hands an artifact back to
+    //  repoWorkspaces  whether `--folder` is a path on the machine or on this host
+    'whatIsOn', 'sessions', 'vbox', 'guestApi', 'repoWorkspaces'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -36,15 +46,161 @@ async function plugin(imports, register) {
 
     var dispatch = imports.dispatch;
     var channel = imports.channel;
+    var sessions = imports.sessions;
 
     var asking = makeAsking({
         ours: imports.ours,
         connected: channel.connected
     });
 
+    var briefing = makeBriefing({
+        readFile: function (at) { return fs.readFileSync(at, 'utf8'); },
+        exists: function (at) { return fs.existsSync(at); },
+        resolve: function (p) { return path.resolve(String(p)); },
+        basename: function (p) { return path.basename(p); }
+    });
+
     var undo = [];
 
     if (actions) {
+        //---- GIVING A MACHINE A TASK, AND LETTING GO OF IT ------------------
+        //
+        //RETURNS AS SOON AS THE WORK HAS STARTED, NOT WHEN IT ENDS. A task runs
+        //for minutes or an hour; waiting would make one command look like a
+        //hang, hold the machine against anything else, and give no progress in
+        //the meantime. Progress is read afterwards with `vmSessionTail`, which
+        //is a delta with a bookmark rather than a stream nobody is watching.
+        //
+        //NOTHING HERE CARRIES A CREDENTIAL, and that is a correction rather than
+        //an omission. The first version of this passed one as an environment
+        //assignment on the command that starts the run — which the agent
+        //inherits, and can print. Transcripts are captured to this host and
+        //KEPT, so a credential reaching agent-visible output is copied out and
+        //filed by design. A worker is signed in separately, through its own
+        //credential file, which is Claude Code's and not something the agent is
+        //handed a copy of.
+        undo.push(actions.define('vmDispatch', {
+            about: 'Give a machine a task to work on, and return without waiting for it',
+            takes: ['name', 'task', 'folder', 'contract', 'rules', 'contractName', 'resume', 'shell'],
+            run: async function (args) {
+                var a = args || {};
+                asking.reachable(a.name, 'it cannot be given work');
+                if (!a.task || !String(a.task).trim()) throw new Error('Say what the task is.');
+
+                var vm = imports.ours.get(a.name);
+                var to = log.on('vm', a.name);
+
+                //---- WHICH RULES, DECIDED BEFORE ANYTHING IS STARTED --------
+                var under = briefing.rulesFor(a);
+
+                //---- A CONTINUATION SAYS SO ---------------------------------
+                //
+                //Wrapped, because a brief that could not be annotated is still
+                //the brief — and refusing to dispatch because the memory folder
+                //could not be read would stop work over a note about it.
+                //
+                //See ../sessions/keying.js for what it says and why it lives
+                //there rather than here: this is one of TWO paths to a worker,
+                //and writing the words at this end is how the first version of
+                //it never once fired.
+                var task = String(a.task);
+                try {
+                    var doing = imports.whatIsOn(a.name);
+                    var kept = doing ? await sessions.get(sessions.keyFor(doing)) : null;
+                    task = makeBriefing.briefWith(sessions.announcement(doing, kept), task);
+                } catch (e) { /* a brief that could not be annotated is still the brief */ }
+
+                //---- AND WHETHER ITS WORKER CAN AUTHENTICATE AT ALL ---------
+                //
+                //ASKED BEFORE ANYTHING IS SET UP, because a worker that cannot
+                //authenticate does not fail as "signed out" — it fails as an api
+                //error in a json blob, minutes later, after a workspace has been
+                //laid out and a run recorded. The first task ever given out
+                //failed exactly that way and nothing between the button and the
+                //log said the obvious thing.
+                //
+                //ASKED OF THE MACHINE rather than read from the registry. A
+                //machine can be signed in three ways — handed a credential,
+                //signed in on itself, or carrying a key in its environment — and
+                //the registry only knows about the first. Refusing a machine
+                //that could in fact work is a worse fault than the one being
+                //fixed.
+                //
+                //A SHELL RUN HAS NO WORKER IN IT, so being signed out is beside
+                //the point: refusing one would mean refusing a soak because a
+                //credential it will never touch is missing.
+                if (!a.shell) {
+                    var able = await channel.run(a.name,
+                        'if [ -s "$HOME/.claude/.credentials.json" ] || [ -n "${ANTHROPIC_API_KEY:-}" ]; '
+                        + 'then echo okc-can-authenticate; fi',
+                        { what: 'checking its worker can authenticate', timeout: 30000 });
+
+                    if (!/okc-can-authenticate/.test(able.output || '')) {
+                        throw new Error('"' + a.name + '"\'s worker is signed out, so the work would fail '
+                            + 'the moment it started. Hand it the credential first: vmCredentialsPut '
+                            + '--name ' + a.name);
+                    }
+                }
+
+                var id = dispatch.newId();
+                var where = imports.repoWorkspaces.guestPath(a.folder, '--folder')
+                    || (vm.spec && vm.spec.folder)
+                    || imports.repoWorkspaces.folderFor(vm.spec);
+
+                //---- WHERE THIS HOST CAN BE REACHED --------------------------
+                //
+                //Worked out here rather than left for the guest to assemble. The
+                //machine already knows the address; what it does not know is
+                //which port artifacts go to, and telling it is cheaper than
+                //putting another value in its environment and re-provisioning to
+                //get it there.
+                //
+                //NO ADDRESS MEANS NO HELPER, AND THE RUN STILL RUNS. What is
+                //lost is the ability to hand something back, which is worth less
+                //than the work.
+                var base = null;
+                try {
+                    var at = await imports.vbox.hostAddress();
+                    if (at) base = 'https://' + at + ':' + imports.guestApi.PORT;
+                } catch (e) { /* no address means no helper */ }
+
+                var r = await channel.run(a.name, dispatch.script({
+                    id: id,
+                    task: task,
+                    folder: where,
+                    contract: under.rules,
+                    resume: a.resume,
+                    shell: !!a.shell,
+                    base: base
+                }), { what: 'dispatching ' + id, timeout: 60000 });
+
+                //---- STARTED IS NOT DISPATCHED ------------------------------
+                //
+                //The guest prints a marker once the work is detached and
+                //running. Without this, a script that failed on its first line
+                //returns exactly like one that started an hour of work.
+                if (!/okc-dispatched/.test(r.output || '')) {
+                    throw new Error('"' + a.name + '" did not start the work: '
+                        + (String(r.output || '').trim().split('\n').pop() || 'it said nothing'));
+                }
+
+                to.good(a.name + ' is working on ' + id
+                    + (under.rules ? ', under ' + under.named : ''));
+
+                return {
+                    run: id,
+                    machine: a.name,
+                    folder: where,
+                    //SAID PLAINLY, because "no rules" is the dangerous one and
+                    //it is also the silent one — a run without a contract looks
+                    //exactly like a run with one from everywhere except here.
+                    contract: under.rules ? (under.at || under.named) : null,
+                    watch: 'okc.js vmSessionTail --name ' + a.name,
+                    note: 'started, not finished — read its session for progress and vmRuns for the outcome'
+                };
+            }
+        }));
+
         //---- WHAT HAS BEEN GIVEN TO A MACHINE, AND WHAT BECAME OF IT -------
         //
         //A RUN WITH NO STATUS IS REPORTED AS `running` RATHER THAN AS A MISSING
