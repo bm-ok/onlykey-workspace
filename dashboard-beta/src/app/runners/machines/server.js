@@ -3,6 +3,7 @@ var makeLifecycle = require('./lifecycle');
 var makeSpeaking = require('./speaking');
 var makeRestoring = require('./restoring');
 var makeAwaiting = require('./awaiting');
+var makeSnapshotting = require('./snapshotting');
 
 //---------------------------------------------------------------------------
 //THE MACHINES, AS ACTIONS.
@@ -125,6 +126,12 @@ async function plugin(imports, register) {
         say: function (who, name) { return log.on(who, name); }
     });
 
+    var snapshotting = makeSnapshotting({
+        ours: ours,
+        snapshotsOf: function (name) { return vbox.snapshots(name); },
+        isOff: function (name) { return vbox.isOff(name); }
+    });
+
     var lifecycle = makeLifecycle({
         ours: ours,
         vbox: vbox,
@@ -229,6 +236,89 @@ async function plugin(imports, register) {
             run: async function (args) {
                 var a = args || {};
                 return await lifecycle.stop(a.name, { force: a.force, seconds: a.seconds });
+            }
+        }));
+
+        //---- TAKING ONE ----------------------------------------------------
+        //
+        //THE FOUR REFUSALS ARE ./snapshotting.js's, in the order that costs
+        //least to be told. The one that matters most is free to check and is
+        //checked first: a snapshot of a machine holding a worker credential
+        //keeps an unsealed copy for as long as the snapshot exists, and a
+        //snapshot is exactly what this app keeps, rolls back to and clones.
+        undo.push(actions.define('vmSnapshotTake', {
+            about: 'Take a snapshot, with a title of your choosing',
+            takes: ['name', 'title', 'description'],
+            run: async function (args) {
+                var a = args || {};
+                ours.get(a.name);
+
+                return await imports.busy.during(a.name, 'being snapshotted', async function () {
+                    var title = await snapshotting.mayTake(a.name, a.title);
+
+                    //POWERED OFF IS NOT UNLOCKED, and a snapshot taken into that
+                    //window is taken of a disk VirtualBox has not finished with.
+                    await vbox.waitUntilUnlocked(a.name);
+                    await vbox.takeSnapshot(a.name, title, a.description || '');
+
+                    //READ AGAIN RATHER THAN REUSED. Whatever was read before the
+                    //snapshot is now older than the thing being recorded.
+                    ours.update(a.name, makeSnapshotting.recordFor(ours.get(a.name), title, Date.now()));
+                    return await vbox.snapshots(a.name);
+                });
+            }
+        }));
+
+        //---- AND THROWING ONE AWAY -----------------------------------------
+        //
+        //WHAT THE REGISTER SAID ABOUT IT GOES TOO, or the branch it named
+        //outlives the point it belonged to — and a later reader would take that
+        //branch as still reachable.
+        //
+        //AND IF IT WAS THE BASE, THE MACHINE NO LONGER HAS ONE. Saying so is the
+        //honest answer: leaving the name would make "put it away" point at a
+        //snapshot that is not there, which fails at the moment a machine is
+        //being handed back rather than now.
+        undo.push(actions.define('vmSnapshotDelete', {
+            about: 'Throw a snapshot away, merging its disk back',
+            takes: ['name', 'title'],
+            run: async function (args) {
+                var a = args || {};
+                var vm = ours.get(a.name);
+                if (!a.title) throw new Error('Say which snapshot.');
+
+                return await imports.busy.during(a.name, 'having a snapshot removed', async function () {
+                    await vbox.waitUntilUnlocked(a.name);
+                    await vbox.deleteSnapshot(a.name, a.title);
+
+                    var kept = Object.assign({}, vm.snapshots || {});
+                    delete kept[a.title];
+                    ours.update(a.name, {
+                        snapshots: kept,
+                        baseSnapshot: vm.baseSnapshot === a.title ? null : vm.baseSnapshot
+                    });
+
+                    log.on('vm', a.name).good('snapshot "' + a.title + '" is gone');
+                    return Object.assign({}, await vbox.snapshots(a.name), { removed: a.title });
+                });
+            }
+        }));
+
+        //---- A CLEAN STARTING POINT, WHICH SHUTS IT DOWN FOR YOU ------------
+        //
+        //THE ONE THAT TAKES A RUNNING MACHINE, because it stops it, snapshots,
+        //and starts it again — which is what the other one refuses to do
+        //silently. ../../vms/provision owns the sequence: the same function runs
+        //when a machine dials in for the first time, so a person pressing this
+        //and a machine arriving go through one path rather than two that drift.
+        undo.push(actions.define('vmBaseSnapshot', {
+            about: 'Make a clean starting point: shut it down, snapshot it, and start it again',
+            takes: ['name', 'title'],
+            run: async function (args) {
+                var a = args || {};
+                ours.get(a.name);
+                snapshotting.refuseIfItHoldsASignIn(a.name);
+                return await imports.provision.base(a.name, a.title);
             }
         }));
 
