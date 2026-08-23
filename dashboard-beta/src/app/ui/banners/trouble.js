@@ -91,12 +91,27 @@ module.exports = function trouble(theme, okc, shell) {
         });
 
         //---- a repository left mid-change ----------------------------------
+        //
+        //THIS LINE HAD NEVER FIRED, IN EITHER APP. Both windows read
+        //`status.repos` and neither app's `status` ever returned it, so the
+        //filter ran over an empty list for as long as the warning has existed —
+        //and a repository left dirty on a branch a machine needs went on
+        //producing a push failure whose error is about a git configuration
+        //variable. It started working the day `status` was ported here.
+        //
+        //AND THE SENTENCE WAS WRONG THE FIRST TIME IT APPEARED. It ended "or put
+        //<repo> back on <home>" unconditionally, which on a repository sitting
+        //on its OWN default branch reads "put local-repo-c back on version2"
+        //while it is on version2. Being dirty and being on the wrong branch are
+        //two different problems and only one of them has that repair.
         (status.repos || []).filter(function (r) { return !r.clean; }).forEach(function (r) {
+            var away = r.home && r.on && r.on !== r.home;
             lines.push({
                 key: 'dirty-' + r.repo,
                 bold: r.repo + ' is on "' + r.on + '" here with uncommitted changes. ',
                 rest: 'A machine working on "' + r.on + '" cannot push while that is true, and its own error'
-                    + ' will not say why. Commit or discard them, or put ' + r.repo + ' back on ' + r.home + '.',
+                    + ' will not say why. Commit or discard them'
+                    + (away ? ', or put ' + r.repo + ' back on ' + r.home : '') + '.',
                 go: { label: 'Changes', at: function () { shell.go('Repositories', 'Changes'); } }
             });
         });

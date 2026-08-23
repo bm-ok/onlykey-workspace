@@ -571,6 +571,42 @@ async function plugin(imports, register) {
     //`-f`, no `-B`, no paths, no `--`. git itself refuses to leave a dirty tree,
     //so the gate here and git's own refusal are two independent stops on the
     //same act.
+    //---- IS THIS WORKING TREE CLEAN, AS A QUESTION ANYTHING MAY ASK ---------
+    //
+    //AND IT IS NOT CALLED `clean`, WHICH IS WHAT IT WAS CALLED FIRST.
+    //`git clean` DELETES UNTRACKED FILES, and a read on this service wearing the
+    //name of one of git's most destructive subcommands is a trap for whoever
+    //reaches for it next — the name says "make it clean" at least as loudly as
+    //it says "is it clean". ../../../test/git/writes.test.js asserts that this
+    //service offers no `clean`, alongside `commit`, `reset` and `stash`, and it
+    //failed the moment that name was added. That test was right.
+    //
+    //THE SAME TEST `checkout` MAKES BEFORE IT REFUSES, pulled out so the window
+    //can ask it BEFORE somebody hits the refusal rather than after. A repository
+    //left dirty on a branch a machine needs makes that machine's push fail with
+    //an error about a configuration variable — git has no idea this working tree
+    //exists — so the only place the real reason can be said is here.
+    //
+    //"COULD NOT TELL" IS NOT CLEAN, and it is not dirty either. `clean: null`
+    //with the reason, so a caller can say "git would not answer" instead of
+    //picking whichever of the two is more convenient.
+    //
+    //IT IS A GIT PROCESS PER CALL and there is no cheaper honest version: a
+    //working tree changes without touching anything this app could key a cache
+    //on. Whoever polls it decides how often — see `status` in ../ui/banners,
+    //which is the one caller and does it on a ten-second draw.
+    async function workingTree(repo) {
+        var said = await run(repo, ['status', '--porcelain']);
+        if (said.code !== 0) {
+            return {
+                repo: String(repo), clean: null, files: 0,
+                why: 'git would not say whether this working tree is clean'
+            };
+        }
+        var dirty = lines(said.stdout).filter(function (l) { return l.trim(); });
+        return { repo: String(repo), clean: !dirty.length, files: dirty.length, why: null };
+    }
+
     async function checkout(repo, branch) {
         var name = String(branch || '').trim();
         if (!name) return { moved: false, why: 'say which branch to move to' };
@@ -1023,6 +1059,10 @@ async function plugin(imports, register) {
             has: has,
             origin: origin,
             tracked: tracked,
+            //A READ, and it belongs beside the other reads rather than behind
+            //`WRITES` — see the block above it for why "could not tell" is its
+            //own answer.
+            workingTree: workingTree,
             mergeBase: mergeBase,
             unlanded: unlanded,
             countBetween: countBetween,

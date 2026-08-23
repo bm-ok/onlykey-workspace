@@ -597,3 +597,40 @@ test('a branch name cannot run a command, on the write side either', async () =>
         assert.equal(fs.existsSync(sentinel), false, 'a branch name ran a command: ' + bad);
     }
 });
+
+//---------------------------------------------------------------------------
+//AND A READ MAY NOT WEAR A DESTRUCTIVE COMMAND'S NAME.
+//
+//The test above says `clean` must not be on this service, and it fired for real:
+//a genuinely read-only "is this working tree clean" was added called `clean`,
+//and `git clean` DELETES UNTRACKED FILES. Nothing about that function was
+//dangerous; the NAME was, because it says "make it clean" at least as loudly as
+//it says "is it clean", and the next person to reach for it is reading a name
+//rather than a body.
+//
+//It is `workingTree` now. This asserts the read exists and behaves, so the
+//forbidden-name test above cannot be satisfied by simply deleting the feature.
+test('the working tree can be asked about, under a name that is not a command', async () => {
+    const g = await aGit();
+
+    assert.equal(typeof g.workingTree, 'function', 'the read went away instead of being renamed');
+    assert.equal(g.clean, undefined, 'it came back as `clean`');
+
+    const said = await g.workingTree('repo-one');
+    assert.equal(said.repo, 'repo-one');
+    assert.equal(said.clean, true, 'a fresh repository read as dirty');
+    assert.equal(said.files, 0);
+    assert.equal(said.why, null);
+});
+
+test('an untracked file makes it dirty, and it is counted', async () => {
+    //UNTRACKED COUNTS. A machine cannot push past somebody's half-finished file
+    //whether or not git is tracking it yet, which is the whole point of using
+    //`status --porcelain` rather than `diff --quiet`.
+    const g = await aGit();
+    fs.writeFileSync(path.join(repo, 'scratch.txt'), 'half a thought');
+
+    const said = await g.workingTree('repo-one');
+    assert.equal(said.clean, false);
+    assert.equal(said.files, 1);
+});
