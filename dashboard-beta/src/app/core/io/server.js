@@ -8,7 +8,9 @@ plugin.provides = ['io', 'appPackage', 'pages'];
 async function plugin(imports, register) {
     var host = imports.app.host;
 
-    serve(host.io, host.appPackage);
+    //KEPT, so onDestroy can take off THIS handler rather than every handler on
+    //a socket server this half did not make. See the note in ./serve.js.
+    var mine = serve(host.io, host.appPackage);
 
     //=======================================================================
     //WHICH PAGE IS THE ONE SOMEBODY IS LOOKING AT.
@@ -52,7 +54,11 @@ async function plugin(imports, register) {
         pages: { all: pages, live: livePage },
         appPackage: host.appPackage,
         onDestroy: function () {
-            host.io.removeAllListeners('connection');
+            //ONLY THE ONE THIS HALF ADDED. `removeAllListeners('connection')`
+            //stood here and reached past this plugin: the socket server belongs
+            //to ./main.js and outlives every reload, so this was quietly
+            //unhooking ../build/main.js's down-reporter as well — see ./serve.js.
+            host.io.off('connection', mine);
             //DROPPED SO THEY LAND ON THE NEW HANDLERS — but they do NOT come
             //back by themselves, whatever this line used to claim.
             //socket.io-client treats a disconnect the server ASKED for as final;

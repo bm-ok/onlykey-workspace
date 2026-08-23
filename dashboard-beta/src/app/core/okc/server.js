@@ -111,7 +111,10 @@ async function plugin(imports, register) {
         });
     }
 
-    io.on('connection', function (client) {
+    //NAMED SO IT CAN BE TAKEN OFF BY ITSELF — see the note in ../io/serve.js.
+    //`io` is made in ../io/main.js and outlives every reload, so unhooking it
+    //with `removeAllListeners` takes everybody else's handlers with it.
+    function onConnection(client) {
         client.emit('okc:up', !!sock);
 
         //AND IT CAN BE ASKED, not only told. The emit above is the only
@@ -156,7 +159,9 @@ async function plugin(imports, register) {
                 function (e) { reply({ ok: false, error: e.message }); }
             );
         });
-    });
+    }
+
+    io.on('connection', onConnection);
 
     connect();
 
@@ -214,7 +219,7 @@ async function plugin(imports, register) {
             unfallback();
             uncatalogue();
             drop('the server half is reloading');
-            io.removeAllListeners('connection');
+            io.off('connection', onConnection);
             if (sock) { try { sock.destroy(); } catch (e) { /* already gone */ } }
             sock = null;
         }

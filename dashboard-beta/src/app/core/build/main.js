@@ -176,8 +176,37 @@ async function plugin(imports, register) {
         //undefined. It never was the app's queue; it is a lock on the reload.
         var reloads = Promise.resolve();
 
+        //null while the server half is up; the failure while it is not. Read by
+        //the connection hook below, cleared by the next reload that works.
+        var down = null;
+
         var first = null;
         ready = new Promise(function (resolve, reject) { first = { resolve, reject }; });
+
+        //---- AND IT IS SAID AGAIN TO WHOEVER ASKS NEXT -----------------------
+        //
+        //THE EMIT BELOW RACES THE DISCONNECT AND LOSES ABOUT HALF THE TIME, and
+        //losing looks exactly like nothing being wrong.
+        //
+        //A failed reload has already torn the old half down, and ../io/server.js
+        //asks every page to disconnect on the way out. So the sequence is: half
+        //dies → sockets are dropped → `server:error` is emitted into a room that
+        //has just been emptied → the page reconnects a moment later and asks
+        //nothing. The window is then rendered, responsive and orphaned, and the
+        //only record is a line in nw.log nobody is tailing.
+        //
+        //Measured on `ReferenceError: makeFreeing is not defined`, twice: the
+        //first time the overlay appeared and was photographed, the second time
+        //the same fault produced a clean-looking window and `windowControls`
+        //answering `failed: null`. Same bug, opposite verdicts, decided by which
+        //side of the disconnect the emit landed on.
+        //
+        //SO IT IS STATE, NOT AN EVENT. This half is main — it does not reload —
+        //so it can hold "the server half is currently down" and tell every page
+        //that connects, however late it arrives and however many times.
+        io.on('connection', function (socket) {
+            if (down) socket.emit('server:error', down);
+        });
 
         webpack(serverConfig).watch({}, function (err, stats) {
             if (err) return first ? first.reject(err) : console.error(err);
@@ -189,6 +218,13 @@ async function plugin(imports, register) {
 
             reloads = reloads.then(function () {
                 return load().then(function () {
+                    //SAID EVEN WHEN NOTHING WAS WRONG, because the page cannot
+                    //tell "no failure since I connected" from "a failure I never
+                    //heard about". Clearing an overlay that is not there costs
+                    //nothing; leaving one up that should be gone costs the whole
+                    //check — see ../../../overlay.js.
+                    down = null;
+                    io.emit('server:ok');
                     if (first) { first.resolve(); first = null; }
                     else console.log('server half reloaded');
                 }, function (e) {
@@ -196,7 +232,8 @@ async function plugin(imports, register) {
                     //the old half is already torn down, so the app is serving
                     //the window and nothing else. say so on screen, not just here.
                     console.error('server half failed to reload', e && e.stack || e);
-                    io.emit('server:error', { message: String(e && e.stack || e) });
+                    down = { message: String(e && e.stack || e), when: Date.now() };
+                    io.emit('server:error', down);
                 });
             }, function () { /* the previous reload already reported itself */ });
         });

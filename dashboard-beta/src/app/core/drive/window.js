@@ -247,6 +247,30 @@ async function plugin(imports, register) {
                     var at = [].slice.call(document.querySelectorAll('[data-broke]')).filter(seen)[0];
                     return at ? (at.getAttribute('data-broke') || 'the pane threw, with no message') : null;
                 })(),
+
+                //AND WHETHER THE APP ITSELF IS DOWN, WHICH IS NEITHER OF THOSE.
+                //
+                //`broke` above is ONE PANE throwing inside a window that is
+                //otherwise working. This is the other kind: the graph failed to
+                //build, or the server half failed to reload, and ../../../
+                //overlay.js printed it over the whole page. Nothing else here
+                //can see it — there is no pane to be broken, so `broke` is null,
+                //`content` counts the red box's own text and reports a page full
+                //of words, and every count comes back plausible.
+                //
+                //THAT IS NOT HYPOTHETICAL. `ReferenceError: makeFreeing is not
+                //defined` was thrown at plugin setup and survived `node
+                //--check`, `npm run check` and `okc.js show` — the last of those
+                //because the window keeps serving the last good bundle. The only
+                //thing that showed it was a photograph of the screen.
+                //
+                //Read off the overlay's id rather than its colour or its words,
+                //for the same reason `broke` reads an attribute: a sentence gets
+                //reworded and an id is a decision.
+                failed: (function () {
+                    var at = document.getElementById('app-error-overlay');
+                    return at ? (at.textContent || '').trim().slice(0, 2000) : null;
+                })(),
                 loading: !![].slice.call(document.querySelectorAll('.skel'))
                     .filter(seen)
                     //A SPECIMEN IS NOT A WAIT. The Kit pane exhibits a skeleton

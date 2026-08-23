@@ -42,9 +42,19 @@ async function plugin(imports, register) {
 
     //the node side tells us when its half failed to reload, at which point the
     //page is talking to a server that no longer has any handlers
+    //
+    //IT ALSO TELLS US ON CONNECT IF IT IS ALREADY DOWN. A failed reload drops
+    //every socket on its way out, so this used to race the disconnect and lose
+    //about half the time — and losing looked exactly like nothing being wrong.
+    //../build/main.js holds the failure as state now and repeats it to whoever
+    //connects next, so arriving late is no longer the same as arriving to good
+    //news. See the note there.
     socket.on('server:error', function (e) {
         showError('the server half failed to reload', e && e.message);
     });
+
+    //and the same channel says when it is back, so the box comes down.
+    socket.on('server:ok', function () { showError.clear(); });
 
     var appPackage = await new Promise(function (resolve, reject) {
         socket.once('app', resolve);

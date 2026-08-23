@@ -263,6 +263,29 @@ function main () {
         const acts = (seen.buttons || []).filter(b => !b.nav)
         const anything = acts.length + (seen.fields || []).length
 
+        // THE APP BEING DOWN IS NOT 42 BROKEN PANES, and this used to report it
+        // as exactly that. When the graph fails to build or the server half
+        // fails to reload, ../src/overlay.js prints over the whole page —
+        // there is no pane to be broken, so every stop below came back
+        // plausible-looking and the walk went on to open forty-one more of them
+        // against an app that was face down.
+        //
+        // CHECKED FIRST AND IT STOPS THE WALK. Nothing after this could be an
+        // answer about a pane, and a list of forty-two faults is a worse
+        // description of one ReferenceError than the ReferenceError is.
+        if (seen.failed) {
+          // THE LINE THAT NAMES THE FAULT, not the line that says there is one.
+          // The overlay leads with its own title ("the server half failed to
+          // reload"), which is true of every one of these and identifies none of
+          // them; the first line after it is the ReferenceError.
+          const lines = seen.failed.split('\n').map(l => l.trim()).filter(Boolean)
+          bad.push(`the app is down, so nothing was walked — ${lines[1] || lines[0]}`)
+          console.log(`\n  THE APP IS DOWN. Nothing below it was walked.\n`)
+          console.log(seen.failed.split('\n').slice(0, 12).map(l => '    ' + l).join('\n'))
+          console.log('\n  Fix that first: this is a start-up failure, not a pane fault.')
+          break
+        }
+
         // `on` COMES BACK FROM THE PAGE, so it is also the proof the page is
         // there at all. A thrown render answers nothing and this reads "?".
         if (!seen.on || seen.on === '?') {
