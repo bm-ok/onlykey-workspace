@@ -140,3 +140,49 @@ test('it is app logic and sits where app logic sits', () => {
     assert.equal(fs.existsSync(path.join(__dirname, '..', '..', 'src', 'app', 'core', 'supervisor')), false,
         'a core/supervisor has appeared');
 });
+
+//---- and what the PERSON is shown is the same list -------------------------
+//
+//TWO READINGS OF ONE FENCE IS HOW A PANE LIES ABOUT A PERMISSION. The Supervisor
+//tab's "What it may do" is the only place a person checks what a machine running
+//a model is allowed to ask this host for, so it being a SEPARATE list assembled
+//from the same data would be a list that agrees until somebody edits one of
+//them — and the failure would look like nothing at all.
+//
+//So `supervisorMay` calls `allowed.list()` and renames one key, and this is the
+//assertion that it goes on doing that.
+
+test('the pane is shown exactly what the supervisor is told', async () => {
+    const plugin = require('../../src/app/supervisor/server');
+
+    //THE ACTION TABLE STOOD IN FOR, because what is being checked is the answer
+    //this plugin defines rather than anything the host does with it.
+    const defined = new Map();
+    let service = null;
+    await plugin({
+        app: { host: { actions: { define: (name, spec) => { defined.set(name, spec); return () => {}; } } } },
+        log: { on: () => ({ good() {}, warn() {}, bad() {}, info() {} }) },
+        state: { app: { doc: () => ({ get: () => ({}), set() {} }) } },
+        ours: {},
+        //REGISTERING THE DOOR IS NOT WHAT THIS IS ABOUT, so it is accepted and
+        //dropped. A stub that threw would make this a test of the door.
+        guestApi: { api: () => () => {} }
+    }, async (_e, s) => { service = s; });
+
+    assert.ok(service, 'the plugin did not register');
+    const may = defined.get('supervisorMay');
+    assert.ok(may, 'supervisorMay is not defined, so the pane has nothing behind it');
+
+    const said = may.run({});
+    const shown = said.may.map((r) => r.action + ' :: ' + r.why);
+    const told = allowed.list().map((r) => r.what + ' :: ' + r.why);
+
+    assert.deepEqual(shown, told,
+        'the pane and the supervisor are being handed different lists — one of them is wrong and neither says which');
+    assert.equal(said.count, told.length);
+
+    //AND IT HANDS OUT NO WRITE. The pane says "read only" in two places; if a
+    //write ever appears, that sentence becomes the lie instead.
+    assert.equal(defined.has('supervisorMaySet'), false);
+    assert.ok(/read only/i.test(said.note), 'the answer stopped saying it cannot be written');
+});

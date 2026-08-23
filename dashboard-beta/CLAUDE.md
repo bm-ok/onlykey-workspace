@@ -246,9 +246,26 @@ machines, tasks or sign-ins. Say so in the pane if empty would read as broken.
   failure available here. If the kit lacks something, add it to the kit —
   `Settings → Kit` is the catalogue and the review surface, and `THEME.md` says
   what belongs there versus in a plugin's own stylesheet.
-* **Purple means a person.** A purple button is a press the command line is
-  refused; a purple field outline is a value that is neither read nor written
-  from outside. The colour is only honest because of the refusal.
+* **Purple is a hazard mark: this is the person's, and a model may not use it.**
+  It has to scream the moment anything reaches for what it is on. A purple button
+  is a press the command line is refused; a purple field outline is a value that
+  is neither read nor written from outside; the purple dot in the corner says
+  this app is still attached to `dashboard/`, so part of what is on screen is
+  coming from the one app nothing here may write to. The colour is only honest
+  because of the refusal, and it is only legible while it is spent on nothing
+  else — every other colour in the theme answers *how is it doing*, and purple
+  answers *is this mine*. **The test for a new purple thing is never "is this
+  important"** — everything on a dashboard is important to somebody. It is
+  whether reaching for it is out of bounds. `Settings → Kit`'s Guarded shelf is
+  the complete list and says so about itself; a purple thing that is not on it
+  makes that sentence false without making anything fail.
+* **Grep the stylesheet before inventing a class name**, including a class
+  assembled from a variable. `class="dot notice"` drew a wide purple oval because
+  `.notice` is the banner — padding, flex, a gap — and every check was green.
+  `test/rules/classes.test.js` covers the literal `className="a b"` form and, for
+  components whose class is `'<base> ' + <prop>`, follows the prop. It cannot
+  follow an arbitrary one: if you add a component of that shape, add it to
+  `TONED` in that file.
 * **Nothing irreversible without the gate.** `ask()` from the theme.
 * **`remember` keeps only where somebody was looking**, never what they were
   looking at. Credentials live in the app data folder, which is derived from

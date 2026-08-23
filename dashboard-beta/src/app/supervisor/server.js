@@ -1,5 +1,8 @@
 var makeGuestApi = require('./guestapi');
 var makeTodos = require('./todos');
+//THE FENCE ITSELF, read by the pane as well as enforced by the door — see
+//`supervisorMay` below for why it is the same call rather than a second list.
+var allowed = require('./allowed');
 
 //---------------------------------------------------------------------------
 //THE LIST OF THINGS TO DO, as actions.
@@ -119,6 +122,41 @@ async function plugin(imports, register) {
             var one = todos.remove(a.id);
             log.warn(one.ref + ' "' + one.what + '" removed');
             return Object.assign({}, one, board(), { note: one.ref + ' is gone. It was ' + one.state + '.' });
+        }
+    }));
+
+    //---- and what it may ask for, which is the fence made readable ---------
+    //
+    //ONE SOURCE, READ TWICE, AND THAT IS THE WHOLE VALUE OF IT. `allowed.list()`
+    //is what the supervisor is handed when it asks what it may do; this hands the
+    //same call's answer to the pane. So "what the supervisor was told" and "what
+    //the person is shown" cannot drift, because there is nothing to keep in step
+    //— a second list assembled here would be a permission list that agrees with
+    //the real one only until somebody edits one of them.
+    //
+    //NO WRITE, AND THE ANSWER SAYS SO rather than leaving somebody hunting for
+    //the button. A permission list anything reaching this app could edit is not a
+    //permission list, and a supervisor able to widen its own is not supervised.
+    //It changes in a checkout, in a commit, with a message.
+    undo.push(actions.define('supervisorMay', {
+        about: 'Every action the supervisor may call, and the reason each one is on the list',
+        run: function () {
+            //`action`, NOT `what`. ./allowed.js answers a MACHINE, which asks
+            //"what may I do"; the pane is a table of actions. Renamed at this
+            //edge rather than in ./allowed.js, because changing the shape there
+            //would change what a supervisor reads to suit a pane.
+            var rows = allowed.list().map(function (r) {
+                return { action: r.what, why: r.why };
+            });
+
+            return {
+                may: rows,
+                count: rows.length,
+                where: 'supervisor/allowed.js',
+                note: 'Read only. A permission list that anything reaching this app could edit is not a '
+                    + 'permission list — this changes in a checkout, in a commit, with a message. The '
+                    + 'reasons are what the supervisor is shown when it asks what it may do.'
+            };
         }
     }));
 
