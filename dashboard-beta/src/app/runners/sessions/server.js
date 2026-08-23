@@ -168,6 +168,122 @@ async function plugin(imports, register) {
         }));
     }
 
+    if (actions) {
+        //---- WHAT IS KEPT, AND WHOSE IT IS --------------------------------
+        //
+        //A SESSION OUTLIVES THE TASK IT BELONGS TO, deliberately: a task that
+        //was thrown away leaves its transcript behind, because what a worker did
+        //is worth reading after somebody decides the work was not. So this joins
+        //two lists and the join is allowed to fail on one side — an orphan is a
+        //row, not a gap.
+        //
+        //THE BOARD IS ASKED FOR BY NAME rather than consumed. ../../../queue
+        //says of itself that nothing consumes it, "so none of these can be a
+        //cycle — which is worth saying out loud, because an unresolved name
+        //takes down the whole graph". Making this the first consumer would spend
+        //that property to read one list. `actions.call` resolves at call time
+        //and costs the graph nothing.
+        undo.push(actions.define('sessions', {
+            about: 'What workers remember, kept per task — restored before a run and taken back after',
+            run: async function () {
+                var kept = await store.everything();
+
+                //A BOARD THAT WILL NOT ANSWER IS NOT A REASON TO SHOW NOTHING.
+                //Every session is still on disk and still worth listing; what is
+                //lost is the title and the branch, and the rows say so by
+                //carrying nulls rather than by not existing.
+                var board = {};
+                try {
+                    var said = await actions.call('tasks', {});
+                    ((said && said.tasks) || []).forEach(function (t) { board[t.uid] = t; });
+                } catch (e) { /* the rows below say what they can */ }
+
+                var rows = kept.map(function (s) {
+                    var t = board[s.uid] || null;
+                    return Object.assign({}, s, {
+                        //FROM THE BOARD WHERE IT STILL EXISTS, and from the
+                        //record beside the archive where it does not.
+                        task: t ? t.id : s.taskId,
+                        number: t ? t.number : s.number,
+                        title: t ? t.title : null,
+                        branch: t ? t.branch : null,
+                        orphaned: !t,
+
+                        //---- FOR THE ONES KEPT BEFORE EITHER WAS RECORDED ----
+                        //
+                        //History rather than an ongoing hole: sessions kept
+                        //before there were lanes name none, and a list of them
+                        //reads "#42, the work it began with is gone" — which
+                        //says nothing about the only question somebody has,
+                        //which is what branch line it was for.
+                        //
+                        //A LOOKUP, NOT A GUESS, and that is what makes filling
+                        //anything in allowable at all: `board` is the TASK
+                        //board, so a uid found on it belonged to a task, and a
+                        //task is worked rather than read. A judgement is not on
+                        //this board and so is never given a lane here.
+                        //
+                        //AND WHAT IS NOT RECOVERABLE IS LEFT EMPTY. A session
+                        //whose task was thrown away has no branch line anywhere
+                        //on this host; filing it under the likelier of two lanes
+                        //would be inventing the answer.
+                        lane: s.lane || (t ? 'worker' : null),
+                        about: s.about || (t ? t.branch : null)
+                    });
+                });
+
+                return {
+                    sessions: rows,
+                    bytes: rows.reduce(function (n, s) { return n + (s.bytes || 0); }, 0),
+                    note: rows.length
+                        ? 'Restored before a worker starts and taken back when it stops, so a task keeps '
+                            + 'one conversation however many machines it passes through.'
+                        : 'Nothing yet. A worker started by a job hands its memory back when it finishes, '
+                            + 'and gets it again next time that task runs.'
+                };
+            }
+        }));
+
+        undo.push(actions.define('sessionForget', {
+            about: 'Throw away what a task remembers. The next run starts a fresh conversation',
+            takes: ['id'],
+            run: async function (args) {
+                var id = String((args || {}).id == null ? '' : (args || {}).id);
+
+                //BY UID, AND BY TASK NAME, because both are what somebody has in
+                //front of them: the pane holds uids, and a person at the command
+                //line has "#42". A memory that outlives its task and cannot then
+                //be deleted is kept twice over.
+                var uid = id;
+                var task = null;
+                try {
+                    var said = await actions.call('tasks', {});
+                    ((said && said.tasks) || []).forEach(function (t) {
+                        if (t.uid === id || String(t.id) === id || String(t.number) === id) {
+                            task = t;
+                            uid = t.uid;
+                        }
+                    });
+                } catch (e) { /* an orphan's uid still works */ }
+
+                var gone = await store.forget(uid);
+
+                imports.log.on('task', task ? task.id : uid).warn(task
+                    ? '#' + task.number + ' will start a fresh conversation next time — what it '
+                        + 'remembered was thrown away'
+                    : 'threw away a session left behind by a task that is gone (' + uid + ')');
+
+                return Object.assign({}, gone, {
+                    task: task ? task.id : null,
+                    number: task ? task.number : null,
+                    note: task
+                        ? '#' + task.number + ' remembers nothing now. The next run starts a fresh conversation.'
+                        : 'Thrown away. It belonged to a task this host no longer has.'
+                });
+            }
+        }));
+    }
+
     //---- AND THE DOOR A WORKER REACHES IT THROUGH -------------------------
     //
     //REGISTERED WITH ../../vms/https RATHER THAN SERVED HERE, which owns the
