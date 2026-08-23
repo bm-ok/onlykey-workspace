@@ -77,6 +77,12 @@ beforeEach(async () => {
         //is where what they do is checked.
         cron: { add: () => {}, does: () => () => {} },
         tls: { ensure: () => ({ fingerprint: 'aabbcc' }) },
+
+        //THE APP'S OWN SSH KEY, which building a machine now DECLARES it needs —
+        //see the consumes line in provision/server.js. Every machine built here
+        //carries this in its installer's authorized_keys, and a machine built
+        //without one cannot be logged into to find out why it failed.
+        keys: { ssh: { ensure: () => ({ publicKey: 'ssh-ed25519 AAAAfake okc-dashboard' }) } },
         //THE VERBS A MACHINE MAY ASK THIS PLUGIN FOR ARE REGISTERED AT LOAD —
         //see src/app/vms/provision/guestapi.js, and test/vms/https-registry.test.js
         //for what the registry does with them.
@@ -121,6 +127,12 @@ test('no VirtualBox at all is refused, rather than half-writing a record', async
         dataDir: { at: (...p) => path.join(dataDir, ...p) },
         cron: { add: () => {}, does: () => () => {} },
         tls: { ensure: () => ({ fingerprint: 'aabbcc' }) },
+
+        //THE APP'S OWN SSH KEY, which building a machine now DECLARES it needs —
+        //see the consumes line in provision/server.js. Every machine built here
+        //carries this in its installer's authorized_keys, and a machine built
+        //without one cannot be logged into to find out why it failed.
+        keys: { ssh: { ensure: () => ({ publicKey: 'ssh-ed25519 AAAAfake okc-dashboard' }) } },
         //THE VERBS A MACHINE MAY ASK THIS PLUGIN FOR ARE REGISTERED AT LOAD —
         //see src/app/vms/provision/guestapi.js, and test/vms/https-registry.test.js
         //for what the registry does with them.

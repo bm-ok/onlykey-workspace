@@ -290,7 +290,32 @@ async function plugin(imports, register) {
             //A MACHINE'S FIRST WORDS. It has finished installing and booted into
             //the system it installed, which is the one moment a clean snapshot
             //means anything — see ./settling.js, which decides whether it is.
-            onHello: function (name) {
+            onHello: function (name, seen) {
+                //---- THE INSTALL TICKET DIES HERE ------------------------
+                //
+                //IT HAS A TOKEN NOW, so the ticket has nothing left to open —
+                //and it must not keep opening things, because the command line
+                //that carried it OUTLIVES the install. VirtualBox writes it into
+                //`vboxpostinstall.sh` in the machine's folder, where it sits for
+                //as long as the machine exists. A live secret in a plain file;
+                //a spent ticket is a string that opens nothing.
+                //
+                //See ../https, which accepts it up to this moment and not after.
+                try {
+                    ours.update(name, Object.assign({ installTicket: null },
+                        (seen && seen.address)
+                            ? {
+                                //WHERE IT ACTUALLY IS, recorded while it is
+                                //still connected. The moment somebody needs to
+                                //ssh in and find out why an agent went quiet is
+                                //the moment there is no socket left to ask.
+                                lastAddress: seen.address,
+                                lastUser: seen.user || null,
+                                lastSeenAt: new Date().toISOString()
+                            }
+                            : {}));
+                } catch (e) { /* it may already be gone */ }
+
                 return settle.firstSnapshotIfItNeedsOne(name);
             }
         });

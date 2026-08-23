@@ -2,6 +2,7 @@ var https = require('https');
 var http = require('http');
 
 var makeRegistry = require('./registry');
+var makeAsking = require('./asking');
 
 //---------------------------------------------------------------------------
 //HOW A MACHINE REACHES THIS HOST.
@@ -97,35 +98,7 @@ async function plugin(imports, register) {
     //THE SAME REFUSAL FOR EVERY REASON. No such machine, wrong token, or a
     //machine that may not reach this verb all answer 401 with the same words:
     //anything more tells whatever reached this port what would have got in.
-    function whoIsAsking(req) {
-        var said = String(req.headers.authorization || '');
-        if (said.slice(0, 6).toLowerCase() !== 'basic ') return null;
-
-        var pair = Buffer.from(said.slice(6), 'base64').toString('utf8');
-        var at = pair.indexOf(':');
-        if (at < 0) return null;
-
-        var name = pair.slice(0, at);
-        var token = pair.slice(at + 1);
-        if (!name || !token) return null;
-
-        if (!ours.has(name)) return null;
-        var vm = ours.get(name);
-        var mine = (vm.spec || {}).token;
-        if (!mine || !same(String(mine), token)) return null;
-
-        return vm;
-    }
-
-    //CONSTANT TIME, because a comparison that returns early tells whoever is
-    //asking how much of the token they got right — and a token is the whole of
-    //what a machine has. ../channel/session.js compares its own the same way.
-    function same(a, b) {
-        if (a.length !== b.length) return false;
-        var out = 0;
-        for (var i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
-        return out === 0;
-    }
+    var asking = makeAsking({ ours: ours });
 
     function refuse(res, why, name) {
         log.warn('refused ' + (name ? '"' + name + '"' : 'a caller') + ': ' + why);
@@ -145,7 +118,12 @@ async function plugin(imports, register) {
 
         //NOT FOUND AND NOT ALLOWED ARE THE SAME ANSWER, on purpose. A machine
         //that can tell them apart can map this host by asking.
-        var vm = whoIsAsking(req);
+        //
+        //EITHER PROOF WILL DO — a token, or an install ticket for the machine
+        //named in the query. See `guestAsking`: a machine being built has no
+        //token yet, because the script it is fetching is where its token comes
+        //from.
+        var vm = asking.whoIsAsking(req.headers, url.searchParams);
         if (!vm) return refuse(res, 'it did not prove which machine it is', null);
         if (!registry.allowed(hit, vm)) {
             return refuse(res, req.method + ' ' + url.pathname + ' is not something it may ask for', vm.name);
