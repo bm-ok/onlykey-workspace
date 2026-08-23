@@ -52,7 +52,7 @@ async function plugin(imports, register, config) {
     //`margin-left: auto`. The dot is the one-glance answer to "is this thing
     //connected", which is why it is first and why it is a colour rather than a
     //word.
-    function Topbar({ brand, sub, live, liveTitle, deadTitle, tabs, on, onPick, right, brandTabs, onBrand }) {
+    function Topbar({ brand, sub, dot, tabs, on, onPick, right, brandTabs, onBrand }) {
         //`.brand` IS THE CONTAINER, NOT THE BUTTON. It is a flex row holding the
         //dot and then real `<button class="tab brand-tab">`s — monospace,
         //accent-coloured, dashed border, truncated. Being real tabs is the
@@ -66,17 +66,27 @@ async function plugin(imports, register, config) {
         return (
             <div className="topbar">
                 <div className="brand">
-                    {/* WHAT THE DOT IS ABOUT IS THE CALLER'S TO SAY. It read
-                        "connected" / "not connected" and never named what to,
-                        which was fine while there was only one thing it could
-                        mean and is not any more: it reports the pipe to the app
-                        being ported FROM, so with that app stopped it goes red
-                        while this one is perfectly healthy. Red then reads as
-                        "something is wrong here", which is the opposite of true
-                        — and the more of the port that lands, the more often it
-                        will be red on purpose. */}
-                    <span className="dot" style={live ? { background: 'var(--ok)' } : undefined}
-                        title={live ? (liveTitle || 'connected') : (deadTitle || 'not connected')} />
+                    {/* WHAT THE DOT IS ABOUT IS THE CALLER'S TO SAY, INCLUDING
+                        HOW MANY STATES IT HAS. It was a boolean, `live`, and it
+                        read "connected" / "not connected" without ever naming
+                        what to — fine while there was only one thing it could
+                        mean.
+
+                        There are two wires now: this app's own, and the pipe to
+                        the app being ported FROM. Two states for three facts
+                        meant "the old app is deliberately off" drew the same red
+                        as "this app is dead", and the first of those is the
+                        ORDINARY state of a port in progress. A red that is
+                        correct most of the time is a dot nobody looks at, which
+                        is the entire value of having one.
+
+                        So the caller hands over a tone and a sentence, and this
+                        kit does not know what either is about. `tone` is one of
+                        the theme's own status names — ok, warn, fail — which is
+                        what keeps a third state from needing a third colour
+                        invented here. */}
+                    <span className={'dot' + (dot && dot.tone ? ' ' + dot.tone : ' fail')}
+                        title={(dot && dot.title) || 'not connected'} />
 
                     {(brandTabs || []).map(function (t) {
                         return (

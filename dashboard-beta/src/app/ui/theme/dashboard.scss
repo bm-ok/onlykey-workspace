@@ -139,13 +139,24 @@ h2:first-child { margin-top: 0; }
 }
 .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .brand .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30vw; }
+/* THE DOT IN THE CORNER, and it has three states rather than two.
+ *
+ * `fail` is this app's own wire being down — the only one of the three that
+ * means something is wrong HERE. `warn` is this app fine and the app being
+ * ported from not answering, which is the ordinary state of a port in progress
+ * and must not look like a fault. `ok` is both.
+ *
+ * NAMED AFTER THE STATUS TOKENS rather than after colours, so a third state did
+ * not need a third colour invented for it — see `Topbar` in ./window.js. */
 .dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--fail);
   transition: background .2s;
   flex: none;
 }
-.dot.live { background: var(--ok); }
+.dot.ok { background: var(--ok); }
+.dot.warn { background: var(--warn); }
+.dot.fail { background: var(--fail); }
 
 .tabs { display: flex; gap: 4px; margin-left: auto; }
 .tab {

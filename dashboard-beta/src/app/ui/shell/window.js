@@ -24,20 +24,32 @@ var { useState, useEffect } = React;
 
 //---- WHAT THE DOT IN THE CORNER IS ABOUT -----------------------------------
 //
-//IT IS ABOUT THE OTHER APP, NOT THIS ONE. `okc.connected` is the pipe to the
-//dashboard being ported FROM, which answers the actions this app has not taken
-//over yet. So with that app stopped the dot goes red while everything here is
-//working perfectly — and as the port lands, red ON PURPOSE becomes the ordinary
-//state rather than a fault.
+//THERE ARE TWO WIRES AND IT USED TO REPORT ONE. `okc.connected` is the pipe to
+//the dashboard being ported FROM, which answers the actions this app has not
+//taken over yet; `okc.wire` is this app's own socket to its own server.
+//
+//A BOOLEAN COULD NOT SAY THE THING WORTH SAYING. With the old app deliberately
+//stopped the dot went red while everything here was working perfectly, which is
+//the ordinary state of a port in progress and drew exactly as alarming as this
+//app being dead. Red that is correct most of the time is a dot nobody looks at,
+//and being looked at is the only thing a dot does.
+//
+//SO: RED IS ABOUT HERE, YELLOW IS ABOUT THERE. Red means this window cannot
+//reach its own server and nothing on screen can be trusted. Yellow means this
+//app is fine and the old one is not answering — expected, and finished when the
+//port is. Green means both, which is fewer and fewer things as this goes on.
 //
 //It used to say "connected" / "not connected" and never name what to, which was
 //fine while there was only one thing it could mean.
-var DOT_UP = 'connected to the dashboard being ported from — actions this app does not define '
-    + 'yet are answered by it';
+var DOT_BOTH = 'connected — this app, and the dashboard being ported from, which answers the '
+    + 'actions this app does not define yet';
 
-var DOT_DOWN = 'not connected to the dashboard being ported from. This app is fine; what is '
-    + 'missing is the actions it has not taken over yet, and each of those says so by name where '
-    + 'it is used';
+var DOT_ALONE = 'this app is connected and fine. The dashboard being ported from is not '
+    + 'answering — what is missing is the actions this app has not taken over yet, and each of '
+    + 'those says so by name where it is used';
+
+var DOT_DEAD = 'this window cannot reach its own server. Nothing on screen is being kept up to '
+    + 'date — it is the last thing that arrived, however old that is';
 
 plugin.consumes = ['react', 'theme', 'appPackage', 'okc', 'app', 'remember'];
 plugin.provides = ['shell'];
@@ -246,9 +258,11 @@ async function plugin(imports, register) {
         var [said, setSaid] = useState(null);
 
         var [up, setUp] = useState(okc.connected);
+        var [wire, setWire] = useState(okc.wire);
         var [, bumpBadge] = useState(0);
 
         useEffect(function () { return okc.onUp(setUp); }, []);
+        useEffect(function () { return okc.onWire(setWire); }, []);
 
         here.at = function () { return { tab: on, pane: pane }; };
 
@@ -347,9 +361,13 @@ async function plugin(imports, register) {
         return (<>
             <Topbar
                 brand="Dashboard"
-                live={up}
-                liveTitle={DOT_UP}
-                deadTitle={DOT_DOWN}
+                // THIS APP FIRST, because it is the only one of the three that
+                // means the screen is lying. With this wire down we cannot know
+                // anything about the other app either, so there is nothing to
+                // say about it and no state where both are reported at once.
+                dot={!wire
+                    ? { tone: 'fail', title: DOT_DEAD }
+                    : (up ? { tone: 'ok', title: DOT_BOTH } : { tone: 'warn', title: DOT_ALONE })}
                 tabs={tabs.filter(inRow).map(function (t) {
                     return { name: t.name, badge: badges[t.name], stopped: stopped[t.name] };
                 })}

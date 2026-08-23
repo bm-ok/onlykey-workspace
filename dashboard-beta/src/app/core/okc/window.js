@@ -19,9 +19,31 @@ async function plugin(imports, register) {
     var up = false;
     var listeners = [];
 
+    //---- TWO WIRES, AND THEY WERE ONE ANSWER --------------------------------
+    //
+    //`up` IS THE OTHER APP. ./server.js holds a local socket to the dashboard
+    //being ported FROM, and `okc:up` reports that socket — it arrives here over
+    //THIS app's socket.io, which is a different wire entirely.
+    //
+    //`wire` IS THIS ONE: whether the page can reach its own server at all.
+    //
+    //THEY WERE REPORTED AS ONE BOOLEAN and the dot in the corner had two states
+    //for three facts, so the ordinary state of a port in progress — this app
+    //perfectly healthy, the old one deliberately stopped — drew the same red as
+    //this app being dead. Red that is correct most of the time is a dot nobody
+    //looks at, which is the whole value of having one.
+    var wire = !!(io && io.connected);
+    var wireListeners = [];
+
     function announce(v) {
         up = !!v;
         listeners.forEach(function (fn) { fn(up); });
+    }
+
+    function announceWire(v) {
+        if (wire === !!v) return;
+        wire = !!v;
+        wireListeners.forEach(function (fn) { fn(wire); });
     }
 
     io.on('okc:up', announce);
@@ -43,8 +65,12 @@ async function plugin(imports, register) {
     //because the panes here fetch once rather than poll, nothing on the screen
     //went stale to give it away. A green dot has to mean the wire is open, or it
     //is worse than no dot at all.
-    io.on('disconnect', function () { announce(false); });
-    io.on('connect', function () { io.emit('okc:up?', {}, announce); });
+    //
+    //AND `announce(false)` HERE IS NOT A GUESS — it is the honest answer. With
+    //this wire down nothing can tell us about the other one, and "we do not
+    //know" has to read as "no" for anything a person might act on.
+    io.on('disconnect', function () { announceWire(false); announce(false); });
+    io.on('connect', function () { announceWire(true); io.emit('okc:up?', {}, announce); });
 
     function call(action, args) {
         return new Promise(function (resolve, reject) {
@@ -63,6 +89,9 @@ async function plugin(imports, register) {
         io: io,
         call: call,
         get connected() { return up; },
+        //AND WHETHER THIS APP'S OWN WIRE IS OPEN, which is a different question
+        //and is the one that means something is wrong here rather than there.
+        get wire() { return wire; },
         //WHETHER THE DASHBOARD IS THERE IS EVERY TAB'S BUSINESS, and it
         //changes often — it is restarted whenever its own code is worked
         //on. Subscribing beats each tab polling for it.
@@ -70,6 +99,14 @@ async function plugin(imports, register) {
             listeners.push(fn);
             fn(up);
             return function () { listeners = listeners.filter(function (x) { return x != fn; }); };
+        },
+        //THE SAME SHAPE FOR THE SAME REASON, and called back straight away so a
+        //subscriber that mounts after the socket is already open is not left
+        //holding the value this plugin was built with.
+        onWire: function (fn) {
+            wireListeners.push(fn);
+            fn(wire);
+            return function () { wireListeners = wireListeners.filter(function (x) { return x != fn; }); };
         }
     };
 
