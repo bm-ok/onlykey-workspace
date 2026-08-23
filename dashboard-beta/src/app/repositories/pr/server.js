@@ -687,6 +687,139 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- WHAT WOULD ACTUALLY GO OUT --------------------------------------
+        //
+        //THE LAST THING BETWEEN WRITING A PULL REQUEST AND PUBLISHING IT. What
+        //`prDraftSave` stores is what somebody typed; what goes to GitHub is
+        //that with every template block on this host appended under it, into a
+        //repository this host does not own. Those are not the same text and not
+        //obviously the same address, and the difference is only visible here.
+        //
+        //IT PUBLISHES NOTHING, which is why it is allowed over the wire when
+        //`prCutMake` is not: reading what a press would do is not the press.
+        //
+        //AND IT NEVER GUESSES. Before a cut exists its pull requests have no
+        //numbers, so the cross-links show `?` rather than a plausible number —
+        //a preview that invents is the one thing a preview must not do, since
+        //its whole job is being believed.
+        undo.push(actions.define('prTemplatePreview', {
+            about: 'What the pull requests would say for a pair of lines, composed from the blocks that are on',
+            needs: 'workspace',
+            takes: ['source', 'target', 'title', 'body', 'repo'],
+            run: async function (args) {
+                var a = args || {};
+                var source = String(a.source || '').trim();
+                var target = String(a.target || '').trim();
+
+                var pair = await carrying(source, target);
+
+                //CARRYING NOTHING IS AN ANSWER, not a refusal. It is the
+                //ordinary state of a pair somebody is still working on, and the
+                //pane draws it as a sentence rather than as an error.
+                if (!pair.on.length) {
+                    return {
+                        text: '', repos: [], where: [],
+                        note: '"' + source + '" carries nothing that "' + target + '" does not already '
+                            + 'have, so no pull request would be opened.'
+                    };
+                }
+
+                //REAL NUMBERS WHEN THERE ARE ANY. Once a cut exists its pull
+                //requests have numbers, so the cross-links can be the ones an
+                //edit would actually write.
+                var kept = ((await landings()).read({}) || {})[key(source, target)] || null;
+                var real = (kept && kept.pulls ? kept.pulls : []).filter(function (p) { return p.number; });
+
+                var pulls = real.length
+                    ? real.map(function (p) { return { repo: p.repo, number: p.number, url: p.url }; })
+                    : pair.on.map(function (r) {
+                        return { repo: r.repo, number: '?', url: 'https://github.com/…/pull/?  (' + r.repo + ')' };
+                    });
+
+                var on = pair.on.map(function (r) { return r.repo; });
+                var which = a.repo && on.indexOf(a.repo) >= 0 ? a.repo : on[0];
+                var typed = String(a.body || '').trim();
+
+                //---- WHERE EACH ONE WOULD GO ---------------------------------
+                //
+                //`repos` IS A LIST OF NAMES, which answers "how many" and not
+                //"into whose". Only one of those is worth asking before pressing
+                //a button that publishes: a pull request goes FROM a fork this
+                //host pushes to, INTO a repository somebody else owns, and here
+                //those are two different accounts.
+                //
+                //THE WHOLE ADDRESS, NOT ONLY THE OWNER AND NAME. Two forks can
+                //differ by one character in the middle of a word, and which of
+                //them receives this is exactly what is being checked.
+                //THE TARGET IS WORKED OUT THE WAY `openOne` WORKS IT OUT, from
+                //`repositories`' own `target.on`, falling back to this
+                //repository's own remote. Not from anything on the git remote
+                //itself: `git.origin` answers `{ url, owner, repo, kind }` and
+                //has no idea a fork has a parent, so a preview reading a
+                //`parent` field off it would quietly show every pull request
+                //going into the fork it came from.
+                //
+                //THAT IS THE FAILURE `openOne` IS WRITTEN AGAINST — "it opens a
+                //pull request inside the fork... which looks perfectly normal,
+                //reports success, and lands the work nowhere anybody is
+                //watching". A preview that showed it landing in the right place
+                //while the press sent it somewhere else would be worse than no
+                //preview, because its whole job is being believed.
+                var known = await relayed('repositories');
+                var rows = (known && known.repos) || [];
+
+                var where = [];
+                for (var i = 0; i < pair.on.length; i++) {
+                    var r = pair.on[i];
+                    var remote = null;
+                    try { remote = await refs.origin(r.repo); } catch (e) { remote = null; }
+
+                    var mine = remote && remote.owner ? remote.owner + '/' + remote.repo : null;
+                    var row = rows.filter(function (x) { return x.repo === r.repo; })[0];
+                    var into = (row && row.target && row.target.on) || mine;
+
+                    where.push({
+                        repo: r.repo, branch: r.head, base: r.base, ahead: r.ahead,
+                        from: mine, into: into,
+                        //AND WHETHER IT CROSSES AT ALL, which is the one-word
+                        //version of the two addresses under it.
+                        crossing: !!(mine && into && into !== mine),
+                        fromUrl: mine ? 'https://github.com/' + mine : null,
+                        intoUrl: into ? 'https://github.com/' + into : null
+                    });
+                }
+
+                var context = {
+                    branch: (pair.on[0] || {}).head,
+                    me: which,
+                    repos: on,
+                    pulls: pulls
+                };
+
+                return {
+                    repos: on,
+                    where: where,
+                    showing: which,
+                    //SEPARATELY, so the window can recompose as somebody types
+                    //without asking again. What the blocks add depends on the
+                    //pair and on which copy — never on what is typed — so it is
+                    //fetched once and the sentence in front of it joined on
+                    //locally.
+                    additions: await compose('', context),
+                    text: await compose(typed, context),
+                    title: String(a.title || '').trim() || (kept && kept.said && kept.said.title) || source,
+                    said: (kept && kept.said) || null,
+                    existing: kept ? { count: real.length, opened: kept.opened } : null,
+                    guessing: !real.length,
+                    note: 'As ' + which + ' would read it. ' + on.length + ' repositor'
+                        + (on.length === 1 ? 'y' : 'ies') + ' carry work: ' + on.join(', ') + '.'
+                        + (real.length
+                            ? ' The links are the real pull request numbers.'
+                            : ' Nothing is cut yet, so the links show ? until it is.')
+                };
+            }
+        }));
+
         //---- sending it out --------------------------------------------------
         //
         //ONE LANDING, N PULL REQUESTS. Each repository that carries something
