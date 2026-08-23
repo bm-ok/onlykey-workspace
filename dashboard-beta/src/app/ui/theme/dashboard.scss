@@ -1183,8 +1183,19 @@ table.kv td .ok { color: var(--ok); }
    as a whole, and the composer walked off the bottom: precisely the failure the
    note above says this rule exists to prevent, reintroduced by moving the markup
    one level down rather than by touching the CSS. */
-#view-chat.active { display: block; }
-#pane-chat.active {
+/* CLASSES, WHERE THE APP BEING PORTED FROM HAS IDS. This arrived as
+   `#pane-chat.active` and `#chat-thread` — the stylesheet was carried over
+   whole, on purpose, and those two came with it. Nothing in this app renders
+   those ids, so both rules matched NOTHING here and did so silently: the pane
+   grew to its content, the page scrolled as a whole, and the composer walked off
+   the bottom. Which is precisely the failure the note over there says these
+   rules exist to prevent, arriving by the markup changing rather than the CSS.
+
+   Worth knowing as a shape: a dead id selector is invisible in every check this
+   repository has. It is not a missing class — nothing names it — so the class
+   guard cannot speak, the sheet parses, the build is clean, and the only sign is
+   a screenshot with the box you type into below the fold. */
+.chat-view {
   display: flex;
   flex-direction: column;
   /* The window, less the header, the banners, the sub-tab bar and this view's
@@ -1195,7 +1206,7 @@ table.kv td .ok { color: var(--ok); }
   min-height: 320px;
 }
 
-#chat-thread {
+.chat-thread {
   flex: 1 1 auto;
   overflow-y: auto;
   padding: 4px 2px 10px;
@@ -1261,6 +1272,14 @@ table.kv.where .sub:last-child { margin-bottom: 0; }
    This one wraps, and dresses the inputs sitting in it. */
 .head-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .head-row h2 { margin: 0; }
+/* WHAT IS TRUE ABOUT THE SUBJECT, BESIDE ITS NAME rather than in a card over
+   it. It sits between the title and `.head-controls`, which carries
+   margin-left:auto — so this stays inline beside the title and the controls stay
+   hard right, with no widths given to anything.
+
+   IT EXISTS BECAUSE THE CARD WAS WORSE. Three short facts about whether a thing
+   can run took the top third of a tab whose subject is what is underneath it. */
+.head-state { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .head-controls { display: flex; gap: 8px; align-items: center; margin-left: auto; }
 .head-controls input {
   background: #0d1117;

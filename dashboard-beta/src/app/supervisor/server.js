@@ -2,6 +2,7 @@ var fs = require('fs');
 
 var makeGuestApi = require('./guestapi');
 var makeTodos = require('./todos');
+var makeSaid = require('./said');
 //THE FENCE ITSELF, read by the pane as well as enforced by the door — see
 //`supervisorMay` below for why it is the same call rather than a second list.
 var allowed = require('./allowed');
@@ -60,6 +61,11 @@ async function plugin(imports, register) {
     //supervisor, it is one that exits in three seconds having asked for nothing.
     var ours = imports.ours;
     var guests = imports.guests;
+
+    //AND THE CONVERSATION, in the host's drawer beside the list. It is host-wide
+    //in the app being ported from too — a supervisor is one machine for this
+    //host, not one per folder somebody happens to be looking at.
+    var talk = makeSaid(imports.state.app.doc('chat'), imports.state.app.doc('chat-read'));
 
     //ONE SHAPE FOR EVERY ANSWER THAT RETURNS THE LIST, so the window and a model
     //are reading the same thing.
@@ -136,6 +142,87 @@ async function plugin(imports, register) {
             var one = todos.remove(a.id);
             log.warn(one.ref + ' "' + one.what + '" removed');
             return Object.assign({}, one, board(), { note: one.ref + ' is gone. It was ' + one.state + '.' });
+        }
+    }));
+
+    //---- the conversation --------------------------------------------------
+    //
+    //TWO ENDS, AND NEITHER GETS TO SAY WHICH IT IS. `chatSay` is the person's —
+    //it is what the window calls, and a supervisor cannot reach it because its
+    //allowlist does not name it. The machine's half is `supervisorSays`, which
+    //records the machine that asked rather than anything the message claims.
+    //
+    //"SENT" MEANS WRITTEN DOWN, NOT DELIVERED. A supervisor is off most of the
+    //time; a line here may have been read a second ago or may be waiting for a
+    //machine to boot, and from this side those look identical. So the answer
+    //carries how far the far end has actually read, and the note says which.
+    undo.push(actions.define('chat', {
+        about: 'The conversation with the supervisor: what was asked for, and what it said',
+        takes: ['since'],
+        run: function (args) {
+            var a = args || {};
+            var rows = a.since == null
+                ? { messages: talk.all(), bookmark: talk.lastNumber(), missed: 0 }
+                : talk.since(a.since);
+
+            //HOW FAR THE SUPERVISOR HAS READ, so the window can show which
+            //messages have actually reached it. One number rather than a field
+            //per message — see ./said.js.
+            var read = talk.readMark();
+
+            //AND WHAT IT WOULD NOT SEE IF IT WOKE NOW.
+            //
+            //`missed` on this answer is always zero and always will be: the
+            //window asks with no bookmark and is handed everything, so that
+            //field describes the WINDOW's reading rather than anybody's problem.
+            //The number worth showing is the other end's — asked here from the
+            //same bookmark it will use, so this is a rehearsal rather than an
+            //estimate. Without it, a conversation passing the trim length would
+            //silently stop being readable from the far end.
+            var beyond = talk.since(read.n || 0).missed || 0;
+
+            return Object.assign({}, rows, {
+                read: read,
+                beyondReach: beyond,
+                note: rows.messages.length
+                    ? rows.messages.length + ' message(s)'
+                        + (rows.missed ? ', and ' + rows.missed + ' older ones not shown' : '') + '.'
+                    : 'Nothing has been said yet. Type something and the supervisor will read it next '
+                        + 'time it looks.'
+            });
+        }
+    }));
+
+    undo.push(actions.define('chatSay', {
+        about: 'Say something to the supervisor. It reads this when it next asks what is new',
+        takes: ['text', 'about'],
+        run: function (args) {
+            var a = args || {};
+
+            //HOW IT ARRIVED, TAKEN FROM THE CALL rather than from an argument
+            //anybody could pass. A message that could claim to be from the
+            //window would make the label worth nothing — which is the same rule
+            //the machine's half of this record follows.
+            var via = a._fromTest ? 'test' : (a._overTheWire || a._driven) ? 'cli' : 'window';
+            var line = talk.say({ who: 'person', text: a.text, about: a.about || null, via: via });
+
+            //KEPT, BECAUSE THIS IS WHERE WORK COMES FROM NOW. A task nobody wrote
+            //by hand was asked for in here, and six weeks later this line is the
+            //answer to "why did it do that".
+            log.on('supervisor').info(
+                (line.via === 'window' ? 'you' : line.via) + ' said: '
+                + line.text.slice(0, 120) + (line.text.length > 120 ? '…' : '')
+            );
+
+            //IT DOES NOT WAKE ANYTHING YET, AND THE NOTE SAYS SO. `supervisorWake`
+            //has not moved, so there is no "answers by itself" to honour here —
+            //and a note promising an answer that cannot come is the failure this
+            //whole action exists to make visible. When wake lands, the settings
+            //flag and the un-awaited call belong here.
+            return Object.assign({}, line, {
+                woke: false,
+                note: 'Said. It reads this when it next wakes.'
+            });
         }
     }));
 
