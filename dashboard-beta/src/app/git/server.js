@@ -509,10 +509,24 @@ async function plugin(imports, register) {
     //THREE THINGS ARE TRUE OF EVERY ONE OF THEM, and together they are what
     //makes this safe rather than merely careful:
     //
-    //  1. NOTHING TOUCHES THE WORKING TREE. No checkout, no reset, no merge, no
-    //     stash, no clean. Every write below moves a REF and nothing else — so
-    //     no act of this app can destroy uncommitted work, on any branch, ever.
-    //     That is a property of the argv, not a promise in a comment.
+    //  1. NOTHING DESTROYS UNCOMMITTED WORK. No reset, no merge, no stash, no
+    //     clean, and no force of any kind. Every write here either moves a REF
+    //     and nothing else, or — in the one case that touches a working tree —
+    //     REFUSES unless git itself reports that tree clean.
+    //
+    //     THAT SENTENCE USED TO BE STRONGER, and it is worth saying why it
+    //     changed. It read "nothing touches the working tree… that is a property
+    //     of the argv, not a promise in a comment", which was true and was
+    //     bought by not being able to do a thing the app needs: stepping a
+    //     repository off a branch a machine is about to be set up on. A checkout
+    //     left open here fails that machine's push for a reason the machine
+    //     cannot explain — it does not know this working tree exists.
+    //
+    //     So there is now exactly one working-tree write, `checkout`, and the
+    //     guarantee is carried by its GATE rather than by the absence of the
+    //     verb. That is a weaker kind of guarantee and the weakening is
+    //     deliberate: it is one function, with fixed argv, that asks git whether
+    //     the tree is clean and stops if it is not or if it cannot tell.
     //
     //  2. NOTHING CREATES OR REWRITES A COMMIT. History is made by people and
     //     by workers on machines; this app moves labels around.
@@ -534,7 +548,64 @@ async function plugin(imports, register) {
     //EVERY WAY THIS PLUGIN CAN CHANGE A REPOSITORY, IN ONE LIST, so a test can
     //assert the list matches what is callable and a new one has to be argued for
     //in a diff. Same shape as EXITS in ../keys/server.js, for the same reason.
-    var WRITES = ['fetch', 'fastForward', 'makeBranch', 'removeBranch', 'push'];
+    var WRITES = ['fetch', 'fastForward', 'makeBranch', 'removeBranch', 'push', 'checkout'];
+
+    //---- the one that touches a working tree --------------------------------
+    //
+    //STEPPING A REPOSITORY OFF A BRANCH, so a machine can be set up on it. A
+    //checkout left open here fails that machine's push for a reason the machine
+    //cannot explain: it does not know this working tree exists, and git's own
+    //message is about a configuration variable rather than about a file somebody
+    //left open.
+    //
+    //ONLY WHEN GIT SAYS THE TREE IS CLEAN, and "could not tell" is not clean.
+    //`git status --porcelain` printing nothing is the whole test; anything else
+    //— a modified file, an untracked one, or a status that would not run — stops
+    //this, and what is in the way is handed back rather than moved.
+    //
+    //THAT IS SOMEBODY'S WORK. Moving off a dirty tree to unblock a machine would
+    //be this app deciding whose work matters more, which is not a decision it
+    //gets to make.
+    //
+    //FIXED ARGV AND NO FORCE. `checkout --quiet <branch>` and nothing else: no
+    //`-f`, no `-B`, no paths, no `--`. git itself refuses to leave a dirty tree,
+    //so the gate here and git's own refusal are two independent stops on the
+    //same act.
+    async function checkout(repo, branch) {
+        var name = String(branch || '').trim();
+        if (!name) return { moved: false, why: 'say which branch to move to' };
+
+        var was = await head(repo);
+        if (was === name) return { moved: false, already: true, why: null };
+
+        var status = await run(repo, ['status', '--porcelain']);
+        if (status.code !== 0) {
+            return {
+                moved: false, clean: null,
+                why: repo + ': git would not say whether this working tree is clean, so it was left alone'
+            };
+        }
+
+        var dirty = lines(status.stdout).filter(function (l) { return l.trim(); });
+        if (dirty.length) {
+            return {
+                moved: false, clean: false, files: dirty.length,
+                why: repo + ' has "' + was + '" checked out here with uncommitted changes, so it cannot be '
+                    + 'moved off it. Commit or discard them, or switch ' + repo + ' back to ' + name + '.'
+            };
+        }
+
+        var said = await spawnGit(await workspace.folderOf(repo), ['checkout', '--quiet', name]);
+        if (said.code !== 0) {
+            return {
+                moved: false, clean: true,
+                why: String(said.stderr || '').split('\n')[0] || 'git would not say why'
+            };
+        }
+
+        log.info(repo + ': moved off ' + was + ' to ' + name);
+        return { moved: true, clean: true, from: was, to: name, why: null };
+    }
 
     //A NAME GIT WILL ACCEPT, CHECKED BEFORE ANYTHING IS CREATED. Asked of git
     //itself rather than guessed at with a regex — the rules are genuinely
@@ -969,6 +1040,7 @@ async function plugin(imports, register) {
             makeBranch: makeBranch,
             removeBranch: removeBranch,
             push: push,
+            checkout: checkout,
             //HANDED OUT SO NOBODY GUESSES AT IT. A caller that wants to say what
             //this can do should say what this SAYS it can do.
             READS: READS

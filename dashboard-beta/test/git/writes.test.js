@@ -105,7 +105,8 @@ after(() => {
 
 test('the declared writes are exactly the ones that are callable', async () => {
     const g = await aGit();
-    assert.deepEqual(g.WRITES.slice().sort(), ['fastForward', 'fetch', 'makeBranch', 'push', 'removeBranch'],
+    assert.deepEqual(g.WRITES.slice().sort(),
+        ['checkout', 'fastForward', 'fetch', 'makeBranch', 'push', 'removeBranch'],
         'the set of ways this plugin can change a repository changed — that is a thing to argue for in a diff');
     for (const name of g.WRITES) {
         assert.equal(typeof g[name], 'function', name + ' is declared as a write and is not callable');
@@ -118,22 +119,35 @@ test('the declared writes are exactly the ones that are callable', async () => {
 //
 //`push` USED TO BE ON THIS LIST and is now a named write of its own — see the
 //block below for what it cannot do, which is where its narrowness is asserted.
-test('there is no commit, merge, rebase, reset or checkout', async () => {
+test('there is no commit, merge, rebase or reset', async () => {
     const g = await aGit();
-    for (const nope of ['commit', 'merge', 'rebase', 'reset', 'checkout', 'clean', 'stash', 'cherryPick']) {
+    for (const nope of ['commit', 'merge', 'rebase', 'reset', 'clean', 'stash', 'cherryPick']) {
         assert.equal(g[nope], undefined, 'the git service now offers `' + nope + '`');
     }
-    //and `run` still refuses every one of them by name, push included
+    //AND `run` STILL REFUSES EVERY ONE OF THEM BY NAME, checkout and push
+    //included. `checkout` is a named write with its own gate now; that does not
+    //make it something the READING door will pass through.
     for (const nope of ['push', 'commit', 'reset', 'checkout', 'clean']) {
         await assert.rejects(() => g.run('repo-one', [nope]), /is not something this reads with/);
     }
 });
 
 //---------------------------------------------------------------------------
-//2. NOTHING TOUCHES THE WORKING TREE.
+//2. NOTHING DESTROYS UNCOMMITTED WORK.
 //
-//This is the property that makes the whole door safe: no act of this app can
-//destroy uncommitted work, on any branch, because every write moves a ref.
+//This is the property that makes the whole door safe, and it used to be bought
+//more cheaply: "nothing touches the working tree", true of the argv rather than
+//of any check.
+//
+//IT COST SOMETHING THE APP NEEDS. A repository sitting on a branch a machine is
+//about to be set up on fails that machine's push for a reason the machine cannot
+//explain — it does not know this working tree exists. Stepping off it is the fix
+//and it is a checkout.
+//
+//SO THERE IS EXACTLY ONE WORKING-TREE WRITE and the guarantee moved from the
+//absence of a verb to a GATE. That is weaker, and the tests below are what it is
+//worth: every write still leaves uncommitted work exactly where it was, and the
+//one that could not is the one that refuses.
 //---------------------------------------------------------------------------
 
 test('uncommitted work survives every write', async () => {
@@ -153,12 +167,98 @@ test('uncommitted work survives every write', async () => {
     await g.fetch('repo-one');
     await g.makeBranch('repo-one', 'a-new-cut', 'master');
     await g.fastForward('repo-one', 'master', 'refs/remotes/origin/master');
+
+    //THE ONE THAT COULD DESTROY IT, asked while the tree is dirty. It is in this
+    //test rather than in one of its own because the claim is about EVERY write,
+    //and a list that quietly excludes the dangerous one is not a list.
+    const moved = await g.checkout('repo-one', 'a-new-cut');
+    assert.equal(moved.moved, false, 'it moved a working tree with uncommitted work in it');
+    assert.equal(moved.clean, false);
+    assert.match(moved.why, /uncommitted changes/);
+
     await g.removeBranch('repo-one', 'a-new-cut', { force: true });
 
     assert.match(fs.readFileSync(path.join(repo, 'readme.md'), 'utf8'), /EDITED BY A PERSON/,
         'an edit in the working tree was overwritten');
     assert.ok(fs.existsSync(path.join(repo, 'new.txt')), 'a staged file was removed');
     assert.match(git(['status', '--porcelain'], repo), /new\.txt/, 'the index was thrown away');
+    assert.equal(git(['rev-parse', '--abbrev-ref', 'HEAD'], repo).trim(), 'master',
+        'the working tree was moved off the branch somebody was working on');
+});
+
+//---------------------------------------------------------------------------
+//2b. AND THE ONE WORKING-TREE WRITE, ON ITS OWN.
+//
+//STEPPING A REPOSITORY OFF A BRANCH so a machine can be set up on it. A checkout
+//left open here fails that machine's push for a reason the machine cannot
+//explain — it does not know this working tree exists, and git's message is about
+//a configuration variable rather than about a file somebody left open.
+//---------------------------------------------------------------------------
+
+test('a clean repository steps off, and says where it went', async () => {
+    const g = await aGit();
+    await g.makeBranch('repo-one', 'somewhere-else', 'master');
+
+    const moved = await g.checkout('repo-one', 'somewhere-else');
+
+    assert.equal(moved.moved, true);
+    assert.equal(moved.from, 'master');
+    assert.equal(moved.to, 'somewhere-else');
+    assert.equal(git(['rev-parse', '--abbrev-ref', 'HEAD'], repo).trim(), 'somewhere-else');
+});
+
+test('and one already there is not moved, which is not a failure', async () => {
+    const g = await aGit();
+    const moved = await g.checkout('repo-one', 'master');
+
+    assert.equal(moved.moved, false);
+    assert.equal(moved.already, true);
+    assert.equal(moved.why, null);
+});
+
+test('an untracked file is uncommitted work too', async () => {
+    //`git checkout` WOULD ALLOW THIS — an untracked file does not block a
+    //switch. The gate is stricter than git on purpose: what is in that file is
+    //somebody's, and a machine about to use the branch is not a reason to make
+    //it harder to find.
+    const g = await aGit();
+    await g.makeBranch('repo-one', 'somewhere-else', 'master');
+    fs.writeFileSync(path.join(repo, 'notes-to-self.txt'), 'mine\n');
+
+    const moved = await g.checkout('repo-one', 'somewhere-else');
+
+    assert.equal(moved.moved, false);
+    assert.match(moved.why, /uncommitted changes/);
+    assert.equal(git(['rev-parse', '--abbrev-ref', 'HEAD'], repo).trim(), 'master');
+});
+
+test('and the refusal names the repository and both branches', async () => {
+    //MET HERE it is a sentence about a file somebody left open; met on the
+    //machine it is a message about a configuration variable.
+    const g = await aGit();
+    await g.makeBranch('repo-one', 'somewhere-else', 'master');
+    fs.writeFileSync(path.join(repo, 'readme.md'), 'edited\n');
+
+    const moved = await g.checkout('repo-one', 'somewhere-else');
+
+    assert.match(moved.why, /^repo-one has "master" checked out here with uncommitted changes/);
+    assert.match(moved.why, /Commit or discard them, or switch repo-one back to somewhere-else/);
+});
+
+test('a branch that is not there is refused by git, and nothing moves', async () => {
+    const g = await aGit();
+    const moved = await g.checkout('repo-one', 'no-such-branch');
+
+    assert.equal(moved.moved, false);
+    assert.equal(moved.clean, true, 'it blamed the working tree for a branch that does not exist');
+    assert.ok(moved.why);
+    assert.equal(git(['rev-parse', '--abbrev-ref', 'HEAD'], repo).trim(), 'master');
+});
+
+test('and saying nothing at all is refused before git is asked', async () => {
+    const g = await aGit();
+    assert.equal((await g.checkout('repo-one', '')).why, 'say which branch to move to');
+    assert.equal((await g.checkout('repo-one', null)).moved, false);
 });
 
 //---------------------------------------------------------------------------
