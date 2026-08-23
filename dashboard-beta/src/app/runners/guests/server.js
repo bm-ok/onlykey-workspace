@@ -449,6 +449,165 @@ async function plugin(imports, register) {
         //THIS WAS THE LAST ACTION READING THE OTHER APP'S CREDENTIALS. While it
         //relayed it answered `dir: ...\okc-dashboard\guests` and listed that
         //app's live sign-ins — fingerprints, plans and all — inside this one.
+        //---- TAKING ONE BACK OFF A MACHINE ---------------------------------
+        //
+        //THE QUEUE CALLS THIS AT THE END OF EVERY RUN — ../../queue/putting.js
+        //— and it was still relayed, so with the app being ported from switched
+        //off a machine could not give its sign-in back at all. Nothing said so:
+        //putting a machine away catches, and the machine goes off holding a
+        //credential this host then believes it has.
+        //
+        //IT READS BEFORE IT DELETES, and that is not tidiness. The Claude CLI
+        //refreshes the token as a worker runs, so what is on the machine at the
+        //end is NEWER than what went on. An earlier version of this in the app
+        //being ported from did `rm -f` and nothing else, and every rotation was
+        //thrown away — the host went on handing out a token one or more
+        //refreshes behind until it died, while its own panel reported the
+        //refresh half good. The reading half lives in ./lend.js, which is where
+        //../../queue already goes, so this is the machine-shaped door onto the
+        //same function rather than a second copy of it.
+        undo.push(actions.define('vmCredentialsForget', {
+            about: 'Take the worker credential off a machine, keeping whatever the worker refreshed',
+            takes: ['name'],
+            run: async function (args) {
+                var name = (args || {}).name;
+                var vm = imports.ours.get(name);
+
+                //WHICH SIGN-IN IS ON IT, from the register rather than from the
+                //caller. A machine holds one at a time and the record is what
+                //says which.
+                var who = vm.guest || null;
+
+                //WHETHER THERE WAS ANYTHING TO TAKE, asked before anything is
+                //done and used only to decide whether to SAY so. This is called
+                //more than once for one machine — a drill takes it back, and
+                //putting the machine away takes it back again — and the second
+                //call is a no-op that announced itself anyway, about a machine
+                //that had not held one for a second by then.
+                //
+                //THE WORK IS NOT SKIPPED, ONLY THE SENTENCE. The record saying a
+                //machine holds nothing is not proof the file is gone — drift is
+                //exactly what this exists to clean up.
+                var hadSomething = !!(vm.guest || vm.holdsCredential);
+
+                if (!who) {
+                    //NO GUEST RECORDED AND MAYBE A FILE ANYWAY. Cleared directly,
+                    //because there is nothing to give back to.
+                    if (!imports.channel.connected(name)) {
+                        throw new Error('"' + name + '" is not dialled in, so its credential cannot be taken off it.');
+                    }
+                    await imports.channel.run(name,
+                        'rm -f "$HOME/.claude/.credentials.json" && echo okc-credential-gone',
+                        { what: 'taking its worker credential away', timeout: 60000 });
+                    imports.ours.update(name, { holdsCredential: false, guest: null });
+                    if (hadSomething) log.on('vm', name).good(name + ' no longer holds a credential');
+                    return { from: name, removed: true, guest: null, rotated: false, kept: false };
+                }
+
+                var back = await lend.fromMachine(who, name);
+
+                //NAMED, RATHER THAN "A WORKER CREDENTIAL" FOR EVERY MACHINE. Said
+                //that way it claimed the wrong KIND of credential had come off a
+                //supervisor, which is a sentence somebody reads afterwards and
+                //believes.
+                if (hadSomething) log.on('vm', name).good(name + ' no longer holds the sign-in "' + who + '"');
+
+                //NOT CARRIED OVER: the app being ported from also reads
+                //`~/.claude.json` here when a sign-in has no account on it yet,
+                //to learn whose it is without signing it in again. It is one
+                //round trip once in the life of a sign-in and it is worth having;
+                //it is left out rather than half-done, because it belongs in
+                //./lend.js beside the read it would sit next to, and ../../queue
+                //goes through that function too.
+                return {
+                    from: name, removed: true, guest: who,
+                    rotated: !!back.rotated,
+                    kept: back.rotated !== undefined
+                };
+            }
+        }));
+
+        //---- AND GETTING ONE BACK OFF A MACHINE THAT IS NOT RUNNING ---------
+        //
+        //THE BANNER SAID THIS FOR A WHILE AND THERE WAS NOTHING TO PRESS: "X is
+        //powered off and still holding a worker credential — start it, take the
+        //credential back, and shut it down again". Three steps, in an order that
+        //matters, that somebody has to do by hand at the moment they least want
+        //a procedure. It happened on this host after a Windows update stopped a
+        //machine outside the ordinary sequence.
+        //
+        //WHY IT CANNOT JUST BE FORGOTTEN: the copy on that disk may be NEWER than
+        //the one here. Marking it back without reading throws away the newest
+        //token this host will ever see, and then hands out an older one until it
+        //dies.
+        //
+        //IT PUTS THE MACHINE BACK AS IT FOUND IT. Started to be read and stopped
+        //again — a machine that was off is off afterwards. One that was already
+        //running is LEFT running: it may be being used, and this is a repair
+        //rather than a tidy-up.
+        undo.push(actions.define('credentialRecover', {
+            about: 'Start a machine that is holding a sign-in, take it back with whatever the worker '
+                + 'refreshed, and leave the machine as it was found',
+            takes: ['name'],
+            run: async function (args) {
+                var name = (args || {}).name;
+                var vm = imports.ours.get(name);
+
+                var live = {};
+                try {
+                    var said = await actions.call('vmList', {});
+                    live = ((said && said.vms) || []).filter(function (v) { return v.name === name; })[0] || {};
+                } catch (e) { /* the register below is still an answer */ }
+
+                if (!vm.holdsCredential && !live.holdsCredential) {
+                    throw new Error('"' + name + '" is not recorded as holding a sign-in, so there is '
+                        + 'nothing to take back.');
+                }
+
+                var wasRunning = live.state === 'running';
+                var did = [];
+
+                if (!wasRunning) {
+                    await actions.call('vmStart', { name: name });
+                    did.push('started it');
+
+                    //WAITED FOR RATHER THAN ASSUMED. `vmStart` returns when the
+                    //kernel speaks, which is before the agent has dialled in —
+                    //and a credential cannot be read off a machine that is not
+                    //talking yet. `vmAwait` is this app's own bounded wait; a
+                    //loop with a sleep in it here would be a second one.
+                    try {
+                        await actions.call('vmAwait', { name: name, for: 'connected', seconds: 180 });
+                    } catch (e) {
+                        throw new Error('"' + name + '" started but has not dialled in, so its sign-in '
+                            + 'still cannot be read. It is running now — try again, or take it back by '
+                            + 'hand once it connects.');
+                    }
+                    did.push('waited for it to dial in');
+                }
+
+                var back = await actions.call('vmCredentialsForget', { name: name });
+                did.push(back.rotated ? 'took the sign-in back, refreshed' : 'took the sign-in back unchanged');
+
+                //AS IT WAS FOUND.
+                if (!wasRunning) {
+                    await actions.call('vmStop', { name: name });
+                    did.push('stopped it again');
+                }
+
+                return {
+                    name: name,
+                    rotated: !!back.rotated,
+                    guest: back.guest || null,
+                    wasRunning: wasRunning,
+                    did: did,
+                    note: name + ': ' + did.join(', and ') + '.' + (back.rotated
+                        ? ' That token was newer than the one here — it would have been lost.'
+                        : ' It was the same token this host already had.')
+                };
+            }
+        }));
+
         undo.push(actions.define('credentialsHeld', {
             about: 'Whether this host holds a worker credential, how long it has left, and where it '
                 + 'came from',
