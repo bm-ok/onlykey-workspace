@@ -15,7 +15,7 @@ module.exports = function kit(theme) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Row,
         Card, CardTitle, CardSub, Badge, Badges, Chips, Chip,
-        Button, Toggle, Views, Linky, Plus, Cog, Finder, Sorter, Form, Field, Skeleton, Notice, Banner, Link, Spec,
+        Button, Toggle, Views, Linky, Plus, Cog, Dot, Finder, Sorter, Form, Field, Skeleton, Notice, Banner, Link, Spec,
         Empty, Note, Mono, Muted, Kv, KvRow, Part, PartWhy, Group, Head, Markdown, Code, Term, ask
     } = theme;
 
@@ -277,10 +277,23 @@ module.exports = function kit(theme) {
                                 }}>Tabs</Button>
                             </Row>
                         </Shelf>
-                        {/* THE THREE MARKS THAT MEAN A PERSON, and they are the
-                            only purple in the app. Everything else here is about
-                            reading a state off the screen; these are about who is
-                            allowed to act. */}
+                        {/* THE MARKS THAT MEAN A PERSON, and they are the only
+                            purple in the app. Everything else here is about
+                            reading a state off the screen; these are about what
+                            is the person's rather than the program's.
+
+                            THERE ARE FOUR NOW AND THERE WERE THREE. The fourth
+                            is the dot at the end, which is not pressable — and
+                            that was the argument against it, until the rule was
+                            written down properly: purple is a HAZARD MARK, and
+                            what it has to do is scream when anything reaches for
+                            what it is on. Three of these are one control each.
+                            The fourth is the whole screen at once.
+
+                            KEEP THIS LIST HONEST. It is the only place all of
+                            them are together, and a purple thing that is not
+                            catalogued here makes the sentence above false
+                            without making anything fail. */}
                         <Shelf title="Guarded" about="purple is the one colour that means: this is yours, not a model's">
                             <Row>
                                 <Button protect>Merge it</Button>
@@ -315,6 +328,34 @@ module.exports = function kit(theme) {
                                 It still appears in <Mono>windowControls</Mono> with its label and whether
                                 anything is in it. &ldquo;Is the token set&rdquo; has to be answerable, and
                                 it is not the secret.
+                            </Note>
+
+                            {/* THE FOURTH MARK, AND THE ONLY ONE THAT IS NOT A
+                                CONTROL. It is in the corner of every screen,
+                                which is why it is a piece rather than markup
+                                buried in the topbar — this shelf is where the
+                                purple things are counted. */}
+                            <Row>
+                                <Dot tone="ok" title="working normally" />
+                                <Dot tone="guarded" title="attached to the dashboard being ported from" />
+                                <Dot tone="fail" title="this window cannot reach its own server" />
+                            </Row>
+                            <Note>
+                                The dot in the corner, at its three sizes of news. Green is working
+                                normally &mdash; this app answering everything itself, which is what the
+                                port is FOR. Red is this window unable to reach its own server, the only
+                                one that means something is wrong here.
+                            </Note>
+                            <Note>
+                                Purple is the odd one and it belongs on this shelf rather than beside the
+                                badges: it is on while this app is still attached to the dashboard being
+                                ported from, and that app is the one thing nothing in this repository may
+                                write to. So it is not a status &mdash; nothing is wrong, and MORE works
+                                in this state than in the green one. It is the same warning the buttons
+                                above carry, said about the whole screen at once: while it is purple, some
+                                of what you are looking at is not this app&apos;s, and reaching for it
+                                reaches somewhere out of bounds. It goes away for good when that stops
+                                being true.
                             </Note>
                         </Shelf>
                         <Shelf title="Nothing here" about="and nothing here that should not be — two different sentences">

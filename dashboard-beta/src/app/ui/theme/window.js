@@ -52,6 +52,28 @@ async function plugin(imports, register, config) {
     //`margin-left: auto`. The dot is the one-glance answer to "is this thing
     //connected", which is why it is first and why it is a colour rather than a
     //word.
+    //---- THE DOT, AS A PIECE RATHER THAN A DETAIL OF THE TOPBAR ------------
+    //
+    //ITS OWN COMPONENT SO THE KIT CAN SHOW IT. `Settings → Kit` is where every
+    //purple thing in this app is catalogued, and it says so about itself —
+    //"the three marks that mean a person, and they are the only purple in the
+    //app". A fourth purple that lives buried inside the topbar's markup makes
+    //that sentence quietly false, and the value of the Kit is entirely that its
+    //sentences are true.
+    //
+    //WHAT THE DOT IS ABOUT IS THE CALLER'S TO SAY, INCLUDING HOW MANY STATES IT
+    //HAS. It was a boolean, `live`, reading "connected" / "not connected"
+    //without ever naming what to — fine while there was only one thing it could
+    //mean, and there are two wires now.
+    //
+    //`tone` is one of ok, guarded, fail. `guarded` is the theme's purple, which
+    //means IMPORTANT and MINE rather than any degree of wrong — see the token in
+    //./dashboard.scss. A third state did not need a third judgement invented
+    //here, because the third state is not a judgement.
+    function Dot({ tone, title }) {
+        return <span className={'dot ' + (tone || 'fail')} title={title || 'not connected'} />;
+    }
+
     function Topbar({ brand, sub, dot, tabs, on, onPick, right, brandTabs, onBrand }) {
         //`.brand` IS THE CONTAINER, NOT THE BUTTON. It is a flex row holding the
         //dot and then real `<button class="tab brand-tab">`s — monospace,
@@ -66,27 +88,9 @@ async function plugin(imports, register, config) {
         return (
             <div className="topbar">
                 <div className="brand">
-                    {/* WHAT THE DOT IS ABOUT IS THE CALLER'S TO SAY, INCLUDING
-                        HOW MANY STATES IT HAS. It was a boolean, `live`, and it
-                        read "connected" / "not connected" without ever naming
-                        what to — fine while there was only one thing it could
-                        mean.
-
-                        There are two wires now: this app's own, and the pipe to
-                        the app being ported FROM. Two states for three facts
-                        meant "the old app is deliberately off" drew the same red
-                        as "this app is dead", and the first of those is the
-                        ORDINARY state of a port in progress. A red that is
-                        correct most of the time is a dot nobody looks at, which
-                        is the entire value of having one.
-
-                        So the caller hands over a tone and a sentence, and this
-                        kit does not know what either is about. `tone` is one of
-                        the theme's own status names — ok, warn, fail — which is
-                        what keeps a third state from needing a third colour
-                        invented here. */}
-                    <span className={'dot' + (dot && dot.tone ? ' ' + dot.tone : ' fail')}
-                        title={(dot && dot.title) || 'not connected'} />
+                    {/* THE PIECE, NOT A `<span>` WRITTEN OUT HERE — see `Dot`
+                        above for what the tones mean and why it is a piece. */}
+                    <Dot tone={dot && dot.tone} title={dot && dot.title} />
 
                     {(brandTabs || []).map(function (t) {
                         return (
@@ -197,7 +201,7 @@ async function plugin(imports, register, config) {
         //missing from the kit — worth adding here so the next pane gets it too
         //— or is that pane's own furniture and belongs in its own stylesheet.
         //See ../../THEME.md for which is which.
-        theme: Object.assign({ Topbar, Pane }, layout, bits, dialog, {
+        theme: Object.assign({ Topbar, Dot, Pane }, layout, bits, dialog, {
             Code: Code, Editor: imports.editor.Editor, Markdown: Markdown,
             //A TERMINAL IS A SURFACE LIKE THE OTHER TWO, and folded in for the
             //same reason: a pane asks the theme for what it draws with, and

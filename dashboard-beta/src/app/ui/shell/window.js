@@ -34,19 +34,37 @@ var { useState, useEffect } = React;
 //app being dead. Red that is correct most of the time is a dot nobody looks at,
 //and being looked at is the only thing a dot does.
 //
-//SO: RED IS ABOUT HERE, YELLOW IS ABOUT THERE. Red means this window cannot
-//reach its own server and nothing on screen can be trusted. Yellow means this
-//app is fine and the old one is not answering — expected, and finished when the
-//port is. Green means both, which is fewer and fewer things as this goes on.
+//---- AND GREEN IS THIS APP ALONE, WHICH IS THE POINT ----------------------
+//
+//THE OBVIOUS ARRANGEMENT IS THE WRONG ONE. Green for "both wires up" reads as
+//"the most working it can be", and it is exactly backwards: being attached to
+//the old app is scaffolding. The FINISHED state of this project is this app
+//answering everything by itself, and that has to be the state that looks right,
+//or the dashboard tells you it is doing badly on the day it finally does well.
+//
+//  green   working normally — this app, on its own. What done looks like
+//  purple  still attached to the dashboard being ported from. Everything
+//          works, and MORE of it works than in the green case — but some of
+//          what is on screen is coming from the old app. Not a fault, and not
+//          a status either: purple is this theme's hazard mark, and while it
+//          is on, anything you reach for here may be reaching into the one app
+//          nothing in this repository is allowed to touch. It goes away for
+//          good when that stops being true
+//  red     this window cannot reach its own server. The only one of the three
+//          that means something is wrong HERE
+//
+//So the dot stops being about how much is connected and starts being about how
+//much of this is finished, which is the question anybody looking at it during a
+//port is actually asking.
 //
 //It used to say "connected" / "not connected" and never name what to, which was
 //fine while there was only one thing it could mean.
-var DOT_BOTH = 'connected — this app, and the dashboard being ported from, which answers the '
-    + 'actions this app does not define yet';
+var DOT_ALONE = 'working normally — this app is answering everything itself. Nothing here '
+    + 'depends on the dashboard being ported from any more';
 
-var DOT_ALONE = 'this app is connected and fine. The dashboard being ported from is not '
-    + 'answering — what is missing is the actions this app has not taken over yet, and each of '
-    + 'those says so by name where it is used';
+var DOT_BOTH = 'still attached to the dashboard being ported from. Everything works, and the '
+    + 'actions this app has not taken over yet are being answered by it — so some of what is on '
+    + 'screen is coming from the old app rather than this one';
 
 var DOT_DEAD = 'this window cannot reach its own server. Nothing on screen is being kept up to '
     + 'date — it is the last thing that arrived, however old that is';
@@ -367,7 +385,7 @@ async function plugin(imports, register) {
                 // say about it and no state where both are reported at once.
                 dot={!wire
                     ? { tone: 'fail', title: DOT_DEAD }
-                    : (up ? { tone: 'ok', title: DOT_BOTH } : { tone: 'warn', title: DOT_ALONE })}
+                    : (up ? { tone: 'guarded', title: DOT_BOTH } : { tone: 'ok', title: DOT_ALONE })}
                 tabs={tabs.filter(inRow).map(function (t) {
                     return { name: t.name, badge: badges[t.name], stopped: stopped[t.name] };
                 })}

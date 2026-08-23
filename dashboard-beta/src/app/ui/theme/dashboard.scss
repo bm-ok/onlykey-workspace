@@ -32,6 +32,15 @@
      override. Somebody who has never been told what it is still reads it as
      "this one is not like the others", which is exactly the whole message.
 
+     AND THE REASON IT IS WORTH A COLOUR AT ALL: so the person can SEE what is
+     protected, in one sweep of a screen, without reading a word. The guard is
+     enforced in the action table whether or not anything is drawn -- the colour
+     is not the protection. What the colour buys is that "what here is mine
+     alone" is answerable at a glance instead of by audit, and it has to SCREAM
+     at whatever reaches for it, model or person. Anything that dulls it costs
+     that, which is why the test for a new purple thing is never "is this
+     important" -- everything on a dashboard is important to somebody.
+
      The same purple as --running, and it used to be argued for by saying a
      button is never a banner and a banner is never pressable, so the two could
      not meet. That stopped being true: the trouble banner carries repairs now,
@@ -40,6 +49,44 @@
      one carrying presses is red -- so purple on that line can only be the press.
      Worth re-checking rather than assuming if a third purple thing appears. */
   --human: #a371f7;
+  /* THE THIRD PURPLE THING, and the note above asks for it to be re-checked
+     rather than assumed when one appears. Re-checked, and what came out of it
+     is that the note above is narrower than the truth.
+
+     PURPLE MEANS IMPORTANT, AND IT MEANS YOURS. Those are one rule, not two:
+     what it marks is the part of this app that belongs to the person and that a
+     model may not use. A purple button is a press the command line is refused. A
+     purple field is a value nothing outside writes. "The drills are running" is
+     the same again -- something is happening that you did not have to be told
+     twice about.
+
+     EVERY OTHER COLOUR HERE ANSWERS "HOW IS IT DOING" -- fine, broken, careful.
+     Purple answers "is this mine", which is a different question, and that is
+     why it sits beside any of them without arguing with them.
+
+     IT IS A HAZARD MARK. It has to scream the moment anything reaches for what
+     it is on, which is why it is never decoration and never a status: a colour
+     that sometimes means "look at this" and sometimes means "you may not have
+     this" gets read as neither.
+
+     THIS ONE IS THE DOT IN THE CORNER, purple when this app is attached to the
+     dashboard being ported FROM. Nothing is wrong -- MORE works in this state
+     than in the green one. What it marks is that some of what is on screen is
+     coming from the old app, and the old app is exactly the thing that is yours
+     and off limits: it is not ported, not owned here, and nothing in this
+     repository may write to it. So this passes the hazard test rather than
+     bending it -- while it is purple, anything you reach for on this screen may
+     be reaching into the app nobody here is allowed to touch. It is on for
+     exactly as long as that is true and goes away for good when it stops.
+
+     AND THAT IS THE TEST FOR A FOURTH ONE. Not "is it important" -- everything
+     on a dashboard is important to somebody. Whether it is the person's rather
+     than the program's. Spending purple on a status would cost the guard buttons
+     the only thing that makes them legible.
+
+     ITS OWN NAME AND NOT `--human`, though the hex is the same, so that changing
+     one of the three meanings cannot silently change the other two. */
+  --guarded: #a371f7;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -142,20 +189,33 @@ h2:first-child { margin-top: 0; }
 /* THE DOT IN THE CORNER, and it has three states rather than two.
  *
  * `fail` is this app's own wire being down — the only one of the three that
- * means something is wrong HERE. `warn` is this app fine and the app being
- * ported from not answering, which is the ordinary state of a port in progress
- * and must not look like a fault. `ok` is both.
+ * means something is wrong HERE.
  *
- * NAMED AFTER THE STATUS TOKENS rather than after colours, so a third state did
- * not need a third colour invented for it — see `Topbar` in ./window.js. */
+ * `ok` IS THIS APP ON ITS OWN, and that is the point of the whole exercise: the
+ * finished state, once the port has taken over everything. It is already the
+ * everyday state, so it is already green — a dashboard that reads "not quite
+ * right" for the entire remainder of a port is a dashboard nobody reads.
+ *
+ * `guarded` IS THE SCAFFOLDING STILL ATTACHED — see `--guarded` above. Not a
+ * warning: everything works, and more of it works than in the green case. What
+ * it says is that some of what you are looking at is coming from the old app,
+ * which is worth knowing before believing it, and which has an end date. */
 .dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--fail);
   transition: background .2s;
   flex: none;
 }
+/* THE TONE NAMES ARE CHECKED AGAINST THIS FILE, not invented. `guarded` here
+ * started life as `notice`, which is the BANNER a few rules down — so the dot
+ * quietly took `padding: 10px 16px`, `display: flex` and a gap, and drew as a
+ * wide purple oval beside two round ones. It cost nothing but a look at it,
+ * which is the point: CSS has no undefined-name error and no collision error
+ * either, so a compound like `.dot .<tone>` is only ever as safe as the grep
+ * that was done before naming the tone. `.ok`, `.fail` and `.guarded` exist
+ * nowhere else in this file, and that was checked rather than assumed. */
 .dot.ok { background: var(--ok); }
-.dot.warn { background: var(--warn); }
+.dot.guarded { background: var(--guarded); }
 .dot.fail { background: var(--fail); }
 
 .tabs { display: flex; gap: 4px; margin-left: auto; }

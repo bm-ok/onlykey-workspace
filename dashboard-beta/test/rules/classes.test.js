@@ -257,6 +257,19 @@ test('and the stylesheet it checks against is actually there', () => {
 //already covers that. It only speaks where the stylesheet has shown what the
 //modifiers on this base are.
 function modifiersFor(css) {
+    //COMMENTS STRIPPED FIRST, AND THIS WAS NOT DECORATION. A base is only found
+    //where its rule follows a `}` — so a rule with an explanatory comment above
+    //it is not preceded by one, and the base VANISHES from this check along with
+    //every modifier it owns. Silently: the check goes on passing, because a base
+    //it cannot see is a base it has no opinion about.
+    //
+    //`.dot` fell out of it that way. A comment was added above the rule
+    //explaining what its three tones mean, and the effect was to stop the tones
+    //being checked at all — the one file whose entire subject is quiet CSS
+    //failures, quietly failing. Writing prose about a rule must not turn the rule
+    //off.
+    const bare = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+
     //A BASE IS SOMETHING THE STYLESHEET DRESSES ON ITS OWN. `.tab { ... }`
     //exists, so `.tab.active` is `tab` wearing a modifier. Without that
     //requirement every compound anywhere counts, and `.why.muted` — one rule
@@ -264,12 +277,12 @@ function modifiersFor(css) {
     //every `note muted` in the app. That was the first version of this and it
     //reported eighteen faults, none of them real.
     const standalone = new Set();
-    for (const m of css.matchAll(/(^|\})\s*\.(-?[A-Za-z_][\w-]*)\s*[{,]/g)) standalone.add(m[2]);
+    for (const m of bare.matchAll(/(^|\})\s*\.(-?[A-Za-z_][\w-]*)\s*[{,]/g)) standalone.add(m[2]);
 
     //FORWARD ONLY. In `.a.b` the base is `a` and the modifier is `b`, and
     //reading it both ways is what made the pairs symmetric and useless.
     const out = new Map();
-    for (const m of css.matchAll(/(^|[\s,>~+])\.(-?[A-Za-z_][\w-]*)\.(-?[A-Za-z_][\w-]*)/g)) {
+    for (const m of bare.matchAll(/(^|[\s,>~+])\.(-?[A-Za-z_][\w-]*)\.(-?[A-Za-z_][\w-]*)/g)) {
         if (!standalone.has(m[2])) continue;
         if (!out.has(m[2])) out.set(m[2], new Set());
         out.get(m[2]).add(m[3]);
@@ -344,4 +357,86 @@ test('a modifier used on a base is one the stylesheet gives that base', () => {
 
     assert.deepStrictEqual(wrong, [],
         'these pair a base class with a modifier that belongs to something else, so the modifier does nothing:\n  ' + wrong.join('\n  '));
+});
+
+//---- a class name that arrives as a PROP ----------------------------------
+//
+//THE HOLE THE TWO CHECKS ABOVE BOTH DECLARE. Each of them reads only the plain
+//`className="a b"` form, and says why: in `className={...}` the pieces come from
+//separate literals and nothing there can tell which end up on one element.
+//
+//`Dot` is that shape. It renders `className={'dot ' + tone}` and `tone` arrives
+//from whoever draws it — so the word that lands beside `dot` is written in a
+//DIFFERENT FILE, and no amount of reading the theme can see it.
+//
+//WHAT IT COST: `tone="notice"` drew `class="dot notice"`, and `.notice` is the
+//banner — `padding: 10px 16px`, `display: flex`, `gap: 12px`. The dot came out a
+//wide purple oval beside two round ones, in the Kit, which is the one pane whose
+//entire job is to show what the pieces look like. Every check in this file was
+//green. It was found by somebody looking at the screen and laughing.
+//
+//NOT A GENERAL FIX, and the general one does not exist: following an arbitrary
+//prop through an arbitrary component is not something a regex does. This is the
+//narrow version that catches the shape actually in use — a component whose class
+//is `'<base> ' + <prop>`, where the tones handed to it are string literals a
+//grep can find. If a second one of these appears, add it to the list rather than
+//making this clever.
+//TWO ENTRIES FOR ONE COMPONENT, because a tone can be one hop further away than
+//the thing that draws it. `Topbar` takes `dot={{tone, title}}` and hands it to
+//`Dot`, so the shell — which is where the wrong tone was actually written — does
+//not contain the word `Dot` anywhere. Checking only the drawing component left
+//the one file that had the bug unchecked, and the check still passed.
+const TONED = [
+    { tag: 'Dot', base: 'dot', prop: 'tone' },
+    { tag: 'Topbar', base: 'dot', prop: 'tone' }
+];
+
+test('a tone handed to a component is a modifier the stylesheet gives its base', () => {
+    const css = fs.readFileSync(SHEET, 'utf8');
+    const mods = modifiersFor(css);
+    const known = classesIn(SHEET);
+
+    const wrong = [];
+    let looked = 0;
+
+    for (const { tag, base, prop } of TONED) {
+        const allowed = mods.get(base);
+        assert.ok(allowed && allowed.size,
+            'the stylesheet gives "' + base + '" no modifiers at all, so this check is inert');
+
+        //BOTH SPELLINGS, because one is markup and the other is a value being
+        //passed along: `<Dot tone="ok" />` in a pane, `{ tone: 'ok' }` in the
+        //shell, and the second is the one that was wrong.
+        const asAttr = new RegExp('<' + tag + '\\b[^>]*?\\b' + prop + '\\s*=\\s*"([^"]*)"', 'g');
+        const asValue = new RegExp('\\b' + prop + '\\s*:\\s*[\'"]([^\'"]*)[\'"]', 'g');
+
+        for (const file of walk(APP)) {
+            const src = fs.readFileSync(file, 'utf8');
+            //THE VALUE FORM IS ONLY READ IN A FILE THAT MENTIONS THE COMPONENT,
+            //because `tone:` is an ordinary enough word to belong to something
+            //else entirely. Naming the tag is what keeps this from reporting on
+            //code it has not understood.
+            const mentions = src.includes(tag);
+            for (const re of mentions ? [asAttr, asValue] : [asAttr]) {
+                for (const m of src.matchAll(re)) {
+                    looked++;
+                    const tone = m[1];
+                    if (allowed.has(tone)) continue;
+                    wrong.push(path.relative(ROOT, file) + ' — <' + tag + ' ' + prop + '="' + tone + '"> draws '
+                        + 'class="' + base + ' ' + tone + '"'
+                        + (known.has(tone)
+                            ? ', and "' + tone + '" is a class that belongs to something else — it brings ITS styling'
+                            : ', and "' + tone + '" is not a class at all — it draws nothing')
+                        + '. "' + base + '" takes ' + [...allowed].map(x => '"' + x + '"').join(', '));
+                }
+            }
+        }
+    }
+
+    //A SCAN THAT FOUND NOTHING PASSES EVERYTHING, which is the failure this whole
+    //file is built around. If `Dot` stops being used, delete it from TONED.
+    assert.ok(looked > 0, 'no toned components were found in the app at all, so this check is inert');
+
+    assert.deepStrictEqual(wrong, [],
+        'these hand a component a tone its base does not have:\n  ' + wrong.join('\n  '));
 });
