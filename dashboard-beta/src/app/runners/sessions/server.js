@@ -3,6 +3,7 @@ var path = require('path');
 var keying = require('./keying');
 var looking = require('./looking');
 var makeStoring = require('./storing');
+var makeGuestApi = require('./guestapi');
 
 //../runs OWNS THE TWO GATES, and this asks the same two. Both are under
 //../, the same way ../../repositories/repos reaches ../branches — a rule
@@ -36,7 +37,12 @@ var makeAsking = require('../runs/asking');
 //said at the one place both paths to a worker pass through, and that is here.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'ours', 'channel', 'dispatch', 'state', 'archive'];
+//`whatIsOn` and `guestApi` ARE FOR THE GUEST DOOR ONLY — ./guestapi.js. This is
+//`whatIsOn`'s second reader, and the reason it is a plugin of its own rather
+//than something the queue keeps: the machine asking here may be running a task
+//or a judgement, and only the join between the two boards can say which.
+plugin.consumes = ['app', 'log', 'ours', 'channel', 'dispatch', 'state', 'archive',
+    'whatIsOn', 'guestApi'];
 plugin.provides = ['sessions'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -161,6 +167,36 @@ async function plugin(imports, register) {
             }
         }));
     }
+
+    //---- AND THE DOOR A WORKER REACHES IT THROUGH -------------------------
+    //
+    //REGISTERED WITH ../../vms/https RATHER THAN SERVED HERE, which owns the
+    //certificate, the port, and has already turned `vm:token` into a machine
+    //record before anything in ./guestapi.js runs. What is this plugin's is the
+    //two verbs and the rule about who may reach them.
+    var stopServing = imports.guestApi.api(makeGuestApi({
+        whatIsOn: imports.whatIsOn,
+        say: imports.log.on,
+        readFile: function (at) { return require('fs').readFileSync(at); },
+
+        //WHICH SIGN-IN THIS MACHINE IS HOLDING, read off the registry. The
+        //machine is told which credential it has when one is put on it, and a
+        //worker naming its own identity would be a worker choosing which one to
+        //bill.
+        signedBy: function (name) {
+            var vm = (imports.ours.read() || []).filter(function (v) { return v.name === name; })[0];
+            return (vm && vm.guest) || null;
+        },
+
+        sessions: {
+            keyFor: keying.keyFor,
+            aboutWork: keying.aboutWork,
+            get: store.get,
+            keep: store.keep,
+            MOST: makeStoring.MOST
+        }
+    }));
+    undo.push(stopServing);
 
     await register(null, {
         sessions: {

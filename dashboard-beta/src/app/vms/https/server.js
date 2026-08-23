@@ -57,6 +57,7 @@ var CHANNEL_PORT = 7374;
 plugin.consumes = ['app', 'log', 'tls', 'ours', 'channel'];
 plugin.provides = ['guestApi'];
 async function plugin(imports, register) {
+    var host = imports.app.host;
     var log = imports.log.on('https');
     var ours = imports.ours;
     var registry = makeRegistry({ say: imports.log.on });
@@ -235,7 +236,30 @@ async function plugin(imports, register) {
         });
     }
 
+    //---- AND WHAT A MACHINE MAY REACH, VISIBLE FROM OUTSIDE -----------------
+    //
+    //THE REGISTRY KNEW AND NOTHING ASKED IT. Every plugin's guest verbs were
+    //registered, matched and enforced correctly, and there was no way to find
+    //out what the set WAS without reading five files — which for the one surface
+    //a guest can reach is the wrong thing to have to reconstruct.
+    //
+    //The app being ported from could not answer this at all: its rules lived in
+    //one long if-chain and the answer was "read server.js". The registry exists
+    //precisely so the answer is a list, so the list is worth showing.
+    //
+    //IT NAMES THE ROUTES AND NOT THE RULE. `may` is a function and cannot be
+    //printed honestly — see ./registry.js, where the refusal is deliberately
+    //uninformative for the same reason a machine is not told what it is not.
+    var undo = [];
+    if (host && host.actions) {
+        undo.push(host.actions.define('guestApis', {
+            about: 'What a machine can reach on this host, and which plugin offers it',
+            run: function () { return { apis: registry.list() }; }
+        }));
+    }
+
     function close() {
+        while (undo.length) undo.pop()();
         servers.splice(0).forEach(function (s) { try { s.close(); } catch (e) { /* already gone */ } });
         try { imports.channel.close(); } catch (e) { /* never opened */ }
     }
