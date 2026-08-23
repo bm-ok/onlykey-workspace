@@ -88,9 +88,43 @@ function rememberThis (id) {
   // carrying an absolute path that only makes sense on the machine that made it.
   cp.execFileSync('tar', ['-czf', tgz, '-C', HOME, ...NOT_THESE, '.claude'], { stdio: ['ignore', 'ignore', 'pipe'] })
   const where = `${BASE}/session?vm=${encodeURIComponent(VM)}&id=${encodeURIComponent(id || '')}&folder=${encodeURIComponent(process.cwd())}`
-  cp.execFileSync('curl', [...curlAuth(), '-X', 'POST', '--data-binary', '@' + tgz, '-H', 'content-type: application/gzip', where], { stdio: ['ignore', 'ignore', 'pipe'] })
+
+  // THE ANSWER IS READ, WHICH IT WAS NOT.
+  //
+  // curl exits 0 on an HTTP error unless it is told otherwise, and nothing here
+  // told it. So a refused upload returned normally, the size was reported, and
+  // the caller printed "okc: kept what this task remembers (N KB)" -- about an
+  // archive the host had thrown away.
+  //
+  // THAT IS NOT HYPOTHETICAL AND IT IS NOT NEW. The host already refuses an
+  // archive over its size limit with a 413, and that refusal has been silent
+  // this whole time: the one case where a transcript is most likely to be lost
+  // is the one case that reported success.
+  //
+  // Read from `-D` rather than with `--fail-with-body`, which is curl 7.76 and
+  // newer -- this runs on whatever the guest happens to have, and the function
+  // above already does it this way.
+  const head = path.join(here, 'claude-keep.head')
+  cp.execFileSync('curl', [...curlAuth(), '-D', head, '-o', '/dev/null',
+    '-X', 'POST', '--data-binary', '@' + tgz,
+    '-H', 'content-type: application/gzip', where], { stdio: ['ignore', 'ignore', 'pipe'] })
+
   const size = fs.statSync(tgz).size
   try { fs.unlinkSync(tgz) } catch { /* it served its purpose */ }
+
+  let headers = ''
+  try { headers = fs.readFileSync(head, 'utf8') } catch { /* nothing was written */ }
+  try { fs.unlinkSync(head) } catch { /* it served its purpose */ }
+
+  // THROWN, because the caller already catches this and says it without failing
+  // the work -- see where rememberThis is called. Failing a run because its
+  // transcript could not be filed would be the tail wagging the dog; reporting
+  // that it WAS filed when it was not is the fault being fixed.
+  if (!/^HTTP\/[\d.]+ 2\d\d/mi.test(headers)) {
+    const line = (headers.split('\n')[0] || '').trim()
+    throw new Error('the dashboard would not keep it: ' + (line || 'it did not answer'))
+  }
+
   return size
 }
 
