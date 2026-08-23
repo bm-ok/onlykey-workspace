@@ -44,7 +44,16 @@ plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
     var actions = host && host.actions;
+    //TWO WAYS IN, AND THE DIFFERENCE IS NOT STYLE. `log` is scoped to 'todo' for
+    //the list below; `say` is UNSCOPED, because `.on` APPENDS.
+    //
+    //This file was the todo list once and is now the whole tab, so every
+    //supervisor line went out tagged `todo,supervisor,<machine>` — a waking, a
+    //turn that did nothing, a machine being started, all filed under a list they
+    //have nothing to do with. Found by reading the log of the first real wake,
+    //which is the only place it shows.
     var log = imports.log.on('todo');
+    var say = imports.log.on;
 
     //`actions` is absent when this half is built against a bare host — the test
     //suite does exactly that. See ../core/okc/server.js.
@@ -209,7 +218,7 @@ async function plugin(imports, register) {
             //KEPT, BECAUSE THIS IS WHERE WORK COMES FROM NOW. A task nobody wrote
             //by hand was asked for in here, and six weeks later this line is the
             //answer to "why did it do that".
-            log.on('supervisor').info(
+            say('supervisor').info(
                 (line.via === 'window' ? 'you' : line.via) + ' said: '
                 + line.text.slice(0, 120) + (line.text.length > 120 ? '…' : '')
             );
@@ -381,10 +390,10 @@ async function plugin(imports, register) {
             //waiting, and a function that sometimes does it is one nobody can
             //predict the cost of.
             if (!imports.channel.connected(on)) {
-                log.on('vm', on).info('starting it — something wants the supervisor');
+                say('vm', on).info('starting it — something wants the supervisor');
                 await actions.call('vmStart', { name: on });
                 await actions.call('vmAwait', { name: on, for: 'connected', seconds: 240 });
-                log.on('vm', on).good('it is up');
+                say('vm', on).good('it is up');
             }
 
             //AND IT CAN ACTUALLY THINK BEFORE IT IS ASKED TO.
@@ -402,15 +411,15 @@ async function plugin(imports, register) {
             try {
                 var put = await actions.call('supervisorSignIn', { name: on });
                 if (put && put.did) {
-                    log.on('supervisor', on).info('it had no sign-in when it was woken — given one before the turn');
+                    say('supervisor', on).info('it had no sign-in when it was woken — given one before the turn');
                 }
             } catch (e) {
-                log.on('supervisor', on).warn('could not check its sign-in before waking it: ' + e.message);
+                say('supervisor', on).warn('could not check its sign-in before waking it: ' + e.message);
             }
 
             thinking = true;
             var began = Date.now();
-            log.on('supervisor', on).info(a.why ? ('waking it — ' + a.why) : 'waking it');
+            say('supervisor', on).info(a.why ? ('waking it — ' + a.why) : 'waking it');
 
             try {
                 //TAKEN BEFORE THE TURN STARTS, so what is compared afterwards is
@@ -468,7 +477,7 @@ async function plugin(imports, register) {
                     { what: 'one turn of the supervisor', timeout: 660000 });
 
                 if (/okc-skill-stale/.test(said.output || '')) {
-                    log.on('supervisor', on).warn('it could not refresh the supervising skill, so it took its '
+                    say('supervisor', on).warn('it could not refresh the supervising skill, so it took its '
                         + 'turn on whatever copy it already had');
                 }
 
@@ -489,7 +498,7 @@ async function plugin(imports, register) {
                 //question is.
                 var used = allowed.asksSoFar() - askedBefore;
                 if (!used) {
-                    log.on('supervisor', on).bad('it woke and asked for nothing in ' + took
+                    say('supervisor', on).bad('it woke and asked for nothing in ' + took
                         + 's — it cannot use this app, so nothing was done');
 
                     //AND WHAT IT SAID BEFORE IT STOPPED. A turn that asked for
@@ -502,9 +511,9 @@ async function plugin(imports, register) {
                             'tail -c 1200 ' + imports.dispatch.SUPERVISOR + '/current.log 2>/dev/null || true',
                             { what: 'reading why the turn did nothing', timeout: 20000, quiet: true });
                         var words = String(tail.output || '').trim();
-                        if (words) log.on('supervisor', on).info('the end of its transcript: ' + words.slice(-600));
+                        if (words) say('supervisor', on).info('the end of its transcript: ' + words.slice(-600));
                     } catch (e) {
-                        log.on('supervisor', on).warn('could not read its transcript: ' + e.message);
+                        say('supervisor', on).warn('could not read its transcript: ' + e.message);
                     }
 
                     try {
@@ -518,10 +527,10 @@ async function plugin(imports, register) {
                                 + 'once it can run.'
                         });
                     } catch (e) {
-                        log.on('supervisor', on).warn('could not say that it failed to run: ' + e.message);
+                        say('supervisor', on).warn('could not say that it failed to run: ' + e.message);
                     }
                 } else {
-                    log.on('supervisor', on).good('it thought for ' + took + 's');
+                    say('supervisor', on).good('it thought for ' + took + 's');
                 }
 
                 return {
@@ -549,10 +558,10 @@ async function plugin(imports, register) {
                 var again = pending;
                 pending = null;
                 if (again) {
-                    log.on('supervisor', on).info('going again — ' + again);
+                    say('supervisor', on).info('going again — ' + again);
                     setTimeout(function () {
                         actions.call('supervisorWake', { name: on, why: again }).catch(function (e) {
-                            log.on('supervisor').warn('the catch-up turn did not run: ' + e.message);
+                            say('supervisor').warn('the catch-up turn did not run: ' + e.message);
                         });
                     }, 1000);
                 }
@@ -627,7 +636,7 @@ async function plugin(imports, register) {
                 }
 
                 await guests.toMachine(use.key.name, machine);
-                log.on('supervisor', machine).good(
+                say('supervisor', machine).good(
                     'signed it in as "' + use.key.name + '" — a supervisor that is up holds its sign-in'
                 );
                 done.push(machine + ' signed in as "' + use.key.name + '"');
