@@ -92,7 +92,7 @@ var makeDispatching = require('./dispatching');
 //saying out loud, because an unresolved name takes down the whole graph and a
 //cycle means nothing builds at all.
 plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact', 'archive', 'cron', 'busy',
-    'guests', 'judge', 'ours', 'refs', 'channel', 'workspace', 'settings', 'repositories'];
+    'guests', 'judge', 'ours', 'refs', 'channel', 'workspace', 'settings', 'repositories', 'meter'];
 plugin.provides = ['queue'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -390,7 +390,7 @@ async function plugin(imports, register) {
         findings: imports.archive.store('artifacts'),
 
         //WHAT THIS HOST HAS SPENT, beside the rest of its state.
-        meterFile: function () { return dataDir.at('meter.json'); },
+        meter: imports.meter,
 
         //WHAT A MACHINE IS FOR, left on it so it can say so if it dials back in.
         noteFor: store.noteFor,
@@ -1120,13 +1120,12 @@ async function plugin(imports, register) {
             adopt: dispatch.adopt,
             dialledIn: dispatch.dialledIn,
 
-            //WHAT THIS HOST HAS SPENT, and on whose sign-in.
-            spent: {
-                all: dispatch.meter.all,
-                byKey: dispatch.meter.byKey,
-                total: dispatch.meter.total,
-                where: dispatch.meter.where
-            }
+            //AND NOT WHAT THIS HOST HAS SPENT. `spent` was here, re-exporting
+            //the meter, back when the queue owned that record — and it is
+            //../meter's now, with two readers. A second door onto somebody
+            //else's store is how "which of these is the real one" becomes a
+            //question, so the queue WRITES rows through the service it consumes
+            //and hands nobody a way to read them back through it.
         },
         onDestroy: function () { while (undo.length) undo.pop()(); }
     });

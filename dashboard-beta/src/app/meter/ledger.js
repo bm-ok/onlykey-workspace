@@ -22,16 +22,22 @@
 //say. This app does not know anybody's rates, and a number it invented would be
 //indistinguishable from one it was told.
 //
-//---- and why it lives in the queue, for now --------------------------------
+//---- and it was in the queue until there was a second reader ---------------
 //
-//THE QUEUE IS THE ONLY THING THAT WRITES IT — ./metering, at the one moment the
-//numbers exist, before the machine is rolled back. Nothing reads it yet: the
-//pane that shows what a host has spent has not been ported.
+//IT LIVED AT ../queue/meter.js, with this in its own header: "THE QUEUE IS THE
+//ONLY THING THAT WRITES IT... THE DAY THERE IS A SECOND READER this becomes its
+//own plugin, because a spending record read by two panes is a shared system and
+//belongs to neither."
 //
-//THE DAY THERE IS A SECOND READER this becomes its own plugin, because a
-//spending record read by two panes is a shared system and belongs to neither.
-//Until then, putting it in core would be a service with one caller sitting where
-//everything can reach it.
+//That day arrived with the Runners → Meter pane, which asks `meter` — so this
+//is that move, made because the condition was met rather than because the file
+//was in the way. The queue consumes it now like anything else.
+//
+//THE RULE UNDERNEATH IT is worth restating, because "where should this go" is
+//the wrong question and produces a folder: ask who OWNS it. A record the queue
+//writes and two panes read is owned by neither, so it is its own thing — and
+//that is also why it is not in core/, which is for what the app is built OUT of
+//rather than for whatever more than one plugin happens to need.
 //---------------------------------------------------------------------------
 
 var fs = require('fs');

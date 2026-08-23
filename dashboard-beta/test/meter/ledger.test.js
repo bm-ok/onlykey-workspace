@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const makeMeter = require('../../src/app/queue/meter');
-const { fromResult, tallyOf, MOST_ROWS } = require('../../src/app/queue/meter');
+const makeMeter = require('../../src/app/meter/ledger');
+const { fromResult, tallyOf, MOST_ROWS } = require('../../src/app/meter/ledger');
 
 //---------------------------------------------------------------------------
 //WHAT HAS BEEN SPENT, AND ON WHOSE SIGN-IN.

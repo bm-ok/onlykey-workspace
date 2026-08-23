@@ -26,7 +26,6 @@ var makeStarting = require('./starting');
 var makeRunning = require('./running');
 var makePutting = require('./putting');
 var makeMetering = require('./metering');
-var makeMeter = require('./meter');
 var makeHeads = require('./heads');
 var makePapers = require('./papers');
 var makeOneTask = require('./onetask');
@@ -55,8 +54,11 @@ module.exports = function dispatching(deps) {
     var channel = d.channel;    //talking to a machine
     var workspace = d.workspace;
     var settings = d.settings;
+    //THE SPENDING RECORD, CONSUMED RATHER THAN BUILT. It was ./meter.js here
+    //until the Runners tab became a second reader — see ../meter/ledger.js for
+    //the note that asked for exactly that move.
+    var meter = d.meter;
     var tipsFor = d.tipsFor || function () { return null; };
-    var meterFile = d.meterFile;
 
     //---- EVERY STEP GOES THROUGH THE ACTIONS -------------------------------
     //
@@ -66,7 +68,6 @@ module.exports = function dispatching(deps) {
     //scheduler is always the one that turns out to be wrong.
 
     var waiting = makeWaiting({});
-    var meter = makeMeter({ file: meterFile });
     var heads = makeHeads({ all: function () { return refs.heads(); } });
 
     var starting = makeStarting({ call: call, busy: busy, settle: waiting.settle });

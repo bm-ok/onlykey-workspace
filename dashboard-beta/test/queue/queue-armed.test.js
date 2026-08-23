@@ -118,7 +118,11 @@ async function aQueue(over) {
         channel: { run: async () => ({ output: '' }) },
         workspace: { dir: async () => workspaceDir, repos: async () => [] },
         settings: { read: () => ({}) },
-        repositories: { read: async () => ({ repos: [] }) }
+        repositories: { read: async () => ({ repos: [] }) },
+        //THE SPENDING RECORD, which the queue consumes rather than builds since
+        //it stopped being the only reader — see src/app/meter/ledger.js. Only
+        //`record` is reached from here: the queue writes rows and reads none.
+        meter: { record: () => null }
     }, over || {}), async (_e, s) => { queue = s.queue; });
 
     //THE BOARD AS THE QUEUE'S OWN STORE HOLDS IT, which is what adoption writes
@@ -141,7 +145,13 @@ test('the plugin builds against the services it declares', async () => {
     assert.ok(queue, 'the queue registered nothing');
     assert.equal(typeof queue.adopt, 'function');
     assert.equal(typeof queue.dialledIn, 'function');
-    assert.equal(typeof queue.spent.total, 'function');
+
+    //AND IT HANDS OUT NO WAY TO READ THE SPENDING RECORD. `queue.spent` was
+    //here, re-exporting the meter, from when the queue owned that store — it is
+    //../../src/app/meter's now, and a second door onto somebody else's record is
+    //how "which of these is the real one" becomes a question.
+    assert.equal(queue.spent, undefined,
+        'the queue is re-exporting the spending record again');
 });
 
 test('and the clock is given the tick, rather than being left unarmed', async () => {
@@ -279,10 +289,15 @@ test('whether this host is dispatching is the clock\'s own answer', async () => 
     assert.equal(queue.running(), true, 'the board would say stopped while the tick was running');
 });
 
-test('what this host has spent is answerable, and starts empty', async () => {
-    const { queue } = await aQueue();
+test('the queue writes rows and never reads them back', async () => {
+    //WHAT IT NEEDS FROM THE METER IS `record`, AND ONLY THAT. It writes at the
+    //one moment a run's numbers exist — see ../../src/app/queue/metering.js —
+    //and reading is the panes' business, through ../../src/app/meter.
+    const wrote = [];
+    const { queue } = await aQueue({ meter: { record: (row) => { wrote.push(row); return row; } } });
 
-    assert.deepEqual(queue.spent.all(), []);
-    assert.equal(queue.spent.total().runs, 0);
-    assert.match(queue.spent.where(), /meter\.json$/);
+    assert.ok(queue, 'the queue registered nothing');
+    assert.equal(queue.spent, undefined);
+    //NOTHING IS WRITTEN BY MERELY STARTING. A row is a finished run.
+    assert.deepEqual(wrote, []);
 });
