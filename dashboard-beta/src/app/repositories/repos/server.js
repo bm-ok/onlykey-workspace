@@ -1,3 +1,21 @@
+//NOT `workspace`, WHICH IS THE SERVICE THIS FILE ALREADY HAS.
+//
+//`var workspace = imports.workspace` inside the plugin would shadow a
+//module-level `workspace` for the whole function — so `workspace.script(...)`
+//would reach the workspace SERVICE, which has no such method, and fail at the
+//moment a machine is waiting.
+//
+//The app being ported from paid for exactly this once, with `log`: a local named
+//`log` shadowed the logger, and the line recording a machine as holding a
+//sign-in threw `log.on is not a function` AFTER the credential had already
+//landed. `node --check` passes on it and so does every reading of the line in
+//isolation. The only defence is not to reuse the word.
+var layout = require('./workspace');
+var makeSettingUp = require('./setting-up');
+var makeFreeing = require('../branches/freeing');
+var reach = require('../branches/reach');
+var revising = require('../pr/revising');
+
 //---------------------------------------------------------------------------
 //THE REPOSITORIES IN THIS WORKSPACE, AND WHAT GITHUB SAYS ABOUT THEM.
 //
@@ -44,8 +62,19 @@
 //describing an account and describing what will actually work.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'git', 'github', 'workspace', 'state', 'refs'];
-plugin.provides = ['repositories'];
+//---- AND WHAT SETTING A MACHINE UP NEEDS ---------------------------------
+//
+//`ours` and `channel` are the machine; `lines` says which repositories a branch
+//is about and what is protected; `prcuts` answers whether a protected one may
+//still be revised; `tls` and `guestApi` are what the machine has to trust and
+//where it has to reach. `vbox` is asked one question — this host's address on
+//the network the machines are on.
+//`tls`, `guestApi` and `vbox` came in with `vmWorkspace` and went out with it.
+//A consumes line is a claim about what this plugin can reach, and the boundary
+//test above it only counts for as much as that line is kept honest.
+plugin.consumes = ['app', 'log', 'git', 'github', 'workspace', 'state', 'refs',
+    'ours', 'channel', 'lines', 'prcuts'];
+plugin.provides = ['repositories', 'repoWorkspaces'];
 async function plugin(imports, register) {
     var host = imports.app.host;
     var actions = host && host.actions;
@@ -77,6 +106,11 @@ async function plugin(imports, register) {
     //This is the second caller of `state.here`, and the app being ported from
     //keeps the same file per workspace for the same reason.
     async function kept() { return state.here.doc('repositories'); }
+
+    //WHERE EACH REPOSITORY BELONGS, recorded on first sight — see
+    //../branches/freeing. In the WORKSPACE's drawer, because "where local-repo-a
+    //belongs" is a fact about the folder that is open.
+    async function defaults() { return state.here.doc('repo-defaults'); }
 
     async function read() {
         try { return (await kept()).read({}) || {}; }
@@ -371,6 +405,60 @@ async function plugin(imports, register) {
         }
         return out;
     }
+
+    //---- what setting a machine up is built from ---------------------------
+    //
+    //HANDED THE PIECES RATHER THAN REACHING FOR THEM, so every gate can be
+    //exercised without a machine — see ./setting-up.js, which is where they are
+    //and where they are tested.
+    var freeing = makeFreeing({
+        repos: function () { return workspace.repos(); },
+        headOf: function (repo) { return imports.refs.head(repo); },
+        bare: async function () { return false; },
+        checkout: function (repo, to) { return imports.git.checkout(repo, to); },
+        kept: {
+            read: async function (fallback) { return (await defaults()).read(fallback); },
+            write: async function (all) { return (await defaults()).write(all); }
+        }
+    });
+
+    var settingUp = makeSettingUp({
+        ours: imports.ours,
+        repos: function () { return workspace.repos(); },
+
+        //WHICH REPOSITORIES ACTUALLY HAVE IT — the union, read from the
+        //repositories themselves rather than from any record of what was cut.
+        carriersOf: async function (branch) {
+            var all = await imports.refs.heads();
+            return Object.keys(all || {}).filter(function (r) {
+                return (all[r] || {})[branch];
+            });
+        },
+        scopeOf: function (branch) { return imports.lines.scopeOf(branch); },
+        headIn: async function (repo, branch) {
+            var all = await imports.refs.heads([repo]);
+            return ((all || {})[repo] || {})[branch] || null;
+        },
+        connected: function (name) { return imports.channel.connected(name); },
+
+        //ASKED OF GIT ITSELF, once, about whichever repository is to hand. The
+        //rules are the same in all of them — this is `check-ref-format`, not a
+        //question about what any one repository contains.
+        nameIsOk: async function (branch) {
+            var found = await workspace.repos();
+            if (!found.length) return true;
+            return await imports.git.nameIsOk(found[0].name, branch);
+        },
+        defaultOf: function (repo) { return freeing.defaultOf(repo); },
+
+        //THE PERMISSION, ASKED WHERE IT IS WRITTEN. See ../pr/revising — the
+        //host's hook asks the same function, which is the whole point of it
+        //being one.
+        mayRevise: async function (branch) {
+            return revising.mayRevise(branch, await imports.prcuts.all(), await imports.lines.protectedOf());
+        },
+        reach: reach
+    });
 
     var undo = [];
     if (actions) {
@@ -852,6 +940,37 @@ async function plugin(imports, register) {
             ask: ask,
             read: read
         },
+
+        //---- WHAT A MACHINE'S WORKSPACE SHOULD BE, WITHOUT SETTING ONE UP ----
+        //
+        //THE DECIDING IS HERE AND THE DOING IS IN ../../runners/machines, and
+        //the split is not tidiness — it is the layering this plugin is built to
+        //and ../../../../test/repositories/repositories.test.js pins.
+        //
+        //`vmWorkspace` used to be defined in this file, ported straight across
+        //from the app being ported from. It read `vm.spec.token` off a machine
+        //and handed it to the script builder, which put it in the guest's
+        //credential store — so THIS plugin, whose whole claim is that it opens
+        //no credential and holds none, was passing one around. The boundary test
+        //went red about the identifier, which is the cheapest possible way to be
+        //told and was still nearly argued with.
+        //
+        //The app being ported from puts that action in actions/machines.js, not
+        //in repos/. So both the rule and the thing being ported agree on where
+        //it goes, and it went there.
+        //
+        //WHAT CROSSES IS A PLAN AND A SCRIPT BUILDER. Every gate — does the
+        //branch exist, is anything else on it, may this machine push — is
+        //decided in ./setting-up.js with nothing run and no machine touched.
+        //The caller supplies the machine's own token because the machine's own
+        //plugin is the one that has it.
+        repoWorkspaces: {
+            plan: settingUp.plan,
+            script: layout.script,
+            folderFor: layout.folderFor,
+            freeEverywhere: freeing.freeEverywhere
+        },
+
         onDestroy: function () { while (undo.length) undo.pop()(); }
     });
 }

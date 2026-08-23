@@ -61,7 +61,13 @@ function stamp() {
     return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 }
 
-plugin.consumes = ['app', 'log', 'vbox', 'ours', 'busy', 'channel', 'dataDir'];
+//`repoWorkspaces` IS THE DECIDING, AND THIS PLUGIN IS THE DOING. Which branch a
+//machine may work on, in which repositories, and what the script should say is
+//../../repositories/repos' — every gate of it, decided with nothing run and no
+//machine touched. What is left here is the three acts that touch something, and
+//the machine's own token, which this plugin has and that one must not.
+plugin.consumes = ['app', 'log', 'vbox', 'ours', 'busy', 'channel', 'dataDir',
+    'repoWorkspaces', 'tls', 'guestApi'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -70,6 +76,7 @@ async function plugin(imports, register) {
 
     var vbox = imports.vbox;
     var ours = imports.ours;
+    var repoWorkspaces = imports.repoWorkspaces;
 
     var speaking = makeSpeaking({
         //ONLY WHAT THE REGISTER SAYS IS CAPTURED, and not a path that merely
@@ -200,6 +207,127 @@ async function plugin(imports, register) {
                     name + '-' + stamp() + '.png');
 
                 return { name: name, file: await vbox.screenshot(name, file) };
+            }
+        }));
+
+        //---- SETTING A MACHINE'S WORKSPACE UP -------------------------------
+        //
+        //EVERY REPOSITORY THE WORK IS ABOUT, ON ONE BRANCH, POINTED BACK HERE.
+        //
+        //The deciding is ../../repositories/repos/setting-up.js and the script is its
+        //workspace.js — both reached through the `repoWorkspaces` service, and neither
+        //runs anything. What is left here is the order of the three acts that DO
+        //something, and that order is the design:
+        //
+        //  1. the host steps off the branch, or says whose work is in the way
+        //  2. the machine is handed the script
+        //  3. and ONLY THEN is the branch recorded
+        //
+        //THE RECORDING IS LAST BECAUSE IT IS A PERMISSION. What a machine may
+        //push is checked against this record — the machine knows which branch it
+        //is on and cannot be trusted to say so, since being the thing the rule is
+        //about is exactly what disqualifies it as the source. Written before the
+        //setup, a machine that never got its workspace would have been given
+        //permission to push anyway.
+        undo.push(actions.define('vmWorkspace', {
+            about: 'Set up a machine\'s workspace: every repository, on one branch, pointed back here',
+            needs: 'workspace',
+            takes: ['name', 'branch', 'reading', 'folder', 'task'],
+            run: async function (args) {
+                var a = args || {};
+                var to = log.on('vm', a.name);
+
+                var plan = await repoWorkspaces.plan(a.name, {
+                    branch: a.branch, reading: a.reading, folder: a.folder
+                });
+
+                //SAID BEFORE ANYTHING IS DONE, so a person watching the live log
+                //knows what this machine is about to be able to reach.
+                if (plan.reading) {
+                    to.info('reading "' + plan.reading.branch + '" in ' + plan.reading.repo + ' at '
+                        + String(plan.reading.head).slice(0, 7) + '; everything else on its default');
+                } else {
+                    to.info('"' + plan.branch + '" exists in ' + plan.in.join(', ')
+                        + (plan.group ? ' — the "' + plan.group + '" line' : '')
+                        + (plan.gone.length ? ', which also named ' + plan.gone.join(', ')
+                            + ', no longer here' : ''));
+                }
+
+                //---- 1. THE HOST STEPS OUT OF THE WAY -----------------------
+                //
+                //ONLY WHEN WORKING. A reading machine pushes nothing, and the
+                //defaults are what the host normally sits on — so doing this
+                //would move somebody's own checkouts for a machine that is only
+                //looking.
+                if (!plan.reading) {
+                    var freed = await repoWorkspaces.freeEverywhere(plan.branch);
+                    for (var i = 0; i < freed.length; i++) {
+                        if (freed[i].busy) throw new Error(freed[i].why);
+                        to.info(freed[i].repo + ' was on ' + freed[i].from + ' here; moved it back to '
+                            + freed[i].to + ' so ' + a.name + ' can use it');
+                    }
+                }
+
+                //---- 2. THE MACHINE IS HANDED THE SCRIPT --------------------
+                var vm = ours.get(a.name);
+                //NOT `host`, WHICH IN THIS FILE IS ALREADY `imports.app.host`.
+                //A local of that name would shadow it for the whole function, and
+                //the app being ported from paid for exactly this shape once with
+                //`log`: the shadowed logger threw `log.on is not a function`
+                //AFTER a credential had already landed on the machine.
+                var hostAddr = await vbox.hostAddress();
+                var keys = await imports.tls.ensure();
+
+                var script = repoWorkspaces.script({
+                    repos: plan.repos,
+                    branch: plan.branch,
+                    on: plan.on,
+                    folder: a.folder || repoWorkspaces.folderFor(vm.spec),
+                    origin: 'https://' + hostAddr + ':' + imports.guestApi.PORT,
+                    machine: a.name,
+                    token: (vm.spec || {}).token,
+                    ca: String(keys.ca || ''),
+                    readOnly: plan.readOnly,
+
+                    //WHAT THIS MACHINE IS FOR, left on the machine. Every path
+                    //that puts a task on one comes through here — the queue, a
+                    //hand-over, taking one by hand — so this is the one place
+                    //that knows and the one place it has to be written.
+                    task: a.task || null
+                });
+
+                var r = await imports.channel.run(a.name, script, {
+                    what: 'setting up the workspace on ' + plan.branch,
+                    timeout: 10 * 60 * 1000
+                });
+
+                if (r.code !== 0) {
+                    throw new Error('The workspace was not fully set up on ' + a.name
+                        + ' — see the live log.');
+                }
+
+                //---- 3. AND ONLY THEN IS THE BRANCH RECORDED ----------------
+                if (plan.claims) {
+                    ours.update(a.name, { branch: plan.claims });
+                    to.good(a.name + ' may now push ' + plan.claims + ', and nothing else');
+                } else {
+                    //A READING MACHINE CLAIMS NOTHING, and this is the record
+                    //saying so.
+                    to.good(a.name + ' is set up to read ' + plan.reading.repo + '/'
+                        + plan.reading.branch + '; it claims nothing and may push nothing');
+                }
+
+                return {
+                    branch: plan.branch,
+                    reading: plan.reading
+                        ? Object.assign({}, plan.reading, { everyRepo: plan.repos })
+                        : null,
+                    folder: a.folder || repoWorkspaces.folderFor(vm.spec),
+                    repos: plan.repos,
+                    in: plan.in,
+                    readOnly: plan.readOnly,
+                    output: r.output
+                };
             }
         }));
     }
