@@ -208,6 +208,10 @@ async function plugin(imports, register) {
     }
 
     function open(what, port, make, refused) {
+        //WHETHER THESE PORTS HAVE EVER BEEN OURS in this process — see the
+        //refusal below, which says a different thing depending on the answer.
+        var bound = !!(host && host.guestPortsHaveBound);
+
         return new Promise(function (done) {
             var server;
             try { server = make(); } catch (e) {
@@ -216,16 +220,32 @@ async function plugin(imports, register) {
             }
 
             server.on('error', function (e) {
-                //THE PORT IS HELD BY THE APP THIS ONE IS REPLACING, which is the
-                //expected answer for as long as both are running — said plainly
-                //rather than thrown, because a machine-facing port being taken
-                //must not stop the window from working.
+                //A PORT THAT IS TAKEN IS SAID PLAINLY RATHER THAN THROWN,
+                //because a machine-facing port being held must not stop the
+                //window from working.
+                //
+                //AND IT SAYS WHICH OF THE TWO CAUSES IT IS, because it used to
+                //name only one and that one is impossible on a reload. "The app
+                //being ported from is probably still running" is a good guess
+                //the FIRST time this process binds, and on any later attempt it
+                //sends whoever reads it to the wrong process list — which cost
+                //an hour: the port was held by THIS app's previous server half,
+                //inside this very process, and the message pointed at the other
+                //app entirely.
+                //
+                //`bound` IS SET THE FIRST TIME ANYTHING LISTENS, so this is
+                //"have we ever had these ports" rather than "is this a reload",
+                //which is the same question from the side that can answer it.
                 refused.push({
                     what: what, port: port,
-                    why: e.code === 'EADDRINUSE'
-                        ? 'port ' + port + ' is already held — the app being ported from is probably still '
-                          + 'running, and a machine dials whichever app holds it'
-                        : e.message
+                    why: e.code !== 'EADDRINUSE' ? e.message
+                        : bound
+                            ? 'port ' + port + ' is still held by this app\'s previous server half — it '
+                              + 'did not let go before this one tried to bind, so a machine dialling in '
+                              + 'is being served by a graph nothing here can reach. Restart the app; '
+                              + 'reloading again will not clear it'
+                            : 'port ' + port + ' is already held — the app being ported from is probably '
+                              + 'still running, and a machine dials whichever app holds it'
                 });
                 done(null);
             });
@@ -233,6 +253,11 @@ async function plugin(imports, register) {
             server.listen(port, '0.0.0.0', function () {
                 log.good(what + ' is listening on ' + port);
                 servers.push(server);
+                //ON THE HOST, NOT IN THIS MODULE. The node bundle is rebuilt on
+                //every save, so a flag here would be false again on the reload
+                //that most needs it — which is the one where the diagnosis above
+                //has to change. The host is the thing that does not reload.
+                if (host) host.guestPortsHaveBound = true;
                 done(port);
             });
         });
@@ -260,10 +285,63 @@ async function plugin(imports, register) {
         }));
     }
 
+    //---- AND IT IS AWAITED, WHICH IT WAS NOT --------------------------------
+    //
+    //`server.close()` IS ASYNCHRONOUS AND THIS RETURNED NOTHING, so rectify —
+    //which does `await destructors.pop()()` — had nothing to wait for and the
+    //next load bound while these were still letting go. Usually it won.
+    //
+    //ONCE IT LOSES, IT LOSES FOR THE LIFE OF THE PROCESS. The port stays held by
+    //a server belonging to an incarnation that no longer exists, every later
+    //reload fails to bind the same way, and the app carries on looking fine: the
+    //DEAD listener still answers, so machines still dial in and are still
+    //served — by handlers closed over a graph nobody can reach.
+    //
+    //WHAT THAT COSTS IS A LIE, NOT AN OUTAGE. The live roster is the new half's,
+    //and nothing ever reaches it — so `channel.connected()` is false for a
+    //machine that is up and talking, `vmAwait --for connected` times out on one
+    //that dialled in thirty seconds ago, and the Supervisor tab says "it is
+    //starting up" for ever. It was found by a wake stalling on a machine the log
+    //three lines above said had dialled in.
+    //
+    //AND THE WARNING BLAMED THE WRONG APP. "port 7383 is already held — the app
+    //being ported from is probably still running" is what it says when this
+    //happens, which sent this hunt to the other app's process list. It is the
+    //likelier cause when it is the FIRST bind of a run and cannot be the cause
+    //on a reload, so ./asking.js says which of the two this is now.
     function close() {
         while (undo.length) undo.pop()();
-        servers.splice(0).forEach(function (s) { try { s.close(); } catch (e) { /* already gone */ } });
+
+        var going = servers.splice(0);
         try { imports.channel.close(); } catch (e) { /* never opened */ }
+
+        return Promise.all(going.map(function (s) {
+            return new Promise(function (done) {
+                var settled = false;
+                function finish() {
+                    if (settled) return;
+                    settled = true;
+                    done();
+                }
+
+                try {
+                    //A CLOSED SERVER WITH AN OPEN CONNECTION NEVER FINISHES
+                    //CLOSING, and a machine's channel is open for as long as the
+                    //machine is up. Without this, a reload while anything is
+                    //connected waits for the guest to hang up — which it has no
+                    //reason to do.
+                    if (typeof s.closeAllConnections === 'function') s.closeAllConnections();
+                    s.close(finish);
+                } catch (e) { finish(); }
+
+                //BOUNDED, BECAUSE A RELOAD THAT NEVER FINISHES IS WORSE THAN A
+                //PORT THAT IS SLOW TO COME BACK. If something still holds it
+                //after two seconds the next bind fails and SAYS SO, which is a
+                //fault somebody can read rather than an app that stopped.
+                var giveUp = setTimeout(finish, 2000);
+                if (giveUp.unref) giveUp.unref();
+            });
+        }));
     }
 
     await register(null, {
