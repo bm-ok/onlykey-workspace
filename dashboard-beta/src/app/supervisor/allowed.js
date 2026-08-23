@@ -308,4 +308,30 @@ function list() {
     });
 }
 
-module.exports = { MAY: MAY, may: may, refuse: refuse, list: list };
+//---- AND HOW MANY TIMES IT HAS ASKED FOR ANYTHING --------------------------
+//
+//WHAT THIS ANSWERS IS "DID THAT WAKING DO ANYTHING AT ALL". A turn that ends
+//normally having asked this host for nothing did nothing, whatever it printed —
+//and the commonest cause is a machine that cannot run a model at all: no
+//credential, a launcher that is gone, a machine that came up wrong. Every one of
+//those ends in seconds and leaves every panel looking exactly as it did before.
+//
+//That failure has happened here: a wake fired, the model exited in three seconds
+//for want of a credential, and the person watching the Chat tab saw their
+//message sit unread with nothing anywhere saying why. The host knew — it had
+//logged a three-second turn and not one request — and nothing was reading it.
+//
+//A COUNT RATHER THAN A FLAG, so it works across overlapping turns and needs no
+//resetting: the caller takes a reading before and after, and compares.
+//
+//COUNTED AT THE DOOR AND NOT AT THE FENCE. It goes up for anything that got as
+//far as being CALLED — a refusal is the fence working, and a supervisor spending
+//a whole turn being refused is very much a turn that did something.
+var asked = 0;
+function noteAsked() { asked += 1; }
+function asksSoFar() { return asked; }
+
+module.exports = {
+    MAY: MAY, may: may, refuse: refuse, list: list,
+    noteAsked: noteAsked, asksSoFar: asksSoFar
+};

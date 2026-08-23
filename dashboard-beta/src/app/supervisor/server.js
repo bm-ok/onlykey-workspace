@@ -39,7 +39,7 @@ var allowed = require('./allowed');
 //same search path as every other provisioning file and a project can replace it.
 //..\vms\provision is the one thing that knows where that path is, and asking it
 //is cheaper than being right about the two environment variables twice.
-plugin.consumes = ['app', 'log', 'state', 'ours', 'guestApi', 'provision', 'guests'];
+plugin.consumes = ['app', 'log', 'state', 'ours', 'guestApi', 'provision', 'guests', 'channel', 'dispatch'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -316,6 +316,326 @@ async function plugin(imports, register) {
                     ? up.name + ' is up and signed in as "' + up.signedInAs + '". It answers when you '
                         + 'say something, if that is switched on.'
                     : rows[0].name + ' cannot run: ' + rows[0].why + '.'
+            };
+        }
+    }));
+
+    //---- waking it, which is the only thing here that spends anything ------
+    //
+    //ONE TURN AT A TIME, ACROSS EVERYTHING THAT MIGHT ASK. A chat message, a task
+    //finishing and somebody pressing the button are three doors into the same
+    //model, and two turns at once on one machine is two things deciding — which
+    //is the fault the one-supervisor rule exists to prevent, arriving from
+    //inside instead of from outside.
+    //
+    //A FLAG IN MEMORY RATHER THAN ON DISK, deliberately: it is about THIS process
+    //having a child running, and a restart genuinely does end that.
+    var thinking = false;
+
+    //AND WHAT HAPPENED WHILE IT WAS THINKING IS NOT DROPPED.
+    //
+    //Refusing a second turn is right and was the whole of it — so anything that
+    //happened mid-turn was simply lost: a task finishing thirty seconds into a
+    //turn woke nothing, and the supervisor found out whenever somebody next
+    //spoke to it. That is the difference between a supervisor that watches and
+    //one that is polled by hand.
+    //
+    //ONE PENDING WAKE, NOT A QUEUE OF THEM. Waking is "go and read what
+    //changed", and three in a row would read the same thing three times: what is
+    //worth keeping is THAT something happened, not how many times.
+    var pending = null;
+    function alsoWake(why) { pending = pending ? (pending + '; ' + why) : why; }
+
+    //WHAT IT IS TOLD WHEN IT WAKES. Deliberately short: the skill on the machine
+    //is what knows the loop, and repeating it here would be a second copy that
+    //goes stale.
+    var WAKE = 'Wake. Use the supervising skill: call whatsNew, read what changed, '
+        + 'do what needs doing if anything does, and reply to the person with supervisorSays. '
+        + 'One message, two or three sentences. If there is nothing to do, say that instead.';
+
+    undo.push(actions.define('supervisorWake', {
+        about: 'Wake the supervisor: one turn of its model, reading what changed and answering',
+        takes: ['name', 'why'],
+        run: async function (args) {
+            var a = args || {};
+
+            if (thinking) {
+                //KEPT, NOT DROPPED. It goes again when this turn ends — once,
+                //however many things happened while it was busy.
+                alsoWake(a.why || 'something happened while it was thinking');
+                return {
+                    woke: false, pending: true,
+                    why: 'it is already thinking. One turn at a time — two would be two things '
+                        + 'deciding, which is the thing the one-supervisor rule exists to prevent. '
+                        + 'It will look again when this turn ends.'
+                };
+            }
+
+            //WHICH MACHINE IS ../../runners/guests's ANSWER — the same one the
+            //sign-in desk uses. Not decided here: "which supervisor" is a
+            //decision, and a second copy of it drifts.
+            var on = guests.whichSupervisor(a.name);
+
+            //STARTED IF IT IS DOWN, and that is this caller's step rather than
+            //something folded into the pick — starting a machine is a minute of
+            //waiting, and a function that sometimes does it is one nobody can
+            //predict the cost of.
+            if (!imports.channel.connected(on)) {
+                log.on('vm', on).info('starting it — something wants the supervisor');
+                await actions.call('vmStart', { name: on });
+                await actions.call('vmAwait', { name: on, for: 'connected', seconds: 240 });
+                log.on('vm', on).good('it is up');
+            }
+
+            //AND IT CAN ACTUALLY THINK BEFORE IT IS ASKED TO.
+            //
+            //Dialling in signs a supervisor in, which covers every ordinary
+            //route — but a wake that STARTED the machine is racing that, and a
+            //wake that found it already up has no dial-in to have caught it.
+            //Both end the same way without this: the model runs, hits a sign-in
+            //menu, exits in three seconds, and the record says it asked for
+            //nothing.
+            //
+            //NOT FATAL. With no sign-in to give, the turn still runs and still
+            //fails — and it fails saying so, which is better than this refusing
+            //on its behalf.
+            try {
+                var put = await actions.call('supervisorSignIn', { name: on });
+                if (put && put.did) {
+                    log.on('supervisor', on).info('it had no sign-in when it was woken — given one before the turn');
+                }
+            } catch (e) {
+                log.on('supervisor', on).warn('could not check its sign-in before waking it: ' + e.message);
+            }
+
+            thinking = true;
+            var began = Date.now();
+            log.on('supervisor', on).info(a.why ? ('waking it — ' + a.why) : 'waking it');
+
+            try {
+                //TAKEN BEFORE THE TURN STARTS, so what is compared afterwards is
+                //what THIS turn asked for. A count rather than a flag, because
+                //two turns can overlap on a busy host and a flag would be reset
+                //by whichever finished first.
+                var askedBefore = allowed.asksSoFar();
+
+                //THE PROMPT GOES OVER AS BASE64. It is prose with apostrophes in
+                //it, heading for a `bash -c` inside an ssh command.
+                var brief = Buffer.from(WAKE, 'utf8').toString('base64');
+
+                //THE SKILL IS RE-FETCHED EVERY TIME IT WAKES, and that is not
+                //tidiness. The skill on the machine is what knows the loop, and
+                //it is fetched once during provisioning — so a machine built
+                //before the loop changed goes on supervising by the old one for
+                //ever. The day judging arrived, the supervisor on this host was
+                //still being told to read an action it is no longer allowed to
+                //call.
+                //
+                //WHERE THIS HOST LISTENS COMES FROM THIS HOST. The first version
+                //of this read `$OKC_BASE` out of the agent's env file, which
+                //holds the machine's name, its token and the authority — and not
+                //the base. It failed with "No host part in the URL", and would
+                //have failed silently for ever behind the `|| true`.
+                var where = null;
+                try {
+                    var at = await actions.call('vmHostAddress', {});
+                    //THE PORT COMES FROM THE PLUGIN THAT LISTENS ON IT. A
+                    //number written here is a number that is right until
+                    //../vms/https moves, and the failure would be a fetch that
+                    //quietly does nothing behind its own `|| true`.
+                    var host = at && at.address;
+                    if (host) where = 'https://' + host + ':' + imports.guestApi.PORT;
+                } catch (e) { /* no address means no refresh, and the turn still happens */ }
+
+                var refresh = where
+                    ? 'mkdir -p "$HOME/.claude/skills/supervising" && '
+                        + 'eval "$(sudo -n cat /etc/okc-agent.env | grep -E \'^OKC_(VM|TOKEN|CA)=\')" && '
+                        + 'curl -fsS --cacert "$OKC_CA" -u "$OKC_VM:$OKC_TOKEN" '
+                        + '-o "$HOME/.claude/skills/supervising/SKILL.md" '
+                        + '"' + where + '/provision/supervisor-skill.md?vm=$OKC_VM" '
+                        + '&& echo okc-skill-refreshed || echo okc-skill-stale'
+                    : 'echo okc-skill-stale';
+
+                //THE SHELL IS BUILT IN ../vms/dispatch AND CHECKED THERE. What
+                //reaches a machine is shell, and shell assembled inside an action
+                //is shell nothing can render without waking a supervisor to see
+                //it — which is how a `continue` outside a loop and a
+                //self-matching `pkill` both got as far as a guest in this
+                //project.
+                var stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
+                var said = await imports.channel.run(on,
+                    imports.dispatch.supervisorTurn({ stamp: stamp, brief: brief, refresh: refresh }),
+                    { what: 'one turn of the supervisor', timeout: 660000 });
+
+                if (/okc-skill-stale/.test(said.output || '')) {
+                    log.on('supervisor', on).warn('it could not refresh the supervising skill, so it took its '
+                        + 'turn on whatever copy it already had');
+                }
+
+                var took = Math.round((Date.now() - began) / 1000);
+
+                //---- DID ANYTHING ACTUALLY HAPPEN? -------------------------
+                //
+                //A turn that ends normally having asked this host for nothing
+                //did nothing, whatever it printed. The commonest cause is a
+                //machine that cannot run a model at all — no credential, a
+                //launcher that is gone, a machine that came up wrong — and every
+                //one of those ends in seconds and leaves every panel looking
+                //exactly as it did.
+                //
+                //SAID IN THE CHAT, not only in the log, because the chat is where
+                //somebody is waiting. A message that is never answered is the
+                //exact shape of this failure, so the answer goes where the
+                //question is.
+                var used = allowed.asksSoFar() - askedBefore;
+                if (!used) {
+                    log.on('supervisor', on).bad('it woke and asked for nothing in ' + took
+                        + 's — it cannot use this app, so nothing was done');
+
+                    //AND WHAT IT SAID BEFORE IT STOPPED. A turn that asked for
+                    //nothing has a reason and the reason is in its transcript.
+                    //Best effort and short: the failure being diagnosed may well
+                    //be the machine itself, so this must not become a second
+                    //thing that hangs.
+                    try {
+                        var tail = await imports.channel.run(on,
+                            'tail -c 1200 ' + imports.dispatch.SUPERVISOR + '/current.log 2>/dev/null || true',
+                            { what: 'reading why the turn did nothing', timeout: 20000, quiet: true });
+                        var words = String(tail.output || '').trim();
+                        if (words) log.on('supervisor', on).info('the end of its transcript: ' + words.slice(-600));
+                    } catch (e) {
+                        log.on('supervisor', on).warn('could not read its transcript: ' + e.message);
+                    }
+
+                    try {
+                        talk.say({
+                            who: 'supervisor', from: on, via: 'wire', about: 'it could not run',
+                            text: 'I woke and stopped after ' + took + 's without asking this host for '
+                                + 'anything, so nothing was done.\n\nThat usually means the machine cannot '
+                                + 'run a worker at all — most often it is holding no credential '
+                                + '(Runners → Claude sign-ins), and sometimes the launcher or the tool '
+                                + 'server is missing. Nothing about your message was lost; wake me again '
+                                + 'once it can run.'
+                        });
+                    } catch (e) {
+                        log.on('supervisor', on).warn('could not say that it failed to run: ' + e.message);
+                    }
+                } else {
+                    log.on('supervisor', on).good('it thought for ' + took + 's');
+                }
+
+                return {
+                    woke: true,
+                    name: on,
+                    seconds: took,
+                    //WHETHER IT USED THIS APP AT ALL, on the answer as well as in
+                    //the chat, so a caller at the command line sees it without
+                    //reading a log.
+                    asked: used,
+                    ranProperly: used > 0,
+                    //WHAT IT PRINTED, which is its own summary rather than what
+                    //it said to the person — that went through `supervisorSays`
+                    //and is in the conversation.
+                    said: String(said.output || '').split('\n').slice(1).join('\n').trim().slice(-2000),
+                    note: on + ' took a turn. What it said to you is on the Chat tab.'
+                };
+            } finally {
+                thinking = false;
+
+                //AND THEN CATCH UP, if anything happened while it was busy. Not
+                //awaited and not recursive in any way that matters: it starts one
+                //more turn and returns, and that turn clears the flag the same
+                //way.
+                var again = pending;
+                pending = null;
+                if (again) {
+                    log.on('supervisor', on).info('going again — ' + again);
+                    setTimeout(function () {
+                        actions.call('supervisorWake', { name: on, why: again }).catch(function (e) {
+                            log.on('supervisor').warn('the catch-up turn did not run: ' + e.message);
+                        });
+                    }, 1000);
+                }
+            }
+        }
+    }));
+
+    //---- and it holds its sign-in, without anybody pressing anything -------
+    //
+    //A SUPERVISOR THAT IS UP SHOULD BE SIGNED IN, FULL STOP. There was a button
+    //for this and a banner explaining when to press it, which is a tool asking
+    //somebody to perform a step that has exactly one right answer: a supervisor
+    //is not handed an identity per task the way a runner is — it holds one for as
+    //long as it is up, it is useless without one, and there is nothing else this
+    //host would rather do with a supervisor sign-in.
+    //
+    //WHY IT KEPT NOT HAPPENING. Every path that starts the machine is a path
+    //somebody wrote for another reason — a host restart, `vmStart`, a person at
+    //the window — so the machine came up able to do nothing rather more often
+    //than it came up ready. And the failure is SILENT: a wake with no credential
+    //runs, exits in about three seconds, and reports that it asked for nothing.
+    //
+    //IDEMPOTENT AND QUIET. It is meant to be called when a machine dials in and
+    //again before every wake, so holding one already is the ordinary answer and
+    //says nothing to the log.
+    //
+    //IT NEVER TAKES A SIGN-IN OFF ANYTHING. One that is out on another machine is
+    //a person's decision and stays that way. If you want a signed-out supervisor,
+    //stop the machine — that is the same one press it always was, and this cannot
+    //undo it.
+    undo.push(actions.define('supervisorSignIn', {
+        about: 'Make sure a supervisor that is up is holding its sign-in. Does nothing if it already is',
+        takes: ['name'],
+        run: async function (args) {
+            var a = args || {};
+            var all = (ours.read() || [])
+                .filter(function (v) { return ours.canBe(v, 'supervisor'); })
+                .filter(function (v) { return !a.name || v.name === a.name; });
+
+            if (!all.length) {
+                return {
+                    did: null,
+                    why: a.name
+                        ? '"' + a.name + '" is not a supervisor machine'
+                        : 'there is no supervisor machine on this host'
+                };
+            }
+
+            //ONLY WHAT IS UP. Starting a machine is a decision with a cost and
+            //this is not the thing that gets to make it — a supervisor that is
+            //off is off on purpose.
+            var up = all.filter(function (v) { return imports.channel.connected(v.name); });
+            if (!up.length) return { did: null, why: 'it is not up' };
+
+            var done = [];
+            for (var i = 0; i < up.length; i++) {
+                var machine = up[i].name;
+                var already = guests.all().filter(function (g) { return g.holder === machine; }).length;
+                if (already) continue;
+
+                //THE ONE THAT WAS CHOSEN, not whichever is free. `supervisorKey`
+                //is the single function that decides it, and asking it here
+                //rather than picking from the list is what keeps "which account
+                //is this machine spending" a question with one answer.
+                var use = guests.supervisorKey();
+                if (!use.key) {
+                    //SAID ONCE PER CALL AND NEVER AS AN ERROR. Having no sign-in
+                    //to give is a real state with a real repair, and the repair
+                    //is a person. Throwing here would turn every dial-in and
+                    //every wake into a failure.
+                    return { did: null, why: use.why };
+                }
+
+                await guests.toMachine(use.key.name, machine);
+                log.on('supervisor', machine).good(
+                    'signed it in as "' + use.key.name + '" — a supervisor that is up holds its sign-in'
+                );
+                done.push(machine + ' signed in as "' + use.key.name + '"');
+            }
+
+            return {
+                did: done.length ? done.join(', ') : null,
+                why: done.length ? null : 'it was already signed in'
             };
         }
     }));

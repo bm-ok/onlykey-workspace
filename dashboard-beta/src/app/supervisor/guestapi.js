@@ -107,6 +107,13 @@ module.exports = function guestapi(deps) {
         //the token that authenticated the call.
         args._fromMachine = at.vm.name;
 
+        //COUNTED, AND THIS IS THE ONLY PLACE IT CAN BE. It is what makes "that
+        //waking asked for nothing" answerable — see `asksSoFar` in ./allowed.js
+        //for the three-second turn that is the reason it exists. Counted here
+        //rather than at the fence above, because a supervisor spending a whole
+        //turn being refused is very much a turn that did something.
+        allowed.noteAsked();
+
         to.info('asked for ' + what);
         return await call(what, args);
     }

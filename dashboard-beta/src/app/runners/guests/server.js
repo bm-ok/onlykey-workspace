@@ -740,6 +740,17 @@ async function plugin(imports, register) {
             get: store.get,
             supervisorKey: store.supervisorKey,
 
+            //WHICH MACHINE IS THE SUPERVISOR, and the refusal that says what to
+            //do instead. On the service because ../../supervisor needs the same
+            //answer before it wakes one, and "which supervisor" is a decision:
+            //two copies of it drift, and the way they drift is that one of them
+            //starts sending people to a runner for a sign-in.
+            //
+            //IT STILL DOES NOT START ANYTHING — see ./desk.js for why that is
+            //the caller's step.
+            whichSupervisor: desk.which,
+            isSupervisor: desk.isSupervisor,
+
             //---- what the queue asks before it spends a machine ---------------
             freeFor: store.freeFor,
             pausedFor: store.pausedFor,
