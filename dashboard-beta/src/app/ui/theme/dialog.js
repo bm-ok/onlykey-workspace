@@ -1,6 +1,9 @@
 var React = require('react');
 var { useState, useEffect, useRef } = React;
-var { useGuard } = require('./bits');
+//`openOut` REACHES THE PERSON'S REAL BROWSER — see ./bits.js. Taken from there
+//rather than written again, because "how a link leaves this window" is one
+//decision and this is the second place that needs it.
+var { useGuard, openOut, Button } = require('./bits');
 
 //---------------------------------------------------------------------------
 //the dialog — where an irreversible thing is agreed to.
@@ -250,10 +253,47 @@ function Dialog({ id, spec }) {
 
                         `console read`, NOT `console tall`: tall is a viewport
                         height and belongs to a pane that IS the screen. */}
+                    {/* THE HEADING IS THE CALLER'S. It said "What will be
+                        posted" for everybody, which was written for the one
+                        caller there was — a review going onto a pull request —
+                        and was a lie on the next one: a sign-in URL is something
+                        to VISIT, and a box over it saying it will be posted
+                        describes a thing that is not going to happen. */}
                     {spec.reads ? (
                         <div>
-                            <div className="dlg-heading">What will be posted</div>
+                            <div className="dlg-heading">{spec.readsAre || 'What will be posted'}</div>
                             <div className="console read">{spec.reads}</div>
+                            {/* AND A WAY TO OPEN IT, when what is being read is
+                                an address rather than a document.
+
+                                AN ORDINARY LINK WOULD NAVIGATE THE DASHBOARD.
+                                This is an app page, so an `<a href>` replaces
+                                the window with the sign-in page and takes the
+                                dialog waiting for the code with it — see
+                                `openOut`, which hands it to the operating system
+                                instead.
+
+                                THE ADDRESS STAYS VISIBLE BESIDE IT. A button
+                                that silently fails to open leaves nothing to
+                                fall back on, and for a sign-in this address is
+                                the only way to finish what was started on the
+                                machine. */}
+                            {spec.opens ? (
+                                <div className="row" style={{ marginTop: '8px' }}>
+                                    {/* AWAITED, because opening a browser is the
+                                        NODE half's job here and therefore a
+                                        round trip — see `setOpener` in
+                                        ./window.js. The old version treated it
+                                        as a boolean and reported failure before
+                                        it had happened. */}
+                                    <Button onClick={function () {
+                                        setErr(null);
+                                        Promise.resolve(openOut(spec.reads)).then(function (ok) {
+                                            if (!ok) setErr('Could not open a browser — copy the address above instead.');
+                                        });
+                                    }}>{spec.opens}</Button>
+                                </div>
+                            ) : null}
                         </div>
                     ) : null}
 

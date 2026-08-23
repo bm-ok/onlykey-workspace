@@ -36,15 +36,44 @@ var dialog = require('./dialog');
 //the convention is actually for.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['react', 'config', 'appPackage', 'editor', 'markdown', 'xterm'];
+//`okc` IS CONSUMED FOR EXACTLY ONE THING: handing ./bits.js a way to open an
+//address in the person's own browser, which this page cannot do itself. See the
+//block at `setOpener` below. Nothing else in this kit asks the app anything.
+plugin.consumes = ['react', 'config', 'appPackage', 'editor', 'markdown', 'xterm', 'okc'];
 plugin.provides = ['theme'];
 async function plugin(imports, register, config) {
+    var okc = imports.okc;
     require('./dashboard.scss');
 
     //ONE MODE, AND IT IS DARK. The dashboard has no light theme and never had:
     //its tokens are a dark palette and the panels are built on them. A switcher
     //here would offer something that does not exist.
     document.body.classList.add('okc');
+
+    //---- HOW A LINK LEAVES THIS APP ---------------------------------------
+    //
+    //INSTALLED HERE BECAUSE THIS IS WHERE THE TRANSPORT IS. ./bits.js keeps the
+    //hook and no knowledge of how to reach anything — a kit that consumed `okc`
+    //would be a kit that cannot be swapped for another.
+    //
+    //THE PAGE CANNOT OPEN A BROWSER ITSELF. This app serves its window over
+    //http, so nw treats it as a REMOTE page and gives it no `nw` and no node —
+    //see ../../core/shot/main.js, which calls that a property worth keeping.
+    //`openExternally` is the node half doing it, and it takes http and https
+    //only.
+    //
+    //A FAILURE IS REPORTED RATHER THAN SWALLOWED, because the thing that used to
+    //happen is the failure this whole window is written against: a button that
+    //quietly does nothing.
+    bits.setOpener(function (url) {
+        return okc.call('openExternally', { url: url }).then(
+            function () { return true; },
+            function (e) {
+                console.error('[openOut] the app would not open ' + url + ' — ' + e.message);
+                return false;
+            }
+        );
+    });
 
     //---- the shell ---------------------------------------------------------
     //

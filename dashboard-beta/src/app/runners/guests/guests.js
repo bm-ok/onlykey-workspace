@@ -38,7 +38,18 @@ module.exports = function guests(theme, okc, remember) {
 
     function GuestsFor(role) {
       return function Guests() {
-        var { state, error, reads, again } = okc.use('guests', {}, 15000);
+        //THE ROLE IS ASKED FOR, and it was not. `guests` answers with a sentence
+        //written for the role it was asked about — ./server.js's `noteFor` — and
+        //with none it answers for a WORKER. So the supervisor pane said "No
+        //worker sign-in yet. A worker is a Claude sign-in kept here under a name
+        //— add one with its token, and a machine can be lent it", which is
+        //wrong twice over on that pane: wrong kind, and a supervisor sign-in is
+        //never lent to anything.
+        //
+        //The list was filtered here anyway, so it looked right and only the
+        //empty sentence gave it away — which is the shape a wrong-field bug has
+        //when the wrong field is prose.
+        var { state, error, reads, again } = okc.use('guests', { role: role }, 15000);
         var machines = okc.use('vmList', {}, 30000);
         var [find, setFind] = useState('');
         var [only, setOnly] = remember.use('guests', 'only', null);
@@ -85,32 +96,122 @@ module.exports = function guests(theme, okc, remember) {
         //and there is no undo. The link is meant to be carried to the other
         //account's browser, which is why it is shown as text to copy rather than
         //offered as something to click.
+        //IT IS TWO CALLS AND THIS PANE MADE ONE, WITH THE WRONG ARGUMENT.
+        //
+        //`claudeSignIn` TAKES THE MACHINE, not what to call the credential —
+        //`name` there is the supervisor whose desk holds the sign-in open. This
+        //passed what somebody typed into "Call it", so the desk was asked for a
+        //machine called "super-claude-1" and refused: "not a virtual machine
+        //this app made, so it will not touch it". There was no way to sign in
+        //from the window at all.
+        //
+        //AND THE ROLE WAS COLLECTED AND THROWN AWAY. `claudeSignIn` has no role;
+        //the role belongs to `claudeSignedIn`, which this never called — so even
+        //a working first half had nowhere to put the code, and the credential
+        //could never be kept.
+        //
+        //SO: THE DESK IS NOT NAMED HERE. `claudeSignIn` with no machine lets
+        //../guests/desk.js choose the one supervisor, and refuses with the whole
+        //reason when there is more than one. A machine field on this dialog
+        //would be a third place that decides which supervisor is the desk.
         function signIn() {
             ask({
-                title: 'Get a sign-in link',
+                title: 'Get a sign-in link for a ' + role,
                 plain: [
                     'The sign-in desk hands back a Claude login URL. Every credential this host holds comes from there.',
                     'OPEN IT AS THE ACCOUNT THE SIGN-IN IS FOR, not as yourself. This browser is already signed in as somebody, and following the link here signs that account in under this name.',
-                    'Bring the code back and it is kept here under the name, sealed, and never shown again.'
+                    'Bring the code back and it is kept here under the name, sealed, and never shown again.',
+                    //WHICH KIND, SAID RATHER THAN ASKED. It is decided by the
+                    //pane the + was pressed on, so the dialog states it — a
+                    //thing being decided for you is fine; a thing being decided
+                    //for you silently is not.
+                    role === 'supervisor'
+                        ? 'It will be kept as a SUPERVISOR sign-in: never lent to a machine, and what this host decides work with.'
+                        : role === 'judge'
+                            ? 'It will be kept as a JUDGE sign-in: lent to a machine to read somebody else’s work, and never the sign-in that produced it.'
+                            : 'It will be kept as a WORKER sign-in: lent to a machine while it works, and taken back after.'
                 ],
+                //---- AND THE ROLE IS NOT ASKED FOR ------------------------
+                //
+                //THE PANE ALREADY ANSWERED IT. There is a `+` on each of the
+                //three panes and this is the same function behind all of them,
+                //so which one it was pressed on IS the kind being made — a
+                //dropdown here asks a question the screen has already answered,
+                //and its default being wrong is how a supervisor sign-in gets
+                //filed as a worker from the supervisor pane.
+                //
+                //A CREDENTIAL FILED UNDER THE WRONG ROLE IS NOT A LABEL. It
+                //cannot be lent to the machine it was made for, and the pane it
+                //belongs on will not show it — see `guestRole`, which exists to
+                //dig one back out.
                 fields: [
-                    { name: 'name', label: 'Call it', placeholder: 'runner5', hint: 'what it is known as here, and what a machine is lent' },
-                    {
-                        name: 'role', label: 'What it is for', value: 'worker',
-                        options: [
-                            { value: 'worker', label: 'worker — lent to a machine to do the work' },
-                            { value: 'judge', label: 'judge — lent to a machine to read somebody else’s work' },
-                            { value: 'supervisor', label: 'supervisor — never lent; this host decides with it' }
-                        ],
-                        hint: 'a judge must never be the same sign-in as the worker whose output it reads'
-                    }
+                    { name: 'as', label: 'Call it', placeholder: 'runner5', hint: 'what it is known as here, and what a machine is lent' }
                 ],
                 confirm: 'Get the link',
                 protect: true,
                 onYes: function (f) {
-                    if (!f.name) throw new Error('It needs a name.');
-                    return okc.call('claudeSignIn', { name: f.name }).then(function (r) {
-                        setSaid({ text: (r.note || 'The desk is open.') + (r.url ? ' — ' + r.url : '') });
+                    var as = String(f.as || '').trim();
+                    if (!as) throw new Error('It needs a name.');
+
+                    return okc.call('claudeSignIn', {}).then(function (r) {
+                        //THE DESK IS NOW HOLDING ONE OPEN, and it stays open
+                        //until the code comes back or it is cancelled. So the
+                        //second half opens straight away rather than leaving
+                        //somebody to find it: a desk left holding a sign-in
+                        //nobody finishes is the state this flow can get stuck in.
+                        codeFor(r, as, role);
+                    }, function (e) { setSaid({ bad: true, text: e.message }); throw e; });
+                }
+            });
+        }
+
+        //---- and giving the code back --------------------------------------
+        //
+        //THE URL IS SHOWN AS TEXT TO COPY, never as something to click. This
+        //host's browser is signed in as somebody, and following the link HERE
+        //signs that account in under this name — quietly, with no undo. That is
+        //the whole trap, and the reason the desk exists as a separate user.
+        function codeFor(started, as, kind) {
+            ask({
+                title: 'Sign in as the account this is for, then paste the code',
+                plain: [
+                    'Copy the address below and open it as THE ACCOUNT THIS SIGN-IN IS FOR — not as yourself, and not in a browser already signed in as somebody else.',
+                    'Approve it there. It hands back a code.',
+                    'The desk on ' + started.name + ' is holding this open until the code comes back.'
+                ],
+                reads: started.url,
+                readsAre: 'The sign-in address',
+                //THE BUTTON THE APP BEING PORTED FROM HAS, and it is not a
+                //convenience: an ordinary link on an app page navigates the
+                //DASHBOARD to claude.com and takes this dialog — the one waiting
+                //for the code — with it. `openOut` hands it to the operating
+                //system instead.
+                //
+                //THE ADDRESS STAYS ABOVE IT for the reason that app gives: a
+                //button that silently fails to open leaves nothing to fall back
+                //on, and this address is the only way to finish what has already
+                //been started on the machine.
+                opens: 'Open the sign-in page',
+                fields: [
+                    { name: 'code', label: 'The code it gave you', placeholder: 'paste it here' }
+                ],
+                cost: 'It signs that Claude account in and keeps the credential here, sealed.',
+                confirm: 'Keep it',
+                protect: true,
+                onYes: function (f) {
+                    var code = String(f.code || '').trim();
+                    if (!code) throw new Error('Paste the code the sign-in page gave you.');
+
+                    return okc.call('claudeSignedIn', {
+                        //THE MACHINE THE DESK IS ON, as the first call answered
+                        //it — not asked again, because a second read could pick
+                        //a different supervisor than the one holding this open.
+                        name: started.name,
+                        code: code,
+                        as: as,
+                        role: kind
+                    }).then(function (r) {
+                        setSaid({ text: r.note || ('"' + as + '" is kept here now.') });
                         again();
                     }, function (e) { setSaid({ bad: true, text: e.message }); throw e; });
                 }

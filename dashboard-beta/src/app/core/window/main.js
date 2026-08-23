@@ -1,9 +1,10 @@
 //the nw.js window. it is a view onto a server that outlives it.
 
-plugin.consumes = ['app', 'http', 'lifecycle'];
+plugin.consumes = ['actions', 'app', 'http', 'lifecycle'];
 plugin.provides = ['window'];
 async function plugin(imports, register, config) {
     var { app, http, lifecycle } = imports;
+    var actions = imports.actions;
 
     //this same list runs under plain node too, where there is no
     //window to open and nothing to open it with
@@ -63,8 +64,27 @@ async function plugin(imports, register, config) {
         });
     }
 
-    await register(null, {
-        window: {
+    //---- AND THE PAGE HAS TO ASK FOR IT -----------------------------------
+    //
+    //DEFINED IN MAIN, WHERE `nw` IS. The window is served over http and is a
+    //REMOTE page as far as nw is concerned, so it has no `nw`, no node, and no
+    //way to reach the operating system — see ../shot/main.js, which calls that a
+    //property worth keeping. This is the one door through it, and it opens onto
+    //exactly one thing.
+    //
+    //IT IS NOT ON THE SUPERVISOR'S LIST and must not go on it. Opening a browser
+    //on somebody's desk at an address a model chose is a way to put a page in
+    //front of a person under this app's name.
+    var stopOpening = actions.define('openExternally', {
+        about: "Open an http address in the person's own browser, outside this app",
+        takes: ['url'],
+        run: function (args) {
+            return { opened: theWindow.openExternally((args || {}).url) };
+        }
+    });
+
+    //NAMED SO THE ACTION ABOVE CAN REACH IT before `register` has handed it out.
+    var theWindow = {
             get isOpen() { return !!win; },
             get current() { return win; },
 
@@ -80,10 +100,43 @@ async function plugin(imports, register, config) {
 
             hide: function () { if (win) win.hide(); },
 
+            //---- AND AN ADDRESS THAT LEAVES THIS APP ENTIRELY --------------
+            //
+            //THE PAGE CANNOT DO THIS AND NEVER WILL. This app serves its window
+            //over http, and nw only injects node into pages loaded from the
+            //package — an http page is REMOTE and gets none. ../shot/main.js
+            //says so about screenshots and calls it "a property worth keeping
+            //rather than a defect to route around": it is exactly why the same
+            //page runs in an ordinary browser tab.
+            //
+            //SO THE PAGE ASKS, and this half — which is nw — does it. The
+            //window's own attempt was `nw.Shell` in the pane, which is
+            //undefined there, falling back to a plain `<a target="_blank">`;
+            //under nw that opens ANOTHER NW WINDOW rather than the person's
+            //browser, and a sign-in page opened inside this app is the one
+            //place it must not be.
+            //
+            //`http:` AND `https:` ONLY. Everything else a shell would hand to
+            //the operating system — `file:`, and on Windows anything it has an
+            //association for — is a way to start a program from a string, and
+            //the strings here arrive from GitHub and from a machine.
+            openExternally: function (href) {
+                var url = String(href == null ? '' : href).trim();
+                if (!/^https?:\/\//i.test(url)) {
+                    throw new Error('only http and https addresses are opened, and that is "' + url + '"');
+                }
+                nw.Shell.openExternal(url);
+                return url;
+            },
+
             //the tray calls this once there is somewhere to reopen from
             closeShouldHide: function (yes) { onClose = yes ? 'hide' : 'quit'; }
-        },
+    };
+
+    await register(null, {
+        window: theWindow,
         onDestroy: function () {
+            stopOpening();
             try { if (keepAlive) keepAlive.close(true); } catch (e) { /* already gone */ }
             keepAlive = null;
         }

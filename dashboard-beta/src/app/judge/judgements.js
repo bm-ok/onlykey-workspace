@@ -317,6 +317,7 @@ module.exports = function judgements(theme, okc, remember) {
                     //to see, and the section a summary drops first is "what I
                     //could not check" \u2014 the one that makes the rest honest.
                     reads: p.body,
+                    readsAre: 'What will be posted',
                     cost: 'A comment on somebody else\u2019s pull request. It can be deleted on GitHub, not from here.',
                     confirm: 'Say it',
                     protect: true,

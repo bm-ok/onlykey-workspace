@@ -393,11 +393,73 @@ function ago(when) {
     return n + ' ' + unit + (n == 1 ? '' : 's') + ' ago';
 }
 
+//THREE WAYS OUT, AND IT USED TO HAVE ONE.
+//
+//This tried `nw.Shell` alone and returned false on anything else, silently — so
+//"Open the sign-in page" reported that it could not open a browser and left no
+//way to find out why. Two whole paths were missing:
+//
+//  nw.gui   the OLD NAME for the same thing. The app being ported from tries
+//           it second and says why: the current API first, and this only if the
+//           global is missing, which would mean this is not the app page it
+//           thinks it is.
+//  a TAB    this app runs at localhost:7317 in an ordinary browser as well as
+//           under NW, and there `nw` is undefined and `window.open` is simply
+//           the right answer. There was no browser path at all, so every
+//           external link in a tab was a link that did nothing.
+//
+//AND A FAILURE SAYS SO. The old catch swallowed the reason, which is the exact
+//failure this window is written against — a button that quietly does not work.
+//The caller still gets `false` to show a sentence with; the console gets the
+//cause, so the next person is reading an error rather than guessing between
+//three possibilities.
+//---- HOW A LINK LEAVES THIS APP ------------------------------------------
+//
+//`nw.Shell` IS NOT AVAILABLE HERE AND NEVER WILL BE. This app serves its window
+//over http, and nw only injects node into pages loaded from the package — an
+//http page is REMOTE and gets none. ../../core/shot/main.js says so and calls it
+//a property worth keeping rather than a defect to route around: it is exactly
+//why this same page runs in an ordinary browser tab.
+//
+//THIS TRIED `nw.Shell` ANYWAY, found nothing, and returned false — so "Open the
+//sign-in page" said it could not open a browser, on a machine with three
+//browsers on it. And every `Link` fell through to its own `<a target="_blank">`,
+//which under nw opens ANOTHER NW WINDOW: a sign-in page inside the app, which is
+//the one place it must not be.
+//
+//SO THE PAGE ASKS THE NODE HALF, which has nw — `openExternally` in
+//../../core/window/main.js. The transport is not this file's business, so it is
+//INSTALLED rather than reached for: ./window.js hands it in, and a theme built
+//without one still works in a browser tab, where `window.open` is not a fallback
+//but the right answer.
+var opener = null;
+
+//SET BY ../theme/window.js, which has `okc`. Kept out of here so the kit stays
+//presentational — a theme that consumes the transport is a theme that cannot be
+//swapped for another.
+function setOpener(fn) { opener = fn; }
+
 function openOut(href) {
+    var url = String(href == null ? '' : href).trim();
+
+    //UNDER NW: ask the half that can. Asynchronous, so this cannot report the
+    //outcome as a return value — it hands back a promise, and the one caller
+    //that shows a failure awaits it.
+    if (opener) return opener(url);
+
+    //IN A TAB: this is the right way, not a fallback. `noopener` so the page
+    //opened cannot reach back into this one.
     try {
-        if (typeof nw != 'undefined' && nw.Shell) { nw.Shell.openExternal(href); return true; }
-    } catch (e) { /* not under nw */ }
-    return false;
+        if (typeof window != 'undefined' && window.open) {
+            if (window.open(url, '_blank', 'noopener')) return Promise.resolve(true);
+        }
+    } catch (e) { /* said below */ }
+
+    //SAID, NOT SWALLOWED. A button that quietly does not work is the failure
+    //this whole window is written against, and the old version of this returned
+    //false with no reason anywhere.
+    console.error('[openOut] could not open ' + url + ' — no opener was installed and window.open did not work');
+    return Promise.resolve(false);
 }
 function Link({ href, children, chip }) {
     return (
@@ -407,7 +469,12 @@ function Link({ href, children, chip }) {
         //draws as bare text that happens to be clickable, which is the quiet
         //kind of wrong: it renders, it works, and it looks like nothing.
         <a className={chip ? 'chip linky-chip' : 'linky'} href={href} target="_blank" rel="noreferrer"
-            onClick={function (e) { if (openOut(href)) e.preventDefault(); }}>
+            //ALWAYS PREVENTED, because `openOut` is asynchronous now and the
+            //browser would follow the href while it was still deciding — which
+            //under nw means a second app window opening over this one. The
+            //`href` stays on the element for what it gives a person: hover, and
+            //copy-link.
+            onClick={function (e) { e.preventDefault(); openOut(href); }}>
             {children || href}
         </a>
     );
@@ -495,5 +562,5 @@ module.exports = {
     Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
     Badge, Badges, Chips, Chip, Views,
     Button, Toggle, Plus, Cog, Finder, Sorter, Form, HeadRow, Controls,
-    Skeleton, Notice, Banner, Link, Linky, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Act, ago, openOut
+    Skeleton, Notice, Banner, Link, Linky, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Act, ago, openOut, setOpener
 };
