@@ -265,7 +265,48 @@ async function plugin(imports, register) {
         //built here would have been authorised with it.
         undo.push(actions.define('sshKey', {
             about: "The key this app uses to reach the machines it made — its public half and fingerprint",
-            run: function () { return ssh.state(); }
+            run: async function () {
+                var said = ssh.state();
+
+                //---- AND WHICH MACHINES WOULD ACTUALLY ACCEPT IT -----------
+                //
+                //NOT THE SAME QUESTION AS WHETHER THE KEY EXISTS. A machine
+                //built before this key — or with a different one named in the
+                //dialog — does not have this one's public half in its
+                //`authorized_keys`, and no amount of having a key changes that.
+                //
+                //SPLIT INTO TWO LISTS BECAUSE THEY LEAD TO DIFFERENT PLACES.
+                //"Some machines will not accept it" is a sentence somebody has
+                //to go and investigate; the NAMES are the investigation.
+                //
+                //AND IT IS NOT UNFIXABLE, which the app being ported from said
+                //for a while and was wrong about: an agent runs on the machine
+                //and executes what this host sends it, so the key can be put
+                //there over the channel. That sentence stopped three machines
+                //from having a working terminal for as long as it stood, so it
+                //is not repeated here.
+                var machines = [];
+                try {
+                    var list = await actions.call('vmList', {});
+                    machines = (list && list.vms) || [];
+                } catch (e) { /* no register reachable; the key is still the answer */ }
+
+                var mine = String(said.publicKey || '').trim();
+                var rows = machines.map(function (vm) {
+                    var theirs = String((vm.spec && vm.spec.sshKey) || '').trim();
+                    return {
+                        name: vm.name,
+                        authorised: !!(mine && theirs && theirs === mine),
+                        //ENOUGH TO TELL TWO KEYS APART, and never a whole one.
+                        builtWith: theirs ? theirs.split(' ').slice(0, 2).join(' ').slice(0, 28) + '…' : null
+                    };
+                });
+
+                return Object.assign({}, said, {
+                    machines: rows.filter(function (m) { return m.authorised; }),
+                    strangers: rows.filter(function (m) { return !m.authorised; })
+                });
+            }
         }));
 
         //---- AND MAKING A NEW ONE, WHICH IS NOT A REPAIR --------------------

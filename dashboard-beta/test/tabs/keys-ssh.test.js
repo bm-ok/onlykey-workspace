@@ -152,18 +152,35 @@ test('the fingerprint is the middle field, not the whole line', () => {
 //---------------------------------------------------------------------------
 
 test('with no key, state says so plainly rather than looking broken', () => {
+    //THE FIELD NAMES ARE THE PANE'S, not this module's preference — ../../src/
+    //app/keys/ssh.js reads `ok`, `missing`, `made` and `why`, and drew "unknown"
+    //against a key that was right there when they did not match.
     const ssh = sshWith({});
     const said = ssh.state();
-    assert.equal(said.have, false);
+
+    assert.equal(said.ok, false);
+    assert.equal(said.missing, true);
     assert.equal(said.publicKey, null);
     assert.equal(said.fingerprint, null);
-    assert.match(said.note, /No key yet/);
+    assert.equal(said.made, null);
+    assert.match(said.why, /no ssh key of its own/);
 });
 
-test('and state warns what remaking one costs', () => {
+test('with a key, state names it and says when it was made', () => {
     const ssh = sshWith({});
     ssh.make();
-    assert.match(ssh.state().note, /locks out every machine/);
+    const said = ssh.state();
+
+    assert.equal(said.ok, true);
+    assert.equal(said.missing, false);
+    assert.equal(said.fingerprint, 'SHA256:abc123def456');
+    assert.match(said.file, /id_okc$/);
+    assert.equal(said.why, null);
+
+    //A REAL DATE, off the file itself rather than kept beside it — a second
+    //record of one fact is a second thing to get wrong.
+    assert.ok(said.made, 'nothing says when the key was made');
+    assert.ok(!isNaN(Date.parse(said.made)), 'the date is not a date: ' + said.made);
 });
 
 test('no public key reads as null rather than throwing', () => {

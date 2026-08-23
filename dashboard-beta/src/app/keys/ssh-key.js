@@ -122,20 +122,34 @@ module.exports = function sshKey(deps) {
     function state() {
         if (!have()) {
             return {
-                have: false,
-                publicKey: null,
+                ok: false,
+                missing: true,
                 fingerprint: null,
-                path: keyFile(),
-                note: 'No key yet. One is made the first time a machine is built, or now if you ask.'
+                publicKey: null,
+                file: keyFile(),
+                made: null,
+                why: 'This app has no ssh key of its own yet. Machines built before one exists are '
+                    + 'reachable only with whatever key was chosen when they were made.'
             };
         }
+
+        //WHEN IT WAS MADE, off the file itself rather than kept beside it — a
+        //second record of one fact is a second thing to get wrong. An unreadable
+        //date is not worth an error: the key is the answer, the date is
+        //decoration.
+        var made = null;
+        try { made = io.statSync(keyFile()).mtime.toISOString(); } catch (e) { /* decoration */ }
+
         return {
-            have: true,
-            publicKey: publicKey(),
+            ok: true,
+            missing: false,
             fingerprint: fingerprint(),
-            path: keyFile(),
-            note: 'This is the key this app uses to reach the machines it made. '
-                + 'Making a new one locks out every machine that already has the old one.'
+            publicKey: publicKey(),
+            //THE PATH, NOT THE CONTENTS. A window that shows a private key is a
+            //window that ends up in a screenshot.
+            file: keyFile(),
+            made: made,
+            why: null
         };
     }
 
