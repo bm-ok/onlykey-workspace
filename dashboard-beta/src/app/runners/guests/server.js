@@ -3,6 +3,7 @@ var makeLend = require('./lend');
 var makeChoosing = require('./choosing');
 var shape = require('./shape');
 var lending = require('./lending');
+var makeDesk = require('./desk');
 
 //---------------------------------------------------------------------------
 //THE CLAUDE IDENTITIES THIS HOST HOLDS, as actions and as a service.
@@ -38,8 +39,11 @@ var lending = require('./lending');
 //reaches a machine sealed to a key that machine made — see ../../vms/sealed — and
 //the means to watch what it does with it goes over in the same round trip, which
 //is what ../../vms/dispatch knows where to put.
+//`signin` IS THE SIGN-IN DESK'S SHELL — ../../vms/auth, which builds what runs
+//on the desk user and reads back what it said. It was ported and nothing
+//consumed it, so every Claude sign-in still went to the app being ported from.
 plugin.consumes = ['app', 'log', 'secret', 'dataDir', 'settings',
-    'sealed', 'channel', 'ours', 'dispatch'];
+    'sealed', 'channel', 'ours', 'dispatch', 'signin'];
 plugin.provides = ['guests'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -120,6 +124,18 @@ async function plugin(imports, register) {
         all: store.all,
         paused: shape.paused,
         kindsOf: imports.ours.kindsOf
+    });
+
+    //---- and which machine holds the sign-in desk ---------------------------
+    //
+    //See ./desk: one machine provides every sign-in, and a runner asking for a
+    //login URL is refused with the whole reason rather than a fact.
+    var signin = imports.signin;
+    var DESK = signin.DESK;
+
+    var desk = makeDesk({
+        ours: imports.ours,
+        connected: imports.channel.connected
     });
 
     var undo = [];
@@ -270,6 +286,145 @@ async function plugin(imports, register) {
                 var done = await lend.toMachine(chosen.name, a.name);
 
                 return Object.assign({}, done, { role: chosen.role, guest: chosen.name });
+            }
+        }));
+
+        //=====================================================================
+        //THE SIGN-IN DESK.
+        //
+        //TWO HALVES, BECAUSE THERE IS A PERSON IN THE MIDDLE. The desk prints an
+        //address, somebody visits it and approves, and a code comes back.
+        //Nothing here can do that half, and nothing should.
+        //
+        //ALL OF IT HAPPENS AS THE DESK USER, which is not the machine's own user
+        //and not the supervisor. A Claude sign-in writes to
+        //`~/.claude/.credentials.json` of WHOEVER RUNS IT, and the supervisor
+        //runs as a credential — so signing in as that user would overwrite the
+        //one it is working with, mid-thought. See
+        //../../vms/provision/scripts/supervisor.sh, which makes the desk.
+        //=====================================================================
+
+        //A SHARED GATE, because all four ask the same two things and a fifth
+        //copy of them is a fifth place to forget one.
+        async function atTheDesk(name, what) {
+            var on = desk.which(name);
+            if (!imports.channel.connected(on)) {
+                throw new Error('"' + on + '" is not dialled in, so ' + what + '. Start it and wait '
+                    + 'for it to connect.');
+            }
+            return on;
+        }
+
+        undo.push(actions.define('vmAuthBegin', {
+            about: "Start a sign-in at the desk, and return the URL to visit",
+            takes: ['name', 'wait'],
+            run: async function (args) {
+                var a = args || {};
+                var on = await atTheDesk(a.name, 'no sign-in can be started');
+
+                var wait = Math.max(5, Math.min(Number(a.wait) || 25, 120));
+                var r = await imports.channel.run(on,
+                    signin.asDesk(signin.begin(wait), DESK),
+                    { what: 'starting a sign-in at the desk', timeout: (wait + 30) * 1000 });
+
+                var out = signin.read(r.output);
+
+                if (out.url) {
+                    log.on('vm', on).good(on + ' is waiting to be signed in — open ' + out.url);
+                    return {
+                        name: on,
+                        url: out.url,
+                        next: 'visit it, then: okc.js vmAuthCode --name ' + on + ' --code "<what it gives you>"',
+                        log: out.log
+                    };
+                }
+
+                //NO URL IS NOT AUTOMATICALLY A FAILURE — it may already be
+                //signed in, or it may have refused for a reason of its own. Its
+                //OWN WORDS are the answer; guessing between those would be
+                //inventing one.
+                //
+                //AND THE RAW REPLY WHEN THE PARSED ONE IS EMPTY. A message built
+                //only from fields that turned out to be blank says nothing at
+                //all, and what actually came back is the thing most likely to
+                //explain that.
+                throw new Error('"' + on + '" did not offer a sign-in URL'
+                    + (out.finished ? ' (it exited ' + out.exit + ')' : '') + '.\n'
+                    + 'it said: ' + (out.log || '(nothing)') + '\n' + (out.why || '')
+                    + (out.log || out.why ? '' : '\nraw reply:\n' + String(r.output || '(empty)').slice(-800)));
+            }
+        }));
+
+        //---- AND WHETHER A MACHINE'S OWN WORKER IS SIGNED IN ----------------
+        //
+        //A DIFFERENT QUESTION FROM THE DESK, and about a different machine. The
+        //desk is where a credential is MADE; this asks a runner whether the one
+        //it was handed still works — so it takes any machine this app made, not
+        //only a supervisor.
+        //
+        //ASKED OF THE MACHINE rather than read from the register, because the
+        //register knows what was HANDED OVER and the machine knows what it has.
+        //A credential can be signed in on the machine itself, or carried in its
+        //environment, and neither reaches the register.
+        undo.push(actions.define('vmAuthStatus', {
+            about: "Whether a machine's worker is signed in",
+            takes: ['name'],
+            run: async function (args) {
+                var name = (args || {}).name;
+                imports.ours.get(name);
+                if (!imports.channel.connected(name)) {
+                    throw new Error('"' + name + '" is not dialled in, so its worker cannot be asked.');
+                }
+
+                var r = await imports.channel.run(name,
+                    'claude auth status 2>&1 | head -20; echo "---"; '
+                    + 'ls -l ~/.claude/.credentials.json 2>/dev/null || echo "no credential file"',
+                    { what: 'checking its worker sign-in', timeout: 60000 });
+
+                return { name: name, status: r.output };
+            }
+        }));
+
+        undo.push(actions.define('vmAuthCode', {
+            about: 'Give a waiting desk the code from the sign-in page',
+            takes: ['name', 'code', 'wait'],
+            run: async function (args) {
+                var a = args || {};
+                var on = await atTheDesk(a.name, 'the code cannot be given back');
+                if (!a.code || !String(a.code).trim()) throw new Error('Say what the code is.');
+
+                var wait = Math.max(5, Math.min(Number(a.wait) || 40, 120));
+                var r = await imports.channel.run(on,
+                    signin.asDesk(signin.code(String(a.code).trim(), wait), DESK),
+                    { what: 'finishing a sign-in at the desk', timeout: (wait + 30) * 1000 });
+
+                var out = signin.read(r.output);
+
+                //NOT WAITING IS ITS OWN ANSWER, and a different one from a bad
+                //code: the first is fixed by starting again, the second by
+                //reading the page more carefully.
+                if (out.noPipe) {
+                    throw new Error('"' + on + '" is not waiting for a code. Start it again with vmAuthBegin.');
+                }
+                if (!(out.finished && out.exit === 0)) {
+                    throw new Error('"' + on + '" did not accept that code.\n'
+                        + 'it said: ' + (out.log || '(nothing)') + '\n' + (out.why || ''));
+                }
+
+                return { name: on, ok: true, log: out.log };
+            }
+        }));
+
+        undo.push(actions.define('vmAuthCancel', {
+            about: 'Stop a sign-in the desk is holding open',
+            takes: ['name'],
+            run: async function (args) {
+                var on = await atTheDesk((args || {}).name, 'there is nothing to stop');
+                var r = await imports.channel.run(on, signin.asDesk(signin.cancel(), DESK),
+                    { what: 'stopping a sign-in at the desk', timeout: 30000 });
+
+                log.on('vm', on).warn('the sign-in at the desk was stopped');
+                return Object.assign({ name: on, stopped: true }, signin.read(r.output));
             }
         }));
 

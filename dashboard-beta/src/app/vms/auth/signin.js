@@ -246,3 +246,19 @@ module.exports = function signin() {
 };
 
 module.exports.DIR = DIR;
+
+//---- THE SIGN-IN DESK, AND THERE IS EXACTLY ONE OF THEM --------------------
+//
+//A supervisor machine carries a second user whose only job is to hold sign-in
+//conversations. Its home is its own, so nothing it does can touch what the
+//supervisor is holding — a Claude sign-in writes to `~/.claude/.credentials.json`
+//of WHOEVER RUNS IT, and the supervisor runs as a credential.
+//
+//ONE MACHINE PROVIDES EVERY LOGIN URL. A worker's credential and a supervisor's
+//come off the same desk and differ only in what they are filed as.
+//
+//THE OTHER HALF OF THIS NAME IS IN ../provision/scripts/supervisor.sh, which
+//creates the user. Two places have to agree on it and there is no way around
+//that — the script runs on a machine and this runs here — so it is named in
+//both, and each says the other exists.
+module.exports.DESK = 'okc-signin';

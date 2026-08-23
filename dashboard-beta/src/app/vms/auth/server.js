@@ -27,6 +27,10 @@ var makeSignin = require('./signin');
 plugin.consumes = ['app'];
 plugin.provides = ['signin'];
 async function plugin(imports, register) {
-    await register(null, { signin: makeSignin() });
+    //THE DESK'S NAME TRAVELS WITH THE THING THAT RUNS ON IT, so a caller does
+    //not have to know it — and cannot disagree with ./signin.js about it.
+    await register(null, {
+        signin: Object.assign(makeSignin(), { DESK: makeSignin.DESK })
+    });
 }
 module.exports = plugin;

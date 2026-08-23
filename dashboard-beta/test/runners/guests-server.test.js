@@ -71,7 +71,17 @@ async function aHost() {
         ours: { get: () => ({ name: 'kit-1', tags: ['worker'] }), read: () => [], update: () => {}, kindsOf: (vm) => ((vm && vm.tags) || []), SUPERVISOR: 'supervisor' },
         channel: { connected: () => false, run: async () => ({ output: '' }) },
         sealed: { toTheMachine: async () => ({ fingerprint: 'x' }), fingerprint: () => 'x' },
-        dispatch: { RUNS: '/runs', SUPERVISOR: '/turns', watcherFor: () => '' }
+        dispatch: { RUNS: '/runs', SUPERVISOR: '/turns', watcherFor: () => '' },
+
+        //THE SIGN-IN DESK'S SHELL — vms/auth. This plugin now holds the four
+        //vmAuth* actions, so it declares it, and the desk's user name travels
+        //with the thing that runs on it rather than being known here.
+        signin: {
+            DESK: 'okc-signin',
+            begin: () => 'begin', code: () => 'code', cancel: () => 'cancel',
+            asDesk: (s) => s,
+            read: () => ({ url: null, log: '', finished: true, exit: 0 })
+        }
     }, async (_e, s) => { guests = s.guests; });
 
     return { guests, actions };
