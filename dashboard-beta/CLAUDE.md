@@ -118,6 +118,27 @@ Never conclude from reading the source. Run it.
     npm run walk                                open every tab and pane
     npm test
 
+**First ask whether the app is UP**, which is not what any other check answers.
+
+    node tools/okc.js windowControls --json     # `failed` is null when healthy
+
+A bare identifier is valid syntax. `node --check` parses one, `npm run check`
+bundles one, and `okc.js show` puts a pane up off the last good bundle — so all
+three read green while the server half is dead, and the pane under the red
+overlay goes on rendering its data, which is what makes it convincing. That is
+how `ReferenceError: makeFreeing is not defined` survived a session: two green
+checks, then a screenshot from somebody who had simply looked at the screen.
+
+`failed` and `broke` are different questions and both are on that answer.
+**`broke` is one pane throwing inside a working window; `failed` is the window
+not working.** `npm run walk` stops on `failed` rather than walking forty-two
+panes against a dead app, and `grep -a "server half failed to reload" nw.log`
+is the same answer from the other side.
+
+The overlay also `console.error`s itself, so it is in the dev console and in
+`nw.log` without anybody asking. It comes down again on the next reload that
+works — a check that says "down" while the app is up is not believed twice.
+
 **Reach for `capture`, not `windowShot`.** It writes both files, of the same
 moment, named the same thing, and takes everything `windowShot` takes —
 `--whole`, `--width`, `--height`. `windowShot` is the picture on its own and is
