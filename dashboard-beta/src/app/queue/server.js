@@ -189,6 +189,18 @@ async function plugin(imports, register) {
     //being written, and the first answer this action ever gave was a confident,
     //completely empty board. So a failure is CARRIED rather than flattened.
     var unreachable = [];
+    //NOT `actions.elsewhere`, WHICH THE NAME NOW SUGGESTS AND IT NEVER WAS.
+    //
+    //This is `actions.call` — it tries THIS app's table first and only falls
+    //through to the app being ported from for what is not here yet. That is what
+    //makes a moved action take over the moment it is defined, with nothing to
+    //update here: `vmRuns`, `vmRunOutput`, `vmSessions` and `vmSessionTail` all
+    //moved into ../runners and every caller below started reading this app's
+    //answer without a line changing.
+    //
+    //The name is about what it was FOR rather than what it does. What it adds
+    //over a plain call is the swallow: a queue that cannot reach one action
+    //should report that one thing as unknown, not fail the whole board.
     async function relayed(name, args) {
         if (!actions) return null;
         try { return await actions.call(name, args || {}); }
@@ -658,6 +670,69 @@ async function plugin(imports, register) {
             takes: ['id'],
             run: async function (args) {
                 return await doors.remove((args || {}).id);
+            }
+        }));
+
+        //---- EVERY ATTEMPT AT ONE TASK, AND WHAT ITS WORKER IS DOING NOW ----
+        //
+        //THE DECIDING IS ./attempts.js's, all of it — which attempt is running,
+        //which never started, and which had no run to start with. What is here
+        //is the door.
+        //
+        //IT PULLS EACH FINISHED RUN'S LOG ACROSS AND KEEPS IT, which is why this
+        //is more than a read and why it happens on being ASKED rather than on a
+        //timer: this is the moment somebody is looking at the work, and a run
+        //nobody has looked at since it ended is exactly the one whose machine
+        //has not been touched yet. The machine is the disposable half of this
+        //tool, and a rollback takes the only account of what happened with it.
+        undo.push(actions.define('taskProgress', {
+            about: 'Every attempt at a task, and what its worker is doing right now',
+            needs: 'workspace',
+            takes: ['id', 'lines'],
+            run: async function (args) {
+                var a = args || {};
+                return await attempts.progress(a.id, {
+                    lines: a.lines == null ? 12 : Number(a.lines)
+                });
+            }
+        }));
+
+        //---- AND WHAT ARRIVED ON ITS BRANCH ---------------------------------
+        //
+        //NEVER CACHED, and that is the whole note. This is what somebody judges
+        //from, and reading a four-second-old picture of a branch is exactly the
+        //wrong moment to be reading a stale one.
+        undo.push(actions.define('taskArtifact', {
+            about: "What arrived on a task's branch: commits and files, per repository",
+            needs: 'workspace',
+            takes: ['id'],
+            run: async function (args) {
+                var task = await store.get((args || {}).id);
+                return await artifact.read(task.branch, { fresh: true });
+            }
+        }));
+
+        //---- ONE REPOSITORY'S CHANGES, IN FULL ------------------------------
+        //
+        //WHICH REPOSITORY IS ASKED FOR RATHER THAN GUESSED. A task's branch can
+        //exist in several, and picking one would answer a question nobody put —
+        //the refusal names what is missing instead.
+        undo.push(actions.define('taskDiff', {
+            about: "One repository's changes on a task's branch, in full",
+            needs: 'workspace',
+            takes: ['id', 'repo', 'file'],
+            run: async function (args) {
+                var a = args || {};
+                if (!a.repo) throw new Error('Say which repository.');
+
+                var task = await store.get(a.id);
+                return {
+                    task: task.id,
+                    repo: a.repo,
+                    branch: task.branch,
+                    file: a.file || null,
+                    diff: await artifact.diff(a.repo, task.branch, a.file)
+                };
             }
         }));
 
