@@ -70,8 +70,18 @@ module.exports = function inbox(theme, okc, remember) {
                     {/* NOTHING WAITING IS THE GOOD ANSWER and should read like
                         one. An empty list that looks like a broken list is how
                         somebody goes looking for the thing that is not there. */}
+                    {/* AND THE EMPTY SENTENCE IS THE ACTION'S, NOT THIS PANE'S.
+                        It said "Everything that needed a person has had one",
+                        which is a bigger claim than this app can make: the list
+                        is composed from the sources that have been ported, and
+                        four more are not being read at all. An empty inbox whose
+                        own words promise completeness is the failure the list
+                        exists to prevent, arriving through the list.
+
+                        The action names what it is not reading and says so in
+                        `note`; this shows it rather than talking over it. */}
                     {!all.length
-                        ? <CardSub>Everything that needed a person has had one.</CardSub>
+                        ? <CardSub>{state.note || 'Everything that needed a person has had one.'}</CardSub>
                         : <CardSub>Each of these is stopped until somebody decides something.</CardSub>}
                     {Object.keys(kinds).length > 1 ? (
                         <Chips>
