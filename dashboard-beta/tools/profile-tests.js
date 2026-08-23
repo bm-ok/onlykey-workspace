@@ -6,6 +6,19 @@ var cp = require('child_process');
 //---------------------------------------------------------------------------
 //`npm run test-profile` — what each test file costs, and what never finishes.
 //
+//---- NOT CALLED `test-profile.js`, AND THAT IS THE POINT --------------------
+//
+//NODE'S TEST RUNNER GLOBS `**/test-*.js` as well as `**/*.test.js` and
+//`**/test/**`. Under its old name this file matched — so `npm test` RAN THE
+//PROFILER as one of its own tests, which ran the suite again from inside the
+//suite. It cost fourteen seconds of every run and reported nothing, because
+//nobody was reading a profiler's stdout in the middle of a test run.
+//
+//CLAUDE.md already warns about the `test/**` half of this trap and says to put
+//shared helpers in tools/ for exactly that reason. This is the other half: being
+//in tools/ is not enough, the NAME has to miss the glob too. Anything here that
+//starts with `test-` is a test as far as `npm test` is concerned.
+//
 //WHY THIS EXISTS. `npm test` is two minutes and says one number at the end, so
 //"the suite is slow" is as much as anybody can tell from it. Two minutes is long
 //enough that it stops being run, and a suite that stops being run is a suite
