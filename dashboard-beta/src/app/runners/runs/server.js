@@ -3,6 +3,8 @@ var path = require('path');
 
 var makeAsking = require('./asking');
 var makeBriefing = require('./briefing');
+var makeFolder = require('./folder');
+var makeJobOrder = require('./joborder');
 
 //---------------------------------------------------------------------------
 //WORK IN FLIGHT ON A MACHINE: GIVING IT OUT, FOLLOWING IT, STOPPING IT.
@@ -37,7 +39,12 @@ plugin.consumes = ['app', 'log', 'dispatch', 'ours', 'channel', 'secret',
     //  sessions        where that conversation is filed, and what it must be told
     //  vbox, guestApi  where a guest hands an artifact back to
     //  repoWorkspaces  whether `--folder` is a path on the machine or on this host
-    'whatIsOn', 'sessions', 'vbox', 'guestApi', 'repoWorkspaces'];
+    'whatIsOn', 'sessions', 'vbox', 'guestApi', 'repoWorkspaces',
+    //AND FOR `jobRun`:
+    //  library   the job, the prompt and the contract, each with its approval
+    //  queue     the task a job may be run for
+    //  judge     the judgement it may be run for instead
+    'library', 'queue', 'judge'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -51,6 +58,27 @@ async function plugin(imports, register) {
     var asking = makeAsking({
         ours: imports.ours,
         connected: channel.connected
+    });
+
+    //WHERE WORK RUNS ON THE MACHINE — see ./folder.js for the silent fallback
+    //this exists to close, and why the app being ported from closed it for jobs
+    //and not for tasks.
+    var folder = makeFolder({
+        homeOf: async function (name) {
+            var r = await channel.run(name, 'printf "%s\\n" "$HOME"',
+                { what: 'where its home is', timeout: 15000 });
+            return String((r && r.output) || '').trim().split('\n').pop().trim();
+        },
+        defaultFor: function (name) {
+            var vm = imports.ours.get(name);
+            return imports.repoWorkspaces.folderFor(vm && vm.spec);
+        }
+    });
+
+    var order = makeJobOrder({
+        jobs: imports.library.jobs,
+        prompts: imports.library.prompts,
+        contracts: imports.library.contracts
     });
 
     var briefing = makeBriefing({
@@ -87,7 +115,6 @@ async function plugin(imports, register) {
                 asking.reachable(a.name, 'it cannot be given work');
                 if (!a.task || !String(a.task).trim()) throw new Error('Say what the task is.');
 
-                var vm = imports.ours.get(a.name);
                 var to = log.on('vm', a.name);
 
                 //---- WHICH RULES, DECIDED BEFORE ANYTHING IS STARTED --------
@@ -143,9 +170,17 @@ async function plugin(imports, register) {
                 }
 
                 var id = dispatch.newId();
-                var where = imports.repoWorkspaces.guestPath(a.folder, '--folder')
-                    || (vm.spec && vm.spec.folder)
-                    || imports.repoWorkspaces.folderFor(vm.spec);
+
+                //---- WHERE IT RUNS, RESOLVED AGAINST THE MACHINE'S OWN HOME --
+                //
+                //NOT PASSED THROUGH AS WRITTEN, which is what the app being
+                //ported from does here and is why every task on a default folder
+                //has been running in the home directory. The default IS a shell
+                //expansion and everything sent to a guest is single-quoted, so
+                //`cd '$HOME/workspace'` fails and the line ends `|| cd "$HOME"`.
+                //See ./folder.js.
+                var where = await folder.on(a.name,
+                    imports.repoWorkspaces.guestPath(a.folder, '--folder'));
 
                 //---- WHERE THIS HOST CAN BE REACHED --------------------------
                 //
@@ -197,6 +232,186 @@ async function plugin(imports, register) {
                     contract: under.rules ? (under.at || under.named) : null,
                     watch: 'okc.js vmSessionTail --name ' + a.name,
                     note: 'started, not finished — read its session for progress and vmRuns for the outcome'
+                };
+            }
+        }));
+
+        //---- SENDING A JOB TO A MACHINE ------------------------------------
+        //
+        //THE SAME MACHINERY AS A TASK, not a parallel one. ../../vms/dispatch
+        //already writes a run directory, detaches the work, records a pid and a
+        //status and keeps the log. A job is a third mode beside `claude -p` and
+        //`bash`: `node`, with a small API written beside the script.
+        //
+        //WHAT IT MAY RUN IS ./joborder.js's, all of it — the approvals, where
+        //the words come from, and the refusal to send a prompt without the
+        //contract it was approved with.
+        undo.push(actions.define('jobRun', {
+            about: 'Send a job to a machine and let it run there, with a prompt — or with what a task '
+                + 'or a judgement carries',
+            needs: 'workspace',
+            takes: ['id', 'promptId', 'task', 'judgement', 'name', 'folder'],
+            run: async function (args) {
+                var a = args || {};
+
+                var job = await order.jobFor(a.id);
+
+                //---- A MACHINE IS REQUIRED, AND REFUSED RATHER THAN CHOSEN ---
+                //
+                //Which machine a job runs on decides what it can see and what it
+                //leaves behind, and picking one quietly is how work lands
+                //somewhere nobody meant. The refusal lists what IS connected,
+                //because that is the question behind the mistake.
+                if (!a.name) {
+                    var free = (imports.ours.read() || [])
+                        .filter(function (v) { return channel.connected(v.name); })
+                        .map(function (v) { return v.name; });
+                    throw new Error(free.length
+                        ? 'Say which machine. Connected right now: ' + free.join(', ') + '.'
+                        : 'Say which machine — and none is connected right now, so start one first.');
+                }
+
+                asking.reachable(a.name, 'it cannot be given anything');
+                var vm = imports.ours.get(a.name);
+                var to = log.on('job', a.id, a.name);
+
+                //---- THE WORKER CREDENTIAL, BECAUSE A JOB MAY START ONE ------
+                //
+                //The queue does three things before it dispatches a task — bring
+                //the machine up, hand it the credential, set the workspace up —
+                //and a job dispatched here did none of them. That was invisible
+                //until the API grew `claude()`: a job that ran a worker got
+                //`Not logged in · Please run /login` every time, on a machine
+                //whose only fault was that nobody had given it the credential
+                //this host had been holding since yesterday.
+                //
+                //NOT FATAL, ON PURPOSE. Most jobs never start a worker, and a
+                //machine that cannot be given one is a reason to say so rather
+                //than to refuse work that does not need it — `claude()` will say
+                //the same thing far more precisely if it turns out to matter.
+                //
+                //WHICH SIGN-IN, FROM THE JOB. A judge job wants a judge's
+                //identity and a task job a worker's, and on a machine tagged as
+                //both nothing else can answer it.
+                var role = job.kind === 'judge' ? 'judge' : 'worker';
+                try {
+                    await actions.call('vmCredentialsPut', { name: a.name, role: role });
+                } catch (e) {
+                    to.warn(a.name + ' has no ' + role + ' credential — a job that starts one will be '
+                        + 'refused: ' + e.message);
+                }
+
+                //---- WHAT IT IS TOLD -----------------------------------------
+                if (a.task && a.judgement) {
+                    throw new Error('Run it for a task or for a judgement, not both — they are '
+                        + 'different pieces of work and the run belongs to one of them.');
+                }
+
+                var work = null;
+                if (a.task) {
+                    work = imports.queue.task.get(a.task);
+                    if (!work) throw new Error('There is no task called "' + a.task + '".');
+                } else if (a.judgement) {
+                    work = imports.judge.get(a.judgement);
+                    if (!work) throw new Error('There is no judgement called "' + a.judgement + '".');
+                }
+
+                //---- A CONTINUATION SAYS SO, AND THIS IS THE PATH THAT MATTERS
+                //
+                //The brief becomes the job's prompt in ./joborder.js, so the
+                //announcement has to be on the brief before it gets there.
+                //
+                //THIS IS THE PATH THE FIRST VERSION MISSED. It was written into
+                //vmDispatch alone, where it never once fired: a task with a JOB
+                //never touches vmDispatch, and every task in the drill that
+                //found the problem has one. See ../sessions/keying.js.
+                if (work && work.brief) {
+                    try {
+                        var doing = {
+                            kind: a.judgement ? 'judgement' : 'task',
+                            id: work.id,
+                            uid: work.uid,
+                            item: work
+                        };
+                        var kept = await sessions.get(sessions.keyFor(doing));
+                        var said = sessions.announcement(doing, kept);
+                        if (said) {
+                            work = Object.assign({}, work, {
+                                brief: makeBriefing.briefWith(said, work.brief)
+                            });
+                            //SAID OUT LOUD, because whether this fired is
+                            //otherwise only answerable by reading the code —
+                            //which is how the first version went unnoticed while
+                            //never firing at all. A brief is not in the run log,
+                            //so nothing downstream can show it either.
+                            to.info('this brief is announced as a continuation — it resumes a '
+                                + 'conversation begun by other work on this subject');
+                        }
+                    } catch (e) { /* a brief that could not be annotated is still the brief */ }
+                }
+
+                var told = await order.whatItIsTold({
+                    work: work,
+                    promptId: work ? null : (a.promptId || job.promptId || null)
+                });
+
+                //---- AND WHERE IT RUNS ---------------------------------------
+                var where = await folder.on(a.name,
+                    imports.repoWorkspaces.guestPath(a.folder, '--folder'));
+
+                var base = null;
+                try {
+                    var at = await imports.vbox.hostAddress();
+                    if (at) base = 'https://' + at + ':' + imports.guestApi.PORT;
+                } catch (e) { /* no address means no helper, and the job still runs */ }
+
+                var runId = makeJobOrder.runIdFor(a.id, Date.now());
+
+                to.info('sending "' + job.name + '" to ' + a.name
+                    + (told.prompt ? ' with the prompt "' + told.prompt.name + '"' : '')
+                    + (told.contract ? ', under "' + told.contract.name + '"' : ''));
+
+                var out = await channel.run(a.name, dispatch.script({
+                    id: runId,
+                    task: job.code,
+                    job: job.code,
+                    vm: a.name,
+                    //THE MACHINE'S OWN TOKEN, which this host holds and the guest
+                    //does not have until something puts it there.
+                    token: vm.spec && vm.spec.token,
+                    prompt: told.prompt
+                        ? { id: told.prompt.id, name: told.prompt.name, text: told.prompt.text }
+                        : null,
+                    //THE TEXT, NOT THE NAME. Carried rather than referenced: read
+                    //six weeks later, a name proves nothing about what the worker
+                    //was actually held to.
+                    contract: told.contract ? told.contract.text : null,
+                    contractName: told.contract ? told.contract.name : null,
+                    contractId: told.contract ? told.contract.id : null,
+                    folder: where,
+                    base: base
+                }), { what: 'dispatching the job ' + a.id, timeout: 60000 });
+
+                if (!/okc-dispatched/.test(out.output || '')) {
+                    throw new Error('"' + a.name + '" did not start it: '
+                        + (String(out.output || '').trim().split('\n').pop() || 'it said nothing'));
+                }
+
+                to.good(a.name + ' is running "' + job.name + '" as ' + runId);
+
+                return {
+                    run: runId,
+                    job: job.id,
+                    machine: a.name,
+                    prompt: told.prompt ? told.prompt.id : null,
+                    //SAID PLAINLY, because "no rules" is the dangerous answer and
+                    //it is also the silent one — the same note vmDispatch makes.
+                    contract: told.contract ? told.contract.id : null,
+                    //FIRE AND FORGET, like every other run here. Holding the
+                    //channel open would make starting one indistinguishable from
+                    //waiting for it.
+                    note: 'Started. Read what it says with: okc.js vmRunOutput --name ' + a.name
+                        + ' --run ' + runId
                 };
             }
         }));
