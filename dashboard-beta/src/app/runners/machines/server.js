@@ -272,6 +272,21 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- WHERE A GUEST WOULD FIND THIS HOST ----------------------------
+        //
+        //A FACT ABOUT THE HOST, asked of the layer that knows which adapter the
+        //machines are on. ../../core/tls needs it to say whether its certificate
+        //still covers this host — and core cannot consume ../../vms without
+        //inverting the layering, so it asks for this BY NAME through the action
+        //table. A lookup resolves at call time and is not an edge in the graph,
+        //which is the same trick ../../keys uses to have its token checked.
+        undo.push(actions.define('vmHostAddress', {
+            about: 'The address a machine would use to reach this host',
+            run: async function () {
+                return { address: await vbox.hostAddress() };
+            }
+        }));
+
         undo.push(actions.define('vmList', {
             about: 'The virtual machines this app made, with live state and stage',
             run: function () { return ours.all(); }

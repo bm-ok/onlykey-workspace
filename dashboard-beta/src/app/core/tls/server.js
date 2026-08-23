@@ -265,6 +265,46 @@ async function plugin(imports, register) {
     //longer fetch.
     var undo = [];
     if (host && host.actions) {
+        //---- WHAT THIS HOST'S CERTIFICATE IS -------------------------------
+        //
+        //THIS RELAYED, AND THAT WAS ACTIVELY DANGEROUS RATHER THAN MERELY
+        //INCOMPLETE. The Keys → HTTPS pane published
+        //`bd6ab7bc4e56ed…` — the authority of the app being ported from — while
+        //every machine THIS app builds checks `04e1f04d…`. A person reading that
+        //pane to verify a machine would have been comparing against an authority
+        //none of their machines has ever heard of, and the numbers are long
+        //enough that nobody notices they are the wrong ones.
+        //
+        //THE FINGERPRINT IS THE ONE NUMBER SOMEBODY MAY ACTUALLY NEED TO READ
+        //OUT. A brand-new machine checks the authority against it before
+        //trusting anything, over a connection that is not yet protected — see
+        //../../vms/provision/bootstrap.js. Published rather than secret, for
+        //exactly that reason, and the private half never leaves this host.
+        undo.push(host.actions.define('tlsKey', {
+            about: "This host's certificate: what it names, when it expires, and its authority",
+            run: async function () {
+                //ASKED OF THE MACHINE LAYER, because "which address is this
+                //host" is a question about the network this app's guests are
+                //on, not about a certificate. No adapter is its own answer.
+                var address = null;
+                try {
+                    var said = await host.actions.call('vmHostAddress', {});
+                    address = (said && said.address) || null;
+                } catch (e) { /* reported as `matches: true` with nothing to match */ }
+
+                var out = state(address);
+
+                var fingerprint = null;
+                try { fingerprint = ensure().fingerprint; } catch (e) { /* missing, said above */ }
+
+                return Object.assign({}, out, {
+                    address: address,
+                    fingerprint: fingerprint,
+                    dir: DIR
+                });
+            }
+        }));
+
         undo.push(host.actions.define('tlsRegenerate', {
             about: 'Make a new certificate for this host — every machine must then be set up again',
             run: function () {
