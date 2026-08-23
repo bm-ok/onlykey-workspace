@@ -47,12 +47,36 @@ var makeRegistry = require('./registry');
 //that says what else exists.
 //---------------------------------------------------------------------------
 
-//THE PORT A MACHINE ALREADY DIALS. Every machine on this host was built with
-//these baked into its environment — see ../provision/header.js — so they are not
-//a preference: they are what the machines already believe.
-var PORT = 7317;
-var CA_PORT = 7318;
-var CHANNEL_PORT = 7374;
+//---- THE PORTS A MACHINE THIS APP BUILDS WILL DIAL --------------------------
+//
+//BAKED INTO A MACHINE AT BUILD TIME — see ../provision/header.js — so changing
+//one does not move a machine that already exists. It changes what the NEXT one
+//is told, and strands every machine built before it.
+//
+//WHICH IS WHY THEY WERE CHANGED NOW AND MUST NOT BE AGAIN. This app has built no
+//machines yet: its register was empty, so there is nothing that believes the old
+//numbers. That window closes with the first `vmInstall`.
+//
+//THE THREE THEY REPLACED WERE EACH WRONG, AND EACH SILENTLY:
+//
+//  7317  was ALSO ../../core/http's — the window's own server. So `vmDispatch`
+//        baked `https://<lan address>:7317` into every guest, pointing at a
+//        PLAIN HTTP server, bound to [::1] only, that serves the window. Three
+//        ways wrong at once and none of them observable from here, because
+//        nothing bound the HTTPS side to fail on.
+//  7318  the CA port, unbound, and one off from a number already in use.
+//  7374  the CHANNEL port of the app being ported from, which is listening on
+//        0.0.0.0 right now. Nothing collided only because this app never called
+//        `listen`. The moment it did, either the bind fails or a machine dialling
+//        home reaches the OTHER dashboard — and that machine would look, from
+//        here, exactly like one that never came up.
+//
+//7383-7385 ARE CLEAR OF BOTH APPS. The app being ported from holds 7373, 7374
+//and 7375; this app's window holds 7317. Checked against what was actually
+//listening rather than against what was assumed.
+var PORT = 7383;
+var CA_PORT = 7384;
+var CHANNEL_PORT = 7385;
 
 plugin.consumes = ['app', 'log', 'tls', 'ours', 'channel'];
 plugin.provides = ['guestApi'];

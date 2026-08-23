@@ -67,6 +67,7 @@ function there(p) {
 plugin.consumes = ['app', 'log', 'dataDir'];
 plugin.provides = ['tls'];
 async function plugin(imports, register) {
+    var host = imports.app.host;
     var log = imports.log.on('tls');
     var DIR = process.env.OKC_KEYS || imports.dataDir.path;
 
@@ -248,7 +249,40 @@ async function plugin(imports, register) {
         };
     }
 
+    //---- MAKING A NEW AUTHORITY, WHICH IS NOT A REPAIR ---------------------
+    //
+    //DEFINED HERE RATHER THAN RELAYED, AND THAT IS THE WHOLE POINT OF PORTING
+    //IT NOW. While it fell through to the app being ported from, pressing
+    //Regenerate in THIS app's Keys tab replaced the OTHER app's certificate —
+    //instantly breaking every machine that app had built, from a button in a
+    //window that had no business touching it. The same shape as `vmRemove`
+    //reaching the other register, with a wider blast radius.
+    //
+    //IT IS NOT A FIX FOR ANYTHING. Every machine already built trusts the OLD
+    //authority, checked against a fingerprint at the moment it was made, and
+    //they will refuse the new one. So this is "start again with the machines",
+    //said plainly in the answer rather than discovered by a machine that can no
+    //longer fetch.
+    var undo = [];
+    if (host && host.actions) {
+        undo.push(host.actions.define('tlsRegenerate', {
+            about: 'Make a new certificate for this host — every machine must then be set up again',
+            run: function () {
+                var made = ensure({ force: true });
+                log.warn('A new certificate was made. Every machine has to be set up again before it '
+                    + 'can fetch or push.');
+                return {
+                    covers: made.covers,
+                    fingerprint: made.fingerprint,
+                    dir: made.dir,
+                    restart: 'restart the dashboard for it to be served'
+                };
+            }
+        }));
+    }
+
     await register(null, {
+        onDestroy: function () { while (undo.length) undo.pop()(); },
         tls: {
             ensure: ensure, make: make, have: have,
             covers: covers, matches: matches, state: state,

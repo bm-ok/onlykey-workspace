@@ -231,10 +231,58 @@ async function plugin(imports, register) {
         }
     }));
 
+    //---- AND THE DOOR IS ACTUALLY OPENED -----------------------------------
+    //
+    //NOBODY WAS CALLING THIS. Every plugin registered its verbs correctly, the
+    //registry matched them correctly, and no socket was ever bound — so a
+    //machine built by this app would have had nowhere to report to, nowhere to
+    //fetch its scripts from, and nowhere to dial in. It would have installed for
+    //twenty-five minutes and then looked exactly like a machine that had wedged.
+    //
+    //HERE BECAUSE `onHello` HAS TO COME FROM SOMEWHERE, and ../https says so in
+    //its own header: it cannot consume this plugin to get the handler, because
+    //this plugin consumes IT to register verbs, and the graph would be a cycle.
+    //So whoever has the dial-in work calls listen and hands it over. That is
+    //this plugin — ./settling.js's `firstSnapshotIfItNeedsOne` IS the dial-in
+    //work, and it was written for this moment and never reached.
+    //OPENING THE DOOR MUST NOT BE ABLE TO TAKE THE APP DOWN WITH IT.
+    //
+    //`listen` reaches for the certificate before it binds anything, and a host
+    //with no data directory — the test suite builds server halves against a bare
+    //one — has no certificate to reach for. Letting that throw here took the
+    //WHOLE plugin graph down: six failures, none of them mentioning a port.
+    //
+    //So it is caught and SAID, never swallowed. A door that would not open is
+    //the failure that otherwise looks like nothing at all, and the difference
+    //between "no machines are talking to us" and "we never opened the socket" is
+    //not something anybody downstream can work out.
+    var opened = { refused: [] };
+    try {
+        opened = await imports.guestApi.listen({
+            //A MACHINE'S FIRST WORDS. It has finished installing and booted into
+            //the system it installed, which is the one moment a clean snapshot
+            //means anything — see ./settling.js, which decides whether it is.
+            onHello: function (name) {
+                return settle.firstSnapshotIfItNeedsOne(name);
+            }
+        });
+    } catch (e) {
+        opened = { refused: [{ what: 'everything', port: imports.guestApi.PORT, why: e.message }] };
+    }
+
+    //EVERY ONE OF THESE IS A MACHINE THAT WILL NOT BE ABLE TO REACH THIS HOST,
+    //and the reason is knowable HERE and nowhere downstream.
+    (opened.refused || []).forEach(function (no) {
+        log.bad('nothing is listening for machines on ' + no.what + ' port ' + no.port
+            + ' — ' + no.why + '. A machine built now would install and never report back.');
+    });
+
     await register(null, {
         //THE NODE BUNDLE IS REBUILT ON EVERY SAVE, so what this registered has
         //to come off again or a save leaves two of it — see ../channel/server.js.
-        onDestroy: function () { stopConsoles(); stopPools(); stopServing(); },
+        //THE SOCKETS TOO: ../https closes them, and a save that left one bound
+        //would stop the next load from binding at all.
+        onDestroy: function () { stopConsoles(); stopPools(); stopServing(); imports.guestApi.close(); },
 
         provision: {
             fill: spec.fill,
