@@ -16,7 +16,7 @@ function storeIn(opts) {
     const at = o.noWorkspace ? null : fs.mkdtempSync(path.join(os.tmpdir(), 'okc-sessions-'));
     const store = makeStoring({
         root: async () => at,
-        inspect: o.inspect || ((bytes) => ({ inside: { turns: 1, bytes: bytes.length }, refuse: [] })),
+        inspect: o.inspect || ((bytes) => ({ inside: { turns: 1, bytes: bytes.length }, refuse: [], checked: true })),
         most: o.most
     });
     return { store, at };
@@ -32,7 +32,7 @@ test('a credential in the archive is refused, and NOTHING is written', () => {
     //THE ORDER IS THE WHOLE POINT. Writing first and checking after would put
     //the thing being refused on disk, in the folder it was being kept out of.
     const { store, at } = storeIn({
-        inspect: () => ({ inside: {}, refuse: ['.claude/.credentials.json'] })
+        inspect: () => ({ inside: {}, refuse: ['.claude/.credentials.json'], checked: true })
     });
 
     return assert.rejects(
@@ -44,8 +44,31 @@ test('a credential in the archive is refused, and NOTHING is written', () => {
 });
 
 test('the refusal names the file and points at where the exclusion belongs', () => {
-    const { store } = storeIn({ inspect: () => ({ inside: {}, refuse: ['.credentials.json'] }) });
+    const { store } = storeIn({
+        inspect: () => ({ inside: {}, refuse: ['.credentials.json'], checked: true })
+    });
     return assert.rejects(() => store.keep('k', SOME, {}), /job-api\.js/);
+});
+
+test('an archive that could not be OPENED is refused, not kept with a note', async () => {
+    //"could not check" must not arrive looking like "checked and clean". An
+    //archive that will not parse has no entries, so asking whether a credential
+    //is in it answers no — and an archive nothing can read cannot be handed back
+    //to a machine either, so what would be kept is bytes nobody has looked at.
+    const { store, at } = storeIn({
+        inspect: () => ({ inside: { unreadable: 'it is not a tar' }, refuse: [], checked: false })
+    });
+
+    await assert.rejects(() => store.keep('k', SOME, {}),
+        (e) => /could not be checked/.test(e.message) && /it is not a tar/.test(e.message));
+    assert.deepEqual(fs.readdirSync(at), [], 'an unreadable archive was written anyway');
+});
+
+test('an inspector that forgets to say whether it looked is treated as not having looked', async () => {
+    //FAIL CLOSED. A check whose default is "it was fine" stops existing the
+    //first time somebody adds a return path that does not set the flag.
+    const { store } = storeIn({ inspect: () => ({ inside: { turns: 1 }, refuse: [] }) });
+    await assert.rejects(() => store.keep('k', SOME, {}), /could not be checked/);
 });
 
 test('an empty archive, an oversized one and a bad id are each refused by name', async () => {

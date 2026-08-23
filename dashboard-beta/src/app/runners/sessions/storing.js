@@ -84,6 +84,30 @@ module.exports = function storing(deps) {
         //See ./looking.js for what may never be in one and why the guest's own
         //exclusion is not a boundary.
         var seen = inspect(bytes);
+
+        //---- AND WHAT COULD NOT BE LOOKED AT IS NOT WHAT WAS FOUND CLEAN ---
+        //
+        //An archive that will not parse has no entries, so asking "is there a
+        //credential in it" answers no — and "not checked" would arrive looking
+        //exactly like "checked and clean". Silence must not be able to mean two
+        //different things; the app being ported from says so itself, in
+        //`vmHolds`, and this is the same shape.
+        //
+        //REFUSED RATHER THAN KEPT WITH A NOTE, because an archive that cannot be
+        //read cannot be handed back to a machine either. What would be kept is
+        //bytes nobody has looked at, in the folder that exists to be kept for a
+        //long time — which is the thing the check above is for.
+        //FAIL CLOSED. `!seen.checked` rather than `seen.checked === false`, so an
+        //inspector that forgets to say is treated as one that could not look. A
+        //check whose default is "it was fine" is a check that stops existing the
+        //first time somebody adds a return path to it.
+        if (!seen.checked) {
+            var why = (seen.inside && seen.inside.unreadable) || 'it could not be read';
+            throw new Error('that archive could not be opened, so it could not be checked: ' + why
+                + '. Nothing was kept — an archive that cannot be read cannot be given back to a '
+                + 'machine either.');
+        }
+
         if (seen.refuse && seen.refuse.length) {
             throw new Error('that archive has ' + seen.refuse.join(', ') + ' in it, and a credential is '
                 + 'never kept unsealed. It is meant to be excluded when the archive is built — see '
