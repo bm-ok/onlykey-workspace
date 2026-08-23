@@ -241,7 +241,26 @@ module.exports = function trouble(theme, okc, shell) {
             //`claude` will run, and this would immediately scold you for the
             //credential you were just told to place, on a machine you are
             //visibly sitting in.
+            //---- AND NOT A SUPERVISOR, WHICH THIS DID NOT ASK -------------
+            //
+            //EVERY SENTENCE BELOW IS THE RUNNER'S AND NONE OF THEM IS TRUE OF A
+            //SUPERVISOR. "A runner rests off and holding nothing" is exactly
+            //backwards for one: it is MEANT to be up, it is MEANT to be holding
+            //its sign-in, and sitting quietly between wakes is not idleness —
+            //it is what a supervisor does.
+            //
+            //IT TOLD SOMEBODY TO UNDO A WORKING SUPERVISOR. beta-super1 came up,
+            //was signed in as "claude-super-3", took a turn — and this banner
+            //said it was "on, doing nothing, and holding a WORKER credential"
+            //and offered a "Take it back" button that would have stripped the
+            //credential that had just made it work.
+            //
+            //THE BLOCK BELOW THIS ONE ALREADY LEARNED IT. Its own note says the
+            //first machine it ever fired on was "a SUPERVISOR holding a
+            //supervisor sign-in" — the fix went in there and not here, one
+            //block up, where the same list is filtered a second time.
             return v.running
+                && (v.tags || []).indexOf('supervisor') < 0
                 && !busy[v.name]              //the queue is using it
                 && !v.borrowed                //somebody took it, deliberately
                 && v.forTasks !== false       //somebody said keep this one back
