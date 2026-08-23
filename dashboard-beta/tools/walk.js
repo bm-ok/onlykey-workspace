@@ -75,17 +75,58 @@ function listedIn (text) {
   return tail.split(',').map(s => s.trim()).filter(Boolean)
 }
 
-function okc (args) {
-  const out = execFileSync(process.execPath, [OKC, ...args, '--json'], {
-    encoding: 'utf8',
-    windowsHide: true,
-    // STDERR IS CAPTURED, NOT PASSED THROUGH. Half the calls here are meant to
-    // fail -- asking for a tab that cannot exist is how the list of real ones is
-    // obtained -- so letting those refusals reach the terminal fills the report
-    // with eleven complaints about a thing nobody asked for.
-    stdio: ['ignore', 'pipe', 'pipe']
-  })
-  return JSON.parse(out)
+// AWAY IS NOT BROKEN, and the two look identical from out here.
+//
+// The server half is rebuilt on every save, INSIDE the app's own process, and
+// ../src/app/core/io/server.js drops every client while it does -- so a walk
+// that starts within a few seconds of an edit asks a window that is briefly not
+// answering anybody. That is the app working as designed.
+//
+// IT USED TO THROW `execFileSync`'s STACK, forty lines of node internals with
+// `a page did not answer` buried at the top, which reads exactly like the app
+// having died. It happened on the first `show` of the first tab, before a single
+// pane had been looked at, so the run produced no report at all.
+//
+// WAITED OUT RATHER THAN RETRIED FOREVER: a reload is seconds, and something
+// that is still not answering after half a minute is not reloading. The wait is
+// bounded so it can FAIL and say so, because a check that hangs cannot report.
+const AWAY = /a page did not answer|no dashboard is listening|server half is rebuilding/i
+const WAIT_MS = 30000
+
+function okc (args, patience) {
+  const until = Date.now() + (patience === undefined ? WAIT_MS : patience)
+  let saidWaiting = false
+
+  for (;;) {
+    try {
+      const out = execFileSync(process.execPath, [OKC, ...args, '--json'], {
+        encoding: 'utf8',
+        windowsHide: true,
+        // STDERR IS CAPTURED, NOT PASSED THROUGH. Half the calls here are meant to
+        // fail -- asking for a tab that cannot exist is how the list of real ones is
+        // obtained -- so letting those refusals reach the terminal fills the report
+        // with eleven complaints about a thing nobody asked for.
+        stdio: ['ignore', 'pipe', 'pipe']
+      })
+      if (saidWaiting) console.log('  ...back')
+      return JSON.parse(out)
+    } catch (e) {
+      // A REFUSAL IS THE ANSWER HERE and must go straight back: asking for a tab
+      // that cannot exist is how the real ones are listed, and retrying that for
+      // thirty seconds would turn the fastest part of this tool into the slowest.
+      if (!AWAY.test(said(e))) throw e
+      if (Date.now() >= until) {
+        throw new Error('the app has not answered for '
+          + Math.round((patience === undefined ? WAIT_MS : patience) / 1000) + 's: ' + said(e)
+          + '\n  it is reloading, or it is down -- `node tools/okc.js windowControls --json` says which')
+      }
+      if (!saidWaiting) {
+        console.log('  the app is not answering (reloading?) -- waiting')
+        saidWaiting = true
+      }
+      pause(1000)
+    }
+  }
 }
 
 // LOOK UNTIL IT HAS STOPPED ARRIVING.
