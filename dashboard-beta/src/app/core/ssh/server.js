@@ -187,6 +187,54 @@ async function plugin(imports, register) {
     //NOT APPENDED TO: a machine's address changes, machines are deleted, and a
     //file that only ever grows accumulates entries pointing at nothing — which
     //fail slowly and confusingly rather than not existing.
+    //---- WHERE A MACHINE IS, AND WHO TO LOG IN AS -------------------------
+    //
+    //DONE HERE, ONCE, ON WHATEVER THE REGISTER HANDS OVER.
+    //
+    //This used to be the CALLER'S job, and the app being ported from gets away
+    //with it because exactly one action calls `writeConfig`. Here there are two
+    //— the Keys pane, and ../../vms/provision when a machine dials in — and the
+    //second passes raw register rows, which carry `lastAddress` and not
+    //`address`. So every dial-in rewrote the file with NO HOSTS IN IT: the
+    //config was correct right up until the moment a machine arrived, which is
+    //the moment it is supposed to become correct.
+    //
+    //LIVE FIRST, THEN WHAT WAS LAST RECORDED. A connected machine is telling us
+    //now; the record is what it said last time, and these addresses come from
+    //DHCP and are reused.
+    //
+    //AND THE MACHINE'S OWN ANSWER FOR THE USER beats the spec, because a
+    //provisioning script can make a different user than the one that was asked
+    //for and the config has to match what is actually there.
+    function readingOf(vm) {
+        var v = vm || {};
+        var agent = v.agent || {};
+        return {
+            name: v.name,
+            spec: v.spec,
+            mine: v.mine,
+            address: v.address
+                || String(agent.from || '').replace(/^::ffff:/, '').replace(/:\d+$/, '')
+                || v.lastAddress
+                || null,
+            user: v.user
+                || (agent.facts && agent.facts.user)
+                || v.lastUser
+                || (v.spec && v.spec.user)
+                || null
+        };
+    }
+
+    //WHETHER THIS APP'S KEY WOULD EVEN BE ACCEPTED, worked out here rather than
+    //asked of the caller — see the `IdentityFile` note below for what naming it
+    //on a machine that has never heard of it costs.
+    function isMine(m) {
+        if (typeof m.mine === 'boolean') return m.mine;
+        var ours = String(publicKey() || '').trim();
+        var theirs = String((m.spec && m.spec.sshKey) || '').trim();
+        return !!ours && ours === theirs;
+    }
+
     function writeConfig(machines) {
         fs.mkdirSync(DIR, { recursive: true });
 
@@ -196,7 +244,7 @@ async function plugin(imports, register) {
             ''
         ];
 
-        (machines || []).forEach(function (m) {
+        (machines || []).map(readingOf).forEach(function (m) {
             if (!m.address || !m.user) return;
 
             lines.push('Host ' + aliasFor(m.name));
@@ -215,7 +263,7 @@ async function plugin(imports, register) {
             //FORWARD SLASHES: ssh reads this file on Windows too, and a
             //backslash in a config value is an escape character there rather
             //than a separator.
-            if (m.mine) {
+            if (isMine(m)) {
                 lines.push('  IdentityFile ' + slashes(keyFile()));
                 lines.push('  IdentitiesOnly yes');
             }
@@ -285,6 +333,16 @@ async function plugin(imports, register) {
             publicKey: publicKey, fingerprint: fingerprint,
             writeConfig: writeConfig, ensureInclude: ensureInclude,
             includeLines: includeLines, aliasFor: aliasFor,
+            //THE SAME READING THE FILE IS WRITTEN FROM, handed out so a pane can
+            //say where a machine is without working it out a second time. Two
+            //readings of one register is how a pane says a machine is reachable
+            //while the file it is describing says nothing about it.
+            readingOf: function (vm) {
+                var m = readingOf(vm);
+                m.alias = aliasFor(m.name);
+                m.usesOurKey = isMine(m);
+                return m;
+            },
             //PATHS, HANDED OUT SO NOTHING GUESSES AT THEM. Never the contents.
             where: { key: keyFile, pub: pubFile, config: configFile, user: userConfig, dir: function () { return DIR; } }
         }

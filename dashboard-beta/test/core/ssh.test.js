@@ -213,6 +213,98 @@ test('an alias cannot carry anything ssh would read as syntax', () => {
 });
 
 //---------------------------------------------------------------------------
+//A REGISTER ROW IS WHAT ARRIVES, NOT A TIDIED ONE.
+//
+//The tests above hand over rows that already say `address`, `user` and `mine`.
+//Nothing else in this app does. ../vms/provision passes what the register holds
+//straight through on dial-in, and that carries `lastAddress`.
+//---------------------------------------------------------------------------
+
+const OUR_KEY = () => ssh.publicKey();
+
+test('a raw register row is understood, with lastAddress and lastUser', () => {
+    //THE BUG THIS CAUGHT. The mapping from `lastAddress` to `address` lived in
+    //the ACTION, and the other caller — provision, on dial-in — passes register
+    //rows straight through. So every time a machine actually arrived, the config
+    //was rewritten with NO HOSTS IN IT: correct until the moment it was supposed
+    //to become correct.
+    aKey();
+    const text = fs.readFileSync(ssh.writeConfig([{
+        name: 'runner1',
+        lastAddress: '192.168.51.108',
+        lastUser: 'okc',
+        spec: { sshKey: OUR_KEY(), user: 'okc' }
+    }]), 'utf8');
+
+    assert.match(text, /Host okc-runner1/);
+    assert.match(text, /HostName 192\.168\.51\.108/);
+    assert.match(text, /User okc/);
+    assert.match(text, /IdentitiesOnly yes/);
+});
+
+test('a live address beats what was last recorded', () => {
+    //A connected machine is telling us NOW; the record is what it said last
+    //time, and these addresses come from DHCP and are reused.
+    aKey();
+    const text = fs.readFileSync(ssh.writeConfig([{
+        name: 'runner1',
+        agent: { from: '::ffff:192.168.51.200:54321' },
+        lastAddress: '192.168.51.108',
+        lastUser: 'okc',
+        spec: { sshKey: OUR_KEY() }
+    }]), 'utf8');
+
+    assert.match(text, /HostName 192\.168\.51\.200/);
+    assert.doesNotMatch(text, /192\.168\.51\.108/);
+});
+
+test("the machine's own answer for the user beats the spec", () => {
+    //A provisioning script can make a different user than the one asked for, and
+    //the config has to match what is actually there.
+    aKey();
+    const text = fs.readFileSync(ssh.writeConfig([{
+        name: 'runner1',
+        lastAddress: '10.0.0.5',
+        agent: { facts: { user: 'somebodyelse' } },
+        spec: { sshKey: OUR_KEY(), user: 'okc' }
+    }]), 'utf8');
+    assert.match(text, /User somebodyelse/);
+});
+
+test('and the spec is the last resort, not the first', () => {
+    aKey();
+    const text = fs.readFileSync(ssh.writeConfig([
+        { name: 'runner1', lastAddress: '10.0.0.5', spec: { sshKey: OUR_KEY(), user: 'okc' } }
+    ]), 'utf8');
+    assert.match(text, /User okc/);
+});
+
+test('a machine with no key recorded is not treated as ours', () => {
+    aKey();
+    const text = fs.readFileSync(ssh.writeConfig([
+        { name: 'runner1', lastAddress: '10.0.0.5', lastUser: 'okc', spec: {} }
+    ]), 'utf8');
+    assert.match(text, /Host okc-runner1/);
+    assert.doesNotMatch(text, /IdentitiesOnly/);
+});
+
+test('what a pane is shown uses the same reading as what is written', () => {
+    //TWO READINGS OF ONE REGISTER is how a pane says a machine is reachable
+    //while the file it is describing says nothing about it. ../../keys used to
+    //have its own copy of this, beside the one inside `writeConfig`.
+    aKey();
+    const row = { name: 'runner1', lastAddress: '10.0.0.5', lastUser: 'okc', spec: { sshKey: OUR_KEY() } };
+    const text = fs.readFileSync(ssh.writeConfig([row]), 'utf8');
+    const said = ssh.readingOf(row);
+
+    assert.equal(said.address, '10.0.0.5');
+    assert.equal(said.user, 'okc');
+    assert.equal(said.alias, 'okc-runner1');
+    assert.equal(said.usesOurKey, true);
+    assert.match(text, /HostName 10\.0\.0\.5/);
+});
+
+//---------------------------------------------------------------------------
 //TWO SPELLINGS OF ONE PATH.
 //---------------------------------------------------------------------------
 

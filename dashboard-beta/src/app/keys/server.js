@@ -1,7 +1,5 @@
 var fs = require('node:fs');
 var path = require('node:path');
-var makeSshKey = require('./ssh-key');
-var makeSshConfig = require('./ssh-config');
 
 //---------------------------------------------------------------------------
 //WHAT THIS HOST HOLDS SO THAT NOTHING ELSE HAS TO.
@@ -56,7 +54,7 @@ var makeSshConfig = require('./ssh-config');
 
 var PUBLIC = 'api.github.com';
 
-plugin.consumes = ['app', 'log', 'secret', 'dataDir'];
+plugin.consumes = ['app', 'log', 'secret', 'dataDir', 'ssh'];
 plugin.provides = ['keys'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -76,30 +74,20 @@ async function plugin(imports, register) {
 
     //---- AND THE KEY THIS APP USES TO REACH ITS OWN MACHINES --------------
     //
-    //BESIDE THE TLS MATERIAL, NOT UNDER `credentials/`. The two are the same
-    //kind of thing — a credential this app needs in order to BE ITSELF — and
-    //../core/tls keeps its pair at the top of the data directory for the same
-    //reason. `credentials/` is where SOMEBODY ELSE'S secrets are kept, sealed;
-    //this one is the app's own and is a plain file because `ssh` reads it from
-    //disk. See ./ssh-key.js, which says why that is honest rather than lax.
-    var ssh = makeSshKey({
-        dirOf: function () { return imports.dataDir.path; },
-        run: function (exe, args) {
-            return require('child_process').execFileSync(exe, args, {
-                encoding: 'utf8',
-                timeout: 60000,
-                windowsHide: true,
-                stdio: ['ignore', 'pipe', 'pipe']
-            });
-        }
-    });
-    //AND THE CONFIG THAT MAKES THAT KEY REACHABLE BY NAME — see ./ssh-config.js.
-    //A key nothing offers is a key VS Code Remote will never use.
-    var sshCfg = makeSshConfig({
-        dirOf: function () { return imports.dataDir.path; },
-        keyFile: ssh.where.key,
-        publicKey: ssh.publicKey
-    });
+    //../core/ssh's, CONSUMED RATHER THAN REBUILT. It keeps the key beside the
+    //TLS material and for the same reason — the two are one kind of thing, a
+    //credential this app needs in order to BE ITSELF — and it owns the ssh
+    //config as well, because a key nothing offers is a key VS Code Remote will
+    //never use.
+    //
+    //THIS FILE HAD A SECOND COPY OF ALL OF IT. ../core/ssh was ported, tested,
+    //and consumed by nobody, so it was invisible: a grep for the ACTION found
+    //nothing and a grep for the SERVICE was never run. Two implementations of
+    //the key machines are reached by is one that drifts, and the live key had
+    //already been made by the wrong one.
+    //
+    //What is here is the pane's actions. What the key IS belongs one layer down.
+    var ssh = imports.ssh;
 
     var FILE = function () { return path.join(DIR(), 'github.json'); };
     var ABOUT = function () { return path.join(DIR(), 'github-about.json'); };
@@ -291,12 +279,16 @@ async function plugin(imports, register) {
                     machines = (list && list.vms) || [];
                 } catch (e) { /* no register reachable; the key is still the answer */ }
 
-                var mine = String(said.publicKey || '').trim();
+                //WHO WOULD ACCEPT IT IS ../core/ssh's ANSWER, not a comparison
+                //made here. It is the same decision that puts `IdentityFile` in
+                //a host block, and a pane that said "authorised" while the file
+                //named no identity would be describing a machine nobody can
+                //reach — in the one place somebody looks to find that out.
                 var rows = machines.map(function (vm) {
                     var theirs = String((vm.spec && vm.spec.sshKey) || '').trim();
                     return {
                         name: vm.name,
-                        authorised: !!(mine && theirs && theirs === mine),
+                        authorised: ssh.readingOf(vm).usesOurKey,
                         //ENOUGH TO TELL TWO KEYS APART, and never a whole one.
                         builtWith: theirs ? theirs.split(' ').slice(0, 2).join(' ').slice(0, 28) + '…' : null
                     };
@@ -357,10 +349,10 @@ async function plugin(imports, register) {
                 try {
                     var said = await actions.call('vmList', {});
                     //HANDED OVER AS THEY COME. Where a machine IS and who to log
-                    //in as is worked out inside ./ssh-config.js, because there
-                    //are two callers and the other one — ../vms/provision on
-                    //dial-in — passes raw register rows. Mapping it here meant
-                    //every dial-in rewrote the file with no hosts in it.
+                    //in as is worked out inside ../core/ssh, because there are
+                    //two callers and the other one — ../vms/provision on dial-in
+                    //— passes raw register rows. Mapping it here meant every
+                    //dial-in rewrote the file with no hosts in it.
                     machines = (said && said.vms) || [];
                 } catch (e) { /* no register reachable; the paths are still worth showing */ }
 
@@ -369,12 +361,36 @@ async function plugin(imports, register) {
                 var wrote = null;
                 if ((args || {}).write === true || (args || {}).write === 'true') {
                     wrote = {
-                        file: sshCfg.write(machines),
-                        include: sshCfg.ensureInclude()
+                        file: ssh.writeConfig(machines),
+                        include: ssh.ensureInclude()
                     };
                 }
 
-                return Object.assign({}, sshCfg.state(machines), { wrote: wrote });
+                //WHAT THE PANE IS SHOWN. Names, aliases and paths — never a key.
+                //`usesOurKey` per machine because "why does this one not take the
+                //app's key" is the question this answers.
+                //
+                //READ BY ../core/ssh AND NOT HERE. This used to work out an
+                //address and a user of its own, beside the one inside
+                //`writeConfig` that decides what goes in the file — and two
+                //readings of one register is how a pane says a machine is
+                //reachable while the file it is describing says nothing about it.
+                return {
+                    file: ssh.where.config(),
+                    include: ssh.where.user(),
+                    lines: ssh.includeLines(),
+                    hosts: machines
+                        .map(ssh.readingOf)
+                        .filter(function (h) { return h.address && h.user; })
+                        .map(function (h) {
+                            return {
+                                name: h.name, alias: h.alias,
+                                address: h.address, user: h.user,
+                                usesOurKey: h.usesOurKey
+                            };
+                        }),
+                    wrote: wrote
+                };
             }
         }));
 
@@ -476,35 +492,16 @@ async function plugin(imports, register) {
             //private half never leaves this object: what is offered is the
             //public key, a fingerprint, and a PATH.
             //
-            //../../vms/provision asks for this rather than reading a file, which
-            //is what makes "building a machine needs a key" visible on a
-            //`consumes` line instead of being discovered when an install warns.
-            ssh: {
-                ensure: ssh.ensure,
-                publicKey: ssh.publicKey,
-                fingerprint: ssh.fingerprint,
-                state: ssh.state,
-                have: ssh.have,
-                make: ssh.make,
-                //A PATH, NOT THE KEY. `ssh -i` takes a filename, so this is what
-                //a caller actually needs, and it is not the secret.
-                privateKeyPath: ssh.where.key,
-
-                //---- AND REACHING A MACHINE BY NAME --------------------------
-                //
-                //THE MACHINES ARE PASSED IN rather than read here. This plugin
-                //holds keys and knows nothing about a register; whoever has the
-                //machines hands them over. That keeps `keys` off ../vms/ours'
-                //dependency list, which would otherwise be a cycle waiting to
-                //happen the first time ours wanted a key.
-                config: {
-                    write: sshCfg.write,
-                    ensureInclude: sshCfg.ensureInclude,
-                    state: sshCfg.state,
-                    alias: makeSshConfig.aliasFor,
-                    where: sshCfg.where
-                }
-            },
+            //PASSED STRAIGHT THROUGH rather than wrapped, because it is not this
+            //plugin's. ../core/ssh owns the key and the config; this plugin owns
+            //the GitHub token and the Keys pane's actions. Anything else that
+            //needs the key consumes `ssh` directly — ../vms/provision does.
+            //
+            //IT IS NOT AN EXIT EITHER WAY. `EXITS` counts the ways SOMEBODY
+            //ELSE'S secret can leave — a GitHub token this app was handed. This
+            //key is the app's own, its public half is MEANT to be given away,
+            //and the private half is offered only as a path.
+            ssh: ssh,
 
             //DECLARED SO IT CAN BE COUNTED. See the header, and the test.
             EXITS: EXITS

@@ -63,7 +63,7 @@ var header = require('./header');
 //
 //    tls    the authority a guest checks before it trusts anything this host
 //           says — ../../core/tls
-//    keys   the ssh key that makes the machine reachable at all — ../../keys
+//    ssh    the ssh key that makes the machine reachable at all — ../../core/ssh
 //
 //THE SECOND ONE WAS NOT DECLARED AND WAS NOT ASKED FOR. `spec.sshKey` defaulted
 //to an empty string, so every machine built here was unreachable, and the only
@@ -76,7 +76,7 @@ var header = require('./header');
 //"what does building a machine actually need" is not a question the source can
 //answer. Here it is a list, it is enforced, and a missing one does not build.
 plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir', 'tls', 'cron', 'guestApi',
-    'keys'];
+    'ssh'];
 plugin.provides = ['provision'];
 async function plugin(imports, register) {
     var log = imports.log.on('vm');
@@ -163,7 +163,7 @@ async function plugin(imports, register) {
         //a machine is a real thing to want. What is fixed is the DEFAULT, which
         //used to be an empty string and made every machine unreachable.
         var built = spec.fill(Object.assign({}, input, {
-            sshKey: (input && input.sshKey) || imports.keys.ssh.ensure().publicKey || ''
+            sshKey: (input && input.sshKey) || imports.ssh.ensure().publicKey || ''
         }));
         var to = log.on(built.name);
 
@@ -320,15 +320,15 @@ async function plugin(imports, register) {
                 //
                 //HERE BECAUSE THIS IS WHERE ITS ADDRESS IS FIRST KNOWN. The
                 //config is rewritten WHOLE from the register — see
-                //../../keys/ssh-config.js — so doing it on every dial-in keeps
+                //../../core/ssh — so doing it on every dial-in keeps
                 //it true as addresses change, rather than accumulating entries
                 //that point at nothing.
                 //
                 //NEVER FATAL. A machine that came up is a machine that came up;
                 //failing to write a convenience file is not a reason to lose it.
                 try {
-                    imports.keys.ssh.config.write(ours.read() || []);
-                    imports.keys.ssh.config.ensureInclude();
+                    imports.ssh.writeConfig(ours.read() || []);
+                    imports.ssh.ensureInclude();
                 } catch (e) {
                     log.warn('could not write the ssh config: ' + e.message
                         + ' — the machine is up, but `ssh ' + name + '` will not find it by name');
