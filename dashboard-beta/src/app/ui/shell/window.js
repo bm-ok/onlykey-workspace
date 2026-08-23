@@ -22,6 +22,23 @@ var { useState, useEffect } = React;
 //happened to be resolved first, and the order would be the plugin resolution
 //order rather than anything a person chose.
 
+//---- WHAT THE DOT IN THE CORNER IS ABOUT -----------------------------------
+//
+//IT IS ABOUT THE OTHER APP, NOT THIS ONE. `okc.connected` is the pipe to the
+//dashboard being ported FROM, which answers the actions this app has not taken
+//over yet. So with that app stopped the dot goes red while everything here is
+//working perfectly — and as the port lands, red ON PURPOSE becomes the ordinary
+//state rather than a fault.
+//
+//It used to say "connected" / "not connected" and never name what to, which was
+//fine while there was only one thing it could mean.
+var DOT_UP = 'connected to the dashboard being ported from — actions this app does not define '
+    + 'yet are answered by it';
+
+var DOT_DOWN = 'not connected to the dashboard being ported from. This app is fine; what is '
+    + 'missing is the actions it has not taken over yet, and each of those says so by name where '
+    + 'it is used';
+
 plugin.consumes = ['react', 'theme', 'appPackage', 'okc', 'app', 'remember'];
 plugin.provides = ['shell'];
 async function plugin(imports, register) {
@@ -331,6 +348,8 @@ async function plugin(imports, register) {
             <Topbar
                 brand="Dashboard"
                 live={up}
+                liveTitle={DOT_UP}
+                deadTitle={DOT_DOWN}
                 tabs={tabs.filter(inRow).map(function (t) {
                     return { name: t.name, badge: badges[t.name], stopped: stopped[t.name] };
                 })}

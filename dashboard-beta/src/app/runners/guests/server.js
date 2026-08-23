@@ -4,6 +4,7 @@ var makeChoosing = require('./choosing');
 var shape = require('./shape');
 var lending = require('./lending');
 var makeDesk = require('./desk');
+var makeLife = require('./life');
 
 //---------------------------------------------------------------------------
 //THE CLAUDE IDENTITIES THIS HOST HOLDS, as actions and as a service.
@@ -136,6 +137,15 @@ async function plugin(imports, register) {
     var desk = makeDesk({
         ours: imports.ours,
         connected: imports.channel.connected
+    });
+
+    //---- and how long each one has left ------------------------------------
+    //
+    //READ FROM THE CREDENTIAL, never by trying it — see ./life, and note that
+    //`usable` is never true: a clock cannot say a credential works.
+    var life = makeLife({
+        read: function (file) { return imports.secret.read(file); },
+        statOf: function (file) { return require('fs').statSync(file); }
     });
 
     var undo = [];
@@ -425,6 +435,96 @@ async function plugin(imports, register) {
 
                 log.on('vm', on).warn('the sign-in at the desk was stopped');
                 return Object.assign({ name: on, stopped: true }, signin.read(r.output));
+            }
+        }));
+
+        //---- IS THERE ANYTHING TO HAND A MACHINE --------------------------
+        //
+        //ASKED ON THE DRAW LOOP, by panes that need one answer to "is there a
+        //sign-in at all" — which is why the clock per guest is read from the
+        //credential rather than by trying it. Free, instant, and needs no
+        //machine; the alternative was booting one, handing the credential over
+        //and watching a worker fail.
+        //
+        //THIS WAS THE LAST ACTION READING THE OTHER APP'S CREDENTIALS. While it
+        //relayed it answered `dir: ...\okc-dashboard\guests` and listed that
+        //app's live sign-ins — fingerprints, plans and all — inside this one.
+        undo.push(actions.define('credentialsHeld', {
+            about: 'Whether this host holds a worker credential, how long it has left, and where it '
+                + 'came from',
+            run: function () {
+                //WORKERS AND JUDGES ONLY. This answers "is there anything to
+                //hand a machine", and a supervisor sign-in is never handed to
+                //one.
+                var held = store.all().filter(function (g) { return g.role !== 'supervisor'; });
+
+                //---- AND A COUNT OF THE OTHER KIND, WHICH IS NOT THE SAME
+                //     QUESTION -------------------------------------------
+                //
+                //The line above is right and was READ as saying more than it
+                //says. A draw loop asks this once and uses the answer for every
+                //"is there a sign-in" it needs — so a list that deliberately
+                //omits supervisors was read as "there are none", and a banner
+                //told somebody this host had no supervisor sign-in while one sat
+                //on the Runners tab with a "here" badge on it.
+                //
+                //A COUNT AND A FLAG, NOT A ROW. What belongs in an answer about
+                //handing things out is whether there is one and whether it is
+                //free — the difference between "one press" and "go and sign one
+                //in", and getting that wrong sends somebody to do a thing they
+                //have already done.
+                //
+                //FROM THE ONE FUNCTION THAT DECIDES IT. Two answers to "is there
+                //a sign-in to give" that can disagree is the exact fault this
+                //field was added to fix; writing the rule out again here would
+                //reintroduce it a level down.
+                var use = store.supervisorKey();
+                var sups = store.all().filter(function (g) { return g.role === 'supervisor'; });
+
+                var supervisor = {
+                    kept: sups.length,
+                    //NOT "ONE IS FREE" BUT "ONE IS AVAILABLE TO USE", which
+                    //differs the moment a choice has been made: an unchosen
+                    //sign-in sitting free is not something anything will reach
+                    //for.
+                    free: !!use.key,
+                    using: use.inUse ? use.inUse.name : (use.key ? use.key.name : null),
+                    chosen: use.chosen,
+                    why: use.why,
+                    //WHICH MACHINE HAS IT, if any. A supervisor sign-in that is
+                    //out is not free and not missing, and those need different
+                    //sentences.
+                    out: use.out || (sups.filter(function (g) { return g.holder; })[0] || {}).holder || null
+                };
+
+                return {
+                    held: held.some(function (g) { return g.has; }),
+                    dir: store.root(),
+
+                    //WHAT EACH ONE IS, AND NEVER WHAT IT SAYS. Names, dates,
+                    //fingerprints, holders and clocks — the rule this whole
+                    //surface is built to.
+                    guests: held.map(function (g) {
+                        return Object.assign({}, g, {
+                            life: g.has
+                                ? life.of(store.fileFor(g.name))
+                                : { usable: null, why: 'there is no token file for it' }
+                        });
+                    }),
+
+                    supervisor: supervisor,
+
+                    //THE OLD SINGLE-FILE SHAPE IS NOT PORTED, deliberately. The
+                    //app being ported from falls back to one `claude.json` for
+                    //hosts that predate the list — one credential handed to
+                    //every machine, which is several workers rotating one token
+                    //and is the shape the list replaced. This app never had it,
+                    //so there is nothing to fall back TO.
+                    note: held.length
+                        ? held.length + ' Claude sign-in' + (held.length === 1 ? '' : 's')
+                            + ' kept here. One is lent per machine — see the Claude guest pane.'
+                        : 'No worker sign-in kept here yet.'
+                };
             }
         }));
 

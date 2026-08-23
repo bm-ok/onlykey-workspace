@@ -52,7 +52,7 @@ async function plugin(imports, register, config) {
     //`margin-left: auto`. The dot is the one-glance answer to "is this thing
     //connected", which is why it is first and why it is a colour rather than a
     //word.
-    function Topbar({ brand, sub, live, tabs, on, onPick, right, brandTabs, onBrand }) {
+    function Topbar({ brand, sub, live, liveTitle, deadTitle, tabs, on, onPick, right, brandTabs, onBrand }) {
         //`.brand` IS THE CONTAINER, NOT THE BUTTON. It is a flex row holding the
         //dot and then real `<button class="tab brand-tab">`s — monospace,
         //accent-coloured, dashed border, truncated. Being real tabs is the
@@ -66,8 +66,17 @@ async function plugin(imports, register, config) {
         return (
             <div className="topbar">
                 <div className="brand">
+                    {/* WHAT THE DOT IS ABOUT IS THE CALLER'S TO SAY. It read
+                        "connected" / "not connected" and never named what to,
+                        which was fine while there was only one thing it could
+                        mean and is not any more: it reports the pipe to the app
+                        being ported FROM, so with that app stopped it goes red
+                        while this one is perfectly healthy. Red then reads as
+                        "something is wrong here", which is the opposite of true
+                        — and the more of the port that lands, the more often it
+                        will be red on purpose. */}
                     <span className="dot" style={live ? { background: 'var(--ok)' } : undefined}
-                        title={live ? 'connected' : 'not connected'} />
+                        title={live ? (liveTitle || 'connected') : (deadTitle || 'not connected')} />
 
                     {(brandTabs || []).map(function (t) {
                         return (
