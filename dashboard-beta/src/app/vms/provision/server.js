@@ -316,6 +316,24 @@ async function plugin(imports, register) {
                             : {}));
                 } catch (e) { /* it may already be gone */ }
 
+                //---- AND IT BECOMES REACHABLE BY NAME --------------------
+                //
+                //HERE BECAUSE THIS IS WHERE ITS ADDRESS IS FIRST KNOWN. The
+                //config is rewritten WHOLE from the register — see
+                //../../keys/ssh-config.js — so doing it on every dial-in keeps
+                //it true as addresses change, rather than accumulating entries
+                //that point at nothing.
+                //
+                //NEVER FATAL. A machine that came up is a machine that came up;
+                //failing to write a convenience file is not a reason to lose it.
+                try {
+                    imports.keys.ssh.config.write(ours.read() || []);
+                    imports.keys.ssh.config.ensureInclude();
+                } catch (e) {
+                    log.warn('could not write the ssh config: ' + e.message
+                        + ' — the machine is up, but `ssh ' + name + '` will not find it by name');
+                }
+
                 return settle.firstSnapshotIfItNeedsOne(name);
             }
         });

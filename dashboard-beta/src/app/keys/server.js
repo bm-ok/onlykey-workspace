@@ -1,6 +1,7 @@
 var fs = require('node:fs');
 var path = require('node:path');
 var makeSshKey = require('./ssh-key');
+var makeSshConfig = require('./ssh-config');
 
 //---------------------------------------------------------------------------
 //WHAT THIS HOST HOLDS SO THAT NOTHING ELSE HAS TO.
@@ -92,6 +93,14 @@ async function plugin(imports, register) {
             });
         }
     });
+    //AND THE CONFIG THAT MAKES THAT KEY REACHABLE BY NAME — see ./ssh-config.js.
+    //A key nothing offers is a key VS Code Remote will never use.
+    var sshCfg = makeSshConfig({
+        dirOf: function () { return imports.dataDir.path; },
+        keyFile: ssh.where.key,
+        publicKey: ssh.publicKey
+    });
+
     var FILE = function () { return path.join(DIR(), 'github.json'); };
     var ABOUT = function () { return path.join(DIR(), 'github-about.json'); };
 
@@ -289,6 +298,45 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- AND WHERE THAT KEY IS OFFERED FROM ----------------------------
+        //
+        //THE PANE ASKS FOR THIS — ./ssh.js calls `sshConfig` — and it was
+        //relaying, so it showed the OTHER app's file.
+        //
+        //THE MACHINES COME FROM THE ACTION TABLE rather than from a consumed
+        //service, deliberately: this plugin holds keys and has no business
+        //knowing what a machine is. `vmList` is the same answer everything else
+        //reads, and asking for it by name resolves at call time rather than
+        //being an edge in the graph.
+        undo.push(actions.define('sshConfig', {
+            about: 'The ssh config this app writes, so its machines can be reached by name',
+            takes: ['write'],
+            run: async function (args) {
+                var machines = [];
+                try {
+                    var said = await actions.call('vmList', {});
+                    //HANDED OVER AS THEY COME. Where a machine IS and who to log
+                    //in as is worked out inside ./ssh-config.js, because there
+                    //are two callers and the other one — ../vms/provision on
+                    //dial-in — passes raw register rows. Mapping it here meant
+                    //every dial-in rewrote the file with no hosts in it.
+                    machines = (said && said.vms) || [];
+                } catch (e) { /* no register reachable; the paths are still worth showing */ }
+
+                //WRITING IS ASKED FOR, NOT DONE ON EVERY READ. Drawing a pane
+                //should not touch the operator's `~/.ssh/config`.
+                var wrote = null;
+                if ((args || {}).write === true || (args || {}).write === 'true') {
+                    wrote = {
+                        file: sshCfg.write(machines),
+                        include: sshCfg.ensureInclude()
+                    };
+                }
+
+                return Object.assign({}, sshCfg.state(machines), { wrote: wrote });
+            }
+        }));
+
         undo.push(actions.define('githubKeySet', {
             about: 'Keep a GitHub token, after checking it against GitHub. A person, at the window',
             takes: ['token', 'api'],
@@ -399,7 +447,22 @@ async function plugin(imports, register) {
                 make: ssh.make,
                 //A PATH, NOT THE KEY. `ssh -i` takes a filename, so this is what
                 //a caller actually needs, and it is not the secret.
-                privateKeyPath: ssh.where.key
+                privateKeyPath: ssh.where.key,
+
+                //---- AND REACHING A MACHINE BY NAME --------------------------
+                //
+                //THE MACHINES ARE PASSED IN rather than read here. This plugin
+                //holds keys and knows nothing about a register; whoever has the
+                //machines hands them over. That keeps `keys` off ../vms/ours'
+                //dependency list, which would otherwise be a cycle waiting to
+                //happen the first time ours wanted a key.
+                config: {
+                    write: sshCfg.write,
+                    ensureInclude: sshCfg.ensureInclude,
+                    state: sshCfg.state,
+                    alias: makeSshConfig.aliasFor,
+                    where: sshCfg.where
+                }
             },
 
             //DECLARED SO IT CAN BE COUNTED. See the header, and the test.
