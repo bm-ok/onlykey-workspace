@@ -107,6 +107,35 @@ test('no action answers with a credential', async () => {
     }
 });
 
+test('and NO action this plugin defines does, named or not', async () => {
+    //THE LIST ABOVE IS A LIST, AND A LIST GOES STALE. Four vmAuth* actions and
+    //three claudeSignIn* ones were added to this plugin and the test above went
+    //on passing without touching any of them — it was green about actions it had
+    //never called.
+    //
+    //So this asks the TABLE what exists rather than being told. Everything is
+    //called with an argument that cannot work; what is being checked is that
+    //neither the answer NOR the refusal carries the credential, because an error
+    //message is a place a token reaches just as easily as a return value.
+    const { actions } = await aHost();
+    await add(actions, 'a');
+
+    const all = (await actions.all()).actions || [];
+    const mine = all.filter(a => a.where === 'here').map(a => a.name);
+
+    //INERTNESS. If the table came back empty this would pass having proved
+    //nothing, which is the shape this whole test is about.
+    assert.ok(mine.length >= 8, 'only ' + mine.length + ' actions were found to check');
+
+    for (const name of mine) {
+        let said = null;
+        try { said = JSON.stringify(await actions.call(name, { name: 'a' })); }
+        catch (e) { said = String(e && e.message); }
+
+        assert.equal(said.includes(FAKE), false, name + ' let the credential out');
+    }
+});
+
 test('and guestAdd, which is the one that was just given one', async () => {
     const { actions } = await aHost();
     const made = await add(actions, 'a');

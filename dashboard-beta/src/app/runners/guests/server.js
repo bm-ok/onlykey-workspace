@@ -428,6 +428,179 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- THE TWO HALVES A PERSON SEES ----------------------------------
+        //
+        //`vmAuth*` ABOVE ARE THE MACHINE'S SIDE. These are the ones a person or
+        //the window calls: get me a URL, and here is the code — with the desk
+        //chosen rather than named, and the credential filed under a name at the
+        //end. Everything else is the same two calls.
+        undo.push(actions.define('claudeSignIn', {
+            about: 'Get a Claude login URL from the sign-in desk. Every credential this host holds '
+                + 'comes from there',
+            takes: ['name', 'wait'],
+            run: async function (args) {
+                var a = args || {};
+                var started = await actions.call('vmAuthBegin', { name: a.name, wait: a.wait });
+
+                if (!started.url) {
+                    throw new Error(started.why || 'the desk did not produce a sign-in address');
+                }
+
+                return {
+                    name: started.name,
+                    url: started.url,
+                    note: 'The desk on ' + started.name + ' is holding the sign-in open. Visit that '
+                        + 'address, approve it, and give the code back with claudeSignedIn. Nothing the '
+                        + 'supervisor is working with is touched by this.'
+                };
+            }
+        }));
+
+        undo.push(actions.define('claudeSignedIn', {
+            about: 'Give the code back. The credential is kept here under a name, and the desk is '
+                + 'left empty',
+            takes: ['name', 'code', 'as', 'role', 'note'],
+            run: async function (args) {
+                var a = args || {};
+
+                //ALL THREE ROLES, because this is what the window's "+" calls.
+                //Mapping anything that is not a supervisor to a worker meant the
+                //Claude Judge pane would sign somebody in and quietly file them
+                //as a worker — a credential that then cannot be lent to the
+                //machine it was made for.
+                var kind = a.role === 'supervisor' ? 'supervisor'
+                    : a.role === 'judge' ? 'judge'
+                        : 'worker';
+
+                var called = String(a.as || '').trim();
+                if (!called) {
+                    throw new Error('Say what to call it. A credential is kept under a name, and a '
+                        + 'list of "claude-code-2" is a list nobody can read six weeks later.');
+                }
+                if (store.get(called)) {
+                    throw new Error('There is already a sign-in called "' + called + '". Pick another '
+                        + 'name, or throw that one away first.');
+                }
+
+                //THROWS ON A CODE THAT DID NOT WORK, and nothing is undone when
+                //it does: a sign-in is retryable and nothing was borrowed to
+                //hold it.
+                var said = await actions.call('vmAuthCode', { name: a.name, code: a.code });
+                var on = said.name;
+
+                //---- OFF THE DESK AND INTO THE LIST ------------------------
+                //
+                //READ AS THE DESK USER, because the file is 0600 in the desk's
+                //home and the machine's own user is not it. base64 so a newline
+                //or a shell metacharacter cannot change what arrives.
+                //
+                //AND QUIET, WHICH IS THE HALF THAT WAS MISSING ONCE. base64 is
+                //not readable and IS the credential — anybody reading the log
+                //can decode it in one command. It does not go to the log at all.
+                var r = await imports.channel.run(on,
+                    'sudo -n -u ' + DESK + ' -H bash -c \'base64 -w0 "$HOME/.claude/.credentials.json" '
+                    + '2>/dev/null || echo OKC_NO_CREDENTIAL\'',
+                    { what: 'taking the credential off the sign-in desk', timeout: 60000, quiet: true });
+
+                var b64 = String(r.output || '').split('\n')
+                    .map(function (x) { return x.trim(); })
+                    .filter(Boolean).pop() || '';
+
+                if (!b64 || b64 === 'OKC_NO_CREDENTIAL') {
+                    throw new Error('The code was accepted and the desk on ' + on + ' has no credential '
+                        + 'to take. The sign-in did not finish — start it again.');
+                }
+
+                //---- AND WHO THAT TURNED OUT TO BE -------------------------
+                //
+                //READ HERE BECAUSE HERE IS THE ONLY PLACE IT EXISTS. The desk is
+                //cleared below — deliberately, and `.claude.json` goes with it —
+                //so this is the last moment anything on this host can find out
+                //which account was just signed in. Read afterwards it is gone;
+                //read from the credential it was never there.
+                //
+                //BEST EFFORT, AND NEVER A REASON TO FAIL A SIGN-IN. A credential
+                //that works and does not say whose it is beats no credential:
+                //this is a label, and the token is what somebody was waiting for.
+                //
+                //`quiet` for the same reason. Not a credential, but it is
+                //somebody's account sitting in a live log, and what is kept is
+                //the three fields `accountOf` takes and no more.
+                var account = null;
+                try {
+                    var who = await imports.channel.run(on,
+                        'sudo -n -u ' + DESK + ' -H bash -c \'base64 -w0 "$HOME/.claude.json" '
+                        + '2>/dev/null || echo OKC_NO_ACCOUNT\'',
+                        { what: 'reading which account signed in', timeout: 30000, quiet: true });
+
+                    var raw = String(who.output || '').split('\n')
+                        .map(function (x) { return x.trim(); })
+                        .filter(Boolean).pop() || '';
+
+                    if (raw && raw !== 'OKC_NO_ACCOUNT') {
+                        account = shape.accountOf(Buffer.from(raw, 'base64').toString('utf8'));
+                    }
+                } catch (e) { /* a sign-in without a name on it is still a sign-in */ }
+
+                var made = store.add({
+                    name: called,
+                    token: Buffer.from(b64, 'base64').toString('utf8'),
+                    role: kind,
+                    from: 'signed in at the desk on ' + on,
+                    note: a.note || null,
+                    account: account
+                });
+
+                //---- AND THE DESK IS LEFT EMPTY ----------------------------
+                //
+                //IT EXISTS TO HOLD A CONVERSATION, NOT A CREDENTIAL. One left
+                //there is a token on a machine's disk that nothing on this host
+                //is recording, which is the state this whole app is arranged to
+                //avoid. Done here rather than at the next sign-in, because "it
+                //will be cleaned up eventually" is how it is still there in six
+                //weeks.
+                //
+                //AND `.claude.json` GOES TOO, which the first version left
+                //behind. Claude Code writes a config file beside the credential
+                //and after a sign-in it holds the account — the email address,
+                //the account uuid, when it was created, what it is billed as.
+                //Not a credential, and not nothing.
+                //
+                //FOUND BY LOOKING RATHER THAN BY ASSUMING: the desk was reported
+                //empty and had 1,973 bytes of account in it.
+                try {
+                    await imports.channel.run(on,
+                        'sudo -n -u ' + DESK + ' -H bash -c \'rm -rf "$HOME/.claude" "$HOME/.claude.json" '
+                        + '"$HOME/.okc-auth"\' && echo okc-desk-clear',
+                        { what: 'clearing the sign-in desk', timeout: 60000 });
+                } catch (e) {
+                    log.on('vm', on).warn('the desk was not cleared: ' + e.message);
+                }
+
+                log.on('guest', called).good('signed in at the desk on ' + on + ' and kept as "'
+                    + called + '" (' + kind + ')');
+
+                //NAME, ROLE AND FINGERPRINT — never the token. The same rule
+                //every other answer in this plugin is built to.
+                return {
+                    name: called,
+                    role: kind,
+                    on: on,
+                    fingerprint: made && made.fingerprint,
+                    account: made && made.account,
+                    note: 'Kept here and taken off the desk. Lend it to a machine when it works.'
+                };
+            }
+        }));
+
+        undo.push(actions.define('claudeSignInCancel', {
+            about: 'Stop a sign-in the desk is holding open',
+            takes: ['name'],
+            run: async function (args) {
+                return await actions.call('vmAuthCancel', { name: (args || {}).name });
+            }
+        }));
+
         undo.push(actions.define('supervisorKey', {
             about: 'Which supervisor sign-in this host uses, and switching it. Pass nothing to read it',
             takes: ['name'],
