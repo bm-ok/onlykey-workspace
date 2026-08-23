@@ -1,5 +1,6 @@
 var fs = require('node:fs');
 var path = require('node:path');
+var makeSshKey = require('./ssh-key');
 
 //---------------------------------------------------------------------------
 //WHAT THIS HOST HOLDS SO THAT NOTHING ELSE HAS TO.
@@ -71,6 +72,26 @@ async function plugin(imports, register) {
     //server halves against a bare host. Resolving here would turn a plugin that
     //merely CAN store a credential into one that cannot be loaded at all.
     var DIR = function () { return imports.dataDir.at('credentials'); };
+
+    //---- AND THE KEY THIS APP USES TO REACH ITS OWN MACHINES --------------
+    //
+    //BESIDE THE TLS MATERIAL, NOT UNDER `credentials/`. The two are the same
+    //kind of thing — a credential this app needs in order to BE ITSELF — and
+    //../core/tls keeps its pair at the top of the data directory for the same
+    //reason. `credentials/` is where SOMEBODY ELSE'S secrets are kept, sealed;
+    //this one is the app's own and is a plain file because `ssh` reads it from
+    //disk. See ./ssh-key.js, which says why that is honest rather than lax.
+    var ssh = makeSshKey({
+        dirOf: function () { return imports.dataDir.path; },
+        run: function (exe, args) {
+            return require('child_process').execFileSync(exe, args, {
+                encoding: 'utf8',
+                timeout: 60000,
+                windowsHide: true,
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+        }
+    });
     var FILE = function () { return path.join(DIR(), 'github.json'); };
     var ABOUT = function () { return path.join(DIR(), 'github-about.json'); };
 
@@ -227,6 +248,47 @@ async function plugin(imports, register) {
         //dialog straight into the store and is read back from there.
         //
         //WRITE, CHECK, PUT BACK EXACTLY WHAT WAS THERE — including nothing.
+        //---- THE APP'S OWN SSH KEY, AS THE Keys → SSH PANE ASKS FOR IT -------
+        //
+        //THE PANE WAS ALREADY THERE AND HAD NOTHING BEHIND IT — ./ssh.js calls
+        //`sshKey` and `sshKeyMake`, and both fell through to the app being
+        //ported from. So the pane was showing the OTHER app's key, and a machine
+        //built here would have been authorised with it.
+        undo.push(actions.define('sshKey', {
+            about: "The key this app uses to reach the machines it made — its public half and fingerprint",
+            run: function () { return ssh.state(); }
+        }));
+
+        //---- AND MAKING A NEW ONE, WHICH IS NOT A REPAIR --------------------
+        //
+        //A NEW KEY LOCKS OUT EVERY EXISTING MACHINE. The old public half is in
+        //their `authorized_keys` and nothing here can reach in to change it, so
+        //this is "start again with the machines" — said in the answer rather
+        //than discovered by a machine that can no longer be logged into.
+        //
+        //The same shape as `tlsRegenerate`, and for the same reason.
+        undo.push(actions.define('sshKeyMake', {
+            about: 'Make a new ssh key — every machine built with the old one becomes unreachable',
+            takes: ['force'],
+            run: function (args) {
+                var force = (args || {}).force === true || (args || {}).force === 'true';
+                var out = ssh.make({ force: force });
+
+                if (out.made && force) {
+                    log.warn('A new ssh key was made. Every machine built with the old one can no '
+                        + 'longer be logged into — they carry the old public half and nothing here '
+                        + 'can reach in to change it.');
+                }
+
+                return Object.assign({}, ssh.state(), {
+                    made: out.made,
+                    note: out.made
+                        ? 'A new key was made. Machines built before now carry the old one.'
+                        : 'There was already a key; nothing was changed. Pass --force to make a new one.'
+                });
+            }
+        }));
+
         undo.push(actions.define('githubKeySet', {
             about: 'Keep a GitHub token, after checking it against GitHub. A person, at the window',
             takes: ['token', 'api'],
@@ -316,6 +378,30 @@ async function plugin(imports, register) {
                 //what is in it is.
                 where: function () { return FILE(); }
             },
+            //---- AND THE APP'S OWN SSH KEY -----------------------------------
+            //
+            //NOT AN EXIT, AND THAT IS THE WHOLE DIFFERENCE. `EXITS` counts the
+            //ways SOMEBODY ELSE'S secret can leave — a GitHub token this app was
+            //handed. This key is the app's OWN, its public half is meant to be
+            //given away (it goes into every guest's `authorized_keys`), and the
+            //private half never leaves this object: what is offered is the
+            //public key, a fingerprint, and a PATH.
+            //
+            //../../vms/provision asks for this rather than reading a file, which
+            //is what makes "building a machine needs a key" visible on a
+            //`consumes` line instead of being discovered when an install warns.
+            ssh: {
+                ensure: ssh.ensure,
+                publicKey: ssh.publicKey,
+                fingerprint: ssh.fingerprint,
+                state: ssh.state,
+                have: ssh.have,
+                make: ssh.make,
+                //A PATH, NOT THE KEY. `ssh -i` takes a filename, so this is what
+                //a caller actually needs, and it is not the secret.
+                privateKeyPath: ssh.where.key
+            },
+
             //DECLARED SO IT CAN BE COUNTED. See the header, and the test.
             EXITS: EXITS
         },

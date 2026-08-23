@@ -59,7 +59,24 @@ var header = require('./header');
 //them, so the plugin that owns those ports can hand them over when it arrives.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir', 'tls', 'cron', 'guestApi'];
+//---- BUILDING A MACHINE NEEDS TWO KEYS, AND NOW IT SAYS SO -----------------
+//
+//    tls    the authority a guest checks before it trusts anything this host
+//           says — ../../core/tls
+//    keys   the ssh key that makes the machine reachable at all — ../../keys
+//
+//THE SECOND ONE WAS NOT DECLARED AND WAS NOT ASKED FOR. `spec.sshKey` defaulted
+//to an empty string, so every machine built here was unreachable, and the only
+//sign was a warning twenty lines into an install: "this machine has no ssh key,
+//so the installer environment cannot be logged into". It was found by watching
+//an install fail and having no way in to see why.
+//
+//That is the argument for this line existing. In the app being ported from, the
+//same dependency is one name pulled out of a forty-entry `shared.js`, where
+//"what does building a machine actually need" is not a question the source can
+//answer. Here it is a list, it is enforced, and a missing one does not build.
+plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir', 'tls', 'cron', 'guestApi',
+    'keys'];
 plugin.provides = ['provision'];
 async function plugin(imports, register) {
     var log = imports.log.on('vm');
@@ -136,7 +153,18 @@ async function plugin(imports, register) {
             throw new Error('VirtualBox is not installed, or not where this expected to find it.');
         }
 
-        var built = spec.fill(input);
+        //---- THE APP'S OWN SSH KEY, UNLESS ONE WAS NAMED ------------------
+        //
+        //MADE IF IT IS NOT THERE, which is the first thing that ever asks for
+        //it — so the key comes into existence the first time a machine is built
+        //rather than needing anybody to think of it.
+        //
+        //A CALLER MAY STILL PASS ONE and it wins: putting somebody's own key on
+        //a machine is a real thing to want. What is fixed is the DEFAULT, which
+        //used to be an empty string and made every machine unreachable.
+        var built = spec.fill(Object.assign({}, input, {
+            sshKey: (input && input.sshKey) || imports.keys.ssh.ensure().publicKey || ''
+        }));
         var to = log.on(built.name);
 
         //CHECKED AGAINST ALL OF VirtualBox, NOT JUST AGAINST OURS.
