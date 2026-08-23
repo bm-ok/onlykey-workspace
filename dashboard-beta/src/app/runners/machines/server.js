@@ -367,14 +367,85 @@ async function plugin(imports, register) {
         //silently. ../../vms/provision owns the sequence: the same function runs
         //when a machine dials in for the first time, so a person pressing this
         //and a machine arriving go through one path rather than two that drift.
+        //---- A CLEAN STARTING POINT, TAKEN BY HAND -------------------------
+        //
+        //NOT THE SAME ACT AS THE FIRST ONE, and collapsing the two was a mistake
+        //worth writing down. ../../vms/provision takes a machine's FIRST
+        //snapshot when it dials in and leaves it off, which is right: it has
+        //just been built and is waiting for work.
+        //
+        //THIS IS A BUTTON, PRESSED ON A MACHINE SOMEBODY IS USING. It was
+        //written as a wrapper around that other function, so pressing it on a
+        //running machine snapshotted it correctly and then silently left it
+        //off — the snapshot was fine and the machine was gone, which is the
+        //worst shape for a fault to have.
         undo.push(actions.define('vmBaseSnapshot', {
-            about: 'Make a clean starting point: shut it down, snapshot it, and start it again',
+            about: 'Shut a machine down, snapshot it as a clean starting point, and start it again',
             takes: ['name', 'title'],
             run: async function (args) {
                 var a = args || {};
-                ours.get(a.name);
-                snapshotting.refuseIfItHoldsASignIn(a.name);
-                return await imports.provision.base(a.name, a.title);
+                var vm = ours.get(a.name);
+                var title = snapshotting.titleFor(a.title || 'base');
+
+                return await imports.busy.during(a.name, 'being snapshotted', async function () {
+                    //BOTH REFUSALS BEFORE THE MACHINE IS SHUT DOWN, not after.
+                    //This one stops a machine first, so a refusal that came
+                    //later would have already cost somebody their machine and
+                    //everything running on it.
+                    snapshotting.refuseIfItHoldsASignIn(a.name);
+                    await snapshotting.refuseIfTaken(a.name, title);
+
+                    var to = log.on('vm', a.name);
+                    var wasRunning = !(await vbox.isOff(a.name));
+
+                    if (wasRunning) {
+                        to.info('shutting down to take a clean snapshot');
+                        await vbox.stop(a.name, false);
+
+                        //ASKED POLITELY FIRST. Only after waiting is the plug
+                        //pulled, because a guest part-way through writing is
+                        //what a clean snapshot must not capture.
+                        if (!(await vbox.waitUntilOff(a.name, { timeout: 120000 }))) {
+                            to.warn('it did not shut down in two minutes; pulling the power');
+                            try { await vbox.stop(a.name, true); } catch (e) { /* it may have gone */ }
+                            await vbox.waitUntilOff(a.name, { timeout: 60000 });
+                        }
+                        await vbox.waitUntilUnlocked(a.name);
+                    }
+
+                    await vbox.takeSnapshot(a.name, title, 'a clean starting point, taken once it was set up');
+                    ours.update(a.name, makeSnapshotting.recordFor(ours.get(a.name), title, Date.now()));
+                    to.good('"' + title + '" is now the point this machine can be returned to');
+
+                    if (wasRunning) {
+                        //---- AND IT COMES BACK, WHICH IS ITS OWN RACE --------
+                        //
+                        //TAKING THE SNAPSHOT LOCKS THE MACHINE, and VirtualBox
+                        //releases that lock a moment AFTER the command returns —
+                        //so starting straight away loses, and this failed every
+                        //time with "already locked by a session". The snapshot
+                        //was fine; only the restart was lost, which is the
+                        //confusing part: the error names the harmless half and
+                        //the machine is left off with no obvious reason why.
+                        //
+                        //WAITED OUT AND THEN RETRIED, because they cover
+                        //different things — SessionState can read "Unlocked" for
+                        //the instant the lock still lives, measured at 100ms
+                        //before a start was refused. The wait is the ordinary
+                        //path; the retry is what makes it true.
+                        await vbox.waitUntilUnlocked(a.name);
+                        await vbox.retrying(function () { return vbox.start(a.name, 'gui'); },
+                            { what: 'starting it again', tags: [a.name] });
+                        to.info('started again; it will dial back in shortly');
+                    }
+
+                    return Object.assign({}, await vbox.snapshots(a.name), {
+                        baseSnapshot: title,
+                        //SAID, because "it is off" is a thing somebody will
+                        //otherwise have to discover.
+                        restarted: wasRunning
+                    });
+                });
             }
         }));
 
