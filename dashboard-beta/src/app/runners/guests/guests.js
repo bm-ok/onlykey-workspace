@@ -198,6 +198,32 @@ module.exports = function guests(theme, okc, remember) {
                 cost: 'It signs that Claude account in and keeps the credential here, sealed.',
                 confirm: 'Keep it',
                 protect: true,
+
+                //---- AND A WAY OUT THAT ACTUALLY ENDS IT -------------------
+                //
+                //"NEVER MIND" ONLY CLOSES THIS DIALOG. The desk on the machine
+                //goes on holding the sign-in open — a `claude` process sitting
+                //at its "paste code here" prompt — and nothing on this screen
+                //would ever say so again. The next `+` then starts a second one
+                //behind the first.
+                //
+                //THE APP BEING PORTED FROM HAS THIS AND THIS DID NOT, which is
+                //the real gap between the two flows. Its own note is worth
+                //keeping: giving up cancels the conversation and nothing else —
+                //no machine was borrowed to hold it, so there is nothing to give
+                //back.
+                extra: {
+                    label: 'Give up',
+                    onClick: function () {
+                        okc.call('claudeSignInCancel', { name: started.name }).then(
+                            function (r) { setSaid({ text: r.note || 'The desk is clear.' }); },
+                            //IT MAY NEVER HAVE STARTED, or may have finished
+                            //while this was open. Neither is worth an error on
+                            //the way out.
+                            function () { setSaid({ text: 'The desk is clear.' }); }
+                        );
+                    }
+                },
                 onYes: function (f) {
                     var code = String(f.code || '').trim();
                     if (!code) throw new Error('Paste the code the sign-in page gave you.');
