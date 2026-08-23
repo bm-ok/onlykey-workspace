@@ -38,7 +38,7 @@ var allowed = require('./allowed');
 //same search path as every other provisioning file and a project can replace it.
 //..\vms\provision is the one thing that knows where that path is, and asking it
 //is cheaper than being right about the two environment variables twice.
-plugin.consumes = ['app', 'log', 'state', 'ours', 'guestApi', 'provision'];
+plugin.consumes = ['app', 'log', 'state', 'ours', 'guestApi', 'provision', 'guests'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -54,6 +54,12 @@ async function plugin(imports, register) {
     //being ported from gives for keeping this beside the triage notebook rather
     //than per workspace. ../core/state has both; this one is `app`.
     var todos = makeTodos(imports.state.app.doc('todo'));
+
+    //THE REGISTER AND THE SIGN-INS, which is what "can it run" is made of. See
+    //`supervisorState` below: a supervisor with no credential is not a broken
+    //supervisor, it is one that exits in three seconds having asked for nothing.
+    var ours = imports.ours;
+    var guests = imports.guests;
 
     //ONE SHAPE FOR EVERY ANSWER THAT RETURNS THE LIST, so the window and a model
     //are reading the same thing.
@@ -130,6 +136,100 @@ async function plugin(imports, register) {
             var one = todos.remove(a.id);
             log.warn(one.ref + ' "' + one.what + '" removed');
             return Object.assign({}, one, board(), { note: one.ref + ' is gone. It was ' + one.state + '.' });
+        }
+    }));
+
+    //---- is there one, and can it actually run -----------------------------
+    //
+    //THREE THINGS HAVE TO BE TRUE AND THE THIRD IS THE ONE THAT IS MISSED. The
+    //machine has to exist, it has to be up and dialled in, and it has to be
+    //HOLDING A CLAUDE SIGN-IN. Without the third it starts, runs, exits in about
+    //three seconds and reports that it asked for nothing — which from outside is
+    //indistinguishable from a supervisor with nothing to do.
+    //
+    //So every reason it cannot run is collected and said in one sentence rather
+    //than the pane showing a disabled button. "Not running" is a whole state
+    //here, not a control that is greyed out.
+    //
+    //BY NAME AND FINGERPRINT, NEVER A VALUE. Which sign-in it is holding is the
+    //same rule the Keys tab is built to: a model may know something is there
+    //without being able to know what it is.
+    undo.push(actions.define('supervisorState', {
+        about: 'The supervisor machine: whether it is up, signed in, and able to run',
+        run: async function () {
+            //THE ROLE IS ASKED OF ../vms/ours RATHER THAN READ OFF THE TAGS. It
+            //owns what a role means, and a second reading of a tag list here
+            //would be a second definition of "supervisor" that agrees until
+            //somebody changes one of them.
+            var mine = (ours.read() || []).filter(function (v) { return ours.canBe(v, 'supervisor'); });
+
+            if (!mine.length) {
+                return {
+                    there: false,
+                    note: 'This host has no supervisor machine. Make one on the Runners tab — tick '
+                        + '"supervisor machine?" when you create it.'
+                };
+            }
+
+            //`vmList` FOR WHAT IT IS DOING NOW, because the register records what
+            //a machine last said and VirtualBox knows whether it is switched on.
+            //Asked once for all of them rather than once each.
+            var live = {};
+            try {
+                var said = await actions.call('vmList', {});
+                ((said && said.vms) || []).forEach(function (v) { live[v.name] = v; });
+            } catch (e) { /* unreachable: the register is still worth reporting */ }
+
+            var held = [];
+            try { held = guests.all() || []; }
+            catch (e) { /* no store yet, which reads as holding nothing */ }
+
+            //ONE IS THE ORDINARY CASE and more than one is refused from running
+            //together. Reported as a list so a host with two says so rather than
+            //picking one quietly.
+            var rows = mine.map(function (v) {
+                var now = live[v.name] || v;
+                var sign = held.filter(function (g) { return g.holder === v.name; })[0] || null;
+
+                var why = [];
+                if (now.state !== 'running') why.push('it is switched off');
+                else if (!now.connected) why.push('it is starting up — it has not dialled in yet');
+                if (!sign) why.push('it is holding no credential, so a worker on it cannot authenticate');
+
+                return {
+                    name: v.name,
+                    state: now.state || null,
+                    connected: !!now.connected,
+                    signedInAs: sign ? sign.name : null,
+                    fingerprint: sign ? sign.fingerprint : null,
+                    ready: !why.length,
+                    why: why.length ? why.join(', and ') : null
+                };
+            });
+
+            var up = rows.filter(function (r) { return r.ready; })[0] || null;
+
+            return {
+                there: true,
+                supervisors: rows,
+                ready: !!up,
+                name: up ? up.name : rows[0].name,
+
+                //NOT PORTED YET AND SAID AS FALSE RATHER THAN LEFT OFF. It is
+                //"this app has a turn running", and this app cannot start one
+                //until `supervisorWake` moves — so false is the true answer here
+                //and not a placeholder. The badge it drives simply never shows.
+                thinking: false,
+
+                //THE TOP-LEVEL `why` IS WHAT THE PANE LEADS WITH when nothing is
+                //ready. It reads `why || note`, and a note that describes the
+                //situation is worse than a sentence naming the one thing to fix.
+                why: up ? null : rows[0].why,
+                note: up
+                    ? up.name + ' is up and signed in as "' + up.signedInAs + '". It answers when you '
+                        + 'say something, if that is switched on.'
+                    : rows[0].name + ' cannot run: ' + rows[0].why + '.'
+            };
         }
     }));
 
