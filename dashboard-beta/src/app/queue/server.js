@@ -314,6 +314,13 @@ async function plugin(imports, register) {
             return all.filter(function (c) { return c.id === id; })[0] || null;
         },
         contractFileExists: async function () { return true; },
+
+        //WHAT ARRIVED ON THE BRANCH, READ FRESH. `judge` refuses a verdict on an
+        //empty branch, and a cached answer is the one thing that could make that
+        //check pass on a branch nothing reached — see ../artifact.
+        delivered: async function (branch) {
+            return await imports.artifact.read(branch, { fresh: true });
+        },
         job: async function (id) {
             var said = await relayed('jobs');
             var all = (said && said.jobs) || [];
@@ -670,6 +677,42 @@ async function plugin(imports, register) {
             takes: ['id'],
             run: async function (args) {
                 return await doors.remove((args || {}).id);
+            }
+        }));
+
+        //---- A PERSON'S DECISION, WHICH IS NOT A MERGE ---------------------
+        //
+        //NOT A SUPERVISOR'S, AND THAT IS WRITTEN DOWN WHERE THE FENCE IS —
+        //../supervisor/allowed.js leaves `taskJudge` off the list on purpose: a
+        //verdict decides whether work was any good, and a supervisor judging its
+        //own delivery is a worker marking its own homework.
+        //
+        //The rule about WHO is stated there rather than restated here, because
+        //one fence with a reason beside each line is the whole design of that
+        //file. What is here is what a verdict IS.
+        undo.push(actions.define('taskJudge', {
+            about: 'Record a verdict on what a task delivered',
+            needs: 'workspace',
+            takes: ['id', 'verdict', 'note'],
+            run: async function (args) {
+                var a = args || {};
+                return await doors.judge(a.id, a.verdict, a.note);
+            }
+        }));
+
+        //---- AND SAYING ONE TAKEN BY HAND IS OVER ---------------------------
+        //
+        //THE MACHINE GOES BACK THROUGH THE SAME DOOR AS EVERYTHING ELSE, so the
+        //same refusal applies: anything uncommitted stops this, because putting a
+        //machine away rolls it back. ./attempts.js owns that.
+        undo.push(actions.define('taskFinished', {
+            about: 'Say a task you took by hand is finished: give the machine back and put it up '
+                + 'for a verdict',
+            needs: 'workspace',
+            takes: ['id', 'keep'],
+            run: async function (args) {
+                var a = args || {};
+                return await attempts.finished(a.id, a.keep === true || a.keep === 'true');
             }
         }));
 

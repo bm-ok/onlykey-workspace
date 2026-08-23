@@ -371,8 +371,67 @@ module.exports = function doors(store, ask, log) {
         return await store.update(ref, it);
     }
 
+    //=======================================================================
+    //A PERSON'S DECISION ABOUT WORK, RECORDED AS A PERSON'S DECISION.
+    //
+    //NOT A MERGE, AND NOT A GATE. Accepting lands nothing, which is deliberate:
+    //merging is a separate act with its own rules, and a verdict that quietly
+    //merged would make reading the work and publishing it the same button. What
+    //this records is that somebody read it and what they thought.
+    //
+    //---- and it is read fresh, at the moment of deciding ------------------
+    //
+    //A VERDICT ON AN EMPTY BRANCH IS A JUDGEMENT OF NOTHING, and afterwards it
+    //is INDISTINGUISHABLE from a judgement of something: the record says
+    //"accepted" either way, and the reason it was empty is not in it.
+    //
+    //So it is refused rather than allowed with a warning, and the branch is read
+    //fresh rather than from anything already on the task. A worker that finished
+    //without pushing has delivered nothing, and the gap between "the run ended"
+    //and "somebody is deciding" is exactly where that becomes true.
+    //=======================================================================
+    async function judge(ref, verdict, note) {
+        var task = await store.get(ref);
+        var call = String(verdict == null ? '' : verdict).trim().toLowerCase();
+
+        if (call !== 'accept' && call !== 'reject') {
+            throw new Error('The verdict is "accept" or "reject".');
+        }
+
+        var art = await ask.delivered(task.branch);
+        if (!art || !art.delivered) {
+            throw new Error('Nothing has arrived on "' + task.branch + '", so there is nothing to '
+                + 'judge. A worker that finished without pushing has delivered nothing.');
+        }
+
+        //A REJECTION WITH NO REASON IS SENT BACK TO A WORKER THAT CANNOT ASK
+        //WHAT WAS WRONG. An acceptance needs no words — the work is the answer —
+        //but a rejection that says nothing is an instruction to guess.
+        var why = String(note == null ? '' : note).trim();
+        if (call === 'reject' && !why) {
+            throw new Error('Say why it was rejected. A rejection with no reason is sent back to a '
+                + 'worker that cannot ask what was wrong.');
+        }
+
+        var decided = await store.update(task.id, {
+            state: call === 'accept' ? 'accepted' : 'rejected',
+            verdict: {
+                call: call,
+                note: why || null,
+                at: new Date().toISOString(),
+                //WHAT WAS ON THE BRANCH WHEN IT WAS DECIDED, kept with the
+                //decision. The branch moves on; a verdict that only says
+                //"accepted" is a verdict nobody can check afterwards.
+                on: art.summary
+            }
+        });
+
+        say.good(call + 'ed: ' + art.summary);
+        return decided;
+    }
+
     return {
-        create: create, queue: queue, remove: remove, edit: edit,
+        create: create, queue: queue, remove: remove, edit: edit, judge: judge,
         branchIsReady: branchIsReady, fromTheLibrary: fromTheLibrary
     };
 };
