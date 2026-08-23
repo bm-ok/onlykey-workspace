@@ -33,16 +33,15 @@ module.exports = {
             "            var named = head.indexOf(':') >= 0 ? head.slice(head.indexOf(':') + 1) : head;",
             "            var named = head.indexOf(':') >= 0 ? head.slice(0, head.indexOf(':')) : head;"],
 
-        //NOT SWEPT: the `named &&` half of `if (named && named === branch)`.
+        //THE `named &&` THAT USED TO BE HERE IS GONE, and this is what holds
+        //instead. It was dead — synchronous, `branch` never re-read, and an
+        //empty `named` fails the equality anyway — so the early return is the
+        //only thing standing between an empty head and an empty branch matching.
         //
-        //IT IS UNREACHABLE, and that is worth knowing rather than deleting. The
-        //only way an empty `named` could match is an empty `branch`, and the
-        //`if (!branch) return false` at the top has already returned by then —
-        //so removing it changes no answer and a sweep reports it SURVIVED.
-        //
-        //LEFT AS THE APP BEING PORTED FROM HAS IT. It is a guard behind a guard,
-        //and the cost of keeping it is nothing; the cost of removing it is that
-        //whoever later moves the early return has no second line holding.
+        //Breaking THAT is how the removal is kept honest.
+        ['a branch with no name matches a pull request with no head',
+            '    if (!branch) return false;\n\n    var all = cuts || {};',
+            '    var all = cuts || {};'],
 
         //IT LOOKS ACROSS EVERY CUT. Stopping at the first is a permission that
         //depends on the order of a record.

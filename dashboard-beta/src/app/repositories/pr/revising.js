@@ -35,6 +35,16 @@
 //NOT ONE THAT HAS MERGED. Once it lands, the branch is history again and the
 //ordinary rule applies.
 function underRevision(branch, cuts) {
+    //AND EVERYTHING BELOW LEANS ON THIS. Once a branch is known to be a
+    //non-empty name, a pull request with no head cannot match it — so the
+    //comparison further down does not have to ask twice.
+    //
+    //The app being ported from writes that comparison as `named && named ===
+    //branch`. The first half cannot change an answer: this function is
+    //synchronous, `branch` is not read again, and an empty `named` fails the
+    //equality anyway. It is dropped rather than copied, and this comment is what
+    //replaces it — if this early return ever moves, the comparison below needs
+    //its own guard back.
     if (!branch) return false;
 
     var all = cuts || {};
@@ -52,7 +62,7 @@ function underRevision(branch, cuts) {
             var head = String(p.head || '');
             var named = head.indexOf(':') >= 0 ? head.slice(head.indexOf(':') + 1) : head;
 
-            if (named && named === branch) return true;
+            if (named === branch) return true;
         }
     }
 

@@ -73,9 +73,18 @@ module.exports = function freeing(deps) {
 
         var home = await defaultOf(repo);
 
-        //NOWHERE TO SEND IT. If this branch IS where the repository belongs then
-        //it is not in the way of anything — it is at home, and the machine will
-        //have to work around it rather than the other way about.
+        //NOWHERE TO SEND IT, and there are two ways to get here.
+        //
+        //`home === branch` is the ordinary one: this branch IS where the
+        //repository belongs, so it is not in the way of anything — it is at
+        //home, and the machine works around it rather than the other way about.
+        //
+        //`!home` LOOKS UNREACHABLE AND IS NOT. The head was read a moment ago
+        //and matched; `defaultOf` reads it AGAIN when nothing is recorded yet,
+        //and between those two awaits the repository can move — somebody in a
+        //terminal, another part of this app, a checkout finishing. A repository
+        //that has stopped answering between one line and the next is not one to
+        //send anywhere on a guess.
         if (!home || home === branch) return { repo: repo, freed: false, busy: false };
 
         var moved = await checkout(repo, home);

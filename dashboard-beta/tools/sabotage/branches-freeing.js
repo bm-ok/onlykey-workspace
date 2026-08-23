@@ -62,17 +62,16 @@ module.exports = {
             '        if (!home || home === branch) return { repo: repo, freed: false, busy: false };',
             ''],
 
-        //NOT SWEPT: the `!home ||` half of that line.
+        //I FIRST WROTE THIS OFF AS UNREACHABLE, AND IT IS NOT.
         //
-        //IT IS UNREACHABLE, like the `named &&` in ../../src/app/repositories/pr/revising.
-        //`freeIfBusy` has already returned unless `head === branch`, and
-        //`defaultOf` falls back to that same head — so `home` is null only when
-        //the head is, which cannot reach here. Removing it changes no answer and
-        //a sweep reports SURVIVED.
-        //
-        //LEFT AS THE APP BEING PORTED FROM HAS IT, and for the same reason: it
-        //costs nothing, and it is the second line holding if the check above it
-        //ever moves.
+        //The head is read here and read AGAIN inside `defaultOf`, and there is
+        //an await between them — so a repository that moves in that window
+        //arrives with `head === branch` true and `home` null. It looked dead
+        //because the value had been checked a line above; a guard is only dead
+        //if nothing can change between the check and the use.
+        ['a repository that moved between the two reads is sent nowhere',
+            '        if (!home || home === branch) return { repo: repo, freed: false, busy: false };',
+            '        if (home === branch) return { repo: repo, freed: false, busy: false };'],
 
         //---- and every repository at once -----------------------------------------
 

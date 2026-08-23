@@ -181,6 +181,24 @@ test('nor is one nothing can be read from at all', async () => {
     assert.deepEqual(moves, []);
 });
 
+test('and one that moves BETWEEN the two reads is left alone', async () => {
+    //THE HEAD IS READ TWICE: once here, and again inside `defaultOf` when
+    //nothing is recorded yet. Between those two awaits the repository can move —
+    //somebody in a terminal, another part of this app, a checkout finishing.
+    //
+    //I FIRST WROTE THIS OFF AS UNREACHABLE and it is not. A guard that looks
+    //dead because the value was checked a line ago is exactly the guard that
+    //earns its keep once there is an await between the two.
+    let looks = 0;
+    const said = await freeing({
+        headOf: async () => (++looks === 1 ? 'work/the-thing' : null)
+    }).freeIfBusy('repo-a', 'work/the-thing');
+
+    assert.equal(looks, 2, 'the head was not read a second time, so this proves nothing');
+    assert.equal(said.busy, false);
+    assert.deepEqual(moves, [], 'it tried to move a repository to nowhere');
+});
+
 //---- and every repository at once ------------------------------------------------
 
 test('only the ones that moved or are in the way come back', async () => {
