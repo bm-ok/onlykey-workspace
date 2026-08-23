@@ -181,19 +181,55 @@ function printers () {
   return all
 }
 
-// --k v, --flag (true), and --json for the raw answer
+// --k v, --flag (true), --k=v, and --json for the raw answer
+//
+//---- A VALUE THAT OPENS LIKE JSON IS JSON ----------------------------------
+//
+//EVERY VALUE ARRIVED AS A STRING, and some actions want an object: `vmCreate
+//--vm '{"name":"runner1"}'` handed `spec.fill` a string, which has no `name` on
+//it, and the answer was "Give it a name using letters, numbers, dots or dashes"
+//— an error about the wrong thing entirely, pointing at a field that was in fact
+//right there.
+//
+//The app being ported from parses here and says exactly that in its own comment.
+//This was lost in the port and cost the first attempt at `vmCreate`.
+//
+//AND WHAT OPENS LIKE JSON AND DOES NOT PARSE IS A MISTAKE, NOT A STRING.
+//Falling back silently is what produced the misleading error above, so it throws
+//with the fix in it — because it happens for a real reason on Windows: a shell
+//eats the backslashes in an embedded path, so `C:\Users` arrives with `\U` in
+//it, which is not a valid escape.
 function readArgs (argv) {
   const args = {}
   let json = false
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (!a.startsWith('--')) continue
-    const key = a.slice(2)
+
+    let key, raw
+    const eq = a.indexOf('=')
+    if (eq > 2) {
+      key = a.slice(2, eq)
+      raw = a.slice(eq + 1)
+    } else {
+      key = a.slice(2)
+      if (key === 'json') { json = true; continue }
+      const next = argv[i + 1]
+      if (next === undefined || next.startsWith('--')) raw = 'true'
+      else { raw = next; i++ }
+    }
     if (key === 'json') { json = true; continue }
-    const next = argv[i + 1]
-    if (next === undefined || next.startsWith('--')) { args[key] = true; continue }
-    args[key] = next
-    i++
+
+    try {
+      args[key] = JSON.parse(raw)
+    } catch (e) {
+      if (/^\s*[{[]/.test(raw)) {
+        throw new Error(`--${key} looks like JSON but did not parse: ${e.message}\n` +
+          '  If it contains a Windows path, use forward slashes: C:/Users/... — a shell\n' +
+          '  eats the backslashes before this ever sees them.')
+      }
+      args[key] = raw
+    }
   }
   return { args, json }
 }

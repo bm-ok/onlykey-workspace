@@ -67,7 +67,10 @@ function stamp() {
 //machine touched. What is left here is the three acts that touch something, and
 //the machine's own token, which this plugin has and that one must not.
 plugin.consumes = ['app', 'log', 'vbox', 'ours', 'busy', 'channel', 'dataDir',
-    'repoWorkspaces', 'tls', 'guestApi'];
+    'repoWorkspaces', 'tls', 'guestApi',
+    //`provision` OWNS MAKING ONE, including the refusal of a name VirtualBox
+    //already has. This plugin owns the door, not the build.
+    'provision'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -134,6 +137,78 @@ async function plugin(imports, register) {
     var undo = [];
 
     if (actions) {
+        //---- MAKING ONE, AND THE NAME IT MAY NOT HAVE ----------------------
+        //
+        //THE COLLISION IS CHECKED AGAINST ALL OF VirtualBox, not against this
+        //app's register — see ../../vms/provision/server.js, which owns the
+        //refusal. That matters more here than it did in the app being ported
+        //from, because there are now TWO registers on this host: this one and
+        //the one belonging to the app being ported from. Either could be empty
+        //while VirtualBox still holds the name.
+        //
+        //So clearing this app's state makes its machines invisible HERE and
+        //changes nothing about what may be created: `runner1` is refused for as
+        //long as VirtualBox has a `runner1`, whoever made it.
+        undo.push(actions.define('vmCreate', {
+            about: 'Make a virtual machine and its disk',
+            takes: ['vm'],
+            run: async function (args) {
+                return await imports.provision.create((args || {}).vm || {});
+            }
+        }));
+
+        //---- AND UNMAKING ONE, WHICH ONLY EVER MEANS ONE OF OURS ------------
+        //
+        //`ours.get` IS THE WHOLE GUARD AND IT IS THE FIRST LINE. It refuses
+        //anything not in THIS app's register — including a machine that exists
+        //in VirtualBox, including one the app being ported from made and is
+        //still using. There is no flag to override it.
+        //
+        //WHICH MEANS A FRESH INSTALL OF THIS APP CAN DELETE NOTHING. Its
+        //register is empty, so every name is somebody else's, so every removal
+        //is refused. That is the property, stated as a consequence rather than
+        //implemented as a special case.
+        //
+        //THE REFUSAL IS DELIBERATELY THE SAME for "no such machine" and "not
+        //ours", because saying which would be a way to probe what else is on
+        //this host.
+        undo.push(actions.define('vmRemove', {
+            about: 'Delete a virtual machine and its disks, and forget it',
+            takes: ['name'],
+            run: async function (args) {
+                var name = (args || {}).name;
+                ours.get(name);
+
+                return await imports.busy.during(name, 'being deleted', async function () {
+                    //BEFORE THE MACHINE GOES, so nothing is left holding a
+                    //session for something that no longer exists — and so a new
+                    //machine of the same name cannot inherit it.
+                    imports.channel.drop(name, 'was deleted');
+
+                    var out = await vbox.destroy(name);
+                    return Object.assign({}, out, ours.forget(name));
+                });
+            }
+        }));
+
+        //---- OR JUST LETTING GO OF IT --------------------------------------
+        //
+        //A DIFFERENT ACT FROM REMOVING, and the difference matters more here
+        //than it did in the app being ported from. Two registers can now name
+        //one VirtualBox machine, so "stop managing this" and "destroy this" are
+        //questions with different answers — and the first is the one to reach
+        //for when the other app is still using it.
+        undo.push(actions.define('vmForget', {
+            about: 'Stop managing a virtual machine without deleting it',
+            takes: ['name'],
+            run: function (args) {
+                var name = (args || {}).name;
+                ours.get(name);
+                imports.channel.drop(name, 'is no longer managed here');
+                return ours.forget(name);
+            }
+        }));
+
         undo.push(actions.define('vmList', {
             about: 'The virtual machines this app made, with live state and stage',
             run: function () { return ours.all(); }
