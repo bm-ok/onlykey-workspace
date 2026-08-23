@@ -1,3 +1,5 @@
+var fs = require('fs');
+
 var makeGuestApi = require('./guestapi');
 var makeTodos = require('./todos');
 //THE FENCE ITSELF, read by the pane as well as enforced by the door — see
@@ -30,7 +32,13 @@ var allowed = require('./allowed');
 //button on the pane is `protected`, and both halves of the rule are real.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'state', 'ours', 'guestApi'];
+//`provision` BECAUSE A SKILL IS A PROVISIONING FILE. It is not installed on a
+//machine and never was — it is fetched from this host at the head of every turn
+//and written to ~/.claude/skills/supervising/SKILL.md there, so it lives on the
+//same search path as every other provisioning file and a project can replace it.
+//..\vms\provision is the one thing that knows where that path is, and asking it
+//is cheaper than being right about the two environment variables twice.
+plugin.consumes = ['app', 'log', 'state', 'ours', 'guestApi', 'provision'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -124,6 +132,122 @@ async function plugin(imports, register) {
             return Object.assign({}, one, board(), { note: one.ref + ' is gone. It was ' + one.state + '.' });
         }
     }));
+
+    //---- what it is TOLD, which is the other half of the same question -----
+    //
+    //THE SKILL IS A DOCUMENT AND THE ALLOWLIST IS CODE, and that is why they are
+    //two actions rather than one pane's worth of settings. The loop a supervisor
+    //works to, the vocabulary it uses and the things it may propose are the
+    //actual control surface, and until this pane existed they were a file only
+    //somebody with a checkout could read.
+    //
+    //NOTHING IS INSTALLED ON A MACHINE. It is fetched from this host at the head
+    //of every turn, so a change takes effect on the next waking — no restart, no
+    //reinstall, no machine work.
+    //
+    //TWO NAMED DOCUMENTS, NOT "ANY FILE IN provision/". The point of this is the
+    //instructions given to a model; a general file editor pointed at the
+    //provisioning directory is a different and much larger thing, and it would
+    //arrive without anybody deciding to build it.
+    var WHICH = {
+        supervisor: {
+            stage: 'skill',
+            title: "the supervisor's skill",
+            about: 'How the supervisor works: the loop, what it may propose, what it may never do. '
+                + 'Fetched fresh at the head of every turn.'
+        },
+        worker: {
+            stage: 'workerSkill',
+            title: "a worker's skill",
+            about: 'What a worker is told when it runs a job on a machine that will be rolled back '
+                + 'underneath it.'
+        }
+    };
+
+    //`fileFor(null, stage)` — NO MACHINE, SO THE STAGE'S DEFAULT. A machine may
+    //name a different file for any stage in its spec, and that is exactly what
+    //should NOT happen here: this pane is about the document this host serves,
+    //not about what one machine happened to be built with.
+    function skillFile(stage) { return imports.provision.fileFor(null, stage); }
+
+    function skillNamed(which) {
+        var one = WHICH[String(which || 'supervisor')];
+        if (!one) {
+            throw new Error('"' + which + '" is not a skill this app keeps. One of: '
+                + Object.keys(WHICH).join(', ') + '.');
+        }
+        return one;
+    }
+
+    undo.push(actions.define('skills', {
+        about: 'The instructions a supervisor and a worker are given: read one in full, or list what there is',
+        takes: ['which'],
+        run: function (args) {
+            var which = (args || {}).which || null;
+
+            if (!which) {
+                return {
+                    skills: Object.keys(WHICH).map(function (key) {
+                        var one = WHICH[key];
+                        var at = null;
+                        var bytes = null;
+                        var edited = null;
+                        //ABSENT IS A ROW, NOT AN ERROR. A project can replace
+                        //either of these and one of them not being on the search
+                        //path is a fact worth showing rather than a failure that
+                        //takes the whole list down with it.
+                        try {
+                            at = skillFile(one.stage);
+                            var stat = fs.statSync(at);
+                            bytes = stat.size;
+                            edited = stat.mtime.toISOString();
+                        } catch (e) { /* the row says so by carrying nulls */ }
+
+                        return {
+                            which: key, title: one.title, about: one.about,
+                            bytes: bytes, edited: edited, there: bytes !== null
+                        };
+                    }),
+                    note: 'Editing one changes the next waking. It is fetched from this host at the head '
+                        + 'of every turn — nothing is installed on a machine.'
+                };
+            }
+
+            var one = skillNamed(which);
+            var file;
+            var text;
+            try {
+                file = skillFile(one.stage);
+                text = fs.readFileSync(file, 'utf8');
+            } catch (e) {
+                throw new Error('Could not read ' + one.title + ': ' + e.message);
+            }
+
+            var when = null;
+            try { when = fs.statSync(file).mtime.toISOString(); }
+            catch (e) { /* an unreadable date is not worth losing the document over */ }
+
+            return {
+                which: String(which),
+                title: one.title,
+                about: one.about,
+                text: text,
+                characters: text.length,
+                lines: text.split('\n').length,
+                edited: when,
+                where: file
+            };
+        }
+    }));
+
+    //NO `skillSave` AND NO `skillHolding`, DELIBERATELY, and the pane says so.
+    //Saving is refused while a window holds unsaved edits, and that handshake is
+    //the whole point of it — a save action without it is a save that silently
+    //overwrites whoever is typing. Half of that is worse than none of it.
+    //
+    //THE SUPERVISOR COULD NOT CALL EITHER ANYWAY: neither name is in
+    //./allowed.js, which is where "it may not rewrite its own instructions"
+    //actually lives.
 
     //---- and what it may ask for, which is the fence made readable ---------
     //
