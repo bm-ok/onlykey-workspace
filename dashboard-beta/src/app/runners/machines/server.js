@@ -5,6 +5,19 @@ var makeRestoring = require('./restoring');
 var makeAwaiting = require('./awaiting');
 var makeSnapshotting = require('./snapshotting');
 
+//---- WHO IS FREE, ASKED OF THE ONE PLACE THAT DECIDES -----------------------
+//
+//A MODULE REQUIRE AND NOT A CONSUMED SERVICE, deliberately. ../../queue's header
+//states an invariant the whole graph leans on -- "NOTHING CONSUMES `queue`, so
+//none of these can be a cycle" -- and that plugin consumes a dozen names. Taking
+//a service from it would put this plugin inside that sentence.
+//
+//`policy` IS PURE: lists in, lists out, no store and no host. So requiring the
+//file is a lookup, exactly as ../repositories/repos requires ../branches/freeing.
+//What must not happen is a SECOND answer to "is that machine free", and this is
+//the same function the tick dispatches by.
+var policy = require('../../queue/policy');
+
 //---------------------------------------------------------------------------
 //THE MACHINES, AS ACTIONS.
 //
@@ -153,6 +166,92 @@ async function plugin(imports, register) {
     });
 
     var undo = [];
+
+    //---- THE POOLS, WHICH IS WHAT A TAG ACTUALLY IS ------------------------
+    //
+    //IT ANSWERS "WHERE CAN WORK GO", and that is the whole of what belongs in
+    //it. The first drill in `what this host has` asks for it, and every suite
+    //that stands on that one has been unrunnable since the port began for want
+    //of this answer.
+    //
+    //A MACHINE THAT CANNOT TAKE WORK IS NOT SHOWN AT ALL. One kept back from the
+    //queue is somebody's decision about their own computer -- listing it with a
+    //reason hands the reader a name, a state and an implicit suggestion, none of
+    //which it can act on.
+    //
+    //KEPT BACK IS NOT MERELY BUSY. A machine doing a task is still in its pool
+    //and will be free in a minute, which is worth knowing. One held back is out
+    //until a person says otherwise.
+    //
+    //A SUPERVISOR IS NOT A POOL. It is out of the queue's reach for good, so
+    //listing it among the kinds work can ask for would be listing a machine no
+    //task can ever have. Counted separately, because "why does this host have
+    //five machines and four in the pools" is a fair question.
+    if (actions) {
+        undo.push(actions.define('pools', {
+            about: 'The kinds of machine there are, how many of each, and how many are free to take work',
+            run: async function () {
+                var said = await actions.call('vmList', {});
+                var all = (said && said.vms) || [];
+
+                //THE SAME FUNCTION THE TICK DISPATCHES BY -- see the note over
+                //the require. Nothing in flight is passed, because this asks
+                //what the POOL is rather than what is happening in it: a machine
+                //busy with a task is still in its pool.
+                var free = {};
+                policy.availability(all, {}).forEach(function (a) { free[a.name] = a; });
+
+                var held = {};
+                all.forEach(function (v) { if (v.forTasks === false) held[v.name] = true; });
+
+                var supervisors = all.filter(function (v) { return v.supervisor; });
+                var workers = all.filter(function (v) { return !v.supervisor; });
+
+                var kinds = {};
+                workers.forEach(function (vm) {
+                    if (held[vm.name]) return;
+                    (vm.tags || []).forEach(function (tag) {
+                        var key = String(tag).toLowerCase();
+                        var row = kinds[key] || { tag: key, machines: [], free: 0, busy: 0 };
+                        var how = free[vm.name] || {};
+                        row.machines.push({ name: vm.name, free: !!how.free, why: how.why || null });
+                        if (how.free) row.free++; else row.busy++;
+                        kinds[key] = row;
+                    });
+                });
+
+                //NO "UNTAGGED" BUCKET. There was one, and it meant "which pool
+                //is this machine in" had two sorts of answer -- a tag, or a
+                //shrug -- so anything checking that work went where it was meant
+                //had to special-case the shrug. A machine with none is still
+                //COUNTED, because a report that silently drops a machine is
+                //worse than one that shows an odd row.
+                var homeless = workers.filter(function (v) {
+                    return !held[v.name] && !(v.tags || []).length;
+                });
+
+                var rows = Object.keys(kinds).sort().map(function (k) { return kinds[k]; });
+
+                return {
+                    pools: rows,
+                    inNoPool: homeless.map(function (v) { return v.name; }),
+                    //HOW MANY ARE OUT OF REACH, WITHOUT SAYING WHICH. The number
+                    //keeps "five machines and four in pools" from reading as a
+                    //fault; a name would be information the reader cannot use.
+                    keptBack: Object.keys(held).length,
+                    //ANY FREE MACHINE AT ALL takes an untagged task, tagged or not.
+                    anyFree: workers.filter(function (v) { return (free[v.name] || {}).free; }).length,
+                    supervisors: supervisors.map(function (v) { return v.name; }),
+                    note: rows.length
+                        ? rows.length + ' pool(s): ' + rows.map(function (k) {
+                            return '"' + k.tag + '" (' + k.free + ' of ' + k.machines.length + ' free)';
+                        }).join(', ') + '. A task with no tag takes any free machine; a tagged one takes only '
+                            + 'its own kind, and waits.'
+                        : 'There are no machines to put in a pool.'
+                };
+            }
+        }));
+    }
 
     if (actions) {
         //---- MAKING ONE, AND THE NAME IT MAY NOT HAVE ----------------------
