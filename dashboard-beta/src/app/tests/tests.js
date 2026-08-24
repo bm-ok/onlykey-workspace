@@ -501,18 +501,21 @@ module.exports = function tests(theme, okc, remember, shell) {
         var everyCheck = suites.reduce(function (all, s) { return all.concat(checksOf(s)); }, []);
         var failed = everyCheck.filter(function (c) { return c.state === 'failed'; }).length;
 
-        //THE TAB BADGE COUNTS FAILURES AND NOTHING ELSE. Not-tried is the
-        //resting state of a quiet host, and a number on the bar that is high
-        //when nothing is wrong is a number people stop reading. It lands at the
-        //shell's next paint rather than instantly — the shell offers no way to
-        //push one, and inventing a channel here for a digit is worse than the
-        //lag.
-        //THROUGH THE SHELL, NOT BY REACHING FOR THE TAB OBJECT. This did
-        //`tab.badge = ...`, mutating the object window.js hands to shell.tab —
-        //which worked only while the pane and the registration were the same
-        //file. `shell.badge` is the way in, and it is the same one the Inbox and
-        //the Judge tab already use.
-        useEffect(function () { shell.badge('Test', failed ? String(failed) : null); }, [failed]);
+        //THE BADGE IS NOT PUSHED FROM HERE ANY MORE, and `failed` is left
+        //because the pane draws it.
+        //
+        //IT WAS `useEffect(() => shell.badge('Test', ...))`, in this component,
+        //so the count only moved while somebody was looking at THIS TAB — which
+        //is precisely when nobody needs it. A badge's whole job is to be seen
+        //from a tab you are not on, and a pane cannot do that job because a pane
+        //is only mounted while it is showing.
+        //
+        //../../src/app/tests/server.js registers what failed with ../inbox
+        //instead, and one poller at plugin scope pushes every tab's badge. The
+        //comment that used to be here said "the shell offers no way to push one,
+        //and inventing a channel here for a digit is worse than the lag" — the
+        //channel exists now, and what goes down it is not a digit but a row with
+        //somewhere to go.
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;

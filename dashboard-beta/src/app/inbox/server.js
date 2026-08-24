@@ -170,9 +170,30 @@ async function plugin(imports, register) {
 
                 STILL_TO_COME.forEach(function (n) { notCounted.push(n); });
 
+                //---- AND THE SAME COUNT, SPLIT BY THE TAB IT IS ON --------
+                //
+                //A BADGE IS A FACT ABOUT THE TAB ROW, and this is the only place
+                //that can work it out: the items are here, and each one already
+                //says which tab it is on because it has to say where to GO. So
+                //the totals fall out of what the list already knows rather than
+                //out of a second list of what belongs where.
+                //
+                //THE WINDOW MUST BE ABLE TO CLEAR ONE, which is the half that
+                //rots. A tab whose last item was dealt with has to drop to zero,
+                //and it can only do that if it was named while it was not — so
+                //this is the WHOLE answer for every tab that has anything, and
+                //anything absent from it is a tab with nothing.
+                var byTab = {};
+                out.forEach(function (r) {
+                    var tab = r.where && r.where.view;
+                    if (!tab) return;
+                    byTab[tab] = (byTab[tab] || 0) + 1;
+                });
+
                 return {
                     items: out,
                     count: out.length,
+                    byTab: byTab,
 
                     //NOTHING IS PUT AWAY, because putting one away is not
                     //ported. Said as a number rather than left off: the pane

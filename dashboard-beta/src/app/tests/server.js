@@ -37,7 +37,11 @@ var makeRuns = require('./runs');
 //separately, and the loader's own require of it is relative.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'state', 'cached'];
+plugin.consumes = ['app', 'log', 'state', 'cached',
+    //A DRILL THAT FAILED IS SOMETHING WAITING ON A PERSON -- see the
+    //source registered below. ../../inbox consumes `app` and `log` and
+    //nothing else, so this cannot close a loop.
+    'inbox'];
 plugin.provides = ['tests'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -479,6 +483,71 @@ async function plugin(imports, register) {
             }
         }));
     }
+
+    //---- AND A DRILL THAT FAILED IS WAITING ON SOMEBODY --------------------
+    //
+    //IT PASSES THE TEST FOR BEING ON THAT LIST: it would sit for a week if
+    //nobody looked, and that would be a problem. A red drill is this app telling
+    //you something it relies on has stopped being true.
+    //
+    //FAILURES AND NOTHING ELSE. Not-tried is the resting state of a quiet host,
+    //and a number on the bar that is high when nothing is wrong is a number
+    //people stop reading -- which is the failure mode ../../inbox's own header
+    //is about, arriving through this source.
+    //
+    //---- IT USED TO BE PUSHED FROM INSIDE THE PANE -------------------------
+    //
+    //`shell.badge('Test', ...)` in a `useEffect` in ./tests.js, so the count
+    //only moved while somebody was looking at the Test tab -- which is exactly
+    //when nobody needs it. Its own comment admitted the compromise: "the shell
+    //offers no way to push one, and inventing a channel here for a digit is
+    //worse than the lag."
+    //
+    //There is a channel now, and it is not a digit: it is a row on the list of
+    //things waiting, with somewhere to go. The badge falls out of that.
+    undo.push(imports.inbox.source({
+        name: 'drills that failed',
+        //---- WHAT IS NOT COUNTED, AND WHY IT WOULD RUIN THE COUNT --------
+        //
+        //`broken` AND `unrunnable` ARE NOT ERRANDS TODAY. Eighteen drills are
+        //broken on this host and every one is the same fact: they `require` the
+        //layout of the app being ported from, which has not been moved yet. That
+        //is one job, written down, not eighteen things a person must go and do.
+        //
+        //Counting them would put the badge at twenty-two and hold it there for
+        //as long as the port runs -- which is exactly the failure ../../inbox's
+        //header describes: "a count that is never zero is a count nobody reads".
+        //Named here so the omission is a decision rather than an oversight.
+        notReading: ['drills that are broken rather than failing — they are one port gap, not many errands'],
+
+        waiting: async function () {
+            var said = await board();
+            var out = [];
+
+            //`tests`, NOT `checks`. A suite has `tests`, and each of those has
+            //`checks` inside it — reading the wrong one found nothing at all and
+            //said so by putting zero on a tab that plainly reads four.
+            ((said && said.suites) || []).forEach(function (suite) {
+                (suite.tests || []).forEach(function (one) {
+                    if (one.state !== 'failed') return;
+
+                    //NO `id` ON A CHECK, so the name is the identity — and the
+                    //suite is part of it, because two suites may reasonably ask
+                    //the same question of different things.
+                    var which = (suite.name || '') + ' / ' + (one.name || '');
+                    out.push(imports.inbox.item(
+                        'drill that failed',
+                        one.name || which,
+                        'It is a check this app makes about itself, and it does not hold. In "' + (suite.name || '?')
+                            + '". Nothing else here will say so.',
+                        imports.inbox.at('Test', null, one.name || null),
+                        { id: which }
+                    ));
+                });
+            });
+            return out;
+        }
+    }));
 
     await register(null, {
         tests: {

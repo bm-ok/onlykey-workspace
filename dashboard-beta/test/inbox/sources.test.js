@@ -186,3 +186,64 @@ test('a source can be taken away again, which is what a reload does', async () =
     assert.equal((await ask()).count, 0);
     assert.deepStrictEqual(inbox.sources(), []);
 });
+
+//---- and the same count, split by the tab it is on -------------------------
+//
+//A BADGE IS A FACT ABOUT THE TAB ROW, and this is the only place that can work
+//it out: the items are here, and each already says which tab it is on because it
+//has to say where to GO. So the totals fall out of the list rather than out of a
+//second list of what belongs where, which would be the thing that drifts.
+
+test('the count is split by tab, so one poller can badge the whole row', async () => {
+    const { inbox, ask } = await anInbox();
+
+    inbox.source({
+        name: 'two places at once',
+        waiting: () => [
+            inbox.item('a', 'one', 'why', inbox.at('Worker', 'Jobs')),
+            inbox.item('b', 'two', 'why', inbox.at('Worker', 'Prompts')),
+            inbox.item('c', 'three', 'why', inbox.at('Judge'))
+        ]
+    });
+
+    const out = await ask();
+    assert.equal(out.count, 3);
+    assert.deepStrictEqual(out.byTab, { Worker: 2, Judge: 1 });
+});
+
+test('a tab with nothing waiting is ABSENT, which is how the window clears it', async () => {
+    const { inbox, ask } = await anInbox();
+
+    let holding = true;
+    inbox.source({
+        name: 'goes away',
+        waiting: () => (holding ? [inbox.item('a', 'one', 'why', inbox.at('Queue'))] : [])
+    });
+
+    assert.deepStrictEqual((await ask()).byTab, { Queue: 1 });
+
+    //THE HALF THAT ROTS. A tab whose last errand was dealt with has to drop to
+    //nothing, and the window can only do that by seeing it disappear from here —
+    //so `byTab` is the WHOLE answer for every tab that has anything, never a
+    //list of changes. A badge that only ever counts up is one people stop
+    //believing.
+    holding = false;
+    assert.deepStrictEqual((await ask()).byTab, {},
+        'a tab with nothing waiting was still named, so its badge could never come off');
+});
+
+test('an item with nowhere to go is still counted, but badges no tab', async () => {
+    const { inbox, ask } = await anInbox();
+
+    //IT IS STILL AN ERRAND. Not being able to say where it is makes it worse to
+    //act on, not less true — and silently dropping it would make the total
+    //disagree with the list somebody is reading.
+    inbox.source({
+        name: 'lost',
+        waiting: () => [inbox.item('a', 'nowhere', 'why', {})]
+    });
+
+    const out = await ask();
+    assert.equal(out.count, 1);
+    assert.deepStrictEqual(out.byTab, {});
+});

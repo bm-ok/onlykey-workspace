@@ -45,11 +45,47 @@ async function plugin(imports, register) {
     //is one small action and the only thing in this app polling while its own
     //tab is shut, which is the exception that proves the rule rather than a
     //crack in it.
+    //---- AND IT IS EVERY TAB'S BADGE, NOT ONLY THIS ONE --------------------
+    //
+    //ONE POLLER FOR THE WHOLE ROW. A badge's job is to be seen from a tab you
+    //are NOT on, and every pane in this app is mounted only while it is showing
+    //— so a pane can never produce its own. ../ui/shell says exactly this over
+    //`setBadge` and then had two callers who disagreed about it: this one, at
+    //plugin scope, and ../tests, from a `useEffect` inside its pane. The second
+    //only moved while somebody was looking at the Test tab, which is precisely
+    //when nobody needs it.
+    //
+    //SO THE COUNT IS COMPOSED ON THE SERVER AND SPLIT BY TAB THERE — see
+    //./server.js `byTab`. Every plugin that can block a person registers a
+    //source; the totals fall out of the items, because each one already says
+    //which tab it is on in order to say where to GO. There is no second list of
+    //what belongs where to keep in step.
+    //
+    //CLEARING IS THE HALF THAT ROTS. A tab whose last errand was dealt with must
+    //drop to nothing, and a badge that only ever counts up is one people stop
+    //believing. `byTab` is the WHOLE answer for every tab that has anything, so
+    //anything this pushed last time and is not in it now is set to null.
     var stop = null;
+    var lit = [];
+
     function count() {
         okc.call('inbox', {}).then(
-            function (d) { shell.badge('Inbox', (d && d.count) || 0); },
-            function () { /* the pipe may be down; the badge simply does not move */ }
+            function (d) {
+                var by = (d && d.byTab) || {};
+
+                shell.badge('Inbox', (d && d.count) || 0);
+
+                Object.keys(by).forEach(function (tab) { shell.badge(tab, by[tab]); });
+                lit.forEach(function (tab) {
+                    if (by[tab] === undefined) shell.badge(tab, null);
+                });
+                lit = Object.keys(by);
+            },
+            //THE PIPE MAY BE DOWN, and then no badge moves at all. Deliberately
+            //not zeroed: "nothing is waiting" and "I could not ask" are the two
+            //sentences this whole plugin exists to keep apart, and clearing the
+            //row on a failed read would say the first while meaning the second.
+            function () { /* the badges simply do not move */ }
         );
     }
     count();

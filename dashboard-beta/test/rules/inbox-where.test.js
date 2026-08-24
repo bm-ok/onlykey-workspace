@@ -52,11 +52,27 @@ function walk(dir) {
     return out;
 }
 
+//TWO WAYS A TAB IS REGISTERED, AND READING ONLY ONE MADE A CORRECT ROW LOOK
+//WRONG. Most say `shell.tab({ name: 'Queue', ... })` inline; ../../src/app/tests
+//builds the object first and passes the variable, because it keeps a reference
+//to it. This read the inline form only, found no tab called "Test", and reported
+//a destination that has always been right.
+//
+//A SCAN THAT UNDER-COLLECTS IS WORSE THAN NO SCAN, because it fails on correct
+//code and the fix somebody reaches for is to change the code.
 function tabNames() {
     const names = new Set();
     for (const file of walk(APP)) {
         const src = fs.readFileSync(file, 'utf8');
+
         for (const m of src.matchAll(/shell\.tab\(\{[^}]*name:\s*'([^']+)'/g)) names.add(m[1]);
+
+        //`shell.tab(x)` — find what `x` was built from, in the same file.
+        for (const m of src.matchAll(/shell\.tab\(\s*([A-Za-z_$][\w$]*)\s*\)/g)) {
+            const built = new RegExp('\\b(?:var|let|const)\\s+' + m[1] + '\\s*=\\s*\\{[^}]*name:\\s*\'([^\']+)\'');
+            const found = built.exec(src);
+            if (found) names.add(found[1]);
+        }
     }
     return names;
 }
