@@ -121,6 +121,17 @@ async function anApp(answers, open) {
     //through it now, so a stand-in would check the stand-in.
     const { refs, stop } = await refsFor({ git: git_, workspace, log: { on: () => logger } });
 
+    //THE GIT DOOR, RECORDED RATHER THAN SERVED. Unlike the other services this
+    //stub leaves out, `guestApi.api(...)` is called while the plugin is being
+    //BUILT — so leaving it out is not "unused", it is a TypeError before any
+    //test in this file gets a plugin at all.
+    //
+    //KEPT rather than thrown away, so what was registered can be asserted on:
+    //the door's name, who it refuses, and the fact that it is one route per
+    //method. See the git-door tests below.
+    const doors = [];
+    const guestApi = { api: (one) => { doors.push(one); return () => {}; } };
+
     await reposPlugin({
         app: { host: { actions } },
         log: { on: () => logger },
@@ -128,10 +139,11 @@ async function anApp(answers, open) {
         github: gh.github,
         workspace,
         state,
-        refs
+        refs,
+        guestApi
     }, async () => {});
 
-    return { actions, asked: gh.asked, said, git: git_, refs, stop, go: (to) => { where = to; } };
+    return { actions, asked: gh.asked, said, git: git_, refs, stop, doors, go: (to) => { where = to; } };
 }
 
 const REPO_OK = {
@@ -312,7 +324,14 @@ test('no token held is reported per repository rather than thrown', async () => 
     };
 
     const { refs } = await refsFor({ git: git_, workspace, log: { on: () => logger } });
-    await reposPlugin({ app: { host: { actions } }, log: { on: () => logger }, git: git_, github, workspace, state, refs }, async () => {});
+    await reposPlugin({
+        app: { host: { actions } }, log: { on: () => logger },
+        git: git_, github, workspace, state, refs,
+        //BUILT, SO THE DOOR IS REGISTERED — see the note in `anApp` above. This
+        //test is about what ../../keys says when nothing is held, and it needs
+        //the plugin to exist before it can ask anything at all.
+        guestApi: { api: function () { return function () {}; } }
+    }, async () => {});
 
     const said = await actions.call('repositoriesCheck', {});
     assert.equal(said.repos[0].reachable, false);

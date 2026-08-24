@@ -126,7 +126,24 @@ async function plugin(imports, register) {
         var vm = asking.whoIsAsking(req.headers, url.searchParams);
         if (!vm) return refuse(res, 'it did not prove which machine it is', null);
         if (!registry.allowed(hit, vm)) {
-            return refuse(res, req.method + ' ' + url.pathname + ' is not something it may ask for', vm.name);
+            //---- THE SAME 401, AND TWO DIFFERENT LOG LINES ------------------
+            //
+            //The ANSWER stays identical on purpose — a machine that can tell
+            //"there is no such route" from "you may not have this one" can map
+            //this host by asking. That rule is about the response and nothing
+            //else.
+            //
+            //THE LOG IS THE OPERATOR'S SIDE and was obeying a rule it was not
+            //under. One sentence covered both, so a newly registered API that
+            //was not matching looked exactly like one that was refusing — and
+            //the file to open is a different file in each case. Cost an hour on
+            //the git door: the route was registered, `guestApis` listed it, and
+            //the message said "is not something it may ask for", which reads as
+            //a decision that something took.
+            refuse(res, req.method + ' ' + url.pathname + (hit
+                ? ' — ' + hit.api.name + ' does not let this machine in'
+                : ' — nothing serves that at all'), vm.name);
+            return;
         }
 
         try {

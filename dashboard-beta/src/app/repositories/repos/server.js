@@ -12,6 +12,8 @@
 //isolation. The only defence is not to reuse the word.
 var layout = require('./workspace');
 var makeSettingUp = require('./setting-up');
+var serving = require('./serve');
+var makeGitApi = require('./gitapi');
 var makeFreeing = require('../branches/freeing');
 var reach = require('../branches/reach');
 var revising = require('../pr/revising');
@@ -73,7 +75,13 @@ var revising = require('../pr/revising');
 //A consumes line is a claim about what this plugin can reach, and the boundary
 //test above it only counts for as much as that line is kept honest.
 plugin.consumes = ['app', 'log', 'git', 'github', 'workspace', 'state', 'refs',
-    'ours', 'channel', 'lines', 'prcuts'];
+    'ours', 'channel', 'lines', 'prcuts',
+    //THE DOOR A MACHINE CLONES THROUGH -- see ./gitapi.js. Not a cycle:
+    //../../vms/https consumes app, log, tls, ours and channel, and none of
+    //those reaches back here. Worth checking rather than assuming, because
+    //an unresolved or circular name takes down the WHOLE graph rather than
+    //this plugin.
+    'guestApi'];
 plugin.provides = ['repositories', 'repoWorkspaces'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -934,6 +942,26 @@ async function plugin(imports, register) {
             }
         }));
     }
+
+    //---- AND THE DOOR A MACHINE CLONES THROUGH ---------------------------
+    //
+    //REGISTERED WITH ../../vms/https, which owns the certificate, the port, and
+    //has already turned `vm:token` into a machine record before anything in
+    //./gitapi.js runs. What is this plugin's is where the repositories are, and
+    //the rule about which of them a given machine's work is about.
+    //
+    //IT IS THIS PLUGIN'S BECAUSE THE REPOSITORIES ARE. A service goes where it
+    //is owned -- ../../../CLAUDE.md -- and everything the door needs to answer
+    //with is already here: the workspace, and `lines.scopeOf`.
+    var stopServing = imports.guestApi.api(makeGitApi({
+        serve: serving({ workspace: workspace, say: imports.log.on }),
+        //ASKED THROUGH ../branches RATHER THAN COPIED. What a branch is about is
+        //a question about lines, and a second answer to it here is how a machine
+        //comes to be refused a repository the setup gave it.
+        scopeOf: function (branch) { return imports.lines.scopeOf(branch); },
+        say: imports.log.on
+    }));
+    undo.push(stopServing);
 
     await register(null, {
         repositories: {
