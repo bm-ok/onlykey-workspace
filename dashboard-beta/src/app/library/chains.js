@@ -51,18 +51,18 @@ var WORDS = {
         one: 'A judge',
         can: 'can judge',
         cannot: 'cannot judge',
-        noPrompt: 'names no prompt — it can read nothing',
+        noPrompt: 'names no prompt — it is given what the judgement carries',
         noContract: 'under no contract — the judge gets no rules',
-        noneAtAll: 'none — a judge with no rules',
+        noneAtAll: 'none here — the judgement carries its own',
         nothingYet: 'no judging chain is assembled yet'
     },
     task: {
         one: 'A worker',
         can: 'can work',
         cannot: 'cannot work',
-        noPrompt: 'names no prompt — it is told nothing',
+        noPrompt: 'names no prompt — it is given what the task carries',
         noContract: 'under no contract — the worker gets no rules',
-        noneAtAll: 'none — a worker with no rules',
+        noneAtAll: 'none here — the task carries its own',
         nothingYet: 'no working chain is assembled yet'
     }
 };
@@ -142,7 +142,29 @@ module.exports = function chains(theme, okc, kind) {
         var chains = jobList.map(function (j) {
             var p = j.promptId ? promptById[j.promptId] : null;
             var c = p && p.contractId ? contractById[p.contractId] : null;
-            var rungs = [j, p, c];
+
+            //---- A JOB THAT NAMES NO PROMPT IS NOT A BROKEN CHAIN -----------
+            //
+            //THIS REPORTED `do-the-work` AS "cannot work", AND IT RUNS. It is
+            //the job a worker task actually uses, it is approved, and it names
+            //no prompt ON PURPOSE: `jobRun` takes "a prompt — or what a task or
+            //a judgement CARRIES", and that job's own description is "gives the
+            //task brief to a worker". The brief IS the prompt, written per task
+            //rather than kept in the library.
+            //
+            //THE SERVER ALWAYS SAID SO. ../library/chain.js's `whyNot` reads
+            //`j.promptId && !from ? 'its prompt is gone' : ...` — a job with no
+            //prompt at all never reaches a fault. This pane required all three
+            //rungs and so disagreed with the rule it was drawn to illustrate:
+            //`cannot work` beside `whyNot: null`, on the same row.
+            //
+            //INHERITED RATHER THAN INVENTED, which is why it went unnoticed:
+            //this was the Judges pane first, and every judging job names a
+            //prompt, so the stricter test was never wrong over there.
+            //
+            //SO THE RULE IS THE SERVER'S: the job must be fit, and IF it names a
+            //prompt, that prompt and its contract must be too.
+            var rungs = j.promptId ? [j, p, c] : [j];
             var can = rungs.every(function (x) { return x && x.approved && !x.lapsed; });
             return { job: j, prompt: p, contract: c, can: can };
         });
