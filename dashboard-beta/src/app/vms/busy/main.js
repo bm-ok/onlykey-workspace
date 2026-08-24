@@ -1,5 +1,6 @@
 var makeDoing = require('./doing');
 var makeTurns = require('./turns');
+var makeGiven = require('./given');
 
 //---------------------------------------------------------------------------
 //NOT DOING TWO OF THESE AT ONCE, at two scopes — see ./doing.js and ./turns.js.
@@ -34,6 +35,7 @@ plugin.provides = ['busy'];
 async function plugin(imports, register) {
     var doing = makeDoing();
     var turns = makeTurns();
+    var given = makeGiven();
 
     var busy = {
         //---- one long thing at a time, per machine ------------------------
@@ -46,7 +48,15 @@ async function plugin(imports, register) {
         //---- and one machine coming up at a time, across the host ---------
         comingUp: turns.comingUp,
         booting: turns.booting,
-        queued: turns.queued
+        queued: turns.queued,
+
+        //---- and which machine the queue has given which job to -----------
+        //
+        //A THIRD TABLE RATHER THAN A THIRD USE OF THE FIRST -- see ./given.js,
+        //which is named after the deadlock that comes of sharing one. The
+        //sentence above about the queue holding its in-flight record here is
+        //still true and is what this is; what was wrong was WHICH map.
+        given: given
     };
 
     imports.handover.put('busy', busy);

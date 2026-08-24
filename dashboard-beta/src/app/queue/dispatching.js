@@ -113,7 +113,7 @@ module.exports = function dispatching(deps) {
         call: call, say: say,
         starting: starting, running: running, metering: metering, putting: putting,
         hold: function (machine, borrowed) { ours.update(machine, { borrowed: borrowed }); },
-        release: busy.release,
+        release: busy.given.take,
         headsOn: heads.on,
         papersFor: function (id, machine, to) { return papers.deliver(id, machine, to); },
         wakes: wakes,
@@ -124,7 +124,7 @@ module.exports = function dispatching(deps) {
         call: call, say: say,
         starting: starting, running: running, metering: metering, putting: putting,
         judging: { get: judge.get, update: judge.update },
-        release: busy.release,
+        release: busy.given.take,
         refOf: judge.refOf,
         repoFor: d.repoFor,
         handedBack: function (uid) { return findings.list(uid); },
@@ -141,7 +141,7 @@ module.exports = function dispatching(deps) {
     //because the node bundle is rebuilt on every save and a queue that forgot
     //would hand a machine a SECOND task on top of a worker still writing.
     function inFlight() {
-        return busy.all().reduce(function (n, r) { n[r.name] = r.job; return n; }, {});
+        return busy.given.all().reduce(function (n, r) { n[r.name] = r.job; return n; }, {});
     }
 
     //---- and whether there is anywhere to deliver ---------------------------
@@ -172,7 +172,7 @@ module.exports = function dispatching(deps) {
         judgementsNow: async function () { return judge.all() || []; },
         inFlight: inFlight,
         signIns: guests.forQueue,
-        claim: busy.claim,
+        claim: busy.given.give,
         runTask: function (entry, machine) { return onetask.run(entry, machine); },
         runJudgement: function (entry, machine) { return onejudgement.run(entry, machine); },
         judging: { update: judge.update },
@@ -198,9 +198,9 @@ module.exports = function dispatching(deps) {
         judgementsNow: async function () { return judge.all() || []; },
         judging: { get: judge.get, update: judge.update },
         refOf: judge.refOf,
-        held: function (machine) { return !!busy.what(machine); },
-        claim: busy.claim,
-        release: busy.release,
+        held: function (machine) { return !!busy.given.whose(machine); },
+        claim: busy.given.give,
+        release: busy.given.take,
         running: running,
         putting: putting,
         kept: function (uid, run) { return logs.has(uid, run); },
@@ -213,7 +213,7 @@ module.exports = function dispatching(deps) {
         taskByUid: d.taskByUid,
         machineNamed: function (machine) { return ours.get(machine); },
         busyWith: function () {
-            var all = busy.all();
+            var all = busy.given.all();
             return {
                 machines: all.map(function (r) { return r.name; }),
                 work: all.map(function (r) { return r.job; })

@@ -6,6 +6,7 @@ const path = require('node:path');
 
 const actionsPlugin = require('../../src/app/core/actions/main');
 const queuePlugin = require('../../src/app/queue/server');
+const makeGiven = require('../../src/app/vms/busy/given');
 
 //---------------------------------------------------------------------------
 //THE WIRING ITSELF.
@@ -104,7 +105,22 @@ async function aQueue(over) {
             start: () => true,
             stop: () => true
         },
-        busy: { all: () => [], claim: () => {}, release: () => {}, what: () => null, comingUp: (n, fn) => fn() },
+        //THE REAL LEDGER RATHER THAN A STUB THAT RECORDS NOTHING, because
+        //the thing this file checks is the WIRING and an inert `given`
+        //cannot tell a correct hookup from one that claims into a void.
+        //It is a pure module with no host in it, so there is nothing to
+        //fake — and using it means a dispatch onto a machine already
+        //working throws HERE instead of on a real one.
+        //
+        //`claim`/`release` STAY INERT AND SEPARATE. Those are the
+        //VirtualBox operation lock, which is not this plugin's to hold —
+        //sharing one table with `given` is the deadlock ../vms/busy/
+        //given.js is named after.
+        busy: {
+            all: () => [], claim: () => {}, release: () => {}, what: () => null,
+            comingUp: (n, fn) => fn(),
+            given: makeGiven()
+        },
         guests: {
             forQueue: () => ({ worker: { free: 1, paused: [] }, judge: { free: 1, paused: [] } }),
             holderOf: () => null, pause: () => {}, all: () => [], freeFor: () => [], pausedFor: () => []

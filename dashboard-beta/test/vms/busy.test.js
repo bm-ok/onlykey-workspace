@@ -312,3 +312,107 @@ test('machines take their turns in the order they asked', async () => {
 
     assert.deepEqual(order, ['two', 'three']);
 });
+
+//---- and a third scope: which machine has been given which job -------------
+//
+//THE ONE THAT WAS NOT HERE, and the cost of that was the first judgement this
+//app ever dispatched. It deadlocked on itself in under a second:
+//
+//    J4 "judge fix/..." -> beta-install1
+//    shutting it down so it can be made clean
+//    could not stop it at all: "beta-install1" is already J4
+//
+//The queue held the machine as `J4` in `doing` — the VirtualBox operation lock —
+//for the length of the job. The job's own first act is to roll the machine back
+//to its base snapshot, which goes through `vmStop`, which asks the same lock for
+//the same machine. Refused, correctly. J4 was blocked by J4.
+//
+//NEITHER LOCK WAS WRONG. They are two different exclusions and one strictly
+//contains the other, so no single table can serve both. See ../../src/app/vms/
+//busy/given.js.
+//
+//WHY NO TEST CAUGHT IT, which is the part worth keeping: both halves are correct
+//code in isolation, every unit test of each passed, and the collision exists
+//only at run time with a real machine and a real job. The checks below are the
+//narrow thing that CAN be asserted here — that the two tables do not see each
+//other — and that is enough, because seeing each other is the whole fault.
+const makeGiven = require('../../src/app/vms/busy/given');
+
+test('a machine given to a job can still be stopped and restored — the deadlock', async () => {
+    const given = makeGiven();
+    const lock = makeDoing();
+
+    //THE TICK CLAIMS IT FOR THE JOB, synchronously, before any await.
+    given.give('beta-install1', 'J4');
+
+    //AND THE JOB'S FIRST ACT IS TO MAKE IT CLEAN. This threw, in the log above.
+    let rolled = false;
+    await within('the rollback', lock.during('beta-install1', 'being restored', async () => {
+        rolled = true;
+    }));
+
+    assert.equal(rolled, true, 'the job could not roll back the machine it had been given');
+    //AND IT IS STILL THE JOB'S AFTERWARDS. A rollback that released the job's
+    //hold would free the machine for a second dispatch mid-run.
+    assert.equal(given.whose('beta-install1'), 'J4');
+});
+
+test('the operation lock still refuses a second operation, holder or not', () => {
+    const given = makeGiven();
+    const lock = makeDoing();
+
+    given.give('beta-install1', 'J4');
+    lock.claim('beta-install1', 'being restored');
+
+    //NOT RE-ENTRANCY, WHICH IS THE TEMPTING FIX AND THE WRONG ONE. Letting the
+    //holder claim twice lets a job snapshot a machine it is also restoring, and
+    //the session-lock wall of COM text comes straight back.
+    assert.throws(() => lock.claim('beta-install1', 'being snapshotted'), /already being restored/);
+});
+
+test('two pieces of work are never given one machine', () => {
+    const given = makeGiven();
+    given.give('beta-install1', 'J4');
+
+    //THE TICK DEPENDS ON THIS THROWING. `plan` has already taken the machine out
+    //of its own pool for the rest of the pass; this is the claim that survives
+    //the pass, and reaching here means something dispatched onto a machine that
+    //was already working.
+    assert.throws(() => given.give('beta-install1', '#12'), /already doing J4/);
+});
+
+test('giving a machine away does not make it look mid-operation', () => {
+    const given = makeGiven();
+    const lock = makeDoing();
+
+    given.give('beta-install1', 'J4');
+
+    //THE TWO BOARDS READ DIFFERENT TABLES and must not answer for each other.
+    //`what` is "a VBoxManage command is in flight"; `whose` is "the queue has
+    //given this away". A machine can be either, both, or neither.
+    assert.equal(lock.what('beta-install1'), null);
+    assert.deepEqual(lock.all(), []);
+    assert.deepEqual(given.all(), [{ name: 'beta-install1', job: 'J4' }]);
+});
+
+test('taking it back frees it for the next dispatch, and twice is not an error', () => {
+    const given = makeGiven();
+    given.give('beta-install1', 'J4');
+
+    assert.equal(given.take('beta-install1'), true);
+    assert.equal(given.whose('beta-install1'), null);
+    //A JOB THAT THREW STILL HAS TO LET GO, and the path that does it runs in a
+    //`finally` that may already have run.
+    assert.equal(given.take('beta-install1'), false);
+
+    given.give('beta-install1', '#12');
+    assert.equal(given.whose('beta-install1'), '#12');
+});
+
+test('a machine named like a thing on Object.prototype is still free', () => {
+    const given = makeGiven();
+    //THE SAME HOLE AS ./doing.js, AND IT IS A HOLE THE OTHER ONE ALREADY HAD.
+    assert.equal(given.whose('constructor'), null);
+    assert.doesNotThrow(() => given.give('constructor', 'J4'));
+    assert.equal(given.whose('constructor'), 'J4');
+});

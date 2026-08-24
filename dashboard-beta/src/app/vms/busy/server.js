@@ -37,7 +37,18 @@ async function plugin(imports, register) {
 
             comingUp: function (name, fn) { return Promise.resolve().then(fn); },
             booting: function () { return null; },
-            queued: function () { return []; }
+            queued: function () { return []; },
+
+            //REFUSES NOTHING, LIKE THE REST OF THE STAND-IN, and for the reason
+            //at the top: with no main half there is no queue dispatching, so
+            //there is nothing for this to serialise. `whose` answering null is
+            //what "no machine has been given anything" looks like.
+            given: {
+                whose: function () { return null; },
+                give: nothing,
+                take: function () { return false; },
+                all: function () { return []; }
+            }
         };
     }
 

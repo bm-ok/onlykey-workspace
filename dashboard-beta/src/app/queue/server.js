@@ -66,13 +66,13 @@ var makeDispatching = require('./dispatching');
 //of work may land — ./policy.js, and test/queue-policy.test.js sabotages both
 //halves of the rule that keeps reading and writing on separate accounts.
 //
-//THE TICK IS NOT. Nothing on this host dispatches yet, which is deliberate:
-//the queue drives real machines, and a half-ported app that started handing out
-//work would be doing it with half of the checks. What runs the work today is the
-//app being ported from, so what is in flight is asked of ../vms/busy first and
-//of that app second — and which of the two answered is SAID. A board reporting
-//"nothing running" while a machine is running something is the confident wrong
-//report this whole app is arranged against.
+//AND THE TICK IS HERE NOW. It was not for a long time, deliberately — the queue
+//drives real machines, and a half-ported app that started handing out work would
+//be doing it with half of the checks. What is in flight is still asked of
+//../vms/busy first and of the app being ported from second, and which of the two
+//answered is SAID: a board reporting "nothing running" while a machine is
+//running something is the confident wrong report this whole app is arranged
+//against.
 //---------------------------------------------------------------------------
 //---- WHAT THE TICK NEEDED, AND WHY EACH ONE IS HERE ----------------------
 //
@@ -109,11 +109,31 @@ async function plugin(imports, register) {
     //which machine was holding which task would hand that machine a SECOND one,
     //on top of a worker still running in a repository it is still writing to.
     //
-    //../vms/busy holds exactly that fact, for exactly that reason, and it is on
-    //the host for exactly that lifetime. Two maps of "which machine is busy" is
+    //../vms/busy is on the host for exactly that lifetime, so the ledger lives
+    //there — as `busy.given`, which is ITS OWN MAP beside the operation lock and
+    //not the same one.
+    //
+    //---- THE PARAGRAPH THAT USED TO BE HERE WAS WRONG, AND CHEAPLY ----------
+    //
+    //It argued that one map was the point: "two maps of which machine is busy is
     //two answers to one question, and the day it would have mattered is the day
-    //the tick lands: a queued task and a snapshot would each believe they held
-    //the same machine, and neither would be wrong about its own record.
+    //the tick lands — a queued task and a snapshot would each believe they held
+    //the same machine". The tick landed. They did not disagree. They DEADLOCKED,
+    //in under a second, on the first judgement this app ever dispatched: the job
+    //held the machine as `J4`, its own rollback asked for it as "being shut
+    //down", and the guard refused J4 on behalf of J4.
+    //
+    //THE TWO ARE NOT ONE QUESTION. "A VirtualBox command is mid-flight" lasts
+    //seconds and must refuse everybody, the holder included. "The queue has
+    //given this machine to a piece of work" lasts hours and CONTAINS dozens of
+    //the first. One strictly contains the other, so they can never both be
+    //served by one table — ../vms/busy/given.js carries the long version of
+    //this, beside the code.
+    //
+    //IT WAS ALREADY RIGHT IN THE APP BEING PORTED FROM, which keeps `busyWith`
+    //in the queue and reaches into `machines/busy` for `comingUp` alone. This is
+    //that arrangement, with the map moved to the host for the lifetime reason
+    //above — which is the part the old one does not need and this one does.
     //
     //SO THE QUEUE ASKS RATHER THAN REMEMBERS. What it takes a machine FOR is the
     //queue's business; whether the machine is free is not.
@@ -465,10 +485,16 @@ async function plugin(imports, register) {
     //board shows a pool and the door below plans work into it; worked out twice,
     //the board can call a machine free while the door has already given it away.
     async function busyNow() {
-        //`all()` GIVES {name, job}; the board's word for those is machine and
-        //task. Renamed here rather than in ../vms/busy, because what a
+        //`given.all()` GIVES {name, job}; the board's word for those is machine
+        //and task. Renamed here rather than in ../vms/busy, because what a
         //machine is being held FOR is this plugin's vocabulary.
-        var mine = busy.all();
+        //
+        //`given` AND NOT THE LOCK BESIDE IT. ../vms/busy/given.js is the queue's
+        //ledger; `busy.all()` is the VirtualBox operation lock, which a job
+        //takes and releases many times while it holds a machine. Reading that
+        //one here would have called a machine in flight only during the seconds
+        //it happened to be mid-rollback.
+        var mine = busy.given.all();
         if (mine.length) {
             return mine.map(function (r) { return { machine: r.name, task: r.job }; });
         }
@@ -921,7 +947,7 @@ async function plugin(imports, register) {
                 var a = args || {};
                 var was = clock.running();
                 clock.stop(a.why ? String(a.why) : null);
-                var held = busy.all().map(function (r) { return { machine: r.name, task: r.job }; });
+                var held = busy.given.all().map(function (r) { return { machine: r.name, task: r.job }; });
                 return {
                     running: false,
                     stillWorking: held,
