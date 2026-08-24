@@ -1,5 +1,4 @@
 var makeJudgements = require('./judgements');
-var makeJudges = require('./judges');
 
 //the Judge tab: what has been read, what is being read, and what it concluded.
 //
@@ -47,7 +46,10 @@ async function plugin(imports, register) {
 
     shell.tab({ name: 'Judge', order: 40 });
     shell.pane({ tab: 'Judge', name: 'Judgement', order: 10, Component: makeJudgements(theme, okc, remember) });
-    shell.pane({ tab: 'Judge', name: 'Judges', order: 20, Component: makeJudges(theme, okc) });
+    //PAINTED BY ../library, LIKE THE THREE PANES BELOW IT. This was `./judges.js`
+    //and the Worker tab had nothing like it — see ../library/chains.js for why a
+    //copy fitted for the worker would have been the drift this app keeps finding.
+    shell.pane({ tab: 'Judge', name: 'Judges', order: 20, Component: library.chains('judge') });
 
     //---- AND THE SET OF THINGS A JUDGE MAY BE GIVEN ----------------------
     //

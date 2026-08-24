@@ -1,5 +1,6 @@
 var React = require('react');
 var makeLibrary = require('./library');
+var makeChains = require('./chains');
 var { useState } = React;
 
 //---------------------------------------------------------------------------
@@ -47,6 +48,19 @@ plugin.consumes = ['theme', 'okc', 'remember'];
 plugin.provides = ['library'];
 async function plugin(imports, register) {
     var { theme, okc, remember } = imports;
-    await register(null, { library: makeLibrary(theme, okc, remember) });
+    //---- AND THE WHOLE-CHAIN VIEW, WHICH IS THE SAME ARGUMENT ------------
+    //
+    //`library('job', 'task')` paints one library. `library.chains('task')`
+    //paints what those three assemble INTO — the answer to "how many of these
+    //could actually run", which none of the three panes can give on its own.
+    //
+    //IT HUNG OFF THE JUDGE TAB and the Worker tab had no counterpart, so the
+    //same question took one glance on one tab and three panes on the other. See
+    //./chains.js: it is handed out here for the reason written above about the
+    //other three, and it keeps both vocabularies so neither tab invents one.
+    var library = makeLibrary(theme, okc, remember);
+    library.chains = function (kind) { return makeChains(theme, okc, kind); };
+
+    await register(null, { library: library });
 }
 module.exports = plugin;

@@ -71,6 +71,18 @@ async function plugin(imports, register) {
     //see ../library. Kept apart because a worker's contract governs WRITING and
     //a judge's governs READING, and the account that says whether work holds
     //must not be the account that wrote it.
+    //---- WHAT THOSE THREE ASSEMBLE INTO ----------------------------------
+    //
+    //THE ONE QUESTION THE THREE PANES BELOW CANNOT ANSWER: how many of these
+    //could actually run. A worker is the whole chain — this job, giving these
+    //words, under these rules — and a job approved by a person is not enough on
+    //its own, because the prompt it names may have been withdrawn an hour ago.
+    //
+    //THE JUDGE TAB HAS HAD THIS ALL ALONG and this one did not, so the same
+    //question took one glance over there and three panes and a memory over here.
+    //Same painter, both tabs — ../library/chains.js.
+    shell.pane({ tab: 'Worker', name: 'Workers', order: 20, Component: library.chains('task') });
+
     shell.pane({ tab: 'Worker', name: 'Jobs', order: 30, Component: library('job', 'task') });
     shell.pane({ tab: 'Worker', name: 'Prompts', order: 40, Component: library('prompt', 'task') });
     shell.pane({ tab: 'Worker', name: 'Contracts', order: 50, Component: library('contract', 'task') });
