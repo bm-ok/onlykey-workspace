@@ -594,9 +594,78 @@ main { padding: 16px; }
  * something to say, and an adjacent-sibling rule counts them anyway -- so the
  * first VISIBLE container would be pushed down by a gap under an element that is
  * not on the screen. CSS cannot ask whether the previous sibling is visible, but
- * it can undo the rule when it is not, which comes to the same thing. */
-.col > div + div:not(.pane) { margin-top: 8px; }
-.col > .hidden + div { margin-top: 0; }
+ * it can undo the rule when it is not, which comes to the same thing.
+ *
+ * ---- AND IT WAS NOT ONLY A COLUMN, WHICH IS WHY THIS IS BACK -------------
+ *
+ * The rule above was right and its reach was not. A column is not the only
+ * thing that holds two containers: a PANE holds them directly whenever it does
+ * not use columns at all, and a PANEL holds cards. Both joins had the same
+ * nothing between them, for the same reason, and were found the same way --
+ * by somebody looking at the screen.
+ *
+ *   Terminal            two panels, flush against each other
+ *   Queue -> Board      the cards under "Lately", flush, in a list whose own
+ *                       gaps eight pixels above are correct
+ *
+ * THE SAME 8px AND THE SAME TWO EXCLUSIONS, because it is the same rule. A
+ * second answer for the same join is how the first version of this came to be
+ * three separate bugs.
+ *
+ * `.panel > .card + .card` RATHER THAN `div + div` INSIDE A PANEL. A column and
+ * a pane hold CONTAINERS and nothing else, so any two divs meeting there is a
+ * join. A panel holds its own insides -- a title, a row of buttons, a table --
+ * and spacing those apart is a decision each panel already made. Only cards are
+ * unambiguous: two of them touching is never what was wanted. */
+.col > div + div:not(.pane),
+.pane > div + div:not(.pane) { margin-top: 8px; }
+.col > .hidden + div,
+.pane > .hidden + div { margin-top: 0; }
+
+/* ---- AND THEN IT DID NOT DEPEND ON THE PARENT AT ALL -------------------
+ *
+ * Everything above asks WHAT THE PARENT IS -- a column, a pane, a panel -- and
+ * that is the thing that keeps being wrong. On Worker -> Contracts the three
+ * panels in the right-hand column are not children of the column: library.js
+ * wraps them in a plain `<div>` with no class on it, so `.col >` misses them,
+ * `.pane >` misses them, and they sit flush against each other while the cards
+ * eight pixels to their left are spaced correctly.
+ *
+ * AN ANONYMOUS WRAPPER DEFEATS EVERY RULE WRITTEN THIS WAY, and there is no
+ * reason a pane should not have one -- it is ordinary JSX for "these go
+ * together". So the rule stops asking about the parent and asks about the two
+ * things that are touching, which is what it was ever about:
+ *
+ *     two panels touching is never what was wanted
+ *     two cards touching is never what was wanted
+ *
+ * EXCEPT INSIDE A .stack, which already has a gap. Margin and gap ADD, so
+ * without the `:not(.stack)` every stacked list in the app would quietly go
+ * from 8px to 16px -- a change nothing would fail on and everything would look
+ * slightly wrong in.
+ *
+ * AND THE SAME HIDDEN EXCLUSION, for the reason given above and with the
+ * specificity to win: these selectors are heavier than the `.col > .hidden`
+ * reset, so without their own they would undo it. */
+:not(.stack) > .panel + .panel,
+:not(.stack) > .card + .card { margin-top: 8px; }
+:not(.stack) > .hidden + .panel,
+:not(.stack) > .hidden + .card { margin-top: 0; }
+
+/* A SECOND SECTION IN ONE PANEL, which is the same join once more.
+ *
+ * The Queue board holds "In flight" and "Waiting" in one panel, and the second
+ * heading had `style={{ marginTop: '12px' }}` written on it by hand -- a pane
+ * inventing spacing because its container offered none, which is the whole of
+ * what the block above is about. Written here, no pane has to remember it and
+ * the two headings cannot end up a different distance apart on two panes.
+ *
+ * 12px RATHER THAN 8, and not for consistency's sake: a heading opening a new
+ * section needs more air above it than two cards in one list need between them,
+ * or the section break reads as another row. It is the number that was already
+ * there, kept. */
+.panel > * + .card-title { margin-top: 12px; }
+.panel > .hidden + .card-title { margin-top: 0; }
 
 @media (max-width: 1100px) {
   .cols { flex-wrap: wrap; }

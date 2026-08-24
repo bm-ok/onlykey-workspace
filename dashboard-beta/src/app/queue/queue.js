@@ -1,7 +1,8 @@
 var React = require('react');
 
 module.exports = function queue(theme, okc, shell) {
-    var { Pane, Panel, Badge, Empty, Note, Mono, Linky, Row, Toggle, Skeleton} = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Linky, Row, Toggle, Skeleton,
+        Stack, Card, CardTitle, CardSub } = theme;
 
     //---- whether any of this is going to happen -----------------------------
     //
@@ -102,7 +103,7 @@ module.exports = function queue(theme, okc, shell) {
                                         ? (m.kinds || []).map(function (k) { return <span key={k}><Badge>{k}</Badge>{' '}</span>; })
                                         : <span><Badge>no role — the queue leaves it alone</Badge>{' '}</span>}
                                     <Badge kind={m.free ? 'ok' : 'warn'}>{m.free ? 'free' : 'busy'}</Badge>
-                                    {m.why ? <div className="note muted">{m.why}</div> : null}
+                                    {m.why ? <Note>{m.why}</Note> : null}
                                 </td>
                             </tr>
                         );
@@ -112,21 +113,39 @@ module.exports = function queue(theme, okc, shell) {
         );
     }
 
+    //---- THE KIT'S CARD, NOT THE CLASS NAME ---------------------------------
+    //
+    //This wrote `className="card"` by hand, which is the one thing a pane may
+    //not do -- and it is worth saying what that actually cost here, because the
+    //classes were all spelled correctly and the check that looks for misspelt
+    //ones had nothing to say.
+    //
+    //A CARD CARRIES NO MARGIN. Everything in this app is spaced by its
+    //CONTAINER: `.stack` has a gap, and the theme's `Stack` is what you get when
+    //you use `Card`. Reaching past the kit meant reaching past the container
+    //too, so these sat flush against each other -- in a list whose other gaps,
+    //eight pixels further up the same pane, were right.
+    //
+    //../ui/theme/dashboard.scss now closes the join wherever it happens, so this
+    //would look right either way. It is still written through the kit, because
+    //the next thing a Card learns is a thing these would not.
     function Work({ rows, empty }) {
         if (!rows || !rows.length) return <Empty>{empty}</Empty>;
-        return (<>
-            {rows.map(function (r, i) {
-                return (
-                    <div className="card" key={r.id || r.ref || i}>
-                        <div className="card-title">
-                            <Badge kind={r.kind == 'judgement' ? 'run' : ''}>{r.ref || r.kind}</Badge>
-                            {' '}{r.title}
-                        </div>
-                        {r.on ? <div className="card-sub"><Mono>{r.on}</Mono></div> : null}
-                    </div>
-                );
-            })}
-        </>);
+        return (
+            <Stack>
+                {rows.map(function (r, i) {
+                    return (
+                        <Card key={r.id || r.ref || i}>
+                            <CardTitle>
+                                <Badge kind={r.kind == 'judgement' ? 'run' : ''}>{r.ref || r.kind}</Badge>
+                                {' '}{r.title}
+                            </CardTitle>
+                            {r.on ? <CardSub><Mono>{r.on}</Mono></CardSub> : null}
+                        </Card>
+                    );
+                })}
+            </Stack>
+        );
     }
 
     function Queue() {
@@ -149,22 +168,22 @@ module.exports = function queue(theme, okc, shell) {
                 <div className="cols">
                     <div className="col">
                         <Panel>
-                            <div className="card-title">Machines</div>
+                            <CardTitle>Machines</CardTitle>
                             <Machines rows={state.machines} />
                         </Panel>
                     </div>
                     <div className="col">
                         <Panel>
-                            <div className="card-title">In flight</div>
+                            <CardTitle>In flight</CardTitle>
                             <Work rows={state.inFlight} empty="nothing is running" />
-                            <div className="card-title" style={{ marginTop: '12px' }}>Waiting</div>
+                            <CardTitle>Waiting</CardTitle>
                             <Work rows={state.waiting} empty="nothing is queued" />
                         </Panel>
                     </div>
                 </div>
 
                 <Panel>
-                    <div className="card-title">Lately</div>
+                    <CardTitle>Lately</CardTitle>
                     <Work rows={(state.history || []).slice(0, 8)} empty="nothing has run" />
                 </Panel>
 
