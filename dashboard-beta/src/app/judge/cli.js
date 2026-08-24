@@ -54,8 +54,12 @@ module.exports = {
             });
 
             out.push('');
+            //AND THE ONES THAT ENDED WITHOUT DECIDING ANYTHING, but only when
+            //there are some. A standing "0 gave up" on every line trains the eye
+            //past the word, and this is a line read at a glance.
             out.push('  ' + said.waiting + ' waiting, ' + said.running + ' being read, '
-                + said.decided + ' decided');
+                + said.decided + ' decided'
+                + (said.gaveUp ? ', ' + said.gaveUp + ' ended without a verdict' : ''));
             return out.join('\n');
         },
 

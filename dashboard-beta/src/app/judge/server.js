@@ -250,7 +250,23 @@ async function plugin(imports, register) {
                     //how many are still to happen.
                     waiting: all.filter(function (j) { return j.state === 'queued'; }).length,
                     running: all.filter(function (j) { return j.state === 'given'; }).length,
-                    decided: all.filter(function (j) { return j.state === 'done'; }).length,
+                    //`done` IS NOT `decided`, AND THE FIRST ONE THIS APP EVER RAN
+                    //WAS THE DIFFERENCE. J4 was dispatched, deadlocked before it
+                    //could boot the machine, and landed in `done` with `verdict`
+                    //and `decided` both null and one attempt carrying the reason
+                    //— an honest record, counted here as a judgement that had
+                    //reached a verdict.
+                    //
+                    //IT IS THE WRONG WAY TO BE WRONG. "Eleven decided" is what
+                    //somebody reads to mean the reading has been DONE, and a
+                    //failure that inflates it hides itself in the one number
+                    //that would have shown it.
+                    decided: all.filter(function (j) { return j.state === 'done' && j.verdict; }).length,
+                    //SO THE ONES THAT ENDED WITHOUT ONE ARE THEIR OWN COUNT
+                    //rather than folded into either neighbour. They are not
+                    //waiting — nothing will pick them up again — and they did
+                    //not decide anything.
+                    gaveUp: all.filter(function (j) { return j.state === 'done' && !j.verdict; }).length,
                     note: all.length
                         ? 'The words each one was given and the rules it was held to are left out here, and what '
                             + 'it asked and what it found are cut short — an ellipsis means there is more. Ask for '
