@@ -1,5 +1,7 @@
 # dashboard-beta
 
+source of trust is the old dashboard, actually read it for the shape of the app.
+
 The `dashboard/` app, ported to rectify plugins + React + webpack, running under
 NW.js and in a browser tab.
 
