@@ -319,6 +319,35 @@ module.exports = function doors(store, ask, log) {
         });
     }
 
+    //TAKING ONE BACK, WHICH IS NOT THE SAME AS STOPPING ONE.
+    //
+    //A TASK LEFT QUEUED IS A RUN THAT HAS NOT HAPPENED YET. That is easy to
+    //forget because nothing appears to be happening: work queued against a host
+    //that cannot dispatch — nothing free, or no sign-in to give it — sits there
+    //looking inert and starts the moment that changes. So anything that queues a
+    //task speculatively needs a way to put it back, or it has scheduled a run
+    //for whenever somebody next fixes something unrelated.
+    //
+    //ONE ALREADY GIVEN OUT IS NOT CALLED BACK BY THIS, on the same rule as
+    //../judge's `judgementUnqueue`: the machine is working, and stopping it is a
+    //different act on a different thing. Said rather than silently doing half
+    //of it.
+    async function unqueue(ref) {
+        var task = await store.get(ref);
+
+        if (task.state !== 'queued') {
+            throw new Error('#' + task.number + ' is "' + task.state + '", not queued. One already given out is '
+                + 'not called back by this — the machine is working and would have to be stopped on it.');
+        }
+
+        var back = await store.update(task.id, { state: 'draft' });
+        say.warn('#' + task.number + ' taken back out of the queue');
+
+        return Object.assign({}, back, {
+            note: '#' + task.number + ' is a draft again. Nothing will pick it up until it is queued once more.'
+        });
+    }
+
     //=======================================================================
     //THROW IT AWAY.
     //
@@ -431,7 +460,7 @@ module.exports = function doors(store, ask, log) {
     }
 
     return {
-        create: create, queue: queue, remove: remove, edit: edit, judge: judge,
+        create: create, queue: queue, unqueue: unqueue, remove: remove, edit: edit, judge: judge,
         branchIsReady: branchIsReady, fromTheLibrary: fromTheLibrary
     };
 };

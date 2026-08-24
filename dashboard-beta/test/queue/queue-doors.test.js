@@ -309,3 +309,49 @@ test('forgetting a task leaves the branch and the logs alone', async () => {
     assert.match(gone.note, /The branch "fix\/it" and the logs kept for it are untouched/);
     assert.deepEqual(await store.read(), []);
 });
+
+//---------------------------------------------------------------------------
+//AND TAKING ONE BACK OUT.
+//
+//THE CLAIM: work left queued is a run that has not happened yet. It sits there
+//looking inert on a host that cannot dispatch — nothing free, or no sign-in to
+//give it — and starts the moment that changes. Without this door the only ways
+//out of the queue are to let it run or to throw the task away.
+//---------------------------------------------------------------------------
+
+test('a queued task can be taken back out, and is a draft again', async () => {
+    const made = await doors.create(aTask());
+    const machines = [{ name: 'runner-1', tags: ['worker'], baseSnapshot: 'b', forTasks: true, stage: 'ready' }];
+    await doors.queue(made.id, planWith(machines));
+
+    const back = await doors.unqueue(made.id);
+
+    assert.equal(back.state, 'draft');
+    assert.equal((await store.get(made.id)).state, 'draft', 'the record still says queued');
+    assert.match(back.note, /Nothing will pick it up until it is queued once more/);
+});
+
+test('one already given out is not called back by this', async () => {
+    //THE MACHINE IS WORKING, and stopping it is a different act on a different
+    //thing — said rather than silently doing half of it.
+    const made = await doors.create(aTask());
+    await store.update(made.id, { state: 'given', machine: 'runner-1' });
+
+    await assert.rejects(
+        () => doors.unqueue(made.id),
+        /is "given", not queued/
+    );
+    assert.equal((await store.get(made.id)).state, 'given', 'and it was taken back anyway');
+});
+
+test('and neither is a draft that was never queued', async () => {
+    //NOT HARMLESS TO ALLOW. "It is a draft now" is the same answer whether this
+    //did anything or not, so a caller that named the wrong task would be told it
+    //had worked.
+    const made = await doors.create(aTask());
+
+    await assert.rejects(
+        () => doors.unqueue(made.id),
+        /is "draft", not queued/
+    );
+});
