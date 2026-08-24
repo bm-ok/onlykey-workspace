@@ -407,7 +407,13 @@ async function plugin(imports, register) {
             takes: ['allow'],
             run: async function (args) {
                 var a = args || {};
-                if (a._overTheWire) {
+                //ALL THREE, LIKE `settingSet` ABOVE. This read the wire alone,
+                //and answering a request to arm the drills is the same act as
+                //arming them -- so it is the same door and takes the same lock.
+                //A drill that could answer its own request is the sharpest
+                //version of "something that could answer its own request has not
+                //asked for anything".
+                if (a._overTheWire || a._driven || a._fromTest) {
                     throw new Error('A request to run the drills is answered in the window, by somebody who can see which folder is open. Something that could answer its own request has not asked for anything.');
                 }
 

@@ -152,7 +152,7 @@ it('a press driven from the command line is still the command line', async ({ ok
   // happen to agree, and the next one added will be a fourth.
   for (const what of ['jobApprove', 'promptApprove', 'contractApprove']) {
     await assert.refuses(
-      () => actions[what].run({ id: 'anything-at-all', _driven: true }),
+      () => okc(what, { id: 'anything-at-all', _driven: true }),
       'window|person|command line',
       `${what} let a press driven from the command line through`
     )

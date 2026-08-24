@@ -484,9 +484,21 @@ async function plugin(imports, register) {
                 //READ HERE. This is the same boundary as approving a job, and it
                 //is the one the standing rule about incoming pull requests is
                 //about.
-                if (a._overTheWire) {
+                //AND A PRESS DRIVEN FROM THE COMMAND LINE IS THE COMMAND LINE.
+                //This read the wire alone. ../../core/drive refuses a PROTECTED
+                //button before it reaches here, and the drill that found this in
+                //the app being ported from says exactly why that is not enough:
+                //"one windowClick opened the confirm dialog and stopped, which
+                //looked like the guard working and was only the dialog. The
+                //guard itself was not there."
+                //
+                //NOT `_fromTest`: a drill may allow one, which is how the judging
+                //suite gets a pull request it can then have read. The line is the
+                //same one approving draws.
+                if (a._overTheWire || a._driven) {
                     throw new Error('Allowing a pull request to be judged is done in the window, by a person who has looked at it. '
-                        + 'A model may not decide that somebody else\'s code is fit to be read here.');
+                        + 'A model may not decide that somebody else\'s code is fit to be read here. '
+                        + 'A press driven from the command line is the command line, whichever button it lands on.');
                 }
 
                 var repo = String(a.repo || '').trim();
@@ -545,7 +557,13 @@ async function plugin(imports, register) {
                 //a person's statement, and something that can be withdrawn from
                 //outside can be withdrawn at a moment nobody notices, which is
                 //how a judging job fails in a way that reads as a bug.
-                if (a._overTheWire) throw new Error('Taking an allowance back is done in the window, like giving one.');
+                //THE SAME PAIR OF FLAGS AS GIVING ONE, because it is the same
+                //statement withdrawn: a guard on one direction only is a guard
+                //somebody walks round by going the other way.
+                if (a._overTheWire || a._driven) {
+                    throw new Error('Taking an allowance back is done in the window, like giving one. '
+                        + 'A press driven from the command line is the command line, whichever button it lands on.');
+                }
 
                 var repo = String(a.repo || '').trim();
                 var number = Number(a.number);
