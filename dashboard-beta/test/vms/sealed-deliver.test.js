@@ -74,6 +74,55 @@ test('and the machine ends up holding exactly it', async () => {
     assert.equal(done.fingerprint, fingerprint(CRED));
 });
 
+//---- AND NOT IN PIECES EITHER -------------------------------------------------
+//
+//THE CHECK ABOVE LOOKS FOR THE WHOLE VALUE, and a leak does not have to be
+//whole. Half a token in a command line is in `ps` and in that machine's history
+//exactly like all of it, and it is enough to recognise, correlate, or finish
+//guessing.
+//
+//THIS CLAIM EXISTED NOWHERE. It was written in the drill beside this — every run
+//of six or more characters, searched for in what was sent — and the regex there
+//says `{6 }`, with a space in the quantifier. `{6 }` is not a quantifier, so JS
+//reads it as four literal characters, so the pattern matched nothing, so the
+//piece list was always empty and the assertion always held. The drill could not
+//load, so it never ran and never had the chance to say so.
+//
+//A CHECK THAT CANNOT FAIL IS WORSE THAN NO CHECK, because the line is there and
+//reads as covered. Hence the floor below.
+test('and not in pieces either, nor inside anything the command encodes', async () => {
+    await deliver().toTheMachine({ run: aMachine(), text: CRED });
+
+    //EVERY RUN OF SIX OR MORE, so a leak cannot get through by being chopped up.
+    const pieces = [...new Set(CRED.match(/[A-Za-z0-9_-]{6,}/g) || [])];
+
+    //THE FLOOR. If this list is empty every assertion below holds vacuously,
+    //which is the exact failure this test exists because of.
+    assert.ok(pieces.length >= 3,
+        'nothing was taken apart, so finding none of it proves nothing — the regex matched no runs at all');
+
+    //AND WHAT THE COMMAND ENCODES, NOT ONLY WHAT IT SPELLS. The way this used to
+    //travel WAS base64 in a command line, so a plain string search would have
+    //found nothing and passed against the very code it was written to condemn.
+    const searched = sent.map(({ command }) => {
+        let out = command;
+        for (const chunk of command.match(/[A-Za-z0-9+/=]{40,}/g) || []) {
+            try { out += '\n' + Buffer.from(chunk, 'base64').toString('utf8'); } catch { /* not base64 */ }
+        }
+        return out;
+    }).join('\n');
+
+    //AND THE DECODING HAPPENED. The sealed reply is base64 on stdin, so there is
+    //always at least one long run to decode; finding none would mean this
+    //searched the plain commands only.
+    assert.ok(searched.length > sent.map((s) => s.command).join('\n').length,
+        'no base64 run was decoded out of what was sent, so only the plain text was searched');
+
+    const leaked = pieces.filter((p) => searched.includes(p));
+    assert.deepEqual(leaked, [],
+        'piece(s) of the credential are in what was sent, or in what it encodes');
+});
+
 //---- the order, which is the design -------------------------------------------
 
 test('the guest speaks first — nothing is sealed until it has answered', async () => {
