@@ -202,7 +202,10 @@ it('and the whole way round it, from outside, ends where it started', async ({ o
   assert.ok(before && !before.approved, 'the prompt this is about was approved as it was written, so there is nothing here to press')
 
   // ---- drive the window to it ----------------------------------------
-  await okc('windowClick', { text: 'Actions' })
+  //THE TAB IS `Worker` HERE, NOT `Actions`. Over there one library serves
+  //workers and judges under a tab of that name; here it is split in two, and a
+  //prompt saved with no `kind` is a task one -- so this is the half it lands in.
+  await okc('windowClick', { text: 'Worker' })
   await okc('windowClick', { text: 'Prompts' })
   await okc('windowClick', { text: 'drill: press approve on me' })
 
