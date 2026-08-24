@@ -226,7 +226,32 @@ async function plugin(imports, register) {
             };
         });
 
-        return { suites: suites, broke: null, run: seen.run || null };
+        //---- AND WHAT IS HAPPENING RIGHT NOW, IF ANYTHING --------------
+        //
+        //THE BANNER READS THIS AND HAS NEVER ONCE SHOWN. ../ui/banners/running
+        //asks for `running` — the check in flight, with the score so far — and
+        //this answered `run`, the RECORD of a run: when it started, what was
+        //asked for, whether it finished. Two different questions one letter
+        //apart, and the one the banner wanted was simply not here.
+        //
+        //So the purple banner announcing a drill in flight could not appear at
+        //any point, on any run. It failed the way a thing does when it is
+        //looking at a field nobody put there: silently, and by doing nothing.
+        //
+        //`progress()` ALREADY WORKED OUT THE HARD PART — see ./runs.js, and the
+        //note there about a check being written down as running and overwritten
+        //when it ends, so between two of them the honest answer is "nothing" and
+        //the useful one is the most recent. It was never asked.
+        //
+        //NULL WHEN NOTHING IS RUNNING, which is what the banner tests. Both are
+        //returned: `run` is the record the Test tab draws, `running` is the
+        //moment the banner is about.
+        return {
+            suites: suites,
+            broke: null,
+            run: seen.run || null,
+            running: await runs.progress()
+        };
     }
 
     //THE WORST OF WHAT IS UNDER IT, because a suite is only as good as its
