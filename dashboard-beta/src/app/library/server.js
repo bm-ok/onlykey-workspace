@@ -41,7 +41,12 @@ var starters = require('./starters');
 //over a wire.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'state'];
+//THE PANE IS CALLED "Jobs", NOT "jobs". ../ui/shell keys panes on the name they
+//were registered under, and a lower-case one silently lands on the tab with no
+//pane chosen -- which looks like the row simply not working.
+function capital(word) { return String(word).charAt(0).toUpperCase() + String(word).slice(1); }
+
+plugin.consumes = ['app', 'log', 'state', 'inbox'];
 plugin.provides = ['library'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -328,6 +333,69 @@ async function plugin(imports, register) {
             takes: ['id', 'name', 'about', 'text', 'kind']
         });
     }
+
+    //---- AND WHAT IN HERE IS WAITING ON A PERSON --------------------------
+    //
+    //REGISTERED WITH ../inbox RATHER THAN READ BY IT. That plugin used to
+    //consume this one and reach in — see its header for why that could only
+    //grow. What is here is the half it could never have written correctly from
+    //the outside:
+    //
+    //TWO MEANINGS OF `kind` MEET IN ONE ROW, and keeping them apart is the whole
+    //of this block. What the thing IS — a job, a prompt, a contract — and who it
+    //is FOR: `task` ones live under Worker, `judge` ones under Judge. Counted
+    //together they once put a badge on a tab the things were not on, and sent a
+    //button to a pane where they are not.
+    //
+    //IT IS THE PLAIN CASE FOR THE LIST: a model may write one of these and may
+    //not approve its own, so an unread one is work that has silently stopped and
+    //will sit there for a week.
+    //
+    //`lapsed` IS THE ONE PEOPLE MISS. Approved, then edited — so what was
+    //approved is not what would be sent. It reads as approved everywhere that
+    //shows a badge, which is why the reason says which of the two it is.
+    undo.push(imports.inbox.source({
+        name: 'jobs, prompts and contracts nobody has read',
+        //AWAITED, WHICH IT WAS NOT, AND IT HAD NEVER ONCE ANSWERED.
+        //
+        //`all()` reads a document off disk and is async. The version of this
+        //that lived in ../inbox called it synchronously and handed the PROMISE
+        //to `.filter` -- inside a `catch` whose comment read "the library is not
+        //answering". So it threw on every call, was swallowed on every call, and
+        //an unapproved job, prompt or contract has never appeared on that list.
+        //The count somebody would have trusted was always zero.
+        //
+        //IT WAS FOUND THE FIRST TIME THIS RAN AS A REGISTERED SOURCE, by the
+        //`notCounted` line naming it -- which is the whole difference between a
+        //source that says nothing and a source nobody can hear.
+        waiting: async function () {
+            var out = [];
+            var shelves = [['job', jobs], ['prompt', prompts], ['contract', contracts]];
+
+            for (var s = 0; s < shelves.length; s++) {
+                //`let` SO THE CLOSURE BELOW SEES THIS ITERATION'S. With `var`
+                //every row would be labelled with the last shelf read.
+                let type = shelves[s][0];
+                let shelf = shelves[s][1];
+                if (!shelf || !shelf.all) continue;
+
+                var rows = (await shelf.all()) || [];
+                rows.filter(function (x) { return !x.approved; }).forEach(function (one) {
+                    var judging = String(one.kind || 'task') === 'judge';
+                    out.push(imports.inbox.item(
+                        type + ' to approve',
+                        one.name || one.id,
+                        'Nothing can run it until somebody reads it. ' + (one.lapsed
+                            ? 'It was approved and then edited, so what was approved is not what would be sent.'
+                            : 'Written and never approved.'),
+                        imports.inbox.at(judging ? 'Judge' : 'Worker', capital(type) + 's', one.id),
+                        { since: one.edited || one.written || null, id: one.id }
+                    ));
+                });
+            }
+            return out;
+        }
+    }));
 
     await register(null, {
         //HANDED OUT SO ../judge STOPS RELAYING FOR IT. `judgementCreate` reads

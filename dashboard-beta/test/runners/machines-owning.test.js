@@ -36,11 +36,13 @@ let actions, asked, registry;
 //THE MACHINE THAT PROVES IT. `runner1` is in VirtualBox and NOT in this app's
 //register — which is exactly the shape of every machine belonging to the app
 //being ported from.
+let registered = [];
 const IN_VBOX_ONLY = 'runner1';
 const OURS = 'kit-1';
 
 beforeEach(async () => {
     asked = { destroyed: [], dropped: [], created: [], busyFor: [] };
+    registered = [];
     registry = [{ name: OURS, spec: {}, tags: [] }];
 
     let table = null;
@@ -111,7 +113,17 @@ beforeEach(async () => {
 
         repoWorkspaces: { folderFor: () => '$HOME/workspace', guestPath: (p) => p, plan: async () => ({}), script: () => '', freeEverywhere: async () => [] },
         tls: { ensure: async () => ({ ca: '' }) },
-        guestApi: { PORT: 7317 }
+        guestApi: { PORT: 7317 },
+
+        //WHAT ON THIS TAB IS WAITING ON A PERSON, registered when the plugin is
+        //BUILT -- so leaving it out is not "unused", it is a TypeError before any
+        //test in this file gets a plugin at all. Recorded rather than dropped, so
+        //what was registered can be asserted on.
+        inbox: {
+            source: (one) => { registered.push(one); return () => {}; },
+            item: (kind, what, why, where, opts) => ({ kind, what, why, where, ...(opts || {}) }),
+            at: (view, pane, pick) => ({ view, pane: pane || null, pick: pick || null })
+        }
     }, async () => {});
 
     actions = table;

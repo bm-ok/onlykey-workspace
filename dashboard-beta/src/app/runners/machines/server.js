@@ -78,7 +78,11 @@ plugin.consumes = ['app', 'log', 'vbox', 'ours', 'busy', 'channel', 'dataDir',
     'repoWorkspaces', 'tls', 'guestApi',
     //`provision` OWNS MAKING ONE, including the refusal of a name VirtualBox
     //already has. This plugin owns the door, not the build.
-    'provision'];
+    'provision',
+    //WHAT ON THIS TAB IS WAITING ON A PERSON -- see the source registered at
+    //the bottom of this file. ../../inbox consumes `app` and `log` and
+    //nothing else, so this cannot close a loop.
+    'inbox'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -840,6 +844,53 @@ async function plugin(imports, register) {
             }
         }));
     }
+
+    //---- AND WHAT ON THIS TAB IS WAITING ON A PERSON ----------------------
+    //
+    //A MACHINE THAT IS OFF AND STILL HOLDING A SIGN-IN, and it is the item on
+    //that list with a repair attached.
+    //
+    //A machine stopped outside the ordinary sequence -- a host that went down, a
+    //Windows update -- keeps the credential, and the copy on ITS disk may be
+    //NEWER than the one here, because the CLI rotates the token as a worker
+    //runs. Left alone this host goes on handing out a token several refreshes
+    //behind while believing it holds the current one.
+    //
+    //IT WOULD SIT FOR A WEEK AND THAT WOULD BE A PROBLEM, which is the test for
+    //being on that list at all -- see ../../inbox/server.js. Nothing else about
+    //a machine passes it: an idle runner is a banner, not an errand.
+    //
+    //ASKED OF THE LIVE STATE FIRST AND THE REGISTER SECOND. The register says
+    //who holds what; only VirtualBox knows whether it is running. A machine that
+    //IS running and holding one is doing its job.
+    undo.push(imports.inbox.source({
+        name: 'machines off and still holding a sign-in',
+        waiting: async function () {
+            var live = {};
+            try {
+                var said = await actions.call('vmList', {});
+                ((said && said.vms) || []).forEach(function (v) { live[v.name] = v; });
+            } catch (e) { /* the register below still knows who holds what */ }
+
+            return (ours.read() || []).filter(function (vm) {
+                var now = live[vm.name] || vm;
+                if (now.running === true || now.state === 'running') return false;
+                return !!(now.holdsCredential || now.guest || vm.holdsCredential || vm.guest);
+            }).map(function (vm) {
+                var now = live[vm.name] || vm;
+                var held = now.guest || vm.guest;
+                return imports.inbox.item(
+                    'credential to take back',
+                    vm.name,
+                    'It is powered off and still holding ' + (held ? '"' + held + '"' : 'a sign-in')
+                        + '. What is on its disk may be newer than the copy here, so it cannot simply be '
+                        + 'forgotten — starting it, reading it back and stopping it again is one press.',
+                    imports.inbox.at('Runners', 'Virtual machines', vm.name),
+                    { id: vm.name }
+                );
+            });
+        }
+    }));
 
     await register(null, { onDestroy: function () { while (undo.length) undo.pop()(); } });
 }

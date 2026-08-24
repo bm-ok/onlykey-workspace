@@ -70,7 +70,18 @@ beforeEach(async () => {
 
     const quiet = { on: () => ({ info() {}, good() {}, warn() {}, bad() {}, out() {} }) };
 
-    await libraryPlugin({ app: { host: { actions } }, log: quiet, state },
+    //../../src/app/library REGISTERS WHAT IN IT IS WAITING ON A PERSON, at the
+    //moment it is built -- so this is not an optional service, it is a
+    //TypeError before this file gets a library at all. It answers nothing here
+    //because what the source finds is checked in test/inbox/sources.test.js;
+    //what matters to THIS file is that the plugin comes up.
+    var inbox = {
+        source: function () { return function () {}; },
+        item: function () { return {}; },
+        at: function () { return {}; }
+    };
+
+    await libraryPlugin({ app: { host: { actions } }, log: quiet, state, inbox },
         async (_e, s) => { library = s.library; });
 
     //`ours` IS THE MACHINE REGISTER, which this plugin also writes to — see
