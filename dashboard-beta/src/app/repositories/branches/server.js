@@ -326,6 +326,72 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- EVERY BRANCH, AS THE DRILLS AND A MACHINE ASK FOR IT ---------
+        //
+        //THE SAME FACTS AS `branchBoard`, TURNED THE OTHER WAY UP. That board is
+        //drawn for a person looking at a pane: it says where a branch IS. This
+        //answers "may I point a machine at this one", which needs the opposite —
+        //where it is NOT.
+        //
+        //`missing` IS THE WHOLE REASON THIS IS NOT JUST AN ALIAS. A machine
+        //checks a branch out in EVERY repository, so one that exists in two of
+        //three is not work a machine can be given. The drills ask exactly that,
+        //with `!(b.missing || []).length` — and against a board that has no such
+        //field, `(undefined || []).length` is 0 and every branch reads as
+        //complete. A silently wrong answer, in the check whose job is to catch
+        //an incomplete one.
+        //
+        //BUILT ON `branchBoard` RATHER THAN BESIDE IT. Two answers to "what
+        //branches are there" is the fault this app keeps finding; asking the
+        //action is a lookup, and it cannot drift from what the pane shows.
+        //
+        //---- AND WHAT IS NOT HERE, SAID RATHER THAN GUESSED --------------
+        //
+        //The app being ported from also answers `usable`, which is `available`
+        //AND `reclaimable` — whether this host can get its own checkout out of
+        //the way. Beta has no `reclaimable`: the nearest things on the board are
+        //`spare`, `removable` and `heldRunning`, and none of them means that.
+        //Inventing a `usable` out of the three would be a confident wrong answer
+        //about whether work can go somewhere, which is worse than not answering.
+        //So it is absent and `note` says so.
+        undo.push(actions.define('gitBranches', {
+            about: 'Every branch across the workspace repositories, which have each, and which are taken',
+            needs: 'workspace',
+            run: async function () {
+                var board = await actions.call('branchBoard', {});
+                var repos = board.repos || [];
+
+                return {
+                    repos: repos,
+                    branches: (board.branches || []).map(function (b) {
+                        var inThese = b.in || [];
+                        var missing = repos.filter(function (r) { return inThese.indexOf(r) < 0; });
+
+                        //TWO QUESTIONS, ANSWERED SEPARATELY. Protected is about
+                        //the branch; held is about a machine having claimed it.
+                        //They fail for different reasons and are put right in
+                        //different places, so they are not folded into one flag.
+                        return Object.assign({}, b, {
+                            missing: missing,
+                            available: !b.protected && !b.heldBy
+                        });
+                    }),
+                    //NEITHER `usable` NOR `defaultHeads`, and both omissions are
+                    //the same decision. Over there `defaultHeads` says where each
+                    //default branch actually IS, as a commit, so a drill can check
+                    //that nothing landed on master rather than looking at master
+                    //and finding it plausible. Nothing here answers it yet, and
+                    //writing `await defaultHeads()` — which is what I reached for
+                    //first — would have been a free identifier: valid syntax, a
+                    //clean build, and a ReferenceError the first time a drill
+                    //asked. Fifth one this sitting.
+                    note: 'Two things the app being ported from answers are not here: "reclaimable", whether this '
+                        + 'host can get its own checkout out of a branch, and "defaultHeads", where each default '
+                        + 'branch actually is. Nothing here means either yet, so neither is guessed at.'
+                };
+            }
+        }));
+
         undo.push(actions.define('branchBoard', {
             about: 'Every branch: who claims it, what is on it, and whether it can be deleted',
             run: async function () {
