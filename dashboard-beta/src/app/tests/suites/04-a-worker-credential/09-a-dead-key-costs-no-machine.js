@@ -31,26 +31,42 @@
 // state and touches nothing but the task it queues.
 
 const { it, cleanup } = require('../../harness')
-const guests = require('../../../core/guests')
 
 // A task that asks for nothing in particular would be sent to whichever machine
 // is free, including somebody's own. The kit's machines carry this.
 const POOL = 'test'
 
-it('this host has a paused sign-in to try it with', ({ assert, log }) => {
+it('this host has a paused sign-in to try it with', async ({ okc, assert, state, log }) => {
+  // ASKED OF THE QUEUE, NOT OF THE SIGN-INS. This used to `require` the guest
+  // store and call `freeFor`/`pausedFor` on it, which a drill cannot do — it
+  // runs from dist/suites with only the harness beside it — and should not want
+  // to. What is under test is what the QUEUE does when it can give work no
+  // identity, so the right question is the one the queue answers itself:
+  // `queueState.plan.signIns` is `guests.forQueue()`, the same call the tick
+  // dispatches by. A drill that read the store directly could disagree with the
+  // thing it is watching, and the one that decides is not the one being read.
+  const { plan } = await okc('queueState')
+
+  assert.needs(plan && plan.signInCheck,
+    'the queue could not read this host\'s sign-ins at all, so it cannot say whether one is free — which is a different fault from the one this watches for')
+
+  const worker = (plan.signIns || {}).worker || { free: 0, paused: [] }
+
   // THE DOOR, and it is shut on an ordinary host on purpose. `assert.needs`
   // reports "could not be tried" and says how to try it, which is what this
   // should say when everything is working — there is nothing here to prove on a
   // host that can sign a worker in.
-  const free = guests.freeFor('worker')
-  const stopped = guests.pausedFor('worker')
-
-  assert.needs(stopped.length,
+  assert.needs(worker.paused.length,
     'no worker sign-in on this host is paused, so there is no dead key to try this with. It runs when a machine has taken a credential and reported itself signed out — which is a thing to catch while it is happening rather than to arrange')
-  assert.needs(!free.length,
-    `this host still has a usable worker sign-in (${free.map(g => g.name).join(', ')}), so a task would simply run. What is under test is what happens when there is NOTHING to give a machine`)
+  assert.needs(!worker.free,
+    `this host still has ${worker.free} usable worker sign-in(s), so a task would simply run. What is under test is what happens when there is NOTHING to give a machine`)
 
-  log(`every worker sign-in here is paused: ${stopped.map(g => `"${g.name}"`).join(', ')} — so a task queued now can be given no identity at all`)
+  // KEPT FOR THE CHECK THAT NEEDS THE NAMES, so both halves are talking about
+  // the same reading rather than two taken minutes apart — a sign-in replaced
+  // between them would otherwise look like the queue naming the wrong one.
+  state.paused = worker.paused
+
+  log(`every worker sign-in here is paused: ${worker.paused.map(n => `"${n}"`).join(', ')} — so a task queued now can be given no identity at all`)
 }, { gate: true })
 
 it('and a machine is standing free that it could have spent', async ({ okc, assert, state, log }) => {
@@ -129,10 +145,9 @@ it('so a task queued against it waits, and nothing boots', async ({ okc, assert,
   // 3. AND THE REFUSAL SAYS WHICH SIGN-IN TO REPLACE. "No credential available"
   //    is a sentence somebody has to act on and cannot: this host may hold
   //    several, and the one that is paused is the one to sign in again.
-  const stopped = guests.pausedFor('worker')
-  for (const g of stopped) {
-    assert.ok(said.text.includes(g.name),
-      `the queue said it is waiting without naming "${g.name}", which is the sign-in somebody has to replace: ${said.text}`)
+  for (const name of state.paused) {
+    assert.ok(said.text.includes(name),
+      `the queue said it is waiting without naming "${name}", which is the sign-in somebody has to replace: ${said.text}`)
   }
   assert.ok(/paused/i.test(said.text),
     `the queue does not say the sign-in is PAUSED, so it reads as "busy, try later" for something that will never get better on its own: ${said.text}`)
