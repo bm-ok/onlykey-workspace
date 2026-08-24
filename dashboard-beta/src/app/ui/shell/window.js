@@ -341,7 +341,33 @@ async function plugin(imports, register) {
             //setOn directly would skip the checks `asked` makes — that the tab
             //exists, that the pane is in it — and a typo would leave the shell
             //on a tab with no panes rather than saying so.
-            goTo.at = function (tab, pane) { asked({ tab: tab, pane: pane || null }, null); };
+            //---- AND IT IS TOLD WHEN THERE IS NO SUCH PLACE -----------------
+            //
+            //THIS PASSED `null` FOR THE REPLY, and every refusal `asked` makes
+            //is `reply && reply(...)`. So a pane sending somebody to a tab that
+            //does not exist did NOTHING AT ALL — no move, no message, no line in
+            //the console. A button that looks like a button and answers a press
+            //with silence.
+            //
+            //IT WAS NOT HYPOTHETICAL. ../../inbox translated its rows through a
+            //table naming the app being ported from, and one entry pointed at
+            //"Actions" — a tab this app has never had, since that library is
+            //split across Worker and Judge here. Every one of those rows drew a
+            //"Go to Actions" button that did nothing when pressed.
+            //
+            //SAID THROUGH `saying`, which is the shell's own sentence and goes
+            //away by itself — and logged, because a person pressing the button
+            //and a person reading the console are looking for the same fault.
+            //`asked` already writes the message and lists what there IS, so
+            //nothing here decides anything; it only stops throwing the answer
+            //away.
+            goTo.at = function (tab, pane) {
+                asked({ tab: tab, pane: pane || null }, function (said) {
+                    if (!said || said.ok !== false) return;
+                    console.error('shell.go: ' + said.error);
+                    if (saying.at) saying.at(said.error, { bad: true });
+                });
+            };
             return function () { okc.io.off('shell:show', asked); goTo.at = null; };
         }, [on]);
 

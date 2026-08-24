@@ -7,23 +7,27 @@ module.exports = function inbox(theme, okc, remember) {
         Chips, Chip, Skeleton, Empty, Note, Mono, Spec, ago
     } = theme;
 
-    //THE OLD WINDOW'S VIEW NAMES ARE NOT THIS APP'S TAB NAMES, and an item that
-    //cannot say where to go is worse than one that says nothing. `where.view` is
-    //`chat`, `repos`, `tasks` — the ids over there. Mapped here, in one table,
-    //rather than by each item guessing.
-    var VIEWS = {
-        chat: 'Supervisor', repos: 'Repositories', tasks: 'Worker', queue: 'Queue',
-        judge: 'Judge', actions: 'Actions', runners: 'Runners', live: 'Live',
-        keys: 'Keys', tests: 'Test', settings: 'Settings'
-    };
-    var PANES = {
-        todo: 'Todo', chat: 'Chat', skill: 'Skill', may: 'What it may do',
-        cuts: 'PR cuts', branchcuts: 'Branches Cut', baselines: 'Branches Lines',
-        changes: 'Changes', conflicts: 'Conflicts', flow: 'Graph',
-        guests: 'Claude Worker', judgesignins: 'Claude Judge', supervisors: 'Claude supervisor',
-        machines: 'Virtual machines', guest: 'Claude Sessions',
-        jobs: 'Jobs', prompts: 'Prompts', contracts: 'Contracts'
-    };
+    //---- WHERE A ROW SENDS YOU, IN THIS APP'S OWN WORDS --------------------
+    //
+    //THERE WERE TWO TRANSLATION TABLES HERE, and they are gone. The server said
+    //`chat`, `repos`, `tasks` — the view ids of the app being ported from — and
+    //this turned them into tab names on the way to the screen.
+    //
+    //IT WAS THE WRONG PLACE FOR THE KNOWING, and one entry was simply wrong:
+    //`actions: 'Actions'`, a tab this app has never had, because that library is
+    //split across Worker and Judge here. Every row that used it drew a "Go to
+    //Actions" button, and pressing it did nothing whatsoever — ../ui/shell threw
+    //the refusal away rather than saying it. Two silences, stacked, and neither
+    //of them fails anything.
+    //
+    //AND IT WOULD HAVE BLOCKED THE NEXT THING. A badge is a fact about the tab
+    //row, so for the server to say which tab is waiting on somebody, the server
+    //has to know this app's tab names. It cannot, while the only place they are
+    //written down is a lookup in the window.
+    //
+    //SO THE SOURCES NAME BETA'S TABS AND PANES DIRECTLY — see the `inbox.at(...)`
+    //calls in ../library/server.js and ../runners/machines/server.js. If one is
+    //wrong now, ../ui/shell says so out loud instead of doing nothing.
 
     function Inbox() {
         var { state, error, reads, again } = okc.use('inbox', {}, 15000);
@@ -41,8 +45,8 @@ module.exports = function inbox(theme, okc, remember) {
 
         function goTo(i) {
             var w = i.where || {};
-            var tab = VIEWS[w.view] || w.view;
-            var pane = w.pane ? (PANES[w.pane] || w.pane) : null;
+            var tab = w.view;
+            var pane = w.pane || null;
             if (!tab) { setWent({ bad: true, text: 'this one does not say where to go' }); return; }
             //REMEMBERED FIRST, THEN SHOWN. `pick` is which row the pane should
             //land on, and every pane already remembers its own selection — so
@@ -98,8 +102,8 @@ module.exports = function inbox(theme, okc, remember) {
                 <Stack>
                     {rows.map(function (i) {
                         var w = i.where || {};
-                        var tab = VIEWS[w.view] || w.view;
-                        var pane = w.pane ? (PANES[w.pane] || w.pane) : null;
+                        var tab = w.view;
+                        var pane = w.pane || null;
                         return (
                             <Card key={i.key || i.id}>
                                 <CardTitle>
