@@ -21,14 +21,33 @@ async function plugin(imports, register) {
 
     if (real) return register(null, { dataDir: real });
 
+    //THE WHOLE SURFACE, NOT JUST `at`, and this was missing two thirds of it.
+    //
+    //./main.js publishes `path`, `from` and `at`. This published `at` alone — so
+    //in a process with no main half, `dataDir.path` was not a refusal, it was
+    //`undefined`, and `path.join(undefined, 'id_okc')` throws a TypeError about
+    //an argument. ../ssh and ../tls both build their directory that way.
+    //
+    //WHICH DEFEATS THE PARAGRAPH AT THE TOP OF THIS FILE. The refusal exists to
+    //say, in words, that nobody knows where this process keeps things and that
+    //guessing is the danger — and it only ever said it down one of the three
+    //ways in. A stand-in narrower than the thing it stands in for answers
+    //`undefined` where it meant to refuse, which is the quiet direction.
+    //
+    //GETTERS, because `path` and `from` are values on the real one and have to
+    //stay values here. Reading either throws the same sentence `at()` throws.
+    function noAnswer() {
+        throw new Error(
+            'This process has no data directory — there is no main half behind it, and the one place that '
+            + 'works it out is core/datadir/main.js. Nothing is guessed here on purpose: a plausible wrong '
+            + 'path is how something gets written where nobody will think to look for it.');
+    }
+
     await register(null, {
         dataDir: {
-            at: function () {
-                throw new Error(
-                    'This process has no data directory — there is no main half behind it, and the one place that '
-                    + 'works it out is core/datadir/main.js. Nothing is guessed here on purpose: a plausible wrong '
-                    + 'path is how something gets written where nobody will think to look for it.');
-            }
+            at: noAnswer,
+            get path() { return noAnswer(); },
+            get from() { return noAnswer(); }
         }
     });
 }

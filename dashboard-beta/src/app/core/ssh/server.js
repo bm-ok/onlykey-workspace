@@ -84,11 +84,21 @@ async function plugin(imports, register) {
 
     //OVERRIDABLE, because the drills need somewhere of their own to make a key
     //without touching the one real machines are already trusting.
-    var DIR = process.env.OKC_KEYS || dataDir.path;
+    //ASKED WHEN IT IS NEEDED, NOT WHEN THIS IS BUILT. ../datadir's own header
+    //says every caller must resolve lazily, and this line did not: it read
+    //`dataDir.path` while the plugin graph was still coming up.
+    //
+    //IT WAS SILENT BECAUSE THE STAND-IN WAS INCOMPLETE. With no main half
+    //behind it, `dataDir.path` was `undefined` rather than a refusal, so this
+    //built a plugin whose directory was undefined and whose first write threw
+    //a TypeError about an argument — instead of the sentence ../datadir wrote
+    //for exactly this moment. Now that the stand-in refuses down all three
+    //ways in, reading it here would take the whole graph down at start-up.
+    function DIR() { return process.env.OKC_KEYS || dataDir.path; }
 
-    function keyFile() { return path.join(DIR, 'id_okc'); }
-    function pubFile() { return path.join(DIR, 'id_okc.pub'); }
-    function configFile() { return path.join(DIR, 'ssh_config'); }
+    function keyFile() { return path.join(DIR(), 'id_okc'); }
+    function pubFile() { return path.join(DIR(), 'id_okc.pub'); }
+    function configFile() { return path.join(DIR(), 'ssh_config'); }
     function userConfig() { return path.join(os.homedir(), '.ssh', 'config'); }
 
     function keygen() {
@@ -124,7 +134,7 @@ async function plugin(imports, register) {
     //happens because a file was missing at an awkward moment.
     function make(opts) {
         var force = !!(opts && opts.force);
-        fs.mkdirSync(DIR, { recursive: true });
+        fs.mkdirSync(DIR(), { recursive: true });
         if (have() && !force) return { made: false, path: keyFile() };
 
         [keyFile(), pubFile()].forEach(function (f) {
@@ -236,7 +246,7 @@ async function plugin(imports, register) {
     }
 
     function writeConfig(machines) {
-        fs.mkdirSync(DIR, { recursive: true });
+        fs.mkdirSync(DIR(), { recursive: true });
 
         var lines = [
             '# Written by the dashboard. Edits here are lost: it is rewritten whenever a',
@@ -273,7 +283,7 @@ async function plugin(imports, register) {
             //alarming. Not written to the operator's known_hosts, for the same
             //reason.
             lines.push('  StrictHostKeyChecking no');
-            lines.push('  UserKnownHostsFile ' + slashes(path.join(DIR, 'known_hosts')));
+            lines.push('  UserKnownHostsFile ' + slashes(path.join(DIR(), 'known_hosts')));
             lines.push('');
         });
 
@@ -344,7 +354,7 @@ async function plugin(imports, register) {
                 return m;
             },
             //PATHS, HANDED OUT SO NOTHING GUESSES AT THEM. Never the contents.
-            where: { key: keyFile, pub: pubFile, config: configFile, user: userConfig, dir: function () { return DIR; } }
+            where: { key: keyFile, pub: pubFile, config: configFile, user: userConfig, dir: function () { return DIR(); } }
         }
     });
 }

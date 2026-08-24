@@ -1068,6 +1068,23 @@ async function plugin(imports, register) {
             countBetween: countBetween,
             wouldConflict: wouldConflict,
 
+            //A READ, THOUGH EVERY CALLER IS ABOUT TO WRITE. It asks git whether
+            //a branch name is one git would accept, and creates nothing.
+            //
+            //IT WAS NEVER EXPORTED, and nothing said so. `../repositories/repos`
+            //has called `imports.git.nameIsOk` since it was written; the function
+            //existed, one file away, used internally by `makeBranch` — so a grep
+            //found it, reading the caller made sense, and reading the callee made
+            //sense. Only the ONE line that publishes it was missing.
+            //
+            //A FREE IDENTIFIER IS INVISIBLE TO EVERY COMPILE CHECK — `undefined
+            //is not a function` is a run-time fact. `npm run check` was green,
+            //the suite was green, and the failure surfaced when the queue
+            //dispatched a judgement onto a real machine: the machine booted, was
+            //lent a credential, and the run died on the way to setting up a
+            //repository. Third bug this session that only a real run could find.
+            nameIsOk: nameIsOk,
+
             //---- the write door. See the block above it. ----------------
             WRITES: WRITES,
 

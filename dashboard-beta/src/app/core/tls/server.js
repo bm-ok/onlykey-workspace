@@ -69,9 +69,13 @@ plugin.provides = ['tls'];
 async function plugin(imports, register) {
     var host = imports.app.host;
     var log = imports.log.on('tls');
-    var DIR = process.env.OKC_KEYS || imports.dataDir.path;
+    //LAZILY — see the same line in ../ssh/server.js for what reading this at
+    //build time cost. ../datadir refuses when there is no main half behind
+    //it, and a plugin that asks while the graph is coming up turns that
+    //refusal into a graph that does not come up at all.
+    function DIR() { return process.env.OKC_KEYS || imports.dataDir.path; }
 
-    function file(name) { return path.join(DIR, name); }
+    function file(name) { return path.join(DIR(), name); }
     function caKey() { return file('ca.key'); }
     function caPem() { return file('ca.pem'); }
     function keyFile() { return file('server.key'); }
@@ -184,7 +188,7 @@ async function plugin(imports, register) {
     function matches(address) { return state(address).matches; }
 
     function make() {
-        fs.mkdirSync(DIR, { recursive: true });
+        fs.mkdirSync(DIR(), { recursive: true });
         var names = addresses();
 
         //THE AUTHORITY. Only ever signs this one certificate, and its private
@@ -232,7 +236,7 @@ async function plugin(imports, register) {
         var ca = fs.readFileSync(caPem());
 
         return {
-            dir: DIR,
+            dir: DIR(),
             key: fs.readFileSync(keyFile()),
             cert: fs.readFileSync(pemFile()),
             ca: ca,
@@ -300,7 +304,7 @@ async function plugin(imports, register) {
                 return Object.assign({}, out, {
                     address: address,
                     fingerprint: fingerprint,
-                    dir: DIR
+                    dir: DIR()
                 });
             }
         }));
@@ -327,7 +331,7 @@ async function plugin(imports, register) {
             ensure: ensure, make: make, have: have,
             covers: covers, matches: matches, state: state,
             addresses: addresses,
-            where: { dir: function () { return DIR; }, ca: caPem, cert: pemFile, key: keyFile }
+            where: { dir: function () { return DIR(); }, ca: caPem, cert: pemFile, key: keyFile }
         }
     });
 }
