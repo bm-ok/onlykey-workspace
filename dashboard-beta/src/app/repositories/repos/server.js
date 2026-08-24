@@ -12,8 +12,6 @@
 //isolation. The only defence is not to reuse the word.
 var layout = require('./workspace');
 var makeSettingUp = require('./setting-up');
-var serving = require('./serve');
-var makeGitApi = require('./gitapi');
 var makeFreeing = require('../branches/freeing');
 var reach = require('../branches/reach');
 var revising = require('../pr/revising');
@@ -75,13 +73,7 @@ var revising = require('../pr/revising');
 //A consumes line is a claim about what this plugin can reach, and the boundary
 //test above it only counts for as much as that line is kept honest.
 plugin.consumes = ['app', 'log', 'git', 'github', 'workspace', 'state', 'refs',
-    'ours', 'channel', 'lines', 'prcuts',
-    //THE DOOR A MACHINE CLONES THROUGH -- see ./gitapi.js. Not a cycle:
-    //../../vms/https consumes app, log, tls, ours and channel, and none of
-    //those reaches back here. Worth checking rather than assuming, because
-    //an unresolved or circular name takes down the WHOLE graph rather than
-    //this plugin.
-    'guestApi'];
+    'ours', 'channel', 'lines', 'prcuts'];
 plugin.provides = ['repositories', 'repoWorkspaces'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -419,6 +411,20 @@ async function plugin(imports, register) {
     //HANDED THE PIECES RATHER THAN REACHING FOR THEM, so every gate can be
     //exercised without a machine — see ./setting-up.js, which is where they are
     //and where they are tested.
+    //---- THE ONE PERMISSION, PUT TOGETHER ONCE -----------------------------
+    //
+    //`revising.mayRevise` IS THE RULE and this is the only place its arguments
+    //are gathered. Two assemblies would be two opinions the moment one of them
+    //learned something the other did not, which is exactly what the drill
+    //`02-the-refusals/05-one-permission-many-gates` is a record of: the
+    //exception for a branch that is out as a pull request was taught to three
+    //gates ONE AT A TIME, and each discovery cost a worker run whose commit the
+    //rollback then destroyed -- three tasks that finished exit 0 with nothing on
+    //the branch.
+    async function mayRevise(branch) {
+        return revising.mayRevise(branch, await imports.prcuts.all(), await imports.lines.protectedOf());
+    }
+
     var freeing = makeFreeing({
         repos: function () { return workspace.repos(); },
         headOf: function (repo) { return imports.refs.head(repo); },
@@ -461,10 +467,9 @@ async function plugin(imports, register) {
 
         //THE PERMISSION, ASKED WHERE IT IS WRITTEN. See ../pr/revising — the
         //host's hook asks the same function, which is the whole point of it
-        //being one.
-        mayRevise: async function (branch) {
-            return revising.mayRevise(branch, await imports.prcuts.all(), await imports.lines.protectedOf());
-        },
+        //being one. Named above so ../gitserve can be handed the SAME assembly
+        //rather than building a second one out of the same parts.
+        mayRevise: mayRevise,
         reach: reach
     });
 
@@ -943,25 +948,6 @@ async function plugin(imports, register) {
         }));
     }
 
-    //---- AND THE DOOR A MACHINE CLONES THROUGH ---------------------------
-    //
-    //REGISTERED WITH ../../vms/https, which owns the certificate, the port, and
-    //has already turned `vm:token` into a machine record before anything in
-    //./gitapi.js runs. What is this plugin's is where the repositories are, and
-    //the rule about which of them a given machine's work is about.
-    //
-    //IT IS THIS PLUGIN'S BECAUSE THE REPOSITORIES ARE. A service goes where it
-    //is owned -- ../../../CLAUDE.md -- and everything the door needs to answer
-    //with is already here: the workspace, and `lines.scopeOf`.
-    var stopServing = imports.guestApi.api(makeGitApi({
-        serve: serving({ workspace: workspace, say: imports.log.on }),
-        //ASKED THROUGH ../branches RATHER THAN COPIED. What a branch is about is
-        //a question about lines, and a second answer to it here is how a machine
-        //comes to be refused a repository the setup gave it.
-        scopeOf: function (branch) { return imports.lines.scopeOf(branch); },
-        say: imports.log.on
-    }));
-    undo.push(stopServing);
 
     await register(null, {
         repositories: {
@@ -1009,7 +995,24 @@ async function plugin(imports, register) {
             //Handed over as a service rather than copied, because it is a
             //refusal with a fix written into it and two copies of a sentence
             //like that drift. It stays tested and sabotaged where it lives.
-            guestPath: settingUp.guestPath
+            guestPath: settingUp.guestPath,
+
+            //---- AND THE ONE PERMISSION EVERY GATE HAS TO ASK ---------------
+            //
+            //PUBLISHED RATHER THAN ASSEMBLED TWICE. It is `revising.mayRevise`
+            //with this plugin's two answers fed to it -- the open cuts and what
+            //is protected -- and ../gitserve needs exactly the same thing.
+            //
+            //A SECOND ASSEMBLY WOULD BE A SECOND OPINION, and the drill
+            //`02-the-refusals/05-one-permission-many-gates` is the record of
+            //what that costs: the exception for a branch that is out as a pull
+            //request was taught to three gates ONE AT A TIME, and each discovery
+            //cost a worker run whose commit the rollback then destroyed. Three
+            //tasks that finished exit 0 with nothing on the branch.
+            //
+            //So the rule lives in ../pr/revising, it is put together here once,
+            //and every gate asks THIS.
+            mayRevise: mayRevise
         },
 
         onDestroy: function () { while (undo.length) undo.pop()(); }

@@ -22,22 +22,25 @@ var spawn = require('child_process').spawn;
 //It stays generic the way everything else here does: it does not know the name
 //of a single repository. It serves what it finds.
 //
-//---- READING ONLY, AND THAT IS DELIBERATE RATHER THAN UNFINISHED ----------
+//---- AND WHAT A WRITE CARRIES WITH IT --------------------------------------
 //
-//`upload-pack` is here. `receive-pack` is NOT, and ./gitapi.js refuses it in
-//words rather than leaving it to fail as a protocol error.
+//`core.hooksPath` POINTS GIT AT THIS APP'S OWN HOOK rather than one inside the
+//repository being written to. Two things follow and both matter: nothing is
+//ever written into the repositories — they stay ordinary checkouts that git, VS
+//Code and a person at a terminal all see identically — and the rule lives
+//somewhere no guest can reach, which is what makes it a rule.
 //
-//A push carries a great deal more than a packfile: which branch it may land on,
-//whether that branch is protected, whether a judgement is trying to write to
-//the thing it was asked to read, and whether a checkout on this host is sitting
-//on the branch and has to be stepped off first. Every one of those rules is
-//already ported — see ../branches and ../pr — and every one of them has to be
-//wired to the `pre-receive` hook that carries them across, which is not.
+//THE OTHER TWO ARE GIT'S OWN, and they protect the thing that makes this
+//storage: history that arrived is not allowed to change or vanish. Enforced
+//here rather than in the hook because git already does it, and a second
+//implementation would only be a chance to get it wrong.
 //
-//SO THE HALF THAT IS HERE IS THE HALF THAT IS COMPLETE. A read has one rule —
-//may this machine see this repository — and ./gitapi.js applies it. Shipping
-//the write path with three of its four checks would be the more dangerous kind
-//of half-finished, because it would look finished.
+//A MISSING HOOK IS NOT A FAILED PUSH, WHICH IS WHY THE PATH IS TESTED. Git
+//treats a `core.hooksPath` with nothing in it as no hook at all — meaning
+//allow. So the one way this can break is the one way that says nothing:
+//test/rules/webpack-config.test.js asserts the folder is copied into `dist/`,
+//that the file in it is called exactly `pre-receive`, and that it has no
+//carriage return in its shebang.
 //---------------------------------------------------------------------------
 
 module.exports = function serving(d) {
@@ -134,10 +137,25 @@ module.exports = function serving(d) {
     }
     var FLUSH = '0000';
 
-    //ONLY THE ONE THAT READS. See the header: the write half is not here, and
-    //../repos/gitapi.js says so to a client rather than letting this table
-    //answer with a protocol error about an unknown service.
-    var SERVICES = { 'git-upload-pack': 'upload-pack' };
+    //GIT'S TWO PROGRAMS, AND THE HTTP PROTOCOL IS A THIN WRAPPER OVER PIPING
+    //THEM. Anything not in here is answered as "this speaks git's smart http and
+    //nothing else" rather than being passed to a shell.
+    var SERVICES = {
+        'git-upload-pack': 'upload-pack',
+        'git-receive-pack': 'receive-pack'
+    };
+
+    //WHERE THE HOOK IS. `__dirname` is the folder the server bundle sits in —
+    //webpack keeps it real (`node: { __dirname: false }`) and the build copies
+    //./hooks there as `git-hooks`. See webpack.config.js, which says what a
+    //missing one costs.
+    var HOOKS = path.join(__dirname, 'git-hooks');
+
+    var WRITE_CONFIG = [
+        '-c', 'core.hooksPath=' + HOOKS,
+        '-c', 'receive.denyNonFastForwards=true',
+        '-c', 'receive.denyDeletes=true'
+    ];
 
     var noCache = {
         'cache-control': 'no-cache, max-age=0, must-revalidate',
@@ -154,7 +172,12 @@ module.exports = function serving(d) {
     //repository.
     function pipeGit(res, args, opts) {
         var o = opts || {};
-        var git = spawn('git', args);
+        //THE ENVIRONMENT IS HOW THE HOOK IS TOLD WHO IS PUSHING. The refs are in
+        //the packfile, but WHO came from the token on the HTTP request and a
+        //hook cannot see that.
+        var git = o.env
+            ? spawn('git', args, { env: Object.assign({}, process.env, o.env) })
+            : spawn('git', args);
 
         git.on('error', function (err) {
             if (!res.headersSent) {
@@ -178,8 +201,13 @@ module.exports = function serving(d) {
         return git;
     }
 
+    //THE ARGUMENTS FOR ONE SERVICE. A WRITE CARRIES THE RULES WITH IT, so there
+    //is no path through this file that starts `receive-pack` without them.
     function argsFor(service, dir, extra) {
-        return ['upload-pack', '--stateless-rpc'].concat(extra || []).concat([dir]);
+        var more = extra || [];
+        return service === 'git-receive-pack'
+            ? WRITE_CONFIG.concat(['receive-pack', '--stateless-rpc']).concat(more).concat([dir])
+            : ['upload-pack', '--stateless-rpc'].concat(more).concat([dir]);
     }
 
     //PHASE ONE: what refs are here, and what this server can do.
@@ -192,7 +220,7 @@ module.exports = function serving(d) {
         });
         res.write(pkt('# service=' + at.service + '\n') + FLUSH);
         say('git', at.repo).info(at.repo + ': advertising refs for ' + at.service);
-        pipeGit(res, argsFor(at.service, at.dir, ['--advertise-refs']));
+        pipeGit(res, argsFor(at.service, at.dir, ['--advertise-refs']), { env: at.env });
     }
 
     //PHASE TWO: the packfile itself.
@@ -213,6 +241,7 @@ module.exports = function serving(d) {
         to.info(at.repo + ': ' + at.service);
 
         var git = pipeGit(res, argsFor(at.service, at.dir), {
+            env: at.env,
             onExit: function (code) {
                 var took = ((Date.now() - started) / 1000).toFixed(1);
                 if (code === 0) to.good(at.repo + ': ' + at.service + ' finished in ' + took + 's');

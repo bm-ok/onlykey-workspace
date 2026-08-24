@@ -43,11 +43,29 @@ module.exports = function onmachine(deps) {
         })[0] || null;
     }
 
-    function whatIsOn(name) {
+    //ASYNC, AND IT WAS NOT — WHICH MEANT IT HAD NEVER ANSWERED ANYTHING.
+    //
+    //Both readers are async: ../../queue's `task.all` and ../../judge's `all`
+    //each read a document off disk. This called them and handed the PROMISE
+    //straight to `given`, so every call threw `(rows || []).filter is not a
+    //function` — every call, from the first one this app ever made.
+    //
+    //IT HID BECAUSE OF WHERE IT IS ASKED. ../runs wraps it in a try that says "a
+    //brief that could not be annotated is still the brief", so the throw was
+    //caught and the work carried on with a slightly poorer prompt. ../sessions
+    //asks it to decide whether a machine is running anything at all, and a
+    //machine that is running nothing is an ordinary answer there — 204, or a
+    //409 saying a transcript has nothing to belong to. Nothing anywhere read
+    //like a fault.
+    //
+    //WHAT IT COST is the rule in ../../repositories/gitserve: a judgement may
+    //not push to the thing it was asked to READ. That check asks this, and this
+    //could only ever throw, so the check has never once fired.
+    async function whatIsOn(name) {
         var machine = String(name || '');
         if (!machine) return null;
 
-        var judgement = given(judgements(), machine);
+        var judgement = given(await judgements(), machine);
         if (judgement) {
             return {
                 kind: 'judgement',
@@ -64,7 +82,7 @@ module.exports = function onmachine(deps) {
             };
         }
 
-        var task = given(tasks(), machine);
+        var task = given(await tasks(), machine);
         if (task) {
             return {
                 kind: 'task',

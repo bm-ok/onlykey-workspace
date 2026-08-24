@@ -122,6 +122,22 @@ module.exports = (env, argv = {}) => {
         { from: path.join(__dirname, 'src', 'app', 'keys', 'credential-helper.js'), to: 'credential-helper.js' },
         { from: path.join(__dirname, 'src', 'app', 'vms', 'provision', 'scripts'), to: 'provision' },
 
+        //THE GIT HOOK, WHICH RUNS ON THIS HOST AND IS THE THING THAT REFUSES.
+        //
+        //`core.hooksPath` points git at this folder when it runs `receive-pack`,
+        //so it must be a real directory on disk with a real file in it — see
+        //../repositories/gitserve/gitapi.js. It is not the repository's own hook
+        //and never becomes one: nothing is written into the repositories being
+        //protected, so they stay ordinary checkouts.
+        //
+        //IT IS THE MOST EXPENSIVE ONE HERE TO GET WRONG. The helper above was
+        //missing and would have failed with ENOENT at a push. This one failing
+        //to be found does not fail the push — git carries on WITHOUT a hook, so
+        //a machine would be able to push anything anywhere and nothing would say
+        //a word. The root .gitattributes pins the folder to LF for the same
+        //reason: a hook with a carriage return in its shebang does not run.
+        { from: path.join(__dirname, 'src', 'app', 'repositories', 'gitserve', 'hooks'), to: 'git-hooks' },
+
         //WHAT A JOB IS HANDED, AND THE WATCHER, which run ON A MACHINE and not
         //here. They are read as text and written into a guest, so what must
         //arrive is what somebody wrote — bundled, a guest would receive babel's

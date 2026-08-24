@@ -46,7 +46,7 @@ module.exports = function guestapi(deps) {
     async function hand(at) {
         var name = at.vm.name;
 
-        var doing = whatIsOn(name);
+        var doing = await whatIsOn(name);
         if (!doing) { at.res.writeHead(204); at.res.end(); return; }
 
         var kept = await sessions.get(sessions.keyFor(doing));
@@ -84,7 +84,7 @@ module.exports = function guestapi(deps) {
         //not running anything, so a transcript has nothing to belong to — and
         //filing it under a guess is how one piece of work ends up holding
         //another's conversation.
-        var doing = whatIsOn(name);
+        var doing = await whatIsOn(name);
         if (!doing) {
             text(at, 409, 'this machine is not running anything, so a transcript has nothing to '
                 + 'belong to.\n');

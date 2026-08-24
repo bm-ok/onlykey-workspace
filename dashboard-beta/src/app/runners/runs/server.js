@@ -132,7 +132,7 @@ async function plugin(imports, register) {
                 //it never once fired.
                 var task = String(a.task);
                 try {
-                    var doing = imports.whatIsOn(a.name);
+                    var doing = await imports.whatIsOn(a.name);
                     var kept = doing ? await sessions.get(sessions.keyFor(doing)) : null;
                     task = makeBriefing.briefWith(sessions.announcement(doing, kept), task);
                 } catch (e) { /* a brief that could not be annotated is still the brief */ }

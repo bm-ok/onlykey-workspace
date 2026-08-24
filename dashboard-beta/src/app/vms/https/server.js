@@ -100,8 +100,22 @@ async function plugin(imports, register) {
     //anything more tells whatever reached this port what would have got in.
     var asking = makeAsking({ ours: ours });
 
-    function refuse(res, why, name) {
-        log.warn('refused ' + (name ? '"' + name + '"' : 'a caller') + ': ' + why);
+    //`quiet` IS FOR THE ONE REFUSAL THAT IS NOT A FAULT.
+    //
+    //GIT ASKS ONCE WITH NO CREDENTIALS AND EXPECTS TO BE CHALLENGED. That is the
+    //handshake, and every ordinary clone does it — so warning about it puts a
+    //line that reads as a fault in front of the operator on every single clone,
+    //twice, in the middle of the log they are reading to find the real one.
+    //
+    //ONLY CREDENTIALS THAT WERE OFFERED AND REFUSED ARE WORTH SAYING ANYTHING
+    //ABOUT. Somebody presenting a name and token this host does not know is a
+    //fact worth having; somebody presenting nothing is git saying hello.
+    //
+    //THE RESPONSE IS IDENTICAL EITHER WAY. This is about what the log says, not
+    //about what the caller is told — the 401 and its `www-authenticate` are what
+    //make the handshake work at all.
+    function refuse(res, why, name, quiet) {
+        if (!quiet) log.warn('refused ' + (name ? '"' + name + '"' : 'a caller') + ': ' + why);
         res.writeHead(401, {
             'content-type': 'application/json',
             //NAMED, so a machine's curl gets a sensible prompt rather than a
@@ -124,7 +138,12 @@ async function plugin(imports, register) {
         //token yet, because the script it is fetching is where its token comes
         //from.
         var vm = asking.whoIsAsking(req.headers, url.searchParams);
-        if (!vm) return refuse(res, 'it did not prove which machine it is', null);
+        //SILENT WHEN NOTHING WAS OFFERED — see `refuse`. A request with no
+        //`authorization` header at all is git's opening move, not an intruder.
+        if (!vm) {
+            return refuse(res, 'it did not prove which machine it is', null,
+                !req.headers.authorization);
+        }
         if (!registry.allowed(hit, vm)) {
             //---- THE SAME 401, AND TWO DIFFERENT LOG LINES ------------------
             //

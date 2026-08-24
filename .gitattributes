@@ -65,3 +65,4 @@ dashboard-beta/src/app/vms/dispatch/guest/* text eol=lf
 # the HOST rather than in a guest, and it is what stops a push reaching master,
 # so it failing to run is the most expensive version of this mistake available.
 dashboard/repos/hooks/* text eol=lf
+dashboard-beta/src/app/repositories/gitserve/hooks/* text eol=lf
