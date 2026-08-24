@@ -101,35 +101,61 @@ test('re-adding keeps the history, and takes the new interval', () => {
     });
 });
 
-//---- who may work the switch ------------------------------------------------
+//---- whether it comes up running -------------------------------------------
+//
+//THERE WAS A `humanOnly` GATE HERE, AND THESE ARE THE TESTS THAT REPLACE IT.
+//A job could declare that only a person may work its switch, and exactly one
+//ever did — the queue. A guard belonging to one job, living in the generic
+//scheduler. The gate is on the WORK now: nothing reaches a machine that was not
+//built from a job, a prompt and a contract somebody approved, and approving is
+//what refuses over the wire.
+//
+//WHICH MAKES `autoStart` LOAD-BEARING IN A WAY IT WAS NOT, because it is now the
+//only thing deciding whether this host starts handing out work by itself. The
+//property below is the one that matters and the one nothing else can see.
 
-test('a job can declare that only a person may start it, and say why', () => {
-    //WITHOUT THIS, cron IS A WAY ROUND A REFUSAL THAT ALREADY EXISTS. The
-    //queue's own `queueStart` refuses over the wire because starting it gives
-    //real machines real work; a generic "cronStart queue" that did not ask would
-    //be the same act under a name nobody had thought to guard.
-    cron.add({ name: 'queue', every: 15000, humanOnly: 'a person, in the window' });
-
-    assert.equal(named('queue').humanOnly, 'a person, in the window');
-    //THE REASON RATHER THAN A FLAG, because whoever is refused should be told
-    //what this particular job is.
-    assert.equal(typeof named('queue').humanOnly, 'string');
-});
-
-test('and a job that needs no gate says nothing', () => {
+test('a job says for itself whether it comes up running', () => {
     cron.add({ name: 'github', every: 60000, autoStart: true });
-    assert.equal(named('github').humanOnly, null);
+    assert.equal(named('github').autoStart, true);
+    assert.equal(named('github').running, true);
+
+    //AND OFF IS THE DEFAULT, so a job that says nothing is not started by a
+    //scheduler making an assumption on its behalf.
+    cron.add({ name: 'queue', every: 15000 });
+    assert.equal(named('queue').autoStart, false);
+    assert.equal(named('queue').running, false);
 });
 
-test('a save cannot drop the gate', () => {
-    cron.add({ name: 'queue', every: 15000, humanOnly: 'a person, in the window' });
+test('a save cannot restart a job somebody stopped', () => {
+    //THE FAILURE THIS IS THE WHOLE POINT OF. The half of the app that registers
+    //jobs is rebuilt on every save and re-registers all of them. If `autoStart`
+    //were honoured every time, pressing Stop would hold only until the next
+    //edit — and during a port that is minutes. The switch in the window would
+    //be a switch that does not stay where it is put.
+    cron.add({ name: 'queue', every: 15000, autoStart: true });
+    assert.equal(named('queue').running, true);
 
-    //THE NEW BUNDLE FORGOT TO SAY IT — a rename, a bad merge, a line deleted by
-    //accident. The gate is the thing that must survive that, not the thing that
-    //quietly goes with it.
-    cron.add({ name: 'queue', every: 15000 });
+    cron.stop('queue', 'somebody pressed stop');
+    assert.equal(named('queue').running, false);
 
-    assert.equal(named('queue').humanOnly, 'a person, in the window');
+    //THE SAVE.
+    cron.add({ name: 'queue', every: 15000, autoStart: true });
+
+    assert.equal(named('queue').running, false,
+        'a save restarted a job that had been deliberately stopped');
+});
+
+test('and a save does not stop one that is running, either', () => {
+    //THE OTHER DIRECTION, which is the same rule: what a re-registration may
+    //change is the SHAPE of the job — its interval, its description — and never
+    //what has happened to it.
+    cron.add({ name: 'queue', every: 15000, autoStart: true });
+    assert.equal(named('queue').running, true);
+
+    cron.add({ name: 'queue', every: 30000, autoStart: false });
+
+    assert.equal(named('queue').running, true, 'a save stopped a job that was running');
+    assert.equal(named('queue').every, 30000, 'the new interval did not take');
 });
 
 //---- the slot ---------------------------------------------------------------

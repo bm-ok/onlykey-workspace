@@ -53,7 +53,6 @@ module.exports = {
 
                 //SAID HERE TOO, so a refusal at the command line is not the first
                 //time anybody hears about it.
-                if (job.humanOnly) out.push('      only a person may work this switch');
 
                 out.push('');
             });

@@ -117,39 +117,25 @@ module.exports = function cronPane(theme, okc) {
                     </Row>
                     : null}
 
+                {/*NO PURPLE ON ANY OF THESE ANY MORE. One job — the queue —
+                   declared `humanOnly`, and these three controls each asked it
+                   whether to draw guarded and whether to confirm. A guard
+                   belonging to one job, rendered by the pane for all of them.
+
+                   THE GATE IS ON THE WORK, NOT ON THE CLOCK: nothing reaches a
+                   machine that was not built from a job, a prompt and a contract
+                   somebody approved, and approving is what refuses over the
+                   wire. See ../core/cron/server.js. Purple is only honest while
+                   it is spent on presses the command line is actually refused —
+                   marking one it is not is worse than not marking it. */}
                 <Row>
                     {job.running
-                        ? <Button protect={!!job.humanOnly}
-                            onClick={function () {
-                                press('cronStop', { name: job.name }, job.humanOnly && {
-                                    title: 'Stop ' + job.name + '?',
-                                    body: 'Anything already in flight is not interrupted — this stops the next one being picked up.',
-                                    confirm: 'Stop it'
-                                });
-                            }}>Stop</Button>
-                        : <Button kind="ok" protect={!!job.humanOnly}
-                            onClick={function () {
-                                press('cronStart', { name: job.name }, job.humanOnly && {
-                                    title: 'Start ' + job.name + '?',
-                                    body: job.humanOnly,
-                                    confirm: 'Start it'
-                                });
-                            }}>Start</Button>}
+                        ? <Button onClick={function () { press('cronStop', { name: job.name }); }}>Stop</Button>
+                        : <Button kind="ok" onClick={function () { press('cronStart', { name: job.name }); }}>Start</Button>}
 
-                    <Button protect={!!job.humanOnly} disabled={job.inFlight || !job.armed}
-                        onClick={function () {
-                            press('cronRun', { name: job.name }, job.humanOnly && {
-                                title: 'Run ' + job.name + ' once, now?',
-                                body: job.humanOnly,
-                                confirm: 'Run it once'
-                            });
-                        }}>Run now</Button>
+                    <Button disabled={job.inFlight || !job.armed}
+                        onClick={function () { press('cronRun', { name: job.name }); }}>Run now</Button>
                 </Row>
-
-                {/*SAID ON THE CARD RATHER THAN ONLY IN THE REFUSAL. A button that
-                   refuses when pressed teaches by failing; a button that says
-                   why it is purple does not have to.*/}
-                {job.humanOnly ? <Note kind="warn">{job.humanOnly}</Note> : null}
 
                 {/*A DISABLED "Run now" WITH NO REASON reads as broken.*/}
                 {!job.armed

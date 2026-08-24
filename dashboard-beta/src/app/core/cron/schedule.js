@@ -58,7 +58,6 @@ module.exports = function schedule(deps) {
             had.every = every;
             had.about = it.about || had.about;
             had.firstRun = it.firstRun || had.firstRun;
-            had.humanOnly = it.humanOnly || had.humanOnly;
             return had;
         }
 
@@ -67,33 +66,20 @@ module.exports = function schedule(deps) {
             about: it.about || '',
             every: every,
 
-            //WHETHER IT COMES UP RUNNING, DECLARED IN CODE AND NOT A SETTING.
+            //WHETHER IT COMES UP RUNNING, AND IT IS THE JOB'S OWN ANSWER.
             //
-            //The queue's job is `false` and that is not a default anybody may
-            //override: it is the piece that rolls a real machine back to its
-            //base snapshot, hands it a credential, and runs somebody's
-            //instructions on it unattended. A thing that does that is STARTED by
-            //a person, every time, rather than found already running by whoever
-            //opened the app.
+            //ONLY WHEN THE JOB IS NEW, which is the whole reason this sits after
+            //the early return above. This half of the app is rebuilt on every
+            //save and re-registers every job it owns; a job already known keeps
+            //what it was doing. Otherwise a save would restart a job somebody
+            //had deliberately stopped, silently, and the switch in the window
+            //would only hold until the next edit.
             //
-            //A job that only READS something — asking github what changed,
-            //asking VirtualBox what is powered on — has no such argument against
-            //it and says so by asking for `true`.
+            //IT IS A DEFAULT, NOT A POLICY. This plugin schedules things and
+            //takes no view on which of them ought to be running — a job that
+            //wants to be off until asked passes `false` and offers its own way
+            //of being turned on. `../../queue` does exactly that, off a setting.
             autoStart: it.autoStart === true,
-
-            //AND WHETHER A MODEL MAY WORK THE SWITCH, declared by the job and
-            //carrying its own reason.
-            //
-            //WITHOUT THIS, THIS PLUGIN IS A WAY ROUND A REFUSAL THAT ALREADY
-            //EXISTS. `queueStart` refuses over the wire, in those words, because
-            //starting the queue gives real machines real work. A generic
-            //"cronStart <name>" that did not ask would be the same act under a
-            //name nobody had thought to guard — which is how a gate gets left
-            //behind by the thing built next to it.
-            //
-            //The REASON rather than a flag, because whoever is refused should be
-            //told what this particular job is, not that a boolean was false.
-            humanOnly: it.humanOnly || null,
 
             //WAITS A FULL INTERVAL BEFORE THE FIRST RUN, unless it says
             //otherwise. A tick on the same turn as the press gives nobody a
@@ -280,7 +266,6 @@ module.exports = function schedule(deps) {
                 armed: !!job.run,
                 inFlight: job.inFlight,
                 autoStart: job.autoStart,
-                humanOnly: job.humanOnly,
 
                 since: job.running ? { by: job.startedBy, at: job.startedAt } : null,
                 dueIn: job.running ? Math.max(0, (dueAt(job) || 0) - (now === undefined ? nowMs() : now)) : null,

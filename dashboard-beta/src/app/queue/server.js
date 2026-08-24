@@ -148,40 +148,62 @@ async function plugin(imports, register) {
     //---- the clock, which is a cron job ------------------------------------
     //
     //The timer used to be the queue's own — see ../core/cron for why every
-    //repeating job in this app now shares one. What is queue-shaped is the two
-    //RULES the switch carries, and they are declared here because this is where
-    //they are true:
+    //repeating job in this app now shares one.
     //
-    //IT COMES UP STOPPED. Always, on every start, with no setting that can
-    //change it. This is the piece that gives real machines real work: it rolls
-    //one back to its base snapshot, hands it a credential, and runs somebody's
-    //instructions on it unattended. A thing that does that is STARTED by
-    //somebody, every time, rather than found already running by whoever opened
-    //the app. `autoStart` is simply not asked for.
+    //---- IT USED TO COME UP STOPPED, ALWAYS, AND ONLY A PERSON COULD START IT
     //
-    //AND ONLY A PERSON MAY START IT. One sentence, said in one place, so the
-    //generic `cronStart` and the queue's own `queueStart` refuse with the same
-    //words — a second copy is how the two come to disagree about what is
-    //allowed.
+    //Both of those are gone, and what replaced them is one sentence: THE GATE IS
+    //ON THE WORK, NOT ON THE CLOCK.
+    //
+    //Nothing reaches a machine that was not built from a job, a prompt and a
+    //contract somebody read and approved — and approving is refused over the
+    //wire, in ../library/server.js, in those words: "a model may write one and
+    //may not ratify its own." ../queue/dispatching.js says the rest of it: a job
+    //the queue dispatches "meets exactly the refusals a job dispatched by hand
+    //meets." So by the time anything is waiting here, the decision has been made
+    //by a person already.
+    //
+    //THE SECOND GATE WAS GUARDING THE WRONG END, and it cost more than it held.
+    //It made the queue stop dead on every restart — and a restart is what a
+    //`main.js` edit IS, so during this port that was several times an hour. The
+    //press it demanded was not somebody deciding anything; it was somebody
+    //typing the same yes again because the app had been rebuilt.
+    //
+    //IT ALSO LEAKED. `cronStart --name queue` would have been the same act under
+    //a name nobody had guarded, so ../core/cron grew a `humanOnly` mechanism
+    //that exactly one job ever used. A guard belonging to one job living in the
+    //generic scheduler, where every other job had to be read as "not that one".
+    //That is gone with it, and cron is a scheduler again.
+    //
+    //SO WHETHER IT COMES UP RUNNING IS A SETTING, off until somebody says
+    //otherwise — see `queueAutoStart` in ../settings/server.js for what turning
+    //it on is a statement of. It is read HERE, once, at registration: ./
+    //../core/cron only honours `autoStart` for a job it has not seen before, so
+    //a save cannot restart a queue somebody stopped on purpose.
     var cron = imports.cron;
     var JOB = 'queue';
-    var ONLY_A_PERSON = 'Starting the queue is done in the window, by a person. It gives real machines '
-        + 'real work — rolled back, handed a credential, and run unattended — and a model may not '
-        + 'decide that this host should begin doing that.';
 
     //THE JOB IS DECLARED BEFORE THE THING IT RUNS EXISTS, and armed after.
     //
-    //`cron.add` is what makes the switch appear on the board and what makes
-    //`cronStart` refuse without a person; the tick is what it does when started.
-    //Declaring both here would put the whole assembly above every read in this
-    //file, so the job is registered with its rules and given its `run` at the
-    //bottom, where the pieces are built. A job with no `run` reports itself
-    //unarmed rather than pretending — see `armed` below, which the board draws.
+    //`cron.add` is what makes the switch appear on the board; the tick is what
+    //it does when started. Declaring both here would put the whole assembly
+    //above every read in this file, so the job is registered with its rules and
+    //given its `run` at the bottom, where the pieces are built. A job with no
+    //`run` reports itself unarmed rather than pretending — see `armed` below,
+    //which the board draws.
+    //
+    //`autoStart` READ THROUGH A try, because a settings document that cannot be
+    //read must not be the thing that stops the queue existing. Off is the
+    //answer that needs no explanation.
+    var autoStart = false;
+    try { autoStart = imports.settings.read().queueAutoStart === true; }
+    catch (e) { autoStart = false; }
+
     cron.add({
         name: JOB,
         every: TICK,
         about: 'Gives waiting work to free machines on this host',
-        humanOnly: ONLY_A_PERSON
+        autoStart: autoStart
     });
 
     //ASKED OF THE JOB EACH TIME RATHER THAN REMEMBERED. This half is rebuilt on
@@ -902,31 +924,36 @@ async function plugin(imports, register) {
         }));
 
         //=================================================================
-        //STARTING THE QUEUE IS A PERSON'S PRESS.
+        //STARTING THE QUEUE IS NOT A PERSON'S PRESS, AND IT WAS.
         //
-        //It is not a setting and it is not a preference: switching this on
-        //means this host will roll a machine back to its base snapshot, hand
-        //it a credential, and run somebody's instructions on it unattended,
-        //again and again, without asking. Nothing that can be reached over a
-        //socket may decide that.
+        //It refused over the wire, with a paragraph here saying why: switching
+        //it on means this host rolls a machine back, hands it a credential and
+        //runs instructions on it unattended, so nothing reachable over a socket
+        //may decide that.
         //
-        //THE SAME BOUNDARY AS APPROVING A JOB, and the same standing rule
-        //behind it: the command line needs approvals because a model runs
-        //them, and it must not be able to create work that runs by itself.
-        //Starting the thing that RUNS the work is the same act one level up.
+        //WHAT WAS WRONG WITH IT is that the thing it describes has already been
+        //decided by then. Nothing is waiting here that was not built from a job,
+        //a prompt and a contract somebody read and approved, and approving is
+        //what refuses over the wire — ../library/server.js, "a model may write
+        //one and may not ratify its own". This was a second gate on the timer
+        //that hands out already-approved work, and the run it guards is the same
+        //run whether the tick starts it or somebody presses Run now.
         //
-        //STOPPING IS NOT SYMMETRICAL AND IS DELIBERATELY NOT REFUSED. Anything
-        //that can see something going wrong should be able to stop new work
-        //being picked up. The cost of a stop nobody meant is a queue somebody
-        //restarts; the cost of a start nobody meant is a machine running a
-        //stranger's code.
+        //IT WAS NOT FREE. The queue stopped dead on every restart, and a
+        //`main.js` edit IS a restart — during this port, several times an hour.
+        //What it asked for was not a decision; it was the same yes typed again
+        //because the app had been rebuilt, which is how a gate stops being read
+        //and starts being cleared.
+        //
+        //STOPPING WAS NEVER REFUSED AND STILL IS NOT. Anything that can see
+        //something going wrong should be able to stop new work being picked up.
+        //That asymmetry was right and is untouched.
         //=================================================================
         undo.push(actions.define('queueStart', {
             about: 'Start handing queued work to machines on this host',
             takes: ['why'],
             run: function (args) {
                 var a = args || {};
-                if (a._overTheWire) throw new Error(ONLY_A_PERSON);
                 var was = clock.running();
                 clock.start(actions.whoAsked(a));
                 return {
@@ -1078,6 +1105,26 @@ async function plugin(imports, register) {
                     every: (TICK / 1000) + 's',
                     tickHere: clock.armed(),
 
+                    //---- AND WHETHER IT WILL COME UP RUNNING NEXT TIME -------
+                    //
+                    //READ FRESH RATHER THAN REPORTING THE `autoStart` THE JOB
+                    //WAS REGISTERED WITH, and the difference is the whole reason
+                    //this is on the answer. The job takes its copy once, at
+                    //registration; the setting can be changed after that. A
+                    //board reporting the job's copy would say "off" to somebody
+                    //who had just switched it on, which reads as the switch not
+                    //working.
+                    //
+                    //SO THESE ARE TWO FACTS AND BOTH ARE SHOWN: `autoStart` is
+                    //what will happen NEXT time, and `ticking` is what is
+                    //happening now. Switching it on does not start the queue —
+                    //there is a Start for that, and conflating them would make
+                    //one press mean two things.
+                    autoStart: (function () {
+                        try { return imports.settings.read().queueAutoStart === true; }
+                        catch (e) { return false; }
+                    })(),
+
                     //AND WHAT COULD NOT BE READ, NAMED. An empty board with this
                     //list on it is a different sentence from an empty board
                     //without one, and anything reading this — a person, a pane, a
@@ -1182,8 +1229,9 @@ async function plugin(imports, register) {
     //---- AND THE CLOCK IS GIVEN THE THING IT RUNS --------------------------
     //
     //LAST, DELIBERATELY. Everything above is a declaration; this is the line
-    //after which this host can give a real machine real work. It stays off until
-    //a person starts it — see ONLY_A_PERSON — so arming it is not starting it.
+    //after which this host can give a real machine real work. Arming is not
+    //starting: whether it comes up running is `queueAutoStart`, read where the
+    //job is registered at the top of this file.
     //
     //ADOPTION FIRST, ON EVERY TICK BEFORE THE FIRST DISPATCH. A restart can
     //leave a task in `given` with no run and a machine still holding one, and

@@ -1,7 +1,7 @@
 var React = require('react');
 
 module.exports = function queue(theme, okc, shell) {
-    var { Pane, Panel, Badge, Empty, Note, Mono, Linky, Skeleton} = theme;
+    var { Pane, Panel, Badge, Empty, Note, Mono, Linky, Row, Toggle, Skeleton} = theme;
 
     //---- whether any of this is going to happen -----------------------------
     //
@@ -13,12 +13,39 @@ module.exports = function queue(theme, okc, shell) {
     //the whole time as an absence — and an absence is not something a person can
     //be expected to read.
     //
-    //IT DOES NOT GROW A START BUTTON. The queue's tick is a cron job with
-    //`humanOnly` on it, and ../cron already draws a guarded Start for every job
-    //there is. ./server.js says why in as many words: only a person may start
-    //it, said in ONE place, so `cronStart` and `queueStart` refuse together —
-    //"a second copy is how the two come to disagree about what is allowed". A
-    //second button is a second copy. So this points at the one that exists.
+    //IT DOES NOT GROW A START BUTTON. The queue's tick is a cron job, and ../cron
+    //already draws Start, Stop and Run now for every job there is. A second
+    //button here is a second copy of one switch, and the two would eventually
+    //disagree about what they mean. So this points at the one that exists.
+    //
+    //IT IS NOT A GUARDED PRESS ANY MORE, and this pane used to say it was. The
+    //gate is on the WORK: nothing is waiting below that was not built from a
+    //job, a prompt and a contract somebody approved, and approving is what
+    //refuses over the wire. See ./server.js.
+    //---- and whether it will come up running next time ----------------------
+    //
+    //THE SWITCH LIVES HERE AND NOT ON THE CRON PANE, which is where somebody
+    //pressing Start actually is. That pane draws every job the same way and
+    //takes no view on any of them — putting one job's setting on it is how a
+    //guard belonging to the queue ended up in the generic scheduler in the first
+    //place, which is the thing that was just taken back out.
+    //
+    //IT DOES NOT START THE QUEUE. Two facts, kept apart: this is what happens
+    //NEXT time the app starts, and the note above is what is happening now. One
+    //press meaning both is a press whose effect depends on when it was made.
+    function AutoStart({ state, again }) {
+        return (
+            <Row>
+                <Toggle
+                    on={!!state.autoStart}
+                    onChange={function (on) {
+                        okc.call('settingSet', { name: 'queueAutoStart', value: on ? 'true' : 'false' })
+                            .then(function () { if (again) again(); });
+                    }}>Start the queue when the app starts</Toggle>
+            </Row>
+        );
+    }
+
     function Standing({ state }) {
         var waiting = (state.waiting || []).length;
         var free = (state.machines || []).filter(function (m) { return m.free; }).length;
@@ -45,11 +72,18 @@ module.exports = function queue(theme, okc, shell) {
                     + (waiting
                         //THE SHARPEST VERSION OF THE SENTENCE, when there is
                         //something to lose by not reading it.
-                        ? waiting + ' waiting, ' + free + ' machine(s) free, and none of it moves until somebody starts it. '
+                        ? waiting + ' waiting, ' + free + ' machine(s) free, and none of it moves until it is started. '
                         : 'Nothing is waiting, so nothing is being missed. ')
-                    + 'It comes up stopped every time and on purpose — it rolls a real machine back, hands it a '
-                    + 'credential, and runs instructions on it unattended. '}
-                <Linky onClick={function () { shell.go('Settings', 'Cron'); }}>Start it in Settings, under Cron</Linky>
+                    //AND WHY IT IS STOPPED, WHICH IS THE ACTIONABLE HALF. "It
+                    //came up this way" and "somebody stopped it" call for
+                    //different things — and with the switch below on, the second
+                    //is the only explanation left, so saying the first would send
+                    //somebody to a setting that is already the way they want it.
+                    + (state.autoStart
+                        ? 'It is set to start with the app, so something stopped it after that — a press, or a '
+                            + 'restart since the setting was changed. '
+                        : 'It comes up this way, and an app restart is enough to do it. ')}
+                <Linky onClick={function () { shell.go('Settings', 'Cron'); }}>Start it under Settings, Cron</Linky>
             </Note>
         );
     }
@@ -96,7 +130,7 @@ module.exports = function queue(theme, okc, shell) {
     }
 
     function Queue() {
-        var { state, error, reads } = okc.use('queueState', {}, 3000);
+        var { state, error, reads, again } = okc.use('queueState', {}, 3000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;
@@ -110,6 +144,7 @@ module.exports = function queue(theme, okc, shell) {
                 {error ? <Note kind="bad">{error}</Note> : null}
 
                 <Standing state={state} />
+                <AutoStart state={state} again={again} />
 
                 <div className="cols">
                     <div className="col">

@@ -52,20 +52,28 @@ async function plugin(imports, register) {
         return;
     }
 
-    //---- the gate ----------------------------------------------------------
+    //---- naming one ---------------------------------------------------------
     //
-    //A JOB THAT MAY ONLY BE WORKED BY A PERSON SAYS SO ITSELF, and this is the
-    //one place that asks.
+    //THERE IS NO GATE HERE ANY MORE, AND THAT IS THE POINT OF THE FILE.
     //
-    //WITHOUT IT THIS PLUGIN IS A WAY ROUND A REFUSAL THAT ALREADY EXISTS.
-    //`queueStart` refuses over the wire, in those words, because starting the
-    //queue gives real machines real work — rolled back, handed a credential, and
-    //run unattended. A generic `cronStart --name queue` that did not ask would
-    //be the same act under a name nobody had thought to guard.
-    function onlyAPerson(name, args) {
+    //This carried a `humanOnly` check: a job could declare that only a person
+    //may work its switch, and exactly one job ever did — the queue. So a guard
+    //belonging to one job lived in the generic scheduler, where every other job
+    //had to be understood as "not that one".
+    //
+    //THE GATE IS ON THE WORK, NOT ON THE CLOCK. Nothing reaches a machine that
+    //was not built from a job, a prompt and a contract a person read and
+    //approved — and approving is refused over the wire, which is where the
+    //refusal belongs. See ../../library/server.js: "a model may write one and
+    //may not ratify its own." A second gate on the timer that hands out already
+    //approved work was guarding the wrong end, and its cost was a queue that
+    //stopped dead on every restart with nobody able to say why.
+    //
+    //SO THIS SCHEDULES THINGS AND TAKES NO VIEW. Whether a job ought to be
+    //running is the job's own business — see `autoStart` in ./schedule.js.
+    function named(name) {
         var job = cron.get(name);
         if (!job) throw new Error('There is no scheduled job called "' + name + '".');
-        if (job.humanOnly && (args || {})._overTheWire) throw new Error(job.humanOnly);
         return job;
     }
 
@@ -79,7 +87,7 @@ async function plugin(imports, register) {
         takes: ['name', 'why'],
         run: function (args) {
             var a = args || {};
-            onlyAPerson(a.name, a);
+            named(a.name);
             var was = cron.get(a.name).running;
             cron.start(a.name, actions.whoAsked(a));
             //WHAT IT WAS BEFORE, because "start" on something already running is
@@ -94,7 +102,7 @@ async function plugin(imports, register) {
         takes: ['name', 'why'],
         run: function (args) {
             var a = args || {};
-            onlyAPerson(a.name, a);
+            named(a.name);
             var was = cron.get(a.name).running;
             cron.stop(a.name, a.why || ('stopped by ' + actions.whoAsked(a)));
             return { name: a.name, running: false, wasAlready: !was };
@@ -109,7 +117,7 @@ async function plugin(imports, register) {
             //THE SAME GATE AS STARTING IT. Running the queue's job once IS
             //giving a machine work; that it happens once rather than every
             //fifteen seconds does not make it a different act.
-            onlyAPerson(a.name, a);
+            named(a.name);
 
             var ok = await cron.fire(a.name);
             //`null` MEANS IT DID NOT RUN — it was already in flight, or nothing

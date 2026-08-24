@@ -178,14 +178,40 @@ test('and the clock is given the tick, rather than being left unarmed', async ()
         'the job is registered and unarmed — the board would draw a switch that does nothing');
 });
 
-test('it comes up STOPPED, with no setting that can change it', async () => {
-    //THIS IS THE PIECE THAT GIVES REAL MACHINES REAL WORK. A thing that does
-    //that is started by somebody, every time, rather than found already running.
+test('it comes up stopped unless the setting says otherwise', async () => {
+    //IT USED TO COME UP STOPPED WITH NO SETTING THAT COULD CHANGE IT, and only a
+    //person could start it. Both are gone: the gate is on the WORK, not on the
+    //clock — nothing is waiting in this queue that was not built from a job, a
+    //prompt and a contract somebody approved, and approving is what refuses over
+    //the wire. A second gate on the timer meant the queue stopped dead on every
+    //restart, and a main.js edit IS a restart.
+    //
+    //OFF IS STILL THE DEFAULT, which is the half worth keeping: a host nobody
+    //has said anything about does not begin handing out work.
     await aQueue();
+    assert.equal(jobs.queue.autoStart, false, 'the queue started itself with nobody having asked');
+});
 
-    assert.equal(jobs.queue.autoStart, undefined, 'the queue asked to start itself');
-    assert.ok(jobs.queue.humanOnly, 'the queue can be started by something that is not a person');
-    assert.match(jobs.queue.humanOnly, /a model may not decide that this host should begin doing that/);
+test('and it reads that setting rather than deciding for itself', async () => {
+    await aQueue({ settings: { read: () => ({ queueAutoStart: true }) } });
+    assert.equal(jobs.queue.autoStart, true, 'queueAutoStart was on and the queue ignored it');
+});
+
+test('a settings document that cannot be read leaves it off', async () => {
+    //OFF IS THE ANSWER THAT NEEDS NO EXPLANATION. A settings read that throws
+    //must not be the thing that stops the queue existing, and it must not be the
+    //thing that starts it either.
+    await aQueue({ settings: { read: () => { throw new Error('no document'); } } });
+    assert.equal(jobs.queue.autoStart, false);
+});
+
+test('only true turns it on, not a string that looks like it', async () => {
+    //THE COMMAND LINE HAS NO TYPES. ../../src/app/settings/server.js coerces on
+    //the way in, and this is the check on the reading end — the same shape as
+    //the live defect its header describes, where the STRING "false" was stored
+    //and was truthy.
+    await aQueue({ settings: { read: () => ({ queueAutoStart: 'false' }) } });
+    assert.equal(jobs.queue.autoStart, false);
 });
 
 //---- and it owns both ends of the board ---------------------------------------
