@@ -15,114 +15,79 @@
 // good" stops being separable from "who wrote it". That separation is the only
 // thing that makes a verdict worth more than a signature.
 //
-// THE RULE IS CHECKED AS ARITHMETIC, not by lending real credentials to real
-// machines. `whyNotOn` is a function of two strings, and nine pairings can be
-// asked in a millisecond — where doing it for real would mean three machines of
-// three kinds and three sign-ins, most of which this host does not have. What
-// needs a machine is checked below with the machines that exist.
+// ---- what this asks, and what it stopped asking --------------------------
 //
-// `guest` IS THE OLD NAME FOR A WORKER and is still what older records say. That
-// is checked too, because a rename that silently reclassifies every existing
-// credential would be a quiet way to break the rule above.
+// THE RULE ITSELF IS ARITHMETIC AND IS ASKED WHERE ARITHMETIC BELONGS. It used
+// to be asked here — `whyNotOn` over nine pairings, `kindOf` over three made-up
+// machines, `takesQueuedWork` over the same — with rows this file invented, on
+// functions it reached for by `require`. A drill runs from `dist/suites` with
+// only the harness beside it and cannot reach the app's insides, which is why
+// this suite read `will not load`; but the rows say the rest, since a check that
+// makes up its own machines is not asking anything about this host.
+//
+// They are asked, and asked harder, in:
+//
+//   test/runners/guests-lending.js   whyNotOn, every pairing, and what the
+//                                    refusal says to do about it
+//   test/runners/guests-shape.js     roleFrom — "guest" is the old name for a
+//                                    worker and still reads as one, so a rename
+//                                    cannot quietly reclassify every existing
+//                                    credential
+//   test/vms/ours-roles.js           kindOf, kindsOf and takesQueuedWork: an
+//                                    unlabelled machine is sent nothing, because
+//                                    nothing knows which sign-in to hand it, and
+//                                    "default" is a POOL rather than a role
+//
+// WHAT IS LEFT IS ABOUT THE MACHINES THAT ARE ACTUALLY HERE, which is the only
+// part a made-up row cannot stand in for:
+//
+//     every machine reads as what its tags say   on this host, not in a fixture
+//     a role can be moved                        worker and judge are the same
+//                                                disk; what separates them is
+//                                                which sign-in may be lent to it
+//     and a provision cannot                     a supervisor is a different
+//                                                build — different scripts, a
+//                                                second user, a sign-in desk —
+//                                                and you cannot retag your way
+//                                                into that
+//     and neither may move under running work    a machine that becomes a judge
+//                                                mid-task holds a sign-in for a
+//                                                role it no longer has
 
 const { it, cleanup } = require('../../harness')
-const guests = require('../../../core/guests')
-const vms = require('../../../machines/vms')
 
-const ROLES = ['worker', 'judge', 'supervisor']
+// THE TAG WORDS, WRITTEN OUT. They are protocol: they appear on the machine, in
+// the pane, and on the command line, and vms/ours/roles.js is where they are
+// defined. A drill cannot import them, and writing them out is the same thing a
+// person typing `--tags judge` does — which is the surface this is about.
+const JUDGE = 'judge'
+const WORKER = 'worker'
+const SUPERVISOR = 'supervisor'
 
-it('every sign-in goes on its own kind of machine, and nowhere else', ({ assert, log }) => {
-  const allowed = []
-  const refused = []
+it('every machine here reads as the kind its tags say', async ({ okc, assert, log }) => {
+  // ASKED OF THE HOST, not of rows made up to have the answer. What can go wrong
+  // that a fixture cannot show: a machine built before the tag words settled, or
+  // one retagged by hand, sitting in the pool reading as something it is not —
+  // and the queue chooses which credential to hand a machine BY ITS KIND.
+  const { vms } = await okc('vmList')
+  assert.needs(vms.length, 'this host has no machines, so there is nothing to be consistent — run "the machines are built" first')
 
-  for (const role of ROLES) {
-    for (const kind of ROLES) {
-      const why = guests.whyNotOn(role, kind, 'the-sign-in', 'the-machine')
-      if (role === kind) {
-        assert.ok(!why, `a ${role} sign-in was refused its own kind of machine: ${why}`)
-        allowed.push(`${role}/${kind}`)
-      } else {
-        assert.ok(why, `a ${role} sign-in was allowed onto a ${kind} machine. Every crossing here collapses two accounts into one`)
-        // THE REFUSAL NAMES BOTH SIDES, because "not allowed" about a
-        // credential and a machine is a sentence somebody has to act on and
-        // cannot if it does not say which two things are wrong together.
-        assert.ok(why.includes('the-sign-in') && why.includes('the-machine'),
-          `the refusal does not name both the sign-in and the machine: ${why}`)
-        refused.push(`${role}/${kind}`)
-      }
-    }
-  }
+  const wrong = []
+  vms.forEach((v) => {
+    const tags = (v.tags || []).map((t) => String(t).toLowerCase())
+    const kind = v.kind || null
 
-  assert.equal(allowed.length, 3, `three pairings should be allowed and ${allowed.length} were: ${allowed.join(', ')}`)
-  assert.equal(refused.length, 6, `six should be refused and ${refused.length} were`)
-  log(`allowed ${allowed.join(', ')}; refused all six crossings`)
-})
+    // A KIND IS A CLAIM ABOUT A TAG, in both directions. Reading as a judge
+    // without carrying the word is a machine the queue will send judgements to
+    // for a reason nobody can see; carrying the word and reading as something
+    // else is the same fault the other way up.
+    if (kind === SUPERVISOR && !tags.includes(SUPERVISOR)) wrong.push(`${v.name} reads as a supervisor without carrying "${SUPERVISOR}"`)
+    if (kind === JUDGE && !tags.includes(JUDGE)) wrong.push(`${v.name} reads as a judge without carrying "${JUDGE}"`)
+    if (tags.includes(SUPERVISOR) && kind !== SUPERVISOR) wrong.push(`${v.name} carries "${SUPERVISOR}" and reads as ${kind}`)
+  })
 
-it('and the old name for a worker still reads as one', ({ assert, log }) => {
-  // EVERY CREDENTIAL WRITTEN BEFORE THERE WERE THREE ROLES SAYS `guest`. If that
-  // stopped reading as a worker, every existing sign-in would become some other
-  // kind and the rule above would refuse it from the machines it has always been
-  // lent to — a rename quietly revoking the host's own credentials.
-  const kept = guests.all()
-  assert.ok(kept.length, 'this host holds no sign-ins, so there is nothing to read')
-  for (const g of kept) {
-    assert.ok(ROLES.includes(g.role), `"${g.name}" reports role "${g.role}", which is not one of the three. An unknown role matches no machine kind and can be lent nowhere`)
-  }
-  assert.ok(!kept.some(g => g.role === 'guest'), 'a sign-in still reports the retired role "guest" rather than "worker"')
-  log(`${kept.length} sign-in(s): ${kept.map(g => `${g.name} (${g.role})`).join(', ')}`)
-})
-
-it('and a machine says which kind it is, from its tags alone', ({ assert, log }) => {
-  const here = vms.read()
-  assert.ok(here.length, 'this host has no machines')
-
-  for (const v of here) {
-    const kind = vms.kindOf(v)
-    // NULL IS A REAL ANSWER, and the one this rule exists to give. A machine
-    // that carries no role tag has not said which credential it may hold, and
-    // saying "worker" for it was a guess this host is not entitled to make.
-    assert.ok(kind === null || ROLES.includes(kind), `"${v.name}" reads as kind "${kind}"`)
-
-    // FROM THE TAGS AND NOTHING ELSE, so the answer cannot drift from what the
-    // queue matches on — which is the reason this is a tag rather than a flag.
-    const tags = (v.tags || []).map(t => String(t).toLowerCase())
-    if (kind === 'supervisor') assert.ok(tags.includes(vms.SUPERVISOR), `"${v.name}" reads as a supervisor without carrying the tag`)
-    if (kind === 'judge') assert.ok(tags.includes(vms.JUDGE), `"${v.name}" reads as a judge without carrying the tag`)
-    if (kind === 'worker') assert.ok(tags.includes(vms.WORKER), `"${v.name}" reads as a worker without carrying the tag`)
-    // NULL HAS TWO CAUSES AND THEY ARE OPPOSITES. This assumed one of them: that
-    // a machine reading as no kind carries no role tag, and that the queue
-    // therefore leaves it alone. True for a machine nobody has labelled. False,
-    // and backwards, for one labelled TWICE.
-    //
-    // `kindOf` answers "which one thing is this", so a machine carrying both
-    // worker and judge cannot answer — the role has to come from the WORK, which
-    // is the whole design. It is null for having said too much rather than too
-    // little, and the queue reaches it eagerly, for either kind of work.
-    if (kind === null) {
-      const kinds = vms.kindsOf(v)
-      if (!kinds.length) {
-        assert.ok(!tags.includes(vms.SUPERVISOR) && !tags.includes(vms.JUDGE) && !tags.includes(vms.WORKER),
-          `"${v.name}" reads as having no role while carrying a role tag`)
-        // AND THE CONSEQUENCE, checked rather than assumed: the queue does not
-        // reach it. This is the whole point of the answer being null.
-        assert.ok(!vms.takesQueuedWork(v), `"${v.name}" has said nothing about what it is for and the queue would still send it work`)
-      } else {
-        assert.ok(kinds.length > 1,
-          `"${v.name}" carries exactly one role, ${kinds[0]}, and still could not say which kind it is`)
-        assert.ok(kinds.every(k => ROLES.includes(k)), `"${v.name}" carries a role that is not one of ${ROLES.join(', ')}: ${kinds.join(', ')}`)
-        // THE OTHER CONSEQUENCE, and it is the reverse of the one above. A
-        // machine that can be two things is not unusable; it is available to
-        // both, one at a time, and the work says which.
-        assert.ok(vms.takesQueuedWork(v),
-          `"${v.name}" carries ${kinds.join(' and ')} and the queue will not send it work — a machine that can do two jobs must not be excluded from both`)
-      }
-    }
-  }
-  log(here.map(v => {
-    const kinds = vms.kindsOf(v)
-    if (kinds.length > 1) return `${v.name}: ${kinds.join(' and ')} — the work says which`
-    return `${v.name}: ${kinds[0] || 'no role — the queue leaves it alone'}`
-  }).join(', '))
+  assert.equal(wrong.length, 0, wrong.join('; '))
+  log(`${vms.length} machine(s), each reading as what it carries: ${vms.map((v) => `${v.name}=${v.kind || 'unsaid'}`).join(', ')}`)
 })
 
 it('a role can be moved, and what was BUILT cannot', async ({ okc, assert, state, log }) => {
@@ -138,35 +103,55 @@ it('a role can be moved, and what was BUILT cannot', async ({ okc, assert, state
   //
   // So a role moves and a provision does not.
   const here = ((await okc('vmList')).vms || [])
-  const idle = here.find(v => v.kind === 'worker' && !v.branch && !v.borrowed && !v.holdsCredential)
-  assert.needs(idle, 'no ordinary runner is idle here, and changing what a busy machine is FOR is refused on purpose')
 
-  const was = (idle.tags || []).map(t => String(t))
+  // ANY ORDINARY MACHINE THAT IS NOT BUSY. Written as "kind === worker" first,
+  // which found nothing on a host whose only spare machine is tagged as a judge
+  // — and the claim is about moving a role, so which end it starts at does not
+  // matter.
+  const idle = here.find((v) => v.kind !== SUPERVISOR && !v.branch && !v.borrowed && !v.holdsCredential)
+  assert.needs(idle, 'no ordinary machine is idle here, and changing what a busy machine is FOR is refused on purpose')
+
+  const was = (idle.tags || []).map((t) => String(t))
+  const wasJudge = was.map((t) => t.toLowerCase()).includes(JUDGE)
+
+  // THE OTHER ROLE, WHICHEVER THIS ONE IS NOT — and the word is SWAPPED, not
+  // dropped.
+  //
+  // Written as "take the judge tag off" first, and beta-install1 came back
+  // reading as `null` rather than as a runner. That is the app being right: a
+  // machine that has not said what it is for is not a worker by default, it is
+  // unlabelled, and the queue sends it nothing because nothing knows which
+  // sign-in to hand it. Moving a role means saying the other word.
+  const want = wasJudge ? WORKER : JUDGE
+  const moved = was.filter((t) => ![JUDGE, WORKER].includes(String(t).toLowerCase())).concat([want])
+
   state.retagged = idle.name
   state.wasTags = was.join(',')
 
-  await okc('vmTags', { name: idle.name, tags: [...was, vms.JUDGE].join(',') })
-  const now = ((await okc('vmList')).vms || []).find(v => v.name === idle.name)
-  assert.equal(now.kind, 'judge', `${idle.name} was given the "${vms.JUDGE}" tag and still reads as ${now.kind}`)
+  await okc('vmTags', { name: idle.name, tags: moved.join(',') })
+  const now = ((await okc('vmList')).vms || []).find((v) => v.name === idle.name)
+  assert.equal(now.kind, want,
+    `${idle.name} was tagged "${want}" and reads as ${now.kind}`)
 
   // AND BACK, because a role that can only be given is a role that traps a
   // machine in it.
   await okc('vmTags', { name: idle.name, tags: was.join(',') })
-  const back = ((await okc('vmList')).vms || []).find(v => v.name === idle.name)
-  assert.equal(back.kind, 'worker', `${idle.name} could not be turned back into a runner — it reads as ${back.kind}`)
+  const back = ((await okc('vmList')).vms || []).find((v) => v.name === idle.name)
+  assert.equal(back.kind, wasJudge ? JUDGE : WORKER,
+    `${idle.name} could not be put back to what it was — it reads as ${back.kind}`)
   state.retagged = null
 
   // THE PROVISION CANNOT MOVE, for the reason the role can: a supervisor is a
   // different build, not a different label on the same one.
-  const sup = here.find(v => v.kind === 'supervisor')
+  const sup = here.find((v) => v.kind === SUPERVISOR)
   if (sup) {
     await assert.refuses(
       () => okc('vmTags', { name: sup.name, tags: 'test' }),
       'keeps the',
-      `the "${vms.SUPERVISOR}" tag could be taken off ${sup.name}, which would put a machine with no project provisioning into the queue's pool`)
+      `the "${SUPERVISOR}" tag could be taken off ${sup.name}, which would put a machine with no project provisioning into the queue's pool`)
   }
 
-  log(`${idle.name} became a judge and a runner again${sup ? `; ${sup.name} cannot stop being a supervisor` : ''}`)
+  log(`${idle.name} changed role and changed back${sup ? `; ${sup.name} cannot stop being a supervisor` : ''}`)
 })
 
 it('and a role cannot change underneath running work', async ({ okc, assert, log }) => {
@@ -174,94 +159,23 @@ it('and a role cannot change underneath running work', async ({ okc, assert, log
   // a worker mid-judgement, is holding a sign-in for a role it no longer has —
   // and the next thing lent to it would be the wrong kind. So the question is
   // whether it is BUSY, which is about right now, rather than when it was made.
-  const busy = ((await okc('vmList')).vms || []).find(v => v.kind !== 'supervisor' && (v.branch || v.borrowed || v.holdsCredential))
+  const busy = ((await okc('vmList')).vms || []).find((v) => v.kind !== SUPERVISOR && (v.branch || v.borrowed || v.holdsCredential))
   assert.needs(busy, 'no machine is busy here, so there is nothing to refuse — this checks the refusal, not the permission')
 
   await assert.refuses(
-    () => okc('vmTags', { name: busy.name, tags: [...(busy.tags || []), vms.JUDGE].join(',') }),
+    () => okc('vmTags', { name: busy.name, tags: [...(busy.tags || []), JUDGE].join(',') }),
     'cannot change right now|mid-task|mid-judgement',
     `${busy.name} is busy and its role could still be changed underneath the work it is doing`)
 
   log(`${busy.name} is busy, so what it is for cannot be changed until it is finished`)
 })
 
-it('and work only ever goes to a machine of its own kind', ({ assert, log }) => {
-  // ASKED OF THE RULE RATHER THAN OF THE POOL, so it can be checked on a host
-  // that has no judge machine — which is most of them, and the reason the two
-  // directions differ:
-  //
-  //   a task never goes to a judge machine        strictly, always
-  //   a judgement goes to a judge machine         when this host has one
-  //
-  // Excluding judge machines from tasks can never strand a task: a machine is a
-  // worker unless it says otherwise, so running out of workers means every
-  // machine is a judge. Requiring a judge for judgements CAN strand one, on any
-  // host that has not made one.
-  const machines = [
-    { name: 'unlabelled', tags: ['default'] },
-    { name: 'a-runner', tags: ['test', vms.WORKER] },
-    { name: 'a-judge', tags: ['test', vms.JUDGE] }
-  ]
-  const kinds = machines.map(m => `${m.name}=${vms.kindOf(m)}`)
-  assert.equal(kinds.join(' '), 'unlabelled=null a-runner=worker a-judge=judge', `kindOf disagrees: ${kinds.join(' ')}`)
-
-  // ---- AND WHICH OF THEM THE QUEUE MAY REACH -------------------------
-  //
-  // THE RULE THIS SUITE IS ABOUT, in the form the queue asks it. Sending work
-  // to a machine means handing it a credential, and which credential is chosen
-  // BY THE KIND — so a machine that has not said what it is cannot be given one
-  // without this host guessing whose identity to put on it.
-  //
-  // "default" IS A POOL, NOT A ROLE. Every machine built here carries it so
-  // that "which pool is this in" always has a name; it says where a machine
-  // sits, never what it may hold. Reading it as a role is the guess being
-  // removed.
-  const reachable = machines.filter(m => vms.takesQueuedWork(m)).map(m => m.name)
-  assert.equal(reachable.join(','), 'a-runner,a-judge',
-    `the queue would reach [${reachable.join(', ')}] — an unlabelled machine must not be sent work, because nothing knows which sign-in to hand it`)
-
-  // AND A SUPERVISOR IS OUT TOO, for a different reason: it is not a pool the
-  // queue draws from at all, and it holds its own identity permanently.
-  assert.ok(!vms.takesQueuedWork({ name: 's', tags: [vms.SUPERVISOR, 'test'] }), 'a supervisor machine is in the queue\'s pool')
-
-  // The tag composes with any other, which is what makes a pool: "judge" and
-  // "test" together is the kit's judge pool, and nothing has to know that.
-  assert.ok(machines[2].tags.includes('test'), 'a judge machine cannot also carry the tag that puts it in a pool')
-
-  log('a machine says worker or judge or it gets no automatic work, and the tag composes with any other')
-})
-
-it('and judging is routed by what this host actually has', async ({ okc, assert, log }) => {
-  // THE CONDITION IS THE DESIGN. Requiring a judge machine outright would stop
-  // every judgement on a host that has not made one — which is every host until
-  // somebody does. So the separation switches itself on when the machine exists,
-  // and this checks whichever of the two states this host is in rather than
-  // insisting on one.
-  const here = ((await okc('vmList')).vms || [])
-  const judges = here.filter(v => v.kind === 'judge')
-
-  if (!judges.length) {
-    // Nothing to assert about routing, and something worth asserting about
-    // honesty: the app must not claim a separation it is not making.
-    log('no machine is tagged "judge" on this host, so judging runs on ordinary runners — the separation is off, which is the documented behaviour until a judge machine is made')
-    return
-  }
-
-  // WITH ONE, EVERY JUDGE MACHINE MUST BE ABLE TO HOLD A JUDGE'S SIGN-IN, or the
-  // routing sends work to a machine that will then be refused its identity.
-  for (const v of judges) {
-    const why = guests.whyNotOn('judge', 'judge', 'a-judge-sign-in', v.name)
-    assert.ok(!why, `${v.name} is tagged as a judge machine and a judge sign-in cannot be lent to it: ${why}`)
-  }
-  log(`judge machines: ${judges.map(v => v.name).join(', ')} — judging goes to those and waits rather than using a runner`)
-})
-
 cleanup(async ({ okc, state }) => {
-  // A ROLE PUT BACK. This drill turns a runner into a judge and back again; if a
-  // check between those two fails, the machine is left as a judge — which the
-  // queue would then honour, quietly taking it out of the worker pool.
-  if (state.retagged && state.wasTags != null) {
-    await okc('vmTags', { name: state.retagged, tags: state.wasTags }).catch(() => {})
+  // A MACHINE LEFT WEARING THE WRONG ROLE is worse than a failed drill: the queue
+  // would go on choosing credentials for it by that role. Put back whatever it
+  // was, whether or not the check that changed it got as far as changing it back.
+  if (state.retagged) {
+    try { await okc('vmTags', { name: state.retagged, tags: state.wasTags || '' }) } catch { /* it may be gone */ }
+    state.retagged = null
   }
-  state.retagged = null
 })
