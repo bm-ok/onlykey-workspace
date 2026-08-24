@@ -11,30 +11,30 @@ const { it } = require('../../harness')
 
 // WHAT IT SAW LAST TIME is recorded at the bottom of this file.
 
-it('setting a machine up on a branch that does not exist is refused', async ({ actions, assert, log }) => {
-  const { vms } = await actions.vmList.run({})
+it('setting a machine up on a branch that does not exist is refused', async ({ okc, assert, log }) => {
+  const { vms } = await okc('vmList', {})
   assert.needs(vms.length, 'there are no machines')
   // Refused on the NAME, before anything is started — which is the point of
   // the test. This used to be discovered after booting a machine and waiting
   // for it to dial in, so the answer to a typo was five minutes away.
   const refusal = await assert.refuses(
-    () => actions.vmWorkspace.run({ name: vms[0].name, branch: 'no/such-branch-okc-test' }),
+    () => okc('vmWorkspace', { name: vms[0].name, branch: 'no/such-branch-okc-test' }),
     'there is no branch',
     'a machine was set up on a branch nobody made')
   log(`asked of ${vms[0].name} — refused, and this is what it said:\n${refusal.message}`)
 })
 
-it('a cut must start from a line or a cut, and not both', async ({ actions, assert, log }) => {
+it('a cut must start from a line or a cut, and not both', async ({ okc, assert, log }) => {
   const refusal = await assert.refuses(
-    () => actions.branchCreate.run({ branch: 'okc-test/never-made', reason: 'a test', group: 'default', from: 'inspection/check1' }),
+    () => okc('branchCreate', { branch: '-test/never-made', reason: 'a test', group: 'default', from: 'inspection/check1' }),
     'both|one of',
     'a branch was cut from two starting points at once')
   log(`refused, and this is what it said:\n${refusal.message}`)
 })
 
-it('a cut must say what it is for', async ({ actions, assert, log }) => {
+it('a cut must say what it is for', async ({ okc, assert, log }) => {
   const refusal = await assert.refuses(
-    () => actions.branchCreate.run({ branch: 'okc-test/never-made', group: 'default' }),
+    () => okc('branchCreate', { branch: '-test/never-made', group: 'default' }),
     'reason',
     'a branch was cut with no reason recorded')
   log(`refused, and this is what it said:\n${refusal.message}`)

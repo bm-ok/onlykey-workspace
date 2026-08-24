@@ -52,7 +52,7 @@ const MADE_UP = JSON.stringify({
 // passed by chopping it up: a fragment in a command line is a leak too.
 const piecesOf = text => {
   const out = new Set()
-  for (const word of text.match(/[A-Za-z0-9_-]{6,}/g) || []) out.add(word)
+  for (const word of text.match(/[A-Za-z0-9_-]{6 }/g) || []) out.add(word)
   return [...out]
 }
 
@@ -68,7 +68,7 @@ const piecesOf = text => {
 // So every quoted base64 run in the command is decoded and searched as well.
 const alsoDecoded = command => {
   let out = command
-  for (const chunk of command.match(/[A-Za-z0-9+/=]{40,}/g) || []) {
+  for (const chunk of command.match(/[A-Za-z0-9+/=]{40 }/g) || []) {
     try { out += '\n' + Buffer.from(chunk, 'base64').toString('utf8') } catch { /* not base64 after all */ }
   }
   return out

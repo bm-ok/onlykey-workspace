@@ -33,7 +33,7 @@ cleanup(async ({ okc, state }) => {
   if (state.branch) { try { await okc('branchDelete', { branch: state.branch, force: true }) } catch { /* never cut */ } }
 })
 
-it('a task written over the wire without a judgement is refused', async ({ okc, actions, assert, state }) => {
+it('a task written over the wire without a judgement is refused', async ({ okc, assert, state }) => {
   const line = await aLine(okc, assert)
   state.branch = scratch('gated')
   await okc('branchCreate', { branch: state.branch, reason: 'a drill proving the judge is the gate', group: line })
@@ -47,7 +47,7 @@ it('a task written over the wire without a judgement is refused', async ({ okc, 
   // The drills go through the same door a supervisor does, which is the only
   // way this check means anything: asked as the window, it is allowed.
   await assert.refuses(
-    () => actions.taskCreate.run({
+    () => okc('taskCreate', {
       task: { title: 'drill: a task with nothing behind it', brief: 'Written by a drill. It should not be written at all.', branch: state.branch, job: job.id },
       _overTheWire: true
     }),
@@ -56,7 +56,7 @@ it('a task written over the wire without a judgement is refused', async ({ okc, 
   )
 }, { gate: true })
 
-it('and naming a judgement that has not finished is not enough', async ({ okc, actions, assert, state }) => {
+it('and naming a judgement that has not finished is not enough', async ({ okc, assert, state }) => {
   assert.needs(state.branch, 'the first check did not cut a branch')
 
   const { jobs } = await okc('jobs', { kind: 'judge' })
@@ -76,7 +76,7 @@ it('and naming a judgement that has not finished is not enough', async ({ okc, a
   // this the gate would be satisfied by asking for a judgement and immediately
   // writing the task — which is the rumour again, with a reference number.
   await assert.refuses(
-    () => actions.taskCreate.run({
+    () => okc('taskCreate', {
       task: { title: 'drill: a task behind an unfinished judgement', brief: 'Written by a drill.', branch: state.branch, job: state.job },
       becauseOf: asked.ref,
       _overTheWire: true
@@ -86,11 +86,11 @@ it('and naming a judgement that has not finished is not enough', async ({ okc, a
   )
 })
 
-it('and a judgement that does not exist is not a way round it', async ({ okc, actions, assert, state }) => {
+it('and a judgement that does not exist is not a way round it', async ({ okc, assert, state }) => {
   assert.needs(state.branch, 'the first check did not cut a branch')
 
   await assert.refuses(
-    () => actions.taskCreate.run({
+    () => okc('taskCreate', {
       task: { title: 'drill: a task behind a judgement that is not there', brief: 'Written by a drill.', branch: state.branch, job: state.job },
       becauseOf: 'J99999',
       _overTheWire: true
@@ -100,14 +100,14 @@ it('and a judgement that does not exist is not a way round it', async ({ okc, ac
   )
 })
 
-it('and the same task, written at the window, is allowed', async ({ okc, actions, assert, state, log }) => {
+it('and the same task, written at the window, is allowed', async ({ okc, assert, state, log }) => {
   assert.needs(state.branch, 'the first check did not cut a branch')
 
   // THE HALF THAT IS EASY TO FORGET. If the gate were shut at the window too,
   // a person could not write a task about code they have just read — and the
   // first thing anybody would do is find the way round, which is how a rule
   // stops describing what happens.
-  state.task = await actions.taskCreate.run({
+  state.task = await okc('taskCreate', {
     task: {
       title: 'drill: a task written at the window',
       brief: 'Written by a drill, as the window rather than over the wire. Nothing runs it.',

@@ -63,16 +63,16 @@ it('and STALE is its own answer, because it is neither of the other two', async 
   assert.equal(allowed.check(ON, N, 'aaaa1111').allowed, false, 'an allowance survived being taken back')
 })
 
-it('and a model cannot allow one', async ({ actions, assert }) => {
+it('and a model cannot allow one', async ({ okc, assert }) => {
   // THE ONE DELEGATION THAT CANNOT BE MADE. A supervisor asking for this would
   // be a model deciding that a stranger's code is fit to be read by a model.
   await assert.refuses(
-    () => actions.prAllowJudging.run({ repo: 'local-repo-c', number: 1, _overTheWire: true }),
+    () => okc('prAllowJudging', { repo: 'local-repo-c', number: 1, _overTheWire: true }),
     'in the window|a person|may not',
     'a pull request was allowed from outside the window'
   )
   await assert.refuses(
-    () => actions.prForbidJudging.run({ repo: 'local-repo-c', number: 1, _overTheWire: true }),
+    () => okc('prForbidJudging', { repo: 'local-repo-c', number: 1, _overTheWire: true }),
     'in the window|like giving one',
     'an allowance was taken back from outside the window'
   )

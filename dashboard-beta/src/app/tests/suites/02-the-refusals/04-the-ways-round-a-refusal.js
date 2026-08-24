@@ -134,7 +134,7 @@ it('and the settings that can be changed are named, not assumed', async ({ okc, 
 // carry cannot be reached. Written down rather than left as a gap somebody
 // discovers by assuming they were covered.
 
-it('a press driven from the command line is still the command line', async ({ actions, assert, log }) => {
+it('a press driven from the command line is still the command line', async ({ okc, assert, log }) => {
   // THE ANTI-BYPASS PROPERTY, AND IT DID NOT HOLD.
   //
   // `windowClick` and `windowFill` reach the same handlers a person's press
@@ -161,7 +161,7 @@ it('a press driven from the command line is still the command line', async ({ ac
   // AND THE SAME FOR ALLOWING SOMEBODY ELSE'S CODE TO BE READ, which is the
   // newest approval here and had the identical hole, written the identical way.
   await assert.refuses(
-    () => actions.prAllowJudging.run({ repo: 'local-repo-c', number: 1, _driven: true }),
+    () => okc('prAllowJudging', { repo: 'local-repo-c', number: 1, _driven: true }),
     'window|person|may not',
     'a pull request could be allowed by driving the window'
   )

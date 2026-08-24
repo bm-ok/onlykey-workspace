@@ -41,8 +41,8 @@ requires('the supervisor', 'judging')
 // had itself opened was noticed and the supervisor was woken with its number and
 // title -- and answered, correctly, that there was nothing to do because it had
 // made it. Later a merge woke it the same way.
-it('a supervisor waking is told what arrived on GitHub, without asking GitHub', async ({ actions, assert, log }) => {
-  const now = await actions.whatsNew.run({})
+it('a supervisor waking is told what arrived on GitHub, without asking GitHub', async ({ okc, assert, log }) => {
+  const now = await okc('whatsNew', {})
 
   // THE SHAPE IS THE CLAIM. A supervisor that has to know to ask is one that
   // wakes on a quiet host, sees nothing, and goes back to sleep with an open

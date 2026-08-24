@@ -33,14 +33,14 @@ const { it, requires } = require('../../harness')
 
 requires('the order')
 
-it('allowing one is refused down the pipe, and refused to a driven click', async ({ actions, assert }) => {
+it('allowing one is refused down the pipe, and refused to a driven click', async ({ okc, assert }) => {
   // THE ONE DECISION A MODEL MAY NOT MAKE FOR ITSELF. Not because a supervisor
   // is untrusted with much — it is trusted with a machine and a credential —
   // but because this specific question is "may somebody else's code be read
   // here", and the thing being protected against is the only thing that would
   // be answering.
   await assert.refuses(
-    () => actions.prAllowJudging.run({ repo: 'local-repo-a', number: 1, _overTheWire: true }),
+    () => okc('prAllowJudging', { repo: 'local-repo-a', number: 1, _overTheWire: true }),
     'window|person',
     'a pull request was allowed to be judged from down the pipe'
   )
@@ -49,7 +49,7 @@ it('allowing one is refused down the pipe, and refused to a driven click', async
   // button it lands on, it is not a person — this is the hole every other
   // approval in this app had at some point.
   await assert.refuses(
-    () => actions.prAllowJudging.run({ repo: 'local-repo-a', number: 1, _driven: true }),
+    () => okc('prAllowJudging', { repo: 'local-repo-a', number: 1, _driven: true }),
     'window|person',
     'a driven click allowed a pull request to be judged'
   )
@@ -57,13 +57,13 @@ it('allowing one is refused down the pipe, and refused to a driven click', async
   // The same on the way back out, for the same reason: an allowance somebody
   // else can take back is not an allowance a person gave.
   await assert.refuses(
-    () => actions.prForbidJudging.run({ repo: 'local-repo-a', number: 1, _overTheWire: true }),
+    () => okc('prForbidJudging', { repo: 'local-repo-a', number: 1, _overTheWire: true }),
     'window|person|like giving',
     'an allowance was taken back from down the pipe'
   )
 })
 
-it('a pull request nobody has allowed cannot be judged, whichever name it is called', async ({ okc, actions, assert, log }) => {
+it('a pull request nobody has allowed cannot be judged, whichever name it is called', async ({ okc, assert, log }) => {
   const { repos } = await okc('repositories')
   const one = (repos || []).find(r => r.parent || (r.remote && r.remote.owner))
   assert.needs(one, 'no repository here has a GitHub remote')
@@ -77,7 +77,7 @@ it('a pull request nobody has allowed cannot be judged, whichever name it is cal
   // right by accident. Asking under both names proves they arrive together.
   for (const on of [one.repo, parent]) {
     await assert.refuses(
-      () => actions.judgementCreate.run({ kind: 'pull', on, number, sha: '0'.repeat(40), job: 'anything', _overTheWire: true }),
+      () => okc('judgementCreate', { kind: 'pull', on, number, sha: '0'.repeat(40), job: 'anything', _overTheWire: true }),
       'allow',
       `a pull request named "${on}" got past the gate with nobody having allowed it`
     )
@@ -87,7 +87,7 @@ it('a pull request nobody has allowed cannot be judged, whichever name it is cal
   // AND A NAME THAT IS NEITHER SAYS SO, rather than being quietly treated as a
   // repository that does not exist somewhere further in.
   await assert.refuses(
-    () => actions.judgementCreate.run({ kind: 'pull', on: 'not-a-repository-here', number, sha: '0'.repeat(40), job: 'anything', _overTheWire: true }),
+    () => okc('judgementCreate', { kind: 'pull', on: 'not-a-repository-here', number, sha: '0'.repeat(40), job: 'anything', _overTheWire: true }),
     'not a repository|owner/name',
     'a name that is not a repository at all was accepted'
   )
