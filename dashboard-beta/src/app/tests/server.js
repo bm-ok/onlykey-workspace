@@ -268,6 +268,70 @@ async function plugin(imports, register) {
     //---- running -----------------------------------------------------------
 
     var going = null;
+
+    //---- SAYING IT RATHER THAN BEING ASKED ---------------------------------
+    //
+    //THE BANNER USED TO POLL FOR THIS EVERY THREE SECONDS, for ever, and
+    //`board()` walks the whole registry and reads the run records off disk to
+    //answer. Almost every one of those answers is "nothing is running".
+    //
+    //AND A RUN SHORTER THAN THE INTERVAL COULD NOT BE SEEN AT ALL. "the
+    //refusals" finishes in 214ms; three seconds of poll can land either side of
+    //it and never inside it. No cadence fixes that — only being told does.
+    //
+    //THE SHAPE IS ../core/okc's, WHICH HAS ALL THREE PARTS AND SAYS WHY. Told on
+    //change, told again when a page connects, and ASKABLE — because the connect
+    //emit races the listener: "the window attaches its listener a moment after
+    //the socket is up, so the one page that most needs the answer is the one
+    //that can miss it." Over there the cost was a dot reading "not connected"
+    //above a panel full of live data.
+    var io = host && host.io;
+
+    //---- BUILT HERE AND NOT ASKED FOR, WHICH IS THE WHOLE OF IT ------------
+    //
+    //THE FIRST VERSION CALLED `runs.progress()`, which is the obvious thing and
+    //was wrong for a reason worth keeping: it reads off disk, so it AWAITS. A
+    //run keeps this process busy, so none of those awaits settle until the run
+    //is over — and every emit of a twenty-check run arrived in the same two
+    //milliseconds at the end, the last of them the `null` that takes the banner
+    //down. React batched them, the null won, and the banner never drew.
+    //
+    //MEASURED, NOT REASONED: five `heard` lines in the window's console inside
+    //2ms, then `heard null`, for a run that took seconds.
+    //
+    //SO THE PAYLOAD IS ASSEMBLED FROM WHAT THE RUN LOOP ALREADY HOLDS — the
+    //check it is on and the counts so far — and emitted with nothing awaited.
+    //An announcement that has to go and look something up is not an
+    //announcement, it is another poll wearing a different hat.
+    //
+    //`keyOf`'s SHAPE, SPELT OUT: "group / test / check", the same string
+    //./runs.js files a result under, so what the banner shows and what the board
+    //shows are one thing rather than two that agree today.
+    //THE COUNTS ARE PASSED IN, AND THEY WERE NOT.
+    //
+    //`counts` belongs to one RUN and this function is outside `runIt`, so
+    //naming it here was a free identifier: a ReferenceError, thrown from inside
+    //`onTestStart`, swallowed by the harness — and the only emit that survived
+    //was the `null` one, because the ternary never reaches `counts` on that
+    //branch. So the banner heard "nothing is running", precisely and only.
+    //
+    //IT LOOKED LIKE A SOCKET PROBLEM FOR THREE ATTEMPTS. The server logged that
+    //it was announcing, the window logged that it heard something, and what it
+    //heard was always null. Nothing in the chain was wrong except a name that
+    //was not in scope — the same shape as `git.nameIsOk`, `whatIsOn`, and the
+    //four rules in the git door, all in one sitting.
+    function announce(at, counts) {
+        if (!io) return;
+        io.emit('tests:running', at
+            ? {
+                doing: [at.groupName, at.suiteName, at.testName].join(' / '),
+                passed: counts.passed,
+                failed: counts.failed,
+                other: counts.unrunnable,
+                done: counts.passed + counts.failed + counts.unrunnable
+            }
+            : null);
+    }
     var stopAsked = false;
 
     async function runIt(args) {
@@ -357,6 +421,8 @@ async function plugin(imports, register) {
 
             onTestStart: function (at) {
                 onCheck = { group: at.groupName, test: at.suiteName, check: at.testName, log: [] };
+                //SYNCHRONOUS, so it leaves before the check does — see `announce`.
+                announce(at, counts);
             },
 
             //WRITTEN DOWN WHEN THE CHECK ENDS, not when its status changes.
@@ -377,6 +443,13 @@ async function plugin(imports, register) {
 
                 var lines = (onCheck && onCheck.check === at.testName) ? onCheck.log : [];
                 onCheck = null;
+
+                //THE SCORE MOVES HERE, not at the start — `1 passed, 1 failed`
+                //is what somebody watches change, and `counts` has just been
+                //added to. Still naming the check that ended: it is the last
+                //thing that happened, and the next `onTestStart` is a moment
+                //away.
+                announce(at, counts);
 
                 //A DRAFT IS NOT A RESULT. It has not been written yet, so
                 //remembering one would put a row on the board about a check that
@@ -414,6 +487,8 @@ async function plugin(imports, register) {
                 unrunnable: counts.unrunnable, suites: (out && out.suites) || [] };
         } finally {
             going = null;
+            //AND THE BANNER COMES DOWN. Nothing to name, so nothing is running.
+            announce(null, counts);
         }
     }
 
@@ -467,6 +542,30 @@ async function plugin(imports, register) {
     //---- the surface -------------------------------------------------------
 
     var undo = [];
+    //---- AND A PAGE THAT ARRIVES MID-RUN ----------------------------------
+    //
+    //Both halves of ../core/okc's answer, for its reasons: a client is told the
+    //state as it connects, AND can ask for it, because attaching a listener
+    //takes a moment and the emit does not wait.
+    function onConnection(client) {
+        runs.progress().then(
+            function (now) { client.emit('tests:running', now); },
+            function () { /* nothing to say; the ask below still works */ }
+        );
+
+        client.on('tests:running?', function (_args, reply) {
+            if (typeof reply != 'function') return;
+            runs.progress().then(function (now) { reply(now); }, function () { reply(null); });
+        });
+    }
+    if (io) {
+        io.on('connection', onConnection);
+        //NAMED SO IT COMES OFF BY ITSELF. `io` is made in ../core/io/main.js and
+        //outlives every reload, so `removeAllListeners` here would take every
+        //other plugin's handlers with it.
+        undo.push(function () { io.off('connection', onConnection); });
+    }
+
     if (actions) {
         undo.push(actions.define('suites', {
             about: 'Every drill there is, and what happened last time each one ran',

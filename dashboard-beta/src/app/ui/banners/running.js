@@ -1,4 +1,5 @@
 var React = require('react');
+var { useState, useEffect } = React;
 
 //---------------------------------------------------------------------------
 //the drills are running.
@@ -23,16 +24,40 @@ module.exports = function running(theme, okc, shell) {
     var { Banner, Linky } = theme;
 
     return function Running() {
-        //ASKED OFTEN, BECAUSE THE ANSWER IS THE POINT. Three seconds is the
-        //cadence the old window drew at, and a banner that says "running" four
-        //seconds after it stopped is the one thing this must not do.
-        var q = okc.use('suites', {}, 3000);
-        var s = q.state;
-        if (!s || !s.running) return null;
+        //---- TOLD, NOT ASKED ----------------------------------------------
+        //
+        //THIS POLLED `suites` EVERY THREE SECONDS, for ever. That answer is
+        //built by walking the whole drill registry and reading the run records
+        //off disk, and almost every one of them says "nothing is running".
+        //
+        //AND IT COULD NOT SEE A SHORT RUN AT ALL. "the refusals" finishes in
+        //214ms; a three-second poll lands either side of it and never inside.
+        //No cadence fixes that — only being told does, which is the whole point
+        //of there being a socket.
+        //
+        //THREE PARTS, AND ../../core/okc PAID FOR THE THIRD. Told on change,
+        //told again on connect, and ASKED once here — because the connect emit
+        //does not wait for this component to mount, and a banner that missed it
+        //would stay down for the length of a run.
+        var [going, setGoing] = useState(null);
+
+        useEffect(function () {
+            var alive = true;
+
+            function heard(now) { if (alive) setGoing(now || null); }
+            okc.io.on('tests:running', heard);
+
+            //THE ONE ASK, for the race above. Anything after this arrives as an
+            //event.
+            okc.io.emit('tests:running?', {}, heard);
+
+            return function () { alive = false; okc.io.off('tests:running', heard); };
+        }, []);
+
+        if (!going) return null;
 
         //THE CHECK IN FLIGHT, shown as it is stored — "suite / test / check" —
         //rather than taken apart and put back together differently.
-        var going = s.running;
         var doing = typeof going == 'object' ? String(going.doing || '') : '';
         var passed = typeof going == 'object' ? going.passed : null;
         var failed = typeof going == 'object' ? going.failed : null;
