@@ -3,6 +3,7 @@ var fs = require('fs');
 var makeGuestApi = require('./guestapi');
 var makeTodos = require('./todos');
 var makeSaid = require('./said');
+var makeCarrying = require('./carrying');
 //THE FENCE ITSELF, read by the pane as well as enforced by the door — see
 //`supervisorMay` below for why it is the same call rather than a second list.
 var allowed = require('./allowed');
@@ -75,6 +76,10 @@ async function plugin(imports, register) {
     //in the app being ported from too — a supervisor is one machine for this
     //host, not one per folder somebody happens to be looking at.
     var talk = makeSaid(imports.state.app.doc('chat'), imports.state.app.doc('chat-read'));
+
+    //AND THE NOTEBOOK, in the host's drawer for the reason ./carrying.js gives:
+    //a supervisor's train of thought spans whatever folder it was looking at.
+    var notebook = makeCarrying(imports.state.app.doc('triage'));
 
     //ONE SHAPE FOR EVERY ANSWER THAT RETURNS THE LIST, so the window and a model
     //are reading the same thing.
@@ -368,6 +373,160 @@ async function plugin(imports, register) {
 
             return Object.assign({}, line, { note: 'Said. It is on the Chat tab now.' });
         }
+    }));
+
+    //---- WHAT IT IS IN THE MIDDLE OF, AND WHAT BECAME OF IT ----------------
+    //
+    //THE NOTEBOOK HOLDS THE INTENT; THE STORES HOLD THE TRUTH. An entry says "I
+    //asked J5 to check this and I am waiting"; whether J5 has finished is a fact
+    //about the judgement, read from the judgement. Writing "waiting" and then
+    //believing it later is how a supervisor waits for something that finished an
+    //hour ago — so every entry is resolved against what is actually there.
+    //
+    //THAT IS THE MOST USEFUL THING THIS DOES. "You asked and it is still
+    //running" and "you asked and the answer is sitting there" are the two states
+    //a supervisor cannot tell apart from its own notes, and they want opposite
+    //responses.
+    //
+    //ASKED OF THE TABLE, NOT OF A SERVICE. `judging` and `tasks` are actions
+    //this app already answers, and going through them keeps this plugin from
+    //growing an edge into the judge and the queue to read two lists.
+    async function whereIsIt(about) {
+        var what = String(about == null ? '' : about).trim();
+
+        //A BARE NUMBER MEANS A TASK, and that is the only shape decided here: a
+        //judgement's number is written J5 and never 5. Everything else is asked
+        //of both stores by whatever it is called, because a supervisor writes
+        //down the name it was just handed — it asked for a judgement, got back
+        //an id like "judge-survey-codebase-1", and wrote THAT. A resolver that
+        //only understood "J5" answered "this is just a note" about the one thing
+        //it was actually waiting for.
+        var looksLikeATask = /^#?\d+$/.test(what);
+
+        if (!looksLikeATask) {
+            try {
+                var seen = ((await actions.call('judging', {})) || {}).judgements || [];
+                var j = seen.filter(function (x) {
+                    return x.ref === what || x.id === what || x.uid === what;
+                })[0];
+
+                if (j) {
+                    return {
+                        kind: 'judgement',
+                        state: j.state,
+                        //FINISHED IS THE ONE THAT MATTERS. It is the moment the
+                        //thing being waited on became an answer, and the moment
+                        //to stop waiting and go and read it.
+                        landed: j.state === 'done',
+                        concluded: j.concluded || j.verdict || null,
+                        reads: j.reads || (j.subject && j.subject.name) || null,
+                        how: j.state === 'done'
+                            ? (j.ref || what) + ' has finished — read it with judgementFindings'
+                            : (j.ref || what) + ' is ' + j.state
+                    };
+                }
+                //NOT A JUDGEMENT IS NOT THE SAME AS A JUDGEMENT THAT IS GONE.
+                //Anything can be written in this notebook — an issue, a line, a
+                //sentence — so finding none falls through to the note below
+                //rather than reporting a thing that never existed as vanished.
+            } catch (e) { /* the same fall-through */ }
+        }
+
+        if (looksLikeATask) {
+            try {
+                var board = ((await actions.call('tasks', {})) || {}).tasks || [];
+                var want = what.replace(/^#/, '');
+                var t = board.filter(function (x) {
+                    return String(x.number) === want || x.id === want || x.uid === want;
+                })[0];
+
+                if (!t) {
+                    return { kind: 'task', state: 'gone', landed: false, how: what + ' is not on the board any more' };
+                }
+
+                return {
+                    kind: 'task',
+                    state: t.state,
+                    landed: t.state === 'done',
+                    //NOT "IT WORKED". A task finishing means the machine stopped,
+                    //and whether anything was actually done is a judge's answer.
+                    how: t.state === 'done'
+                        ? '#' + t.number + ' has finished — judge the line to find out whether it did what was asked'
+                        : '#' + t.number + ' is ' + t.state
+                };
+            } catch (e) {
+                return { kind: 'task', state: 'gone', landed: false, how: what + ' could not be looked up' };
+            }
+        }
+
+        //An issue, a line, a repository, a sentence. Nothing to resolve it
+        //against, and that is fine: it is the supervisor's own note about its
+        //own thinking.
+        return { kind: 'note', state: null, landed: false, how: null };
+    }
+
+    undo.push(actions.define('triage', {
+        about: 'What the supervisor is in the middle of, and which of those things have finished since',
+        takes: ['about'],
+        run: async function (args) {
+            var a = args || {};
+            var want = a.about == null ? null : String(a.about).trim();
+
+            var rows = [];
+            var kept = notebook.all().filter(function (r) { return !want || r.about === want; });
+            for (var i = 0; i < kept.length; i++) {
+                rows.push(Object.assign({}, kept[i], { now: await whereIsIt(kept[i].about) }));
+            }
+
+            //WHAT IT WAS WAITING FOR AND IS NOW READY, pulled out rather than
+            //left to be spotted. This is the whole reason the notebook is
+            //resolved against the stores instead of being believed.
+            var ready = rows.filter(function (r) {
+                return r.now.landed && /wait/i.test(r.state || '');
+            });
+
+            return {
+                carrying: rows,
+                ready: ready.map(function (r) {
+                    return { about: r.about, was: r.state, now: r.now.how };
+                }),
+                note: rows.length
+                    ? (ready.length
+                        ? ready.length + ' of ' + rows.length + ' finished while you were away — read those '
+                            + 'first, then say what you are doing about them.'
+                        : rows.length + ' thing(s) in hand, none of them finished since.')
+                    : 'Nothing in hand. Write one down when you ask for something and will not get the '
+                        + 'answer in this waking.',
+                states: notebook.USUAL
+            };
+        }
+    }));
+
+    undo.push(actions.define('triageSet', {
+        about: 'Write down what you are in the middle of: what it is about, what state it is in, and why',
+        takes: ['about', 'state', 'note'],
+        run: async function (args) {
+            var a = args || {};
+            var row = notebook.set({
+                about: a.about,
+                state: a.state,
+                note: a.note,
+                //WHO IS CARRYING IT. Almost always the supervisor, and worth
+                //recording because a person can write one too — an entry with no
+                //author reads as the app's own opinion, which it never is.
+                by: a._fromMachine || (a._overTheWire ? 'the command line'
+                    : a._fromTest ? 'a drill' : 'the window')
+            });
+
+            say('supervisor').info('triage: ' + row.about + ' — ' + row.state);
+            return Object.assign({}, row, { now: await whereIsIt(row.about) });
+        }
+    }));
+
+    undo.push(actions.define('triageForget', {
+        about: 'Stop carrying something. Nothing about the task or judgement itself is touched',
+        takes: ['about'],
+        run: function (args) { return notebook.forget((args || {}).about); }
     }));
 
     //---- WHAT HAPPENED WHILE IT WAS AWAY, IN ONE CALL ----------------------
