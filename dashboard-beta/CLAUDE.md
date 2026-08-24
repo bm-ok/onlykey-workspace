@@ -1,6 +1,11 @@
 # dashboard-beta
 
-source of trust is the old dashboard, actually read it for the shape of the app.
+Source of trust is the old dashboard, actually read it for the shape of the app.
+
+Only use claude credentials for testing worker, judge, and supervisor workflow., 
+Test everything else without credentials as possible.
+
+During port
 
 The `dashboard/` app, ported to rectify plugins + React + webpack, running under
 NW.js and in a browser tab.
@@ -130,6 +135,33 @@ three read green while the server half is dead, and the pane under the red
 overlay goes on rendering its data, which is what makes it convincing. That is
 how `ReferenceError: makeFreeing is not defined` survived a session: two green
 checks, then a screenshot from somebody who had simply looked at the screen.
+
+**AND WHETHER THE SERVER HALF ACTUALLY REBUILT, which is a third question and
+the quietest of the three.** The watcher can stop rebuilding while everything
+else goes on working perfectly.
+
+Nothing points at it. `okc.js` still answers, because the pipe is served by a
+half that did not need to reload. The action list is right. `npm run check` is
+green and `npm test` is green, because both build from scratch. `windowControls`
+says `failed: null`. Every check available says the app is healthy, and it is —
+it is just not running the code you last wrote.
+
+    grep -a "is listening on 7383" nw.log | tail -1
+
+That line is the receipt: the guest-facing server rebinds on every server-half
+reload, so its timestamp is when your code last became real. If it is older than
+your edit, nothing you have measured since means anything.
+
+It cost an hour on the git door. The route was registered, `guestApis` listed it
+with the right paths, and a machine got a 401 anyway — so the search went into
+the route matcher, the register, `may`, the token, and the record shape, all of
+which were correct. The answer was that the app had last rebuilt ten minutes
+before the edit that added the door. **Two "verified" results in that window were
+verifications of stale code**, which is worse than no result: a wrong answer
+arrived at carefully is one you defend.
+
+`npm run restart` is the fix and it is also the way to rule this out — reach for
+it before doubting your code when a server-half change does not appear.
 
 `failed` and `broke` are different questions and both are on that answer.
 **`broke` is one pane throwing inside a working window; `failed` is the window
