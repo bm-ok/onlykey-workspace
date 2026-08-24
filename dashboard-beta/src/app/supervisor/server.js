@@ -329,6 +329,216 @@ async function plugin(imports, register) {
         }
     }));
 
+    //---- THE MACHINE'S END OF THE SAME CONVERSATION ------------------------
+    //
+    //THIS IS HOW A SUPERVISOR ANSWERS YOU, and until it existed a supervisor
+    //could think and could not speak. The first successful wake on this app read
+    //the board — tasks, todos, branchBoard, judging, prCuts, repositories —
+    //formed an answer, called this, and was refused: "Nothing here answers
+    //supervisorSays". From the Chat tab that is indistinguishable from a model
+    //that ignored you, which is the exact failure `asksSoFar` was ported to make
+    //visible and which this one had reintroduced one layer up.
+    //
+    //WHICH MACHINE, TAKEN FROM THE CALL AND NEVER FROM THE MESSAGE. ./guestapi.js
+    //strips every `_` key off what the machine sent and then stamps
+    //`_fromMachine` from the TOKEN that authenticated the request — so a
+    //supervisor cannot sign a message as another machine, and cannot sign one as
+    //a person. The one question this record has to answer six weeks later is who
+    //asked for a thing.
+    //
+    //AND IT IS THE ONLY WAY IN FOR A MACHINE. `chatSay` is the person's and is
+    //not on ./allowed.js, so the two ends cannot be confused even by a
+    //supervisor that wanted to.
+    undo.push(actions.define('supervisorSays', {
+        about: 'The supervisor saying something to the person',
+        takes: ['text', 'about'],
+        run: function (args) {
+            var a = args || {};
+            var line = talk.say({
+                who: 'supervisor',
+                text: a.text,
+                about: a.about || null,
+                from: a._fromMachine || null,
+                via: 'wire'
+            });
+
+            say('supervisor', a._fromMachine || undefined).info(
+                'it said: ' + line.text.slice(0, 120) + (line.text.length > 120 ? '…' : '')
+            );
+
+            return Object.assign({}, line, { note: 'Said. It is on the Chat tab now.' });
+        }
+    }));
+
+    //---- WHAT HAPPENED WHILE IT WAS AWAY, IN ONE CALL ----------------------
+    //
+    //A SUPERVISOR THINKS IN BURSTS: it wakes, reads, decides, does something and
+    //stops. Everything it needs on waking is "what is different since last
+    //time", and that spans several records — what was said to it, what the queue
+    //finished, what this host did.
+    //
+    //ONE BOOKMARK, WHICH IS THE POINT. Four calls would be four bookmarks and a
+    //model keeping all four correctly across a restart; this takes one number
+    //and hands back the next. Nothing here goes to the network.
+    undo.push(actions.define('whatsNew', {
+        about: 'Everything that changed since a bookmark: what was said, what finished, what is waiting',
+        takes: ['since', 'events'],
+        run: async function (args) {
+            var a = args || {};
+
+            //---- NEVER LESS THAN WHAT IT HAS NOT ANSWERED ----------------
+            //
+            //THIS ACTION USED TO ERASE WHAT IT RETURNED. It marks read on the
+            //way out, and the skill tells a supervisor to keep the bookmark and
+            //pass it — so the FIRST call in a turn returned the message and moved
+            //the mark, and the SECOND call, made with that fresh bookmark,
+            //returned an empty conversation. It is called two to four times a
+            //turn, every turn.
+            //
+            //Four messages in a row were read and answered with "nothing to do",
+            //including one that said "you have twice not answered me". The
+            //bookmark proved they were delivered; the second look is what decided
+            //the reply. From outside it was indistinguishable from a model
+            //ignoring somebody, and that is where two hours went.
+            //
+            //SO THE FLOOR IS THE LAST THING THE SUPERVISOR ITSELF SAID.
+            //Everything after that is by definition something it has not replied
+            //to, and no bookmark it can pass will hide it. Asking twice in one
+            //turn gives the same answer twice, which is what "what is new" has to
+            //mean if a model may ask it more than once.
+            var spoke = talk.all()
+                .filter(function (m) { return m.who === 'supervisor'; })
+                .map(function (m) { return Number(m.n); });
+            var lastSaid = spoke.length ? Math.max.apply(null, spoke) : 0;
+            var asked = a.since == null ? 0 : (Number(a.since) || 0);
+
+            //A BUDGET, BECAUSE THE READING END HAS ONE. This is answered into a
+            //tool result on a machine, and an answer too large to accept does not
+            //arrive — which is not a smaller version of arriving, it is the
+            //supervisor going blind to everything said to it. The conversation
+            //was once 81% of a 102,000-character reply.
+            var said = talk.since(Math.min(asked, lastSaid), { bytes: 20000 });
+
+            //THE RECEIPT, WRITTEN HERE BECAUSE HERE IS WHERE THE WORDS ARRIVE.
+            //Not when the message was stored, which says only that this host took
+            //it, and not when the supervisor replies, which may never happen — a
+            //supervisor that reads something and decides to do nothing has still
+            //read it. From the person's side this is the difference between "it
+            //has not looked yet" and "it looked and said nothing".
+            if (said.messages.length) talk.markRead(said.bookmark, a._fromMachine || null);
+
+            //THE BOARD AS IT STANDS, rather than a diff of it. A supervisor
+            //deciding what to do next needs the state, and the state is small.
+            var board = [];
+            try {
+                var got = await actions.call('tasks', {});
+                board = (got && got.tasks) || [];
+            } catch (e) { /* the note below says what could not be read */ }
+
+            function inState(s) { return board.filter(function (t) { return t.state === s; }); }
+            var finished = board.filter(function (t) { return t.state === 'done' && !t.verdict; });
+
+            var cuts = 0;
+            var unsent = [];
+            try {
+                var cutRows = ((await actions.call('prCuts', {})) || {}).cuts || [];
+                cuts = cutRows.length;
+
+                //NOT ONE THAT HAS ALREADY BEEN CUT. The text was written for that
+                //cut and the cut exists; listing it as outstanding is asking for
+                //the same thing twice.
+                var already = {};
+                cutRows.forEach(function (c) { already[c.source + ' -> ' + c.target] = true; });
+
+                //A DRAFT IS ITS OWN UNFINISHED WORK AND IT COULD NOT SEE IT.
+                //Writing one is on its list and reading them back was not, so a
+                //supervisor that wrote a draft, went to sleep and woke had no way
+                //of learning it had one — `cuts` counts what has already GONE.
+                //The consequence was a change sitting drafted and unsent with
+                //nothing wrong with it, and its skill says in as many words "do
+                //not stop at the draft and ask".
+                ((await actions.call('prDrafts', {})) || {}).drafts?.forEach(function (d) {
+                    if (!already[d.source + ' -> ' + d.target]) {
+                        unsent.push({ source: d.source, target: d.target, title: d.title || null, at: d.at || null });
+                    }
+                });
+            } catch (e) { /* named in `notRead` below */ }
+
+            var machines = 0;
+            try { machines = (ours.read() || []).length; } catch (e) { /* none */ }
+
+            var out = {
+                said: said.messages,
+                bookmark: said.bookmark,
+                //HOW MANY WERE NOT SENT, which now has two reasons to be
+                //non-zero: too many messages, or too much text. Either way it is
+                //the difference between "nobody said anything" and "you were not
+                //shown it", and only one of those is a reason to ask again.
+                missed: said.missed,
+                saidNote: said.missed
+                    ? said.missed + ' earlier message(s) are not in this answer — the newest that fit are. '
+                        + 'Ask "chat" for the whole conversation if what you need is older than this.'
+                    : null,
+
+                tasks: {
+                    queued: inState('queued').map(function (t) {
+                        return { id: t.id, number: t.number, title: t.title, branch: t.branch, tag: t.tag || null };
+                    }),
+                    running: inState('given').map(function (t) {
+                        return { id: t.id, number: t.number, title: t.title, machine: t.machine };
+                    }),
+                    //THE ONES WORTH ITS ATTENTION: finished, and nobody has
+                    //judged them.
+                    waitingOnAVerdict: finished.map(function (t) {
+                        return { id: t.id, number: t.number, title: t.title, branch: t.branch };
+                    })
+                },
+
+                machines: machines,
+                cuts: cuts,
+                unsent: unsent,
+
+                //---- AND WHAT THIS APP CANNOT TELL IT YET -----------------
+                //
+                //`arrived` IS MISSING AND IS NAMED RATHER THAN OMITTED. Over
+                //there it carries what the GitHub watcher last saw — an issue
+                //somebody filed, a pull request somebody proposed — which are the
+                //only two things here that turn up on their own. That watcher has
+                //not been ported.
+                //
+                //IT MATTERS MORE THAN THE OTHER GAPS ON THIS ANSWER. A supervisor
+                //CAN ask (`issues` and `pulls` are on its list) but is never told
+                //there is anything to ask ABOUT — so it wakes, sees nothing new,
+                //and goes back to sleep with an open issue sitting there. That
+                //happened over there, which is why the field exists at all.
+                //
+                //SAID IN THE ANSWER, so a model reads it rather than inferring
+                //silence. An empty `arrived` would be a claim that nothing has
+                //arrived.
+                arrived: null,
+                notRead: ['arrived — nothing here watches GitHub yet, so ask `issues` and `pulls` directly']
+            };
+
+            //AND WHAT THIS HOST DID, when asked for. Off by default because it is
+            //the long half and a supervisor mostly wants the short one.
+            if (a.events !== false && a.events !== 'false') {
+                try {
+                    var happened = ((await actions.call('events', { limit: 60 })) || {}).events || [];
+                    out.happened = happened.map(function (e) {
+                        return { at: e.at, level: e.level, tags: e.tags, text: e.text };
+                    });
+                } catch (e) { out.notRead.push('happened — the event stream would not answer'); }
+            }
+
+            out.note = said.messages.length
+                ? said.messages.length + ' thing(s) said to you. Ask again with since=' + out.bookmark + '.'
+                : 'Nothing said since ' + (a.since == null ? 'ever' : a.since)
+                    + '. Ask again with since=' + out.bookmark + '.';
+
+            return out;
+        }
+    }));
+
     //---- waking it, which is the only thing here that spends anything ------
     //
     //ONE TURN AT A TIME, ACROSS EVERYTHING THAT MIGHT ASK. A chat message, a task
