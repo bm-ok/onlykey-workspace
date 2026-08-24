@@ -7,7 +7,6 @@
 
 const { it, draft, requires } = require('../../harness')
 const { aMachine, roleFor } = require('../../helpers')
-const guests = require('../../../core/guests')
 
 // It hands the credential to a machine to find out whether it works, so it
 // stands on machines existing and coming up. That is the whole reason it sits
@@ -148,48 +147,29 @@ draft('and signing a worker in is a job, not a sequence written into this app',
 // it checkable was noticing that the CLI rotating is not the thing to prove:
 // what has to be true is that a CHANGE on the machine arrives here, which a
 // throwaway identity can demonstrate in seconds without a worker run.
-// THE INVARIANT, and it needs no machine and no money: one sign-in is never out
-// on two machines at once. Whether lending is pinned or pooled is a policy
-// question, settled above and in favour of pooled; this is not policy. Two
+// THE INVARIANT THAT USED TO BE ASKED HERE — one sign-in is never out on two
+// machines at once — IS NOT ASKED HERE ANY MORE, and it was the right claim in
+// the wrong file.
+//
+// It handed `choosable` rows it made up, deliberately, "so the answer does not
+// depend on what this host happens to be holding". That is a unit test's whole
+// description of itself: no machine, no credential, no host. It could not run
+// here anyway, since a drill is copied to dist/suites with only the harness
+// beside it and cannot reach the app's insides — but even reachable it belonged
+// somewhere it could run every time, not only when somebody exercises the kit.
+//
+// `test/runners/guests-choosing.test.js` asks it, against the same function, and
+// asks more than this did: one already out on another machine is not offered,
+// one out on THIS machine still is, the wrong role is refused, a sign-in whose
+// file is gone is not offered, a paused one is passed over so a single dead key
+// cannot starve a host, and the three different reasons a host can have nothing
+// to give are told apart.
+//
+// WHAT THE CLAIM MEANT IS UNCHANGED and is worth keeping written down: two
 // machines holding one identity means two workers authenticating as the same
-// account, and the host having no idea which of them refreshed the token it gets
-// back — and there is no version of that anybody wants.
-//
-// A draft asking for pinned credentials stood here and was scrapped rather than
-// kept, because a to-do list that carries a design somebody already decided
-// against is one that argues for building it every time it is read.
-//
-// ASKED OF `choosable` WITH ROWS HANDED IN, so the answer does not depend on
-// what this host happens to be holding. The same separation the merge rule and
-// the revise rule got, for the same reason: a rule only checkable against live
-// state is one that gets checked once.
-it('one sign-in is never out on two machines at once', async ({ assert, log }) => {
-  const rows = [
-    { name: 'free', role: 'worker', has: true, holder: null },
-    { name: 'onA', role: 'worker', has: true, holder: 'machine-a' },
-    { name: 'judgely', role: 'judge', has: true, holder: null },
-    { name: 'tokenless', role: 'worker', has: false, holder: null }
-  ]
-  const names = (role, machine) => guests.choosable(rows, role, machine).map(g => g.name)
-
-  // THE WHOLE POINT: a sign-in already out is not offered to anybody else.
-  assert.ok(!names('worker', 'machine-b').includes('onA'),
-    '"onA" is out on machine-a and was offered to machine-b as well — two workers would authenticate as one account')
-
-  // AND IT IS STILL ITS OWN. A machine already holding one is not refused it a
-  // second time: that is a machine picking up where it left off, not sharing.
-  assert.ok(names('worker', 'machine-a').includes('onA'),
-    'a machine was refused the sign-in it is already holding')
-
-  // THE ORDINARY CASE, so the filter is not simply refusing everything.
-  assert.ok(names('worker', 'machine-b').includes('free'), 'a free worker sign-in was not offered at all')
-
-  // AND THE TWO THAT ARE NOT ABOUT HOLDING: the wrong role, and no token.
-  assert.ok(!names('worker', 'machine-b').includes('judgely'), 'a judge sign-in was offered for a worker')
-  assert.ok(!names('worker', 'machine-b').includes('tokenless'), 'a sign-in with no token behind it was offered')
-
-  log(`offered to machine-b: ${names('worker', 'machine-b').join(', ') || 'nothing'} — "onA" is out on machine-a and stays there`)
-})
+// account, with the host having no idea which of them refreshed the token it
+// gets back. Whether lending is pinned or pooled is policy and is settled above
+// in favour of pooled; this never was policy.
 
 
 draft('and the .claude folder can be thrown away without losing the token',

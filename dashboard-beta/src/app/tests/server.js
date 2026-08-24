@@ -257,10 +257,30 @@ async function plugin(imports, register) {
     //THE WORST OF WHAT IS UNDER IT, because a suite is only as good as its
     //weakest check and an average would hide the one that matters.
     function worstOf(rows) {
-        var order = ['failed', 'changed', 'unrunnable', 'not run', 'passed'];
+        //THE SAME ORDER ../tests.js DRAWS IN, and "asks you" sits where it does
+        //there: worse than a check whose code has changed, because somebody has
+        //to go and do something, and not as bad as one that failed.
+        var order = ['failed', 'asks you', 'changed', 'unrunnable', 'not run', 'passed'];
+
+        //A STATE THIS DOES NOT KNOW IS NOT SILENTLY THE WORST ONE.
+        //
+        //`indexOf` gives -1 for anything missing, and -1 is less than every real
+        //rank — so an unrecognised state won the comparison, became `worst`, and
+        //then could never be beaten, since every later row was compared against
+        //-1 as well. That is how "asks you" would have arrived here: not shown
+        //as itself, but quietly overriding the whole suite's summary.
+        //
+        //Ranked last instead, and the row is left alone. A word this function
+        //has not been taught is a reason to teach it, not a reason for a board
+        //to change colour.
+        function rank(state) {
+            var at = order.indexOf(state);
+            return at < 0 ? order.length : at;
+        }
+
         var worst = 'passed';
         rows.forEach(function (r) {
-            if (order.indexOf(r.state) < order.indexOf(worst)) worst = r.state;
+            if (rank(r.state) < rank(worst)) worst = r.state;
         });
         return rows.length ? worst : 'not run';
     }
@@ -327,8 +347,12 @@ async function plugin(imports, register) {
                 doing: [at.groupName, at.suiteName, at.testName].join(' / '),
                 passed: counts.passed,
                 failed: counts.failed,
-                other: counts.unrunnable,
-                done: counts.passed + counts.failed + counts.unrunnable
+                //NEITHER PASSED NOR FAILED, TOGETHER. The banner has room for
+                //three numbers and a person watching one wants to know how much
+                //is left, not the taxonomy — but `done` has to count them or the
+                //bar stops short of the end for a run with anything asked in it.
+                other: counts.unrunnable + counts.asking,
+                done: counts.passed + counts.failed + counts.unrunnable + counts.asking
             }
             : null);
     }
@@ -351,7 +375,7 @@ async function plugin(imports, register) {
 
         await runs.began({ suite: wantGroup, test: wantTest });
 
-        var counts = { passed: 0, failed: 0, unrunnable: 0 };
+        var counts = { passed: 0, failed: 0, unrunnable: 0, asking: 0 };
 
         //WHICH CHECK IS SPEAKING, so its log lines land against it.
         var onCheck = null;
@@ -452,14 +476,32 @@ async function plugin(imports, register) {
             //durable record needs all three, and they are only complete here.
             onTestEnd: function (at) {
                 var was = at.result || {};
+
+                //A JOB FOR SOMEBODY IS NOT A FAILURE, and this ladder used to
+                //say it was. `asksYou` was not on it, so a check that ended by
+                //asking a person to do something — sign a worker in, answer a
+                //request — fell off the end into `failed`: filed red in the
+                //durable record and counted against the run.
+                //
+                //THE PANE WAS ALREADY BUILT FOR IT. ./tests.js ranks and counts
+                //a state called "asks you", between the failures and the
+                //changed ones, and nothing has ever written one. The reader was
+                //waiting for a word the writer never said.
+                //
+                //IT IS WORTH GETTING RIGHT BEYOND THE COLOUR. What the drills
+                //ask for is exactly the list of what a person has to do to keep
+                //this host running, and filing it as a failure both slanders the
+                //kit and throws away the best source of that list there is.
                 var state = was.draft ? 'draft'
                     : was.carried ? 'passed'
-                        : was.unrunnable ? 'unrunnable'
-                            : was.ok ? 'passed' : 'failed';
+                        : was.asksYou ? 'asks you'
+                            : was.unrunnable ? 'unrunnable'
+                                : was.ok ? 'passed' : 'failed';
 
                 if (state === 'passed' && !was.carried) counts.passed++;
                 if (state === 'failed') counts.failed++;
                 if (state === 'unrunnable') counts.unrunnable++;
+                if (state === 'asks you') counts.asking++;
 
                 var lines = (onCheck && onCheck.check === at.testName) ? onCheck.log : [];
                 onCheck = null;
@@ -504,7 +546,8 @@ async function plugin(imports, register) {
             await remembering;
             await runs.ended(counts);
             return { ran: true, passed: counts.passed, failed: counts.failed,
-                unrunnable: counts.unrunnable, suites: (out && out.suites) || [] };
+                unrunnable: counts.unrunnable, asking: counts.asking,
+                suites: (out && out.suites) || [] };
         } finally {
             going = null;
             //AND THE BANNER COMES DOWN. Nothing to name, so nothing is running.
@@ -634,10 +677,16 @@ async function plugin(imports, register) {
     //nobody looked, and that would be a problem. A red drill is this app telling
     //you something it relies on has stopped being true.
     //
-    //FAILURES AND NOTHING ELSE. Not-tried is the resting state of a quiet host,
-    //and a number on the bar that is high when nothing is wrong is a number
-    //people stop reading -- which is the failure mode ../../inbox's own header
-    //is about, arriving through this source.
+    //FAILURES, AND CHECKS THAT ASKED FOR SOMETHING. Not-tried is the resting
+    //state of a quiet host, and a number on the bar that is high when nothing is
+    //wrong is a number people stop reading -- which is the failure mode
+    //../../inbox's own header is about, arriving through this source.
+    //
+    //THE SECOND KIND IS WHY THIS SOURCE EARNS ITS PLACE. A drill that asks has
+    //RUN, found this host short of something only a person can supply, and said
+    //what to do — which is the definition of a row on this list, worked out by
+    //trying rather than guessed at. Both go to zero on a host that is looked
+    //after, which is the test for belonging here.
     //
     //---- IT USED TO BE PUSHED FROM INSIDE THE PANE -------------------------
     //
@@ -650,7 +699,7 @@ async function plugin(imports, register) {
     //There is a channel now, and it is not a digit: it is a row on the list of
     //things waiting, with somewhere to go. The badge falls out of that.
     undo.push(imports.inbox.source({
-        name: 'drills that failed',
+        name: 'drills that failed or are asking you',
         //---- WHAT IS NOT COUNTED, AND WHY IT WOULD RUIN THE COUNT --------
         //
         //`broken` AND `unrunnable` ARE NOT ERRANDS TODAY. Eighteen drills are
@@ -673,17 +722,45 @@ async function plugin(imports, register) {
             //said so by putting zero on a tab that plainly reads four.
             ((said && said.suites) || []).forEach(function (suite) {
                 (suite.tests || []).forEach(function (one) {
-                    if (one.state !== 'failed') return;
+                    if (one.state !== 'failed' && one.state !== 'asks you') return;
 
                     //NO `id` ON A CHECK, so the name is the identity — and the
                     //suite is part of it, because two suites may reasonably ask
                     //the same question of different things.
                     var which = (suite.name || '') + ' / ' + (one.name || '');
+
+                    //---- THE OTHER KIND, AND IT IS THE BETTER ONE -----------
+                    //
+                    //A CHECK THAT ASKS IS NOT REPORTING A FAULT. It ran, found
+                    //this host missing something only a person can supply — a
+                    //worker signed in, a request answered — and said what to do
+                    //about it. That is precisely what this list is for, and the
+                    //drills are the only thing on this host that works it out by
+                    //trying.
+                    //
+                    //THE DRILL'S OWN WORDS, NOT A SENTENCE WRITTEN HERE. It
+                    //knows what it wanted and this does not; `why` is the whole
+                    //value of the row, and paraphrasing it into "a drill needs
+                    //something" would throw away the only part worth reading.
+                    var asking = one.state === 'asks you';
+
+                    //FROM THE CHECK, NOT FROM THE ROW ABOVE IT. A test row
+                    //carries a state and the checks under it carry the reason —
+                    //so reading `why` here found nothing and every asked row
+                    //came out saying "it needs something", which is the one
+                    //sentence a person cannot act on.
+                    var asked = asking
+                        ? (one.checks || []).filter(function (c) { return c.state === 'asks you' && c.why; })[0]
+                        : null;
+
                     out.push(imports.inbox.item(
-                        'drill that failed',
+                        asking ? 'a drill is asking you' : 'drill that failed',
                         one.name || which,
-                        'It is a check this app makes about itself, and it does not hold. In "' + (suite.name || '?')
-                            + '". Nothing else here will say so.',
+                        asking
+                            ? ((asked && asked.why) || 'It ran, and it needs something from you before it can go further.')
+                                + ' Asked by "' + (suite.name || '?') + '".'
+                            : 'It is a check this app makes about itself, and it does not hold. In "'
+                                + (suite.name || '?') + '". Nothing else here will say so.',
                         imports.inbox.at('Test', null, one.name || null),
                         { id: which }
                     ));
