@@ -700,6 +700,23 @@ async function plugin(imports, register) {
             }
         }));
 
+        //AND TAKING ONE BACK OUT, which the board had no way to do — ../judge has
+        //had `judgementUnqueue` since it was written and the task half of the
+        //same board did not.
+        //
+        //IT IS NOT A TIDINESS ACTION. Work queued against a host that cannot
+        //dispatch it sits looking inert and starts the moment that changes, so
+        //without this the only ways out of the queue are to let it run or to
+        //throw the task away — and one of those spends a machine on work
+        //somebody decided against.
+        undo.push(actions.define('taskUnqueue', {
+            about: 'Take a task back out of the queue. Does not stop one already running',
+            takes: ['id'],
+            run: async function (args) {
+                return await doors.unqueue((args || {}).id);
+            }
+        }));
+
         //---- CHANGING ONE, AND THE TWO CALLERS THAT DO -----------------------
         //
         //A PERSON EDITING A DRAFT and the queue recording what happened to a run
@@ -1081,23 +1098,45 @@ async function plugin(imports, register) {
                     //running the same function a tick dispatches by rather than
                     //by describing it.
                     //
-                    //THE SIGN-IN CHECK IS NOT APPLIED HERE, and that is said
-                    //rather than quietly skipped. Whether a credential is free
-                    //is a rule about sign-ins and it lives with them — over in
-                    //the app being ported from, until the Runners half moves. A
-                    //second copy of it here is how two answers to "can this go
-                    //out" come to disagree, and the one that decides is not the
-                    //one anybody is reading.
+                    //THE SIGN-IN CHECK IS APPLIED HERE NOW, and it did not used
+                    //to be. It was left out while the Runners half was still in
+                    //the app being ported from, and what this said was that a
+                    //row shown as going out may still wait for a credential.
+                    //
+                    //THAT SENTENCE OUTLIVED THE THING IT DESCRIBED. `guests` is
+                    //consumed by this plugin and ../runners/guests answers
+                    //`forQueue` — the tick has been asking it, through
+                    //./dispatching, the whole time. So the board was the only
+                    //reader that could not see why work was not going out, and
+                    //the person watching it is the one who has to do something
+                    //about it: a paused sign-in is fixed by signing in again,
+                    //and nothing else on this host can do that for them.
+                    //
+                    //STILL NOT A SECOND COPY OF THE RULE. It runs the same
+                    //`policy.plan` a tick dispatches by, given the same answer
+                    //from the same place — which is the only arrangement where
+                    //the board and the tick cannot come to disagree.
                     plan: (function () {
-                        var p = policy.plan(waiting, vms, { inFlight: doing, signIns: null });
+                        //A BOARD IS WORTH DRAWING WITHOUT THIS. If the sign-ins
+                        //cannot be read the plan is still the truth about
+                        //machines and order, and `signInCheck` says which of the
+                        //two answers this is rather than leaving a reader to
+                        //assume the stricter one.
+                        var signIns = null;
+                        try { signIns = imports.guests.forQueue(); } catch (e) { signIns = null; }
+
+                        var p = policy.plan(waiting, vms, { inFlight: doing, signIns: signIns });
                         return {
                             next: p.dispatch,
                             waiting: p.waiting.map(function (w) { return { ref: w.ref, why: w.why }; }),
                             free: p.free,
-                            signInCheck: false,
-                            about: 'What the tick would do with what is waiting now. The sign-in check is NOT part of '
-                                + 'this — whether a credential is free is a rule that lives with the sign-ins, which '
-                                + 'have not moved here yet, so a row shown as going out may still wait for one.'
+                            signInCheck: !!signIns,
+                            signIns: signIns,
+                            about: signIns
+                                ? 'What the tick would do with what is waiting now, including whether a sign-in is '
+                                    + 'free to give it — the same check, from the same place, that a tick dispatches by.'
+                                : 'What the tick would do with what is waiting now. The sign-ins could not be read, so '
+                                    + 'a row shown as going out may still wait for one.'
                         };
                     })(),
 
