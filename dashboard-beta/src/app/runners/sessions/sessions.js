@@ -298,7 +298,7 @@ module.exports = function sessions(theme, okc, shell) {
                         {'Remembered ' + (rows.length ? '— ' + rows.length + ', ' + size(state.bytes) : '— none yet')}
                     </div>
                     <Note>{state.note}</Note>
-                    {state.where ? <p className="note muted mono">{state.where}</p> : null}
+                    {state.where ? <Note><Mono>{state.where}</Mono></Note> : null}
                 </Panel>
 
                 <div className="cols">

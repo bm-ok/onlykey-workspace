@@ -386,9 +386,30 @@ test('a modifier used on a base is one the stylesheet gives that base', () => {
 //`Dot`, so the shell — which is where the wrong tone was actually written — does
 //not contain the word `Dot` anywhere. Checking only the drawing component left
 //the one file that had the bug unchecked, and the check still passed.
+//AND `Note`, WHICH IS THE SAME SHAPE AND WAS THE SAME BUG AT A HUNDRED CALL
+//SITES. `.note` had no modifiers whatsoever while `kind="bad"` was passed all
+//over the app, so every error message in it drew in the grey of the footnote
+//underneath. It is the third time a modifier has existed only compounded onto
+//some other base — .badge, .card-sub, .empty, and the stylesheet carries a
+//comment about each of the first two. The lesson that did not stick is that
+//noticing costs a person looking at the screen, and this file is what replaces
+//that. So the entry goes in the moment the shape appears, not after.
+//`value: false` ON Note, AND THE REASON IS THE WORD ITSELF. The value form
+//exists for `dot={{ tone: 'ok' }}` — a tone travelling as data one hop before it
+//is drawn — and it is only safe because `tone:` belongs to nothing else in this
+//app. `kind:` is the opposite: it is how half the state here says what something
+//IS. `{ kind: 'task' }`, `{ kind: 'judgement' }`, `{ kind: 'judge' }`. Reading
+//the value form for Note reported thirty of those as styling mistakes, including
+//several in server files that contain no markup at all.
+//
+//"Only in a file that mentions the component" is not enough of a guard for a
+//word that common — `Note` appears in a comment in most of these. So the
+//narrower check is the honest one: a Note's kind is written where the Note is
+//written, and nothing passes one along.
 const TONED = [
-    { tag: 'Dot', base: 'dot', prop: 'tone' },
-    { tag: 'Topbar', base: 'dot', prop: 'tone' }
+    { tag: 'Dot', base: 'dot', prop: 'tone', value: true },
+    { tag: 'Topbar', base: 'dot', prop: 'tone', value: true },
+    { tag: 'Note', base: 'note', prop: 'kind', value: false }
 ];
 
 test('a tone handed to a component is a modifier the stylesheet gives its base', () => {
@@ -399,7 +420,7 @@ test('a tone handed to a component is a modifier the stylesheet gives its base',
     const wrong = [];
     let looked = 0;
 
-    for (const { tag, base, prop } of TONED) {
+    for (const { tag, base, prop, value } of TONED) {
         const allowed = mods.get(base);
         assert.ok(allowed && allowed.size,
             'the stylesheet gives "' + base + '" no modifiers at all, so this check is inert');
@@ -416,7 +437,7 @@ test('a tone handed to a component is a modifier the stylesheet gives its base',
             //because `tone:` is an ordinary enough word to belong to something
             //else entirely. Naming the tag is what keeps this from reporting on
             //code it has not understood.
-            const mentions = src.includes(tag);
+            const mentions = value && src.includes(tag);
             for (const re of mentions ? [asAttr, asValue] : [asAttr]) {
                 for (const m of src.matchAll(re)) {
                     looked++;

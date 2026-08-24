@@ -232,6 +232,37 @@ module.exports = function trouble(theme, okc, shell) {
         var busy = {};
         ((qs.state && qs.state.inFlight) || []).forEach(function (f) { busy[f.machine] = true; });
 
+        //---- AND WHAT IS ABOUT TO HAPPEN TO IT, WHICH IS NOT IDLENESS -------
+        //
+        //`plan.next` IS THE QUEUE SAYING WHERE IT IS ABOUT TO PUT THINGS, and
+        //this banner read `queueState` for `inFlight` and dropped it. A machine
+        //fifteen seconds from being given a judgement was called "on and doing
+        //nothing" and offered a button to strip its credential — which is the
+        //banner racing the tick, and losing tells you nothing about who was
+        //right.
+        //
+        //ONLY WHILE THE TICK IS ACTUALLY TURNING, and this went in the wrong way
+        //round once already. `plan` answers "what WOULD the tick do", on purpose
+        //— ./queue/server.js built it that way so the board can say what is
+        //about to happen without letting it happen. So with the queue stopped it
+        //names a machine that is about to be given nothing, for ever. Suppressing
+        //on that silenced the only machine with a reason to be mentioned, and a
+        //banner that goes quiet reads as "all clear".
+        var aboutTo = {};
+        if (qs.state && qs.state.ticking) {
+            (((qs.state && qs.state.plan) || {}).next || []).forEach(function (g) {
+                if (g && g.machine) aboutTo[g.machine] = g.entry || true;
+            });
+        }
+
+        //AND WHETHER ANY OF IT IS GOING TO HAPPEN AT ALL. The line below says
+        //"the queue starts one when there is work" — which was simply FALSE with
+        //a judgement sitting in `waiting` and the tick switched off, and it is
+        //the sentence somebody reads before deciding to shut the machine down.
+        //Told to undo the very machine the queue was about to use.
+        var stopped = !!(qs.state && qs.state.tickHere && !qs.state.ticking);
+        var queued = ((qs.state && qs.state.waiting) || []).length;
+
         vms.filter(function (v) {
             //A SHELL OPEN ON IT WOULD COUNT AS USING IT, and there is no way to
             //have one here yet — the terminal's live half is not built, so there
@@ -262,6 +293,7 @@ module.exports = function trouble(theme, okc, shell) {
             return v.running
                 && (v.tags || []).indexOf('supervisor') < 0
                 && !busy[v.name]              //the queue is using it
+                && !aboutTo[v.name]           //the queue is one tick from using it
                 && !v.borrowed                //somebody took it, deliberately
                 && v.forTasks !== false       //somebody said keep this one back
                 && v.stage !== 'installing';  //it is being built
@@ -287,13 +319,26 @@ module.exports = function trouble(theme, okc, shell) {
             //NOT OFFERED HERE. Stopping a machine somebody may be about to use is
             //not a repair, and this line is a nudge rather than a fault — the one
             //above it is the one with something wrong to put right.
-            lines.push({
-                key: 'idle-' + v.name,
-                bold: v.name + ' is on and doing nothing. ',
-                rest: 'A runner rests off — the queue starts one when there is work. Shut it down, or give it'
-                    + ' something to do.',
-                go: { label: 'Runners', at: function () { shell.go('Runners', 'Virtual machines'); } }
-            });
+            //THE ADVICE DEPENDS ON WHY NOTHING IS HAPPENING, and there are two
+            //reasons that look identical on a machine. Nothing to do is a nudge.
+            //Something to do and a stopped queue is not this machine's fault at
+            //all, and "shut it down" is the wrong end of it — the queue is
+            //where the work is stuck, so that is where this points.
+            lines.push(stopped && queued
+                ? {
+                    key: 'idle-' + v.name,
+                    bold: v.name + ' is on and doing nothing, and the queue is stopped. ',
+                    rest: queued + ' waiting — it is not this machine that is idle so much as the thing that hands'
+                        + ' out the work. Start the queue, or shut the machine down until you want it.',
+                    go: { label: 'Queue', at: function () { shell.go('Queue', 'Board'); } }
+                }
+                : {
+                    key: 'idle-' + v.name,
+                    bold: v.name + ' is on and doing nothing. ',
+                    rest: 'A runner rests off — the queue starts one when there is work. Shut it down, or give it'
+                        + ' something to do.',
+                    go: { label: 'Runners', at: function () { shell.go('Runners', 'Virtual machines'); } }
+                });
         });
 
         //---- off, and still holding one ------------------------------------

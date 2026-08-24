@@ -1,7 +1,58 @@
 var React = require('react');
 
-module.exports = function queue(theme, okc) {
-    var { Pane, Panel, Badge, Empty, Note, Mono, Skeleton} = theme;
+module.exports = function queue(theme, okc, shell) {
+    var { Pane, Panel, Badge, Empty, Note, Mono, Linky, Skeleton} = theme;
+
+    //---- whether any of this is going to happen -----------------------------
+    //
+    //THE BOARD DID NOT SAY, AND IT IS THE FIRST THING IT SHOULD SAY. A judgement
+    //sat under "Waiting" beside a machine marked "free" for as long as anybody
+    //cared to look at it, and the screen was perfectly correct: that IS what is
+    //waiting and that IS which machine is free. What it left out is that the
+    //tick was off, so the answer to "why has nothing happened" was on the page
+    //the whole time as an absence — and an absence is not something a person can
+    //be expected to read.
+    //
+    //IT DOES NOT GROW A START BUTTON. The queue's tick is a cron job with
+    //`humanOnly` on it, and ../cron already draws a guarded Start for every job
+    //there is. ./server.js says why in as many words: only a person may start
+    //it, said in ONE place, so `cronStart` and `queueStart` refuse together —
+    //"a second copy is how the two come to disagree about what is allowed". A
+    //second button is a second copy. So this points at the one that exists.
+    function Standing({ state }) {
+        var waiting = (state.waiting || []).length;
+        var free = (state.machines || []).filter(function (m) { return m.free; }).length;
+
+        //ARMED AND RUNNING ARE DIFFERENT, and the Cron pane keeps them apart for
+        //a reason worth repeating here: this half is rebuilt on every save and
+        //the job is not, so there is a moment after each one where the clock
+        //turns with nothing behind it.
+        if (!state.tickHere) {
+            return <Note kind="warn">{'The tick is not armed on this host, so nothing below will be given out '
+                + 'however much is waiting. That is what the moment after a save looks like — it comes back by itself.'}</Note>;
+        }
+
+        if (state.ticking) {
+            var by = state.startedBy;
+            return <Note kind="ok">{'The queue is running'
+                + (by && by.by ? ', started by ' + by.by : '')
+                + ' — it looks every ' + (state.every || '?') + ' and gives waiting work to free machines.'}</Note>;
+        }
+
+        return (
+            <Note kind="bad">
+                {'The queue is STOPPED. '
+                    + (waiting
+                        //THE SHARPEST VERSION OF THE SENTENCE, when there is
+                        //something to lose by not reading it.
+                        ? waiting + ' waiting, ' + free + ' machine(s) free, and none of it moves until somebody starts it. '
+                        : 'Nothing is waiting, so nothing is being missed. ')
+                    + 'It comes up stopped every time and on purpose — it rolls a real machine back, hands it a '
+                    + 'credential, and runs instructions on it unattended. '}
+                <Linky onClick={function () { shell.go('Settings', 'Cron'); }}>Start it in Settings, under Cron</Linky>
+            </Note>
+        );
+    }
 
     function Machines({ rows }) {
         if (!rows || !rows.length) return <Empty>no machines</Empty>;
@@ -58,6 +109,8 @@ module.exports = function queue(theme, okc) {
                     ask", and those are different sentences. */}
                 {error ? <Note kind="bad">{error}</Note> : null}
 
+                <Standing state={state} />
+
                 <div className="cols">
                     <div className="col">
                         <Panel>
@@ -81,7 +134,7 @@ module.exports = function queue(theme, okc) {
                 </Panel>
 
                 <Note>{'read ' + reads + ' time(s) · the queue itself ticks every ' + (state.every || '?')}</Note>
-                <p className="note muted mono">{state.order}</p>
+                <Note><Mono>{state.order}</Mono></Note>
             </Pane>
         );
     }

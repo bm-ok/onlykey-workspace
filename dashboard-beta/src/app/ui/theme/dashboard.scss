@@ -652,6 +652,18 @@ main { padding: 16px; }
   font-size: 12px;
   margin: 0 0 12px;
 }
+/* AND THE SAME THING AGAIN, A THIRD TIME. `.note` had no modifiers at all while
+   a hundred call sites passed one -- `<Note kind="bad">` matched `.note` and a
+   `.bad` that exists only compounded onto .badge, .card-sub, .empty and .chip.
+   So every "I could not read this" in the app drew in exactly the grey of the
+   footnote beside it, which is the one sentence a note must never be mistaken
+   for: an error that looks like a caption is an error nobody reads.
+   `theme.Note` is now in TONED in test/rules/classes.test.js, which is what
+   makes the fourth time impossible rather than merely unlikely. */
+.note.bad { color: var(--fail); }
+.note.ok { color: var(--ok); }
+.note.warn { color: var(--warn); }
+.note.muted { color: var(--muted); }
 
 /* A section title with a control on the right. */
 .titlerow { display: flex; align-items: center; gap: 8px; }

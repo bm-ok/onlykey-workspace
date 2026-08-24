@@ -1062,8 +1062,31 @@ async function plugin(imports, register) {
                         ? 'THIS BOARD IS INCOMPLETE — ' + unreachable.join(', ') + ' could not be read. What is shown '
                             + 'is not "nothing is waiting", it is "this could not be seen". The app being ported from '
                             + 'answers those and may not be running.'
-                        : 'The order and the pool are this host\'s. Nothing here dispatches yet — what is running is '
-                            + 'being run by the app this is being ported from, and is shown as it reports it.'
+                        //---- AND OTHERWISE, WHETHER ANY OF IT IS GOING TO HAPPEN
+                        //
+                        //THIS SENTENCE WAS LEFT BEHIND BY THE THING IT DESCRIBED.
+                        //It said "nothing here dispatches yet — what is running is
+                        //being run by the app this is being ported from" for as
+                        //long as it took the tick to move over, and went on saying
+                        //it afterwards. `tickHere` sat two lines above it
+                        //answering true.
+                        //
+                        //A NOTE THAT IS PROSE GOES STALE; ONE BUILT FROM THE
+                        //FIELDS BESIDE IT CANNOT. The comment above `inFlight`
+                        //was updated when the tick moved and this was not, which
+                        //is exactly the drift — so it now says what `ticking` and
+                        //`tickHere` say, and there is nothing left to remember to
+                        //change.
+                        : !clock.armed()
+                            ? 'The tick is not armed on this host, so nothing here will be given out. That is the '
+                                + 'moment after a save — this half is rebuilt and the job is not — and it comes back by itself.'
+                            : clock.running()
+                                ? 'The queue is running on this host. It looks every ' + (TICK / 1000) + 's and gives '
+                                    + 'waiting work to free machines.'
+                                : 'THE QUEUE IS STOPPED, so nothing here is waiting to be picked up — it is waiting for '
+                                    + 'somebody to start it, in the window, under Settings and Cron. It comes up stopped '
+                                    + 'every time and on purpose: it rolls a real machine back, hands it a credential, '
+                                    + 'and runs instructions on it unattended.'
                 };
             }
         }));

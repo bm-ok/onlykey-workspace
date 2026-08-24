@@ -26,7 +26,7 @@ async function plugin(imports, register) {
     //row only when a tab has more than one, so registering the board as a pane
     //costs nothing while it is alone and is what makes room for the next.
     shell.tab({ name: 'Queue', order: 30 });
-    shell.pane({ tab: 'Queue', name: 'Board', order: 10, Component: makeQueue(theme, okc) });
+    shell.pane({ tab: 'Queue', name: 'Board', order: 10, Component: makeQueue(theme, okc, shell) });
 
     //---- AND WRITING A TASK DOWN IS THE QUEUE'S -----------------------------
     //
