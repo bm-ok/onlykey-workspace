@@ -51,13 +51,10 @@
 // script run by a real shell over a real ssh channel, and the questions are
 // answered by looking at its disk:
 //
-//     it holds exactly the credential      hashed on the machine, from the bytes
-//                                          that landed — not from what this host
-//                                          believes it sent
-//     and the key that opened it is gone   one pair per handover; a private half
-//                                          left behind makes that machine a
-//                                          place where every credential it is
-//                                          ever handed can be decrypted
+//     it holds exactly the credential      carried home off the machine's disk by
+//                                          the read-back, and compared here — not
+//                                          taken from what this host believes it
+//                                          sent
 //
 // THROUGH THE REAL DOOR, with no runner of its own: `guestLend` is what the queue
 // calls on every run, so what is exercised is the path that actually hands
@@ -68,7 +65,7 @@
 // at a login page. So nothing real is read, sent or risked, and the machine is
 // left without it.
 
-const { it, cleanup, requires } = require('../../harness')
+const { it, draft, cleanup, requires } = require('../../harness')
 const { aConnectedMachine, roleFor } = require('../../helpers')
 const crypto = require('node:crypto')
 
@@ -130,62 +127,85 @@ it('a machine is dialled in, and this host has something to hand it', async ({ o
 }, { minutes: 6, gate: true })
 
 it('and the machine ends up holding exactly it', async ({ okc, assert, state, log }) => {
-  // THE REAL DOOR. `guestLend` is what the queue calls on every run — the
-  // choosing and then the sealed handover — so this exercises the path machines
-  // are actually given their sign-ins by, rather than a runner assembled here.
+  // THE REAL DOORS, BOTH WAYS. `guestLend` is what the queue calls on every run —
+  // the choosing and then the sealed handover — and `guestBack` is what it calls
+  // when the run is over: it reads the credential off the machine's disk, keeps
+  // it if the worker refreshed it, and removes it from the machine.
+  //
+  // WHICH IS THE MEASUREMENT. This asked the machine to `sha256sum` the file and
+  // compared that — through `vmRun`, an action the old dashboard has and this app
+  // has not been given, deliberately or otherwise. But the read-back is a better
+  // question than a hash: it carries the BYTES home rather than a summary of
+  // them, over the same channel, and the host's own comparison of them is the one
+  // the app makes on every real run.
+  //
+  // SO WHAT IS ASKED IS THAT NOTHING MOVED. `rotated` is false only when what
+  // came off the disk fingerprints identically to what was sealed to it, and
+  // `refused` is null only when what came back was a usable credential rather
+  // than an emptied one. Together those say: it arrived, it arrived unchanged,
+  // and it is still that when it comes home.
   await okc('guestLend', { name: NAME, machine: state.machine })
   state.placed = true
 
-  // MEASURED ON THE MACHINE, from the bytes on its disk — not from what this
-  // host believes it sent, and not from what it reported back. sha256 cut to
-  // sixteen characters is what the guest list records and what every other drill
-  // here compares by.
-  const said = await okc('vmRun', {
-    name: state.machine,
-    command: 'sha256sum "$HOME/.claude/.credentials.json" | cut -c1-16',
-    what: 'fingerprinting what actually landed'
-  })
-  const onIt = String(said.output || '').trim().split('\n').pop().trim()
+  const back = await okc('guestBack', { name: NAME, machine: state.machine })
+  state.placed = false
 
-  assert.equal(onIt, state.print,
-    `${state.machine} is holding ${onIt} where the credential sealed to it is ${state.print}. It arrived, and it arrived changed`)
-  log(`${state.machine} holds ${onIt}, byte for byte what was sealed to it`)
+  assert.equal(back.refused || null, null,
+    `taking it back was refused, which means what came off ${state.machine} was not the credential that was put there: ${back.refused}`)
+  assert.equal(back.rotated, false,
+    `what came back off ${state.machine} is not byte for byte what was sealed to it — the fingerprint moved, and nothing on that machine was asked to change it`)
+
+  // AND THE HOST STILL HOLDS THE SAME ONE, asked of the list rather than of the
+  // answer above, because "nothing was overwritten" is a claim about what is
+  // here now.
+  const still = ((await okc('guests')).guests || []).filter((g) => g.name === NAME)[0]
+  assert.ok(still, `"${NAME}" is not in the list after a handover and a read-back`)
+  assert.equal(still.fingerprint, state.print,
+    `this host is holding ${still.fingerprint} where it sealed ${state.print}`)
+  assert.equal(still.holder || null, null,
+    `${state.machine} is still recorded as holding "${NAME}" after it was taken back`)
+
+  log(`${state.machine} took it, and it came home unchanged as ${still.fingerprint}`)
 }, { minutes: 6, gate: true })
 
-it('and the key that could open it does not outlive the handover', async ({ okc, assert, state, log }) => {
-  // ONE PAIR PER HANDOVER. If the private half stayed on the machine, a recording
-  // of the exchange would be openable by anything that later reached that disk —
-  // and the machine would be a place where every credential it is ever handed can
-  // be decrypted. It is removed whether the decryption worked or not.
-  const said = await okc('vmRun', {
-    name: state.machine,
-    command: 'ls "$HOME/.okc-handover" 2>&1 | tail -1; echo "---"; ls "$HOME/.okc/credential.js" 2>&1 | tail -1',
-    what: 'looking for the key it opened the credential with'
-  })
-  const out = String(said.output || '')
-  const [key] = out.split('---')
-
-  assert.ok(/No such file|cannot access/.test(key),
-    `the private key ${state.machine} opened the credential with is still on it: ${key.trim().slice(-200)}`)
-
-  // The guest half itself is expected to still be there, and is not a secret —
-  // said out loud so nobody reads the check above as "nothing is left behind".
-  log('the private half is gone; the script that used it stays, and is not a secret')
-})
+// AND THE KEY THAT COULD OPEN IT DOES NOT OUTLIVE THE HANDOVER — one pair per
+// handover, because a private half left behind makes that machine a place where
+// every credential it is ever handed can be decrypted, given a recording of the
+// exchange.
+//
+// A DRAFT RATHER THAN A CHECK, because asking it needs something this app cannot
+// do: look at a path on a machine. There is no action here that runs a command on
+// one — the app being ported from has `vmRun` and this does not, which is a
+// decision about how much the command line may do to a machine rather than an
+// oversight to fix in passing.
+//
+// IT IS NOT UNASKED IN THE MEANTIME. test/vms/sealed-both-halves.test.js runs the
+// guest half FOR REAL — the actual script, not a stand-in — and asks exactly
+// this: the private half does not survive a finish whether or not it worked, a
+// second finish has nothing to open with so a replay lands nothing, and a reply
+// sealed to somebody else does not land. What is missing is only that those are
+// asked of a script run here rather than of one that ran over there.
+draft(
+  'and the key that could open it does not outlive the handover, ON THE MACHINE',
+  'THE CLAIM: after a handover, ~/.okc-handover is gone from the machine, whether or not the decryption worked. '
+  + 'test/vms/sealed-both-halves.test.js runs the real guest half and asks this, so what is missing is the same '
+  + 'question asked of a machine rather than of this host. '
+  + 'WHAT IT WOULD TAKE: a way to run a command on a machine and read its output. The app being ported from calls '
+  + 'that `vmRun`; this app has no such action, and whether it should is a question about how much the command '
+  + 'line may do to a machine — not a gap to close on the way past. '
+  + 'THE CHECK, once there is one: ls "$HOME/.okc-handover" reports no such file, while the guest half itself is '
+  + 'still there and is not a secret.')
 
 cleanup(async ({ okc, state }) => {
   // TAKEN BACK OFF THE MACHINE FIRST, through the door that does it, so the list
   // does not go on believing a machine is holding something after this has
   // removed the file underneath it.
+  // TAKEN BACK OFF THE MACHINE IF IT IS STILL THERE. `guestBack` is what removes
+  // the file from the machine as well as recording it here, so a drill that got
+  // as far as lending has one thing to undo rather than two — and if the check
+  // above already did it, `state.placed` says so and this does nothing.
   if (state.placed && state.machine) {
-    try { await okc('guestBack', { name: NAME, machine: state.machine }) } catch { /* it may be off by now */ }
-    try {
-      await okc('vmRun', {
-        name: state.machine,
-        command: 'rm -f "$HOME/.claude/.credentials.json"',
-        what: 'clearing what a drill handed over'
-      })
-    } catch { /* it may be off by now; the rollback takes it either way */ }
+    try { await okc('guestBack', { name: NAME, machine: state.machine }) } catch { /* it may be off by now; the rollback takes it either way */ }
   }
   if (state.made) { try { await okc('guestForget', { name: NAME }) } catch { /* never made */ } }
 })
