@@ -1,5 +1,5 @@
 var React = require('react');
-var { useState } = React;
+var { useState, useEffect } = React;
 
 module.exports = function library(theme, okc, remember) {
     var {
@@ -80,6 +80,38 @@ module.exports = function library(theme, okc, remember) {
 
         return function Library() {
             var { state, error, reads, again } = okc.use(K.list, {}, 20000);
+
+            //---- AND IT IS TOLD WHEN SOMETHING IS WRITTEN --------------------
+            //
+            //THE POLL ABOVE IS TWENTY SECONDS, which is right for a list that
+            //rarely moves and wrong for the moment it does. A job written from
+            //the command line was not on this pane -- or clickable -- until the
+            //next read, and a person watching for their own save has no way to
+            //tell a slow pane from one that did not happen.
+            //
+            //THE EVENT CARRIES ONLY WHAT CHANGED, so this asks again rather than
+            //being handed rows: the fetch above already knows which half of the
+            //library this pane is about, and a payload would mean the server
+            //deciding that instead.
+            //
+            //AND THE POLL IS LEFT ALONE. A write that never came through the
+            //actions -- a job's script edited on disk -- still arrives within
+            //twenty seconds. This makes the common case immediate; it is not the
+            //only way a list can change.
+            useEffect(function () {
+                var alive = true;
+                function heard(said) {
+                    if (!alive) return;
+                    //ONLY THIS SHELF. Three panes are mounted from this same
+                    //factory, and a save on one redrawing all three is three
+                    //reads for one change.
+                    if (said && said.what && said.what !== which) return;
+                    again();
+                }
+                okc.io.on('library:changed', heard);
+                return function () { alive = false; okc.io.off('library:changed', heard); };
+            }, []);
+
             var [find, setFind] = useState('');
             //SCOPED PER SET, so picking a job on one tab does not move the
             //selection on the other. They are two libraries; a shared memory

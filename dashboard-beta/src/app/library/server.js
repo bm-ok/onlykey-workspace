@@ -250,6 +250,34 @@ async function plugin(imports, register) {
         //with a different store behind it. What differs between the three is
         //where they are kept and what the approval is against, and both of those
         //are settled where the stores are built.
+        //---- SAYING SO, RATHER THAN BEING FOUND OUT TWENTY SECONDS LATER ---
+        //
+        //EVERY PANE HERE READS ITS LIST ON A TWENTY SECOND POLL. So a job, a
+        //prompt or a contract written from the command line is not on the screen
+        //you are looking at -- and not clickable -- for up to twenty seconds.
+        //
+        //THE DRILL THAT FOUND IT IS THE ONE THAT WALKS THE WINDOW: it writes a
+        //prompt down the pipe, drives to Worker/Prompts, and looks for the card
+        //it just made. The prompt exists; the card does not yet. A person doing
+        //the same thing meets the same wall and has no way to tell a slow pane
+        //from a save that did not happen.
+        //
+        //ONE EVENT, AND THE PANE ASKS AGAIN. Deliberately NOT the rows: what
+        //changed is cheap to say and the answer is what the pane already knows
+        //how to fetch, filtered the way that pane wants it. Sending the list
+        //would mean this half deciding which half of the library each pane is
+        //about, which is the thing `kind` exists to keep apart.
+        //
+        //THE POLL STAYS AS THE FLOOR. A write this misses -- a file edited on
+        //disk, a store changed by something that never came through here -- is
+        //still picked up within twenty seconds. Events for the moments something
+        //happens; a poll for the truth being derived elsewhere.
+        var io = host && host.io;
+
+        function changed(what) {
+            if (io) io.emit('library:changed', { what: what });
+        }
+
         function doors(what, store, opts) {
             var o = opts || {};
 
@@ -261,6 +289,7 @@ async function plugin(imports, register) {
                     var made = await store.save(a, by(a));
                     log.good((made.created ? 'wrote ' : 'saved ') + what + ' "' + made.name + '"'
                         + (made.approved ? '' : ' — waiting to be read'));
+                    changed(what);
                     return made;
                 }
             }));
@@ -291,6 +320,7 @@ async function plugin(imports, register) {
                     }
                     var now = await store.approve(a.id, a.note);
                     log.good('approved ' + what + ' "' + now.name + '"');
+                    changed(what);
                     return now;
                 }
             }));
@@ -304,6 +334,7 @@ async function plugin(imports, register) {
                 run: async function (args) {
                     var now = await store.withdraw((args || {}).id);
                     log.warn('withdrew approval on ' + what + ' "' + now.name + '"');
+                    changed(what);
                     return now;
                 }
             }));
@@ -314,6 +345,7 @@ async function plugin(imports, register) {
                 run: async function (args) {
                     var a = args || {};
                     var now = await store.use(a.id, a.on, { by: by(a) });
+                    changed(what);
                     return now;
                 }
             }));
@@ -324,6 +356,7 @@ async function plugin(imports, register) {
                 run: async function (args) {
                     var gone = await store.forget((args || {}).id);
                     log.warn('deleted ' + what + ' "' + gone.name + '"');
+                    changed(what);
                     return Object.assign({}, gone, {
                         note: 'Deleted. Anything that already went out kept its own copy of what it was given, '
                             + 'so nothing that ran changes.'
