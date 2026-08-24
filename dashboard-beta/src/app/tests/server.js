@@ -257,22 +257,30 @@ async function plugin(imports, register) {
     //THE WORST OF WHAT IS UNDER IT, because a suite is only as good as its
     //weakest check and an average would hide the one that matters.
     function worstOf(rows) {
-        //THE SAME ORDER ../tests.js DRAWS IN, and "asks you" sits where it does
-        //there: worse than a check whose code has changed, because somebody has
-        //to go and do something, and not as bad as one that failed.
-        var order = ['failed', 'asks you', 'changed', 'unrunnable', 'not run', 'passed'];
+        //EVERY STATE THAT CAN REACH THIS, WORST FIRST. It held five of eleven.
+        //
+        //IT WORKED ANYWAY, BY ACCIDENT, AND THAT IS THE INTERESTING PART.
+        //`indexOf` gives -1 for a state that is missing, and -1 is less than
+        //every real rank — so `broken` and `interrupted` beat everything, became
+        //`worst`, and could then never be beaten, since every later row was
+        //compared against -1 too. Which is roughly right for `broken` and wrong
+        //for `draft`, and right for neither reason.
+        //
+        //SO NAMING THEM ALL IS THE FIX, and ranking an unknown one LAST is only
+        //the floor under it. Made -1 explicit first and left the list short, and
+        //every broken drill on the board immediately read as passing: the
+        //accident had been holding up the answer.
+        //NOT ../tests.js's `RANK`, WHICH IS A DIFFERENT QUESTION. That one is
+        //the order rows are DRAWN in, and it puts `passed` above `not run`
+        //because a reader wants results before blanks. Severity is the other way
+        //round: a suite half of which has never been tried is "not run", and
+        //borrowing the display order would have summarised it as "passed" —
+        //which is the most flattering wrong answer available.
+        var order = ['broken', 'failed', 'interrupted', 'asks you', 'changed', 'unrunnable',
+            'running', 'not run', 'carried', 'passed', 'draft'];
 
-        //A STATE THIS DOES NOT KNOW IS NOT SILENTLY THE WORST ONE.
-        //
-        //`indexOf` gives -1 for anything missing, and -1 is less than every real
-        //rank — so an unrecognised state won the comparison, became `worst`, and
-        //then could never be beaten, since every later row was compared against
-        //-1 as well. That is how "asks you" would have arrived here: not shown
-        //as itself, but quietly overriding the whole suite's summary.
-        //
-        //Ranked last instead, and the row is left alone. A word this function
-        //has not been taught is a reason to teach it, not a reason for a board
-        //to change colour.
+        //A word this function has not been taught is a reason to teach it, not a
+        //reason for a board to change colour.
         function rank(state) {
             var at = order.indexOf(state);
             return at < 0 ? order.length : at;
