@@ -35,6 +35,36 @@ test('all three are on disk, and every one of them parses as node', () => {
     }
 });
 
+//---- AND THE OTHER HALF OF ASKING FOR A STREAM --------------------------------
+//
+//DISPATCH ASKS CLAUDE FOR `stream-json` so a run can be watched while it happens
+//— one event per line rather than one object at the end — and this is the guest
+//that has to READ that. The two changed in the same breath and only one of them
+//is checked anywhere: ./dispatch-script asks that the stream is requested, and
+//nothing asked that anything could read it.
+//
+//WHAT IT COSTS IF THEY DISAGREE: `claude()` parsed the whole log as one object.
+//Against a stream that throws, so every job would report that the worker said
+//nothing — a total, silent failure wearing the clothes of a display preference.
+//
+//READ FROM THE SOURCE RATHER THAN EXERCISED, and that is a compromise worth
+//naming. The reading is inline in a longer function in a file that is DELIVERED
+//VERBATIM to a machine, so pulling it out to call it here would change the thing
+//being checked. This is the claim the drill `watching it work` used to make, in
+//the only form available without refactoring a guest payload.
+test('and the guest can read a stream, and still read one object', () => {
+    const api = fs.readFileSync(path.join(GUEST, 'job-api.js'), 'utf8');
+
+    //THE FLOOR FIRST. Every assertion below is a regex against a file read from
+    //disk, so a moved or renamed file passes them all by being empty.
+    assert.ok(api.length > 1000, 'job-api.js is too small to be the guest API — this is reading the wrong file');
+
+    assert.match(api, /type === 'result'/,
+        'the guest does not look for a result line, so a streamed run reads as the worker having said nothing');
+    assert.match(api, /JSON\.parse\(out\)/,
+        'the guest no longer accepts a whole-file object, so a run started by anything asking for the old format stops reading');
+});
+
 test('they are copied to dist rather than bundled', () => {
     //WEBPACK MUST NOT FOLD THEM IN. The PAYLOADS list is what carries them, and
     //a payload dropped from it fails as an ENOENT deep inside something else.

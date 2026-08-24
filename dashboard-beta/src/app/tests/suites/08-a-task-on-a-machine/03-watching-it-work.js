@@ -1,144 +1,168 @@
 'use strict'
 
-// watching it work — the run is readable while it runs, not only after
+// watching it work — a run can be seen while it is happening
 //
-// A run used to be invisible until it ended. `claude -p --output-format json`
-// writes ONE object when the worker finishes, so the log was zero bytes for
-// twenty minutes and then complete — and "working" was equally true of a worker
-// reading files and one stuck at a sign-in prompt. The two available answers to
-// "is it doing anything" were wait, or stop it and find out.
+// A RUN USED TO BE A THING YOU FOUND OUT ABOUT AFTERWARDS. Dispatch asked Claude
+// for `--output-format json`, which is one object written when the worker
+// finishes, so for the twenty minutes in between there was nothing to look at
+// and no way to tell a machine that was thinking from one that had wedged.
 //
-// THREE THINGS HAVE TO HOLD TOGETHER, and each is checked separately here
-// because each has failed on its own:
+// It asks for `stream-json` now — one event per line — and the guest half reads
+// the last `result` line out of it. Those two changed in the same breath, and
+// either of them alone is a silent failure: a stream nobody can read reports
+// that the worker said nothing.
 //
-//   the run is asked for a STREAM        one event per line, as it happens
-//   the reader takes the LAST result     it parsed the whole file as one object,
-//                                        and left alone would have reported
-//                                        every job as saying nothing
-//   the watcher runs where it lands      it is node, written into a guest, and
-//                                        `node --check` on this host says
-//                                        nothing about the shell that carries it
+// ---- what this asks, and what it stopped asking --------------------------
 //
-// NO MACHINE IS NEEDED. What reaches a machine is a string, built here, and the
-// point of these checks is that the string can be looked at before a guest is
-// the one to find out. Both generated scripts are rendered and read.
+// IT USED TO BUILD THE RUN SCRIPT AND READ IT. `dispatch.script({...})` with
+// made-up arguments, then regexes over the text: is `claude -p` asked for a
+// stream, is the watcher node that parses, does the current run have a stable
+// name. A drill runs from `dist/suites` with only the harness beside it and
+// cannot reach the app's insides, so this suite read `will not load` — but the
+// requires are the smaller half of it. Reading a string this file asked the app
+// to build is a unit test, and it is one that already exists:
+//
+//   test/vms/dispatch-script.js     the stream is asked for, the run is detached
+//                                   in its own session so it outlives the
+//                                   connection, the current link is moved so a
+//                                   watcher can follow the next run too, and
+//                                   everything it produces parses as shell
+//   test/vms/dispatch-payloads.js   the watcher and the guest API are on disk,
+//                                   parse as node, and are delivered byte for
+//                                   byte — and the guest reads a stream while
+//                                   still reading one whole object
+//   test/vms/dispatch-supervisor.js the supervisor takes its turn the same way
+//
+// THAT LAST ONE WAS ONLY EVER ASKED HERE. Nothing checked that anything could
+// READ the stream that dispatch had started asking for; it moved into the
+// payloads test while this file was being rewritten.
+//
+// ---- and what a drill can say that none of them can ----------------------
+//
+// THAT IT ACTUALLY WORKS ON A MACHINE. A script that parses is not a run that
+// can be watched: the watcher has to start, the run has to keep going without
+// the connection that began it, and the output has to be readable BEFORE the
+// thing is over — which is the entire point and the one thing a string cannot
+// demonstrate.
+//
+// WITH NO CREDENTIAL, WHICH IS WHY THIS IS WORTH DOING. A run does not have to
+// be a worker: `vmDispatch --shell` runs a command through the same machinery —
+// same watcher, same run folder, same current link, same reading — and a shell
+// command needs nobody to be signed in. So the watching can be proven on any
+// host with a machine up, and what is left needing a credential is only whether
+// Claude itself streams.
 
-const { it, requires } = require('../../harness')
-const fs = require('node:fs')
-const path = require('node:path')
-const dispatch = require('../../../machines/dispatch')
+const { it, cleanup, requires } = require('../../harness')
+const { aConnectedMachine } = require('../../helpers')
 
-// It is about what dispatch generates, which stands on nothing.
-requires()
+requires('the machines are built')
 
-// A run script, as a machine would receive it.
-const aRun = () => String(dispatch.script({
-  id: 'drill-run', task: 'do the thing', folder: '/home/okc/workspace',
-  base: 'https://host:7373', vm: 'kit-1', token: 'TOKEN', contract: 'the rules it was given'
-}))
+// LONG ENOUGH TO BE CAUGHT IN THE MIDDLE OF, short enough that a failed drill
+// does not leave a machine busy. It prints before it waits, so there is
+// something to read while it is still going — which is the claim.
+const SECONDS = 20
+const MARK = 'okc-drill-watching-this-run'
+const COMMAND = `echo "${MARK} started"; sleep ${SECONDS}; echo "${MARK} finished"`
 
-it('a run is asked for a stream, not one object at the end', async ({ assert, log }) => {
-  const line = aRun().split('\n').find(l => l.includes('claude -p'))
-  assert.ok(line, 'nothing in a dispatched run gives the brief to a worker')
+it('a machine is up to run something on', async ({ okc, assert, state, log }) => {
+  const machine = await aConnectedMachine(okc, assert, 'no machine from the test pool is dialled in to watch a run on')
+  state.machine = machine.name
 
-  assert.ok(/--output-format stream-json/.test(line),
-    'a run does not ask for stream-json, so its log is empty until it finishes and nothing can be watched')
-  // --verbose is REQUIRED alongside stream-json when running with -p. Without
-  // it claude refuses to start, which is a run that fails on the machine for a
-  // reason nothing here would explain.
-  assert.ok(/--verbose/.test(line), 'stream-json was asked for without --verbose, which claude refuses')
-  assert.ok(/> \S+out\.log/.test(line), 'the run does not write its log where anything can read it')
-  log(line.trim().slice(0, 140))
-})
+  // NOTHING OF THIS DRILL'S LEFT OVER. A previous run still going would be found
+  // by the checks below and read as the one this started.
+  const { runs } = await okc('vmRuns', { name: state.machine })
+  const mine = (runs || []).filter((r) => r.state === 'running')
+  assert.needs(!mine.length,
+    `${state.machine} already has ${mine.length} run(s) going, so a run started now could not be told from them — wait for it, or stop it`)
 
-it('and the reader takes the last result line, or a whole-file object', async ({ assert }) => {
-  // THE HALF THAT HAD TO CHANGE IN THE SAME BREATH. `claude()` in the job API
-  // parsed the whole log as one object; against a stream that throws, and every
-  // job would have reported that the worker said nothing — a total, silent
-  // failure on what reads like a display preference.
-  const api = fs.readFileSync(path.join(__dirname, '../../../machines/job-api.js'), 'utf8')
-  assert.ok(/type === 'result'/.test(api), 'the job API does not look for a result line, so a streamed run reads as nothing')
-  assert.ok(/JSON\.parse\(out\)/.test(api), 'the job API no longer accepts a whole-file object, so runs from before the change stop reading')
-})
+  log(`${state.machine} is up and idle`)
+}, { gate: true })
 
-it('and the watcher it writes is node that runs', async ({ assert, log }) => {
-  const text = aRun()
-  const open = "<<'OKC_WATCH_EOF'\n"
-  const from = text.indexOf(open)
-  assert.ok(from > 0, 'a run writes no watcher, so there is nothing to follow it with')
+it('a run started here keeps going without the connection that started it', async ({ okc, assert, state, log }) => {
+  // DETACHED IS THE WHOLE ARRANGEMENT. `vmDispatch` returns immediately — it
+  // says so in its own description — and the run carries on in its own session,
+  // which is what lets the dashboard be restarted, or the machine's channel
+  // dropped, without killing somebody's work.
+  const said = await okc('vmDispatch', {
+    name: state.machine,
+    task: COMMAND,
+    shell: true
+  })
 
-  const watcher = text.slice(from + open.length, text.indexOf('\nOKC_WATCH_EOF', from))
+  state.run = said.run || said.id || null
+  assert.ok(state.run, `dispatching returned without naming the run it started: ${JSON.stringify(said).slice(0, 200)}`)
 
-  // COMPILED AND RUN HERE, IN A CONTEXT OF ITS OWN, rather than written to a
-  // file and given to a child process. Two reasons, and the second is the one
-  // that caught this out: a child would need `node` on PATH, and the process
-  // running these drills is `nw.exe` — the window and the app are one node
-  // context, so `process.execPath` is the browser runtime and `--check` means
-  // nothing to it.
-  //
-  // What is proven is the same thing: that what came out the other end of a
-  // heredoc, inside a template literal, inside a shell script, is JavaScript
-  // that parses and behaves — which is where this project has lost a file to a
-  // stray backtick before.
-  const vm = require('node:vm')
-  let feed = null
-  const printed = []
-  const stage = {
-    process: { stdin: { setEncoding: () => {}, on: (what, fn) => { if (what === 'data') feed = fn } } },
-    // One argument, because that is how the watcher calls it — every line it
-    // prints is one built string. A rest parameter here also trips the
-    // declared-names check, which does not read `...bits` as a declaration.
-    console: { log: line => printed.push(String(line)) },
-    JSON
+  // AND IT IS GOING, asked of the machine rather than believed from the answer
+  // above. "It was started" and "it is running" are different claims and only
+  // the second one means the watcher came up.
+  const { runs } = await okc('vmRuns', { name: state.machine })
+  const it2 = (runs || []).filter((r) => r.id === state.run)[0]
+
+  assert.ok(it2, `${state.machine} does not list the run it was just given (${state.run})`)
+  assert.equal(it2.state, 'running',
+    `the run reads as "${it2.state}" immediately after being dispatched — a run that is over before this line either never started or was not detached`)
+
+  // AN EXIT CODE OF NOTHING IS NOT AN EXIT CODE OF ZERO, and a run still going
+  // has none. This is the one place that distinction can be seen from outside.
+  assert.equal(it2.exit, null, `a run that is still going reported exit ${it2.exit}`)
+
+  log(`${state.run} is going on ${state.machine}, with no exit code yet`)
+}, { minutes: 4, gate: true })
+
+it('and what it has said so far can be read before it is over', async ({ okc, assert, state, log }) => {
+  // THE POINT OF ASKING FOR A STREAM. Reading a run's output while it is still
+  // going is the difference between watching a worker think and waiting twenty
+  // minutes to find out it wedged in the first thirty seconds.
+  const said = await okc('vmRunOutput', { name: state.machine, run: state.run, lines: 40 })
+  const out = String(said.output || '')
+
+  assert.ok(out.includes(`${MARK} started`),
+    `the run has printed a line and reading its output does not show it — what came back was ${out.length} characters: ${out.slice(-200)}`)
+  assert.ok(!out.includes(`${MARK} finished`),
+    'the run is already over, so this read nothing that was in flight — the command was too short to be caught in the middle of')
+
+  // AND IT IS STILL GOING WHILE THAT IS TRUE, which is what makes the two lines
+  // above mean "watched" rather than "read afterwards".
+  const { runs } = await okc('vmRuns', { name: state.machine })
+  const still = (runs || []).filter((r) => r.id === state.run)[0]
+  assert.equal(still && still.state, 'running',
+    'the run finished between reading its output and asking about it, so nothing here was read in flight')
+
+  log(`read ${out.length} characters of a run that is still going`)
+}, { minutes: 4 })
+
+it('and it finishes, with an exit code that says how', async ({ okc, assert, state, log }) => {
+  // WAITED FOR BY ASKING THE MACHINE, which is the only thing that knows. The
+  // command sleeps for a known time, so this is bounded by the run itself rather
+  // than by a guess about how long things take.
+  const until = Date.now() + (SECONDS + 40) * 1000
+  let last = null
+
+  while (Date.now() < until) {
+    const { runs } = await okc('vmRuns', { name: state.machine })
+    last = (runs || []).filter((r) => r.id === state.run)[0] || last
+    if (last && last.state !== 'running') break
+    await new Promise((r) => setTimeout(r, 3000))
   }
-  vm.runInNewContext(watcher, stage, { filename: 'watch.js', timeout: 5000 })
-  assert.ok(typeof feed === 'function', 'the watcher does not read stdin, so a log piped into it goes nowhere')
 
-  // AND IT DOES THE THING IT EXISTS FOR. A watcher that parses and prints
-  // nothing is the same to a person as no watcher at all.
-  const events = [
-    JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-opus-5' }),
-    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Looking at the README first.' }] } }),
-    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'git status --porcelain' } }] } }),
-    JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: ' M README.md\n M TODO.md' }] } }),
-    'claude: could not sign in',
-    JSON.stringify({ type: 'result', subtype: 'success', num_turns: 7, total_cost_usd: 1.2345 })
-  ].join('\n') + '\n'
+  assert.ok(last && last.state !== 'running',
+    `${state.run} was still going ${SECONDS + 40}s after a command that sleeps for ${SECONDS}s`)
+  assert.equal(last.exit, 0, `the run ended with exit ${last.exit}, and it was a command that cannot fail`)
 
-  feed(events)
-  const said = printed.join('\n')
-  assert.ok(/Looking at the README first/.test(said), 'the watcher drops what the worker SAID, which is most of what is worth watching')
-  assert.ok(/Bash/.test(said) && /git status/.test(said), 'the watcher drops what the worker reached for')
-  assert.ok(/7 turns/.test(said) && /1\.2345/.test(said), 'the watcher drops the result line, which is where the cost is')
-  // Anything that is not an event is printed as it came: a worker that fails to
-  // start says so in plain words, and that is the most important line in the
-  // file on the day it happens.
-  assert.ok(/could not sign in/.test(said), 'the watcher swallows plain text, which is what a failure to start looks like')
-  log(`${printed.length} lines out of 6 events`)
-})
+  const said = await okc('vmRunOutput', { name: state.machine, run: state.run, lines: 40 })
+  assert.ok(String(said.output || '').includes(`${MARK} finished`),
+    'the run ended without its last line being readable, so what a finished run said is not kept')
 
-it('and whichever run is happening now has a name that does not change', async ({ assert }) => {
-  const text = aRun()
-  // A run's directory is named after the run, which is right for the record and
-  // useless for watching: something that wants to SEE the work would have to be
-  // told an id that did not exist a moment ago. So the box gets a link, moved at
-  // the start of every run, and one watcher beside it that follows through it.
-  assert.ok(/ln -sfn \S+drill-run \S+\.okc-runs\/current/.test(text),
-    'a run does not relink ~/.okc-runs/current, so nothing can watch "whatever it is doing now"')
-  assert.ok(/tail -n \+1 -F "\S+\.okc-runs\/current\/out\.log"/.test(text),
-    'the box watcher does not follow the link by name, so it would stop at the end of one run')
-})
+  state.run = null
+  log(`${state.machine} finished the run, exit 0, and both lines are in its output`)
+}, { minutes: 4 })
 
-it('and the supervisor takes its turn the same way', async ({ assert, log }) => {
-  // THE OTHER HALF OF THE APP, and the same fault: a turn is a command over the
-  // channel, which hands everything back at the end. It writes a stream to a
-  // file now, and relinks current.log so a terminal left open sees every wake.
-  const turn = String(dispatch.supervisorTurn({
-    stamp: '20260101-000000', brief: 'V0FLRQ==', refresh: 'echo okc-skill-stale'
-  }))
-  assert.ok(/--output-format stream-json --verbose/.test(turn), 'a supervisor turn is not asked for a stream')
-  assert.ok(/ln -sfn \S+turns\/20260101-000000\.log \S+current\.log/.test(turn),
-    'a turn does not relink current.log, so a terminal watching it sees one wake and then silence')
-  assert.ok(/okc-watch/.test(turn), 'a turn writes no watcher')
-  log(turn.split('\n').filter(l => l.startsWith('timeout')).join('').slice(0, 120))
+cleanup(async ({ okc, state }) => {
+  // A RUN LEFT GOING holds the machine as far as anything asking is concerned,
+  // and the next drill to want one would find it busy for a reason that is not
+  // about it.
+  if (state.run && state.machine) {
+    try { await okc('vmRunStop', { name: state.machine, run: state.run }) } catch (e) { /* it may be over, or the machine gone */ }
+    state.run = null
+  }
 })
