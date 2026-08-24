@@ -40,12 +40,12 @@ var makeSnapshotting = require('./snapshotting');
 //NOR MAKING OR DESTROYING ONE. `vmCreate`, `vmInstall` and `vmRemove` are
 //../../vms/provision's subject and are the largest thing left on this tab.
 //
-//NOR `vmTags`, AND IT CARRIES A RULE THAT HAS TO COME WITH IT. The `supervisor`
+//`vmTags` IS HERE NOW, AND IT CAME WITH THE RULE IT CARRIES. The `supervisor`
 //tag may not be ADDED and may not be TAKEN OFF — it is decided when the machine
 //is built, because a supervisor is a different BUILD: permanently out of the
 //queue, holding no repositories, with a slim setup of node and Claude Code. The
-//dialog that makes one says "this cannot be changed later", and the app being
-//ported from refuses both directions, for the two failures each causes:
+//dialog that makes one says "this cannot be changed later", and both directions
+//are refused, for the two failures each causes:
 //
 //  typed on    a machine with a full build and repositories joins the set of
 //              things nothing may queue work to, reading as a queue gone quiet
@@ -53,8 +53,15 @@ var makeSnapshotting = require('./snapshotting');
 //              back to its base snapshot while it is working
 //
 //./lifecycle.js READS THAT TAG and refuses to bring a second supervisor up. That
-//is only sound while the tag cannot move, so whoever ports `vmTags` is porting
-//this rule with it — not as tidiness, but because the check above depends on it.
+//is only sound while the tag cannot move, which is why the two refusals above
+//are part of the action rather than a separate tidiness — the check in lifecycle
+//depends on them.
+//
+//AND A JUDGE AND A WORKER ARE THE SAME MACHINE, so those tags DO move: what
+//separates them is which sign-in they may be lent and which work the queue sends
+//them, and both are this host's decisions about an identical disk. The guard
+//there is about being BUSY rather than about how it was built — a machine that
+//becomes a judge mid-task is holding a sign-in for a role it no longer has.
 //---------------------------------------------------------------------------
 
 //A FILENAME THAT SORTS, and has nothing in it a filesystem objects to.
@@ -284,6 +291,105 @@ async function plugin(imports, register) {
             about: 'The address a machine would use to reach this host',
             run: async function () {
                 return { address: await vbox.hostAddress() };
+            }
+        }));
+
+        //---- WHAT A MACHINE IS FOR, WHICH CAN CHANGE ----------------------
+        //
+        //A TAG IS HOW A TASK ASKS FOR A KIND OF MACHINE rather than for a name.
+        //Without this there is no way to say a machine is a judge after it is
+        //built — which is how this host ended up with a supervisor, a machine
+        //tagged "test", and nothing the queue would give work to at all.
+        //
+        //A JUDGE AND A WORKER ARE THE SAME MACHINE, SO THE ROLE CAN MOVE. What
+        //separates them is which sign-in they may be lent and which work the
+        //queue sends them, and both are this host's decisions about an identical
+        //disk. Turning a worker into a judge is saying so, not rebuilding it.
+        undo.push(actions.define('vmTags', {
+            about: 'Tag a machine, so tasks can ask for a kind of machine rather than a name. '
+                + 'Pass nothing to read them',
+            takes: ['name', 'tags'],
+            run: function (args) {
+                var a = args || {};
+                var vm = ours.get(a.name);
+                if (a.tags === undefined) return { name: a.name, tags: vm.tags || [] };
+
+                var seen = {};
+                var want = (Array.isArray(a.tags) ? a.tags : String(a.tags).split(','))
+                    .map(function (t) { return String(t).trim().toLowerCase(); })
+                    .filter(function (t) {
+                        if (!t || seen[t]) return false;
+                        seen[t] = true;
+                        return true;
+                    });
+
+                var was = (vm.tags || []).map(function (t) { return String(t).toLowerCase(); });
+                var isSupervisor = was.indexOf(ours.SUPERVISOR) >= 0;
+
+                //---- EXCEPT THE ONE TAG THAT IS NOT A LABEL -------------
+                //
+                //"supervisor" decides what gets INSTALLED at first boot — a
+                //different provision, a second user, a sign-in desk — so it is
+                //chosen when the machine is made. Refused rather than quietly
+                //kept, because a refusal is the only version of this somebody
+                //learns from.
+                if (!isSupervisor && want.indexOf(ours.SUPERVISOR) >= 0) {
+                    throw new Error('"' + ours.SUPERVISOR + '" is not a tag you can add. It is what keeps a '
+                        + 'machine out of the task pool and it decides what gets installed at first boot, so '
+                        + 'it is chosen when the machine is made — tick "supervisor machine" then, or make '
+                        + 'another one.');
+                }
+                if (isSupervisor && want.indexOf(ours.SUPERVISOR) < 0) {
+                    throw new Error('"' + a.name + '" is a supervisor machine, so it keeps the "'
+                        + ours.SUPERVISOR + '" tag. Taking it off would put it in the queue\'s pool, and the '
+                        + 'first queued task would roll it back to its base snapshot while it was working.');
+                }
+
+                //---- AND THE CHANGE MUST NOT LAND UNDER RUNNING WORK ------
+                //
+                //A machine that becomes a judge mid-task, or a worker
+                //mid-judgement, is holding a sign-in for a role it no longer
+                //has — and the next thing lent to it would be the wrong kind. So
+                //the guard is about whether it is BUSY, which is a fact about
+                //right now, rather than about when it was made.
+                //
+                //BUSY MEANS ANY OF THE THREE, because each is a different way of
+                //being mid-something and any one makes a role change wrong.
+                var changingRole = (was.indexOf(ours.JUDGE) >= 0) !== (want.indexOf(ours.JUDGE) >= 0)
+                    || (was.indexOf(ours.WORKER) >= 0) !== (want.indexOf(ours.WORKER) >= 0);
+
+                if (changingRole) {
+                    var busyWith = vm.branch ? 'claiming "' + vm.branch + '"'
+                        : vm.holdsCredential ? 'holding a sign-in'
+                            : vm.borrowed ? ('borrowed — ' + ((vm.borrowed && vm.borrowed.why) || 'somebody is using it'))
+                                : null;
+
+                    if (busyWith) {
+                        throw new Error('"' + a.name + '" is ' + busyWith + ', so what it is FOR cannot change '
+                            + 'right now. A machine that becomes a judge mid-task — or a worker mid-judgement '
+                            + '— is holding a sign-in for a role it no longer has. Let it finish, or give it '
+                            + 'back with vmReturn, then change it.');
+                    }
+                }
+
+                //CLEARING THEM PUTS IT BACK IN THE ORDINARY POOL rather than
+                //leaving it in none. Every machine is in a pool, so "no tags" is
+                //not a state a machine can be in — asking for it means asking
+                //for the default one.
+                var settled = want.length ? want : [ours.POOL];
+                var now = ours.update(a.name, { tags: settled });
+
+                log.on('vm', a.name).info(want.length
+                    ? 'tagged ' + settled.map(function (t) { return '"' + t + '"'; }).join(', ')
+                        + ' — a task asking for one of those can be given this machine'
+                    : 'back in the "' + ours.POOL + '" pool — every machine is in one');
+
+                return {
+                    name: a.name,
+                    tags: now.tags,
+                    was: was,
+                    note: '"' + a.name + '" is ' + (now.tags || []).join(', ') + '.'
+                };
             }
         }));
 
