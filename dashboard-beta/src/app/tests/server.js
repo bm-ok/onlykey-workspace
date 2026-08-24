@@ -366,9 +366,29 @@ async function plugin(imports, register) {
             //anything else does, and meets the same refusals.
             actions: actions,
 
+            //---- A DRILL IS NOT A PERSON EITHER -------------------------
+            //
+            //`_fromTest` IS FORCED, NOT MERGED, and it goes on LAST so a drill
+            //cannot clear it by passing its own. The whole point of the flag is
+            //that a check cannot pretend to be somebody it is not — a drill that
+            //could unset it would be the exact hole the drills exist to look
+            //for, reachable from inside them.
+            //
+            //NOTHING SET IT BEFORE, so every guard reading it was inert and a
+            //drill reached the action table looking exactly like the window.
+            //`the ways round a refusal` says why that matters: with the drills
+            //on, this app will write a task, dispatch it and take a credential
+            //off a machine — so a drill able to arm the drills is a drill that
+            //can arm itself.
+            //
+            //IT IS NOT THE SAME AS `_overTheWire`, and merging them would break
+            //more than it fixed: a drill legitimately writes branches and tasks,
+            //and those doors refuse the WIRE. What `_fromTest` closes is the
+            //narrower set that only a person may do — see ATTHEWINDOW in
+            //../settings/server.js.
             okc: async function (name, callArgs) {
                 if (!actions) throw new Error('there is no action table to drive');
-                return actions.call(name, callArgs || {});
+                return actions.call(name, Object.assign({}, callArgs || {}, { _fromTest: true }));
             },
 
             //THE HALF-HOUR ONES ARE OFF UNLESS SOMEBODY SAYS SO. Building a

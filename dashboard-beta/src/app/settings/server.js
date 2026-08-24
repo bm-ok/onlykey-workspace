@@ -315,7 +315,28 @@ async function plugin(imports, register) {
                 //drill in ../tests/suites/02-the-refusals reads this message. A
                 //refusal whose wording drifts is a check that goes red for a
                 //reason that is not the one it is about.
-                if (ATTHEWINDOW.indexOf(key) !== -1 && a._overTheWire) {
+                //---- THREE WAYS IN, AND THIS WATCHED ONE OF THEM ----------
+                //
+                //IT READ `a._overTheWire` ALONE. The other two reach the same
+                //door and were not looked at:
+                //
+                //  `_driven`    a press driven from the command line. ../core/
+                //               drive refuses a PROTECTED button before it gets
+                //               here, which is a real guard -- but this is the
+                //               one that holds when the button is not painted,
+                //               or when the call arrives some other way.
+                //  `_fromTest`  a drill. Nothing set it until now, so a drill
+                //               reached this looking exactly like the window --
+                //               and with the drills on, this app writes a task,
+                //               dispatches it and takes a credential off a
+                //               machine. A drill able to arm the drills is a
+                //               drill that can arm itself.
+                //
+                //THE DRILL THAT ASKS THIS COULD NOT HAVE PASSED HONESTLY. `the
+                //ways round a refusal` calls `settingSet` as a drill and expects
+                //to be refused; with nothing marking it, being refused or not
+                //said nothing about anybody else.
+                if (ATTHEWINDOW.indexOf(key) !== -1 && (a._overTheWire || a._driven || a._fromTest)) {
                     throw new Error(key === 'testsEnabled'
                         ? 'The drills are switched on in the window, by somebody who knows what folder is open. They write a task and take a credential off a machine — that is a decision about somebody\'s repository, not a flag to be set down a pipe.'
                         : '"' + key + '" is the other half of that same permission. The drills are allowed when testsEnabled is on AND testsFor is the folder open now — so moving the folder arms them against whatever is in front of you without the switch ever being touched. It is decided in the same place, in the window, by somebody who can see which folder that is. Ask with testsAsk instead.');

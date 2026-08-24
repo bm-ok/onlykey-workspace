@@ -782,7 +782,28 @@ async function plugin(imports, register) {
 
             for (var i = 0; i < names.length; i++) {
                 var b = rows[names[i]];
-                if (!b) { out.push({ repo: repo, branch: names[i], moved: false, why: 'there is no branch by that name here' }); continue; }
+
+                //---- A BRANCH NOBODY HAS IS NOT A BRANCH TO SYNC -----------
+                //
+                //REFUSED RATHER THAN REPORTED, and the difference is the whole
+                //point. This pushed a row saying `moved: false, why: "there is
+                //no branch by that name here"` — a successful answer with a note
+                //in it. `repoSyncBranch` then returned 200 and whatever asked
+                //carried on believing the branch was up to date.
+                //
+                //ONLY REACHABLE WHEN SOMEBODY NAMED ONE. With no branch given,
+                //`names` comes from `rows` itself, so every name is there by
+                //construction. So arriving here means a caller asked for a
+                //branch that does not exist — a typo or a stale name — and that
+                //is a mistake to stop, not a note to file.
+                //
+                //AFTER THE FETCH, WHICH THE APP BEING PORTED FROM DID NOT DO. It
+                //refused against the branches it already knew; this asks origin
+                //first, so a branch that exists only on the remote is caught up
+                //to rather than refused as absent.
+                if (!b) {
+                    throw new Error('"' + repo + '" has no branch called "' + names[i] + '".');
+                }
                 //ONLY WHERE BOTH SIDES HAVE IT. A branch that exists only here
                 //has nothing to catch up TO, and reporting that as a failure is
                 //how "3 out of step" got counted wrong in the first place.

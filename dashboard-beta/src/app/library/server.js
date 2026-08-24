@@ -272,10 +272,22 @@ async function plugin(imports, register) {
                 //on this: a model may write one and may not ratify its own.
                 run: async function (args) {
                     var a = args || {};
-                    if (a._overTheWire) {
+                    //A PRESS DRIVEN FROM THE COMMAND LINE IS THE COMMAND LINE,
+                    //whichever button it lands on. ../core/drive refuses a
+                    //protected button before it reaches here, and this is the
+                    //half that does not depend on the button being painted --
+                    //a pane that builds its own control is a pane the driver
+                    //cannot see the mark on.
+                    //
+                    //NOT `_fromTest`, DELIBERATELY. A drill may approve: it is
+                    //how a run gets a job it can then dispatch, and the app
+                    //being ported from draws the same line. What a drill may not
+                    //do is arm the drills -- see ATTHEWINDOW in ../settings.
+                    if (a._overTheWire || a._driven) {
                         throw new Error('Approving a ' + what + ' is done in the window, by somebody who has read '
                             + 'it. That is the whole of what an approval means here — a model may write one and '
-                            + 'may not ratify its own.');
+                            + 'may not ratify its own. A press driven from the command line is the command line, '
+                            + 'whichever button it lands on.');
                     }
                     var now = await store.approve(a.id, a.note);
                     log.good('approved ' + what + ' "' + now.name + '"');
