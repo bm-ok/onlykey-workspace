@@ -72,9 +72,57 @@ async function plugin(imports, register) {
     io.on('disconnect', function () { announceWire(false); announce(false); });
     io.on('connect', function () { announceWire(true); io.emit('okc:up?', {}, announce); });
 
+    //---- WHETHER THIS WINDOW IS BEING DRIVEN FROM OUTSIDE -----------------
+    //
+    //`windowClick` and `windowFill` exist so the window can be tested from the
+    //command line — it was the one half of this app with no way in, so every
+    //fault in a click handler was found by a person clicking it. A driven press
+    //reaches exactly the handlers a real press reaches, which is the point: a
+    //test that took a different path would not be testing the button.
+    //
+    //AND THAT IS ALSO THE HAZARD. The window is where a person is assumed to be.
+    //Approving is refused over the wire precisely because a model may write one
+    //and may not ratify its own. A driven press is not refused outright —
+    //testing the approve button means being able to press it — but it must not
+    //be able to CLAIM to be a person, because "somebody read this and approved
+    //it" is the whole of what that record asserts.
+    //
+    //So it is marked, and the mark travels with every call the press causes.
+    //
+    //CLEARED BY A REAL HUMAN TOUCH, NOT BY A TIMER. A press sets off work that
+    //finishes whenever it finishes — a dialog opened now and confirmed in a
+    //minute is one act — so there is no duration that is right. What is
+    //unambiguous is somebody putting their hand on the window: `isTrusted` is
+    //set by the browser and cannot be forged from script, so the first genuine
+    //mousedown or keypress says a person is here again.
+    //
+    //IT STAYS SET UNTIL THEN, WHICH IS THE SAFE WAY ROUND. The worst that does
+    //is describe a person's action as driven; the alternative is describing a
+    //model's action as a person's.
+    //
+    //AND IT IS READABLE, which is not decoration. Without it the only way to
+    //find out whether the window thought it was being driven was to watch what
+    //an approval did — and over there that is how a stuck flag went unnoticed
+    //for an evening.
+    var drivenFromTheWire = false;
+
+    if (typeof document != 'undefined' && document.addEventListener) {
+        ['mousedown', 'keydown', 'wheel'].forEach(function (kind) {
+            document.addEventListener(kind, function (e) {
+                if (e && e.isTrusted) drivenFromTheWire = false;
+            }, true);
+        });
+    }
+
     function call(action, args) {
+        //THE MARK RIDES WITH THE CALL rather than being asked for at the far
+        //end: by the time the action runs, the press that caused it is over.
+        var sending = drivenFromTheWire
+            ? Object.assign({}, args || {}, { _driven: true })
+            : (args || {});
+
         return new Promise(function (resolve, reject) {
-            io.emit('okc:call', { action: action, args: args || {} }, function (reply) {
+            io.emit('okc:call', { action: action, args: sending }, function (reply) {
                 if (reply && reply.ok) resolve(reply.result);
                 else reject(new Error((reply && reply.error) || 'no answer from the dashboard'));
             });
@@ -88,6 +136,11 @@ async function plugin(imports, register) {
         //`call` would be talking to the wire rather than to the table.
         io: io,
         call: call,
+
+        //SET BY ../drive AROUND A DRIVEN PRESS, and read by anything that needs
+        //to say whether this window currently believes a person is at it.
+        driving: function (on) { drivenFromTheWire = !!on; },
+        get driven() { return drivenFromTheWire; },
         get connected() { return up; },
         //AND WHETHER THIS APP'S OWN WIRE IS OPEN, which is a different question
         //and is the one that means something is wrong here rather than there.

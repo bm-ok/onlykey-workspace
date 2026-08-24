@@ -217,29 +217,43 @@ it('and the whole way round it, from outside, ends where it started', async ({ o
 
   // ---- press it ------------------------------------------------------
   //
-  // TWICE, AND THE FIRST ONE PROVES NOTHING. Approving asks a question first,
-  // and the original hole was found by stopping here: one press opened the
-  // dialog and went no further, which looks exactly like a guard working. It
-  // was the dialog. A check that stopped here would have passed against an app
-  // with no guard at all.
-  const asked = await okc('windowClick', { text: 'Approve it' })
-  assert.ok(asked.asking, `pressing Approve went straight through without asking anything — expected the confirm dialog, got ${JSON.stringify(asked.now)}`)
-
-  await okc('windowClick', { text: 'I have read it' })
+  // AND THIS IS WHERE THIS APP ANSWERS DIFFERENTLY FROM THE ONE IT WAS PORTED
+  // FROM, so the check says which answer it is watching for.
+  //
+  // Over there a driven press is ALLOWED — "testing the approve button means
+  // being able to press it" — and the mark set above is what refuses it at the
+  // far end. So the walk there is: press, confirm, and find it still
+  // unapproved.
+  //
+  // HERE THE DRIVER REFUSES THE PRESS ITSELF. core/drive will not click a
+  // button marked protected at all, so the walk stops one step earlier and the
+  // approval is never reached. That is the stronger of the two: nothing is
+  // pressed, so nothing depends on what the far end does with the mark.
+  //
+  // BOTH GUARDS ARE STILL CHECKED, and that is the point of keeping this walk
+  // rather than deleting it. The refusal below is the driver's; the check above
+  // proved the MARK arrives, and the check before that proved the ACTION
+  // refuses a call carrying it. Two pieces of code, each able to fail on its
+  // own, each watched separately.
+  //
+  // THE DRIVER'S REFUSAL IS NOT ENOUGH BY ITSELF, which is why the other two
+  // matter: it can only see a button the theme painted. A pane that builds its
+  // own control is one the mark is invisible on, and then the far end is all
+  // there is.
+  const refusedPress = await assert.refuses(
+    () => okc('windowClick', { text: 'Approve it' }),
+    'protected|persons press|a person',
+    'the window let a driven press land on Approve — over there that is allowed and the action refuses it, but here the driver is the guard and it just opened')
 
   // ---- and it is still not approved ----------------------------------
   //
-  // THE REFUSAL LEAVES NO LINE IN THE LOG, so the evidence is the state: the
-  // prompt is unapproved and the dialog is still open, because the action threw
-  // rather than returning and nothing closed it.
+  // THE EVIDENCE IS THE STATE, not the absence of a line in the log. Nothing
+  // was pressed, so nothing wrote anything either way.
   const after = ((await okc('prompts')).prompts || []).find(p => p.id === ID)
-  assert.ok(after && !after.approved, `a press driven from the command line approved a prompt. That is the whole bypass: two clicks instead of one, and approved by ${after && after.approvedBy}`)
+  assert.ok(after && !after.approved, `a press driven from the command line approved a prompt. That is the whole bypass, and it did not even need the confirm dialog — approved by ${after && after.approvedBy}`)
 
-  const still = await okc('windowControls')
-  assert.ok(still.dialog, 'the dialog closed, which is what happens when the approval went through — the check above should have caught that first')
-
-  await okc('windowClick', { text: 'Never mind' })
-  log('wrote a prompt down the pipe, drove the window to it, pressed Approve and confirmed — still unapproved')
+  log(`wrote a prompt down the pipe, drove the window to it, and the press was refused:
+${refusedPress.message.slice(0, 120)}`)
 })
 
 cleanup(async ({ okc, state }) => {

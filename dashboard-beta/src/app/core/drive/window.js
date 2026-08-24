@@ -21,7 +21,13 @@
 plugin.consumes = ['okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
-    var io = imports.okc.io;
+    //BOTH, AND NAMED. `io` is the wire this listens on; `okc` is asked whether
+    //the window believes it is being driven, and told when it is. Reaching
+    //`imports.okc.io` and nothing else left `okc` a free identifier further
+    //down — valid syntax, a clean build, and "okc is not defined" the first time
+    //anything asked for the controls.
+    var okc = imports.okc;
+    var io = okc.io;
     if (!io) return register(null, {});
 
     var seen = function (n) { return !!n.offsetParent; };
@@ -222,6 +228,17 @@ async function plugin(imports, register) {
             return {
                 on: r.where,
                 dialog: r.dialog,
+
+                //WHETHER THIS WINDOW THINKS IT IS BEING DRIVEN, which is a
+                //different question from every other one on this answer: the
+                //rest describe the screen, and this describes who is at it.
+                //
+                //REPORTED BECAUSE THE ALTERNATIVE IS INFERRING IT FROM AN
+                //APPROVAL. Without it the only way to find out was to press
+                //something guarded and watch what happened — which is a test
+                //that changes what it measures, and over there is exactly how a
+                //stuck flag went unnoticed for an evening. See ../okc.
+                driven: !!okc.driven,
                 //IS IT STILL COMING? A skeleton on the screen is the pane saying
                 //"this is a list and it is on its way", and it is the difference
                 //between "there is nothing here" and "nothing has arrived yet"
@@ -464,6 +481,22 @@ async function plugin(imports, register) {
                 throw new Error('"' + b.label + '" is disabled' + (b.why ? ': ' + b.why : ' and says no reason') + '.');
             }
 
+            //---- AND THE PRESS CARRIES THE MARK -------------------------
+            //
+            //SET BEFORE THE CLICK, and never unset here. What the press causes
+            //may finish long after this returns — a dialog opened now and
+            //confirmed a minute later is one act — so there is no moment in this
+            //function that means "the press is over". ../okc clears it on the
+            //first genuine `isTrusted` event instead: a person putting their
+            //hand on the window is unambiguous, and cannot be forged from
+            //script.
+            //
+            //THIS IS NOT THE SAME GUARD AS THE REFUSAL ABOVE. That one stops a
+            //PAINTED button being driven at all. This one is what holds when the
+            //button is not painted — a pane that builds its own control is a
+            //pane the mark above cannot see — so the action at the far end can
+            //still tell that a person did not do this.
+            okc.driving(true);
             b.node.click();
             //Long enough for what the press caused to have happened — a dialog
             //to open, a pane to switch, a read to come back. Said as a duration
