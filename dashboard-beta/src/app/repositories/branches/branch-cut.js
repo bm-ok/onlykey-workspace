@@ -205,6 +205,25 @@ module.exports = function branches(theme, okc, remember) {
 
     function Branches() {
         var { state, error, reads, again } = okc.use('branchBoard', {}, 10000);
+
+        //---- WHAT A BRANCH MAY BE CUT FROM, WHICH IS TWO THINGS -----------
+        //
+        //A LINE, OR ANOTHER BRANCH CUT. `branchCreate` takes `group` for the
+        //first and `from` for the second, and refuses both at once — "they are
+        //two different starting points and only one of them can be true".
+        //
+        //THE DIALOG OFFERED NEITHER. It read `state.baselines` off `branchBoard`
+        //and mapped `g.branch`; that answer carries `asked, branches, note,
+        //protected, repos` and has never had a `baselines`. So `|| []` swallowed
+        //it, the select rendered with ZERO options, and "Cut a branch" could not
+        //be completed from the window at all — on a host with six lines.
+        //
+        //IT LOOKS LIKE A STYLING PROBLEM AND IS NOT. An empty `<select>` draws
+        //as an empty box, which reads as "nothing to choose yet" rather than as
+        //a pane asking the wrong question — and every check in this repository
+        //passed, because a field name that is absent is not a class that is
+        //missing and nothing here checks shapes.
+        var lines = okc.use('lines', {}, 0);
         var [find, setFind] = useState('');
         var [only, setOnly] = remember.use('branches', 'only', null);
         var [picked, setPicked] = remember.use('branches', 'picked', null);
@@ -237,6 +256,30 @@ module.exports = function branches(theme, okc, remember) {
         //CUTTING ONE ASKS FOR A REASON, and the reason is not decoration: it is
         //what somebody reads in six weeks when they find the branch and have to
         //decide whether it can go.
+        //---- THE TWO STARTING POINTS, IN ONE LIST -------------------------
+        //
+        //LINES FIRST AND CUTS AFTER, because it all starts at a line: a cut from
+        //a cut is still measured against the line the first one came from. The
+        //value carries the KIND, since `branchCreate` takes `group` for a line
+        //and `from` for a branch and refuses both together.
+        //
+        //A LINE SAYS WHAT EACH REPOSITORY IS ON. "default" alone does not tell
+        //somebody what the halves will start level with, and that is the fact
+        //the branch is measured against ever after.
+        var startingPoints = ((lines.state && (lines.state.lines || lines.state.groups)) || [])
+            .map(function (g) {
+                var on = (g.on || []).map(function (p) { return p.repo + ':' + p.branch; }).join(', ');
+                return { value: 'line:' + g.name, label: g.name + (on ? ' — ' + on : '') };
+            })
+            .concat(((state.branches || [])
+                //NOT THE LINES AGAIN. A line IS a branch here and would otherwise
+                //appear twice, once under each kind, which reads as two different
+                //things with one name.
+                .filter(function (b) { return !b.protected; })
+                .map(function (b) {
+                    return { value: 'branch:' + b.name, label: b.name + ' — a branch cut' };
+                })));
+
         function cut() {
             ask({
                 title: 'Cut a branch',
@@ -248,16 +291,43 @@ module.exports = function branches(theme, okc, remember) {
                     { name: 'branch', label: 'Name', placeholder: 'fix/the-thing', hint: 'the same name in every repository — that is what makes it one change' },
                     { name: 'reason', label: 'Why', placeholder: 'what this is for', hint: 'read by whoever finds this branch later and has to decide whether it can go' },
                     {
-                        name: 'group', label: 'Cut from', value: 'default',
-                        options: (state.baselines || []).map(function (g) { return { value: g.branch, label: g.branch }; }),
-                        hint: 'the line every half starts level with'
+                        //---- LINES FIRST, BECAUSE IT ALL STARTS AT ONE -----
+                        //
+                        //A cut may come from a line or from another cut, and
+                        //`branchCreate` takes those as two different arguments —
+                        //but a cut from a cut still traces back to a line, so
+                        //the lines are listed first and one of them is the
+                        //default. Somebody who opens this and presses Cut gets
+                        //the ordinary answer.
+                        //
+                        //LABELLED WITH WHAT IT ACTUALLY IS in each repository,
+                        //the way the app being ported from does it: a name on
+                        //its own does not say what the halves will start level
+                        //with, and that is the fact the whole branch is measured
+                        //against ever after.
+                        name: 'startsAt', label: 'Cut from',
+                        value: startingPoints.length ? startingPoints[0].value : '',
+                        options: startingPoints,
+                        hint: 'a branch line, or another branch cut — a line is where it all starts'
                     }
                 ],
                 confirm: 'Cut it',
                 onYes: function (f) {
                     if (!f.branch) throw new Error('It needs a name.');
                     if (!f.reason) throw new Error('It needs a reason — that is the whole point of cutting one deliberately.');
-                    return tell(okc.call('branchCreate', { branch: f.branch, reason: f.reason, group: f.group }))
+                    if (!f.startsAt) {
+                        throw new Error('Say what it is cut from. Every branch starts somewhere, and this is the '
+                            + 'record of where.');
+                    }
+
+                    //ONE FIELD, TWO ARGUMENTS. The value carries which kind it
+                    //is, because `branchCreate` refuses being given both and a
+                    //dropdown cannot express "either" without saying which.
+                    var cut = { branch: f.branch, reason: f.reason };
+                    if (f.startsAt.indexOf('line:') === 0) cut.group = f.startsAt.slice(5);
+                    else cut.from = f.startsAt.slice(7);
+
+                    return tell(okc.call('branchCreate', cut))
                         .then(function () { setPicked(f.branch); });
                 }
             });
