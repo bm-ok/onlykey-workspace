@@ -165,6 +165,23 @@ module.exports = (env, argv = {}) => {
         { from: path.join(__dirname, 'src', 'app', 'tests', 'suites'), to: 'suites' }
     ];
 
+    //WHAT THE SOURCE NO LONGER HAS, the destination should not either. Walks the
+    //COPY and asks the source about each entry, rather than diffing both ways:
+    //everything the source has was just written, so the only question left is
+    //what is here that should not be.
+    function prune(from, to) {
+        for (const entry of fs.readdirSync(to, { withFileTypes: true })) {
+            const here = path.join(to, entry.name);
+            const there = path.join(from, entry.name);
+
+            if (!fs.existsSync(there)) {
+                fs.rmSync(here, { recursive: true, force: true });
+                continue;
+            }
+            if (entry.isDirectory()) prune(there, here);
+        }
+    }
+
     //Copied on every emit, including every watch rebuild, so editing a script
     //takes effect on the next boot with nothing to restart — which is the whole
     //promise vms/provision/scripts.js makes about reading them fresh.
@@ -176,6 +193,19 @@ module.exports = (env, argv = {}) => {
                     for (const { from, to } of PAYLOADS) {
                         if (!fs.existsSync(from)) continue;
                         fs.cpSync(from, path.join(out, to), { recursive: true });
+
+                        //AND WHAT IS NO LONGER THERE HAS TO GO. cpSync adds and
+                        //overwrites; it never removes. A drill renamed in src
+                        //therefore kept RUNNING from its old copy here, and
+                        //since the reason drills get renamed is that their old
+                        //name was wrong, what the board showed was a broken
+                        //check nobody could find the source of.
+                        //
+                        //ONLY EVER INSIDE THIS PAYLOAD'S OWN DESTINATION, and
+                        //only where the source says a directory: a delete that
+                        //walks from `out` itself is one bad `to` away from
+                        //taking the build with it.
+                        if (fs.statSync(from).isDirectory()) prune(from, path.join(out, to));
                     }
                     done();
                 } catch (e) {
