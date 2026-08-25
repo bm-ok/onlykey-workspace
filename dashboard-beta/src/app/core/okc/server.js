@@ -1,4 +1,5 @@
 var net = require('net');
+var Watching = require('./watching');
 var os = require('os');
 var path = require('path');
 
@@ -111,6 +112,56 @@ async function plugin(imports, register) {
         });
     }
 
+    //THE SAME SURFACE A PANE REACHES THROUGH `okc:call`, and deliberately the
+    //same one: a watch must answer exactly what asking would have answered, or a
+    //pane is being kept up to date with a different question than the one it
+    //drew.
+    function reachFor(w) {
+        return actions ? actions.call(w.action, w.args) : call(w.action, w.args);
+    }
+
+    //---- what the windows are watching, and the one timer that checks it ----
+    //
+    //ONE INTERVAL FOR THE WHOLE APP, rather than one per watch. Forty timers here
+    //would be the forty that were just taken out of the page, moved. This wakes
+    //on a coarse beat and asks the registry what is due; a watch's cadence is
+    //what it MEANS rather than what it owns.
+    //
+    //THE BEAT IS THE GRANULARITY, NOT THE CADENCE. Everything is rounded up to
+    //the next beat, which is why the floor on a watch is a whole second — asking
+    //for less would be asking for something this cannot deliver anyway.
+    var BEAT = 500;
+
+    var watches = Watching();
+    var watchers = new Map();
+    var beat = null;
+
+    async function sweep() {
+        var ready = watches.due();
+        for (var i = 0; i < ready.length; i++) {
+            var w = ready[i];
+            //MARKED OUT BEFORE IT IS ASKED, so the next beat does not dispatch it
+            //again while this one is still in flight. See ./watching.js.
+            watches.started(w);
+            (function (it) {
+                reachFor(it).then(function (result) {
+                    it.quiet = false;
+                    var said = watches.answered(it, result);
+                    if (!said.changed || said.gone) return;
+                    var to = watchers.get(it.who);
+                    if (to) to.emit('okc:changed', { id: it.id, result: result });
+                }, function (e) {
+                    watches.failed(it);
+                    //NOT LOGGED PER FAILURE. A watch on an action that is failing
+                    //fails on every beat, and a line each time would fill the log
+                    //with one sentence — the same argument as the relay above.
+                    //The pane keeps what it had and hears about the recovery.
+                    if (!it.quiet) { it.quiet = true; log.info('watching "' + it.action + '" is failing: ' + e.message); }
+                });
+            }(w));
+        }
+    }
+
     //NAMED SO IT CAN BE TAKEN OFF BY ITSELF — see the note in ../io/serve.js.
     //`io` is made in ../io/main.js and outlives every reload, so unhooking it
     //with `removeAllListeners` takes everybody else's handlers with it.
@@ -159,9 +210,59 @@ async function plugin(imports, register) {
                 function (e) { reply({ ok: false, error: e.message }); }
             );
         });
+
+        //---- AND ASKING TO BE TOLD RATHER THAN ASKING AGAIN -----------------
+        //
+        //THE PAGE USED TO OWN FORTY TIMERS. Every pane polled on its own
+        //cadence, and with every tab open that was nearly three hundred calls a
+        //minute, almost all of them answering that nothing had happened — and
+        //each one handed to React, which re-rendered a board identical to the one
+        //already on screen.
+        //
+        //THE TIMER MOVES HERE AND THE WIRE GOES QUIET. A pane says what it wants
+        //and how often it would like to know; this asks on that cadence and
+        //sends something back only when the answer is not the one the pane
+        //already has. A tab open on an unchanging board now costs nothing across
+        //the socket at all.
+        //
+        //THE PANE HANDS OVER THE FINGERPRINT OF WHAT IT ALREADY READ, so the
+        //first check is silent. Without that every mount would get one pointless
+        //update for an answer it had just fetched itself.
+        watchers.set(client.id, client);
+
+        client.on('okc:watch', function (msg, reply) {
+            try {
+                var w = watches.add(client.id, msg || {});
+                if (typeof reply == 'function') reply({ ok: true, everyMs: w.everyMs });
+            } catch (e) {
+                if (typeof reply == 'function') reply({ ok: false, error: e.message });
+            }
+        });
+
+        client.on('okc:unwatch', function (msg) {
+            watches.drop(client.id, (msg && msg.id));
+        });
+
+        //A PAGE THAT GOES AWAY TAKES ITS WATCHES WITH IT. This one reloads on
+        //every hot update, so sockets come and go constantly — a registry that
+        //leaked them would leave this polling on behalf of pages closed hours
+        //ago, with nothing on screen to say so.
+        client.on('disconnect', function () {
+            watchers.delete(client.id);
+            var gone = watches.dropAll(client.id);
+            if (gone) log.info('a window went away, and ' + gone + ' watch(es) went with it');
+        });
     }
 
     io.on('connection', onConnection);
+
+    //STARTED HERE AND STOPPED IN `onDestroy`, like the socket below it. This half
+    //is rebuilt on every save, and an interval left behind by the old copy would
+    //go on polling actions on behalf of watches that live in a registry nothing
+    //can reach any more.
+    beat = setInterval(sweep, BEAT);
+    //SO A WATCH NEVER HOLDS THE PROCESS OPEN.
+    if (beat.unref) beat.unref();
 
     connect();
 
@@ -188,6 +289,41 @@ async function plugin(imports, register) {
     //Asked at the moment somebody looks, not cached: the far side is restarted
     //constantly while its own code is worked on, and a cached table would
     //describe the version before the last restart.
+    //---- AND WHETHER ANY OF THE WATCHING IS ACTUALLY SAVING ANYTHING -------
+    //
+    //A WATCH THAT SENDS EVERY TIME IS THE POLLING IT REPLACED, with the server
+    //now paying for the timer as well — and from the outside it is completely
+    //indistinguishable from one working perfectly. Same panes, same data, same
+    //feel. The only thing that says which it is doing is the gap between how
+    //often it looked and how often it had anything to say.
+    //
+    //THE SAME ARGUMENT AS THE RATE LIMIT IN ../../github. A claim about work not
+    //being done needs a number, or it is a comment.
+    //
+    //`checks` MUCH LARGER THAN `sent` IS THIS WORKING. `checks` equal to `sent`
+    //is a watch on an action whose answer is never the same twice — a timestamp
+    //in it, most likely — which is worth finding, because that pane is paying
+    //full price and quietly.
+    var unwatching = actions ? actions.define('watching', {
+        about: 'What the open windows are being kept up to date on, and how often there was anything to say',
+        run: async function () {
+            var rows = watches.about();
+            var checks = rows.reduce(function (n, r) { return n + r.checks; }, 0);
+            var sent = rows.reduce(function (n, r) { return n + r.sent; }, 0);
+            return {
+                watching: rows,
+                windows: watchers.size,
+                checks: checks,
+                sent: sent,
+                note: rows.length
+                    ? rows.length + ' watch(es) from ' + watchers.size + ' window(s). Looked ' + checks
+                        + ' time(s), had something to say ' + sent + ' time(s)'
+                        + (checks && sent === checks ? ' — which is every time, so nothing is being saved here.' : '.')
+                    : 'No window is watching anything. Either none is open, or every pane on screen asked once and is done.'
+            };
+        }
+    }) : function () {};
+
     var uncatalogue = actions ? actions.catalogue(async function () {
         if (!sock) throw new Error('the dashboard this relays to is not running, so its actions are not listed');
         var got = await call('actions', {});
@@ -216,8 +352,11 @@ async function plugin(imports, register) {
             //in a row was the first thing the new command-line view showed.
             if (said) log.info('the relay is going down with a reload of this half');
             closing = true;
+            if (beat) { clearInterval(beat); beat = null; }
+            watchers.clear();
             unfallback();
             uncatalogue();
+            unwatching();
             drop('the server half is reloading');
             io.off('connection', onConnection);
             if (sock) { try { sock.destroy(); } catch (e) { /* already gone */ } }
