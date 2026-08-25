@@ -131,6 +131,63 @@ async function plugin(imports, register) {
     var kit = null;
     var kitFault = null;
 
+    //---- THE CATALOGUE, REWRITTEN WHEN THE KIT CHANGES --------------------
+    //
+    //`outline.md` IS THE CLOSEST THING THIS PROJECT HAS TO A SPECIFICATION:
+    //every suite, test and check, in the order a person uses the app. It is
+    //generated, and a generated file is only worth reading while it is current —
+    //during a session where somebody is adding checks it goes stale within
+    //minutes, and whoever reads it has no reason to doubt it.
+    //
+    //ON THE KIT RELOAD RATHER THAN AT STARTUP, which is where the app being
+    //ported from does it. This half rebuilds on every save and `theKit` has just
+    //dropped the drills from node's cache and loaded them again — so this is the
+    //moment the registry changed, and editing a drill rewrites the catalogue
+    //about five seconds later instead of at the next restart.
+    //
+    //ONLY WHILE THE DRILLS ARE ON FOR THE OPEN FOLDER, the same gate everything
+    //else about them keeps. `npm test` checks the file as well, for the change
+    //made with them switched off.
+    //
+    //WRITTEN ONLY WHEN IT WOULD CHANGE, so a reload for any other reason touches
+    //no file and leaves the working tree alone.
+    //
+    //AND INTO THE SOURCE TREE, WHICH MAY NOT BE THERE. `__dirname` is the
+    //bundle's folder at run time, so the file beside these drills is the one in
+    //`dist` — a description of the app written next to a build nobody reads. A
+    //packaged app has no source tree at all, and that is an answer rather than a
+    //problem: the outline is for whoever is CHANGING the drills.
+    //
+    //NEVER FATAL. A specification that could not be written is a line in the log,
+    //not a Test tab that will not load.
+    async function writeOutline(loaded) {
+        try {
+            var may = await imports.settings.allowed();
+            if (!may || !may.allowed) return;
+
+            var outline = require('./outline');
+            var to = outline.sourceFile();
+            if (!to) return;
+
+            var made = outline.put(
+                outline.render(
+                    loaded.harness.getRegisteredSuites(),
+                    loaded.harness.requirements(),
+                    path.join(__dirname, 'suites')),
+                to);
+
+            if (made.wrote) {
+                log.info('outline.md rewritten — ' + made.suites + ' suites, '
+                    + made.tests + ' tests, ' + made.checks + ' checks');
+            }
+            (made.broken || []).forEach(function (b) {
+                log.warn(b + ' — the outline says so, and nothing else will');
+            });
+        } catch (e) {
+            log.info('could not write outline.md: ' + (e && e.message ? e.message : e));
+        }
+    }
+
     function theKit() {
         if (kit || kitFault) return kit;
         try {
@@ -176,6 +233,13 @@ async function plugin(imports, register) {
                 titleOf: loader.titleOf,
                 broken: loader.broken || []
             };
+
+            //THE CATALOGUE, REWRITTEN because the registry just changed. See
+            //`writeOutline` above for why it is here and not at startup.
+            //
+            //NOT AWAITED: `theKit` is what every read calls and must stay
+            //synchronous, and nothing depends on the file having been written.
+            writeOutline(kit);
         } catch (e) {
             //SAID ONCE AND KEPT, because a kit that cannot be loaded is not a
             //kit with no drills — and those two look identical on a board that
