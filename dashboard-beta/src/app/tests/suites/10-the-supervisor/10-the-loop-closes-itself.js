@@ -32,109 +32,67 @@
 // GitHub, so a pull request nobody can reach checks it exactly as well and
 // leaves nothing behind on anybody's tracker.
 
-const { it, requires } = require('../../harness')
-const watching = require('../../../repos/watching')
-const supervisor = require('../../../core/supervisor')
+// ---- what this asks, and what it stopped asking --------------------------
+//
+// IT COULD NOT LOAD. It required `repos/watching` and `core/supervisor`, and a
+// drill runs from `dist/suites` with only the harness beside it.
+//
+// AND THE FIRST OF THOSE IS NOT A RENAME. This app has no `endedAmong` and
+// nothing that answers the question it asks: which of the pull requests this host
+// cut have since been merged or closed, and are therefore news the supervisor has
+// not been told. Four of this file's five checks were about that function, so
+// four of them are describing something that is not here yet. They are a DRAFT
+// below rather than checks that fail — a check failing says a rule broke, and
+// nothing broke; this half of the loop has not been carried over.
+//
+// WHAT IS HERE IS THE FIFTH, and it is the one the whole loop rests on.
+
+const { it, requires, draft } = require('../../harness')
 
 requires('what this host has')
 
-const ON = 'okc-drill/nothing-real'
-const pull = n => `${ON} pull#${n}`
-const issue = n => `${ON} issue#${n}`
-
-// One cut of this host's own, carrying one pull request. `into` is the field the
-// landings record actually stores — `on` is the name the same value carries in
-// the live projection, and reading for the wrong one matched nothing at all,
-// silently, which is how the first version of this shipped doing nothing.
-const CUTS = {
-  'a line -> default': {
-    source: 'a line',
-    target: 'default',
-    pulls: [{ repo: 'nothing-real', number: 41, into: ON, state: 'open' }]
-  }
-}
-
-const watched = (id, kind, number) => ({ id, kind, on: ON, repo: 'nothing-real', number, title: 'a thing' })
-
-it('a cut of this host that is no longer open is news', async ({ assert, log }) => {
-  const seen = { [pull(41)]: watched(pull(41), 'pull', 41) }
-  const said = watching.endedAmong(seen, {}, CUTS)
-
-  assert.equal(said.length, 1, 'a pull request this host cut fell out of the open list and nothing said so')
-  assert.equal(said[0].number, 41, 'it named the wrong pull request')
-  log(`${said[0].on}#${said[0].number} has ended, and the supervisor is told`)
-})
-
-it('and a closed issue is still not', async ({ assert }) => {
-  // THE HALF OF THE RULE THAT WAS ALWAYS RIGHT, and the reason this is a
-  // narrowing rather than a reversal. Somebody else opened it and somebody else
-  // closed it; it was never this host's loop to close, and waking a model to
-  // tell it so costs a turn of somebody's money for nothing.
-  const seen = { [issue(41)]: watched(issue(41), 'issue', 41) }
-  assert.equal(watching.endedAmong(seen, {}, CUTS).length, 0, 'a closed issue woke the supervisor')
-})
-
-it('and a pull request nobody here cut is not', async ({ assert }) => {
-  // A stranger's pull request closing on a repository this workspace watches is
-  // somebody else's business. Only a cut in the landings record is a loop that
-  // started here.
-  const seen = { [pull(99)]: watched(pull(99), 'pull', 99) }
-  assert.equal(watching.endedAmong(seen, {}, CUTS).length, 0, "somebody else's pull request was reported as this host's")
-})
-
-it('and a repository that could not be read has said nothing', async ({ assert }) => {
-  // THE MISTAKE THIS FILE HAS ALREADY PAID FOR ONCE. GitHub was unreachable for
-  // ten minutes overnight and every issue and pull request dropped out of the
-  // record, so the next successful look read all of them as new. The fix carries
-  // an unreadable repository's entries forward untouched — they stay in `now` —
-  // and this is the same guard from the other side: still in `now` means it has
-  // not gone, whether that is because it is still open or because nobody could
-  // ask. "I did not hear" is not "it ended".
-  const one = watched(pull(41), 'pull', 41)
-  const seen = { [pull(41)]: one }
-  assert.equal(watching.endedAmong(seen, { [pull(41)]: one }, CUTS).length, 0,
-    'a repository that could not be read was treated as one whose work had gone')
-})
-
-it('and merging is a person, which is why this drill merges nothing', async ({ assert, log }) => {
+it('merging is a person, which is why this drill merges nothing', async ({ okc, assert, log }) => {
   // THE BOUNDARY THE WHOLE LOOP RESTS ON. Everything before a merge is
   // recoverable from GitHub and a merge is not: it is the one act this app takes
-  // that lands in somebody's repository for good.
+  // that lands in somebody else's repository for good.
   //
-  // A SUPERVISOR IS REFUSED IT OUTRIGHT — not by a setting, not by a mode, but
-  // by not being on its list at all, which is the only kind of refusal that
-  // cannot be switched off by accident.
-  assert.equal(supervisor.may('prCutLand'), false, 'a supervisor could merge a cut into somebody\'s repository')
-  assert.ok(!Object.keys(supervisor.MAY).includes('prCutLand'), 'prCutLand appeared on the supervisor\'s list')
+  // A SUPERVISOR IS REFUSED IT OUTRIGHT — not by a setting, not by a mode, but by
+  // not being on its list at all, which is the only kind of refusal that cannot
+  // be switched off by accident.
+  const { may } = await okc('supervisorMay')
+  const names = (may || []).map((m) => m.action)
 
-  // AND THE KIT IS NOT AN EXCEPTION. `prCutLand` refuses from outside the window
-  // UNLESS testing mode is on — and testing mode is exactly the state the drills
-  // run in, so during a run this refusal is not what stands between this file and
-  // somebody's main branch. Nothing does, except that no drill calls it. That is
-  // worth saying out loud rather than leaving as an unwritten habit: a kit that
-  // may merge is a kit that merges the first time somebody writes the wrong line.
-  log('prCutLand is not on the supervisor\'s list, and no drill in this kit calls it')
+  assert.ok(names.length, 'the supervisor may call nothing at all, so finding this one absent proves nothing')
+  assert.ok(!names.includes('prCutLand'),
+    'prCutLand is on the list of what a supervisor may call, so a model could merge a cut into somebody else\'s repository')
+
+  // AND THE KIT IS NOT AN EXCEPTION, which is worth saying out loud rather than
+  // leaving as an unwritten habit.
+  //
+  // `prCutLand` refuses from outside the window UNLESS testing mode is on — and
+  // testing mode is exactly the state the drills run in. So during a run that
+  // refusal is NOT what stands between this file and somebody's main branch.
+  // Nothing does, except that no drill calls it. A kit that may merge is a kit
+  // that merges the first time somebody writes the wrong line.
+  log(`prCutLand is not among the ${names.length} actions a supervisor may call, and no drill in this kit calls it`)
 })
 
-// WHAT IT SAW, on 19 August 2026, in fifty-one milliseconds:
-//
-//   a cut of this host that is no longer open is news
-//     okc-drill/nothing-real#41 has ended, and the supervisor is told
-//
-//   and merging is a person, which is why this drill merges nothing
-//     prCutLand is not on the supervisor's list, and no drill in this kit calls it
-//
-// THE OTHER THREE CHECKS SAY NOTHING, and that is what they are for. A closed
-// issue, a stranger's pull request and a repository that could not be read all
-// have to produce SILENCE, and silence is not something a log line can show —
-// only a count of nought can. They are the three ways this could have become a
-// wake that costs money and tells the supervisor nothing.
-//
-// AND THE REAL ONE, WHICH THIS CANNOT REACH. The rule was proven against the
-// genuine merged pull request the day it was written, by seeding the watch
-// record with it as though it were still open and running a live look: it came
-// back merged, with a closed issue beside it that was correctly ignored. That
-// run is also what found the fault — the set was being built from `p.on` where
-// the record stores `p.into`, so it matched nothing, silently, and reported
-// nothing for the right-looking reason. Reading the code did not find it and
-// would not have.
+// ---- and the half of the loop that has not been carried over ---------------
+
+draft('a cut of this host that is no longer open is news',
+  'WHAT IT WOULD DO: notice that a pull request this host CUT has been merged or closed, and tell the supervisor '
+  + 'once — which is what closes the loop, because otherwise the last thing that happens to a piece of work is '
+  + 'invisible to the thing that started it. '
+  + 'WHERE IT STANDS: the app being ported from has `repos/watching.endedAmong(seen, extra, cuts)`; this one has '
+  + 'nothing that answers the question, and nothing in supervisor/carrying or supervisor/todos looks at whether a '
+  + 'cut has ended. '
+  + 'THE FOUR CHECKS THIS FILE USED TO MAKE, and each is a way it can go wrong — three of them by SAYING SOMETHING '
+  + 'when it should be silent, which is worse than saying nothing, because a supervisor woken for nothing learns to '
+  + 'be woken for nothing: (1) a pull request of ours that has ended IS news; (2) a closed ISSUE is not, because an '
+  + 'issue is not a cut; (3) a pull request nobody here cut is not, however interesting — it is not this host\'s '
+  + 'work; (4) a repository that could not be READ has said nothing, and an unreadable repository must not read as '
+  + '"everything in it ended". '
+  + 'WHY IT IS A DRAFT AND NOT A FAILING CHECK: nothing broke. This is a feature the port has not reached, and a red '
+  + 'drill would say the opposite. '
+  + 'WHERE IT SHOULD BE ASKED WHEN IT EXISTS: `endedAmong` is a function of three lists with no host in it, so it '
+  + 'belongs in test/, the way pr-allowing and queue-plan do. What belongs HERE is only that the supervisor is actually told, once, on a host where one of its cuts has just been merged.')
