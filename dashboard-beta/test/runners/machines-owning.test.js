@@ -229,3 +229,55 @@ test('creating with nothing said still reaches the builder, which names the faul
     await actions.call('vmCreate', {}).catch(() => {});
     assert.equal(asked.created.length, 1, 'the door answered instead of asking the builder');
 });
+
+//---------------------------------------------------------------------------
+//AND WHAT IS WAITING ON A PERSON.
+//
+//A MACHINE THE QUEUE KEPT BACK. When a run goes quiet for ten minutes the queue
+//stops rather than rolling the machine back, because the disk, the memory and
+//whatever is on the screen are the only evidence of what went wrong. It is
+//claimed in the register while that is true, so nothing picks it up.
+//
+//WHICH IS INDISTINGUISHABLE FROM THE POOL QUIETLY DRAINING. A held machine is
+//correctly never chosen, and a queue with no machines to give work to looks
+//exactly like a queue with nothing to do. So the thing that holds a machine back
+//has to be the thing that says so, or the fix trades one silent failure for
+//another.
+//---------------------------------------------------------------------------
+
+test('a machine the queue kept back is something waiting on a person', async () => {
+    registry = [
+        {
+            name: 'kept-1',
+            borrowed: { why: 'kept for looking at — it stopped answering', at: '2026-08-25T00:00:00.000Z', keptBy: 'the queue' }
+        }
+    ];
+
+    const source = registered.filter((s) => s.name === 'machines the queue kept back')[0];
+    assert.ok(source, 'nothing registers the machines the queue is holding, so they are out of the pool and unexplained');
+
+    const items = await source.waiting();
+    assert.equal(items.length, 1);
+    assert.equal(items[0].what, 'kept-1');
+    assert.match(items[0].why, /stopped answering/, 'it does not carry the reason the queue gave, which is the only clue there is');
+    assert.match(items[0].why, /NOT been rolled back/, 'it does not say the evidence is still on the machine');
+    assert.equal(items[0].where.view, 'Runners');
+    assert.equal(items[0].where.pick, 'kept-1', 'it does not point at the machine it is about');
+    assert.equal(items[0].since, '2026-08-25T00:00:00.000Z', 'it does not say since when, so nothing can tell a fresh one from a week-old one');
+});
+
+test("and somebody's own borrow is not, because they know they took it", async () => {
+    //`keptBy` IS WHAT TELLS THE TWO APART, and it is the reason that field exists
+    //rather than the queue borrowing anonymously. Both write the same `borrowed`,
+    //because to everything else it is the same fact: this machine is claimed.
+    registry = [
+        { name: 'mine-1', borrowed: { why: 'I am looking at something on it', at: '2026-08-25T00:00:00.000Z' } },
+        { name: 'free-1' }
+    ];
+
+    const source = registered.filter((s) => s.name === 'machines the queue kept back')[0];
+    const items = await source.waiting();
+
+    assert.deepEqual(items, [],
+        'a machine somebody borrowed by hand is on the list of things waiting on them, which makes the count one nobody reads');
+});

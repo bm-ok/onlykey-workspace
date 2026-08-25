@@ -991,6 +991,48 @@ async function plugin(imports, register) {
         }
     }));
 
+    //AND A MACHINE THE QUEUE KEPT BACK FOR SOMEBODY TO LOOK AT.
+    //
+    //THE FAILURE THIS GUARDS IS THE ONE THAT KEEPING A MACHINE CREATES. When a
+    //run goes quiet for ten minutes the queue stops rather than rolling the
+    //machine back, because the disk, the memory and whatever is on the screen
+    //are the only evidence of what went wrong — see ../../queue/putting.js. It
+    //is claimed in the register while that is true, so nothing picks it up.
+    //
+    //WHICH IS INDISTINGUISHABLE FROM THE POOL QUIETLY DRAINING. A held machine
+    //is correctly never chosen, and a queue with no machines to give work to
+    //looks exactly like a queue with nothing to do — this app says as much about
+    //itself elsewhere. So the thing that holds a machine back has to be the thing
+    //that says so, or the fix trades one silent failure for another.
+    //
+    //IT PASSES THE TEST FOR BEING ON THIS LIST: nothing here will ever clear it.
+    //`vmReturn` is a person deciding they have seen enough, and until they do the
+    //machine stays out of the pool for ever.
+    //
+    //A PERSON'S OWN BORROW IS NOT ON IT. Somebody who took a machine knows they
+    //took it; `keptBy` is what tells the two apart, and it is the reason that
+    //field exists rather than the queue borrowing anonymously.
+    undo.push(imports.inbox.source({
+        name: 'machines the queue kept back',
+        waiting: async function () {
+            return (ours.read() || []).filter(function (vm) {
+                return !!(vm.borrowed && vm.borrowed.keptBy === 'the queue');
+            }).map(function (vm) {
+                var held = vm.borrowed || {};
+                return imports.inbox.item(
+                    'machine kept for you',
+                    vm.name,
+                    (held.why || 'the queue kept it as it is')
+                        + '. It has NOT been rolled back, so its log and anything it never handed over are '
+                        + 'still on it, and it is still running so its console can be opened. Nothing will '
+                        + 'touch it until you give it back — which is what takes it off this list.',
+                    imports.inbox.at('Runners', 'Virtual machines', vm.name),
+                    { id: vm.name, since: held.at || null }
+                );
+            });
+        }
+    }));
+
     await register(null, { onDestroy: function () { while (undo.length) undo.pop()(); } });
 }
 module.exports = plugin;

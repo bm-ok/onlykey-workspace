@@ -19,123 +19,124 @@
 // three things can be looked at which could not be before, and that the machine
 // is not thrown away before anybody has had the chance.
 //
-// TWO HALVES, CHECKED TWO WAYS. The BOUND is arithmetic and is asked directly.
-// The CONSEQUENCE needs a real machine, and is done to one — but by calling the
-// thing the queue calls, rather than by waiting ten minutes for the queue to
-// call it. A drill that waits out a ten-minute bound per run is a drill nobody
-// runs, which is how this property stayed unchecked in the first place.
+// ---- what this asks, and what it stopped asking --------------------------
+//
+// IT USED TO REACH IN FOR ALL OF IT: `tasks/queue` for the bound and for
+// `keepForLooking`, `machines/vms`, `core/inbox`, and `core/log` to hand the
+// keeping something to log to. A drill runs from `dist/suites` with only the
+// harness beside it and can reach none of them, which is why this file read
+// `will not load`.
+//
+// THE BOUND IS ARITHMETIC. Ten minutes, and that nine is not enough and eleven
+// is, and that a machine which has never gone quiet does not read as overdue —
+// `test/queue/queue-running.test.js` asks all of it against the same function,
+// including the one that matters most: zero and null are "not lost" rather than
+// timestamps from 1970.
+//
+// AND THE KEEPING ITSELF IS ASKED IN `test/queue/queue-putting.test.js`: not
+// stopped, not rolled back, not asked for its credential, and marked as held with
+// the reason and who held it.
+//
+// THE PART THAT CANNOT BE DONE HERE AT ALL is arranging for a machine to be kept.
+// There is no action for "give up on a run" — correctly, because nothing should
+// be able to ASK for that — and the drill before this one got round it by calling
+// the queue's own function with a log it had reached in for. From `dist/suites`
+// that is not available, and building an action so a drill can reach it would be
+// adding a door to the app for the test's benefit.
+//
+// ---- so this runs when it is true, which is when it matters --------------
+//
+// A MACHINE BEING HELD IS NOT A STATE SOMEBODY ARRANGES. It happens when a run
+// went quiet, and on a host where that has happened these are exactly the
+// questions worth asking — asked of the real machine, the real inbox and the
+// real way out, rather than of a situation a drill staged for itself.
+//
+// AND THE FAILURE IT GUARDS IS THE ONE KEEPING A MACHINE CREATES. A held machine
+// is correctly never picked up, which is indistinguishable from a queue that has
+// gone quiet — this app says so about itself elsewhere. So the thing that holds a
+// machine back has to be the thing that says so, and the way out has to work, or
+// keeping it at all is a one-way door and the objection to the whole idea is
+// correct.
 
-const { it, cleanup } = require('../../harness')
-const queue = require('../../../tasks/queue')
-const vms = require('../../../machines/vms')
-const inbox = require('../../../core/inbox')
+const { it, cleanup, requires } = require('../../harness')
 
-const KIND = 'test'
-const MINUTE = 60000
+requires('the machines are built')
 
-it('the bound is ten minutes, and it can be asked without waiting ten minutes', ({ assert, log }) => {
-  // NAMED AND ASKED THROUGH A FUNCTION so it is checkable at all. `now` is a
-  // parameter for exactly this reason: it lets the rule be asked about eleven
-  // minutes ago without eleven minutes passing.
-  assert.equal(queue.HOW_LONG_OUT_OF_TOUCH, 10 * MINUTE,
-    `the bound moved to ${queue.HOW_LONG_OUT_OF_TOUCH / MINUTE} minutes. That is allowed, and this check exists so it is a decision rather than a drift`)
+it('this host is holding a machine it lost sight of', async ({ okc, assert, state, log }) => {
+  // NOT ARRANGED, FOUND. See the header: there is no way to ask this app to give
+  // up on a run, and there should not be.
+  const { vms } = await okc('vmList')
+  const kept = (vms || []).filter((v) => v.borrowed && v.borrowed.keptBy === 'the queue')
 
-  const now = Date.now()
-  assert.ok(!queue.outOfTouchTooLong(now - 9 * MINUTE, now), 'nine minutes of quiet is not long enough to give up on a machine')
-  assert.ok(queue.outOfTouchTooLong(now - 11 * MINUTE, now), 'eleven minutes of quiet did not reach the bound, so the app would wait for ever')
+  assert.needs(kept.length,
+    'no machine here is being held by the queue, so there is nothing to ask these questions about. It happens when a run goes quiet for ten minutes — the machine is kept exactly as it is rather than rolled back, and this runs on the host where that has happened')
 
-  // NEVER LOST IS NOT LOST LONG AGO. `lostSince` is zero until the first failed
-  // look, and zero read as a timestamp is 1970 — which would make every machine
-  // instantly overdue. Worth pinning, because the bug would be silent and total.
-  assert.ok(!queue.outOfTouchTooLong(0, now), 'a machine that has never gone quiet reads as overdue — zero was taken as a timestamp rather than as "not lost"')
-  assert.ok(!queue.outOfTouchTooLong(null, now), 'no timestamp at all reads as overdue')
+  state.machine = kept[0].name
+  state.why = (kept[0].borrowed || {}).why || ''
 
-  log('nine minutes no, eleven minutes yes, never-lost no — asked in microseconds')
-})
+  // IT IS STILL THERE, WHICH IS THE WHOLE POINT. Keeping a machine means keeping
+  // it: one somebody may want to open a console on is one that has to still be
+  // on, because memory holds what the disk does not.
+  assert.ok(kept[0].running || kept[0].state === 'running',
+    `${state.machine} is held but not running (${kept[0].state}) — it was kept so somebody could look at it, and what was on its screen is gone`)
 
-it('a machine kept for looking at is not rolled back, and says so', async ({ okc, assert, slow, state, log }) => {
-  assert.needs(slow, 'this borrows a real machine and leaves it running — minutes. Ask for it with: suiteRun --suite "a task on a machine" --slow true')
+  log(`${state.machine} is held: ${state.why}`)
+}, { gate: true })
 
-  const { vms: all } = await okc('vmList')
-  const free = all.filter(v => v.stage === 'ready' && !v.branch && !v.borrowed && v.forTasks !== false && v.baseSnapshot)
-  const tagged = free.filter(v => (v.tags || []).includes(KIND))
-  const pick = tagged[0] || free[0]
-  assert.needs(pick, 'no machine is free to keep')
+it('and the person is told, rather than the pool quietly draining', async ({ okc, assert, state, log }) => {
+  const items = ((await okc('inbox')).items || []).filter((i) => /kept for you/.test(i.kind))
+  const mine = items.filter((i) => i.what === state.machine)[0]
 
-  await okc('vmBorrow', { name: pick.name, why: 'a drill proving a machine we lost sight of is kept as it is' })
-  state.machine = pick.name
+  assert.ok(mine,
+    `nothing in the inbox says ${state.machine} is being held. It is out of the pool and nothing anywhere explains why, which is the failure this whole arrangement would otherwise have traded for the one it fixes`)
 
-  const before = ((await okc('vmList')).vms || []).find(v => v.name === state.machine)
-  assert.ok(before.running, `${state.machine} was borrowed and is not running, so there is nothing to keep`)
-  state.wasOn = before.baseSnapshot
+  // WHERE TO GO, because a row that names a problem and not a place is one
+  // somebody has to go and find.
+  assert.equal(mine.where && mine.where.view, 'Runners', `it does not say where to go: ${JSON.stringify(mine.where)}`)
+  assert.equal(mine.where && mine.where.pick, state.machine, 'it points at the tab but not at the machine it is about')
 
-  // THE THING THE QUEUE CALLS, called directly.
-  //
-  // Reaching past the actions is deliberate and is the only way in: this runs
-  // inside a `finally` after a ten-minute wait, and there is no action for "give
-  // up on a run" — correctly, because nothing should be able to ASK for that.
-  // The kit already does this where a rule cannot be reached through an action;
-  // see the supervisor suite reading MAY directly.
-  const kept = await queue.keepForLooking(
-    { vmList: { run: () => okc('vmList') }, vmScreenshot: { run: a => okc('vmScreenshot', a) } },
-    require('../../../core/log'),
-    state.machine,
-    'a drill pretending this host lost sight of it'
-  )
-  assert.ok(kept.kept, 'keepForLooking did not report keeping it')
+  // AND HOW TO END IT. Nothing in this app will ever clear this row by itself,
+  // so the row has to carry the one thing the reader needs next.
+  assert.ok(/give it back|given back/.test(mine.why || ''),
+    `it does not say how to release the machine, which is the one thing the reader needs next: ${mine.why}`)
 
-  // ---- IT IS STILL THERE, WHICH IS THE WHOLE POINT --------------------------
-  const after = ((await okc('vmList')).vms || []).find(v => v.name === state.machine)
-  assert.ok(after.running, `${state.machine} was stopped. Keeping it means keeping it: a machine somebody may want to open a console on is one that has to still be on`)
-  assert.equal(after.baseSnapshot, state.wasOn, 'its snapshot moved, which means something rolled it back — the one thing this must not do')
-  assert.ok(!after.branch || after.branch === before.branch, 'its claim changed underneath it')
-
-  // ---- AND IT SAYS WHOSE IT IS AND WHY -------------------------------------
-  assert.ok(after.borrowed, `${state.machine} is not marked as held, so the queue would hand it to the next task and roll it back after that`)
-  assert.equal(after.borrowed.keptBy, 'the queue', 'it is held, but not in a way anything can tell apart from somebody borrowing it by hand')
-  assert.ok(/lost sight/.test(after.borrowed.why || ''), `what it says about why is not the reason: "${after.borrowed.why}"`)
-
-  log(`${state.machine}: still ${after.state}, still on "${after.baseSnapshot}", held — ${after.borrowed.why}`)
-}, { gate: true, minutes: 12 })
-
-it('and the person is told, rather than the pool quietly draining', async ({ assert, state, log }) => {
-  // THE FAILURE THIS GUARDS IS THE ONE KEEPING A MACHINE CREATES. A held machine
-  // is correctly never picked up, which is indistinguishable from a queue that
-  // has gone quiet — this app says so about itself elsewhere. So the thing that
-  // holds a machine back has to be the thing that says so.
-  const items = inbox.all().filter(i => /kept for you/.test(i.kind))
-  const mine = items.find(i => i.what === state.machine)
-  assert.ok(mine, `nothing in the inbox says ${state.machine} is being held. It is out of the pool and nothing anywhere explains why, which is the failure this whole change would otherwise have traded for the one it fixed`)
-
-  assert.ok(mine.mine, 'it is listed as something other than a person\'s errand, but nothing in this app will ever clear it by itself')
-  assert.equal(mine.where.view, 'runners', `it does not say where to go: ${JSON.stringify(mine.where)}`)
-  assert.ok(/vmReturn/.test(mine.why), 'it does not say how to give the machine back, which is the one thing the reader needs next')
-
-  log(`inbox: "${mine.kind}" — ${mine.what}, pointing at ${mine.where.view}/${mine.where.pane}`)
+  log(`inbox: "${mine.kind}" — ${mine.what}, pointing at ${mine.where.view}/${mine.where.pane || '(the tab)'}`)
 })
 
 it('and giving it back puts it in the pool again', async ({ okc, assert, state, log }) => {
   // THE WAY OUT HAS TO WORK, or keeping a machine is a one-way door and the
   // objection to keeping it at all is correct.
+  //
+  // THIS IS THE ONE STEP THAT CHANGES SOMETHING, and it is the step a person
+  // would take anyway once they had looked. It is not undone afterwards: the
+  // machine belongs in the pool, and putting it back is the answer rather than a
+  // side effect to clean up.
   await okc('vmReturn', { name: state.machine })
 
+  let back = null
   for (let i = 0; i < 24; i++) {
-    const v = ((await okc('vmList')).vms || []).find(x => x.name === state.machine)
-    if (v && !v.borrowed && !v.branch && v.state !== 'running') { state.back = v; break }
-    await new Promise(r => setTimeout(r, 5000))
+    const v = ((await okc('vmList')).vms || []).filter((x) => x.name === state.machine)[0]
+    if (v && !v.borrowed && !v.branch && v.state !== 'running') { back = v; break }
+    await new Promise((r) => setTimeout(r, 5000))
   }
-  assert.ok(state.back, `${state.machine} did not come back after vmReturn`)
-  state.machine = null
 
-  const left = inbox.all().filter(i => /kept for you/.test(i.kind) && i.what === (state.back || {}).name)
+  assert.ok(back, `${state.machine} did not come back after vmReturn`)
+
+  const left = ((await okc('inbox')).items || [])
+    .filter((i) => /kept for you/.test(i.kind) && i.what === state.machine)
   assert.equal(left.length, 0, 'the machine is back in the pool and the inbox still says it is being held')
-  log(`${state.back.name}: ${state.back.state}, in the pool, and the inbox no longer mentions it`)
+
+  state.machine = null
+  log(`${back.name}: ${back.state}, in the pool, and the inbox no longer mentions it`)
 }, { minutes: 6 })
 
 cleanup(async ({ okc, state }) => {
-  // Only if a check failed before giving it back: this machine is deliberately
-  // left running and held, so a drill that stops halfway would leave it that way
-  // for ever.
-  if (state.machine) await okc('vmReturn', { name: state.machine }).catch(() => { /* already back */ })
-  state.machine = null
+  // ONLY IF A CHECK FAILED BEFORE GIVING IT BACK. This machine was deliberately
+  // left running and held by something that went wrong, so a drill that stopped
+  // halfway must not leave it that way — but it also must not put back a machine
+  // it never took.
+  if (state.machine) {
+    try { await okc('vmReturn', { name: state.machine }) } catch (e) { /* already back, or gone */ }
+    state.machine = null
+  }
 })
