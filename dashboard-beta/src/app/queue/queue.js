@@ -1,7 +1,7 @@
 var React = require('react');
 
 module.exports = function queue(theme, okc, shell) {
-    var { Pane, Panel, Badge, Empty, Note, Mono, Linky, Row, Toggle, Skeleton,
+    var { Pane, Panel, Badge, Button, Empty, Note, Mono, Linky, Row, Toggle, Skeleton,
         Stack, Card, CardTitle, CardSub } = theme;
 
     //---- whether any of this is going to happen -----------------------------
@@ -102,7 +102,20 @@ module.exports = function queue(theme, okc, shell) {
                                     {(m.kinds || []).length
                                         ? (m.kinds || []).map(function (k) { return <span key={k}><Badge>{k}</Badge>{' '}</span>; })
                                         : <span><Badge>no role — the queue leaves it alone</Badge>{' '}</span>}
-                                    <Badge kind={m.free ? 'ok' : 'warn'}>{m.free ? 'free' : 'busy'}</Badge>
+                                    {/* "NOT FREE" RATHER THAN "BUSY", because the
+                                        answer carries one flag and several
+                                        reasons. beta-super1 is powered off and
+                                        tagged supervisor — it is never given task
+                                        work at all — and this said `busy` about
+                                        it, in warning yellow, next to a sentence
+                                        saying it is never given task work.
+
+                                        The column answers one question: can the
+                                        queue give this work now. `why` says which
+                                        of the reasons it is, and inventing a word
+                                        the answer does not contain is how a board
+                                        comes to disagree with its own note. */}
+                                    <Badge kind={m.free ? 'ok' : 'muted'}>{m.free ? 'free' : 'not free'}</Badge>
                                     {m.why ? <Note>{m.why}</Note> : null}
                                 </td>
                             </tr>
@@ -129,7 +142,11 @@ module.exports = function queue(theme, okc, shell) {
     //../ui/theme/dashboard.scss now closes the join wherever it happens, so this
     //would look right either way. It is still written through the kit, because
     //the next thing a Card learns is a thing these would not.
-    function Work({ rows, empty }) {
+    //`take` IS PASSED ONLY BY THE WAITING LIST, which is what decides whether a
+    //row can be taken back. The same card draws what is running and what has
+    //already run, and neither of those is something this undoes: one is a machine
+    //working and the other is over.
+    function Work({ rows, empty, take, busy }) {
         if (!rows || !rows.length) return <Empty>{empty}</Empty>;
         return (
             <Stack>
@@ -141,6 +158,18 @@ module.exports = function queue(theme, okc, shell) {
                                 {' '}{r.title}
                             </CardTitle>
                             {r.on ? <CardSub><Mono>{r.on}</Mono></CardSub> : null}
+                            {take
+                                ? <Row>
+                                    {/* NOT GUARDED. Queueing something is the act
+                                        that spends a machine; taking it back out
+                                        spends nothing and can be undone by
+                                        queueing it again. A gate here would ask
+                                        somebody to confirm the safe direction. */}
+                                    <Button disabled={busy} onClick={function () { take(r); }}>
+                                        Take it back out
+                                    </Button>
+                                </Row>
+                                : null}
                         </Card>
                     );
                 })}
@@ -150,6 +179,45 @@ module.exports = function queue(theme, okc, shell) {
 
     function Queue() {
         var { state, error, reads, again } = okc.use('queueState', {}, 3000);
+
+        //---- TAKING SOMETHING BACK OUT OF THE QUEUE ------------------------
+        //
+        //THE WAY OUT THAT DID NOT EXIST. Work could go in and only come out by
+        //running: the choices were to let a machine spend twenty minutes on
+        //something somebody had changed their mind about, or to throw the task
+        //away and lose what it says.
+        //
+        //IT MATTERS MOST WHEN NOTHING IS HAPPENING. Work queued against a host
+        //that cannot dispatch it -- no machine free, or no sign-in to give it --
+        //sits here looking inert and starts the moment somebody fixes the
+        //unrelated thing.
+        //
+        //TWO DOORS FOR THE TWO KINDS, because a task and a judgement are kept by
+        //different plugins and each refuses for its own reasons. The row already
+        //says which it is.
+        var [taking, setTaking] = React.useState(false);
+        var [said, setSaid] = React.useState(null);
+
+        function take(row) {
+            setTaking(true);
+            setSaid(null);
+            okc.call(row.kind === 'judgement' ? 'judgementUnqueue' : 'taskUnqueue', { id: row.id }).then(
+                function (r) {
+                    setSaid({ text: (r && r.note) || (row.ref + ' is out of the queue.') });
+                    setTaking(false);
+                    again();
+                },
+                function (e) {
+                    //SAID, NOT SWALLOWED. The refusal for one already given out
+                    //names the state it is in, and that is the answer somebody
+                    //needs: the machine is working and stopping it is a different
+                    //act on a different thing.
+                    setSaid({ bad: true, text: e.message });
+                    setTaking(false);
+                    again();
+                }
+            );
+        }
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;
@@ -161,6 +229,7 @@ module.exports = function queue(theme, okc, shell) {
                     restarts says "there is nothing" when it means "I could not
                     ask", and those are different sentences. */}
                 {error ? <Note kind="bad">{error}</Note> : null}
+                {said ? <Note kind={said.bad ? 'bad' : 'ok'}>{said.text}</Note> : null}
 
                 <Standing state={state} />
                 <AutoStart state={state} again={again} />
@@ -177,7 +246,7 @@ module.exports = function queue(theme, okc, shell) {
                             <CardTitle>In flight</CardTitle>
                             <Work rows={state.inFlight} empty="nothing is running" />
                             <CardTitle>Waiting</CardTitle>
-                            <Work rows={state.waiting} empty="nothing is queued" />
+                            <Work rows={state.waiting} empty="nothing is queued" take={take} busy={taking} />
                         </Panel>
                     </div>
                 </div>
