@@ -941,7 +941,33 @@ async function plugin(imports, register) {
                 var rows = [];
 
                 for (var i = 0; i < want.length; i++) {
-                    var row = await ask(want[i].name, notes[want[i].name] || null);
+                    var was = notes[want[i].name] || null;
+                    var row = await ask(want[i].name, was);
+
+                    //WHAT SOMEBODY CHOSE IS NOT SOMETHING GITHUB ANSWERED, and
+                    //this is the one line that keeps those apart.
+                    //
+                    //A NOTE HOLDS BOTH: facts from GitHub, and where work is
+                    //sent — which is the only setting in this app with somebody
+                    //else's name on it. Filing an answer used to be
+                    //`notes[repo] = row`, a whole-object replacement, so every
+                    //field the answer did not mention was dropped. The success
+                    //path carried the choice through by hand and `unasked` — what
+                    //EVERY failure branch returns — did not mention it at all.
+                    //
+                    //So a 403, an expired token, a 404, or a remote that is not
+                    //GitHub turned "send work to the fork you are working with"
+                    //into "send it to yourself", silently: unset means your own
+                    //remote, which looks exactly like working. And the inbox
+                    //invites somebody to "ask GitHub about this one", so doing
+                    //what it asked was what lost it.
+                    //
+                    //KEPT HERE RATHER THAN IN EACH BRANCH because the fault was
+                    //never a branch being wrong — it was a branch not mentioning
+                    //something. A sixth one cannot forget what it is not asked
+                    //to remember.
+                    row = Object.assign({}, row, { target: (was && was.target) || null });
+
                     rows.push(row);
                     notes[row.repo] = row;
 

@@ -679,3 +679,90 @@ test('a pull request is not counted as an issue', async () => {
     assert.equal(row.openIssues, 1, 'a pull request was counted as an issue');
     assert.equal(row.issues[0].number, 7);
 });
+
+//---------------------------------------------------------------------------
+//WHERE WORK GOES IS THE ONLY SETTING IN THIS APP WITH SOMEBODY ELSE'S NAME ON IT.
+//
+//Everything else decides what happens on this host. This decides whose
+//repository a pull request is opened against — and losing it does not fail, it
+//quietly sends the next change somewhere else, because unset means "your own
+//remote", which looks exactly like working.
+//
+//THE NOTE HOLDS TWO KINDS OF THING: what GitHub answered, and what a person
+//CHOSE. `repositoriesCheck` files an answer with `notes[repo] = row`, a
+//whole-object replacement, so every field the answer does not mention is gone.
+//The success path carries the choice through by hand; `unasked` — which is what
+//every failure branch returns — does not mention it at all.
+//
+//So a 403, an expired token, a laptop shut mid-sweep, or a remote that is not
+//GitHub took "send work to the fork you are working with" and made it "send it
+//to yourself".
+//
+//AND THE INVITATION MAKES IT WORSE: the inbox offers "ask GitHub about this one",
+//and doing exactly what it asks is what loses the choice.
+//
+//ASKED AS A PROBE RATHER THAN BY READING. Every individual line looks reasonable;
+//the fault is in which fields each branch does not mention, which is the part a
+//reader cannot hold in their head and the part that breaks when a sixth branch
+//is added. So each branch is driven, and the question is the same for all of
+//them.
+//---------------------------------------------------------------------------
+
+test('a choice about where work goes survives asking GitHub, on every branch', async () => {
+    //MUTABLE ON PURPOSE. The stand-in reads this object when it is called, so a
+    //test can change what GitHub says between one call and the next — which is
+    //the only way to reach a failure branch on demand. Waiting for a real 403
+    //means a check that passes for months and cannot be trusted the one time it
+    //matters.
+    const answers = Object.assign({}, REPO_OK);
+    const { actions } = await anApp(answers);
+
+    await actions.call('repoTargetSet', {
+        repo: 'repo-one', on: 'someone/their-fork', why: 'the fork this work is for'
+    });
+
+    const chose = (await actions.call('repositories')).repos.find((r) => r.repo === 'repo-one');
+    assert.equal(chose.target.on, 'someone/their-fork', 'the choice did not take, so losing it proves nothing');
+    assert.equal(chose.target.chosen, true);
+
+    //EVERY WAY ASKING CAN GO WRONG, one at a time, against the same choice.
+    const goesWrong = [
+        ['a rate limit', { status: 403, body: { message: 'API rate limit exceeded' } }],
+        ['an expired token', { status: 401, body: { message: 'Bad credentials' } }],
+        ['a repository the token was not granted', { status: 404, body: { message: 'Not Found' } }],
+        ['GitHub having a bad day', { status: 500, body: { message: 'Server Error' } }]
+    ];
+
+    for (const [what, answer] of goesWrong) {
+        answers['/repos/anowner/arepo'] = answer;
+        await actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+        const now = (await actions.call('repositories')).repos.find((r) => r.repo === 'repo-one');
+        assert.equal(now.target.on, 'someone/their-fork',
+            `${what} took where work goes with it — it now says ${now.target.on}, and unset means "your own remote", which looks exactly like working`);
+        assert.equal(now.target.chosen, true,
+            `${what} left the target reading as a default rather than as a choice somebody made`);
+    }
+
+    //AND THE SUCCESS PATH TOO, which is the one the inbox invites people to run.
+    answers['/repos/anowner/arepo'] = REPO_OK['/repos/anowner/arepo'];
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    const after = (await actions.call('repositories')).repos.find((r) => r.repo === 'repo-one');
+    assert.equal(after.target.on, 'someone/their-fork', 'asking GitHub successfully lost where work goes');
+    assert.equal(after.target.chosen, true);
+});
+
+test('and asking about a repository GitHub cannot be asked about does not either', async () => {
+    //THE TWO BRANCHES THAT NEVER REACH GITHUB AT ALL: a remote that is not
+    //GitHub, and no remote. Both return through the same `unasked`, so both file
+    //an answer over the note.
+    const { actions } = await anApp(REPO_OK);
+
+    await actions.call('repoTargetSet', { repo: 'repo-two', on: 'someone/their-fork' });
+    await actions.call('repositoriesCheck', { repo: 'repo-two' });
+
+    const now = (await actions.call('repositories')).repos.find((r) => r.repo === 'repo-two');
+    assert.equal(now.target.on, 'someone/their-fork',
+        'a repository whose remote is not GitHub lost where work goes by being asked about');
+});
