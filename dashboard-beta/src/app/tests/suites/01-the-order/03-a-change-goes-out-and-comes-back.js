@@ -19,8 +19,10 @@
 // run. So this proves the half either side of the worker: that a branch with
 // something on it pushes, opens, lands, and comes back.
 //
-// IT WRITES TO GITHUB FOR REAL. A pull request on the parent, a merge on its
-// default branch, a branch on the fork and then not. Nothing here is mocked —
+// IT WRITES TO GITHUB FOR REAL. A pull request wherever this workspace sends
+// work — the parent when one has been picked, and the fork itself when nothing
+// has — a merge on that repository's default branch, a branch on the fork and
+// then not. Nothing here is mocked —
 // the whole reason for it is that the interesting failures are on the other side
 // of the network. Which is why it runs only while testing mode is on, for the
 // workspace somebody named at the window: `prCutLand` and `branchDeleteRemote`
@@ -46,6 +48,20 @@ const ONE = 'local-repo-a'
 // be read without opening another one.
 
 it('a cut is made, and a change is committed on it', async ({ okc, assert, state, log }) => {
+  // LEVEL WITH THE FORK BEFORE CUTTING ANYTHING, which is what a person does
+  // without thinking about it and what this did not do at all.
+  //
+  // THE DRILL COLLIDED WITH ITS OWN LAST RUN. Every run rewrites the same file,
+  // so a run that merged and then stopped before its final step left this host
+  // one commit behind: the next run cut from the stale default, wrote
+  // `drill-order.md` again, and GitHub answered "Pull Request has merge
+  // conflicts" — about a conflict this file had created for itself. Twice.
+  //
+  // It only fast-forwards, so it cannot lose anything here; and it is the same
+  // action the last step of this series uses to follow the change home.
+  const level = await okc('repoSync')
+  log(`brought this host level with its remotes first — ${level.note || 'nothing to do'}`)
+
   state.line = await aLine(okc, assert)
   state.branch = scratch('sent-out')
   await okc('branchCreate', { branch: state.branch, reason: 'a drill proving a change can be sent out and land', group: state.line })
@@ -163,6 +179,22 @@ it('the fork is behind its parent, and syncing pulls it up', async ({ okc, asser
   // The answer to "I merged the PR and now my branch and master are off". The
   // parent moved when the change landed and the fork did not, so everything cut
   // from the fork afterwards would start from something out of date.
+  //
+  // ONLY WHEN WORK ACTUALLY GOES TO THE PARENT, and that is a choice somebody
+  // makes per repository rather than a fact about forks.
+  //
+  // Unset means "your own remote", so the pull request above was opened against
+  // the FORK and merged into the fork's own default branch. The parent never
+  // moved, `merge-upstream` correctly answers "none", and asserting that the sync
+  // did something would be asserting that this host is configured a particular
+  // way. It failed exactly that way here — a real merge, a correct "none", and a
+  // red check about neither.
+  const row = ((await okc('repositories')).repos || []).find(r => r.repo === ONE) || {}
+  const sends = row.target || {}
+
+  assert.needs(sends.chosen && sends.on !== sends.self,
+    `work from ${ONE} goes to ${sends.on || 'its own remote'}, which is this repository itself — so the merge above landed on the fork and its parent did not move. There is nothing upstream to pull up. Point it at the fork it was forked from (Repositories -> Repos -> Send work here) to exercise this`)
+
   const up = await okc('repoForkSync', { repo: ONE })
   const one = (up.repos || [])[0]
   assert.ok(one, 'Nothing was reported about the fork at all')
@@ -172,6 +204,10 @@ it('the fork is behind its parent, and syncing pulls it up', async ({ okc, asser
 })
 
 it('and this host follows, with the change on its default branch', async ({ okc, assert, state, log }) => {
+  // WHERE THIS HOST'S DEFAULT LINE IS BEFORE IT FOLLOWS, so "it moved" is a
+  // measurement rather than a hope.
+  const before = ((await okc('repositories')).repos || []).find(r => r.repo === ONE) || {}
+
   await okc('repoSync', {})
   // Read from the repositories rather than from what the sync REPORTED. "It said
   // it moved" and "the change is here" are different claims, and only the second
@@ -182,14 +218,32 @@ it('and this host follows, with the change on its default branch', async ({ okc,
   // and a check that looked for the sha would fail on a merge method somebody is
   // entitled to choose. What matters is that the branch carries nothing the
   // default line does not already have.
-  // THE SAME COMPARISON AS ABOVE, ROUND THE SAME WAY: the cut is the head and
-  // the line it was cut from is the base. `carrying` empty is the whole claim —
-  // there is nothing on the branch the line does not already have.
-  const back = await okc('compare', { base: state.line, head: state.branch })
-  const still = back.carrying || []
-  assert.equal(still.length, 0,
-    `The change did not come back: ${still.join(', ')} still carries something the line does not have`)
-  log(`pulled, and "${state.branch}" now carries nothing that "${state.line}" does not already have — the change is home`)
+  // MEASURED AS THE DEFAULT LINE MOVING, not as the branch carrying nothing.
+  //
+  // THIS ASKED `compare` AND WAS WRONG ABOUT A MERGE THAT WORKED. The comment
+  // above says the point exactly — after a squash or a rebase the sha on the
+  // default branch is not the sha that was pushed — and then it asked a question
+  // that cannot survive either. `compare` diffs `base...head`, three dots, which
+  // is against the MERGE BASE: squashing does not move that, so the branch goes on
+  // "carrying" its change for ever, and this reported that a change which had
+  // landed had not come back. The repository said `drill: a change to send out
+  // (#7)` on its default branch at the time.
+  //
+  // THREE DOTS IS RIGHT FOR THE PANE and wrong for this claim. It answers "what
+  // does this branch add", which is what somebody reviewing wants, and it is
+  // deliberately stable while the base moves underneath.
+  //
+  // SO THE CLAIM IS ASKED OF THE THING THAT ACTUALLY HAD TO HAPPEN: this host's
+  // default line moved. Together with the step above — GitHub agreeing every pull
+  // request in the cut is merged — that is the change being home, and neither
+  // half depends on which merge button somebody pressed.
+  const after = ((await okc('repositories')).repos || []).find(r => r.repo === ONE) || {}
+
+  assert.ok(after.head, `${ONE} does not report where its default branch is`)
+  assert.notEqual(after.head, before.head,
+    `${ONE}'s default branch is still at ${String(before.head).slice(0, 8)} after syncing, so the change that landed on the fork has not reached this host`)
+
+  log(`pulled: ${ONE} moved from ${String(before.head).slice(0, 8)} to ${String(after.head).slice(0, 8)} — the change is home`)
 })
 
 it('and the branch it came from is taken off the fork', async ({ okc, assert, state, log }) => {
