@@ -22,6 +22,10 @@
 //reads it on a timer.
 //---------------------------------------------------------------------------
 
+//A MODULE, NOT A SERVICE. What an allowance MEANS is a rule about two values and
+//belongs beside the pane that uses it — the same arrangement ./revising.js has.
+var allowing = require('./allowing');
+
 plugin.consumes = ['app', 'log', 'git', 'github', 'keys', 'workspace', 'state', 'settings', 'refs'];
 plugin.provides = ['prcuts'];
 async function plugin(imports, register) {
@@ -381,27 +385,20 @@ async function plugin(imports, register) {
     //of `git` does not have yet, and there is nothing to bring one here FOR
     //until a judge can read it.
     //=======================================================================
-    function allowKey(on, number) { return String(on || '').trim() + '#' + Number(number); }
+    function allowKey(on, number) { return allowing.keyFor(on, number); }
 
     function allowances() { return state.app.doc('pr-allowed'); }
 
-    //THREE ANSWERS, BECAUSE THEY NEED THREE DIFFERENT THINGS DONE ABOUT THEM.
-    //`stale` is the one worth having a word for: it is not "no" — a person has
-    //looked and formed a view — and it is emphatically not "yes", because the
-    //thing they looked at is gone.
+    //WHAT IS KEPT IS THIS FILE'S BUSINESS; WHAT AN ALLOWANCE MEANS IS ./allowing.
+    //
+    //The deciding used to be written out here, reading the record and judging it
+    //in one function — which meant the rule protecting this host from somebody
+    //else's code could only be exercised by a real pull request on GitHub with a
+    //real person allowing it. It never was. The same separation ./revising.js
+    //has, for the same reason.
     function allowCheck(on, number, sha) {
         var said = (allowances().read({}) || {})[allowKey(on, number)] || null;
-        var now = String(sha || '').trim();
-        if (!said) return { allowed: false, stale: false, said: null, why: 'nobody has allowed this pull request to be judged' };
-        if (!now) return { allowed: false, stale: false, said: said, why: 'this host does not know which commit the pull request is at, so an allowance cannot be matched to it' };
-        if (said.sha !== now) {
-            return {
-                allowed: false, stale: true, said: said,
-                why: 'it was allowed at ' + said.sha.slice(0, 7) + ' and is now at ' + now.slice(0, 7)
-                    + ' — the author has pushed since, so what was read is not what is there'
-            };
-        }
-        return { allowed: true, stale: false, said: said, why: null };
+        return allowing.check(said, sha);
     }
 
     var undo = [];
