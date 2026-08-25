@@ -182,10 +182,13 @@ it('and this host follows, with the change on its default branch', async ({ okc,
   // and a check that looked for the sha would fail on a merge method somebody is
   // entitled to choose. What matters is that the branch carries nothing the
   // default line does not already have.
-  const back = await okc('changeRead', { source: state.branch, target: state.line })
-  const still = (back.repos || []).filter(r => r.ahead > 0)
+  // THE SAME COMPARISON AS ABOVE, ROUND THE SAME WAY: the cut is the head and
+  // the line it was cut from is the base. `carrying` empty is the whole claim —
+  // there is nothing on the branch the line does not already have.
+  const back = await okc('compare', { base: state.line, head: state.branch })
+  const still = back.carrying || []
   assert.equal(still.length, 0,
-    `The change did not come back: ${still.map(r => `${r.repo} is still ${r.ahead} ahead`).join(', ')}`)
+    `The change did not come back: ${still.join(', ')} still carries something the line does not have`)
   log(`pulled, and "${state.branch}" now carries nothing that "${state.line}" does not already have — the change is home`)
 })
 
