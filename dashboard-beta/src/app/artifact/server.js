@@ -184,6 +184,38 @@ async function plugin(imports, register) {
 
     var undo = [];
     if (actions) {
+        //ONE REPOSITORY'S CHANGES, IN FULL — the diff itself rather than the
+        //summary `branchArtifacts` carries.
+        //
+        //TWO QUESTIONS, NOT ONE. That action answers "what does this branch carry"
+        //across the workspace: how far ahead each repository is, which files
+        //moved, and by how much. This answers "show me", for one repository and
+        //optionally one file, and a board that had to fetch every diff to draw a
+        //list of filenames would be unusable.
+        //
+        //THE BASE IS NOT AN ARGUMENT. What a branch is measured against is its
+        //line's business — see `diff` above, which asks ../repositories/lines —
+        //and letting a caller pass one would be a second opinion about the thing
+        //this app is most careful about: what a change is a change FROM.
+        undo.push(actions.define('branchDiff', {
+            about: "One repository's changes on a branch, in full, without a task",
+            takes: ['branch', 'repo', 'file'],
+            run: async function (args) {
+                var a = args || {};
+                var branch = String(a.branch || '').trim();
+                var repo = String(a.repo || '').trim();
+
+                //BOTH, BECAUSE ONE WITHOUT THE OTHER IS NOT A QUESTION. A branch
+                //spans repositories and a repository holds many branches, so
+                //either alone names a set rather than a thing.
+                if (!branch || !repo) throw new Error('Which branch, in which repository?');
+                if (!(await workspace.dir())) throw new Error('No workspace is open.');
+
+                var file = a.file ? String(a.file) : null;
+                return { branch: branch, repo: repo, file: file, diff: await diff(repo, branch, file) };
+            }
+        }));
+
         undo.push(actions.define('branchArtifacts', {
             about: 'Everything a branch carries: its commits, the files handed over, and the session',
             takes: ['branch'],
