@@ -195,6 +195,68 @@ test('a merged pull request reads as merged, not as closed', async () => {
     assert.equal(cut.landed, true);
 });
 
+//---------------------------------------------------------------------------
+//AND MERGED IS THE ONE ANSWER WORTH WRITING DOWN.
+//
+//GitHub will not reopen a merged pull request, so asking a second time can only
+//ever be told the same thing. Twenty-six of the twenty-six cuts on the host this
+//was written against are merged, and re-reading all of them is what made this
+//pane take twenty-three seconds.
+//
+//THE CHECK IS THAT IT IS NOT ASKED TWICE, which is the only claim that matters
+//here — the ANSWER was already right when it asked every time.
+//---------------------------------------------------------------------------
+test('a pull request that has merged is asked about once and then never again', async () => {
+    const { actions, asked } = await anApp({
+        landings: { 'a -> b': { source: 'a', target: 'b', pulls: [{ repo: 'one', number: 1, into: 'anowner/one' }] } },
+        answers: {
+            'GET /repos/anowner/one/pulls/1': {
+                status: 200,
+                body: { number: 1, state: 'closed', merged_at: '2026-08-01T00:00:00Z', html_url: 'u' }
+            }
+        }
+    });
+
+    const first = (await actions.call('prCuts', {})).cuts[0];
+    assert.equal(first.pulls[0].state, 'merged');
+    const afterOne = asked.filter((a) => a.at.includes('/pulls/1')).length;
+    assert.equal(afterOne, 1, 'the first read did not ask GitHub at all');
+
+    //THE SECOND LOAD OF THE SAME PANE.
+    const again = (await actions.call('prCuts', {})).cuts[0];
+    assert.equal(asked.filter((a) => a.at.includes('/pulls/1')).length, 1,
+        'it asked GitHub again about a pull request that cannot stop being merged');
+
+    //AND IT STILL SAYS THE SAME THING, which is the half that would make this
+    //a saving rather than a bug.
+    assert.equal(again.pulls[0].state, 'merged');
+    assert.equal(again.pulls[0].mergedAt, '2026-08-01T00:00:00Z');
+    assert.equal(again.landed, true);
+    assert.equal(again.merged, 1);
+});
+
+//THE OPPOSITE, AND IT IS THE DIRECTION THE APP BEING PORTED FROM WAS BURNED IN.
+//A closed pull request CAN be reopened and an open one can become anything, so
+//neither may be written off. The record there was written when a cut was made
+//and never refreshed, so every cut read "open" for ever and a sweep once
+//reported fifteen outstanding pull requests that had all been merged days
+//earlier.
+test('an open or closed pull request is asked about every single time', async () => {
+    for (const state of ['open', 'closed']) {
+        const { actions, asked } = await anApp({
+            landings: { 'a -> b': { source: 'a', target: 'b', pulls: [{ repo: 'one', number: 1, into: 'anowner/one' }] } },
+            answers: {
+                'GET /repos/anowner/one/pulls/1': { status: 200, body: { number: 1, state: state, merged_at: null, html_url: 'u' } }
+            }
+        });
+
+        await actions.call('prCuts', {});
+        await actions.call('prCuts', {});
+        assert.equal(asked.filter((a) => a.at.includes('/pulls/1')).length, 2,
+            'a ' + state + ' pull request was written off as settled — it can still change, and nothing would notice');
+    }
+});
+
 test('a genuinely closed one is closed, and the cut has not landed', async () => {
     const { actions } = await anApp({
         landings: { 'a -> b': { source: 'a', target: 'b', pulls: [{ repo: 'one', number: 1, into: 'anowner/one' }] } },

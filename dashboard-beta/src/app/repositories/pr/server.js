@@ -163,11 +163,43 @@ async function plugin(imports, register) {
     //something this app is told about. `into` is where it actually lives — a
     //pull request from a fork is IN THE PARENT — so it is asked for there first
     //and only then looked for on the repository itself.
+    //---- AND MERGED IS THE ONE ANSWER THAT CANNOT CHANGE BACK ---------------
+    //
+    //GITHUB WILL NOT REOPEN A MERGED PULL REQUEST. Closed can be reopened and
+    //open can become either, so both have to be asked about every time; merged
+    //is the end of the road, and asking again can only ever be told the same
+    //thing. Twenty-six of the twenty-six cuts on this host are merged.
+    //
+    //THIS IS NOT THE CACHE ABOVE AND IT IS NOT KEPT WITH IT. ../../core/cached
+    //holds answers that may be evicted, and its own header says what may never
+    //be put there: a thing somebody DECIDED. That a pull request was merged is a
+    //fact about what happened, so it is written into the cut's record beside the
+    //number and the url, and it survives whatever the caches do.
+    //
+    //WHICH DIRECTION THIS CAN BE WRONG IN MATTERS, and it is the safe one. The
+    //app being ported from was burned by trusting a stale OPEN: the record was
+    //written when a pull request was cut and never refreshed, so every cut this
+    //host ever made read "open" for ever, and a sweep once reported fifteen
+    //outstanding pull requests that had all been merged days earlier. That is
+    //the opposite of this. A stale "merged" cannot invent work that is not
+    //there; it can only fail to notice a repository being deleted out from under
+    //a pull request that had already landed, which changes nothing anybody is
+    //waiting on.
+    //
+    //IT IS STILL ASKED ONCE. Nothing is believed merged until GitHub said so —
+    //this only stops it being asked a second time.
+    function isFinal(p) { return !!p.mergedAt; }
+
     async function stateOf(rec) {
         var now = [];
         for (var i = 0; i < (rec.pulls || []).length; i++) {
             var p = rec.pulls[i];
             if (!p.number) { now.push(Object.assign({}, p, { state: 'never opened' })); continue; }
+
+            if (isFinal(p)) {
+                now.push(Object.assign({}, p, { state: 'merged', settled: true }));
+                continue;
+            }
 
             var where = p.into || null;
             var found = null;
@@ -666,6 +698,42 @@ async function plugin(imports, register) {
                 //somebody reads down.
                 var names = Object.keys(all);
                 var rows = await github.many(names, function (n) { return stateOf(all[n]); });
+
+                //---- WHAT WAS LEARNED IS WRITTEN DOWN, ONCE ------------------
+                //
+                //A PULL REQUEST THAT GITHUB SAYS IS MERGED IS MERGED FOR GOOD,
+                //and recording it here is what stops the next load asking. See
+                //`isFinal` above for why this direction is the safe one.
+                //
+                //AFTER THE POOL AND NOT INSIDE IT. Eight of these run at once,
+                //and eight of them reading, changing and writing one document
+                //would lose whichever landed first — a race that shows up as a
+                //cut quietly reverting to "open" and being asked about for ever.
+                //One write, off the answers that came back.
+                var learned = [];
+                for (var r = 0; r < rows.length; r++) {
+                    var was = all[names[r]] || {};
+                    (rows[r].pulls || []).forEach(function (p, at) {
+                        var before = (was.pulls || [])[at] || {};
+                        if (p.state === 'merged' && p.mergedAt && !before.mergedAt) {
+                            learned.push({ name: names[r], at: at, mergedAt: p.mergedAt });
+                        }
+                    });
+                }
+
+                if (learned.length) {
+                    var doc = await landings();
+                    var held = doc.read({}) || {};
+                    learned.forEach(function (it) {
+                        var cut = held[it.name];
+                        var p = cut && (cut.pulls || [])[it.at];
+                        if (!p) return;
+                        p.state = 'merged';
+                        p.mergedAt = it.mergedAt;
+                    });
+                    doc.write(held);
+                    log.info(learned.length + ' pull request(s) have merged and will not be asked about again');
+                }
 
                 //A DRAFT IS A CUT THAT HAS NOT LEFT YET, and it belongs at the
                 //top rather than sorted among the finished ones. Seventeen landed
