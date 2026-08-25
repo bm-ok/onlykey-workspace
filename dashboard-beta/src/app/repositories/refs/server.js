@@ -174,6 +174,44 @@ async function plugin(imports, register) {
         });
     }
 
+    //---- THE COMMIT A REF IS AT, IN FULL -----------------------------------
+    //
+    //`of()` ALREADY HAS ONE OF THESE AND IT IS THE WRONG ONE. The ref walk asks
+    //for `%(objectname:short)`, and ../repos compares this value against a sha
+    //GITHUB gave it — forty characters — to say whether this host is in step
+    //with its fork. A short sha never equals a long one, so answering this from
+    //the walk would report every repository as permanently out of step, with a
+    //panel that looks exactly as it should apart from being wrong.
+    //
+    //IT WAS `git.run` STRAIGHT OUT OF ../repos, and that is why it is here now.
+    //One `rev-parse` per repository per draw, going round this plugin entirely —
+    //so a board whose every other answer came out of a drawer still spawned
+    //three processes to ask where three default branches were, every time,
+    //including on the calls where nothing else was worked out at all.
+    //
+    //KEPT IN THE SAME DRAWER AS EVERYTHING ELSE, so one write invalidates the
+    //lot together. Under a key that cannot collide with a repository name or
+    //with `head:`.
+    var shaKeys = {};
+
+    async function sha(repo, ref) {
+        var name = String(repo);
+        var want = String(ref);
+        var key = 'sha:' + name + ':' + want;
+        //REMEMBERED PER REPOSITORY, because the drawer forgets by exact key and
+        //a repository can be asked about more than one ref. Without this list
+        //`forget` would have nothing to name, and a stale sha would outlive the
+        //write that changed it — which is the one failure a ref cache must not
+        //have.
+        (shaKeys[name] = shaKeys[name] || {})[key] = true;
+
+        return await rows.get(key, function () {
+            return git.run(name, ['rev-parse', want]).then(function (said) {
+                return said.code === 0 ? (String(said.stdout || '').trim() || null) : null;
+            }, function () { return null; });
+        });
+    }
+
     //EVERY BRANCH IN EVERY REPOSITORY AND WHERE IT IS, which is the shape the
     //board wants: a lookup rather than a process per branch.
     async function heads(repos) {
@@ -262,10 +300,15 @@ async function plugin(imports, register) {
     //---- when to stop believing any of it ----------------------------------
 
     function forget(repo) {
-        if (repo === undefined) { rows.empty(); origins.empty(); return; }
+        if (repo === undefined) { rows.empty(); origins.empty(); shaKeys = {}; return; }
         var name = String(repo);
         rows.forget(name);
         rows.forget('head:' + name);
+        //AND EVERY REF THIS REPOSITORY WAS ASKED THE COMMIT OF. See `sha` above:
+        //the drawer forgets by exact key, so the keys have to be remembered or a
+        //stale sha outlives the write that moved it.
+        Object.keys(shaKeys[name] || {}).forEach(function (k) { rows.forget(k); });
+        delete shaKeys[name];
         //ORIGIN IS KEYED ON `.git/config`, so there is nothing here to forget:
         //a changed remote is already a different key. Emptying it on every ref
         //write would throw away a correct answer for nothing.
@@ -403,6 +446,7 @@ async function plugin(imports, register) {
             branches: branches,
             head: head,
             heads: heads,
+            sha: sha,
             origin: origin,
             hasBranch: hasBranch,
             hasRemote: hasRemote,

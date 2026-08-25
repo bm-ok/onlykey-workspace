@@ -397,11 +397,22 @@ async function plugin(imports, register) {
         //branch, only of what HEAD points at.
         try { out.default = await refs.head(name); } catch (e) { /* said as null */ }
 
+        //ASKED OF ../refs RATHER THAN OF GIT DIRECTLY, which is what it was.
+        //
+        //ONE `rev-parse` PER REPOSITORY PER DRAW, GOING ROUND THE ONE PLUGIN
+        //THAT EXISTS TO STOP THAT. Every other answer on this row comes out of a
+        //drawer; this one spawned a process every single time, so a board where
+        //nothing had changed and nothing was worked out still started three git
+        //processes to ask where three default branches were.
+        //
+        //IT IS NOT THE SHORT SHA FROM THE REF WALK, and that is why ../refs has
+        //a function for it rather than this reading `of()`. Line ~576 below
+        //compares this against a sha GITHUB gave — forty characters — to say
+        //whether this host is in step with its fork, and a short sha never
+        //equals a long one.
         if (out.default) {
-            try {
-                var said = await git.run(name, ['rev-parse', out.default]);
-                if (said.code === 0) out.head = String(said.stdout || '').trim() || null;
-            } catch (e) { /* said as null */ }
+            try { out.head = await refs.sha(name, out.default); }
+            catch (e) { /* said as null */ }
         }
         return out;
     }

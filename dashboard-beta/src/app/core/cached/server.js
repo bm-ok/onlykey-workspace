@@ -235,6 +235,60 @@ async function plugin(imports, register) {
         });
     }
 
+    //---- AND WHETHER ANY OF IT IS BEING USED -------------------------------
+    //
+    //`about()` HAS EXISTED SINCE THIS PLUGIN DID AND NOTHING COULD READ IT. The
+    //counters were there, per drawer, and the only way to see one was to attach
+    //a debugger — so "the caching is not doing what I expected" had no answer
+    //short of reading four files and reasoning about them.
+    //
+    //THE NUMBER THAT MATTERS IS `misses` AGAINST `hits`, per drawer, and the
+    //shapes worth knowing on sight:
+    //
+    //    hits high, misses low     working
+    //    misses high, hits ~0      the drawer is being emptied faster than it
+    //                              fills, or every caller arrives with a new key
+    //    held 0 after a busy draw  something is wiping it — see `wipes`
+    //    nothing listed at all     nobody opened that drawer; the reads are
+    //                              going somewhere else entirely
+    //
+    //THAT LAST ONE IS THE FAILURE THIS FILE'S OWN HEADER DESCRIBES, and it is
+    //invisible from inside: a cache nobody asks is indistinguishable from a
+    //cache that is always cold, and both look like "the app is just slow".
+    //
+    //AND IT STILL CANNOT SEE THE WORST ONE. ./drawers.js says it plainly — a
+    //board that cached correctly and saved nothing, because building the KEY
+    //cost four git processes whether it hit or missed. A drawer reporting 95%
+    //hits is not evidence that anything got faster. That is why ../../git counts
+    //what it SPAWNS, from outside, and why both numbers are worth having.
+    var host = imports.app && imports.app.host;
+    var actions = host && host.actions;
+    var undo = [];
+
+    if (actions) {
+        undo.push(actions.define('caches', {
+            about: 'Every drawer of remembered answers, and whether anything is actually being reused',
+            run: async function () {
+                var rows = core.about();
+                var hits = rows.reduce(function (n, r) { return n + r.hits; }, 0);
+                var misses = rows.reduce(function (n, r) { return n + r.misses; }, 0);
+                var cold = rows.filter(function (r) { return r.hits === 0 && r.misses > 0; });
+                return {
+                    drawers: rows,
+                    hits: hits,
+                    misses: misses,
+                    note: (rows.length
+                        ? rows.length + ' drawer(s): ' + hits + ' answer(s) reused, ' + misses + ' worked out.'
+                        : 'No drawer has been opened at all, which means nothing in this app is remembering anything yet.')
+                        + (cold.length
+                            ? ' NEVER REUSED: ' + cold.map(function (r) { return r.name; }).join(', ')
+                                + ' — filled and never read, so it is costing memory and saving nothing.'
+                            : '')
+                };
+            }
+        }));
+    }
+
     var cached = {
         byContent: byContent,
         byEtag: byEtag,
@@ -257,6 +311,7 @@ async function plugin(imports, register) {
     await register(null, {
         cached: cached,
         onDestroy: function () {
+            while (undo.length) undo.pop()();
             gone = true;
             if (soon) { clearTimeout(soon); soon = null; }
             //NOT AWAITED, BECAUSE onDestroy IS NOT ASYNC HERE. What is lost is

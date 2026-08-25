@@ -201,7 +201,29 @@ async function plugin(imports, register) {
         return said.then(function (r) { moved(cwd, (args || [])[0]); return r; });
     }
 
+    //---- COUNTED, BECAUSE A HIT RATE IS NOT EVIDENCE --------------------------
+    //
+    //../core/cached/drawers.js carries the scar in its own header: a board in the
+    //app being ported from cached correctly and saved nothing, because building
+    //the KEY cost four git processes and they ran on a hit as well as a miss. The
+    //heavy call really was skipped, the hit rate really was high, and the timing
+    //never moved.
+    //
+    //NO COUNTER INSIDE A DRAWER COULD HAVE CAUGHT THAT, because everything it
+    //measured was healthy. What catches it is counting what gets SPAWNED, from
+    //outside, which is here — the one place that starts a git process.
+    //
+    //BY SUBCOMMAND, because the shape of the list is the diagnosis. Forty
+    //`for-each-ref` in one draw is a cache nobody is asking; forty `rev-parse` is
+    //somebody asking per branch what one ref walk already answers, which is the
+    //exact mistake that put 39% of the old window's samples inside `spawn`.
+    var spawned = { total: 0, by: {} };
+
     function spawnRaw(cwd, args) {
+        spawned.total++;
+        var word = String((args || [])[0] || '?');
+        spawned.by[word] = (spawned.by[word] || 0) + 1;
+
         return new Promise(function (resolve) {
             //NO `shell: true`, AND NO STRING. See the header. If this ever needs
             //to become a string, it does not.
@@ -1065,6 +1087,30 @@ async function plugin(imports, register) {
         //from where — so a second one would be a near-duplicate distinguished
         //only by a worse name. Asking any of these with a repository that is not
         //there already answers it: the refusal names every one that is.
+        //WHAT THIS APP HAS ACTUALLY ASKED GIT TO DO, since it started. See the
+        //block above `spawnRaw` for why a cache's own counters cannot answer
+        //this — and `caches` in ../core/cached for the other half of the picture.
+        undo.push(actions.define('gitCalls', {
+            about: 'How many git processes this app has started, by subcommand — the number a cache is meant to move',
+            takes: ['reset'],
+            run: async function (a) {
+                var was = { total: spawned.total, by: Object.assign({}, spawned.by) };
+                //ZEROED ON REQUEST, so a draw can be measured rather than a
+                //whole session. Reading a running total twice and subtracting is
+                //the alternative, and it is the kind of arithmetic somebody gets
+                //wrong once and then trusts.
+                if (a && (a.reset === true || a.reset === 'true')) spawned = { total: 0, by: {} };
+                var kinds = Object.keys(was.by).sort(function (x, y) { return was.by[y] - was.by[x]; });
+                return {
+                    total: was.total,
+                    by: kinds.map(function (k) { return { git: k, times: was.by[k] }; }),
+                    reset: !!(a && (a.reset === true || a.reset === 'true')),
+                    note: was.total + ' git process(es)'
+                        + (kinds.length ? ': ' + kinds.map(function (k) { return k + ' ' + was.by[k]; }).join(', ') : '')
+                };
+            }
+        }));
+
         undo.push(actions.define('gitFiles', {
             about: 'What changed between two branches in one repository, as a list of files',
             takes: ['repo', 'base', 'head'],
