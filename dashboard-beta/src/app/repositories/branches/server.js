@@ -267,15 +267,78 @@ async function plugin(imports, register) {
         catch (e) { return null; }
     }
 
+    //---- HOW A LINE ENDS, WHICH IS THE HALF NOTHING SAID -------------------
+    //
+    //A LINE IS MADE, WORK IS CUT FROM IT, AND THEN IT IS FOR EVER. Six lines
+    //here and one of them is a baseline: the other five are finished work that
+    //was promoted so it could be compared and sent, and FOUR OF THOSE HAVE
+    //LANDED — merged, weeks ago, still named, still protecting their branches.
+    //
+    //THAT IS WHAT MAKES THE BOARD SILT UP. Promoting a cut is how a change gets
+    //sent, and it is one-way: the cut stops being a cut. Every completed piece
+    //of work therefore costs the workspace one branch cut, permanently, and the
+    //list of places work can go shrinks every time work finishes. It was down
+    //to two.
+    //
+    //ASKED OF THE CUTS RATHER THAN REMEMBERED. Whether a change landed is
+    //something GitHub knows and ../pr already asks it — a second record here
+    //would be a second opinion, and the app being ported from was burned by
+    //exactly that: state written when a pull request opened and never
+    //refreshed, so every cut read "open" for ever.
+    //
+    //AND IT IS SAID, NEVER ACTED ON. Retiring a line is a person's press — see
+    //`lineRetire`. What this adds is the thing that press needs and did not
+    //have: which of these is finished with.
+    async function endsOf(all) {
+        var said = await relayed('prCuts', {});
+        var cuts = (said && said.cuts) || [];
+        if (!said) return {};
+
+        var byLine = {};
+        all.forEach(function (g) {
+            var sent = cuts.filter(function (c) { return c.source === g.name; });
+            var into = cuts.filter(function (c) { return c.target === g.name; });
+
+            //LANDED IF ANY CUT FROM IT LANDED. A line sent twice — reopened
+            //after a first attempt was closed — is finished the moment one of
+            //them is in, and the others are history rather than outstanding.
+            var landed = sent.filter(function (c) { return c.landed; });
+            var open = sent.filter(function (c) { return !c.landed; });
+
+            byLine[g.name] = {
+                //`null` IS NOT "never sent". A workspace whose pull requests
+                //could not be read answers nothing, and a line reported as
+                //never sent on that basis is one somebody might retire.
+                sent: sent.length,
+                landed: landed.length,
+                open: open.length,
+                receives: into.length,
+                ends: landed.length ? 'landed' : (open.length ? 'out' : 'here'),
+                //WHERE IT WENT, so the pane can say it rather than "landed".
+                where: (landed[0] || open[0] || {}).target || null
+            };
+        });
+        return byLine;
+    }
+
     var undo = [];
     if (actions) {
         undo.push(actions.define('lines', {
-            about: 'Every named line: one branch per repository, and what work is cut from',
+            about: 'Every named line: one branch per repository, what work is cut from, and whether its change has landed',
             run: async function () {
                 var all = await groups();
                 if (all === null) {
                     return { lines: [], groups: [], repos: [], note: 'No workspace is open, so there are no lines.' };
                 }
+
+                //HOW EACH ONE ENDS, folded onto the rows rather than handed back
+                //as a second list a pane has to join. See `endsOf`.
+                var ends = await endsOf(all);
+                all = all.map(function (g) {
+                    return Object.assign({}, g, ends[g.name] || { ends: null });
+                });
+
+                var done = all.filter(function (g) { return g.ends === 'landed'; });
                 var stuck = all.filter(function (g) { return g.sync === 'conflict'; });
                 return {
                     //`lines` AND `groups` ARE THE SAME ARRAY, under both names.
@@ -285,11 +348,20 @@ async function plugin(imports, register) {
                     lines: all,
                     groups: all,
                     repos: await baselines(),
+                    //WHAT IS FINISHED WITH, COUNTED, because it is the reason
+                    //this list is as long as it is. A line whose change landed
+                    //is doing nothing but protecting a branch and taking a place
+                    //work could be cut to.
+                    landed: done.length,
                     note: !all.length
                         ? 'No lines yet. A line names one branch per repository so a change can be talked about as one thing.'
                         : stuck.length
                             ? stuck.length + ' of ' + all.length + ' have a part that moved on both sides — see Conflicts.'
                             : all.length + ' line' + (all.length === 1 ? '' : 's') + '.'
+                                + (done.length
+                                    ? ' ' + done.length + ' of them landed and can be retired — a line that has landed goes '
+                                        + 'on protecting its branch and taking a place work could be cut to.'
+                                    : '')
                 };
             }
         }));
@@ -869,6 +941,133 @@ async function plugin(imports, register) {
                     //also just made its branches writable, and that is not
                     //obvious from the word "forget".
                     note: '"' + title + '" is gone. Its branches are untouched — and they stop being protected by it, so work can be done directly on them again.'
+                };
+            }
+        }));
+
+        //---- and the end of a line's life -----------------------------------
+        //
+        //A LINE HAD NO END. It is made, work is cut from it, it is promoted so
+        //the change can be sent — and then it is for ever. Four of the six lines
+        //in the workspace this was written against had LANDED: merged, weeks
+        //earlier, still named, still protecting their branches.
+        //
+        //WHICH IS WHAT MAKES THE BOARD SILT UP, and it is not cosmetic.
+        //Promoting a cut is one-way: the cut stops being a cut. So every piece
+        //of work that completes costs the workspace one branch cut for ever, and
+        //the list of places work can be put shrinks each time work finishes. It
+        //was down to two, on a board with eleven branches.
+        //
+        //FORGETTING AND RETIRING ARE DIFFERENT ACTS AND BOTH ARE KEPT.
+        //`lineForget` is "I do not want this line any more" and asks no
+        //questions — it is the way out of a line made by mistake, or one whose
+        //work was abandoned. This one is "this landed, tidy it up", and it
+        //refuses anything else.
+        //
+        //IT IS NOT AUTOMATIC AND MUST NOT BECOME SO. Nothing in this app revokes
+        //on a timer; a merge is a person's press and so is clearing up after
+        //one. What was missing was never the automation — it was that nothing
+        //SAID which lines were finished with, so the press had no information
+        //behind it. See `endsOf` above, which is the other half of this.
+        //
+        //---- what it refuses, and why each one --------------------------
+        //
+        //NOT LANDED. Retiring an open line deletes branches carrying a change
+        //that is still out for review, and the pull request is left pointing at
+        //a head that is gone.
+        //
+        //A LINE OTHER CUTS ARE MADE INTO. `default` receives every cut this host
+        //makes; retiring it would take away the thing everything else is
+        //measured against, and `branchCreate` would answer "there is no line
+        //called default" to the next person trying to start work.
+        //
+        //AND THE BRANCHES GO ONLY IF ASKED. Forgetting the line unprotects them,
+        //which is already enough to free the board; deleting them is the extra
+        //step, and it is the one that cannot be undone.
+        undo.push(actions.define('lineRetire', {
+            about: 'Retire a line whose change has landed: forget it, and delete the branches it named if asked',
+            takes: ['name', 'branches'],
+            run: async function (args) {
+                var a = args || {};
+                var title = String(a.name || '').trim();
+                if (!title) throw new Error('Say which line.');
+
+                var all = await groups();
+                if (all === null) throw new Error('No workspace is open.');
+                var line = all.filter(function (g) { return g.name === title; })[0];
+                if (!line) {
+                    throw new Error('There is no line called "' + title + '". There is: '
+                        + all.map(function (g) { return g.name; }).join(', ') + '.');
+                }
+
+                var ends = (await endsOf(all))[title];
+                if (!ends) {
+                    throw new Error('This host could not read what became of "' + title + '" on GitHub, so it will not '
+                        + 'retire it. A line retired on the strength of an unanswered question is one whose change may '
+                        + 'still be out.');
+                }
+                if (ends.receives) {
+                    throw new Error('"' + title + '" is what ' + ends.receives + ' cut(s) are made INTO, so it is a '
+                        + 'baseline rather than a change. Retiring it would take away the thing work is measured '
+                        + 'against, and the next branchCreate would answer "there is no line called ' + title + '".');
+                }
+                if (ends.ends !== 'landed') {
+                    throw new Error('"' + title + '" has not landed'
+                        + (ends.open ? ' — ' + ends.open + ' cut(s) from it are still open' : ' and has never been sent')
+                        + ', so there is nothing to tidy up yet. `lineForget` is the way to drop a line you do not '
+                        + 'want; this one is only for a change that is already in.');
+                }
+
+                //THE LINE FIRST, BECAUSE IT IS WHAT PROTECTS THE BRANCHES.
+                //`branchDelete` refuses a protected branch, and it is right to —
+                //so this unprotects by forgetting, and only then deletes.
+                var gone = await actions.call('lineForget', { name: title });
+
+                var removed = [];
+                var failed = [];
+                var alsoBranches = a.branches === true || a.branches === 'true';
+
+                if (alsoBranches) {
+                    //BY NAME, ONCE EACH. A line names one branch per repository
+                    //and they are usually the same name; `branchDelete` already
+                    //takes a name and removes it wherever it is.
+                    var names = {};
+                    (line.on || []).forEach(function (p) { if (p.branch) names[p.branch] = true; });
+
+                    var want = Object.keys(names);
+                    for (var i = 0; i < want.length; i++) {
+                        try {
+                            //FORCED, because the whole precondition of this door
+                            //is that the change is already in. git's own "not
+                            //fully merged" test compares against the CURRENT
+                            //branch, which is not what landed it.
+                            await actions.call('branchDelete', { branch: want[i], force: true });
+                            removed.push(want[i]);
+                        } catch (e) {
+                            failed.push(want[i] + ': ' + e.message);
+                        }
+                    }
+                }
+
+                log.warn('line "' + title + '" retired — it landed in ' + (ends.where || 'its target')
+                    + (removed.length ? ', and ' + removed.length + ' branch(es) went with it' : ''));
+
+                return {
+                    retired: title,
+                    landedIn: ends.where || null,
+                    was: gone.was,
+                    branches: removed,
+                    failed: failed,
+                    //SAID RATHER THAN DONE, for the half that reaches somebody
+                    //else's repository. See ../repos/branchDeleteRemote — a
+                    //branch on the fork is theirs, and any pull request open
+                    //from one is on it.
+                    note: '"' + title + '" landed in ' + (ends.where || 'its target') + ' and is retired.'
+                        + (removed.length
+                            ? ' ' + removed.join(', ') + ' deleted here. Anything on the fork is untouched — '
+                                + 'branchDeleteRemote is the door for that.'
+                            : ' Its branches are untouched and no longer protected by it.')
+                        + (failed.length ? ' Could not delete: ' + failed.join('; ') + '.' : '')
                 };
             }
         }));

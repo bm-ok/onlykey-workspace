@@ -117,7 +117,21 @@ it('a cut becomes a line before it leaves', async ({ okc, assert, state, log }) 
   state.promoted = true
   const after = (await okc('gitBranches')).branches.find(b => b.name === state.branch)
   assert.ok(after.protected, 'A line is protected, and this one is not')
-  log(`"${state.branch}" is a line now, protected: ${!!after.protected}`)
+
+  // AND IT CANNOT BE RETIRED YET, which is the guard that makes retiring safe
+  // enough to offer at all. A line is retired when its change has LANDED;
+  // retiring one now would delete branches carrying a change that has not even
+  // been sent, and there would be nothing to say it had ever existed.
+  //
+  // ASKED HERE RATHER THAN IN A REFUSALS DRILL because the state it needs — a
+  // real line, promoted a moment ago, with nothing sent from it — is one this
+  // series is standing in the middle of. A refusal drill would have to build
+  // the whole order to ask it.
+  const early = await assert.refuses(
+    () => okc('lineRetire', { name: state.branch }),
+    'has not landed|never been sent',
+    'A line was retired before its change had gone anywhere')
+  log(`"${state.branch}" is a line now, protected: ${!!after.protected} — and retiring it is refused: ${early}`)
 })
 
 it('and now it can be compared with the line it was cut from', async ({ okc, assert, state, log }) => {
@@ -297,17 +311,36 @@ it('and the branch it came from is taken off the fork', async ({ okc, assert, st
   log(`taken off the fork: ${(gone.repos || []).filter(r => r.gone).map(r => r.repo).join(', ')}`)
 })
 
-it('and nothing is left behind here', async ({ okc, assert, state, log }) => {
-  // The last step of the order is the tidying, and it is a check rather than
-  // only a cleanup: a flow that cannot be run twice is a flow that works once.
-  await okc('lineForget', { name: state.branch })
+it('and the line it became is retired, because its change is in', async ({ okc, assert, state, log }) => {
+  // THE LAST STEP OF THE ORDER, AND THE ONE THAT DID NOT EXIST. This drill used
+  // to end by calling `lineForget` and `branchDelete` by hand — which tidied up
+  // after ITSELF and proved nothing about what happens to real work.
+  //
+  // AND REAL WORK WAS NOT TIDIED UP. Six lines in this workspace, one of them a
+  // baseline; four of the other five had LANDED — merged weeks earlier, still
+  // named, still protecting their branches. Promoting a cut is one-way, so every
+  // change that completes costs the workspace one branch cut for ever, and the
+  // list of places work can go had shrunk to two.
+  //
+  // SO THE DRILL DOES WHAT A PERSON WOULD, through the door a person presses.
+  // If `lineRetire` ever stops working, this goes red — rather than the drill
+  // quietly cleaning up around it and the silting-up going on unmeasured.
+  const done = await okc('lineRetire', { name: state.branch, branches: true })
   state.promoted = false
-  await okc('branchDelete', { branch: state.branch, force: true })
+  assert.equal(done.retired, state.branch, 'It reported retiring something else')
+  assert.ok((done.branches || []).length, `The line was retired and its branches were left: ${done.note}`)
+  assert.equal((done.failed || []).length, 0, `Some branches could not be deleted: ${(done.failed || []).join('; ')}`)
   state.branch = null
 
-  const left = await okc('drillSweep', {})
-  assert.equal(left.total, 0, `The order ran and left something behind: ${JSON.stringify(left.branches)} ${JSON.stringify(left.remote)}`)
-  log(`the line was forgotten, the branch deleted, and a sweep found ${left.total} things left by drills`)
+  // AND IT IS GONE FROM THE LIST, which is the whole point — asked of the app
+  // rather than assumed from what the call said it did.
+  const left = (await okc('lines')).lines || []
+  assert.ok(!left.some(l => l.name === done.retired), 'It said it retired the line and the line is still listed')
+
+  const swept = await okc('drillSweep', {})
+  assert.equal(swept.total, 0, `The order ran and left something behind: ${JSON.stringify(swept.branches)} ${JSON.stringify(swept.remote)}`)
+  log(`retired "${done.retired}" — it landed in ${done.landedIn}, ${(done.branches || []).join(', ')} deleted, `
+    + `${left.length} line(s) left, and a sweep found ${swept.total} things left by drills`)
 })
 
 cleanup(async ({ okc, state }) => {

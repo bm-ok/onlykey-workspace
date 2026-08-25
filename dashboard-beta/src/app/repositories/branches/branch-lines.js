@@ -129,6 +129,51 @@ module.exports = function lines(theme, okc, shell, remember) {
             });
         }
 
+        //---- RETIRING, WHICH IS NOT FORGETTING ------------------------------
+        //
+        //FORGET IS "I do not want this line"; RETIRE IS "this landed, tidy it
+        //up". They are different acts and the second is the one that was
+        //missing, so a line that finished had no ending: four of the six here
+        //had merged weeks earlier and were still named, still protecting their
+        //branches, still taking a place a cut could have gone.
+        //
+        //THE BRANCHES ARE OFFERED AND NOT ASSUMED. Forgetting the line already
+        //frees the board; deleting what it named is the part that cannot be
+        //undone, so it is a box rather than a consequence.
+        //
+        //AND THE FORK IS NOT TOUCHED, said here rather than discovered. A branch
+        //on somebody's fork is theirs, and a pull request open from one is on
+        //it — ../repos/branchDeleteRemote is the door for that, pressed on
+        //purpose.
+        function retire(g) {
+            ask({
+                title: 'Retire the line "' + g.name + '"?',
+                plain: [
+                    'Its change landed in ' + (g.where || 'its target') + ', so this line has done its job.',
+                    'It goes from this list, and its branches stop being protected by it.'
+                ],
+                //`checkbox`, WHICH IS THE NAME ../ui/theme/dialog.js ACTUALLY
+                //TESTS FOR. This said `check` and would have rendered a text box
+                //asking somebody to type the word — the same shape as the
+                //`proposed` badge this file's own header records getting wrong,
+                //and as `orphaned` on the pane next door. A name that is nearly
+                //right is invisible.
+                fields: [{
+                    name: 'branches', label: 'Also delete the branches it named', type: 'checkbox',
+                    hint: 'they are already merged. Anything on the fork is untouched either way'
+                }],
+                cost: 'The name, the reason and the arrangement are gone. Deleting the branches cannot be undone from here.',
+                confirm: 'Retire it',
+                protect: true,
+                onYes: function (f) {
+                    return tell(okc.call('lineRetire', {
+                        name: g.name,
+                        branches: !!(f && (f.branches === true || f.branches === 'true'))
+                    })).then(function () { setPicked(null); });
+                }
+            });
+        }
+
         function forget(g) {
             ask({
                 title: 'Forget the line "' + g.name + '"?',
@@ -205,9 +250,19 @@ module.exports = function lines(theme, okc, shell, remember) {
                                         <CardTitle>
                                             <Mono>{g.name}</Mono>
                                             {g.marked ? <span>{' '}<Badge kind="run">proposed</Badge></span> : null}
+                                            {/* HOW IT ENDS, ON THE ROW. Four of
+                                                the six lines here had landed and
+                                                nothing said so — they read
+                                                exactly like the baseline and
+                                                like work still in progress. */}
+                                            {g.ends === 'landed' ? <span>{' '}<Badge kind="ok">landed</Badge></span> : null}
+                                            {g.ends === 'out' ? <span>{' '}<Badge kind="warn">out for review</Badge></span> : null}
+                                            {g.receives ? <span>{' '}<Badge kind="muted">a baseline</Badge></span> : null}
                                         </CardTitle>
                                         <div className="muted">
                                             {(g.on || []).length + ' repositor' + ((g.on || []).length === 1 ? 'y' : 'ies')}
+                                            {g.ends === 'landed' && g.where ? ' · landed in ' + g.where : ''}
+                                            {g.receives ? ' · ' + g.receives + ' cut(s) made into it' : ''}
                                         </div>
                                     </Card>
                                 );
@@ -284,13 +339,22 @@ module.exports = function lines(theme, okc, shell, remember) {
                                 ) : null}
 
                                 <div className="row">
-                                    {on.marked
+                                    {/* A LINE THAT HAS LANDED IS FINISHED, and
+                                        what it wants is not "propose it" — that
+                                        already happened, weeks ago in four cases
+                                        here. Offering the next step of a flow
+                                        that is over is how a board fills up with
+                                        things nobody can tell apart. */}
+                                    {on.ends === 'landed' ? null : on.marked
                                         ? <Button onClick={function () { return tell(okc.call('lineWithdraw', { name: on.name })); }}>
                                             Withdraw it
                                         </Button>
                                         : <Button kind="ok" onClick={function () { propose(on); }}>
                                             Propose it for landing
                                         </Button>}
+                                    {on.ends === 'landed'
+                                        ? <Button kind="ok" protect onClick={function () { retire(on); }}>Retire it</Button>
+                                        : null}
                                     <Button kind="danger" protect onClick={function () { forget(on); }}>Forget it</Button>
                                 </div>
                             </Panel>
