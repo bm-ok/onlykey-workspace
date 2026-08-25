@@ -1,6 +1,82 @@
 var path = require('path');
+var fs = require('fs');
+var os = require('os');
+var child = require('child_process');
 
 var makeRuns = require('./runs');
+
+//---- MAKING ONE COMMIT, WITHOUT TOUCHING ANYBODY'S WORKING TREE -------------
+//
+//THE FOLDER IN THE WORKSPACE IS SOMEBODY'S. It has their files open in it, their
+//index, and possibly a branch they are in the middle of. So this never checks
+//anything out and never writes into the tree: it builds the commit out of git's
+//own object database and moves the ref, which is the same set of steps `git
+//commit` performs and none of the ones that touch a file.
+//
+//    hash-object   the new file's bytes become an object
+//    read-tree     the branch's current tree, into an index OF ITS OWN
+//    update-index  the one file added to it
+//    write-tree    that index becomes a tree
+//    commit-tree   the tree, with the branch tip as its parent
+//    update-ref    the branch moves, and ONLY if it is still where it was
+//
+//ITS OWN INDEX FILE, thrown away afterwards. The repository's real index belongs
+//to whoever has the folder open, and using it would leave their staged work
+//looking like something else happened to it.
+//
+//AND THE LAST STEP IS A COMPARE-AND-SWAP. `update-ref <ref> <new> <old>` refuses
+//unless the branch is still at `old`, so a drill and a person committing at the
+//same moment cannot silently lose one of the two.
+//
+//AN IDENTITY OF ITS OWN, so a drill's commits are legible as a drill's in any log
+//that shows them — and so this does not depend on git being configured on the
+//host, which it may not be.
+function commitOnDrillBranch(folder, what) {
+    var it = what || {};
+
+    var git = function (args, opts) {
+        var o = opts || {};
+        return child.execFileSync('git', ['-C', folder].concat(args), {
+            input: o.input,
+            encoding: 'utf8',
+            timeout: 30000,
+            windowsHide: true,
+            env: o.env || process.env
+        }).trim();
+    };
+
+    //WHERE THE BRANCH IS, AND WHETHER IT IS HERE AT ALL. A repository without it
+    //is skipped: a cut spans the workspace and a change usually does not.
+    var tip = null;
+    try { tip = git(['rev-parse', '--verify', 'refs/heads/' + it.branch]); }
+    catch (e) { return null; }
+
+    var blob = git(['hash-object', '-w', '--stdin'], { input: it.text });
+
+    var index = path.join(os.tmpdir(), 'okc-drill-' + process.pid + '-'
+        + String(it.branch).replace(/[^\w]/g, '') + '.idx');
+    var withIndex = Object.assign({}, process.env, { GIT_INDEX_FILE: index });
+
+    try {
+        git(['read-tree', tip], { env: withIndex });
+        git(['update-index', '--add', '--cacheinfo', '100644,' + blob + ',' + it.file], { env: withIndex });
+        var tree = git(['write-tree'], { env: withIndex });
+
+        var commit = git(['commit-tree', tree, '-p', tip, '-m', String(it.message)], {
+            env: Object.assign({}, process.env, {
+                GIT_AUTHOR_NAME: 'okc drill',
+                GIT_AUTHOR_EMAIL: 'drill@okc.invalid',
+                GIT_COMMITTER_NAME: 'okc drill',
+                GIT_COMMITTER_EMAIL: 'drill@okc.invalid'
+            })
+        });
+
+        git(['update-ref', 'refs/heads/' + it.branch, commit, tip]);
+        return { repo: it.repo, branch: it.branch, file: it.file, commit: commit, was: tip };
+    } finally {
+        try { fs.unlinkSync(index); } catch (e) { /* it was never written */ }
+    }
+}
 
 //---------------------------------------------------------------------------
 //THE DRILLS: enumerating them, running them, and remembering what happened.
@@ -37,7 +113,7 @@ var makeRuns = require('./runs');
 //separately, and the loader's own require of it is relative.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['app', 'log', 'state', 'cached',
+plugin.consumes = ['app', 'log', 'state', 'cached', 'settings', 'workspace',
     //A DRILL THAT FAILED IS SOMETHING WAITING ON A PERSON -- see the
     //source registered below. ../../inbox consumes `app` and `log` and
     //nothing else, so this cannot close a loop.
@@ -641,6 +717,105 @@ async function plugin(imports, register) {
         undo.push(actions.define('suites', {
             about: 'Every drill there is, and what happened last time each one ran',
             run: board
+        }));
+
+        //---- PUTTING A COMMIT ON A DRILL BRANCH ---------------------------
+        //
+        //WHY THE KIT NEEDS ONE AT ALL. Several drills are about what happens to a
+        //CHANGE — a verdict is refused on a branch with nothing on it, a change
+        //goes out and comes back — and none of them can ask that question without
+        //a commit existing. Waiting for a real worker to make one costs a machine
+        //and real money to set up a precondition.
+        //
+        //---- WHY IT IS HERE AND NOT IN ../git ------------------------------
+        //
+        //../git/server.js states it plainly: "NOTHING CREATES OR REWRITES A
+        //COMMIT. History is made by people and by workers on machines; this app
+        //moves labels around." Its `WRITES` list is closed and a test holds the
+        //list to what is callable, so adding a commit-maker there would take a
+        //promise the app makes about itself and make it false — for the benefit
+        //of the drills, which is the worst possible reason.
+        //
+        //So the kit brings its own, and it is the kit's: it lives with the drills,
+        //it is gated by the same switch they are, and it goes when they go. The
+        //sentence in ../git stays literally true.
+        //
+        //---- WHAT IT REFUSES, WHICH IS THE ONLY PART THAT LASTS ------------
+        //
+        //None of this is a promise about how drills are written. A rule that
+        //depends on every future drill being careful is not a rule.
+        //
+        //  the drills must be on         the same gate suiteRun uses, for the
+        //                                same folder somebody turned them on for
+        //  only a `drill/` branch        so it cannot land on a line, a default,
+        //                                or anything somebody is working on
+        //  only a `drill-` file          so even on the right branch it cannot
+        //                                land on top of somebody's file
+        //  only a repository here        named, and checked against the workspace
+        //
+        //THE BRANCH MUST ALREADY EXIST, and a repository that does not have it is
+        //skipped rather than refused: a cut spans the workspace, a change usually
+        //does not, and a drill naming one repository is making a point about a
+        //change that spans one.
+        undo.push(actions.define('drillCommit', {
+            about: 'Put a commit on a drill branch, so a drill has a change to send out. Refused off a drill branch',
+            takes: ['branch', 'repo', 'file', 'text', 'message'],
+            run: async function (args) {
+                var a = args || {};
+
+                var may = await imports.settings.allowed();
+                if (!may.allowed) throw new Error(may.why);
+
+                var on = String(a.branch || '').trim();
+                if (on.indexOf('drill/') !== 0) {
+                    throw new Error('"' + on + '" is not a drill branch. This only ever commits on drill/ branches — '
+                        + 'a drill that could commit anywhere is a drill that can write into somebody\'s work.');
+                }
+
+                var name = String(a.file || 'drill-note.md').trim();
+                if (!/^drill-/.test(name)) {
+                    throw new Error('"' + name + '" is not a drill file. The name has to start with "drill-" so it '
+                        + 'cannot land on top of something somebody wrote.');
+                }
+                //A PLAIN RELATIVE PATH. `..` in a name written into a tree is a
+                //path this never has to understand, so it is refused rather than
+                //reasoned about.
+                if (!/^[\w.-]+(\/[\w.-]+)*$/.test(name) || name.indexOf('..') >= 0) {
+                    throw new Error('"' + name + '" is not a plain relative path.');
+                }
+
+                var here = (await imports.workspace.repos()).map(function (r) { return r.name; });
+                var want = a.repo ? [String(a.repo)] : here;
+                for (var i = 0; i < want.length; i++) {
+                    if (here.indexOf(want[i]) < 0) {
+                        throw new Error('There is no repository called "' + want[i] + '" here. There is: '
+                            + here.join(', ') + '.');
+                    }
+                }
+
+                var done = [];
+                for (var j = 0; j < want.length; j++) {
+                    var made = commitOnDrillBranch(await imports.workspace.folderOf(want[j]), {
+                        repo: want[j],
+                        branch: on,
+                        file: name,
+                        text: String(a.text == null ? 'Written by a drill.\n' : a.text),
+                        message: String(a.message || 'drill: a change to send out')
+                    });
+                    if (made) done.push(made);
+                }
+
+                if (!done.length) throw new Error('No repository here has a branch called "' + on + '". Cut it first.');
+
+                log.info('committed ' + name + ' on ' + on + ' in ' + done.map(function (d) { return d.repo; }).join(', '));
+                return {
+                    branch: on,
+                    commits: done,
+                    note: done.length + ' commit(s) on ' + on + ': ' + done.map(function (d) {
+                        return d.repo + ' ' + d.commit.slice(0, 7);
+                    }).join(', ') + '.'
+                };
+            }
         }));
 
         undo.push(actions.define('suiteSource', {
