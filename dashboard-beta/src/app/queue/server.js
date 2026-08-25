@@ -819,6 +819,56 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- AND KEEPING ONE BACK WITHOUT TAKING IT --------------------
+        //
+        //A BORROW AND A KEEP-BACK ARE DIFFERENT THINGS. Borrowing says "I am
+        //using this right now" and brings the machine up; this says "leave this
+        //one out of the pool" and changes nothing else about it. A machine kept
+        //back can sit powered off for a month.
+        //
+        //IT DOES NOT INTERRUPT ANYTHING, and that is said out loud on the answer.
+        //Somebody pressing this while a task runs on that machine is asking for
+        //it BACK, and would otherwise assume it had been freed at once.
+        undo.push(actions.define('vmForTasks', {
+            about: 'Let the queue use this machine, or keep it back for yourself',
+            takes: ['name', 'enabled'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.name || '').trim();
+                var vm = imports.ours.get(name);
+
+                //NO ARGUMENT MEANS TOGGLE IT, which is what a button does.
+                //
+                //THE PORTED LINE READ `!(vm.forTasks === false)` AND NEVER
+                //TOGGLED ANYTHING. Kept back is `false`, so that gave false again
+                //— still kept back; available is undefined, so it gave true —
+                //still available. It normalised to the current value in both
+                //directions, which is indistinguishable from a button that does
+                //nothing, and looks exactly like the click not registering.
+                //
+                //Caught by pressing it twice rather than by reading it.
+                var want = a.enabled === undefined || a.enabled === null
+                    ? (vm.forTasks === false)
+                    : !(a.enabled === false || a.enabled === 'false' || a.enabled === 'no' || a.enabled === '0');
+
+                imports.ours.update(name, { forTasks: want });
+
+                var doing = busyAs(await busyNow())[name] || null;
+                imports.log.on('vm', name).info(want ? 'available to the queue' : 'kept back from the queue');
+
+                return {
+                    name: name,
+                    forTasks: want,
+                    note: want
+                        ? 'The queue may pick this up when it is free and clean.'
+                        : doing
+                            ? 'It is running ' + doing + ' and will finish that first — this stops it being picked '
+                                + 'up again, it does not interrupt it.'
+                            : 'The queue will not pick this up. Nothing else about it changes.'
+                };
+            }
+        }));
+
         undo.push(actions.define('vmReturn', {
             about: 'Give a borrowed machine back: put it away clean, or just release the claim',
             takes: ['name', 'keep'],
