@@ -32,7 +32,17 @@
 
 const { it, cleanup } = require('../../harness')
 const { scratch, aLine } = require('../../helpers')
-const sessions = require('../../../tasks/sessions')
+// WHETHER A WORKER CARRIES ITS CONVERSATION, which decides what the second pass
+// below should be able to say. It used to be read from `tasks/sessions` — which
+// a drill cannot reach, since it runs from `dist/suites` with only the harness
+// beside it, and is why this file would not load.
+//
+// WRITTEN DOWN HERE, AND PINNED SOMEWHERE THAT FAILS IF IT MOVES.
+// `test/runners/sessions-keying.test.js` asserts the whole constant —
+// `{ worker: true, judge: false }` — so flipping the default breaks that test
+// loudly rather than quietly changing what this drill expects. A value copied
+// out of the app is only safe while something says the two agree.
+const WORKER_REMEMBERS = true
 
 const JOB = 'do-the-work'
 const KIND = 'test'
@@ -138,7 +148,7 @@ it('and the second pass knows what the flag says it should know', async ({ okc, 
 
   const remembered = (text.match(/REMEMBERED NUMBER:\s*(\d{4})/) || [])[1] || null
   const blank = /NO MEMORY/.test(text)
-  const remembers = !!(sessions.REMEMBERS && sessions.REMEMBERS.worker)
+  const remembers = WORKER_REMEMBERS
 
   // THE ASSERTION FOLLOWS THE FLAG, so this check is true in both positions and
   // does not have to be rewritten when somebody changes it.

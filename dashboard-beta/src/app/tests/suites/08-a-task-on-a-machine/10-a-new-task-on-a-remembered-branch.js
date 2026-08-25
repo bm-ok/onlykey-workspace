@@ -38,7 +38,17 @@
 
 const { it, cleanup } = require('../../harness')
 const { scratch, aLine } = require('../../helpers')
-const sessions = require('../../../tasks/sessions')
+// WHETHER A WORKER CARRIES ITS CONVERSATION, which decides what the second pass
+// below should be able to say. It used to be read from `tasks/sessions` — which
+// a drill cannot reach, since it runs from `dist/suites` with only the harness
+// beside it, and is why this file would not load.
+//
+// WRITTEN DOWN HERE, AND PINNED SOMEWHERE THAT FAILS IF IT MOVES.
+// `test/runners/sessions-keying.test.js` asserts the whole constant —
+// `{ worker: true, judge: false }` — so flipping the default breaks that test
+// loudly rather than quietly changing what this drill expects. A value copied
+// out of the app is only safe while something says the two agree.
+const WORKER_REMEMBERS = true
 
 const JOB = 'do-the-work'
 const KIND = 'test'
@@ -158,7 +168,7 @@ it('and the second pass does the new job, not the old one', async ({ okc, assert
   const onlyTwo = await okc('branchDiff', { branch: state.branch, repo: REPO, file: 'PASS-TWO.md' })
   const body = JSON.stringify(onlyTwo)
 
-  const remembers = !!(sessions.REMEMBERS && sessions.REMEMBERS.worker)
+  const remembers = WORKER_REMEMBERS
 
   // WHICH RULE OWNS LINE ONE. Both want it: the standing instruction the branch
   // was given last time, and the contract this task is being run under now. The
