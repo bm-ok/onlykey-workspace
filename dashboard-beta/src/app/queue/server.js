@@ -712,6 +712,173 @@ async function plugin(imports, register) {
             }
         }));
 
+        //=======================================================================
+        //TAKING A MACHINE OUT OF THE POOL, AND PUTTING IT BACK.
+        //
+        //THE SAME TWO ACTS THE TICK PERFORMS, done by a person instead of by the
+        //loop: bring one up clean, and put it away. They are defined HERE, in the
+        //plugin that owns the pool, because everything they need — who is free,
+        //how a machine is brought up, how one is put away — is this plugin's, and
+        //a second copy of "put a machine away" is the kind of duplication that is
+        //discovered by a machine rather than by a reader.
+        //
+        //---- and why they had to exist ------------------------------------
+        //
+        //NOTHING COULD GIVE A MACHINE BACK. The queue keeps a machine it lost
+        //sight of rather than rolling it back, and ../../inbox tells the person
+        //it is theirs "until you give it back" — an instruction naming an action
+        //this app did not have. `attempts.finished` relayed `vmReturn` to the app
+        //being ported from, so finishing a task by hand was broken here too.
+        //=======================================================================
+
+        undo.push(actions.define('vmBorrow', {
+            about: 'Take a machine out of the pool and bring it up clean, for a person to use. A tag asks for a kind of machine',
+            takes: ['name', 'why', 'tag'],
+            run: async function (args) {
+                var a = args || {};
+                var reason = String(a.why || '').trim() || 'somebody is using it';
+
+                var said = await actions.call('vmList', {});
+                var all = (said && said.vms) || [];
+                //THE SAME PAIR queueState DRAWS THE POOL WITH — what is
+                //running, whoever's tick is running it, keyed by machine. A
+                //borrow that asked a different question from the board would
+                //hand out a machine the board shows as busy.
+                var free = policy.availability(all, busyAs(await busyNow()));
+
+                var pick = a.name ? String(a.name) : null;
+
+                if (pick) {
+                    //A NAMED MACHINE THAT IS BUSY IS REFUSED IN THE QUEUE'S OWN
+                    //WORDS rather than quietly swapped for a different one.
+                    var row = free.filter(function (x) { return x.name === pick; })[0];
+                    if (!row) throw new Error('There is no machine called "' + pick + '".');
+                    if (!row.free) throw new Error('"' + pick + '" ' + row.why + '.');
+                } else {
+                    //OR A KIND OF MACHINE, WHICH IS WHAT A TAG IS FOR.
+                    //
+                    //"The first free machine" reaches whatever is idle, and on a
+                    //host where somebody keeps working runners beside a test kit
+                    //that is the wrong answer more often than the right one: the
+                    //drills borrowed a runner because it happened to be free,
+                    //gave it back rolled to its base snapshot, and looked like
+                    //the queue behaving oddly.
+                    //
+                    //The tick already matches work to machines by tag and WAITS
+                    //rather than falling back, so this refuses rather than
+                    //quietly handing over an untagged machine.
+                    var want = String(a.tag || '').trim().toLowerCase();
+                    var tags = {};
+                    all.forEach(function (v) {
+                        tags[v.name] = (v.tags || []).map(function (t) { return String(t).toLowerCase(); });
+                    });
+
+                    var could = free.filter(function (x) {
+                        return x.free && (!want || (tags[x.name] || []).indexOf(want) >= 0);
+                    });
+
+                    if (!could.length) {
+                        throw new Error(want
+                            ? 'No machine tagged "' + want + '" is free. ' + free.map(function (x) {
+                                return x.name + ((tags[x.name] || []).length ? ' [' + tags[x.name].join(', ') + ']' : '')
+                                    + ' ' + (x.free ? 'is free' : x.why);
+                            }).join('; ') + '.'
+                            : 'No machine is free. ' + free.map(function (x) {
+                                return x.name + ' ' + (x.free ? 'is free' : x.why);
+                            }).join('; ') + '.');
+                    }
+                    pick = could[0].name;
+                }
+
+                //CLAIMED BEFORE IT IS BROUGHT UP, so the next tick — at most
+                //fifteen seconds away and possibly sooner — cannot take it while
+                //it is starting.
+                imports.ours.update(pick, { borrowed: { why: reason, at: new Date().toISOString() } });
+
+                var to = imports.log.on('vm', pick);
+                to.info('borrowed — ' + reason);
+
+                try {
+                    await dispatch.starting.bringUp(to, pick);
+                } catch (e) {
+                    //HANDED BACK ON FAILURE. A machine left borrowed by a
+                    //bring-up that never finished is out of the pool with nobody
+                    //using it, which is the failure this whole thing exists to
+                    //avoid.
+                    imports.ours.update(pick, { borrowed: null });
+                    to.bad('could not bring it up, so it is back in the pool: ' + e.message);
+                    throw e;
+                }
+
+                return {
+                    name: pick,
+                    why: reason,
+                    note: pick + ' is yours until you give it back. The queue will not touch it, and '
+                        + '"vmReturn --name ' + pick + '" puts it away clean.'
+                };
+            }
+        }));
+
+        undo.push(actions.define('vmReturn', {
+            about: 'Give a borrowed machine back: put it away clean, or just release the claim',
+            takes: ['name', 'keep'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.name || '').trim();
+                var keep = a.keep === true || a.keep === 'true';
+
+                var vm = imports.ours.get(name);
+
+                //"NOTHING TO GIVE BACK" IS ABOUT WHAT IT HOLDS, NOT ABOUT THE
+                //BORROW.
+                //
+                //Refusing on the borrow alone reads as a tidy guard right up
+                //until a machine exists that is claiming a branch and is NOT
+                //borrowed — and then it is the only thing between that machine
+                //and the one door that puts it away. The recovery path for a
+                //stuck machine would refuse to run BECAUSE the machine is stuck.
+                //
+                //A CLAIM IS WHAT MATTERS MOST HERE: it is a standing permission
+                //to push to a branch, and it outlives the borrow that created it.
+                //Refusing to clear one is refusing to revoke.
+                var holding = (vm && (vm.borrowed || vm.branch || vm.holdsCredential));
+                if (!holding) {
+                    throw new Error('"' + name + '" is not borrowed, claims no branch and holds no sign-in, '
+                        + 'so there is nothing to give back.');
+                }
+
+                //ASKED WHAT IT IS HOLDING FIRST, because putting it away ROLLS IT
+                //BACK, and a person working by hand is exactly who has
+                //uncommitted work. The queue's own runs push before they finish;
+                //a human in an editor has no such habit, and losing an afternoon
+                //to a tidy-up button is not a mistake anybody makes twice.
+                if (!keep) {
+                    var holds = null;
+                    try { holds = await actions.call('vmHolds', { name: name }); }
+                    catch (e) { /* said below, if it said anything */ }
+
+                    if (holds && holds.summary) {
+                        throw new Error('"' + name + '" is still holding ' + holds.summary + '. Putting it away '
+                            + 'rolls it back to its base snapshot, which discards that. Push it, or give it back '
+                            + 'with keep=true to release the claim and leave the machine exactly as it is.');
+                    }
+                }
+
+                imports.ours.update(name, { borrowed: null });
+
+                if (keep) {
+                    imports.log.on('vm', name).good('given back — left running, and free for the queue');
+                    return { name: name, put: false, note: name + ' is back in the pool as it is. It is still running.' };
+                }
+
+                await dispatch.putting.putAway(name);
+                return {
+                    name: name, put: true,
+                    note: name + ' is off, back at its base snapshot, and free for the queue.'
+                };
+            }
+        }));
+
         undo.push(actions.define('taskQueue', {
             about: 'Put a task in the queue. The next free machine takes it, runs it, and shuts down',
             takes: ['id'],

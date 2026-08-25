@@ -226,6 +226,16 @@ module.exports = function dispatching(deps) {
         adopt: adopting.adopt,
         dialledIn: redial.dialledIn,
         meter: meter,
-        inFlight: inFlight
+        inFlight: inFlight,
+
+        //THE TWO A PERSON DRIVES DIRECTLY, handed out rather than rebuilt.
+        //
+        //`vmBorrow` and `vmReturn` are the same two acts the tick performs —
+        //bring a machine up clean, and put it away — done by somebody at the
+        //window instead of by the loop. Building a second `starting` and a second
+        //`putting` for them would be two implementations of "put a machine away",
+        //and the one that turns out to be wrong is discovered by a machine.
+        starting: starting,
+        putting: putting
     };
 };

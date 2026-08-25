@@ -423,6 +423,128 @@ async function plugin(imports, register) {
         //that has to interpret an absence will eventually interpret it as
         //finished, and the queue is a caller that would then hand the machine to
         //somebody else while the work was still going.
+        //---- WHAT A MACHINE IS HOLDING THAT IS NOT HERE --------------------
+        //
+        //THE QUESTION ASKED BEFORE ANYTHING ROLLS A MACHINE BACK. Putting one
+        //away restores its base snapshot, which is right after work that ENDED
+        //and destroys everything after work that has not. A person working by
+        //hand is exactly who has uncommitted changes — the queue's own runs push
+        //before they finish, and a human in an editor has no such habit.
+        //
+        //SO IT IS ASKED OF THE MACHINE, not inferred here. What is on that disk
+        //is not knowable from this side: a branch this host thinks it is on says
+        //nothing about what was typed into it since.
+        //
+        //ONE LINE PER REPOSITORY, in a shape that is READ rather than parsed out
+        //of prose. Nothing at all when there is no workspace on it, which is a
+        //real answer and not a failure.
+        //
+        //A REPOSITORY WITH NO UPSTREAM HAS NOTHING TO BE AHEAD OF, so counting
+        //`@{upstream}..HEAD` fails there and answers zero — which would read as
+        //"nothing to lose" about a repository whose every commit exists only on
+        //that machine. Untracked means ALL of it, not none of it, and `tracked`
+        //travels with the number so a reader knows which it is.
+        undo.push(actions.define('vmHolds', {
+            about: 'What a machine is holding that is not here: commits not pushed, and files not committed',
+            takes: ['name'],
+            run: async function (args) {
+                var name = String((args || {}).name || '').trim();
+                var vm = imports.ours.get(name);
+
+                //NOT DIALLED IN IS NOT "NOTHING". It is "could not ask", and the
+                //difference decides whether a rollback is safe — so it is said
+                //rather than answered with an empty list.
+                if (!channel.connected(name)) {
+                    return {
+                        asked: false,
+                        why: '"' + name + '" is not dialled in, so it cannot be asked what it is holding.',
+                        repos: []
+                    };
+                }
+
+                var folder = imports.repoWorkspaces.folderFor(vm && vm.spec);
+
+                var script = [
+                    'set -u',
+                    'WS="' + folder + '"',
+                    '[ -d "$WS" ] || exit 0',
+                    'for d in "$WS"/*/; do',
+                    '  [ -d "$d/.git" ] || continue',
+                    '  cd "$d" || continue',
+                    '  name=$(basename "$d")',
+                    '  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)',
+                    '  if git rev-parse --abbrev-ref "@{upstream}" >/dev/null 2>&1; then',
+                    '    ahead=$(git rev-list --count "@{upstream}..HEAD" 2>/dev/null || echo 0)',
+                    '    tracked=yes',
+                    '  else',
+                    '    ahead=$(git rev-list --count HEAD 2>/dev/null || echo 0)',
+                    '    tracked=no',
+                    '  fi',
+                    //`wc -l`, NOT `grep -c .`. grep prints 0 AND exits 1 when
+                    //nothing matches, so `|| echo 0` fired as well and `dirty`
+                    //came back as two lines — which split the record in half and
+                    //took `tracked` off the end of it. Every repository then read
+                    //as tracked, including one whose every commit exists only on
+                    //that machine. Measured against a real workspace, not
+                    //reasoned about.
+                    '  dirty=$(git status --porcelain 2>/dev/null | wc -l | tr -d " ")',
+                    '  echo "okc-holds|$name|$branch|$ahead|$dirty|$tracked"',
+                    'done'
+                ].join('\n');
+
+                var r = await channel.run(name, script, { what: 'what it is holding', timeout: 60000 });
+
+                var repos = String((r && r.output) || '').split('\n')
+                    .map(function (l) { return l.trim(); })
+                    .filter(function (l) { return l.indexOf('okc-holds|') === 0; })
+                    .map(function (l) { return l.split('|'); })
+                    .map(function (f) {
+                        return {
+                            repo: f[1],
+                            branch: f[2],
+                            ahead: Number(f[3]) || 0,
+                            dirty: Number(f[4]) || 0,
+                            tracked: f[5] !== 'no'
+                        };
+                    });
+
+                var commits = repos.reduce(function (n, x) { return n + x.ahead; }, 0);
+                var files = repos.reduce(function (n, x) { return n + x.dirty; }, 0);
+
+                //WHAT IT MAY PUSH, AGAINST WHAT IT IS ACTUALLY ON. Two different
+                //claims, and only the first was ever recorded: "may push
+                //fix/thing" is a permission and says nothing about where the
+                //machine's work IS. A machine sitting on another branch is not
+                //dangerous — the push refuses — it is a machine whose work has
+                //nowhere to go, and nothing said so until somebody tried.
+                var elsewhere = repos.filter(function (x) { return vm && vm.branch && x.branch !== vm.branch; });
+
+                return {
+                    asked: true,
+                    repos: repos,
+                    commits: commits,
+                    files: files,
+                    mayPush: (vm && vm.branch) || null,
+                    elsewhere: elsewhere.map(function (x) { return x.repo + ' is on ' + x.branch; }),
+                    adrift: elsewhere.length
+                        ? name + ' may push ' + (vm && vm.branch) + ', but '
+                            + elsewhere.map(function (x) { return x.repo + ' is on ' + x.branch; }).join(' and ')
+                            + ' — work there cannot be pushed until it is on ' + (vm && vm.branch) + '.'
+                        : null,
+
+                    //SAID ONCE, HERE, so every caller says it the same way — and
+                    //`null` when there is nothing, so a caller can test it
+                    //without deciding for itself what counts as holding something.
+                    summary: (commits || files)
+                        ? [
+                            commits ? (commits + ' commit' + (commits === 1 ? ' that exists' : 's that exist') + ' nowhere else') : null,
+                            files ? (files + ' file' + (files === 1 ? '' : 's') + ' changed and not committed') : null
+                        ].filter(Boolean).join(', ')
+                        : null
+                };
+            }
+        }));
+
         undo.push(actions.define('vmRuns', {
             about: 'The tasks given to a machine, and whether they are still going',
             takes: ['name'],
