@@ -38,7 +38,7 @@
 
 var LINES = require('./lines');
 
-plugin.consumes = ['app', 'log', 'git', 'workspace', 'state', 'refs'];
+plugin.consumes = ['app', 'log', 'git', 'workspace', 'state', 'refs', 'inbox'];
 plugin.provides = ['lines'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -322,6 +322,58 @@ async function plugin(imports, register) {
     }
 
     var undo = [];
+
+    //---- AND IT ASKS FOR SOMEBODY, BECAUSE NOTHING ELSE WILL --------------
+    //
+    //RETIRING A LINE IS A PERSON'S PRESS AND MUST STAY ONE. Nothing in this app
+    //revokes on a timer. But an act that only a person can do, on a state
+    //nothing announces, is an act that never happens — which is exactly what
+    //occurred: four lines merged weeks apart, each one quietly taking a branch
+    //cut out of circulation, until "Work in this Branch Cut" offered two options
+    //out of eleven and looked broken.
+    //
+    //SO IT IS AN ERRAND RATHER THAN A BADGE. ../../inbox is the list of things
+    //waiting for a person, and this is one: the change is in, the line has done
+    //its job, and only somebody who can be sure can say so. The badge on the
+    //pane says which; this says that there is something to go and look at, from
+    //a screen nobody has to think to open.
+    //
+    //ONE ITEM PER LINE AND NOT ONE SUMMARY. `where` takes a pick, so each row
+    //lands on the line it is about with that line already selected — an errand
+    //that drops somebody on a list to find the thing themselves is one they put
+    //off. It also means the count on the inbox is the number of presses left.
+    //
+    //IT ASKS GITHUB, THROUGH ../pr, so an inbox that cannot reach it says
+    //nothing rather than guessing. `endsOf` answers `{}` when the cuts could not
+    //be read, and an empty answer here is an errand nobody is nagged about — the
+    //right way round for a list whose whole worth is that everything on it is
+    //real.
+    if (imports.inbox) {
+        undo.push(imports.inbox.source({
+            name: 'lines whose change has landed',
+            waiting: async function () {
+                var all = await groups();
+                if (!all || !all.length) return [];
+
+                var ends = await endsOf(all);
+                return all.filter(function (g) {
+                    return (ends[g.name] || {}).ends === 'landed';
+                }).map(function (g) {
+                    var it = ends[g.name];
+                    return imports.inbox.item(
+                        'line to retire',
+                        g.name,
+                        'Its change landed in ' + (it.where || 'its target') + ', so this line has done its job — '
+                            + 'and until it is retired it goes on protecting '
+                            + ((g.on || []).length) + ' branch(es) and taking a place work could be cut to.',
+                        imports.inbox.at('Repositories', 'Branches Lines', g.name),
+                        { id: g.name }
+                    );
+                });
+            }
+        }));
+    }
+
     if (actions) {
         undo.push(actions.define('lines', {
             about: 'Every named line: one branch per repository, what work is cut from, and whether its change has landed',
