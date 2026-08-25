@@ -355,3 +355,45 @@ test('and neither is a draft that was never queued', async () => {
         /is "draft", not queued/
     );
 });
+
+//---------------------------------------------------------------------------
+//AND A CONTRACT FILE THAT IS NOT THERE.
+//
+//THE CLAIM: a task naming a contract file this host cannot read is refused when
+//it is WRITTEN, not when it is given out. ../../src/app/runners/runs/briefing
+//resolves and reads the file at dispatch and throws if it is missing — so
+//without this gate the task is accepted, waits in the queue, takes a machine,
+//and fails there.
+//
+//IT WAS INERT IN THE APP. queue/server.js answered `contractFileExists` with a
+//function that returned true for every path, so this gate could not refuse
+//anything. The drill "a task cannot be written wrong" is what noticed; nothing
+//here had ever handed it a false.
+//---------------------------------------------------------------------------
+
+test('a task naming a contract file that is not there is refused at the door', async () => {
+    await setUp({ contractFileExists: async () => false });
+
+    await assert.rejects(
+        () => doors.create(aTask({ contract: 'C:/nothing/here.md' })),
+        /There is no contract at C:\/nothing\/here\.md/);
+});
+
+test('and it says the file is read from this host, because that is where to put it', async () => {
+    await setUp({ contractFileExists: async () => false });
+
+    await assert.rejects(
+        () => doors.create(aTask({ contract: '/rules.md' })),
+        /read from this host when the task is given out/);
+});
+
+test('and the path it was given is the path it asks about', async () => {
+    //NOT A GUESS AT WHAT WAS MEANT. A door that asked about a path it had
+    //rewritten would refuse tasks whose file exists, or accept ones whose file
+    //does not — and either way the message names something the person did not type.
+    const asked = [];
+    await setUp({ contractFileExists: async (at) => { asked.push(at); return false; } });
+
+    await assert.rejects(() => doors.create(aTask({ contract: 'rules/theirs.md' })), /no contract at/);
+    assert.deepEqual(asked, ['rules/theirs.md']);
+});

@@ -1,3 +1,6 @@
+var fs = require('fs');
+var path = require('path');
+
 var policy = require('./policy');
 var makeStore = require('./store');
 var makeArchive = require('./archive');
@@ -355,7 +358,27 @@ async function plugin(imports, register) {
             var all = (said && said.contracts) || [];
             return all.filter(function (c) { return c.id === id; })[0] || null;
         },
-        contractFileExists: async function () { return true; },
+        //ASKED FOR REAL, AND ASKED THE SAME WAY THE DISPATCH ASKS IT.
+        //
+        //THIS RETURNED `true` FOR EVERY PATH, so the gate in ./doors.js that
+        //refuses a task naming a contract file that is not there could not
+        //refuse anything. A stub easier to satisfy than the real thing, in the
+        //shipping code rather than in a test.
+        //
+        //WHAT IT COST IS THE WHOLE POINT OF THAT GATE. ../runners/runs/briefing
+        //resolves and reads the file when the task is GIVEN OUT, and throws if it
+        //is missing — so the task was accepted, sat in the queue, took a machine,
+        //and failed there. The moment it is written is the cheap moment to find
+        //that out; this is what makes that true.
+        //
+        //`path.resolve` BECAUSE THAT IS WHAT THE OTHER END DOES. A relative path
+        //that exists from the dashboard's working directory is one the dispatch
+        //will find, and disagreeing about what a path MEANS would refuse tasks
+        //that would have run.
+        contractFileExists: async function (at) {
+            try { return fs.existsSync(path.resolve(String(at))); }
+            catch (e) { return false; }
+        },
 
         //WHAT ARRIVED ON THE BRANCH, READ FRESH. `judge` refuses a verdict on an
         //empty branch, and a cached answer is the one thing that could make that
