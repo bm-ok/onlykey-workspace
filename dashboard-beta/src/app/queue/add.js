@@ -143,11 +143,61 @@ module.exports = function add(theme, okc, remember) {
         var kind = val('kind') === 'judge' ? 'judge' : 'task';
         var words = WORK[kind];
 
-        //A CUT, AND NOT A LINE. `protected` wins over `cut`: making a branch a
-        //line is exactly the act that says work does not go on it directly.
+        //---- EVERY BRANCH CUT, AND WHAT IS TRUE OF EACH -------------------
+        //
+        //A CUT, WHICH IS NOT THE SAME AS A BRANCH. A workspace holds branches
+        //cut here with a reason, the repositories' own defaults, and whatever
+        //somebody made by hand. `cut` is the record of the act, written when
+        //branchCreate made it — so `master`, `version2` and a pull request
+        //fetched from somebody else are not offered, and that has not changed.
+        //
+        //---- WHAT DID CHANGE: A LINE IS STILL A CUT -----------------------
+        //
+        //THIS READ `b.cut && !b.protected`, ported from the app being ported
+        //from, where the same line sits in ui/tasks.js. It is not drift and it
+        //was not wrong there. It is narrower than the rule, and the difference
+        //had become the whole list: four lines had landed weeks earlier without
+        //anything retiring them, and every one had eaten a branch cut on its way
+        //past. This dropdown was down to two options out of eleven branches and
+        //read as broken.
+        //
+        //AND THE FORM WAS NEVER WHAT PREVENTED ANYTHING. The old app says so
+        //itself, in the comment right below the line this copied: "LINES ARE NOT
+        //OFFERED HERE AT ALL, and the read-only machinery behind them stays
+        //anyway. A machine set up on a line is refused its push by the host's
+        //hook and told so by a pre-push hook in the guest — that is true however
+        //the machine got there, and IT IS NOT THIS FORM'S BUSINESS to be the
+        //only thing preventing it."
+        //
+        //Both halves are here and both were checked: `taskCreate` accepts any
+        //branch that exists — proven on `master`, on a line and on an uncut
+        //branch, all three written and then removed — and ../../repositories/
+        //gitserve refuses the push. So hiding lines here bought nothing except a
+        //shorter list.
+        //
+        //SO EVERY CUT IS OFFERED, WITH WHAT IT IS SAID ON IT. Which is what the
+        //Branches Cut pane does, and it is the pane that owns the word: it lists
+        //all of them and puts a state on each rather than deciding for you.
+        //Choosing a line is a choice somebody can now make on purpose, and the
+        //label is what makes it a choice rather than a trap.
+        var claimOn = function (b) {
+            if (b.heldBy) return b.heldRunning ? 'a machine is working on it' : 'held by ' + b.heldBy;
+            if ((b.tasks || []).length) return (b.tasks || []).length + ' task(s) already on it';
+            if (b.protected) return 'a line — the push is refused, so merge into it instead';
+            if (b.orphaned) return 'carries work nobody claims';
+            if (b.spare) return 'spare';
+            return null;
+        };
+
         var cuts = (board.state.branches || [])
-            .filter(function (b) { return b.cut && !b.protected; })
-            .map(function (b) { return b.name; });
+            .filter(function (b) { return b.cut; })
+            .map(function (b) {
+                //`·` AND NOT `—`, because some of what `claimOn` says has a dash
+                //of its own in it and "brads/testing2 — a line — the push is
+                //refused" reads as three things rather than two.
+                var says = claimOn(b);
+                return { value: b.name, label: b.name + (says ? ' · ' + says : '') };
+            });
 
         var ofKind = function (rows) {
             return (rows || []).filter(function (r) { return String(r.kind || 'task') === kind; });
@@ -358,9 +408,16 @@ module.exports = function add(theme, okc, remember) {
 
                                 <Field f={{
                                     name: 'branch', label: 'Work in this Branch Cut',
-                                    hint: 'a cut is a branch made here with a reason. A line is not offered: making one is what says work does not go on it directly',
+                                    hint: 'a cut is a branch made here with a reason — a default branch and a pull request '
+                                        + 'fetched from somebody else are not cuts and are not offered. A line is: work is '
+                                        + 'normally merged into one rather than done on one, and its push is refused, so it '
+                                        + 'says so beside the name rather than being hidden',
+                                    //ALREADY {value, label} — see where `cuts` is
+                                    //built. Each carries what is true of it, so
+                                    //picking a line is a choice rather than a
+                                    //trap.
                                     options: [{ value: '', label: cuts.length ? 'pick the cut this work belongs to' : 'there are no cuts yet — make one on Repositories → Branches Cut' }]
-                                        .concat(cuts.map(function (b) { return { value: b, label: b }; }))
+                                        .concat(cuts)
                                 }} value={val('branch')} onChange={function (v) { set('branch', v); }} />
 
                                 {kind === 'judge' ? null : (
