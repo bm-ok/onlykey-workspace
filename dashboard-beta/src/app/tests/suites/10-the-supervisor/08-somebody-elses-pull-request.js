@@ -16,75 +16,75 @@
 // the allowance names. What has never happened is a judge being pointed at
 // somebody else's pull request and asked, which is a run rather than a build.
 
+// ---- where the rule itself is asked ---------------------------------------
+//
+// THIS FILE COULD NOT LOAD. It required `repos/allowed` and `core/supervisor`,
+// and a drill runs from `dist/suites` with only the harness beside it. The first
+// of those does not exist in this app at all: allowances are kept by
+// ../../repositories/pr, which is where the pane that grants them lives.
+//
+// AND WHAT IT ASKED THAT STORE WAS ARITHMETIC. Allow at one commit, ask about
+// another, get STALE; forget it, get nothing. No host in the question, no
+// machine, no GitHub — and asked here it was only ever asked when somebody
+// exercised the kit, which for the rule that keeps a stranger's code off this
+// host is not often enough.
+//
+// `test/repositories/pr-allowing.test.js` asks it now, of a module extracted for
+// the purpose, and asks more than this did: that a single character of difference
+// is enough — comparing shortened shas is the natural way to write it and would
+// accept a collision — and that not knowing where the pull request is NOW is its
+// own answer rather than staleness, because what is missing is this host's
+// knowledge and not the person's decision.
+//
+// ---- and what stays here, which is who may press it ------------------------
+//
+// THE GATE IS NOT THE RULE. Whether an allowance matches a commit is arithmetic;
+// whether a MODEL can grant one is a fact about this running app, and it is the
+// half that would be catastrophic to get wrong. A supervisor allowing a pull
+// request would be a model deciding that a stranger's code is fit to be read by
+// a model.
+
 const { it, requires, draft } = require('../../harness')
-const allowed = require('../../../repos/allowed')
 
 requires('what this host has')
 
-// A number nothing will collide with. The store is keyed by owner/name#number
-// and never asks GitHub, so a pull request that does not exist is exactly as
-// good for checking the RULE — and leaves nothing behind on anybody's tracker.
-const ON = 'okc-drill/nothing-real'
-const N = 987654
-
-it('an incoming pull request is not judgeable until somebody says so', async ({ assert, log }) => {
-  allowed.forget(ON, N)
-  const said = allowed.check(ON, N, 'aaaa1111')
-  assert.equal(said.allowed, false, 'a pull request nobody has looked at was judgeable')
-  assert.equal(said.stale, false, 'nothing was allowed, so nothing can be stale')
-  assert.ok(/nobody has allowed/i.test(said.why || ''), `it should say nobody has allowed it, and it said "${said.why}"`)
-  log(said.why)
-})
-
-it('and an allowance names the commit, not the pull request', async ({ assert, log }) => {
-  allowed.allow(ON, N, 'aaaa1111', { by: 'a drill' })
-  const now = allowed.check(ON, N, 'aaaa1111')
-  assert.equal(now.allowed, true, 'a pull request allowed at the commit it is on was still refused')
-
-  // THE WHOLE REASON THE STORE EXISTS. An allowance that named only the number
-  // would carry onto whatever the author pushed next, seconds later — approving
-  // a number rather than the code somebody read.
-  const moved = allowed.check(ON, N, 'bbbb2222')
-  assert.equal(moved.allowed, false, 'an allowance carried onto a commit nobody had read')
-  assert.equal(moved.stale, true, 'a pushed-since allowance reads as "never allowed" rather than as stale')
-  assert.ok(/pushed since|is now at/i.test(moved.why || ''), `it should say the author pushed since, and it said "${moved.why}"`)
-  log(moved.why)
-})
-
-it('and STALE is its own answer, because it is neither of the other two', async ({ assert }) => {
-  const moved = allowed.check(ON, N, 'bbbb2222')
-  // A person looked and formed a view, so this is not "nobody has said
-  // anything" — and what they read is gone, so it is emphatically not "yes".
-  // Anything that folds it into one of those two loses the fact that a person
-  // has already spent attention on this pull request.
-  assert.ok(moved.said, 'a stale allowance forgets that somebody had looked at all')
-  assert.equal(moved.said.sha, 'aaaa1111', 'it should still say which commit was allowed')
-  allowed.forget(ON, N)
-  assert.equal(allowed.check(ON, N, 'aaaa1111').allowed, false, 'an allowance survived being taken back')
-})
-
-it('and a model cannot allow one', async ({ okc, assert }) => {
-  // THE ONE DELEGATION THAT CANNOT BE MADE. A supervisor asking for this would
-  // be a model deciding that a stranger's code is fit to be read by a model.
+it('a model cannot allow a pull request to be judged', async ({ okc, assert, log }) => {
+  // THE ONE DELEGATION THAT CANNOT BE MADE, asked of the running action table
+  // rather than of the source, so it is about what this app actually refuses.
   await assert.refuses(
     () => okc('prAllowJudging', { repo: 'local-repo-c', number: 1, _overTheWire: true }),
     'in the window|a person|may not',
     'a pull request was allowed from outside the window'
   )
+
+  // AND TAKING ONE BACK IS THE SAME PRESS. It reads like the safe direction and
+  // is not: a model that can withdraw an allowance can withdraw the one a person
+  // gave, and then ask for it again at a commit of its choosing.
   await assert.refuses(
     () => okc('prForbidJudging', { repo: 'local-repo-c', number: 1, _overTheWire: true }),
     'in the window|like giving one',
     'an allowance was taken back from outside the window'
   )
+
+  log('both doors refuse the wire, so allowing one is a person at the window')
 })
 
-it('and it is not on the supervisor\'s list at all', async ({ assert, log }) => {
-  const sup = require('../../../core/supervisor')
-  const names = Object.keys(sup.MAY || {})
+it('and it is not on the list of what a supervisor may call', async ({ okc, assert, log }) => {
+  // TWO GATES, AND THIS IS THE OUTER ONE. The refusal above is what happens when
+  // it is pressed; this is whether the supervisor is ever told the press exists.
+  // A refusal is a door somebody can rattle — see `the ways round a refusal` —
+  // and the list is what decides whether it is even in the corridor.
+  const { may } = await okc('supervisorMay')
+  const names = (may || []).map((m) => m.action)
+
+  assert.ok(names.length, 'the supervisor may call nothing at all, so finding this one absent proves nothing')
+
   for (const what of ['prAllowJudging', 'prForbidJudging', 'prJudging']) {
-    assert.ok(!names.includes(what), `${what} is on the supervisor's list, and the whole point is that it is not`)
+    assert.ok(!names.includes(what),
+      `${what} is on the supervisor's list, and the whole point is that it is not — the model would be deciding that a stranger's code is fit for a model to read`)
   }
-  log(`${names.length} actions on the list, and none of them is this one`)
+
+  log(`${names.length} actions on the supervisor's list, and none of them is this one`)
 })
 
 // ---- what the judging itself has to do, once it exists ----------------------
