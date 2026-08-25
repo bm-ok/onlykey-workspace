@@ -73,7 +73,7 @@ var revising = require('../pr/revising');
 //A consumes line is a claim about what this plugin can reach, and the boundary
 //test above it only counts for as much as that line is kept honest.
 plugin.consumes = ['app', 'log', 'git', 'github', 'workspace', 'state', 'refs',
-    'ours', 'channel', 'lines', 'prcuts'];
+    'ours', 'channel', 'lines', 'prcuts', 'settings'];
 plugin.provides = ['repositories', 'repoWorkspaces'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -946,6 +946,108 @@ async function plugin(imports, register) {
         //not a fork, or a conflict GitHub will not resolve, is reported on its own
         //row — a workspace of five where the third is not a fork should still pull
         //the other four up.
+        //---- DELETING A BRANCH ON THE FORK -------------------------------
+        //
+        //THE BUTTON GITHUB OFFERS ON A MERGED PULL REQUEST. A fork that keeps
+        //every branch it has ever merged is a list nobody can read, and the
+        //branches that matter are lost among the ones already in master.
+        //
+        //IT IS SOMEBODY ELSE'S SERVER, so it is gated from outside the window the
+        //same way the other outward acts are: over the wire or driven, testing
+        //mode must be on for THIS workspace. A model deciding to delete branches
+        //on a repository is not a thing to make possible by default.
+        //
+        //THROUGH THE API, NOT THROUGH A PUSH. ../../git's write door says what it
+        //is for — "NOTHING ELSE. No `--delete`" — and a delete-by-push would need
+        //that list opened. GitHub has a ref endpoint; this is one call to it, and
+        //the git door is left as it is.
+        //
+        //AND THE COPY HERE GOES WITH IT, IN THE SAME ACT. `refs/remotes/origin/
+        //<branch>` is this host's record of what the fork has; deleting the branch
+        //there and leaving the copy is a second opinion about one fact, and every
+        //panel that reads "where origin has it" believes the copy. That is how a
+        //drill which had cleaned up after itself was reported as having left
+        //something behind.
+        //
+        //BY FETCHING, which already prunes — rather than by reaching for
+        //`update-ref -d`, which would be a new kind of write for one caller.
+        undo.push(actions.define('branchDeleteRemote', {
+            about: 'Delete a branch from the fork on GitHub, the way the button on a merged pull request does',
+            takes: ['branch', 'repo'],
+            run: async function (args) {
+                var a = args || {};
+                var on = String(a.branch || '').trim();
+                if (!on) throw new Error('Say which branch.');
+
+                if (a._overTheWire || a._driven) {
+                    var may = await imports.settings.allowed();
+                    if (!may.allowed) {
+                        throw new Error('Deleting a branch on the fork from outside the window is only done while '
+                            + 'testing mode is on for this workspace. ' + may.why);
+                    }
+                }
+
+                var found = await workspace.repos();
+                var here = found.map(function (r) { return r.name; });
+                var want = a.repo ? [String(a.repo)] : here;
+                for (var i = 0; i < want.length; i++) {
+                    if (here.indexOf(want[i]) < 0) {
+                        throw new Error('There is no repository called "' + want[i] + '" here. There is: '
+                            + here.join(', ') + '.');
+                    }
+                }
+
+                var done = [];
+                for (var j = 0; j < want.length; j++) {
+                    var name = want[j];
+                    var to = log.on('git', name);
+
+                    try {
+                        var remote = await refs.origin(name);
+                        if (!remote || remote.kind !== 'github') {
+                            throw new Error('"' + name + '" has no GitHub remote.');
+                        }
+
+                        var where = remote.owner + '/' + remote.repo;
+                        var r = await github.call('DELETE',
+                            '/repos/' + remote.owner + '/' + remote.repo + '/git/refs/heads/' + on);
+
+                        //204 IS GONE. 422 AND 404 ARE "IT WAS NOT THERE", which is
+                        //the same state and not a failure to report as one — a
+                        //cleanup that runs twice should be quiet the second time.
+                        if (r.status === 422 || r.status === 404) {
+                            done.push({ repo: name, branch: on, gone: false, already: true, on: where });
+                            continue;
+                        }
+                        if (r.status !== 204) {
+                            throw new Error('Could not delete "' + on + '" on ' + where + ': '
+                                + ((r.body && r.body.message) || ('GitHub answered ' + r.status)));
+                        }
+
+                        //THE COPY HERE, through the door that already prunes.
+                        try { await git.fetch(name); }
+                        catch (e) { to.info('deleted it there, but this host still has its own copy of the branch: ' + e.message); }
+
+                        to.good('deleted ' + on + ' on ' + where);
+                        done.push({ repo: name, branch: on, gone: true, on: where });
+                    } catch (e) {
+                        to.warn(e.message);
+                        done.push({ repo: name, branch: on, gone: false, why: e.message });
+                    }
+                }
+
+                var gone = done.filter(function (d) { return d.gone; });
+                return {
+                    branch: on,
+                    repos: done,
+                    note: gone.length
+                        ? '"' + on + '" deleted on ' + gone.map(function (d) { return d.repo; }).join(', ')
+                            + '. It is untouched here — branchDelete removes it from this host.'
+                        : 'Nothing to delete: no fork had "' + on + '".'
+                };
+            }
+        }));
+
         undo.push(actions.define('repoForkSync', {
             about: "Pull each fork's default branch up from its parent on GitHub, the way the Sync fork button does",
             takes: ['repo', 'branch'],
