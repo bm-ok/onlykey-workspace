@@ -214,3 +214,21 @@ test('more work than machines leaves the rest waiting, in order', () => {
     assert.deepEqual(said.waiting.map((w) => w.ref), ['#2', '#3']);
     assert.match(said.waiting[0].why, /no machine is free/);
 });
+
+//AND NOTHING AT ALL STRANDS NOTHING, which is not pedantry.
+//
+//`adopt` returns early when no workspace is open, because asking would read an
+//empty board and "recover" it — adoption doing the one thing it exists to
+//prevent. This says the rule underneath that early return is safe on nothing, so
+//it is a second door rather than the only one.
+//
+//IT WAS ASKED ONLY IN A DRILL THAT COULD NOT LOAD. Nothing here has ever handed
+//`stranded` an empty board, a missing one, or one with holes in it.
+test('an empty board, a missing one, and one with holes in it strand nothing', () => {
+    const asTasks = (x) => x.worker;
+
+    assert.deepEqual(policy.stranded([], asTasks), []);
+    assert.deepEqual(policy.stranded(null, asTasks), []);
+    assert.deepEqual(policy.stranded(undefined, asTasks), []);
+    assert.deepEqual(policy.stranded([null, undefined], asTasks), []);
+});

@@ -36,96 +36,32 @@
 // real restart, which needs the app stopped and started and so belongs to a
 // person.
 
-const { it, draft } = require('../../harness')
-const queue = require('../../../tasks/queue')
+// ---- where the arithmetic went, and why it is better off there ----------
+//
+// THIS FILE COULD NOT LOAD. It required `tasks/queue` to call `stranded`
+// directly, handing it boards it made up — a drill runs from `dist/suites` with
+// only the harness beside it and cannot reach the app's insides.
+//
+// AND MADE-UP BOARDS ARE NOT A DRILL'S WORK. There is no host in the question,
+// no machine and no restart: it is a function of a list, and asking it here meant
+// it was only ever asked when somebody exercised the kit.
+//
+// `test/queue/queue-plan.test.js` asks it — a task that was being set up is
+// stranded, a judgement that was is too, and a person's work never is, whichever
+// kind it is — and `test/queue/queue-adopting.test.js` asks what is DONE about
+// them: re-queued, left alone, and nothing recovered in a workspace nobody is
+// serving.
+//
+// MOVING THE LAST OF IT FOUND A GAP. Nothing over there had ever handed
+// `stranded` an empty board, a missing one, or one with holes in it — the
+// defensive case that makes `adopt`'s early return a second door rather than the
+// only one. It is asked there now.
+//
+// WHAT IS LEFT IS THE PART THAT NEEDS A RESTART, and it is below, still a draft
+// for the reason it always was: this harness runs INSIDE the app, so a check
+// here cannot restart the app without killing itself.
 
-// The two kinds of work, and the two different words they use for whose it is.
-// Written out rather than derived, because the point of the check is that these
-// two are NOT the same shape and the rule has to hold across both anyway.
-const AS_TASKS = x => x.worker
-const AS_JUDGEMENTS = x => x.by
-
-it('work that was being set up when this stopped goes back in the queue', ({ assert, log }) => {
-  const board = [
-    { id: 't1', number: 7, state: 'given', run: null, machine: 'kit-1', worker: 'claude' },
-    { id: 't2', number: 8, state: 'queued', run: null, machine: null, worker: 'claude' },
-    { id: 't3', number: 9, state: 'given', run: 'run-9', machine: 'kit-2', worker: 'claude' },
-    { id: 't4', number: 10, state: 'done', run: 'run-10', machine: null, worker: 'claude' }
-  ]
-
-  const out = queue.stranded(board, AS_TASKS).map(x => x.id)
-  assert.equal(out.join(', '), 't1', `only the one being set up is stranded, and this picked ${out.join(', ') || 'nothing'}`)
-
-  // SAID THE OTHER WAY ROUND, because each of the three it left alone is left
-  // alone for a different reason, and a check that only counts one would pass
-  // while any of them broke.
-  assert.ok(!out.includes('t2'), 'a task still queued was never given to anything — re-queueing it would be a second copy')
-  assert.ok(!out.includes('t3'), 'a task WITH a run is in flight and is adopted, not re-queued — this is the one that would steal work from a machine still doing it')
-  assert.ok(!out.includes('t4'), 'a finished task is finished')
-
-  log('of given-without-run, queued, in-flight and done, only the first is stranded')
-})
-
-it('and the same rule holds for a judgement, which says it differently', ({ assert, log }) => {
-  // THE ACTUAL SHAPE OF J41: given, no run, a machine that was about to be told
-  // what to do. A judgement says `by` where a task says `worker`, and that one
-  // word is the whole of why adoption did not cover this for as long as it did.
-  const board = [
-    { id: 'j41', number: 41, ref: 'J41', state: 'given', run: null, machine: 'kit-1', by: 'claude' },
-    { id: 'j42', number: 42, ref: 'J42', state: 'given', run: 'run-42', machine: 'kit-2', by: 'claude' },
-    { id: 'j43', number: 43, ref: 'J43', state: 'given', run: null, machine: null, by: 'person' }
-  ]
-
-  const out = queue.stranded(board, AS_JUDGEMENTS).map(x => x.ref)
-  assert.equal(out.join(', '), 'J41', `J41 is the stranded one, and this picked ${out.join(', ') || 'nothing'}`)
-
-  // AND THE CROSS-CHECK, WHICH IS THE ONE WORTH HAVING.
-  //
-  // Ask the same board with the TASK's word for whose work it is. Every row
-  // answers undefined, because a judgement has no `worker` — so nothing looks
-  // like a person's, and J43 is swept up alongside J41. That is not a
-  // hypothetical: it is what a rule reading one field does the day a second
-  // kind of work arrives, and it fails silently, because sweeping up more than
-  // you meant to looks exactly like working.
-  const wrongWord = queue.stranded(board, AS_TASKS).map(x => x.ref)
-  assert.equal(wrongWord.join(', '), 'J41, J43', `asked with a task's word, the rule should sweep up the person's judgement too — that is the failure being demonstrated — and it picked ${wrongWord.join(', ') || 'nothing'}`)
-
-  log(`by \`by\`: ${out.join(', ')}. by \`worker\`, which is the fault: ${wrongWord.join(', ')} — J43 is a person's`)
-})
-
-it('and a person\'s work is left where it is, whichever kind it is', ({ assert, log }) => {
-  // THE EXPENSIVE ONE. Both boards, both words, both left alone — a person's
-  // work sits in `given` with no run for as long as they are working in it,
-  // which is exactly the shape of the thing being swept up above.
-  const tasks = [
-    { id: 'p1', number: 11, state: 'given', run: null, machine: null, worker: 'person' },
-    { id: 'c1', number: 12, state: 'given', run: null, machine: 'kit-1', worker: 'claude' }
-  ]
-  const judgements = [
-    { id: 'pj', number: 43, ref: 'J43', state: 'given', run: null, machine: null, by: 'person' },
-    { id: 'cj', number: 44, ref: 'J44', state: 'given', run: null, machine: 'kit-1', by: 'claude' }
-  ]
-
-  const t = queue.stranded(tasks, AS_TASKS).map(x => x.id)
-  assert.equal(t.join(', '), 'c1', `a person's task must be left alone; this would have re-queued ${t.join(', ')}`)
-
-  const j = queue.stranded(judgements, AS_JUDGEMENTS).map(x => x.ref)
-  assert.equal(j.join(', '), 'J44', `a person's judgement must be left alone; this would have re-queued ${j.join(', ')}`)
-
-  log('a person\'s task and a person\'s judgement both stay put; the machine\'s of each go back in the queue')
-})
-
-it('and an empty board is not something to recover', ({ assert, log }) => {
-  // NOT PEDANTRY. `adopt` returns early when no workspace is open, because
-  // asking would read an empty board and "recover" it — adoption doing the one
-  // thing it exists to prevent. This says the rule underneath it is safe on
-  // nothing at all, so that early return is a second door rather than the only
-  // one.
-  assert.equal(queue.stranded([], AS_TASKS).length, 0, 'an empty board strands nothing')
-  assert.equal(queue.stranded(null, AS_TASKS).length, 0, 'no board at all strands nothing')
-  assert.equal(queue.stranded([null, undefined], AS_TASKS).length, 0, 'a board with holes in it strands nothing')
-  log('empty, absent and holed boards all strand nothing')
-})
+const { draft } = require('../../harness')
 
 draft('and a real run survives a real restart', [
   'WALKED ON 20 AUGUST 2026, AND IT FOUND ONE. A run is detached on purpose —',
