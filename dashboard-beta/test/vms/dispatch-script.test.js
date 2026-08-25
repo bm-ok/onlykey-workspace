@@ -240,6 +240,45 @@ test('and can say what it is doing without being able to fail its own work', () 
     //BEST EFFORT, ALWAYS EXITS 0. A line that could not be delivered must never
     //fail the work it was describing.
     assert.match(s, />\/dev\/null 2>&1 \|\| true\nexit 0/);
+    //AND IT IS RUNNABLE, which nothing asked. `okc-artifact` is checked for its
+    //`chmod` in the test above and `okc-watch` in ../vms/dispatch-payloads; this
+    //one was written, put on PATH, and never made executable as far as any check
+    //here was concerned. The source does it — the gap was the asking.
+    assert.match(s, /chmod \+x .*\/okc-say/, 'okc-say is written and never made executable, so calling it fails on the machine');
+});
+
+//---------------------------------------------------------------------------
+//AND BOTH OF THEM AUTHENTICATE AS THE MACHINE, WHICH IS THE POSITIVE HALF.
+//
+//The credential checks at the top of this file are all NEGATIVE — the Claude
+//token is not in the environment, not on a command line, not present at all when
+//there is no job. Every one of them passes just as happily if the two commands
+//that talk to this host carry no credential whatsoever and simply fail on the
+//guest, twenty minutes in, saying 401.
+//
+//WHAT THEY USE IS THE MACHINE'S OWN TOKEN, read from the agent's environment at
+//the moment of the call — the same identity git already replays on every push,
+//and the reason a run's artifacts can be filed against the machine that sent
+//them rather than trusted because they arrived.
+//
+//THIS WAS ASKED IN THE APP THIS IS PORTED FROM and stopped being asked here —
+//see ../../src/app/tests/suites/08-a-task-on-a-machine/README.md, which records
+//where the rest of that drill went.
+//---------------------------------------------------------------------------
+test('the two commands that reach this host authenticate as the machine', () => {
+    const s = of({});
+    for (const cmd of ['okc-artifact', 'okc-say']) {
+        const at = s.indexOf('/' + cmd + " <<'");
+        assert.ok(at >= 0, cmd + ' is not written into the run at all');
+        //FROM THE END OF THE OPENING LINE, because the opener names the marker
+        //too — slicing to the first `_EOF` after it finds the opener's own and
+        //leaves a body four characters long, which matches nothing and reads as
+        //a missing credential.
+        const from = s.indexOf('\n', at) + 1;
+        const body = s.slice(from, s.indexOf('_EOF', from));
+        assert.match(body, /-u "\$\{OKC_VM\}:\$\{OKC_TOKEN\}"/,
+            cmd + ' does not authenticate as the machine, so this host cannot tell who sent what');
+    }
 });
 
 test('nothing is handed back when there is nowhere to hand it to', () => {
