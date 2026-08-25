@@ -586,6 +586,63 @@ async function plugin(imports, register) {
                 };
             }
         }));
+        //---- ONE PAIR, READ FROM GITHUB ----------------------------------
+        //
+        //`prCuts` ANSWERS ABOUT ALL OF THEM and asks GitHub about every pull
+        //request in every cut to do it — three requests each, for cuts that
+        //landed months ago. Anything following ONE change through does not want
+        //that, and asking the whole board to find out about a pair somebody
+        //already named is how a check becomes too slow to run.
+        //
+        //THE SAME `stateOf`, so the answer cannot disagree with the board. What
+        //is different is only which records it is asked about.
+        //
+        //`landed: null` FOR A PAIR NOBODY SENT, which is a third answer and not a
+        //no. "It has not landed" about a change that was never sent out reads as
+        //a failure to land rather than as nothing having happened.
+        undo.push(actions.define('prCutState', {
+            about: 'What became of a change that was sent out: each pull request, read from GitHub',
+            takes: ['source', 'target'],
+            run: async function (args) {
+                var a = args || {};
+                var source = String(a.source || '').trim();
+                var target = String(a.target || '').trim();
+
+                if (!source || !target) {
+                    throw new Error('Two lines: --source what carries the change, --target what it goes into.');
+                }
+
+                var all = await read(landings);
+                if (all === null) throw new Error('No workspace is open, so there are no PR cuts.');
+
+                var rec = all[key(source, target)];
+                if (!rec) {
+                    return {
+                        source: source, target: target, landed: null, pulls: [],
+                        note: 'This pair has not been sent out from here.'
+                    };
+                }
+
+                var at = await stateOf(rec);
+
+                //WHAT IS TRUE OF THE PARTS, in the words the board uses. A cut is
+                //landed only when every pull request in it is merged — the point
+                //of holding them together is that they land together — so
+                //anything less says how far it got rather than "no".
+                var said = [
+                    at.merged ? (at.merged + ' merged') : null,
+                    at.open ? (at.open + ' still open') : null,
+                    at.closed ? (at.closed + ' closed without merging') : null
+                ].filter(Boolean).join(', ') || 'nothing was opened';
+
+                return Object.assign({}, at, {
+                    note: at.landed
+                        ? 'Landed: all ' + at.of + ' pull request(s) are merged.'
+                        : said + '. It is not landed until every one of them is.'
+                });
+            }
+        }));
+
         undo.push(actions.define('prCuts', {
             about: 'Every PR cut: one act, one pull request per repository, and how far each has got',
             run: async function () {
