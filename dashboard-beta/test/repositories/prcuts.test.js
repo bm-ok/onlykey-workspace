@@ -8,6 +8,7 @@ const actionsPlugin = require('../../src/app/core/actions/main');
 const statePlugin = require('../../src/app/core/state/main');
 const prPlugin = require('../../src/app/repositories/pr/server');
 const { refsFor } = require('../../tools/test-parts');
+const Many = require('../../src/app/github/many');
 
 //---------------------------------------------------------------------------
 //a PR cut: one act, one pull request per repository, held together.
@@ -34,6 +35,12 @@ function aGitHub(answers) {
                 return { status: 404, body: { message: 'nothing said about ' + method + ' ' + at } };
             },
             check: async () => ({ ok: true }),
+            //THE REAL POOL, NOT A STAND-IN FOR IT. A stub that ran these one at
+            //a time would pass every check below exactly as happily, so the day
+            //this stopped being concurrent nothing here would say so — a stub
+            //easier to satisfy than the thing it stands for is a stub being
+            //tested. See ../../src/app/github/many.js.
+            many: Many(8),
             apiHost: () => 'api.github.com'
         }
     };

@@ -147,9 +147,14 @@ async function plugin(imports, register) {
         //ABOUT THE WRONG PLACE, which is exactly what a key made of content
         //cannot do. Nothing keyed on a clock or a stamp is written down at all,
         //so this reasoning never has to hold for them.
+        //THE FINGERPRINT DRAWERS COME UP WITH THE CONTENT ONES, for the same
+        //reason and with an easier conscience: what they hold is never served
+        //without asking the far end first, so an entry that migrated across a
+        //workspace switch can at worst send a fingerprint nobody recognises and
+        //get a full answer — which is what an empty drawer does anyway.
         if (loadedFor && here !== loadedFor) {
-            var content = core.drawers().filter(function (d) { return d.kind === 'content'; });
-            for (var j = 0; j < content.length; j++) await load(content[j]);
+            var written = core.drawers().filter(function (d) { return d.kind === 'content' || d.kind === 'etag'; });
+            for (var j = 0; j < written.length; j++) await load(written[j]);
         }
         loadedFor = here;
 
@@ -182,8 +187,57 @@ async function plugin(imports, register) {
         });
     }
 
+    //---- and the same for the fingerprint drawer, where only one verb waits --
+    //
+    //`byContent` CAN WRAP `get` BECAUSE `get` IS ASYNC. The etag door's three
+    //verbs are not, so the wait has to go somewhere it is true rather than
+    //everywhere it would be tidy.
+    //
+    //IT GOES ON `tag`, WHICH IS THE ONE THAT MUST SEE THE FILE. Asking for a
+    //fingerprint before the file has been read answers "none", and none means a
+    //full download of something already on disk — the restart paying for itself
+    //twice.
+    //
+    //`got` DOES NOT NEED IT, and this is a property of ./drawers.js rather than
+    //luck: `load` skips a key already held, so a fresh answer written before the
+    //file arrives is not overwritten by the older one in it.
+    //
+    //`still` DOES NOT NEED IT EITHER, because it cannot be reached without
+    //having called `tag` first — a 304 only comes back when a fingerprint went
+    //out, and the only place one comes from is `tag`.
+    function byEtag(name) {
+        var d = core.byEtag(name);
+        if (ready[name]) return d;
+
+        var done = load(d);
+        ready[name] = done;
+
+        return Object.assign({}, d, {
+            tag: async function (key) {
+                await done;
+                return d.tag(key);
+            },
+
+            //THE WHOLE ENTRY, FOR A CALLER THAT KEEPS MORE THAN A VALUE BESIDE
+            //THE FINGERPRINT. ../../github stores where a moved repository
+            //actually answers, so it can go straight there instead of being
+            //redirected every time — and it needs the fingerprint and the
+            //address in one look, before it builds the request.
+            //
+            //NAMED APART FROM `peek`, WHICH IS SYNC ON EVERY OTHER DRAWER. One
+            //verb that means the same thing and returns a promise in one place
+            //and a value in another is the kind of difference nobody notices
+            //until it is awaited by accident.
+            entry: async function (key) {
+                await done;
+                return d.peek(key);
+            }
+        });
+    }
+
     var cached = {
         byContent: byContent,
+        byEtag: byEtag,
         byStamp: core.byStamp,
         whileFresh: core.whileFresh,
 

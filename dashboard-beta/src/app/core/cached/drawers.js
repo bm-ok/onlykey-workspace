@@ -25,6 +25,45 @@
 //                only honest use is "no single draw asks twice" — a second, not
 //                a minute — and it MUST be dropped when something writes.
 //
+//    byEtag      the key is a URL, and the answer is held beside the FINGERPRINT
+//                the far end gave for it. Never believed without asking; asking
+//                is one round trip that carries no body.
+//
+//---- the fourth door, which breaks the shape of the other three ------------
+//
+//THERE ARE FOUR NOW, AND THE FOURTH IS NOT KEYED ON ITS ANSWER. That is the rule
+//at the top of this file, so it needs saying why it is still honest.
+//
+//`byContent` KEYS ON THE THING ITSELF and never asks again — two commits with
+//the same shas ARE the same commits. `byEtag` keys on a URL, whose answer changes
+//whenever somebody merges something, and it CANNOT tell from the key whether it
+//has. So it never tries: every read sends the stored fingerprint back in
+//`If-None-Match`, and what comes back is either "still that one" or a new answer.
+//
+//SO WHAT IS SAVED IS THE PAYLOAD AND NOT THE ROUND TRIP, and that is the whole
+//difference. A `byContent` hit costs nothing; a `byEtag` hit costs one request
+//that returns no body — which GitHub does not charge to the hourly quota at all,
+//so a 304 is free in the way that matters most for a thing polled from a pane.
+//
+//IT IS WRITTEN DOWN, AND NOT FOR THE REASON `byContent` IS. Content reaches disk
+//because it is true for ever. This reaches disk because it is never BELIEVED
+//without asking — so the worst a stale file can do is send a fingerprint the far
+//end no longer recognises and get a full answer back, which is exactly what
+//having no file at all does. There is no window in which it is wrong, only one
+//in which it is unhelpful.
+//
+//AND `stale()` LEAVES IT ALONE, with the content- and stamp-keyed drawers. A
+//write changes the resource, the far end issues a new fingerprint, and the next
+//read gets a 200 rather than a 304 — it corrects itself by construction. Wiping
+//it on every write would throw away the fingerprints and turn every subsequent
+//read back into a full download, which is the cost this exists to avoid.
+//
+//WHAT IT MUST NEVER HOLD is anything asked in order to find out whether a
+//credential still works. See ../../github/server.js: `githubCheck`'s whole
+//worth is that it asked just now, and an answer served from a drawer is an
+//answer from the last time — the two are indistinguishable to a reader and only
+//one of them is true.
+//
 //WHY THE THIRD ONE EXISTS AT ALL, given the rule it breaks. Reading refs to
 //check whether a cached ref read is still good costs exactly what the read
 //costs, so there is no content to key on that is cheaper than the answer. What
@@ -204,6 +243,44 @@ module.exports = function Drawers(opts) {
 
         function save() { return how.written ? held : null; }
 
+        //---- and the fourth door's surface, which is deliberately not `get` --
+        //
+        //NO `make`, BECAUSE THERE IS NOTHING TO MAKE WITHOUT ASKING. `get(key,
+        //make)` means "here is how to work it out if I have not got it", and
+        //every other drawer can then hand back what it holds without a word to
+        //anybody. An etag drawer that did the same would be serving the last
+        //answer as though it were this one — the exact failure this whole file
+        //is written against, wearing the interface that promises it cannot
+        //happen.
+        //
+        //SO IT IS THREE VERBS AND THE CALLER DOES THE ASKING: what fingerprint
+        //have you got, here is a new answer, and the far end says the one you
+        //have is still good. A caller cannot get a value out of this without
+        //having gone and asked.
+        function tag(key) {
+            var held2 = peek(String(key));
+            return (held2 && held2.etag) || null;
+        }
+
+        function got(key, etag, value) {
+            key = String(key);
+            misses++;
+            //NO FINGERPRINT, NOTHING TO KEEP. An answer with no etag cannot be
+            //revalidated, so holding it would leave something in here that the
+            //next read has no way to check — which is a cache that must be
+            //believed, and there is no such thing in this file.
+            if (!etag) { forget(key); return false; }
+            put(key, { etag: String(etag), value: value });
+            return true;
+        }
+
+        function still(key) {
+            key = String(key);
+            if (!has(key)) return undefined;
+            hits++;
+            return held[key].value;
+        }
+
         var it = {
             name: name,
             kind: how.kind,
@@ -225,6 +302,17 @@ module.exports = function Drawers(opts) {
             }
         };
 
+        //ONLY AN ETAG DRAWER GETS THE THREE VERBS, and only an etag drawer is
+        //without `get`. Both halves matter: this file's argument is that a call
+        //site should say which promise is being made, and a drawer offering both
+        //surfaces would let somebody take the answer without asking for it.
+        if (how.kind === 'etag') {
+            delete it.get;
+            it.tag = tag;
+            it.got = got;
+            it.still = still;
+        }
+
         all[name] = it;
         return it;
     }
@@ -236,6 +324,10 @@ module.exports = function Drawers(opts) {
 
         //THE SAME PROMISE, NEVER WRITTEN DOWN. See the header.
         byStamp: function (name) { return drawer(name, { kind: 'stamp', written: false }); },
+
+        //KEYED ON A URL AND HELD BESIDE THE FAR END'S FINGERPRINT. Written down,
+        //because it is never believed without asking. See the header.
+        byEtag: function (name) { return drawer(name, { kind: 'etag', written: true }); },
 
         //KEYED ON A CLOCK, so it must be dropped when anything writes, and the
         //window must be smaller than the thing it is de-duplicating.

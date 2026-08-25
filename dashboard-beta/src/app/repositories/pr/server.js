@@ -649,11 +649,23 @@ async function plugin(imports, register) {
                 var all = await read(landings);
                 if (all === null) return { cuts: [], drafts: [], note: 'No workspace is open, so there are no PR cuts.' };
 
-                var rows = [];
+                //---- ASKED TOGETHER, NOT ONE AFTER ANOTHER -------------------
+                //
+                //THIS WAS A `for` LOOP WITH AN `await` IN IT, and it is the whole
+                //reason this tab took twenty-three seconds. Twenty-six cuts,
+                //twenty-six round trips to GitHub, each waiting for the one
+                //before it to come back — and every one of them answering that a
+                //pull request merged weeks ago is still merged.
+                //
+                //THE BOUND IS ../../github's, deliberately. How many things this
+                //app may ask GitHub for at once is a fact about GitHub, and the
+                //plugin that owns the connection is the one place it can be
+                //changed once rather than guessed at per pane.
+                //
+                //ORDER IS KEPT by `many`, which matters here: these become rows
+                //somebody reads down.
                 var names = Object.keys(all);
-                for (var i = 0; i < names.length; i++) {
-                    rows.push(await stateOf(all[names[i]]));
-                }
+                var rows = await github.many(names, function (n) { return stateOf(all[n]); });
 
                 //A DRAFT IS A CUT THAT HAS NOT LEFT YET, and it belongs at the
                 //top rather than sorted among the finished ones. Seventeen landed
