@@ -566,8 +566,49 @@ async function plugin(imports, register) {
                         //three answers. `null` where nothing could be asked, so
                         //an unreachable machine layer cannot make a held branch
                         //read as free.
+                        //
+                        //THIS COMMENT DESCRIBED A PAIR AND ONLY ONE OF THEM WAS
+                        //HERE. `orphaned` was dropped in the port and ../branches
+                        //went on reading it — a badge that never drew and a
+                        //filter chip that silently answered "nothing" whichever
+                        //branches were on the board. Exactly the failure
+                        //`branchBoard`'s own header records having found once
+                        //already with `protected`, in the pane next door.
+                        //
+                        //THE TWO DIFFER ON ONE TERM AND THAT TERM IS THE WHOLE
+                        //POINT: whether anything is actually ON it. Both mean
+                        //"not protected, nobody's task, no machine, and readable"
+                        //— and then:
+                        //
+                        //    spare      carries nothing. A name and nothing
+                        //               else, so sweeping it up loses exactly
+                        //               nothing. Most of what accumulates here
+                        //               is this — a drill's branch outliving the
+                        //               drill.
+                        //
+                        //    orphaned   carries work, and the task that asked
+                        //               for it is gone. The one row on the board
+                        //               where somebody has to decide whether to
+                        //               throw work away.
+                        //
+                        //So the difference between them is the whole of what
+                        //deleting costs, which is why one badge is muted and the
+                        //other is a warning.
+                        //
+                        //`delivered` IN THE APP BEING PORTED FROM IS
+                        //`carrying.length > 0` — at least one repository has
+                        //commits on it. `carrying` here is already the parts
+                        //that have a base, so the same question is
+                        //`some(ahead > 0)`, which is `spare`'s condition
+                        //negated. Written as its own expression rather than as
+                        //`!spare`, because `spare` is `null` when nothing could
+                        //be asked and `!null` is `true` — an unreachable machine
+                        //layer would have made every branch read as orphaned.
                         spare: (vms && board)
                             ? (!p && !claims.length && !held && !!art && carrying.every(function (a) { return a.ahead === 0; }))
+                            : null,
+                        orphaned: (vms && board)
+                            ? (!p && !claims.length && !held && !!art && carrying.some(function (a) { return a.ahead > 0; }))
                             : null,
                         removable: !p && !held && !claims.length
                     }));
