@@ -32,6 +32,28 @@ it('a machine of our own, up and holding a credential', async ({ okc, assert, st
   // that whatever happens here.
   const free = await aMachine(okc, assert, 'no machine is free to borrow — this needs one of the kit\'s, or any idle machine, to lend a credential to')
 
+  // WHICH ROLE THIS MACHINE WOULD BE LENT, worked out before anything is spent.
+  // A machine may be a worker and a judge at once and the action refuses to
+  // guess, so the answer comes from the machine's own tags.
+  const role = roleFor(free, 'worker')
+
+  // AND WHETHER THIS HOST HAS ONE TO LEND, ASKED BEFORE THE MACHINE IS BOOTED.
+  //
+  // This borrowed first and found out afterwards: a machine claimed, brought up,
+  // waited on for up to ten minutes, and only then refused with "this host holds
+  // no judge sign-in". That is the exact failure the app itself is careful about
+  // — the queue asks for a sign-in BEFORE it spends a machine, precisely so a
+  // credential that cannot be given does not cost a boot and a rollback — and
+  // the drill about not wasting machines was wasting one.
+  //
+  // ASKED OF THE QUEUE, which is the thing that would have to find it.
+  const { plan } = await okc('queueState')
+  const held = ((plan && plan.signIns) || {})[role] || { free: 0, paused: [] }
+  assert.needs(held.free,
+    `this host holds no ${role} sign-in that can be lent, and ${free.name} is a ${role} machine${
+      held.paused.length ? ` — ${held.paused.map(n => `"${n}"`).join(', ')} paused` : ''
+    }. Both checks below are about a machine HOLDING a credential, so there is nothing here to ask them about`)
+
   const got = await okc('vmBorrow', { name: free.name, why: 'a drill asking what a machine holding a credential refuses' })
   state.machine = got.name
   await okc('vmAwait', { name: state.machine, for: 'connected', seconds: 600 })
@@ -40,7 +62,7 @@ it('a machine of our own, up and holding a credential', async ({ okc, assert, st
   // action refuses to guess between them. What this check is about is a machine
   // HOLDING a credential at all, so either would do — worker is asked for
   // because that is the one a snapshot must not capture.
-  const put = await okc('vmCredentialsPut', { name: state.machine, role: roleFor(free, 'worker') })
+  const put = await okc('vmCredentialsPut', { name: state.machine, role: role })
   state.lent = true
   assert.ok(put, `${state.machine} was not given the credential, so the checks below have nothing to ask about`)
   log(`borrowed ${state.machine}, brought it up and lent it the worker credential — it goes back in the cleanup`)
