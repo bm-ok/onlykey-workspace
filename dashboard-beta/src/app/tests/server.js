@@ -719,6 +719,227 @@ async function plugin(imports, register) {
             run: board
         }));
 
+        //---- WHAT THE DRILLS LEFT BEHIND ---------------------------------
+        //
+        //RESERVED NAMES ARE WHAT MAKE THIS SAFE. `drill/` on a branch, `drill:`
+        //on a task, `drill-` on a machine: names nothing else in this app ever
+        //writes, so removing one needs no judgement about whose it is.
+        //
+        //LISTING IS FREE; REMOVING IS GATED. Everything that RUNS a drill refuses
+        //unless the drills are on for the open folder, and this deletes branches,
+        //tasks and machines. The reserved names make it safe in the sense that it
+        //can only touch what a drill made — which is not the same as safe: a
+        //folder somebody has just opened, holding debris from a session they were
+        //not part of, is exactly where "it only removes drill things" is a
+        //sentence said afterwards.
+        //
+        //Reading stays open, because seeing what a drill left is how somebody
+        //decides whether to turn the drills on at all.
+        undo.push(actions.define('drillSweep', {
+            about: 'What the drills left behind — drill/ branches and drill: tasks. Pass remove to take them away',
+            takes: ['remove'],
+            run: async function (args) {
+                var a = args || {};
+                var doIt = a.remove === true || a.remove === 'true';
+
+                if (doIt) {
+                    var may = await imports.settings.allowed();
+                    if (!may.allowed) {
+                        throw new Error(may.why + ' Reading what the drills left is always allowed — it is removing '
+                            + 'that is not.');
+                    }
+                }
+
+                var call = function (name, args2) { return actions.call(name, args2 || {}); };
+
+                var branches = (((await call('gitBranches')).branches) || [])
+                    .filter(function (b) { return String(b.name || '').indexOf('drill/') === 0; });
+
+                var tasks = (((await call('tasks')).tasks) || [])
+                    .filter(function (t) { return /^drill:/i.test(String(t.title || '')); });
+
+                //REMOTE BRANCHES TOO, because a drill that pushed left one on the
+                //fork — and that is the half nobody can see from here.
+                var remote = [];
+                var here = (await imports.workspace.repos()).map(function (r) { return r.name; });
+                for (var i = 0; i < here.length; i++) {
+                    try {
+                        var rows = await call('repoBranches', { repo: here[i] });
+                        ((rows && rows.branches) || []).forEach(function (b) {
+                            var name = b.branch || b.name;
+                            if (String(name || '').indexOf('drill/') === 0 && b.remote) {
+                                remote.push({ repo: here[i], branch: name });
+                            }
+                        });
+                    } catch (e) { /* a repository that cannot be read is reported by its own panel */ }
+                }
+
+                //AND MACHINES, WHICH ARE THE EXPENSIVE ONES. A drill that dies
+                //half way through an install leaves a virtual machine and a
+                //forty-gigabyte disk image, and nothing else in this app will ever
+                //tidy that up — the queue only knows about machines it is meant to
+                //use.
+                var madeUp = (((await call('vmList')).vms) || [])
+                    .filter(function (v) { return /^drill-/.test(String(v.name || '')); });
+
+                //---- AND WHAT A DRILL LEFT OUTSIDE THIS HOST ----------------
+                //
+                //THE SWEEP THAT COUNTED EVERYTHING LOCAL AND NOTHING OUTWARD
+                //FACING had it backwards. A leftover branch is on somebody's
+                //disk; a leftover PULL REQUEST is on their GitHub account, with
+                //their name on it, where anyone can see it. Nine of them
+                //accumulated in the app this is ported from, while the drill that
+                //opens them asserted a sweep found nothing left behind — and
+                //passed, every time, because it was not looking outward.
+                //
+                //ASKED OF GITHUB RATHER THAN OF THE RECORD HERE. The stored state
+                //is written when a pull request is opened and never refreshed, so
+                //every cut this host ever made reads "open" for ever. Trusting it
+                //once reported fifteen outstanding pull requests across two
+                //accounts; every one had been merged days earlier. A sweep that
+                //cries wolf is one somebody stops reading, and the whole point of
+                //it is to be believed the one time it has something.
+                //
+                //`prCuts` ALREADY ASKS. It reads every cut's pull requests live to
+                //build its answer, so this filters what it returns rather than
+                //asking again per cut — which is what the app being ported from
+                //does, and it means two GitHub reads of the same thing.
+                var said = await call('prCuts');
+                var mine = ((said && said.cuts) || [])
+                    .filter(function (c) { return String(c.source || '').indexOf('drill/') === 0; });
+
+                var cuts = [];
+                var unchecked = [];
+
+                mine.forEach(function (c) {
+                    var pulls = c.pulls || [];
+
+                    //ONLY WHAT GITHUB AFFIRMATIVELY CALLS OPEN. Written first as
+                    //"not merged and not closed", which counted pull requests
+                    //GitHub could not be asked about at all — a repository that
+                    //moved account answers nothing when the old owner is asked.
+                    //Absence is not an open pull request.
+                    var open = pulls.filter(function (p) { return p && p.number && p.state === 'open'; });
+
+                    //AND UNREACHABLE IS NOT OUTSTANDING. The network being down
+                    //is not a drill leaving a mess, and counting it as one is how
+                    //a red total stops meaning anything.
+                    var lost = pulls.filter(function (p) {
+                        return p && /could not be|gone|not found|unknown/i.test(String(p.state || ''));
+                    });
+
+                    if (lost.length) {
+                        unchecked.push(c.source + ' — ' + lost.map(function (p) {
+                            return (p.repo || p.url || 'a pull request') + ' is ' + p.state;
+                        }).join(', '));
+                    }
+                    if (open.length) cuts.push({ source: c.source, target: c.target, open: open });
+                });
+
+                var found = {
+                    branches: branches.map(function (b) { return b.name; }),
+                    tasks: tasks.map(function (t) { return '#' + t.number + ' ' + t.title; }),
+                    remote: remote,
+                    machines: madeUp.map(function (v) {
+                        return v.name + ' (' + v.state + (v.stage ? ', ' + v.stage : '') + ')';
+                    }),
+                    cuts: cuts.map(function (c) {
+                        return c.source + ' — ' + c.open.map(function (p) { return p.repo + '#' + p.number; }).join(', ');
+                    }),
+                    //SAID, NEVER COUNTED. Something that could not be looked at is
+                    //a sentence for whoever is reading, not a number in a total
+                    //that means "a drill left this".
+                    unchecked: unchecked
+                };
+
+                var total = branches.length + tasks.length + remote.length + madeUp.length + cuts.length;
+
+                if (!doIt) {
+                    return Object.assign({}, found, {
+                        total: total,
+                        removed: false,
+                        note: (total
+                            ? total + ' thing(s) left by drills. Nothing has been touched — pass remove to take them away.'
+                            : 'Nothing left behind. Every drill that writes removes what it wrote.')
+                            + (unchecked.length
+                                ? ' ' + unchecked.length + ' cut(s) could not be read from GitHub, so nothing is '
+                                    + 'claimed about them: ' + unchecked.join('; ')
+                                : '')
+                    });
+                }
+
+                var gone = { tasks: [], branches: [], machines: [], cuts: [], failed: [] };
+
+                //---- THE PULL REQUESTS FIRST, AND THEY ARE THE ONE OUTWARD ACT
+                //
+                //CLOSED RATHER THAN DELETED, because a pull request cannot be
+                //deleted and should not be: it happened, and the record of it
+                //happening is somebody else's repository's business. Closing is
+                //the honest end.
+                //
+                //FIRST, BECAUSE THE BRANCH GOES NEXT. Deleting the branch a pull
+                //request is open on leaves GitHub showing a request whose head is
+                //gone, which is messier than either state on its own.
+                for (var j = 0; j < cuts.length; j++) {
+                    var c2 = cuts[j];
+                    try {
+                        await call('prCutUpdate', { source: c2.source, target: c2.target, state: 'closed' });
+                        try { await call('prCutForget', { source: c2.source, target: c2.target }); }
+                        catch (e) { /* closed is the part that matters */ }
+                        gone.cuts.push(c2.source + ' (' + c2.open.map(function (p) { return p.repo + '#' + p.number; }).join(', ') + ')');
+                    } catch (e) {
+                        gone.failed.push(c2.source + ': ' + e.message);
+                    }
+                }
+
+                //MACHINES ON THEIR OWN. Removing one deletes its disks, which is
+                //the slowest and least reversible thing here — and a machine that
+                //is still running is stopped by vmRemove itself, so nothing else
+                //needs to know about that.
+                for (var k = 0; k < madeUp.length; k++) {
+                    try { await call('vmRemove', { name: madeUp[k].name }); gone.machines.push(madeUp[k].name); }
+                    catch (e) { gone.failed.push(madeUp[k].name + ': ' + e.message); }
+                }
+
+                //TASKS BEFORE BRANCHES. A task naming a branch is what makes the
+                //branch look claimed, and deleting the branch under it would leave
+                //a task pointing at nothing.
+                for (var m = 0; m < tasks.length; m++) {
+                    try { await call('taskRemove', { id: tasks[m].id }); gone.tasks.push(tasks[m].id); }
+                    catch (e) { gone.failed.push(tasks[m].id + ': ' + e.message); }
+                }
+
+                for (var n = 0; n < branches.length; n++) {
+                    //FORCED, because a drill branch is ours by construction:
+                    //nothing else in this app ever writes that name, and refusing
+                    //to remove one because it carries a commit is refusing to
+                    //clean up after a test that failed halfway — which is the only
+                    //time this is ever run.
+                    try { await call('branchDelete', { branch: branches[n].name, force: true }); gone.branches.push(branches[n].name); }
+                    catch (e) { gone.failed.push(branches[n].name + ': ' + e.message); }
+                }
+
+                log.warn('swept ' + gone.tasks.length + ' task(s), ' + gone.branches.length + ' branch(es) and '
+                    + gone.machines.length + ' machine(s) left by drills');
+
+                return Object.assign({}, found, {
+                    removed: true,
+                    gone: gone,
+                    //SAID RATHER THAN DONE. Deleting a branch on the fork reaches
+                    //somebody else's repository, and any pull request open from
+                    //one is theirs — neither is something a tidy-up should decide.
+                    //`branchDeleteRemote` is the door for it, pressed on purpose.
+                    note: remote.length
+                        ? gone.tasks.length + ' task(s), ' + gone.branches.length + ' branch(es) and '
+                            + gone.machines.length + ' machine(s) removed here. ' + remote.length + ' branch(es) are '
+                            + 'also on origin and are NOT touched — deleting those reaches somebody else\'s '
+                            + 'repository, and any pull request open from one is on it.'
+                        : gone.tasks.length + ' task(s), ' + gone.branches.length + ' branch(es) and '
+                            + gone.machines.length + ' machine(s) removed.'
+                });
+            }
+        }));
+
         //---- PUTTING A COMMIT ON A DRILL BRANCH ---------------------------
         //
         //WHY THE KIT NEEDS ONE AT ALL. Several drills are about what happens to a
