@@ -32,12 +32,13 @@
 //are repositories, ../../git runs the commands, and this decides what a
 //comparison MEANS across them. None of the three reaches into another's job, so
 //the day any one of them changes it changes alone.
-plugin.consumes = ['app', 'git', 'workspace', 'okc'];
+plugin.consumes = ['app', 'log', 'git', 'workspace', 'okc'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var git = imports.git;
     var workspace = imports.workspace;
     var okc = imports.okc;
+    var log = imports.log.on('git');
     var actions = imports.app.host && imports.app.host.actions;
 
     //`actions` is absent when this half is built against a bare host — the test
@@ -56,14 +57,36 @@ async function plugin(imports, register) {
     //choosing between two actions depending on what somebody picked, which is a
     //branch in the code for a difference the reader does not have.
     //
-    //LINES COME FROM THE RELAY, because a line is the dashboard's idea and has
-    //not moved across. A name that is not a line is a branch — deliberately in
-    //that order, since a line named after a branch is somebody meaning the line.
+    //LINES CAME FROM THE RELAY, and that sentence outlived the thing it
+    //described. `okc.call` is the pipe to the app being ported from and NOTHING
+    //ELSE — it rejects with "the dashboard is not listening" when that app is not
+    //running — while `lines` has since become an action of this one. So this
+    //asked a dead pipe, the catch below turned the rejection into an empty list,
+    //and every line name fell through to being treated as a branch.
+    //
+    //WHAT THAT COST: comparing anything against a line answered "Nothing to land
+    //— no repository carries anything", about a branch carrying a commit. Not an
+    //error, not an empty pane: a confident wrong answer, which is the shape of
+    //failure this app is arranged against. Found by a drill that made a commit
+    //and then could not see it.
+    //
+    //`actions.call` IS THE ONE TO ASK. It tries this app's own table first and
+    //falls through to the pipe for anything not moved yet — so this keeps working
+    //either way round, which is the whole point of that order.
+    //
+    //A name that is not a line is a branch — deliberately in that order, since a
+    //line named after a branch is somebody meaning the line.
     async function lines() {
         try {
-            var said = await okc.call('lines', {});
+            var said = await actions.call('lines', {});
             return (said && said.groups) || [];
-        } catch (e) { return []; }
+        } catch (e) {
+            //SAID, NOT SWALLOWED. Returning an empty list is the right fallback —
+            //branch-to-branch comparison still works without any lines — but it
+            //makes every line name silently wrong, so it cannot also be silent.
+            log.warn('the lines could not be read, so a comparison naming one will be about a branch of that name: ' + e.message);
+            return [];
+        }
     }
 
     function refIn(name, groups) {

@@ -73,7 +73,18 @@ it('what the cut carries can be read, on the cut', async ({ okc, assert, state, 
   // described: a comparison is between two LINES, and a cut is not one yet. The
   // reading that exists at this point is the artifact on the branch, which is
   // the Branches Cut tab. The failure was the useful part.
-  const art = await okc('branchArtifact', { branch: state.branch, repo: ONE })
+  // `branchArtifacts` RATHER THAN `branchArtifact`, and the git half of it.
+  //
+  // The app being ported from had two shapes of this question and this drill
+  // asked the narrower one — `artifact.read`, straight out. Here there is one
+  // action and it answers the whole of what a branch carries: what git says, the
+  // tasks that named it, and what the worker remembers. The reading this check is
+  // about is the first of those.
+  //
+  // ASKED FRESH, which is the part that matters at this point in the file. A
+  // cached answer would be from before the commit above, and the check would be
+  // about the branch as it was rather than as it is.
+  const art = (await okc('branchArtifacts', { branch: state.branch })).git || {}
   const one = (art.repos || []).find(r => r.repo === ONE)
   assert.ok(one, `Nothing was reported about ${ONE} at all`)
   assert.equal(one.ahead, 1, `The cut should carry exactly the one commit that was made on it, and carries ${one.ahead}`)
@@ -97,11 +108,22 @@ it('and now it can be compared with the line it was cut from', async ({ okc, ass
   // The Changes tab, which is a comparison between lines and so only becomes
   // possible at this point in the order. The same fact from the other side: what
   // the branch carries, said as what one line has that another does not.
-  const change = await okc('changeRead', { source: state.branch, target: state.line })
-  const carrying = (change.repos || []).filter(r => r.ahead > 0)
+  // `compare`, WHICH IS WHAT THIS APP CALLS IT, and the two names are the same
+  // question asked from opposite ends: `changeRead` took the SOURCE and the
+  // target, this takes the BASE and the head. So the cut is the head and the line
+  // it was cut from is the base — reading it the other way round compares
+  // backwards and reports nothing carried, which looks exactly like a commit
+  // that never landed.
+  const change = await okc('compare', { base: state.line, head: state.branch })
+
+  // AND `carrying` IS THE ANSWER RATHER THAN SOMETHING DERIVED FROM THE ROWS.
+  // This used to filter on `ahead > 0`; there is no `ahead` here, and a filter on
+  // a field that does not exist keeps nothing and reports that the change is
+  // missing. Asking for the app's own answer cannot go wrong that way.
+  const carrying = change.carrying || []
   assert.equal(carrying.length, 1, `The change should be one commit in one repository, and ${carrying.length} repositories carry something`)
-  assert.equal(carrying[0].repo, ONE, `The change is in ${carrying[0].repo}, which is not where it was made`)
-  log(`comparing "${state.branch}" with "${state.line}": ${carrying.map(r => `${r.repo} +${r.ahead}`).join(', ')} — the other repositories carry nothing`)
+  assert.equal(carrying[0], ONE, `The change is in ${carrying[0]}, which is not where it was made`)
+  log(`comparing "${state.branch}" with "${state.line}": ${carrying.join(', ')} carries it — the other repositories carry nothing`)
 })
 
 it('and it leaves as one pull request, from the repository that carries something', async ({ okc, assert, state, log }) => {
