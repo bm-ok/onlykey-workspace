@@ -353,6 +353,21 @@ async function plugin(imports, register) {
             kind: scopes == null ? 'fine-grained' : 'classic',
             scopes: scopes == null ? null : String(scopes).split(',').map(function (s) { return s.trim(); }).filter(Boolean),
             expires: r.headers['github-authentication-token-expiration'] || null,
+            //---- WHAT IS LEFT OF THE HOUR ----------------------------------
+            //
+            //REPORTED BECAUSE IT IS THE THING THE FINGERPRINTS ARE FOR. GitHub
+            //allows five thousand an hour and does not charge a `304` against
+            //it at all, so "how much of the hour has this app spent" is the
+            //measurement that says whether the caching above is working —
+            //separately from how fast a pane feels, which is latency and a
+            //different question.
+            //
+            //IT IS ALSO THE ONLY WAY TO SEE THE FAILURE THAT MATTERS. A cache
+            //that quietly stopped sending `If-None-Match` would look exactly
+            //like this one from the outside: same answers, same panes, same
+            //speed to a human — and a quota draining twenty-six at a time.
+            limit: r.headers['x-ratelimit-limit'] == null ? null : Number(r.headers['x-ratelimit-limit']),
+            left: r.headers['x-ratelimit-remaining'] == null ? null : Number(r.headers['x-ratelimit-remaining']),
             api: keys.github.apiHost(),
             ok: true,
             checked: { at: new Date().toISOString(), ok: true, why: null }
