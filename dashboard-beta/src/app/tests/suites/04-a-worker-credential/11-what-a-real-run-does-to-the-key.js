@@ -29,7 +29,6 @@
 
 const { it, cleanup } = require('../../harness')
 const { scratch, aLine } = require('../../helpers')
-const guests = require('../../../core/guests')
 
 // A job that actually calls Claude. `api-tour` exercises the job API and never
 // starts a worker, so it would prove the machine round trip and nothing at all
@@ -40,9 +39,15 @@ const POOL = 'test'
 it('this host can sign a worker in, and has a machine to do it on', async ({ okc, assert, state, log }) => {
   // THE DOOR. Everything below spends a machine and real money, so it is checked
   // first and stops the series rather than failing halfway through a run.
-  const free = guests.freeFor('worker')
-  assert.needs(free.length, `no worker sign-in here can be given to a machine${
-    guests.pausedFor('worker').length ? ` — ${guests.pausedFor('worker').map(g => `"${g.name}"`).join(', ')} ${guests.pausedFor('worker').length === 1 ? 'is' : 'are'} paused` : ''}. This drill measures what a real run does to a key, so it needs one that works`)
+  // ASKED OF THE QUEUE, which is what will actually have to find a sign-in for
+  // the task this queues below. `plan.signIns` is the queue's own reading — the
+  // same call a tick dispatches by — so the door this drill stops at is the door
+  // the work would stop at.
+  const { plan } = await okc('queueState')
+  const worker = ((plan && plan.signIns && plan.signIns.worker) || { free: 0, paused: [] })
+
+  assert.needs(worker.free, `no worker sign-in here can be given to a machine${
+    worker.paused.length ? ` — ${worker.paused.map((n) => `"${n}"`).join(', ')} ${worker.paused.length === 1 ? 'is' : 'are'} paused` : ''}. This drill measures what a real run does to a key, so it needs one that works`)
 
   const { vms } = await okc('vmList')
   const able = vms.filter(v => (v.kinds || []).includes('worker') &&
@@ -55,30 +60,43 @@ it('this host can sign a worker in, and has a machine to do it on', async ({ okc
   assert.needs(job, `the job "${JOB}" is not approved here, and only an approved job runs on a machine`)
 
   state.pool = POOL
-  log(`${free.map(g => g.name).join(', ')} can be lent; ${able.map(v => v.name).join(', ')} can take it; the job is "${job.name}"`)
+  log(`${worker.free} worker sign-in(s) can be lent; ${able.map(v => v.name).join(', ')} can take it; the job is "${job.name}"`)
 }, { gate: true })
 
-it('and what it holds before the run is written down', ({ assert, state, log }) => {
+it('and what it holds before the run is written down', async ({ okc, assert, state, log }) => {
   // BOTH SIDES OF THE ROUND TRIP, MEASURED. Without the "before" this drill can
   // only say the token is usable afterwards, which was true of the destroyed one
   // right up until it was not.
   //
-  // BY FINGERPRINT, NEVER BY VALUE. A drill that compared tokens would be a
-  // drill that had read one, and the whole arrangement here is that nothing
-  // reports a credential's contents — see core/guests.js.
-  const before = guests.freeFor('worker').map(g => ({
-    name: g.name,
-    fingerprint: g.fingerprint,
-    refreshed: g.refreshed || null,
-    usable: guests.usable(guests.token(g.name))
-  }))
+  // BY FINGERPRINT, NEVER BY VALUE, and this file used to say exactly that and
+  // then do the opposite: `guests.usable(guests.token(name))` reads the
+  // credential. It is the one door the store keeps shut from outside — the rule
+  // for the keys is that you can tell something was done in there and not what —
+  // and reaching through it was possible only because this drill was reaching
+  // past the actions altogether.
+  //
+  // SO USABILITY IS ASKED THE WAY EVERYTHING ELSE ASKS IT: a sign-in the queue
+  // would hand out. `has` says there is a sealed token behind the name, and the
+  // queue's own answer says none of them is paused. Neither requires anybody to
+  // look at the secret.
+  const rows = ((await okc('guests', { role: 'worker' })).guests || [])
+  const { plan } = await okc('queueState')
+  const paused = ((plan && plan.signIns && plan.signIns.worker) || {}).paused || []
+
+  const before = rows
+    .filter((g) => !g.holder && g.has && !paused.includes(g.name))
+    .map((g) => ({ name: g.name, fingerprint: g.fingerprint, refreshed: g.refreshed || null }))
+
+  assert.ok(before.length,
+    `no worker sign-in here is free with a token behind it${paused.length ? ` — ${paused.map((n) => `"${n}"`).join(', ')} paused` : ''}, so there is nothing to measure a round trip against`)
 
   for (const g of before) {
-    assert.ok(g.usable, `"${g.name}" is offered to machines and what this host holds for it cannot authenticate anything`)
+    assert.ok(g.fingerprint,
+      `"${g.name}" is offered to machines and this host records no fingerprint for it, so nothing afterwards can be compared to anything`)
   }
 
   state.before = before
-  log(before.map(g => `${g.name} ${g.fingerprint}${g.refreshed ? ` (last changed ${String(g.refreshed).slice(0, 10)})` : ' (never changed)'}`).join('; '))
+  log(before.map((g) => `${g.name} ${g.fingerprint}${g.refreshed ? ` (last changed ${String(g.refreshed).slice(0, 10)})` : ' (never changed)'}`).join('; '))
 })
 
 it('a task is written and queued, and nothing here touches it again', async ({ okc, assert, state, log }) => {
@@ -142,7 +160,7 @@ it('the queue runs it, and gives the sign-in back', async ({ okc, assert, state,
   log(`#${done.number} ran on ${state.machine} and the machine holds nothing`)
 }, { minutes: 9 })
 
-it('and the key came home whole — rotated or not', ({ assert, state, log }) => {
+it('and the key came home whole — rotated or not', async ({ okc, assert, state, log }) => {
   // ---- THE CLAIM, AND IT IS AN "EITHER WAY" ----------------------------
   //
   // A rotation cannot be forced, so this asserts what must hold in both cases
@@ -151,14 +169,28 @@ it('and the key came home whole — rotated or not', ({ assert, state, log }) =>
   // reason this drill exists.
   assert.needs(state.before, 'nothing was written down before the run')
 
+  // READ ONCE FOR THE WHOLE COMPARISON, so every name below is being judged
+  // against the same moment rather than against a list that moved between them.
+  const after = ((await okc('guests', { role: 'worker' })).guests || [])
+  const { plan } = await okc('queueState')
+  const nowPaused = ((plan && plan.signIns && plan.signIns.worker) || {}).paused || []
+
   const moved = []
   for (const was of state.before) {
-    const now = guests.get(was.name)
+    const now = after.filter((g) => g.name === was.name)[0]
     assert.ok(now, `"${was.name}" is gone from this host since the run started`)
 
-    // FIRST, ALWAYS: whatever else changed, it must still be a credential.
-    assert.ok(guests.usable(guests.token(was.name)),
-      `"${was.name}" cannot authenticate anything after a run touched it — the round trip stored something worse than it was lent`)
+    // FIRST, ALWAYS: whatever else changed, there is still a credential behind
+    // the name, and it is still one the queue would hand out.
+    //
+    // ASKED WITHOUT READING IT. `has` is the sealed file being there and the
+    // queue's own list is whether it would be lent — which is exactly what the
+    // destroyed one stopped being. The value itself is nobody's business out
+    // here, including this drill's.
+    assert.ok(now.has,
+      `"${was.name}" has no sealed token behind it after a run touched it — the round trip removed the credential`)
+    assert.ok(!nowPaused.includes(was.name),
+      `"${was.name}" was lent to a machine and came back paused, which is this host saying the credential it got back cannot authenticate — the round trip stored something worse than it lent`)
 
     if (now.fingerprint === was.fingerprint) {
       // NO ROTATION. Then nothing about it may have moved: a date that ticks on
