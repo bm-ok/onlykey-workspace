@@ -922,6 +922,124 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- PULLING A FORK UP FROM ITS PARENT ----------------------------
+        //
+        //THE ANSWER TO "I MERGED THE PULL REQUEST AND NOW MY BRANCH AND MASTER
+        //ARE OFF". The change landed on the parent; the fork did not move, so
+        //everything cut from the fork afterwards starts from something out of
+        //date. GitHub offers one button for this and one API call, and this is
+        //that call rather than a fetch-and-merge through this host.
+        //
+        //IT CANNOT FOLLOW THE CHOSEN TARGET, and that is GitHub rather than a
+        //decision here. `merge-upstream` takes no destination: it pulls a fork
+        //from ITS OWN immediate parent, which is why this posts to the FORK.
+        //
+        //So when the chosen target IS the immediate parent — the ordinary case,
+        //and the whole point of picking the fork you forked from — it is one call
+        //and costs nothing. When somebody has picked further up the chain this
+        //REFUSES rather than quietly syncing from somewhere they are not sending
+        //work. Fetching and merging through this host would do it; that is a
+        //different and slower act, and it should be asked for rather than
+        //substituted.
+        //
+        //ONE REPOSITORY'S FAILURE DOES NOT STOP THE OTHERS. A repository that is
+        //not a fork, or a conflict GitHub will not resolve, is reported on its own
+        //row — a workspace of five where the third is not a fork should still pull
+        //the other four up.
+        undo.push(actions.define('repoForkSync', {
+            about: "Pull each fork's default branch up from its parent on GitHub, the way the Sync fork button does",
+            takes: ['repo', 'branch'],
+            run: async function (args) {
+                var a = args || {};
+
+                var found = await workspace.repos();
+                if (!found.length) throw new Error('There are no repositories in this workspace to sync.');
+
+                var here = found.map(function (r) { return r.name; });
+                var want = a.repo ? [String(a.repo)] : here;
+                for (var i = 0; i < want.length; i++) {
+                    if (here.indexOf(want[i]) < 0) {
+                        throw new Error('There is no repository called "' + want[i] + '" here. There is: '
+                            + here.join(', ') + '.');
+                    }
+                }
+
+                var doc = await kept();
+                var notes = doc.read({}) || {};
+                var done = [];
+
+                for (var j = 0; j < want.length; j++) {
+                    var name = want[j];
+                    var to = log.on('git', name);
+
+                    try {
+                        var note = notes[name] || {};
+                        var remote = await refs.origin(name);
+
+                        if (!remote || remote.kind !== 'github') {
+                            throw new Error('"' + name + '" has no GitHub remote to sync.');
+                        }
+                        if (!note.parent) {
+                            throw new Error('"' + name + '" is not a fork of anything this app knows about, so there '
+                                + 'is nothing upstream to pull from. Ask GitHub about it first.');
+                        }
+
+                        var sends = targetOf(note, remote);
+                        if (sends.chosen && sends.on !== note.parent) {
+                            throw new Error('"' + name + '" sends work to ' + sends.on + ', and GitHub can only sync a '
+                                + 'fork from its own immediate parent, which is ' + note.parent + '. Syncing from '
+                                + sends.on + ' means fetching and merging through this host — a different act, and one '
+                                + 'to ask for rather than have substituted.');
+                        }
+
+                        var branch = String(a.branch || note.upstreamDefault || '').trim();
+                        if (!branch) throw new Error('Nothing says which branch of "' + name + '" to sync.');
+
+                        var r = await github.call('POST',
+                            '/repos/' + remote.owner + '/' + remote.repo + '/merge-upstream', { branch: branch });
+
+                        if (r.status !== 200) {
+                            //409 IS A CONFLICT THE FORK CANNOT RESOLVE ON ITS OWN
+                            //and 422 is a branch GitHub will not merge into. Said
+                            //as itself, because both need a person and neither is
+                            //this app being wrong.
+                            throw new Error('Could not sync "' + name + '" from ' + note.parent + ': '
+                                + ((r.body && r.body.message) || ('GitHub answered ' + r.status)));
+                        }
+
+                        //GITHUB SAYS WHICH OF THREE HAPPENED: fast-forward, merge,
+                        //or none. "none" is NOT a failure — it is a fork that was
+                        //already up to date, and reporting it as an error would
+                        //make the ordinary case look wrong.
+                        var how = (r.body && r.body.merge_type) || 'none';
+                        var row = {
+                            repo: name, branch: branch, from: note.parent, how: how,
+                            already: how === 'none',
+                            said: (r.body && r.body.message) || null
+                        };
+
+                        to[row.already ? 'info' : 'good'](row.already
+                            ? 'already up to date with its parent'
+                            : 'pulled ' + branch + ' up from ' + note.parent + ' (' + how + ')');
+
+                        done.push(row);
+                    } catch (e) {
+                        to.warn(e.message);
+                        done.push({ repo: name, moved: false, how: null, why: e.message });
+                    }
+                }
+
+                var moved = done.filter(function (d) { return d.how && d.how !== 'none'; });
+                return {
+                    repos: done,
+                    note: moved.length
+                        ? moved.length + ' fork(s) pulled up from their parents. This host is still where it was — '
+                            + 'fetch to bring it up to them.'
+                        : 'Every fork was already up to date with its parent, or could not be pulled up — see each row.'
+                };
+            }
+        }));
+
         undo.push(actions.define('repositoriesCheck', {
             about: 'Ask GitHub about the repositories: reachability, what the token may do, and what is open',
             takes: ['repo'],

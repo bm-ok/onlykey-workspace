@@ -161,9 +161,30 @@ test('repositories does not consume keys, and cannot reach a credential', () => 
     //went red about a sentence in an `about:` field.
     //
     //A regex cannot really parse a string literal, and this one does not have to
-    //be perfect — it has to not be fooled by the one construction that is
+    //be perfect — it has to not be fooled by the constructions that are
     //everywhere in this codebase.
-    assert.ok(!/\btoken\b/.test(code.replace(/'(?:[^'\\]|\\.)*'/g, '')),
+    //
+    //DOUBLE QUOTES ARE ONE OF THEM, and leaving them out was the same trap one
+    //layer along. A string is written "like this" here precisely WHEN it contains
+    //an apostrophe — `"Pull each fork's default branch up"` — so stripping only
+    //single-quoted strings left that apostrophe looking like the start of one.
+    //The strip ran from it to the next quote several lines away, swallowed the
+    //code in between, and the mangled fragment contained the word this looks for.
+    //Red about an `about:` field again, one quote character different.
+    //ONE PASS, EITHER KIND, LEFT TO RIGHT — not two passes.
+    //
+    //Stripping single quotes first and double quotes second does not work and is
+    //the obvious way to write it. The first pass reaches the apostrophe inside
+    //`"Pull each fork's default branch up"`, treats it as the START of a string,
+    //and runs to the next quote several lines away — so the second pass is
+    //handed text that has already been mangled.
+    //
+    //An alternation scans once: at that point in the text the `"` comes first,
+    //so the whole double-quoted string matches and the apostrophe inside it is
+    //consumed with it.
+    const noStrings = code.replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, '');
+
+    assert.ok(!/\btoken\b/.test(noStrings),
         'it handles something called a token outside a message');
 });
 
