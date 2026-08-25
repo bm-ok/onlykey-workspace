@@ -195,7 +195,17 @@ test('a repository is read once per window however many panes ask', async () => 
     await it.refs.of('repo-one');
 
     assert.equal(it.ran.tracked, 1);
-    assert.equal(it.cached.about().filter(d => d.name === 'refs')[0].shared, 2,
+
+    //ACROSS BOTH REF DRAWERS, because which one a repository's answers go in
+    //depends on whether its `fs.watch` started: a watched repository is believed
+    //for minutes, an unwatched one for one draw. Naming `refs` alone asked about
+    //a drawer this fixture does not fill — it starts no watch — and the question
+    //here is not about the window at all. It is that three panes asking at once
+    //cost one read.
+    const shared = it.cached.about()
+        .filter(d => d.name === 'refs' || d.name === 'refs-unwatched')
+        .reduce((n, d) => n + d.shared, 0);
+    assert.equal(shared, 2,
         'the two that arrived mid-read must wait on the first, not start their own');
 
 });

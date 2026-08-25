@@ -53,8 +53,37 @@ var path = require('path');
 //watcher stops.
 //---------------------------------------------------------------------------
 
-//LONG ENOUGH TO COVER ONE DRAW, short enough that a missed watch event is a
-//blink rather than a wrong board.
+//---- HOW LONG AN ANSWER IS BELIEVED, AND WHY IT IS NOW LONG ---------------
+//
+//THIS WAS TWO SECONDS AND IT SAVED NOTHING. Two seconds covers one draw — no
+//single board read asks git the same thing twice — and every draw after it paid
+//in full. The panes are read every eight to ten seconds, so the window between
+//them was never once a hit: the drawer reported a healthy hit rate the whole
+//time, because the hits were all INSIDE a draw, and git ran flat out anyway.
+//
+//MEASURED: 167 git processes in 45 seconds with the app sitting idle on one tab,
+//about 3.7 a second, every one of them re-answering a question whose answer had
+//not changed. `repositories` alone is twelve processes and something asks for it
+//every eight seconds.
+//
+//SO THE ANSWER IS KEPT UNTIL SOMETHING SAYS OTHERWISE, and the something already
+//exists: (1) ../../git announces its own writes, and (2) `fs.watch` on each
+//`.git` and `.git/refs` catches a person in a terminal. Both were already wired
+//to `forget`. The clock was not protecting anything they do not — it was
+//throwing away good answers on a timer and calling it safety.
+//
+//AND IT IS ONLY TRUSTED WHERE THE WATCH ACTUALLY RUNS. That is the whole of the
+//objection this file used to raise against a longer window — "a number that only
+//looks safe while the watcher works is a number that hides the day the watcher
+//stops" — and it is answered by not applying the number there. `fs.watch` throws
+//on a `.git` that is a file, and fires nothing at all on some network shares; a
+//repository whose watch did not start keeps the old two-second behaviour and
+//re-reads. Nothing is trusted for five minutes on the strength of a watcher that
+//was never listening.
+var KEPT = 300000;
+
+//WHAT AN UNWATCHED REPOSITORY GETS, which is what every repository used to get:
+//long enough that one draw does not ask twice, and nothing more.
 var FRESH = 2000;
 
 //A GIT WRITE TOUCHES MANY FILES. One `fetch --prune` rewrites packed-refs, a
@@ -69,7 +98,17 @@ async function plugin(imports, register) {
     var workspace = imports.workspace;
     var log = imports.log.on('refs');
 
-    var rows = imports.cached.whileFresh('refs', FRESH);
+    //KEPT UNTIL SOMETHING SAYS OTHERWISE, for a repository whose watch is
+    //running — see the header, and `drawerFor` below.
+    var rows = imports.cached.whileFresh('refs', KEPT);
+
+    //AND THE OLD BEHAVIOUR FOR ONE THAT IS NOT BEING WATCHED: long enough that a
+    //single draw does not ask twice, and nothing more.
+    var quick = imports.cached.whileFresh('refs-unwatched', FRESH);
+
+    //WHICH REPOSITORIES ARE ACTUALLY BEING LISTENED TO. Set when `fs.watch`
+    //started, not when it was tried — see `watch` at the bottom of this file.
+    var listening = {};
     var origins = imports.cached.byStamp('origins');
 
     var undo = [];
@@ -78,9 +117,22 @@ async function plugin(imports, register) {
 
     //EVERY BRANCH, WHERE IT IS HERE, AND WHERE ORIGIN HAS IT. Two git processes
     //for a whole repository however many branches it has. See ../../git.
+    //---- WHICH DRAWER A REPOSITORY'S ANSWERS GO IN ------------------------
+    //
+    //TWO WINDOWS, CHOSEN PER REPOSITORY, because the long one is only honest
+    //where something is listening. `listening` is set when `fs.watch` actually
+    //started — not when it was attempted. It throws on a `.git` that is a file
+    //and fires nothing at all on some network shares, and a repository in either
+    //state must not be trusted for five minutes on the strength of a watcher
+    //that was never there.
+    //
+    //THAT IS THE WHOLE OF THE SAFETY, and it is what makes the long window
+    //defensible where this file previously argued it was not.
+    function drawerFor(name) { return listening[name] ? rows : quick; }
+
     async function of(repo) {
         var name = String(repo);
-        return await rows.get(name, function () { return git.tracked(name); });
+        return await drawerFor(name).get(name, function () { return git.tracked(name); });
     }
 
     //---- where a repository came from --------------------------------------
@@ -169,7 +221,7 @@ async function plugin(imports, register) {
     //cannot collide with a repository name.
     async function head(repo) {
         var name = String(repo);
-        return await rows.get('head:' + name, function () {
+        return await drawerFor(name).get('head:' + name, function () {
             return git.head(name).catch(function () { return null; });
         });
     }
@@ -205,7 +257,7 @@ async function plugin(imports, register) {
         //have.
         (shaKeys[name] = shaKeys[name] || {})[key] = true;
 
-        return await rows.get(key, function () {
+        return await drawerFor(name).get(key, function () {
             return git.run(name, ['rev-parse', want]).then(function (said) {
                 return said.code === 0 ? (String(said.stdout || '').trim() || null) : null;
             }, function () { return null; });
@@ -299,11 +351,19 @@ async function plugin(imports, register) {
 
     //---- when to stop believing any of it ----------------------------------
 
+    //BOTH DRAWERS, ALWAYS. Which one a repository's answers went into depends on
+    //whether its watch was running when they were worked out, and that can change
+    //— a watch can die. Forgetting only the one it would go in TODAY would leave
+    //yesterday's answer in the other, which is the shape of a cache that is wrong
+    //exactly once and never again reproducible.
     function forget(repo) {
-        if (repo === undefined) { rows.empty(); origins.empty(); shaKeys = {}; return; }
+        if (repo === undefined) { rows.empty(); quick.empty(); origins.empty(); shaKeys = {}; return; }
         var name = String(repo);
-        rows.forget(name);
-        rows.forget('head:' + name);
+        [rows, quick].forEach(function (d) {
+            d.forget(name);
+            d.forget('head:' + name);
+            Object.keys(shaKeys[name] || {}).forEach(function (k) { d.forget(k); });
+        });
         //AND EVERY REF THIS REPOSITORY WAS ASKED THE COMMIT OF. See `sha` above:
         //the drawer forgets by exact key, so the keys have to be remembered or a
         //stale sha outlives the write that moved it.
@@ -408,8 +468,26 @@ async function plugin(imports, register) {
                 });
                 //A WATCH THAT DIES MUST NOT TAKE THE APP WITH IT. Losing one
                 //means falling back to the window, which is what it is for.
-                w.on('error', function () { try { w.close(); } catch (e) { /* gone */ } });
+                //AND A WATCH THAT DIES STOPS BEING TRUSTED, which is the half
+                //that makes the long window safe. `listening` is what `drawerFor`
+                //reads; dropping it here puts this repository back on the
+                //two-second window from the next read onwards, rather than
+                //leaving five minutes of answers behind a watcher that has
+                //stopped saying anything.
+                w.on('error', function () {
+                    try { w.close(); } catch (e2) { /* gone */ }
+                    if (listening[name]) {
+                        delete listening[name];
+                        forget(name);
+                        log.warn('the watch on ' + name + ' stopped, so its reads go back to being re-read');
+                    }
+                });
                 watching.push(w);
+                //SET WHEN IT STARTED, NOT WHEN IT WAS TRIED. `fs.watch` throws
+                //below on a `.git` that is a file, and the whole point of
+                //`drawerFor` is that a repository nobody is listening to is not
+                //trusted for five minutes.
+                listening[name] = true;
             } catch (e) {
                 //A `.git` THAT IS A FILE is a worktree or a submodule, and there
                 //is nothing to watch. Said once, not per event.
