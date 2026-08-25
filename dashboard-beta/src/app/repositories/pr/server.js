@@ -1026,7 +1026,33 @@ async function plugin(imports, register) {
                     };
                 }
 
-                var how = String(a.how || 'squash');
+                //---- HOW IT MERGES, AND THE DEFAULT IS `merge` ---------------
+                //
+                //THIS SAID `squash` AND THAT WAS DRIFT, not a choice. The app
+                //this is ported from defaults to `merge` in both the helper and
+                //its caller, and the difference is the whole shape of the
+                //history afterwards: a merge keeps the commit that was made and
+                //the pull request it came through, so the graph reads "Merge
+                //pull request #7 from <fork>/<branch>" with the work hanging off
+                //it. A squash throws both away and leaves one flat commit on the
+                //default branch, authored by whoever pressed the button.
+                //
+                //WHICH LOOKS EXACTLY LIKE COMMITTING STRAIGHT ONTO master. Five
+                //runs of the order drill landed that way in local-repo-a, sitting
+                //on master under the human's name, indistinguishable from someone
+                //pushing to a protected branch — and the drill passed every time,
+                //because merging is all it asserted.
+                //
+                //IT ALSO BREAKS THE READING AFTERWARDS. A squash rewrites the
+                //commits, so the fork looks diverged from a change it already
+                //carries and `git cherry` becomes the only way to tell — see
+                //../repos, which has a whole panel explaining that state to
+                //somebody. Choosing it by default is choosing that explanation
+                //for everybody.
+                //
+                //STILL ASKED FOR, because a squash is a legitimate thing to want
+                //on purpose. It is the DEFAULT that was wrong.
+                var how = String(a.how || 'merge');
                 var done = [];
                 for (var i = 0; i < open.length; i++) {
                     var p = open[i];
@@ -1037,9 +1063,16 @@ async function plugin(imports, register) {
                     }
                     var r = await github.call('PUT', '/repos/' + bits[0] + '/' + bits[1] + '/pulls/' + p.number + '/merge',
                         { merge_method: how });
+                    //`sha`, `into` AND `how` COME BACK, which they did not, and
+                    //that absence is why a drill could not tell a merge from a
+                    //squash. "It merged" is the same word for both; the commit
+                    //it produced and the method that produced it are not.
                     done.push({
                         repo: p.repo, number: p.number,
                         merged: r.status === 200,
+                        sha: (r.body && r.body.sha) || null,
+                        into: bits.join('/'),
+                        how: how,
                         why: r.status === 200 ? null : ((r.body && r.body.message) || ('GitHub answered ' + r.status))
                     });
                 }

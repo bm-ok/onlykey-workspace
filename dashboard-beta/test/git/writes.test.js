@@ -306,6 +306,62 @@ test('a real fast-forward moves it, and says where from and to', async () => {
 });
 
 //---------------------------------------------------------------------------
+//AND THE FILES COME WITH IT, WHICH NOTHING ABOVE ASKED.
+//
+//Every check on this page is about where the REF ended up, and all of them
+//passed while `fastForward` moved `refs/heads/master` with `update-ref` out from
+//under a working tree standing on it. The ref was right; the files were as they
+//were before; and git, comparing the two, reported every file the fast-forward
+//brought in as a staged modification UNDOING it.
+//
+//It reads as somebody having left uncommitted work. Two repositories in the real
+//workspace sat like that for days — one of them showing a reverted drill file,
+//the other a reverted fix — and the banner about them said exactly that.
+//
+//IT DOES NOT STAY HERE EITHER. A machine given work on that branch cannot push
+//while the tree is dirty, and git's error is about a configuration variable
+//rather than about a file, so it lands on the guest with nothing to say.
+//---------------------------------------------------------------------------
+test('a fast-forward onto the checked-out branch brings the working tree with it', async () => {
+    const g = await aGit();
+    fs.writeFileSync(path.join(elsewhere, 'theirs.txt'), 'arrived\n');
+    git(['add', '.'], elsewhere);
+    git(['commit', '-q', '-m', 'theirs'], elsewhere);
+    git(['push', '-q', 'origin', 'master'], elsewhere);
+    await g.fetch('repo-one');
+
+    assert.equal(git(['rev-parse', '--abbrev-ref', 'HEAD'], repo).trim(), 'master',
+        'this test is about the checked-out branch, and the fixture is not on it');
+
+    const said = await g.fastForward('repo-one', 'master', 'refs/remotes/origin/master');
+    assert.equal(said.moved, true, said.why);
+
+    assert.ok(fs.existsSync(path.join(repo, 'theirs.txt')),
+        'the ref moved and the file it brought is not in the working tree');
+    assert.equal(git(['status', '--porcelain'], repo).trim(), '',
+        'the ref moved without the tree, so git reports the change as an uncommitted undo of itself');
+});
+
+test('a fast-forward is refused when the checked-out branch has uncommitted work', async () => {
+    const g = await aGit();
+    fs.writeFileSync(path.join(elsewhere, 'theirs.txt'), 'arrived\n');
+    git(['add', '.'], elsewhere);
+    git(['commit', '-q', '-m', 'theirs'], elsewhere);
+    git(['push', '-q', 'origin', 'master'], elsewhere);
+    await g.fetch('repo-one');
+
+    fs.writeFileSync(path.join(repo, 'readme.md'), 'one\nEDITED BY A PERSON\n');
+    const was = at('master');
+
+    const said = await g.fastForward('repo-one', 'master', 'refs/remotes/origin/master');
+    assert.equal(said.moved, false, 'it moved a branch a working tree was standing on with work in it');
+    assert.equal(said.clean, false);
+    assert.match(said.why, /uncommitted/);
+    assert.equal(at('master'), was, 'it reported refusing and moved the branch anyway');
+    assert.match(fs.readFileSync(path.join(repo, 'readme.md'), 'utf8'), /EDITED BY A PERSON/);
+});
+
+//---------------------------------------------------------------------------
 //THE COMPARE-AND-SWAP, WHICH IS THE HALF THAT IS INVISIBLE UNTIL IT MATTERS.
 //
 //`update-ref <ref> <new> <old>` refuses unless the ref is still at `<old>`. So a
@@ -339,9 +395,15 @@ test('a branch that moves mid-flight loses the race rather than being overwritte
         repos: async () => [{ name: 'repo-one' }],
         folderOf: async () => {
             calls++;
-            //the last call fastForward makes is the one immediately before
-            //update-ref; move the branch out from under it right there
-            if (calls === 4) git(['update-ref', 'refs/heads/master', sneak], repo);
+            //the last call fastForward makes is the one immediately before it
+            //writes; move the branch out from under it right there.
+            //
+            //SIX, BECAUSE `repo-one` IS STANDING ON master. fastForward asks
+            //where HEAD is, resolves both ends, asks merge-base, then asks
+            //whether the tree is clean — and only then writes, with `merge
+            //--ff-only` rather than `update-ref` precisely because the tree is
+            //standing on it. Five of those are reads; the sixth is the write.
+            if (calls === 6) git(['update-ref', 'refs/heads/master', sneak], repo);
             return repo;
         }
     };

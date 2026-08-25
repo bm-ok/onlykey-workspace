@@ -692,7 +692,41 @@ async function plugin(imports, register) {
     //the write — a worker pushing, somebody committing — loses the race safely
     //rather than being overwritten. Without the third argument this would be a
     //`git push --force` with extra steps.
+    //
+    //---- AND WHICH OF THE TWO WRITES IT IS DEPENDS ON WHERE THE TREE STANDS ---
+    //
+    //`update-ref` MOVES A REF AND NOTHING ELSE, which is exactly right for a
+    //branch nobody has checked out and exactly wrong for the one they have.
+    //Moving `refs/heads/master` while a working tree is standing on it leaves
+    //the files as they were and the branch somewhere else, so git compares the
+    //two and reports every file the fast-forward brought in as a STAGED
+    //MODIFICATION UNDOING IT. Nobody edited anything; the repository just says
+    //somebody did.
+    //
+    //THAT IS NOT COSMETIC AND IT DOES NOT STAY IN THIS APP. A machine given
+    //work on that branch cannot push while the tree is dirty, and git's own
+    //error is about a configuration variable rather than about a file — so the
+    //failure surfaces on the guest, twenty minutes later, saying nothing about
+    //what caused it. Two repositories in this workspace sat like that, and the
+    //banner about them read as somebody having left work uncommitted.
+    //
+    //SO: STANDING ON IT, MERGE IN THE TREE. `merge --ff-only` moves the ref and
+    //the files together, and it is the same one-way write — git refuses it for
+    //anything that is not a fast-forward, which is the compare-and-swap's
+    //guarantee arrived at from the other side. Not standing on it, `update-ref`
+    //as before.
+    //
+    //AND A DIRTY TREE IS LEFT ALONE AND SAID OUT LOUD, the same rule `checkout`
+    //keeps: uncommitted work belongs to whoever left it there, and a sync button
+    //does not get an opinion about it.
     async function fastForward(repo, branch, toRef) {
+        //ASKED FIRST, BEFORE ANYTHING ELSE IS READ, because which write this is
+        //decides everything below it — and because ../../../test/git/writes.test.js
+        //counts the calls to `folderOf` to land its mid-flight sabotage on the
+        //one immediately before the write. Reading it here keeps that the LAST
+        //call rather than one of several.
+        var standing = (await head(repo)) === String(branch);
+
         var here = await run(repo, ['rev-parse', String(branch)]);
         var there = await run(repo, ['rev-parse', String(toRef)]);
         if (here.code !== 0) return { moved: false, why: 'there is no branch called "' + branch + '" here' };
@@ -710,8 +744,25 @@ async function plugin(imports, register) {
             };
         }
 
-        var said = await spawnGit(await workspace.folderOf(repo),
-            ['update-ref', 'refs/heads/' + String(branch), want, was]);
+        if (standing) {
+            var tree = await workingTree(repo);
+            if (tree.clean !== true) {
+                return {
+                    moved: false, was: was, clean: tree.clean,
+                    why: '"' + branch + '" is checked out here with '
+                        + (tree.clean === null
+                            ? 'a working tree git would not report on'
+                            : tree.files + ' uncommitted change(s)')
+                        + ' — left alone. Moving it would put those files at odds with the branch, and a '
+                        + 'machine working on it cannot push while that is true.'
+                };
+            }
+        }
+
+        var said = await spawnGit(await workspace.folderOf(repo), standing
+            //IN THE TREE, so the files come with it. See the header above.
+            ? ['merge', '--quiet', '--ff-only', String(toRef)]
+            : ['update-ref', 'refs/heads/' + String(branch), want, was]);
         if (said.code !== 0) {
             return { moved: false, was: was, why: String(said.stderr || '').split('\n')[0] || 'the ref moved underneath this' };
         }

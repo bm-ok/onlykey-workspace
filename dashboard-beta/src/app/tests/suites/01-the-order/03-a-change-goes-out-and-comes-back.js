@@ -161,7 +161,7 @@ it('and it leaves as one pull request, from the repository that carries somethin
   for (const p of (cut.pulls || []).filter(p => !p.opened)) log(`${p.repo}: none opened — ${p.why}`)
 })
 
-it('the pull requests are merged as one act', async ({ okc, assert, state, log }) => {
+it('the pull requests are merged as one act, and merged as merges', async ({ okc, assert, state, log }) => {
   // WHERE THE HUMAN GATE IS, if there is one. This is refused outright from the
   // command line unless testing mode is on — see prCutLand — so a run that gets
   // here has already been permitted by somebody at the window.
@@ -170,9 +170,31 @@ it('the pull requests are merged as one act', async ({ okc, assert, state, log }
   assert.equal(merged.length, 1, `The cut did not land: ${(landed.merged || []).map(m => m.why || 'merged').join('; ')}`)
   state.landed = true
 
+  // AND HOW IT MERGED, WHICH THIS DID NOT ASK AND SHOULD HAVE.
+  //
+  // "It merged" is the same sentence for a merge and for a squash, and for a
+  // while `prCutLand` defaulted to squash — so five runs of this drill passed
+  // while landing five flat commits directly on local-repo-a's master, under the
+  // human's name, indistinguishable in the graph from somebody pushing to a
+  // protected branch. The drill asserted the merge and was silent about the only
+  // part that had gone wrong.
+  //
+  // A MERGE IS THE SHAPE THE WHOLE FLOW IS FOR. The branch went out, a pull
+  // request was opened on it, and the merge commit is the record that both
+  // happened — "Merge pull request #N from <fork>/<branch>", with the work
+  // hanging off it. A squash keeps the change and throws away the evidence of
+  // how it arrived, which for a drill about the ORDER of the work is the one
+  // thing it exists to prove.
+  assert.equal(merged[0].how, 'merge',
+    `It landed by "${merged[0].how}". A squash or a rebase puts a flat commit straight on the default branch and `
+    + 'loses the pull request it came through — which is what this drill is proving did not happen')
+  assert.ok(merged[0].sha, 'A pull request was reported as merged without the commit it produced')
+  state.mergeSha = merged[0].sha
+
   const at = await okc('prCutState', { source: state.branch, target: state.line })
   assert.ok(at.landed, 'GitHub does not agree that every pull request in the cut is merged')
-  log(`merged ${merged.map(m => `#${m.number} in ${m.repo}`).join(', ')}, and GitHub agrees the cut has landed`)
+  log(`merged ${merged.map(m => `#${m.number} in ${m.repo} by "${m.how}" as ${String(m.sha).slice(0, 8)}`).join(', ')}`
+    + ', and GitHub agrees the cut has landed')
 })
 
 it('the fork is behind its parent, and syncing pulls it up', async ({ okc, assert, state, log }) => {
@@ -243,7 +265,26 @@ it('and this host follows, with the change on its default branch', async ({ okc,
   assert.notEqual(after.head, before.head,
     `${ONE}'s default branch is still at ${String(before.head).slice(0, 8)} after syncing, so the change that landed on the fork has not reached this host`)
 
-  log(`pulled: ${ONE} moved from ${String(before.head).slice(0, 8)} to ${String(after.head).slice(0, 8)} — the change is home`)
+  // AND THE COMMIT THAT ARRIVED IS THE ONE THAT WAS MADE, which is the claim the
+  // paragraphs above talked themselves out of.
+  //
+  // Everything from "after a squash the sha is not the sha that was pushed"
+  // onwards is true, and it was reasoning about a merge method this app had
+  // chosen for itself and nobody had asked for. Once the cut lands as a MERGE —
+  // which the step above now holds it to — the commit made at the top of this
+  // file is on the default branch, by its own sha, and the strongest available
+  // check is simply to look for it.
+  //
+  // `gitLog` DROPS MERGES (`--no-merges`), so what comes back is the work rather
+  // than the commit that carried it in. One entry, and it is ours.
+  const arrived = (await okc('gitLog', { repo: ONE, base: before.head, head: after.head })).commits || []
+  assert.ok(arrived.some(c => String(state.commit).startsWith(c.sha)),
+    `${ONE}'s default branch moved, but the commit this drill made (${String(state.commit).slice(0, 8)}) is not among `
+    + `what arrived: ${arrived.map(c => `${c.sha} ${c.subject}`).join('; ') || 'nothing'}. A flat commit with a new sha `
+    + 'is what a squash leaves behind')
+
+  log(`pulled: ${ONE} moved from ${String(before.head).slice(0, 8)} to ${String(after.head).slice(0, 8)}, `
+    + `carrying ${String(state.commit).slice(0, 8)} itself — the change is home, and it is the same commit`)
 })
 
 it('and the branch it came from is taken off the fork', async ({ okc, assert, state, log }) => {
