@@ -26,8 +26,26 @@ the source instead undercounted by fifteen in one plugin alone — see 2a.
 
 **And 69 is still not the size of the work.** Names changed in the move, and a
 rename counted as a gap makes the remaining work look bigger than it is.
-Cross-checked, those 69 come apart into three piles, and only the third is
-work.
+Cross-checked one at a time against what each action SAYS IT DOES, seventeen of
+the 69 are renames or merges that are already here — the table under 1 — which
+leaves about **52 genuinely not here by any name**.
+
+**And twenty of those are `vm*` machine plumbing**: `vmBridges`, `vmIsos`,
+`vmSerial`, `vmScript`, `vmScripts`, `vmShell`, `vmShellRun`, `vmSetupAgain`,
+`vmRotateToken`, `vmAuthorizeKey`, `vmDescribe`, `vmEditor`, `vmNetwork`,
+`vmAddress`, `vmAgents`, `vmInfo`, `vmProvisionUpdate`, `vmRelease`,
+`vmCredentialsGrab`, `vmRun`. None of them is on the loop. Some may be
+deliberate — `vmRun` is "run any command on a machine and wait", which is a
+large door to reopen without deciding to.
+
+**So what is actually left on the loop is about a dozen:**
+
+    judgementVerdict  judgementUpdate  judgementLog
+    taskSendBack
+    changeDiff        changeFile
+    prFetch           prDraftForget
+    issues            pulls
+    inboxHide         inboxShow
 
 ---
 
@@ -53,16 +71,26 @@ Written down because they keep getting re-derived as drift.
 
 **Renamed, already here** — if something looks missing, check this shape first:
 
-| dashboard/ | here |
-|---|---|
-| `machines` | `vmList` |
-| `branchArtifact` | `branchArtifacts` |
-| `judgements` | `judging` |
-| `taskGive` | `vmDispatch` |
-| `taskStop` | `vmRunStop` |
-| `repoTarget` | `repoTargetSet` |
-| `prComment` | `judgementSay` |
-| `supervisorThinking` | folded into `supervisorState` |
+| dashboard/ | here | |
+|---|---|---|
+| `machines` | `vmList` | |
+| `machineAdd` | `vmCreate` | |
+| `machineRemove` | `vmRemove` | |
+| `machineReach` | `vmAwait` | *"does it answer"* is now *"wait until it does"* |
+| `branchArtifact` | `branchArtifacts` | moved into the **artifact** plugin |
+| `judgements` | `judging` | |
+| `taskGive` | `vmDispatch` | |
+| `taskStop` | `vmRunStop` | |
+| `taskLog` | `vmRunOutput` | narrower — see 3 |
+| `taskLogs` | `vmRuns` | narrower — see 3 |
+| `session` | `sessions` | |
+| `vmLogs` | `vmLog` | |
+| `repoTarget` | `repoTargetSet` | |
+| `prComment` | `judgementSay` | narrower — only a judgement's comment |
+| `changeRead` | `compareLog` | narrower — see 3 |
+| `supervisor` | `skills` | the skill document, read by name |
+| `supervisorThinking` | folded into `supervisorState` | |
+| the whole approval library | `doors()` in `library/server.js` | see 2a |
 
 ---
 

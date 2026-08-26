@@ -62,8 +62,12 @@ function fromTheApp() {
         var said = JSON.parse(run.stdout);
         var list = said.actions || said;
         if (!Array.isArray(list)) return null;
-        var here = new Set();
-        list.forEach(function (a) { if (a && a.name && a.where === 'here') here.add(a.name); });
+        //THE NAME AND WHAT IT SAYS IT DOES, both from the app. `--near` needs the
+        //second, and reading it out of source has the same hole as reading the
+        //names did: an `about` built as `'Say this ' + what + ' has been read'`
+        //is not in any file as a sentence.
+        var here = new Map();
+        list.forEach(function (a) { if (a && a.name && a.where === 'here') here.set(a.name, a.about || ''); });
         return here.size ? here : null;
     } catch (e) { return null; }
 }
@@ -129,14 +133,15 @@ function overlap(a, b) {
 const old = theirs();
 const live = fromTheApp();
 const here = live || ours(path.join(HERE, 'src', 'app'), new Set());
-const missing = [...old].filter((n) => !here.has(n)).sort();
+const hereNames = live ? new Set(live.keys()) : here;
+const missing = [...old].filter((n) => !hereNames.has(n)).sort();
 
 const args = process.argv.slice(2);
 const only = args.filter((a) => !a.startsWith('--'))[0];
 const list = only ? missing.filter((n) => n.toLowerCase().includes(only.toLowerCase())) : missing;
 
 console.log(`${old.size} actions in the app being ported from`);
-console.log(`${here.size} defined here (${old.size - missing.length} of theirs, plus ${here.size - (old.size - missing.length)} this app added)`);
+console.log(`${hereNames.size} defined here (${old.size - missing.length} of theirs, plus ${hereNames.size - (old.size - missing.length)} this app added)`);
 if (!live) {
     console.log('THE APP IS NOT RUNNING, so this read the source instead — and a source read');
     console.log('UNDERCOUNTS: any action registered under a computed name is invisible to it.');
@@ -152,8 +157,8 @@ if (args.includes('--near')) {
         if (!f.endsWith('.js')) continue;
         for (const [k, v] of abouts(fs.readFileSync(path.join(OLD, f), 'utf8'))) theirAbout.set(k, v);
     }
-    const ourAbout = new Map();
-    (function walk(dir) {
+    const ourAbout = live ? new Map(live) : new Map();
+    if (!live) (function walk(dir) {
         for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
             if (e.isDirectory()) { if (e.name !== 'vendor') walk(path.join(dir, e.name)); continue; }
             if (!e.name.endsWith('.js')) continue;
