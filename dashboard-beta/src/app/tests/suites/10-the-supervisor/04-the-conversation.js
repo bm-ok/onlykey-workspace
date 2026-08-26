@@ -224,6 +224,61 @@ it('and the destructive one is refused from out here, rather than travelling', a
   log(`refused, and all ${still.length} message(s) are still here`)
 })
 
+it('and the tab offers one decision at a time while nothing is running', async ({ okc, assert, log }) => {
+  // THREE STATES, ONE SCREEN, and the whole design of this tab is that they do
+  // not overlap. What went wrong here was not a broken control — it was the
+  // SAME control offered twice: the header's state line kept its "Start it"
+  // while the body was already asking which machine to start, so a screen whose
+  // point is one decision showed two, six pixels of small type apart.
+  //
+  // Nothing fails when that happens, which is why it needs a check rather than
+  // an eye. Driven through the window the way a person presses it, because the
+  // states live in the window and no action can be asked what is on screen.
+  const st = await okc('supervisorState')
+  assert.needs(!st.ready, 'a supervisor is running, so this is the running state and not the two being checked')
+  assert.needs(st.there, 'this host has no supervisor machine, so there is nothing to choose to start')
+
+  const on = async () => {
+    const w = await okc('windowControls')
+    assert.equal(w.broke, null, `the pane threw: ${w.broke}`)
+    return (w.buttons || []).filter(b => !b.nav).map(b => b.label)
+  }
+
+  await okc('show', { tab: 'Supervisor', pane: 'Chat' })
+
+  // WHICH OF THE TWO OFF-BODIES IS SHOWING IS REMEMBERED, deliberately — across
+  // draws and across leaving the tab, though not across sessions. So this starts
+  // by putting it back on the decision rather than assuming it is there; a drill
+  // that only passes when somebody left the window a particular way is a drill
+  // that fails for reasons that have nothing to do with what it checks.
+  if ((await on()).includes('Close')) await okc('windowClick', { text: 'Close' })
+
+  // CHOOSING: the decision is in the middle of the body and the header row is
+  // empty. Not "mostly empty" — a second Start, a Clear that would clear
+  // nothing, a Wake that cannot wake, are each a control offered where it does
+  // nothing.
+  const choosing = await on()
+  assert.ok(choosing.includes(`Start ${st.name}`), `the body is not offering to start ${st.name}: ${choosing.join(' | ')}`)
+  assert.ok(choosing.includes('Read what was said'), `there is no way to read the conversation: ${choosing.join(' | ')}`)
+  for (const gone of ['Start it', 'Close', 'Wake it', 'Clear']) {
+    assert.ok(!choosing.includes(gone),
+      `"${gone}" is on screen while choosing which supervisor to start — that state offers one decision, in the body`)
+  }
+
+  // READING: the body IS the conversation, so the header comes back to say why
+  // there is nowhere to type, and Close is the one way out.
+  await okc('windowClick', { text: 'Read what was said' })
+  const reading = await on()
+  assert.ok(reading.includes('Close'), `there is no way back out of the conversation: ${reading.join(' | ')}`)
+  assert.ok(reading.includes('Start it'), 'the state line is gone while reading, so nothing on screen says why there is nowhere to type')
+  assert.ok(!reading.includes('Read what was said'), 'the body is still offering to read what is already being read')
+
+  await okc('windowClick', { text: 'Close' })
+  const back = await on()
+  assert.ok(back.includes('Read what was said'), `Close did not come back to the decision: ${back.join(' | ')}`)
+  log('choosing offers the body only; reading brings the state line back with one way out')
+})
+
 it('and two supervisors are never running at once', async ({ okc, assert, state, log }) => {
   // TWO OF THEM DECIDE WHAT WORK THERE IS WITH NO IDEA OF EACH OTHER: the same
   // issue picked up twice, two branches cut for one piece of work, two tasks

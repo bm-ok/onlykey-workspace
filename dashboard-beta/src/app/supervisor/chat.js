@@ -85,6 +85,9 @@ module.exports = function chat(theme, okc, markdown) {
         //decision again rather than wherever this was left. Keyed on `ready`
         //rather than on the whole state object, which changes on every poll.
         var [reading, setReading] = useState(false);
+        //WHICH ONE TO START, when there is more than one to pick from. Held here
+        //with the other hooks for the same reason `reading` is.
+        var choice = useState('');
         var ready = !!(state.state && state.state.ready);
         useEffect(function () { if (ready) setReading(false); }, [ready]);
 
@@ -117,16 +120,20 @@ module.exports = function chat(theme, okc, markdown) {
         //ONE FUNCTION, TWO PLACES. The state line offers it while reading and the
         //body offers it while choosing — same act, same sentence, and two copies
         //of a confirm dialog is two places for the wording to drift.
-        function startIt() {
+        //WHICH ONE, PASSED IN RATHER THAN ASSUMED. The state line's button is
+        //about the one it is describing; the body's is about whichever was
+        //picked, and with several machines those are not the same name.
+        function startIt(which) {
+            var name = which || (state.state || {}).name;
             ask({
-                title: 'Start ' + (state.state || {}).name + '?',
+                title: 'Start ' + name + '?',
                 plain: [
                     'It starts the machine, waits for it to dial in, and signs it in with the supervisor credential this host holds.',
                     'It is a whole machine, so this takes a minute or two. Nothing is asked of the model by starting it.'
                 ],
                 confirm: 'Start it',
                 onYes: function () {
-                    return okc.call('supervisorUp', { name: (state.state || {}).name }).then(
+                    return okc.call('supervisorUp', { name: name }).then(
                         function (r) { setSaid({ text: r.note || 'Started.' }); state.again(); },
                         function (e) { setSaid({ bad: true, text: e.message }); throw e; }
                     );
@@ -174,6 +181,18 @@ module.exports = function chat(theme, okc, markdown) {
         var offline = !sup.ready;
         var showThread = !offline || reading;
 
+        //WHICH OF THE THREE IT IS, NAMED ONCE. Everything on this pane that
+        //swaps — the state line, the control row, the body, the composer —
+        //swaps on this and nothing else, which is how the app being ported from
+        //keeps them from disagreeing with each other.
+        var showing = sup.ready ? 'running' : reading ? 'reading' : 'choosing';
+
+        //EVERY SUPERVISOR THIS HOST HAS, because starting one is picking WHICH
+        //when there is more than one. The flattened fields above are the first
+        //of these; `supervisors` is the list itself.
+        var rows = sup.supervisors || [];
+        var [chose, setChose] = choice;
+
         return (
             <Pane>
                 {said ? <Notice kind={said.bad ? 'bad' : 'ok'} onClose={function () { setSaid(null); }}>{said.text}</Notice> : null}
@@ -210,8 +229,26 @@ module.exports = function chat(theme, okc, markdown) {
                         to watch it think. All of it is already in
                         `supervisorState` — `connected`, `signedInAs`,
                         `fingerprint`, `why` — and none of it was on the screen. */}
+                    {/* AND IT GOES WHILE CHOOSING, because the body is saying the
+                        same three things in the middle of the screen: which
+                        machine, why it cannot run, and the button that fixes it.
+                        Two copies of one sentence, one of them in small type at
+                        the top, is a screen asking somebody to work out whether
+                        they are two different facts.
+
+                        IT STAYS WHILE READING. There the body IS the
+                        conversation, so this line is the only thing saying why
+                        there is nowhere to type. */}
+                    {showing === 'choosing' ? null : (
                     <div className="head-state">
-                        <Mono>{sup.name || 'none'}</Mono>
+                        {/* NO MACHINE IS ONE MUTED PHRASE AND NOTHING ELSE. A
+                            name, a badge and a start button describing a machine
+                            that does not exist is four controls about nothing;
+                            what to do about it is on the Runners tab, and the
+                            body says so. */}
+                        {sup.there
+                            ? <Mono>{sup.name}</Mono>
+                            : <span className="muted" title={sup.note || ''}>no supervisor machine</span>}
                         {/* `cannot run` RATHER THAN `not running`, and they are
                             different facts. A machine can be running and still
                             unable to work — holding no credential is the usual
@@ -223,7 +260,7 @@ module.exports = function chat(theme, okc, markdown) {
                                 title={sup.why || sup.note || ''}>
                                 {sup.thinking ? 'thinking' : sup.ready ? 'ready' : 'cannot run'}
                             </Badge>
-                            : <Badge kind="warn">none made</Badge>}
+                            : null}
 
                         {/* WHAT IT IS SIGNED IN AS, which was invisible
                             everywhere else and cost an afternoon over there. A
@@ -280,8 +317,14 @@ module.exports = function chat(theme, okc, markdown) {
                                     title="Starts the machine, waits for it to dial in, and signs it in"
                                     onClick={function () { startIt(); }}>Start it</Button>
                         ) : null}
-                        {talk.state && talk.state.missed ? <Badge kind="warn">{talk.state.missed + ' not shown'}</Badge> : null}
+                        {/* `missed` WAS A BADGE HERE AND COULD NEVER FIRE. The
+                            window asks `chat` with no bookmark and is handed
+                            everything, so that field is always zero — it
+                            describes the WINDOW's reading rather than anybody's
+                            problem. The number worth showing is the other end's,
+                            and that is `beyondReach`, in the note. */}
                     </div>
+                    )}
                     <div className="head-controls">
                         {/* THREE STATES, ONE ROW, and what belongs here depends
                             entirely on which it is:
@@ -472,14 +515,20 @@ module.exports = function chat(theme, okc, markdown) {
                                 somebody came here to find out, and the reason it
                                 cannot run is what they do next about it. */}
                             <p className="why">
-                                {sup.there ? sup.name + ' is not running.' : 'This host has no supervisor machine.'}
+                                {!sup.there ? 'This host has no supervisor machine.'
+                                    : rows.length === 1 ? rows[0].name + ' is not running.'
+                                        : 'No supervisor is running.'}
                             </p>
-                            {sup.there && (sup.why || sup.note)
-                                ? <p className="why muted">{sup.why || sup.note}</p>
+                            {/* THE REASON ONLY WHEN THERE IS ONE OF THEM. With
+                                several, "why" belongs to whichever is picked and
+                                a single line under a list of machines reads as
+                                being about all of them. */}
+                            {sup.there && rows.length === 1 && rows[0].why
+                                ? <p className="why muted">{rows[0].why}</p>
                                 : null}
                             {!sup.there
                                 ? <p className="why muted">
-                                    Make one on the Runners tab — tick "supervisor machine" when you create it.
+                                    Make one on the Runners tab — tick "supervisor machine?" when you create it.
                                 </p>
                                 : null}
 
@@ -489,9 +538,24 @@ module.exports = function chat(theme, okc, markdown) {
                                 and nothing else on the screen competing. */}
                             {sup.there ? (
                                 <div className="row">
+                                    {/* ONE IS THE ORDINARY CASE, and a picker
+                                        with one entry asks a question with one
+                                        answer. Shown only when there is a real
+                                        choice — and only one may run at a time
+                                        anyway, so picking is picking WHICH. */}
+                                    {rows.length > 1 ? (
+                                        <select value={chose || rows[0].name}
+                                            onChange={function (e) { setChose(e.target.value); }}>
+                                            {rows.map(function (r) {
+                                                return <option key={r.name} value={r.name}>{r.name + ' — ' + r.state}</option>;
+                                            })}
+                                        </select>
+                                    ) : null}
                                     <Button kind="ok"
                                         title="Starts the machine, waits for it to dial in, and signs it in"
-                                        onClick={function () { startIt(); }}>{'Start ' + sup.name}</Button>
+                                        onClick={function () { startIt(rows.length > 1 ? (chose || rows[0].name) : rows[0].name); }}>
+                                        {rows.length > 1 ? 'Start the one you picked' : 'Start ' + (rows[0] ? rows[0].name : 'it')}
+                                    </Button>
 
                                     {/* THE CONVERSATION OUTLIVES ANY ONE
                                         SUPERVISOR, which is the whole reason this
@@ -506,10 +570,17 @@ module.exports = function chat(theme, okc, markdown) {
                                 </div>
                             ) : null}
 
-                            <p className="why muted">
-                                Anything said while it is down would wait unread until one is up, so there is
-                                nowhere to type until then.
-                            </p>
+                            {/* AND NOT WHEN THERE IS NO MACHINE AT ALL. "there is
+                                nowhere to type until then" is about a machine
+                                that is down and could come up; with none made it
+                                answers a question nobody asked, under two lines
+                                that already said what to do. */}
+                            {sup.there ? (
+                                <p className="why muted">
+                                    Anything said while it is down would wait unread until one is up, so there is
+                                    nowhere to type until then.
+                                </p>
+                            ) : null}
                         </div>
                     )
                 ) : (
