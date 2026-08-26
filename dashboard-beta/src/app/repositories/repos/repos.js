@@ -446,34 +446,41 @@ module.exports = function repos(theme, okc) {
                                 : <span className="muted">{'  its head could not be read'}</span>}
                         </KvRow>
                     ) : null}
-                    {asked && r.intoParent ? (
-                        //WHAT IS ABOVE THIS ONE, WHICH IS NOT WHERE WORK GOES.
+                    {asked && (r.intoTarget || r.intoParent) ? (
+                        //THE TARGET, WHICH IS WHERE A CHANGE WILL ACTUALLY LAND.
                         //
-                        //This row said "a pull request goes to" and named the
-                        //parent, which was true while the target was INFERRED
-                        //from the parent and became false the moment it became a
-                        //choice — leaving it two rows above "work goes to"
-                        //saying something different about the same thing. Two
-                        //places knowing one fact and disagreeing.
+                        //This row said "one level up" and named the immediate
+                        //parent, with whether the token could open a pull
+                        //request THERE. That is the right question only while
+                        //the target is inferred from the parent — and this app
+                        //lets somebody pick any link in the chain, or their own
+                        //remote. So a target three links up, or one that is your
+                        //own fork, was never checked: the row reported the
+                        //parent as usable and the change went somewhere else.
                         //
-                        //Kept and renamed, because what it carries is still
-                        //worth having: whether this token could push to the
-                        //parent AT ALL. That is a fact about GitHub rather than
-                        //a decision about where work goes.
-                        <KvRow label="one level up">
-                            <Mono>{r.intoParent.repo}</Mono>
+                        //It was already renamed once, from "a pull request goes
+                        //to", for saying something true of an inferred target
+                        //and false of a chosen one. This is the same fault a
+                        //second time, and the fix this time is to ASK ABOUT THE
+                        //TARGET rather than to rename the row again.
+                        <KvRow label="target fork">
+                            <Mono>{(r.intoTarget || r.intoParent).repo}</Mono>
                             <span>{'  '}</span>
-                            <span className={r.intoParent.mayOpen ? 'ok' : 'bad'}>
-                                {r.intoParent.mayOpen
-                                    ? 'this token could open a pull request there'
-                                    : 'this token could NOT open a pull request there'}
+                            <span className={(r.intoTarget || r.intoParent).mayOpen ? 'ok' : 'bad'}>
+                                {(r.intoTarget || r.intoParent).mayOpen
+                                    ? 'this token can open a pull request there'
+                                    : 'this token can NOT open a pull request there'}
                             </span>
-                            {r.intoParent.why ? <div className="muted">{r.intoParent.why}</div> : null}
+                            {(r.intoTarget || r.intoParent).why
+                                ? <div className="muted">{(r.intoTarget || r.intoParent).why}</div>
+                                : null}
                             {r.chained ? (
                                 <Note>
-                                    <strong>{'This is a fork of a fork. '}</strong>
-                                    {'One level up is ' + r.parent + '; the root of the network is ' + r.source
-                                        + '. GitHub reports those two and never the middle of a longer chain, so if work belongs somewhere between them, walk the chain below and say so.'}
+                                    <strong>This is a fork of a fork. </strong>
+                                    <span>{'One level up is ' + r.parent + '; the root of the network is '
+                                        + r.source + '. GitHub reports those two and never the middle of a '
+                                        + 'longer chain, so if work belongs somewhere between them, select the '
+                                        + 'fork below and say so.'}</span>
                                 </Note>
                             ) : null}
                         </KvRow>
@@ -562,3 +569,4 @@ module.exports = function repos(theme, okc) {
         );
     };
 };
+

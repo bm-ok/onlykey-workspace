@@ -267,8 +267,32 @@ async function plugin(imports, register) {
             ? Object.assign({}, await canOpenIn(source), { defaultBranch: r.body.source.default_branch || null })
             : null;
 
-        if (intoParent && !intoParent.mayOpen && !(intoSource && intoSource.mayOpen)) {
-            missing.push('Pull requests on ' + parent);
+        //---- AND THE ONE THAT ACTUALLY MATTERS: THE TARGET ------------------
+        //
+        //WHERE PULL REQUESTS WILL BE OPENED IS THE TARGET, and until now nothing
+        //asked whether the token can open one THERE. The panel probed the
+        //immediate parent and said "one level up" — which is the right question
+        //only while the target is inferred from the parent, and this app lets
+        //somebody pick any link in the chain, or their own remote.
+        //
+        //So a target three links up, or a target that is your own fork, was
+        //never checked at all: the row said the parent was reachable and the
+        //push went somewhere else. The check that matters is the one against the
+        //place a change will actually land.
+        //
+        //ASKED SEPARATELY EVEN WHEN IT IS THE PARENT. A token can be granted one
+        //repository and not another, and in a chain that is the ordinary case;
+        //reusing the parent's answer because the names happen to match would be
+        //right until somebody picks a different link and silently wrong after.
+        var wantOn = targetOf(note, remote).on;
+        var intoTarget = wantOn
+            ? Object.assign({}, await canOpenIn(wantOn), { chosen: !!(note && note.target && note.target.on) })
+            : null;
+
+        //REPORTED AGAINST THE TARGET, not the parent. This said "Pull requests
+        //on <parent>" while work was being sent somewhere else entirely.
+        if (intoTarget && !intoTarget.mayOpen) {
+            missing.push('Pull requests on ' + wantOn);
         }
 
         //---- WHAT IS OPEN ---------------------------------------------------
@@ -331,6 +355,7 @@ async function plugin(imports, register) {
             chained: chained,
             intoParent: intoParent,
             intoSource: intoSource,
+            intoTarget: intoTarget,
             upstreamDefault: r.body.default_branch || null,
             upstreamHead: headOfList(branchList, r.body.default_branch),
             branchesThere: canReadCode && Array.isArray(branchList.body) ? branchList.body.length : null,
@@ -616,6 +641,7 @@ async function plugin(imports, register) {
                         source: note.source || null,
                         chained: !!note.chained,
                         intoParent: note.intoParent || null,
+                        intoTarget: note.intoTarget || null,
                         intoSource: note.intoSource || null,
                         branchesThere: note.branchesThere == null ? null : note.branchesThere,
                         privateRepo: note.privateRepo == null ? null : note.privateRepo,
