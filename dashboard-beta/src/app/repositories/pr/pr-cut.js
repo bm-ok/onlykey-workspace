@@ -5,7 +5,7 @@ module.exports = function cuts(theme, okc, remember, shell) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Link,
-        Kv, KvRow, Notice, ask
+        Kv, KvRow, Notice, Markdown, ask
     } = theme;
 
     var idOf = function (c) { return c.source + ' -> ' + c.target; };
@@ -140,6 +140,37 @@ module.exports = function cuts(theme, okc, remember, shell) {
         }, []);
 
         useEffect(function () { readDrafts(); read(); }, [readDrafts, read]);
+
+        //---- WHAT A DRAFT WOULD ACTUALLY SAY --------------------------------
+        //
+        //DECIDING WHETHER TO SEND SOMETHING IS DONE BY READING IT. A draft was
+        //a title and a state word here, and the button beside it publishes to
+        //somebody else's repository — so the one thing needed to make that
+        //decision was the one thing not on the screen. The app being ported from
+        //composed it here for exactly this reason.
+        //
+        //COMPOSED, NOT QUOTED. What goes out is what somebody typed PLUS every
+        //template block that is on, and the blocks are most of it. Showing only
+        //the typed half would be a preview of the smaller part.
+        //
+        //ONLY FOR A DRAFT. A cut that is out has real pull requests below, and
+        //what they say is on GitHub rather than in a composer.
+        var [composed, setComposed] = useState(null);
+        var wants = picked && (drafts || []).filter(function (w) {
+            return w.source + ' -> ' + w.target == picked;
+        })[0];
+        var forSource = wants && wants.source;
+        var forTarget = wants && wants.target;
+
+        useEffect(function () {
+            if (!forSource || !forTarget) { setComposed(null); return; }
+            var gone = false;
+            setComposed({ asking: true });
+            okc.call('prTemplatePreview', { source: forSource, target: forTarget })
+                .then(function (v) { if (!gone) setComposed(v); },
+                    function (e) { if (!gone) setComposed({ why: e.message }); });
+            return function () { gone = true; };
+        }, [forSource, forTarget]);
 
         if (!got && !drafts && !err) return <Pane><Skeleton rows={4} /></Pane>;
 
@@ -521,6 +552,41 @@ module.exports = function cuts(theme, okc, remember, shell) {
                                             <Empty>
                                                 Nothing is on GitHub for this one yet — it has been written and not sent.
                                             </Empty>
+
+                                            {on.draft && composed && composed.asking
+                                                ? <Note>Composing what it would say…</Note>
+                                                : null}
+
+                                            {/* A DRAFT OUTLIVES THE WORK IT WAS
+                                                WRITTEN FOR. The pair it names can
+                                                stop carrying anything — the branch
+                                                landed some other way, or was
+                                                rebuilt — and then Send it can only
+                                                fail. Saying so here, next to
+                                                "Throw it away", is the difference
+                                                between a dead row and a dead row
+                                                somebody can clear. */}
+                                            {on.draft && composed && !composed.asking && !composed.text
+                                                ? <Note kind="bad">
+                                                    {(composed.why || composed.note || 'Nothing would be opened for this pair.')
+                                                        + ' Throw it away, or point it at a line that carries something.'}
+                                                </Note>
+                                                : null}
+
+                                            {on.draft && composed && composed.text
+                                                ? <React.Fragment>
+                                                    <Note>
+                                                        What a pull request would say — what was written, and everything
+                                                        the blocks on New PR Cut add to it.
+                                                    </Note>
+                                                    <Card>
+                                                        <CardTitle>
+                                                            <span>{(on.said && on.said.title) || composed.title}</span>
+                                                        </CardTitle>
+                                                        <Markdown text={composed.text} />
+                                                    </Card>
+                                                </React.Fragment>
+                                                : null}
                                         </Panel>
                                     )}
                             </div>
