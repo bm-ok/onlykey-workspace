@@ -40,7 +40,10 @@ var allowed = require('./allowed');
 //same search path as every other provisioning file and a project can replace it.
 //..\vms\provision is the one thing that knows where that path is, and asking it
 //is cheaper than being right about the two environment variables twice.
-plugin.consumes = ['app', 'log', 'state', 'ours', 'guestApi', 'provision', 'guests', 'channel', 'dispatch'];
+plugin.consumes = ['app', 'log', 'state', 'ours', 'guestApi', 'provision', 'guests', 'channel', 'dispatch',
+    //`settings` FOR ONE FLAG: whether saying something wakes it. Read at the
+    //moment it would be rather than remembered, the same way ../queue reads it.
+    'settings'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -236,14 +239,48 @@ async function plugin(imports, register) {
                 + line.text.slice(0, 120) + (line.text.length > 120 ? '…' : '')
             );
 
-            //IT DOES NOT WAKE ANYTHING YET, AND THE NOTE SAYS SO. `supervisorWake`
-            //has not moved, so there is no "answers by itself" to honour here —
-            //and a note promising an answer that cannot come is the failure this
-            //whole action exists to make visible. When wake lands, the settings
-            //flag and the un-awaited call belong here.
+            //AND IT WAKES, IF IT HAS BEEN TOLD TO. This is what "I sent a message
+            //and nothing read it" is: the message was written down, correctly,
+            //and nothing on this host had any reason to read it.
+            //
+            //THIS SAID WAKE HAD NOT MOVED YET, and it had. `supervisorWake` is
+            //defined a few hundred lines below and the queue already honours
+            //this flag when a task finishes — so the only place it was NOT
+            //honoured was the one a person uses, and the switch offering it sat
+            //on this pane doing nothing. A control that is offered and has no
+            //effect is the fault this whole tab exists to end.
+            //
+            //NOT AWAITED. A turn is the better part of a minute — the machine
+            //may have to start first — and somebody who typed a sentence should
+            //not be watching a spinner for it. What it says arrives in the
+            //conversation, and the conversation is on screen.
+            //
+            //OFF BY DEFAULT, because a sentence typed here otherwise starts a
+            //machine and spends a model's time.
+            var wakes = false;
+            try { wakes = imports.settings.read().supervisorWakes === true; }
+            catch (e) { /* no settings is not a reason to lose the message */ }
+
+            if (wakes) {
+                //ALREADY THINKING IS `supervisorWake`'s OWN QUESTION. It folds a
+                //second call into the turn in flight rather than starting two —
+                //see `alsoWake` — so asking here as well would be a second
+                //opinion about the same thing, and the two would drift.
+                actions.call('supervisorWake', { why: 'you said something' })
+                    .catch(function (e) {
+                        say('supervisor').warn('it could not be woken: ' + e.message);
+                    });
+            }
+
             return Object.assign({}, line, {
-                woke: false,
-                note: 'Said. It reads this when it next wakes.'
+                woke: wakes,
+                //AND THE NOTE SAYS WHAT TO PRESS. "It reads this when it next
+                //wakes" is true and leaves somebody watching a message sit
+                //unread with nothing saying what would change that.
+                note: wakes
+                    ? 'Said, and it is waking to read it. What it says back appears here.'
+                    : 'Said. It reads this when it next wakes — press "Wake it" to do that now, or '
+                        + 'switch on "Answers by itself".'
             });
         }
     }));

@@ -224,6 +224,82 @@ it('and the destructive one is refused from out here, rather than travelling', a
   log(`refused, and all ${still.length} message(s) are still here`)
 })
 
+// WHAT THE SWITCH WAS BEFORE ANY OF THIS TOUCHED IT, recorded by whichever check
+// gets there first and never overwritten.
+//
+// IT WAS ONLY IN THE FIRST OF THE TWO, and a check can be run on its own —
+// `suiteRun --check` does exactly that. Run alone, the one below turned
+// "Answers by itself" ON and the cleanup skipped, because the value it restores
+// was never recorded. That leaves the one setting on this host that spends a
+// model's time on somebody's next sentence armed, by a drill, silently. Caught
+// by running exactly that.
+async function remember (okc, state) {
+  const now = (await okc('settings')).settings.supervisorWakes === true
+  if (state.wakes === undefined) state.wakes = now
+  return now
+}
+
+it('and saying something says what would make it read it', async ({ okc, assert, state, log }) => {
+  // "I SENT A MESSAGE AND IT NEVER GOT READ", which is what this looked like
+  // from outside and was not a receipt fault at all: the message was written
+  // down correctly, "Answers by itself" was off, and nothing on this host had
+  // any reason to read it. That is the right behaviour — the switch is off by
+  // default because a sentence typed here otherwise starts a machine and spends
+  // a model's time — and the note is the entire difference between it and a
+  // conversation being ignored.
+  //
+  // THE NOTE SAID "It reads this when it next wakes." and stopped, which is true
+  // and leaves somebody watching an unread message with nothing saying what
+  // would change that. Both ways out have to be named.
+  const was = await remember(okc, state)
+  if (was) await okc('settingSet', { name: 'supervisorWakes', value: false })
+
+  const said = await okc('chatSay', { text: 'nothing should wake for this one', about: 'a drill' })
+  assert.equal(said.woke, false, 'it woke with "Answers by itself" off, which starts a machine nobody asked to start')
+  assert.ok(/Wake it/.test(said.note),
+    `the note does not say what to press: "${said.note}"`)
+  assert.ok(/Answers by itself/.test(said.note),
+    `the note does not mention the switch that would do it every time: "${said.note}"`)
+  log('with the switch off it does not wake, and the note names both ways out')
+})
+
+it('and with the switch on it wakes by itself', async ({ okc, assert, state, log }) => {
+  // THE HALF THAT WAS MISSING ENTIRELY. `chatSay` returned a hard-coded
+  // `woke: false` under a comment saying wake had not been ported — and it had:
+  // `supervisorWake` is defined a few hundred lines below it, and the queue
+  // already honoured this flag when a task finished. So the ONE place the switch
+  // was not honoured was the one a person uses, and the control offering it sat
+  // on the pane doing nothing.
+  //
+  // ONLY AGAINST A SUPERVISOR THAT IS ALREADY UP. Waking one that is down starts
+  // the machine — a minute or two of VirtualBox — and that is not a cost a drill
+  // gets to impose without being asked. Up, it is one turn of a model, which is
+  // what this suite is for.
+  const st = await okc('supervisorState')
+  assert.needs(st.ready, 'no supervisor is up and signed in, and waking a stopped one would boot a machine')
+
+  await remember(okc, state)
+  await okc('settingSet', { name: 'supervisorWakes', value: true })
+  const said = await okc('chatSay', { text: 'wake on this one and say anything at all', about: 'a drill' })
+  assert.equal(said.woke, true, 'the switch is on and saying something did not wake it')
+  assert.ok(/waking/.test(said.note), `the note does not say it is waking: "${said.note}"`)
+
+  // AND THE RECEIPT ACTUALLY MOVES, which is the claim rather than the flag. A
+  // `woke: true` that nothing acts on is the same bug wearing a different value.
+  //
+  // BOUNDED, because an unsettled wait hangs instead of failing and a hang
+  // cannot be reported. Four minutes: a turn is usually under a minute.
+  let readTo = 0;
+  for (let i = 0; i < 48; i++) {
+    readTo = Number(((await okc('chat')).read || {}).n) || 0
+    if (readTo >= Number(said.n)) break
+    await new Promise(r => setTimeout(r, 5000))
+  }
+  assert.ok(readTo >= Number(said.n),
+    `it said it was waking and four minutes later the receipt is still at ${readTo}, behind n${said.n}`)
+  log(`said n${said.n} with nobody pressing anything, and it read up to ${readTo}`)
+}, { minutes: 6 })
+
 it('and the tab offers one decision at a time while nothing is running', async ({ okc, assert, log }) => {
   // THREE STATES, ONE SCREEN, and the whole design of this tab is that they do
   // not overlap. What went wrong here was not a broken control — it was the
@@ -315,6 +391,15 @@ it('and two supervisors are never running at once', async ({ okc, assert, state,
 
 cleanup(async ({ okc, state }) => {
   if (state.second) { try { await okc('vmRemove', { name: state.second }) } catch { /* never made */ } }
+
+  // AND THE SWITCH GOES BACK TO WHATEVER IT WAS. Two checks above turn it on and
+  // off, and leaving it ON is the one setting on this host that spends a model's
+  // time on somebody's next sentence — a drill that quietly arms that has done
+  // more than it was asked to. `state.wakes` is only set once the first of them
+  // has read it, so this restores nothing it never touched.
+  if (state.wakes !== undefined) {
+    try { await okc('settingSet', { name: 'supervisorWakes', value: state.wakes }) } catch { /* said in the log */ }
+  }
 })
 
 // ---- WHAT IT SAW ----------------------------------------------------------
