@@ -253,6 +253,14 @@ it('and the tab offers one decision at a time while nothing is running', async (
   // that fails for reasons that have nothing to do with what it checks.
   if ((await on()).includes('Close')) await okc('windowClick', { text: 'Close' })
 
+  // AND THE WINDOW GETS THE SAME VETO THE STATE DID. `supervisorState` was asked
+  // a moment ago; a supervisor going down between that answer and this draw
+  // leaves the pane in the running state while the check believes it is not, and
+  // it fails on a mismatch that is nobody's bug. Seen once, stopping a machine
+  // while this ran.
+  assert.needs(!(await on()).includes('Wake it'),
+    'the pane is in its running state, so a supervisor came up or went down while this was running')
+
   // CHOOSING: the decision is in the middle of the body and the header row is
   // empty. Not "mostly empty" — a second Start, a Clear that would clear
   // nothing, a Wake that cannot wake, are each a control offered where it does

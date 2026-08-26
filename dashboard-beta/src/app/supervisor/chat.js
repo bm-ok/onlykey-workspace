@@ -193,6 +193,18 @@ module.exports = function chat(theme, okc, markdown) {
         var rows = sup.supervisors || [];
         var [chose, setChose] = choice;
 
+        //AND THE MACHINE'S OWN FIELDS COME FROM THE ROW, not from the top of the
+        //answer. `supervisorState` flattens SOME of the first supervisor up —
+        //`name`, `ready`, `thinking`, `why` — and not the rest: `signedInAs`,
+        //`fingerprint` and `connected` exist only on the row.
+        //
+        //THIS READ THEM OFF THE TOP, so `signedInAs` was always undefined and
+        //the line always said "no credential". It agreed with the badge for as
+        //long as the machine held nothing, which is most of the time and was the
+        //whole of the testing — and the moment one was signed in the header read
+        //"ready" and "no credential" side by side.
+        var one = rows.filter(function (r) { return r.name === sup.name; })[0] || rows[0] || {};
+
         return (
             <Pane>
                 {said ? <Notice kind={said.bad ? 'bad' : 'ok'} onClose={function () { setSaid(null); }}>{said.text}</Notice> : null}
@@ -257,7 +269,7 @@ module.exports = function chat(theme, okc, markdown) {
                             state is on the hover. */}
                         {sup.there
                             ? <Badge kind={sup.thinking ? 'run' : sup.ready ? 'ok' : 'warn'}
-                                title={sup.why || sup.note || ''}>
+                                title={one.why || sup.note || ''}>
                                 {sup.thinking ? 'thinking' : sup.ready ? 'ready' : 'cannot run'}
                             </Badge>
                             : null}
@@ -269,9 +281,9 @@ module.exports = function chat(theme, okc, markdown) {
                             no credential wakes, finds a sign-in menu, and exits
                             in three seconds having asked this host for nothing. */}
                         {sup.there ? (
-                            sup.signedInAs
-                                ? <span className="muted" title={'fingerprint ' + (sup.fingerprint || '')}>
-                                    {sup.signedInAs}
+                            one.signedInAs
+                                ? <span className="muted" title={'fingerprint ' + (one.fingerprint || '')}>
+                                    {one.signedInAs}
                                 </span>
                                 : <span className="warn"
                                     title="A worker on it cannot authenticate, so waking it does nothing.">

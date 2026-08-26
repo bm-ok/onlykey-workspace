@@ -1102,6 +1102,130 @@ async function plugin(imports, register) {
         }
     }));
 
+    //---- one press to start it, and one to put it away ---------------------
+    //
+    //TWO STEPS IN AN ORDER THAT MATTERS, which is the whole reason this is one
+    //action: start the machine, wait for it to dial in, THEN sign it in. A
+    //credential cannot be put on a machine that is not talking yet, and doing it
+    //by hand is what went wrong on the host this came from — a supervisor that
+    //was running, dialled in, and holding nothing looks exactly like a working
+    //one, and every wake against it ended in three seconds having done nothing.
+    //
+    //THE SAME THREE STEPS THE SIGN-IN DESK ALREADY TAKES. ../runners/guests has
+    //`deskForSigningIn` — start, `vmAwait` connected, and then the sign-in —
+    //because getting a login URL needs a machine that is up too. This is that
+    //flow with the machine left up at the end, which is the only difference: a
+    //desk is borrowed for a minute, a supervisor is being put to work.
+    //
+    //AND THE KEY IS ALREADY CHOSEN. `supervisorSignIn` asks
+    //`guests.supervisorKey()`, the single function that decides which sign-in a
+    //supervisor spends — so this does not pick one, it just makes sure the
+    //machine is in a state to be given it.
+    //
+    //THIS WAS NOT DEFINED HERE AT ALL, and the pane's Start button called it
+    //anyway. An action this app does not have is relayed to the app being ported
+    //from, so the press either failed with "nothing here answers supervisorUp"
+    //(what happens with that app down) or — with it up — started ITS supervisor
+    //machine and handed it ITS credential, under a dialog naming this app's.
+    undo.push(actions.define('supervisorUp', {
+        about: 'Start the supervisor and sign it in, in one press',
+        takes: ['name'],
+        run: async function (args) {
+            var a = args || {};
+            var was = await actions.call('supervisorState', {});
+            if (!was.there) throw new Error(was.note);
+
+            //THE ONE ASKED FOR, CHECKED AGAINST THE LIST. With more than one
+            //supervisor machine the window sends which was picked, and a name
+            //that is not on the list is a name this must not start — `vmStart`
+            //would take it happily.
+            var rows = was.supervisors || [];
+            var name = a.name || was.name;
+            var one = rows.filter(function (r) { return r.name === name; })[0];
+            if (!one) {
+                throw new Error('"' + name + '" is not a supervisor machine on this host. It is '
+                    + (rows.length ? rows.map(function (r) { return '"' + r.name + '"'; }).join(' or ') : 'none of them') + '.');
+            }
+
+            var did = [];
+
+            //FROM THE LIVE STATE, WHICH IS THE ONLY ONE THERE IS. Whether a
+            //machine is running is asked of VirtualBox every time — a second
+            //opinion about it is the bug that app's machine layer exists to
+            //prevent — and `supervisorState` just asked, so this uses its answer
+            //rather than reading a stored field that does not exist.
+            if (one.state !== 'running') {
+                await actions.call('vmStart', { name: name });
+                //WAITING IS NOT OPTIONAL. This is the step a person forgets.
+                await actions.call('vmAwait', { name: name, for: 'connected', seconds: 240 });
+                did.push('started it');
+            }
+
+            //WHATEVER IT IS ALREADY HOLDING IS LEFT ALONE. Lending a second
+            //sign-in over the top would be two identities on one machine, and
+            //taking one back to put the same one on again rotates a token for
+            //nothing. `supervisorSignIn` is that check.
+            var put = await actions.call('supervisorSignIn', { name: name });
+            if (put && put.did) did.push(put.did);
+
+            var now = await actions.call('supervisorState', {});
+            var why = ((now.supervisors || []).filter(function (r) { return r.name === name; })[0] || {}).why;
+            return Object.assign({}, now, {
+                did: did.length ? did.join(', and ') : 'it was already up and signed in',
+                note: now.ready
+                    ? name + ' is ready — ' + (did.length ? did.join(', and ') : 'it was already up') + '.'
+                    : name + ' is still not ready: ' + (why || (put && put.why) || 'no reason given')
+            });
+        }
+    }));
+
+    //THE CREDENTIAL COMES OFF BEFORE THE MACHINE STOPS, and that order is the
+    //whole point of this being one press. Stopping first leaves a sign-in on a
+    //powered-off disk with nothing on this host recording it as out — which is
+    //what a host restart does, and what somebody then unpicks by hand.
+    //
+    //AND WHAT THE WORKER REFRESHED COMES BACK WITH IT. Taking it back reads the
+    //credential off the machine first: a supervisor session rotates its token,
+    //and stopping without reading throws the newer one away.
+    undo.push(actions.define('supervisorDown', {
+        about: 'Take the credential back and stop the supervisor, in that order',
+        takes: ['name'],
+        run: async function (args) {
+            var a = args || {};
+            var was = await actions.call('supervisorState', {});
+            if (!was.there) throw new Error(was.note);
+
+            var rows = was.supervisors || [];
+            var name = a.name || was.name;
+            var one = rows.filter(function (r) { return r.name === name; })[0];
+            if (!one) throw new Error('"' + name + '" is not a supervisor machine on this host.');
+
+            var did = [];
+
+            var held = guests.holderOf(name);
+            if (held) {
+                var back = await actions.call('vmCredentialsForget', { name: name });
+                did.push(back && back.rotated
+                    ? 'took "' + held + '" back, refreshed'
+                    : 'took "' + held + '" back unchanged');
+            }
+
+            //THE LIVE STATE AGAIN, and this is the half that failed silently
+            //over there: it took the credential back, said so, and left the
+            //machine running — reporting success for half a job.
+            if (one.state === 'running') {
+                await actions.call('vmStop', { name: name });
+                did.push('stopped it');
+            }
+
+            return {
+                name: name,
+                did: did.length ? did.join(', and ') : 'it was already off and holding nothing',
+                note: name + ': ' + (did.length ? did.join(', and ') : 'nothing to do — it was already away') + '.'
+            };
+        }
+    }));
+
     //---- what it is TOLD, which is the other half of the same question -----
     //
     //THE SKILL IS A DOCUMENT AND THE ALLOWLIST IS CODE, and that is why they are
