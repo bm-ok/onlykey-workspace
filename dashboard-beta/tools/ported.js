@@ -36,7 +36,38 @@ function theirs() {
     return out;
 }
 
-//AND THIS ONE'S IS EVERY `actions.define`, wherever it lives.
+//AND THIS ONE'S IS WHAT THE RUNNING APP SAYS, not what a regex can find.
+//
+//READING THE SOURCE IS WRONG HERE AND WAS WRONG IN THE WORST DIRECTION. A
+//`actions.define(what + 'Save')` inside a helper is invisible to any pattern,
+//so this reported the ENTIRE approval library — fifteen actions — as still
+//living in the other app. They are all here, registered by `doors()` in
+//library/server.js, and have been. The command line was asked at the time, said
+//`where: here` for every one of them, and was disbelieved because the regex
+//disagreed with it.
+//
+//That nearly cost a second copy of all fifteen, registered under the same names.
+//
+//SO THE APP IS THE AUTHORITY WHEN IT IS UP, and its own answer carries `where`.
+//The static scan stays as a fallback for when it is not, and says out loud that
+//it undercounts — a number with a known bias is usable; one presented as a fact
+//is not.
+function fromTheApp() {
+    var run = require('child_process').spawnSync(
+        process.execPath, [path.join(__dirname, 'okc.js'), 'actions', '--json'],
+        { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }
+    );
+    if (run.status !== 0 || !run.stdout) return null;
+    try {
+        var said = JSON.parse(run.stdout);
+        var list = said.actions || said;
+        if (!Array.isArray(list)) return null;
+        var here = new Set();
+        list.forEach(function (a) { if (a && a.name && a.where === 'here') here.add(a.name); });
+        return here.size ? here : null;
+    } catch (e) { return null; }
+}
+
 function ours(dir, into) {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         if (e.isDirectory()) {
@@ -96,7 +127,8 @@ function overlap(a, b) {
 }
 
 const old = theirs();
-const here = ours(path.join(HERE, 'src', 'app'), new Set());
+const live = fromTheApp();
+const here = live || ours(path.join(HERE, 'src', 'app'), new Set());
 const missing = [...old].filter((n) => !here.has(n)).sort();
 
 const args = process.argv.slice(2);
@@ -105,6 +137,12 @@ const list = only ? missing.filter((n) => n.toLowerCase().includes(only.toLowerC
 
 console.log(`${old.size} actions in the app being ported from`);
 console.log(`${here.size} defined here (${old.size - missing.length} of theirs, plus ${here.size - (old.size - missing.length)} this app added)`);
+if (!live) {
+    console.log('THE APP IS NOT RUNNING, so this read the source instead — and a source read');
+    console.log('UNDERCOUNTS: any action registered under a computed name is invisible to it.');
+    console.log('Start the app and ask again before believing the number below.');
+    console.log('');
+}
 console.log(`${missing.length} still relayed — they work only while the other app is running, and log only there\n`);
 
 //---- WHAT EACH MISSING ONE MIGHT ALREADY BE, UNDER ANOTHER NAME ----------

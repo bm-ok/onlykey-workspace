@@ -17,12 +17,17 @@ off only when something ran, not when the code looks right.
 ## Where it stands
 
     258 actions in dashboard/
-    202 defined here (174 of theirs, plus 28 this app added)
-     84 not defined here BY NAME
+    217 defined here (189 of theirs, plus 28 this app added)
+     69 not defined here BY NAME
 
-**84 is not the size of the work.** Names changed in the move, and a rename
-counted as a gap makes the remaining work look bigger than it is. Cross-checked,
-those 84 come apart into three piles, and only the third is work.
+**Ask the app, not the source.** `tools/ported.js` reads the running app's own
+action table, which knows what is registered however it was registered. Reading
+the source instead undercounted by fifteen in one plugin alone — see 2a.
+
+**And 69 is still not the size of the work.** Names changed in the move, and a
+rename counted as a gap makes the remaining work look bigger than it is.
+Cross-checked, those 69 come apart into three piles, and only the third is
+work.
 
 ---
 
@@ -66,22 +71,29 @@ Written down because they keep getting re-derived as drift.
 The loop is: **supervisor decides → a person approves → worker runs → judge
 reads → PR cut → a person merges.** These stop it closing.
 
-### 2a. The approval library is not here — 15 actions
+### 2a. ~~The approval library is not here — 15 actions~~ — WRONG, it is all here
 
-`library/server.js` defines the five READERS (`jobs`, `job`, `prompts`,
-`contracts`, `contract`) and nothing else. Missing:
+**Struck out rather than deleted, because the mistake is the useful part.**
 
-    jobSave      jobApprove      jobWithdraw      jobUse      jobForget
-    promptSave   promptApprove   promptWithdraw   promptUse   promptForget
-    contractSave contractApprove contractWithdraw contractUse (no contractForget)
+All fifteen — `jobSave`, `jobApprove`, `jobWithdraw`, `jobUse`, `jobForget` and
+the same five each for prompts and contracts — are defined in
+`library/server.js` by `doors(what, store, opts)`, and have been all along. The
+approval boundary is there too, sharper than the one being ported from: *"a
+model may write one and may not ratify its own"*, refusing `_overTheWire` and
+`_driven` and deliberately allowing `_fromTest`.
 
-**Why it is first.** The supervisor proposes a job or a prompt and there is no
-way to approve it in this app, so nothing it proposes can ever run. It is also
-the human gate — *"human, approves prompts, jobs, contracts"* — so it is the one
-part of the loop that must be a person at this window and cannot be delegated.
+They were reported missing because `tools/ported.js` READ THE SOURCE, and
+`actions.define(what + 'Save')` inside a helper matches no pattern. The command
+line was asked at the time and answered `where: here` for every one of them —
+and was disbelieved, because the static tool disagreed with it.
 
-Note the shape of the refusal, which has to survive the move: written at the
-window it is approved by whoever wrote it; **written over the wire it waits.**
+It nearly cost a second copy of all fifteen under the same names. The tool now
+asks the running app first and only falls back to reading source, saying out
+loud that a source read undercounts.
+
+**The lesson is bigger than this entry:** a static reader of this codebase is a
+FLOOR in both directions. `test/rules/no-pane-relays.test.js` has the same
+blind spot and its zero should be read the same way.
 
 ### 2b. No repository points at a fork — the whole drill chain is blocked
 
@@ -123,7 +135,10 @@ and let everything under it run for the first time.
 
 A relayed action does its logging in `dashboard/`, so every line it would have
 written is missing from Live — the log viewer both a person and a model watch a
-run through. A quiet Live is not a quiet app. This closes as 2a closes.
+run through. A quiet Live is not a quiet app.
+
+With 2a struck out this is smaller than it looked, and it is still true of the
+69: whatever is left over there logs over there.
 
 ---
 
@@ -192,3 +207,6 @@ missing file.
 * Does anything still write to the old app's `%LOCALAPPDATA%\okc-dashboard`
   state? Nothing should, and nothing is known to — but it has never been checked
   from this side.
+* need a dedicated plugin for "open in vscode",  when click it setup ssh key and launched vscode that connects to the vm directly.   this button should termperally exist on in runners->virtual machines->Actions area for selected vm, (old dashbaord had this button somewhere)
+* lightgraph ui plugin is not ported yet,  it was in old dashboard,  it was used to show the graph of the line,  and also to show the graph of the branch.  this plugin should be ported to new dashboard. use markdown and editor in ui plugin group as examples. 2 placed i remember (repositories0>graph) and (supervisor->graph)
+
