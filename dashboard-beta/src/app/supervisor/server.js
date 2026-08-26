@@ -437,11 +437,18 @@ async function plugin(imports, register) {
                 ready: !!up,
                 name: up ? up.name : rows[0].name,
 
-                //NOT PORTED YET AND SAID AS FALSE RATHER THAN LEFT OFF. It is
-                //"this app has a turn running", and this app cannot start one
-                //until `supervisorWake` moves — so false is the true answer here
-                //and not a placeholder. The badge it drives simply never shows.
-                thinking: false,
+                //WHETHER A TURN IS RUNNING RIGHT NOW, from the flag the wake
+                //keeps — see `thinking` below, which is set around the child and
+                //is what refuses a second turn.
+                //
+                //THIS WAS HARD-CODED `false` under a comment saying wake had not
+                //been ported. It had: `supervisorWake` is defined in this same
+                //file and maintains that flag. So the badge that says "thinking"
+                //could never show it, and neither could the Wake button that now
+                //relabels — on the one screen whose subject is whether the far
+                //end is doing anything. The third field in this pane found saying
+                //"not ported yet" about something already here.
+                thinking: thinking,
 
                 //THE TOP-LEVEL `why` IS WHAT THE PANE LEADS WITH when nothing is
                 //ready. It reads `why || note`, and a note that describes the

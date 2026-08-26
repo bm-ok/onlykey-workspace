@@ -80,6 +80,27 @@ module.exports = function chat(theme, okc, markdown) {
         var [sending, setSending] = useState(false);
         var bottom = useRef(null);
 
+        //A TEXTAREA THAT GROWS WITH WHAT IS IN IT, which is the whole reason it
+        //is a textarea rather than an input. A brief for a supervisor is often a
+        //paragraph, and typing one into a single-line box that scrolls sideways
+        //is how it ends up being one sentence.
+        //
+        //THE STYLESHEET ONLY SETS THE BOUNDS — `min-height: 2.4rem` and
+        //`max-height: 9rem`, the same 144px the app being ported from stops at —
+        //and a box with `rows={1}` sits at the minimum and scrolls inside itself
+        //however much is typed. Nothing was wrong on screen; it simply never
+        //grew, and the comment above it claimed the opposite.
+        //
+        //`auto` FIRST, or `scrollHeight` is measured against the height it
+        //already has and the box can only ever grow.
+        var box = useRef(null);
+        useEffect(function () {
+            var el = box.current;
+            if (!el) return;
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 144) + 'px';
+        }, [text]);
+
         //---- READING THE THREAD WHILE NOTHING IS UP ------------------------
         //
         //UP HERE WITH THE OTHER HOOKS, AND NOT BESIDE THE THING IT IS ABOUT.
@@ -410,9 +431,23 @@ module.exports = function chat(theme, okc, markdown) {
                             </label>
                         )}
 
+                        {/* AND IT SAYS SO WHILE IT IS THINKING. A turn is the
+                            better part of a minute; a button that goes quiet for
+                            that long reads as one that did nothing, and gets
+                            pressed again.
+
+                            THIS WAS ALWAYS "Wake it" AND ALWAYS PRESSABLE.
+                            `supervisorWake` folds a second call into the turn in
+                            flight rather than starting two, so nothing broke —
+                            the button simply lied about what was happening, on
+                            the one screen whose subject is whether the far end
+                            is doing anything. */}
                         {offline ? null : (
                             <Button
-                                title="One turn: it reads what changed and answers"
+                                disabled={!!sup.thinking}
+                                title={sup.thinking
+                                    ? 'It is mid-turn. What you have said is already in front of it.'
+                                    : 'One turn: it reads what changed and answers'}
                             onClick={function () {
                                 ask({
                                     title: 'Wake ' + sup.name + ' now?',
@@ -430,7 +465,7 @@ module.exports = function chat(theme, okc, markdown) {
                                         );
                                     }
                                 });
-                            }}>Wake it</Button>
+                            }}>{sup.thinking ? 'thinking…' : 'Wake it'}</Button>
                         )}
 
                         {/* TIDYING THE SCREEN, AND NOTHING MORE.
@@ -625,7 +660,7 @@ module.exports = function chat(theme, okc, markdown) {
                     //often a paragraph, and Enter sends while Shift+Enter makes a
                     //line.
                     <div className="chat-composer">
-                        <textarea rows={1} value={text}
+                        <textarea rows={1} value={text} ref={box}
                             placeholder="say something to the supervisor — Enter to send, Shift+Enter for a new line"
                             onChange={function (e) { setText(e.target.value); }}
                             onKeyDown={function (e) {
@@ -659,7 +694,7 @@ module.exports = function chat(theme, okc, markdown) {
         //screen on the first message.
         return (
             <div className="chat-thread">
-                {msgs.length ? null : <Empty>nothing has been said yet</Empty>}
+                {msgs.length ? null : <Empty>No conversation yet.</Empty>}
                 {msgs.map(function (m) {
                     var mine = m.who == 'person' || m.who == 'you' || m.who == 'the person';
 

@@ -354,15 +354,29 @@ it('and with the switch on it wakes by itself', async ({ okc, assert, state, log
   //
   // BOUNDED, because an unsettled wait hangs instead of failing and a hang
   // cannot be reported. Four minutes: a turn is usually under a minute.
+  // AND WHILE IT IS IN FLIGHT, THIS HOST SAYS SO. Checked in the same wait
+  // rather than in a check of its own, because the expensive thing here is the
+  // turn and there is one going past already.
+  //
+  // `supervisorState.thinking` WAS HARD-CODED `false`, under a comment saying
+  // wake had not been ported — and it is defined in that same file and keeps
+  // that very flag. So the badge that reads "thinking" could never show it and
+  // neither could the Wake button, which relabels and disables itself off it.
+  // Two controls, on the one screen whose subject is whether the far end is
+  // doing anything, wired to a literal.
   let readTo = 0;
+  let sawThinking = false
   for (let i = 0; i < 48; i++) {
+    if (!sawThinking && (await okc('supervisorState')).thinking === true) sawThinking = true
     readTo = Number(((await okc('chat')).read || {}).n) || 0
     if (readTo >= Number(said.n)) break
     await new Promise(r => setTimeout(r, 5000))
   }
   assert.ok(readTo >= Number(said.n),
     `it said it was waking and four minutes later the receipt is still at ${readTo}, behind n${said.n}`)
-  log(`said n${said.n} with nobody pressing anything, and it read up to ${readTo}`)
+  assert.ok(sawThinking,
+    'a whole turn went past and this host never once reported `thinking` — the badge and the Wake button both read that field')
+  log(`said n${said.n} with nobody pressing anything, it reported thinking, and it read up to ${readTo}`)
 }, { minutes: 6 })
 
 it('and the tab offers one decision at a time while nothing is running', async ({ okc, assert, log }) => {
