@@ -530,10 +530,40 @@ async function plugin(imports, register) {
                     if (r.remote && r.remote.owner) ours[r.remote.owner + '/' + r.remote.repo] = true;
                 });
 
-                for (var i = 0; i < mine.length; i++) {
-                    var r = mine[i];
-                    var on = r.issuesOn || (r.remote && r.remote.owner ? r.remote.owner + '/' + r.remote.repo : null);
-                    if (!on) continue;
+                //FROM EVERY PLACE EACH REPOSITORY READS PULL REQUESTS FROM.
+                //
+                //THIS READ ONE PLACE — wherever work was SENT — and arriving
+                //pull requests do not turn up there. They turn up where the
+                //person who wrote them opened one, which for a fork of a fork
+                //is as likely to be the project above as the fork in between.
+                //So a pull request waiting to be allowed could sit unseen on a
+                //repository this workspace watches, and nothing anywhere said
+                //it existed.
+                //
+                //`reads.pulls` IS THE SET, and it defaults to where work goes,
+                //so nothing changes for a workspace that has never said
+                //otherwise. See `readsOf` in ../repos/server.js.
+                //ONE PLACE ASKED ONCE, however many repositories name it. Two
+                //forks of the same project both reading from that project is
+                //the ordinary arrangement, and asking per repository would
+                //fetch it twice and list every pull request on it twice — one
+                //pull request, two rows, two allow buttons for one decision.
+                var asked = [];
+                var already = {};
+                mine.forEach(function (r) {
+                    var places = (r.reads && r.reads.pulls && r.reads.pulls.length)
+                        ? r.reads.pulls
+                        : [r.issuesOn || (r.remote && r.remote.owner ? r.remote.owner + '/' + r.remote.repo : null)];
+                    places.filter(Boolean).forEach(function (on) {
+                        if (already[on]) return;
+                        already[on] = true;
+                        asked.push({ r: r, on: on });
+                    });
+                });
+
+                for (var i = 0; i < asked.length; i++) {
+                    var r = asked[i].r;
+                    var on = asked[i].on;
                     var bits = on.split('/');
                     var said = null;
                     try { said = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/pulls?state=open&per_page=100'); }

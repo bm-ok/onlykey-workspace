@@ -712,6 +712,137 @@ test('a pull request is not counted as an issue', async () => {
 });
 
 //---------------------------------------------------------------------------
+//ISSUES CAN BE SWITCHED OFF PER REPOSITORY, AND SEVERAL OF THESE FORKS ARE.
+//
+//GitHub answers 410 Gone for the issues of a repository whose owner turned them
+//off. Read as a failure that is a permissions message pointing at a token, and
+//the setting it is really about is a checkbox on somebody else's repository —
+//so somebody goes looking for a scope that was never the problem.
+//
+//AND IT COSTS A REQUEST EVERY CHECK, forever, to be told the same thing. The
+//repository itself says `has_issues`, and GitHub embeds the whole parent and
+//source objects in it, so this is known before anything is asked.
+//---------------------------------------------------------------------------
+
+test('a repository with issues switched off is not asked, and the row says why', async () => {
+    const { actions, asked } = await anApp(Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo': { status: 200, body: { default_branch: 'main', fork: false, has_issues: false } }
+    }));
+
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+
+    assert.deepEqual(row.noIssuesAt, ['anowner/arepo'], 'the switched-off repository was not noticed');
+
+    //NOT ASKED, WHICH IS THE POINT OF NOTICING. A cheap answer that still spends
+    //the request is the same cost with better wording.
+    assert.ok(!asked.some((a) => a.indexOf('/repos/anowner/arepo/issues') >= 0),
+        'it asked for issues from a repository that has none: ' + asked.join(', '));
+
+    const said = (row.issuesFrom || [])[0];
+    assert.equal(said.on, 'anowner/arepo');
+    assert.equal(said.off, true);
+    assert.equal(said.asked, false, '`asked` is what separates "no issues tab" from "asked, and none"');
+    assert.match(said.why, /switched off/);
+});
+
+//A COUNT CANNOT SAY WHY IT IS ZERO, and three different things arrive as zero.
+test('what each place in a read set answered is carried beside the list', async () => {
+    const { actions } = await anApp(Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo': {
+            status: 200,
+            body: { default_branch: 'main', fork: true, has_issues: true, parent: { full_name: 'up/arepo', has_issues: true } }
+        },
+        '/repos/anowner/arepo/issues': { status: 200, body: [{ number: 3, title: 'mine', user: { login: 'me' } }] },
+        '/repos/up/arepo': { status: 200, body: { default_branch: 'main', has_issues: true } },
+        '/repos/up/arepo/pulls': { status: 200, body: [] },
+        '/repos/up/arepo/issues': { status: 403, body: { message: 'Forbidden' } }
+    }));
+
+    //WALKED FIRST, because a read set may only name links the app has actually
+    //seen — see the refusal in `repoReadsSet`.
+    await actions.call('repoChain', { repo: 'repo-one' });
+    await actions.call('repoReadsSet', { repo: 'repo-one', issues: ['anowner/arepo', 'up/arepo'] });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+
+    const from = row.issuesFrom || [];
+    assert.equal(from.length, 2, 'a place in the set contributed no answer at all');
+
+    const ours = from.find((x) => x.on === 'anowner/arepo');
+    assert.equal(ours.count, 1);
+    assert.equal(ours.why, null);
+
+    //THE ONE THAT WOULD OTHERWISE VANISH. It contributed no issues and no row to
+    //say so in, so without this the list is short and confident.
+    const theirs = from.find((x) => x.on === 'up/arepo');
+    assert.equal(theirs.count, null, 'a place that could not be read was recorded as having none');
+    assert.match(theirs.why, /Forbidden/);
+
+    //AND EVERY ISSUE KNOWS WHICH REPOSITORY IT IS ON. Two places read at once
+    //both have a #1, so a number on its own names two different things.
+    assert.equal(row.issues.length, 1);
+    assert.equal(row.issues[0].on, 'anowner/arepo');
+});
+
+//PULL REQUESTS ARE READ FROM A SET TOO, and for a fork that matters more than
+//for issues: a change SOMEBODY ELSE opened arrives in the repository they opened
+//it on, which is never this fork.
+test('pull requests are read from every place in the set, each row saying where', async () => {
+    const { actions } = await anApp(Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo': {
+            status: 200,
+            body: { default_branch: 'main', fork: true, has_issues: true, parent: { full_name: 'up/arepo' } }
+        },
+        '/repos/anowner/arepo/pulls': { status: 200, body: [] },
+        '/repos/up/arepo': { status: 200, body: { default_branch: 'main', has_issues: true } },
+        '/repos/up/arepo/pulls': {
+            status: 200,
+            body: [{
+                number: 8, title: 'from somebody else', state: 'open',
+                head: { ref: 'fix', repo: { full_name: 'anowner/arepo' }, sha: 'abc' },
+                base: { ref: 'main' }, user: { login: 'someone' }, author_association: 'MEMBER'
+            }]
+        }
+    }));
+
+    await actions.call('repoChain', { repo: 'repo-one' });
+    await actions.call('repoReadsSet', { repo: 'repo-one', pulls: ['anowner/arepo', 'up/arepo'] });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+
+    assert.equal(row.openPulls, 1, 'the pull request upstream was never read');
+    assert.equal(row.pulls[0].on, 'up/arepo', 'the row does not say which repository it is open on');
+    assert.equal(row.pulls[0].headRepo, 'anowner/arepo', 'whose fork the branch is on was dropped');
+    assert.equal(row.pulls[0].base, 'main');
+});
+
+//A DISABLED CHECKBOX IS NOT A RULE. The command line never sees one.
+test('choosing to read issues from a repository that has none is refused', async () => {
+    const { actions } = await anApp(Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo': {
+            status: 200,
+            body: { default_branch: 'main', fork: true, has_issues: true, parent: { full_name: 'up/arepo', has_issues: false } }
+        },
+        '/repos/up/arepo': { status: 200, body: { default_branch: 'main', has_issues: false } },
+        '/repos/up/arepo/pulls': { status: 200, body: [] }
+    }));
+
+    await actions.call('repoChain', { repo: 'repo-one' });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    await assert.rejects(
+        () => actions.call('repoReadsSet', { repo: 'repo-one', issues: ['anowner/arepo', 'up/arepo'] }),
+        /switched off/);
+
+    //AND PULL REQUESTS FROM THERE ARE STILL FINE. They are a different tab on
+    //GitHub and a different setting; refusing both would be one rule doing two
+    //jobs and getting one of them wrong.
+    await actions.call('repoReadsSet', { repo: 'repo-one', pulls: ['anowner/arepo', 'up/arepo'] });
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+    assert.deepEqual(row.reads.pulls, ['anowner/arepo', 'up/arepo']);
+});
+
+//---------------------------------------------------------------------------
 //WHERE WORK GOES IS THE ONLY SETTING IN THIS APP WITH SOMEBODY ELSE'S NAME ON IT.
 //
 //Everything else decides what happens on this host. This decides whose

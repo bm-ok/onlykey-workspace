@@ -299,10 +299,19 @@ module.exports = function repos(theme, okc) {
 
                         {links.map(function (l) {
                             var canSend = l.self || l.mayOpen;
+                            //ISSUES CAN BE SWITCHED OFF PER REPOSITORY on
+                            //GitHub, and on these forks several are. A place
+                            //with no issues tab can never answer, so offering it
+                            //as somewhere to read from is offering a choice that
+                            //produces an empty list and no reason for it.
+                            var noIssues = (r.noIssuesAt || []).indexOf(l.on) >= 0;
                             return (
                                 <Part key={l.on} right={
                                     <React.Fragment>
-                                        <label className="inline" title={'Read issues from ' + l.on}>
+                                        <label className="inline"
+                                            title={noIssues
+                                                ? 'Issues are switched off on ' + l.on + ', so there is nothing to read there'
+                                                : 'Read issues from ' + l.on}>
                                             {/* NAMED, because a bare checkbox in
                                                 a row is nameless to everything
                                                 that is not a pair of eyes: the
@@ -311,7 +320,9 @@ module.exports = function repos(theme, okc) {
                                                 The words are the question plus
                                                 the place, which is what somebody
                                                 would say out loud. */}
-                                            <input type="checkbox" checked={reads.issues.indexOf(l.on) >= 0}
+                                            <input type="checkbox"
+                                                checked={!noIssues && reads.issues.indexOf(l.on) >= 0}
+                                                disabled={noIssues}
                                                 aria-label={'read issues from ' + l.on}
                                                 onChange={function () { toggle('issues', l.on); }} />
                                         </label>
@@ -339,6 +350,10 @@ module.exports = function repos(theme, okc) {
                                     <Mono>{l.on}</Mono>
                                     {l.self ? <Badge kind="muted">yours</Badge> : null}
                                     {!l.fork ? <Badge kind="muted">the project</Badge> : null}
+                                    {/* SAID ON THE ROW as well as in the greyed
+                                        box, because a disabled control on its
+                                        own says "not now" and never says why. */}
+                                    {noIssues ? <Badge kind="muted">no issues tab</Badge> : null}
                                 </Part>
                             );
                         })}

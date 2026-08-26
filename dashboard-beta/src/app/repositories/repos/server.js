@@ -188,6 +188,66 @@ async function plugin(imports, register) {
         };
     }
 
+    //WHAT ONE PLACE IN A READ SET ANSWERED, in the words a pane can print.
+    //
+    //410 IS NOT AN ERROR, IT IS A SETTING. GitHub answers Gone for the issues of
+    //a repository whose owner has switched issues OFF — which is a normal thing
+    //to do on a fork, and is why bm-sandbox-b/local-repo-b returns nothing. Read
+    //as a failure it reads as "the token cannot see it" and sends somebody to
+    //the permissions page for a checkbox on the repository's own settings.
+    function whatItSaid(on, got, what) {
+        var said = { on: on, count: null, off: false, asked: true, why: null };
+        if (got.status === 200 && Array.isArray(got.body)) {
+            said.count = got.body.length;
+            return said;
+        }
+        if (got.status === 410) {
+            said.off = true;
+            said.count = 0;
+            said.why = what === 'issues'
+                ? 'issues are switched off on this repository'
+                : 'pull requests are switched off on this repository';
+            return said;
+        }
+        if (got.status === 404) {
+            said.why = 'GitHub says 404 — either it does not exist, or this token was not granted it';
+            return said;
+        }
+        said.why = (got.body && got.body.message) || ('GitHub answered ' + got.status);
+        return said;
+    }
+
+    //ONE PULL REQUEST, in this app's words. Used for every place in the read
+    //set, so `on` says which repository it is OPEN ON — with two forks read at
+    //once, "#1" on its own names two different pull requests.
+    function onePull(on, p) {
+        return {
+            on: on,
+                    number: p.number, title: p.title, state: p.state, draft: !!p.draft,
+                    merged: !!p.merged_at,
+                    head: p.head && p.head.ref, base: p.base && p.base.ref,
+                    by: p.user && p.user.login, at: p.created_at, updated: p.updated_at,
+                    url: p.html_url,
+
+                    //WHOSE CODE, AND WHICH COMMIT. Fine to drop while every pull
+                    //request here is one this host cut; it stops being fine the
+                    //moment one ARRIVES. Deciding whether a judge may read
+                    //somebody else's change needs to know whose it is, and an
+                    //allowance to read it names the commit or it carries onto
+                    //whatever the author pushes next.
+                    headRepo: (p.head && p.head.repo && p.head.repo.full_name) || null,
+                    headSha: (p.head && p.head.sha) || null,
+
+                    //GitHub's own word for how close the author is to the
+                    //repository: OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, NONE.
+                    //Carried and never interpreted — "is this person trusted" is
+                    //not a question this app should answer, and the answer it
+                    //could give is somebody's permissions rather than their
+                    //intent.
+                    association: p.author_association || null
+                };
+    }
+
     function targetOf(note, remote) {
         var self = remote && remote.owner ? remote.owner + '/' + remote.repo : null;
         var picked = note && note.target && note.target.on ? String(note.target.on) : null;
@@ -226,8 +286,23 @@ async function plugin(imports, register) {
         if (!full) return null;
         var bits = String(full).split('/');
         var up = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/pulls?state=open&per_page=1');
+
+        //AND WHETHER IT HAS AN ISSUES TAB AT ALL. A repository's owner can switch
+        //issues off, and several of these forks have — reading issues from one
+        //then spends a request to be told 410 Gone, every check, forever. Asking
+        //the repository itself is one call and it is the same call the etag door
+        //answers from cache, so knowing this costs nothing and saves a request
+        //per check per place.
+        //
+        //`null` MEANS NOT KNOWN, which is not `false`. A place that could not be
+        //asked must not be recorded as having issues switched off: that would
+        //take the choice away on screen for what is really a permissions problem.
+        var about = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1]);
         return {
             repo: full,
+            hasIssues: about.status === 200 && about.body && about.body.has_issues !== undefined
+                ? !!about.body.has_issues
+                : null,
             mayOpen: up.status === 200,
             why: up.status === 200 ? null : (up.status === 404
                 ? 'this token was not granted it, so a pull request cannot be opened there'
@@ -276,6 +351,10 @@ async function plugin(imports, register) {
         var branchList = await github.call('GET', at + '/branches?per_page=100');
         var canReadCode = branchList.status === 200;
 
+        //THE PROBE, WHICH IS A DIFFERENT QUESTION FROM THE READ BELOW. This asks
+        //whether the token may use Pull requests ON THIS REPOSITORY, and feeds
+        //the missing-permission sentence. WHICH repositories are read from is a
+        //decision somebody made — see the `reads.pulls` loop further down.
         var pulls = await github.call('GET', at + '/pulls?state=open&per_page=100');
         var canReadPulls = pulls.status === 200;
 
@@ -348,13 +427,72 @@ async function plugin(imports, register) {
         //trap: every PR is also an issue there, so a list drawn from it without
         //filtering shows each pull request twice, once as itself and once as an
         //issue. `pull_request` on the row is how they are told apart.
-        var on = targetFrom(note, remote);
+        //FROM EVERY PLACE THIS REPOSITORY READS ISSUES FROM, which is a SET and
+        //was one value. Issues arrive where people file them, and for a fork of
+        //a fork that can be two places at once — the fork you collaborate
+        //through and the project above it — so reading only from wherever work
+        //is SENT missed half of them with nothing to say so. See `readsOf`.
+        //
+        //ASKED IN ORDER AND CONCATENATED, each row carrying `on`, so a list can
+        //say which repository an issue came from rather than implying they are
+        //all one repository's.
+        //
+        //AND WHAT EACH PLACE ANSWERED, kept beside the list. A set can be half
+        //readable — a repository in it with ISSUES SWITCHED OFF answers 410 and
+        //an unreadable one answers 404 — and both look identical in a
+        //concatenated list: fewer rows, no reason. `issuesFrom` carries one
+        //entry per place so a pane can say which fork went quiet and why,
+        //rather than showing a short list that reads as "there are none".
+        //---- WHERE THERE IS NO ISSUES TAB TO READ ---------------------------
+        //
+        //ISSUES CAN BE SWITCHED OFF PER REPOSITORY, and on these forks they often
+        //are: bm-sandbox-c/local-repo-a has them, bm-sandbox-c/local-repo-c and
+        //bm-sandbox-b/local-repo-b do not. GitHub answers 410 Gone for the issues
+        //of a repository whose owner turned them off, so a read set naming one
+        //spends a request every check to be told the same thing.
+        //
+        //ASKED ONCE, FROM WHAT IS ALREADY IN HAND. `has_issues` is on the
+        //repository, and GitHub embeds the whole parent and source objects in
+        //it — so this costs nothing for the chain, and `canOpenIn` learns it for
+        //a target picked anywhere else.
+        //
+        //ONLY `false` COUNTS. Anything not known stays unknown and is asked for
+        //as normal: refusing to read from a place because a probe failed would
+        //turn a token problem into a setting nobody can find.
+        var noIssues = {};
+        function noteIssues(on, has) {
+            if (on && has === false) noIssues[on] = true;
+        }
+        var mineFull = remote && remote.owner ? remote.owner + '/' + remote.repo : null;
+        noteIssues(mineFull, r.body.has_issues);
+        if (r.body.parent) noteIssues(parent, r.body.parent.has_issues);
+        if (r.body.source) noteIssues(source, r.body.source.has_issues);
+        [intoParent, intoSource, intoTarget].forEach(function (probe) {
+            if (probe) noteIssues(probe.repo, probe.hasIssues);
+        });
+
+        var from = readsOf(note, remote).issues;
         var issues = null;
-        if (on) {
+        var issuesFrom = [];
+        for (var ri = 0; ri < from.length; ri++) {
+            var on = from[ri];
+            if (noIssues[on]) {
+                //NOT ASKED, and the row says so rather than saying zero. `asked`
+                //is what separates "there is no issues tab here" from "there is
+                //one and it is empty" — they look the same in a count.
+                issuesFrom.push({ on: on, count: 0, off: true, asked: false,
+                    why: 'issues are switched off on this repository' });
+                continue;
+            }
             var bits = on.split('/');
             var got = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/issues?state=open&per_page=100');
+            issuesFrom.push(whatItSaid(on, got, 'issues'));
             if (got.status === 200 && Array.isArray(got.body)) {
-                issues = got.body.filter(function (x) { return !x.pull_request; }).map(function (x) {
+                //NULL UNTIL SOMETHING ANSWERS. An empty array means "asked, and
+                //there are none", which is a different answer from "could not
+                //ask" — and the panes tell them apart.
+                if (issues === null) issues = [];
+                issues = issues.concat(got.body.filter(function (x) { return !x.pull_request; }).map(function (x) {
                     return {
                         number: x.number, title: x.title, at: x.created_at, updated: x.updated_at,
                         by: x.user && x.user.login, url: x.html_url, on: on,
@@ -370,7 +508,31 @@ async function plugin(imports, register) {
                         //words again.
                         body: x.body || null
                     };
-                });
+                }));
+            }
+        }
+
+        //FROM EVERY PLACE THIS REPOSITORY READS PULL REQUESTS FROM, the same set
+        //shape as the issues above and for the same reason: a change somebody
+        //else opened arrives in the repository they opened it on, which is not
+        //necessarily this fork.
+        var pullFrom = readsOf(note, remote).pulls;
+        var pullList = null;
+        var pullsFrom = [];
+        for (var pi = 0; pi < pullFrom.length; pi++) {
+            var pOn = pullFrom[pi];
+            var pBits = pOn.split('/');
+            //THE PROBE ANSWERED THIS ONE ALREADY when the set is just this
+            //repository, which is the common case. Asking twice would be
+            //harmless — the second is a 304 — but it would be two lines in the
+            //log for one question.
+            var pGot = (pOn === mineFull)
+                ? pulls
+                : await github.call('GET', '/repos/' + pBits[0] + '/' + pBits[1] + '/pulls?state=open&per_page=100');
+            pullsFrom.push(whatItSaid(pOn, pGot, 'pulls'));
+            if (pGot.status === 200 && Array.isArray(pGot.body)) {
+                if (pullList === null) pullList = [];
+                pullList = pullList.concat(pGot.body.map(onePull.bind(null, pOn)));
             }
         }
 
@@ -402,35 +564,21 @@ async function plugin(imports, register) {
             upstreamDefault: r.body.default_branch || null,
             upstreamHead: headOfList(branchList, r.body.default_branch),
             branchesThere: canReadCode && Array.isArray(branchList.body) ? branchList.body.length : null,
-            pulls: canReadPulls && Array.isArray(pulls.body) ? pulls.body.map(function (p) {
-                return {
-                    number: p.number, title: p.title, state: p.state, draft: !!p.draft,
-                    merged: !!p.merged_at,
-                    head: p.head && p.head.ref, base: p.base && p.base.ref,
-                    by: p.user && p.user.login, at: p.created_at, updated: p.updated_at,
-                    url: p.html_url,
-
-                    //WHOSE CODE, AND WHICH COMMIT. Fine to drop while every pull
-                    //request here is one this host cut; it stops being fine the
-                    //moment one ARRIVES. Deciding whether a judge may read
-                    //somebody else's change needs to know whose it is, and an
-                    //allowance to read it names the commit or it carries onto
-                    //whatever the author pushes next.
-                    headRepo: (p.head && p.head.repo && p.head.repo.full_name) || null,
-                    headSha: (p.head && p.head.sha) || null,
-
-                    //GitHub's own word for how close the author is to the
-                    //repository: OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, NONE.
-                    //Carried and never interpreted — "is this person trusted" is
-                    //not a question this app should answer, and the answer it
-                    //could give is somebody's permissions rather than their
-                    //intent.
-                    association: p.author_association || null
-                };
-            }) : null,
-            openPulls: canReadPulls && Array.isArray(pulls.body) ? pulls.body.length : null,
+            pulls: pullList,
+            openPulls: pullList ? pullList.length : null,
             issues: issues,
             openIssues: issues ? issues.length : null,
+
+            //WHAT EACH PLACE IN THE TWO READ SETS ANSWERED, one entry per place.
+            //A concatenated list cannot say that one of the forks it was built
+            //from is unreadable, or has issues switched off — it just comes back
+            //shorter, which reads as "there are none".
+            issuesFrom: issuesFrom,
+            pullsFrom: pullsFrom,
+            //AND THE PLACES WITH NO ISSUES TAB AT ALL, so the pane that picks
+            //read sets can refuse to offer one rather than letting somebody
+            //choose a repository that can never answer.
+            noIssuesAt: Object.keys(noIssues),
             why: missing.length
                 ? 'the token cannot use ' + missing.join(' or ') + ' here — add '
                     + (missing.length === 1 ? 'that permission' : 'those permissions') + ' to it on GitHub'
@@ -728,6 +876,14 @@ async function plugin(imports, register) {
                         //be named.
                         reads: readsOf(note, remote),
                         target: targetOf(note, remote),
+
+                        //CARRIED THROUGH TO THE PANES, which is the whole point
+                        //of writing them down: Issues and Pull requests say
+                        //which fork each row came from, and Repos greys the
+                        //places that have no issues tab.
+                        issuesFrom: note.issuesFrom || null,
+                        pullsFrom: note.pullsFrom || null,
+                        noIssuesAt: note.noIssuesAt || [],
 
                         //COMPUTED HERE RATHER THAN STORED, so it is right even
                         //when the local branch moved after the last check.
@@ -1176,6 +1332,17 @@ async function plugin(imports, register) {
                 var want = { issues: asList(a.issues), pulls: asList(a.pulls) };
                 ['issues', 'pulls'].forEach(function (which) {
                     (want[which] || []).forEach(function (on) {
+                        //A REPOSITORY WITH ISSUES SWITCHED OFF CANNOT BE READ
+                        //FROM, and refusing it here rather than only greying the
+                        //box is the difference between a disabled control and a
+                        //rule. The pane is one caller; the command line is
+                        //another, and it never sees a disabled anything.
+                        if (which === 'issues' && (note.noIssuesAt || []).indexOf(on) !== -1
+                            && ((note.reads || {}).issues || []).indexOf(on) === -1) {
+                            throw new Error('"' + on + '" has issues switched off on GitHub, so there is nothing '
+                                + 'to read there. Turn them on in that repository’s settings, or read issues '
+                                + 'from somewhere else in the chain.');
+                        }
                         if (Object.keys(may).length && !may[on]) {
                             throw new Error('"' + on + '" is not this repository or anywhere in the chain above '
                                 + 'it, so its issues and pull requests are not ' + name + "'s. Walk the chain "
@@ -1183,6 +1350,17 @@ async function plugin(imports, register) {
                         }
                     });
                 });
+
+                //AND ONE ALREADY IN THE RECORD IS DROPPED RATHER THAN REFUSED.
+                //Issues can be switched off after a read set was chosen, and a
+                //stored place that is now refused would fail every later change
+                //to the set — including the one that would have removed it.
+                var dropped = (want.issues || []).filter(function (on) {
+                    return (note.noIssuesAt || []).indexOf(on) !== -1;
+                });
+                if (dropped.length) {
+                    want.issues = want.issues.filter(function (on) { return dropped.indexOf(on) === -1; });
+                }
 
                 note.reads = {
                     issues: want.issues == null ? (note.reads || {}).issues : want.issues,
@@ -1200,6 +1378,10 @@ async function plugin(imports, register) {
                 doc.write(notes);
 
                 var now = readsOf(note, remote);
+                if (dropped.length) {
+                    log.on('git', name).info('dropped ' + dropped.join(', ')
+                        + ' from where issues are read: issues are switched off there');
+                }
                 log.on('git', name).info('reads issues from ' + (now.issues.join(', ') || 'nowhere')
                     + '; pull requests from ' + (now.pulls.join(', ') || 'nowhere'));
 
