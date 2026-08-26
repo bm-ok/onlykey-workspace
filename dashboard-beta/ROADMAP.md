@@ -30,41 +30,61 @@ Cross-checked one at a time against what each action SAYS IT DOES, seventeen of
 the 69 are renames or merges that are already here — the table under 1 — which
 leaves about **52 genuinely not here by any name**.
 
-**And twenty of those are `vm*` machine plumbing**: `vmBridges`, `vmIsos`,
-`vmSerial`, `vmScript`, `vmScripts`, `vmShell`, `vmShellRun`, `vmSetupAgain`,
-`vmRotateToken`, `vmAuthorizeKey`, `vmDescribe`, `vmEditor`, `vmNetwork`,
-`vmAddress`, `vmAgents`, `vmInfo`, `vmProvisionUpdate`, `vmRelease`,
-`vmCredentialsGrab`, `vmRun`. None of them is on the loop. Some may be
-deliberate — `vmRun` is "run any command on a machine and wait", which is a
-large door to reopen without deciding to.
+**Audited one at a time, twice, by two different routes** — once by looking for
+the capability in this app's source, once by searching every live action's own
+description for what it does. Both passes agree. (The first pass had to be
+thrown away and redone: `grep -E` with `\|` matches a literal pipe, so half of
+it reported "nothing found" about things that were there.)
 
-**Audited one at a time — twelve more of the 52 are here too**, which the
-rename table under 1 now carries: `changeDiff`->`compareDiff`,
-`changeFile`->`compareDiff --file`, `changeRead`->`compare` (across every
-repository, so NOT narrower after all), `hostKeys`->`sshKey`,
-`vmRelease`->`vmReturn`, `vmCredentialsGrab`->`credentialRecover`,
-`worker`->`skills`, `logWatch`->`watching`, `repoDefaults`->`repositories` +
-`repoBranches`, `judgementLog`->`vmRunOutput`, and `windowShotDone` /
-`windowShotPending` folded into `windowShot`.
+**Twelve more of the 52 are here**, and the rename table under 1 carries them:
+`changeDiff`->`compareDiff`, `changeFile`->`compareDiff --file`,
+`changeRead`->`compare` (across every repository, so NOT narrower after all),
+`hostKeys`->`sshKey`, `vmRelease`->`vmReturn`,
+`vmCredentialsGrab`->`credentialRecover`, `worker`->`skills`,
+`logWatch`->`watching`, `repoDefaults`->`repositories` + `repoBranches`,
+`judgementLog`->`vmRunOutput`, `windowShotDone`/`windowShotPending` folded into
+`windowShot`.
 
-**Which leaves eight on the loop, and two of them stop it dead:**
+**Five more are served another way, not as an action:**
 
-    judgementVerdict   judgementUpdate      <- see 2d
+| dashboard/ | here |
+|---|---|
+| `provision` | the `provision` guest API route |
+| `gitRepos` | the `git` guest API route — it is machine-facing |
+| `issues` / `pulls` | read inside `repoOverview` and `repositories`, not paged per repository |
+| `vmScripts` | run by `vmInstall`; listing them is not exposed |
+
+**That leaves 36 genuinely absent. Nine are on the loop:**
+
+    judgementVerdict   judgementUpdate      <- 2b, and they stop it dead
+    taskSendBack       taskWorkOn           branchWorkOn
     prFetch            prDraftForget
-    issues             pulls
     inboxHide          inboxShow
 
-and `taskSendBack`, which is partly `taskUpdate` + `taskQueue` and wants a
-decision rather than a port: over there it re-queues a rejected task WITH THE
-REASON ATTACHED, and the reason is the part that has nowhere to go here.
+* `prFetch` **is blocked, and the code says so**: `repositories/pr/server.js`
+  reads *"prFetch HAS NOT MOVED... bringing an arrived pull request into the
+  workspace is a git FETCH of `pull/<n>/head`, which is a door the write half of
+  `git` does not have yet"*. It needs that door first.
+* `taskSendBack` wants a decision rather than a port: over there it re-queues a
+  rejected task WITH THE REASON ATTACHED, and the reason is the part with
+  nowhere to go here.
+* `taskWorkOn` / `branchWorkOn` are half-built in an interesting way — see below.
 
-Everything else is off the loop: about thirty `vm*` and window internals —
-`vmBridges`, `vmIsos`, `vmSerial`, `vmScript(s)`, `vmShell(Run)`,
-`vmSetupAgain`, `vmRotateToken`, `vmAuthorizeKey`, `vmDescribe`, `vmEditor`,
-`vmNetwork`, `vmAddress`, `vmAgents`, `vmInfo`, `vmProvisionUpdate`, `vmRun`,
-`windowSlow`, `appQuit`, `openEditor`, `provision`, `credentialsTest`,
-`guestBackup`, `guestRestore`, `repoRemoteSet`, `workspaceData`, `turnGraph`,
-`workGraph`, `gitRepos` (machine-facing — check `guestApis` before porting).
+**And the other 27 are off it**, mostly machine plumbing whose primitives are
+already in `vms/vbox` (`list`, `showvminfo`, `modifyvm`, `controlvm`,
+`guestproperty`, `snapshot`): `vmAddress`, `vmAgents`, `vmAuthorizeKey`,
+`vmBridges`, `vmDescribe`, `vmEditor`, `vmInfo`, `vmIsos`, `vmNetwork`,
+`vmProvisionUpdate`, `vmRotateToken`, `vmRun`, `vmScript`, `vmSerial`,
+`vmSetupAgain`, `vmShell`, `vmShellRun`, plus `appQuit`, `credentialsTest`,
+`guestBackup`, `guestRestore`, `openEditor`, `repoRemoteSet`, `turnGraph`,
+`workGraph`, `windowSlow`, `workspaceData`. These are doors not cut, not
+machinery missing.
+
+**One of them is a whole engine with no door.** `vms/editor/server.js` registers
+an `editor` service — `open-editor.js`, 270 lines, opens a folder in VS Code
+here or over ssh — and **nothing on the server side consumes it**. That single
+gap is `openEditor`, `vmEditor`, and the "and open it" half of `taskWorkOn` and
+`branchWorkOn`: four entries, one missing consumer.
 
 ---
 
@@ -100,8 +120,8 @@ Written down because they keep getting re-derived as drift.
 | `judgements` | `judging` | |
 | `taskGive` | `vmDispatch` | |
 | `taskStop` | `vmRunStop` | |
-| `taskLog` | `vmRunOutput` | narrower — see 3 |
-| `taskLogs` | `vmRuns` | narrower — see 3 |
+| `taskLog` | `vmRunOutput` | narrower — see 4 |
+| `taskLogs` | `vmRuns` | narrower — see 4 |
 | `session` | `sessions` | |
 | `vmLogs` | `vmLog` | |
 | `repoTarget` | `repoTargetSet` | |
@@ -152,7 +172,7 @@ loud that a source read undercounts.
 FLOOR in both directions. `test/rules/no-pane-relays.test.js` has the same
 blind spot and its zero should be read the same way.
 
-### 2d. Nothing can record what a judgement decided
+### 2b. Nothing can record what a judgement decided
 
 **The one verified hole that stops the loop closing**, and it was found by
 reading rather than by counting names.
@@ -174,7 +194,7 @@ verdict at all.
 `taskJudge` is not the same act: it records a verdict on **what a task
 delivered**, not on a judgement.
 
-### 2b. No repository points at a fork — the whole drill chain is blocked
+### 2c. No repository points at a fork — the whole drill chain is blocked
 
 One setting, and it takes out most of the suite:
 
@@ -210,7 +230,7 @@ Repos → **Send work here**, pointing `local-repo-a` at
 `bm-sandbox-b/local-repo-a`. That alone should take *the order* off unrunnable
 and let everything under it run for the first time.
 
-### 2c. Relayed actions log nowhere we can see
+### 2d. Relayed actions log nowhere we can see
 
 A relayed action does its logging in `dashboard/`, so every line it would have
 written is missing from Live — the log viewer both a person and a model watch a
@@ -221,7 +241,55 @@ With 2a struck out this is smaller than it looked, and it is still true of the
 
 ---
 
-## 3. Here, but narrower than it was — decisions, not ports
+## 3. Drills FOR THE LOOP, so the codebase knows it better than we do
+
+**This is the point of the rest of it.** Everything above was found by two
+people reading two codebases and disagreeing with each other about what was
+there — five times in one day, in both directions. A drill does not misremember.
+The suite should be the thing that knows how the loop works, so that neither of
+us has to.
+
+The suites today drill the PARTS: a task on a machine, judging, a worker
+credential, the guards. Nothing drills the LOOP as one act, which is why every
+part passed while the whole had never been walked.
+
+**What a loop drill has to assert, in order** — each step is a claim somebody
+could otherwise get wrong quietly:
+
+1. **A line exists and a cut comes from it.** A cut with no line is refused.
+2. **A job, a prompt and a contract are written and NOT runnable** until a
+   person approves them — and a save over the wire waits, while a save at the
+   window is approved by whoever wrote it.
+3. **A task on that cut, under that chain, is queued**, and a machine takes it
+   on its own. Nobody dispatches it by hand.
+4. **What the worker delivered is on the branch**, and the artifact is readable
+   through the `artifact` plugin rather than off the machine.
+5. **A judgement is asked for, run, and REACHES A VERDICT** — this is 2b, and it
+   is the step that cannot pass today.
+6. **The verdict gates the PR cut**: an unjudged or rejected change cannot go
+   out, and the refusal names why.
+7. **The PR cut is made, and landing it is a person's press** — never the
+   queue's, never a model's.
+8. **The branch line is retired** and stops being offered afterwards.
+9. **Nothing is left behind**: no drill branch, no claimed machine, no
+   credential on a powered-off disk.
+
+**And the drill has to be able to FAIL at each step**, which is the half that
+makes it worth writing: half this suite already passes by being refused, and a
+loop drill that only checks the happy path would have said nothing about 2b.
+
+Sabotage each guard once and confirm the drill notices — a survived sabotage is
+a weak check, an unreachable guard, or a guard protecting something no test
+reads.
+
+**Where it goes:** a new suite that `requires` the existing ones, so it runs
+last and only when the parts are known good. It is the one drill that needs
+every credential and a real machine, which is exactly why it should exist once
+rather than be re-run by hand every time somebody wonders whether the app works.
+
+---
+
+## 4. Here, but narrower than it was — decisions, not ports
 
 Each of these is a real difference somebody should decide about, rather than a
 missing file.
@@ -240,19 +308,19 @@ missing file.
 
 ---
 
-## 4. Built, never run — nobody knows if these work
+## 5. Built, never run — nobody knows if these work
 
 * **Claude session backup and restore, per branch cut.** The keying is written
   and reasoned (`runners/sessions/keying.js`), the storing is written, and the
   two drills that would prove it — *what a branch remembers* and *a new task on a
-  remembered branch* — have **never run**, because of 2b. So: unknown, and one
+  remembered branch* — have **never run**, because of 2c. So: unknown, and one
   setting away from being knowable.
 * **`a worker credential`** is `asks you` — it needs a person to answer.
 * **`judging`** has never run.
 
 ---
 
-## 5. Known small faults
+## 6. Known small faults
 
 * A drill in *the order* leaves a branch behind: `drill/one-act-<time>`. Its own
   last check catches it — *"Something was left behind"* — so it is a real leak,
@@ -267,7 +335,7 @@ missing file.
 
 ---
 
-## 6. Not started
+## 7. Not started
 
 * `TODO.md` and `LEARNED.md` have no counterpart here. The old app's rule was to
   read them before simplifying anything.
@@ -277,7 +345,7 @@ missing file.
 
 ---
 
-## 7. Things we may have missed
+## 8. Things we may have missed
 
 *(Add here. A line with a question mark is worth more than a blank.)*
 
@@ -286,4 +354,5 @@ missing file.
   from this side.
 * need a dedicated plugin for "open in vscode",  when click it setup ssh key and launched vscode that connects to the vm directly.   this button should termperally exist on in runners->virtual machines->Actions area for selected vm, (old dashbaord had this button somewhere)
 * lightgraph ui plugin is not ported yet,  it was in old dashboard,  it was used to show the graph of the line,  and also to show the graph of the branch.  this plugin should be ported to new dashboard. use markdown and editor in ui plugin group as examples. 2 placed i remember (repositories0>graph) and (supervisor->graph)
+* issue with naming in plugins,,   we have session and sessions in the new dashbaord, 1 is for window/browser session, other is for claude session folder, need to fix this naming issue,  maybe rename claude session to claudeSession or something else.  this is a known issue, but not fixed yet.
 
