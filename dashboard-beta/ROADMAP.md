@@ -200,6 +200,44 @@ verdict at all.
 `taskJudge` is not the same act: it records a verdict on **what a task
 delivered**, not on a judgement.
 
+### 2e. The inbox is missing most of its sources — including the two that bit us
+
+**"Why didn't the dashboard tell me?" It should have. It has no source for it.**
+
+The inbox is *"Everything waiting on you: what it is, why it needs you, and where
+to go for it"* — and in this app only five things ever put anything in it: a line
+to retire, a credential to take back, a machine kept for you, a drill asking you
+something, and a drill that failed, plus the library's things to approve.
+`repositories/pr` registers **nothing at all**.
+
+The app being ported from builds nine, and two of the missing ones are exactly
+the two surprises of today:
+
+* **`change out and not merged`** — *"Open on somebody else's repository and
+  waiting on a merge."* Three pull requests sat open and nothing anywhere said
+  so; they were found by reading `prCutState` by hand.
+* **`where work goes`** — *"It is a fork and nothing has been picked, so issues
+  and pull requests both stay on `<self>` and nothing upstream is watched. Walk
+  the fork chain and say where work goes."* **That is 2c**, and the inbox over
+  there raises it by itself, per repository. It is why nobody noticed the target
+  was unset, and why a cut opened pull requests against our own fork rather than
+  the parent — with nothing at the time saying which way they had gone.
+
+The others not here: `written and not sent` (a draft waiting to go), `pull
+request to allow` (somebody else's, waiting to be let in), `the supervisor said
+something`, `the supervisor cannot see this any more` (the beyondReach line),
+`on your list` (todos), `ask GitHub about this one`.
+
+**Why this ranks with the rest.** Every other item on this roadmap is something
+that cannot be done. This is a set of things that CAN be done and that nobody is
+told about — which is worse in the one way that matters: it fails silently, and
+the person only finds out by going and looking, which is the whole thing the
+inbox exists to stop.
+
+**And `inboxHide` / `inboxShow` belong with it.** They are on the eight-item loop
+list, and a list you cannot put anything away in is one that grows until it is
+ignored.
+
 ### 2c. No repository points at a fork — the whole drill chain is blocked
 
 One setting, and it takes out most of the suite:
