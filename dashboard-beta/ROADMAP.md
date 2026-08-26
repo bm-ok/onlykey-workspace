@@ -38,14 +38,33 @@ leaves about **52 genuinely not here by any name**.
 deliberate — `vmRun` is "run any command on a machine and wait", which is a
 large door to reopen without deciding to.
 
-**So what is actually left on the loop is about a dozen:**
+**Audited one at a time — twelve more of the 52 are here too**, which the
+rename table under 1 now carries: `changeDiff`->`compareDiff`,
+`changeFile`->`compareDiff --file`, `changeRead`->`compare` (across every
+repository, so NOT narrower after all), `hostKeys`->`sshKey`,
+`vmRelease`->`vmReturn`, `vmCredentialsGrab`->`credentialRecover`,
+`worker`->`skills`, `logWatch`->`watching`, `repoDefaults`->`repositories` +
+`repoBranches`, `judgementLog`->`vmRunOutput`, and `windowShotDone` /
+`windowShotPending` folded into `windowShot`.
 
-    judgementVerdict  judgementUpdate  judgementLog
-    taskSendBack
-    changeDiff        changeFile
-    prFetch           prDraftForget
-    issues            pulls
-    inboxHide         inboxShow
+**Which leaves eight on the loop, and two of them stop it dead:**
+
+    judgementVerdict   judgementUpdate      <- see 2d
+    prFetch            prDraftForget
+    issues             pulls
+    inboxHide          inboxShow
+
+and `taskSendBack`, which is partly `taskUpdate` + `taskQueue` and wants a
+decision rather than a port: over there it re-queues a rejected task WITH THE
+REASON ATTACHED, and the reason is the part that has nowhere to go here.
+
+Everything else is off the loop: about thirty `vm*` and window internals —
+`vmBridges`, `vmIsos`, `vmSerial`, `vmScript(s)`, `vmShell(Run)`,
+`vmSetupAgain`, `vmRotateToken`, `vmAuthorizeKey`, `vmDescribe`, `vmEditor`,
+`vmNetwork`, `vmAddress`, `vmAgents`, `vmInfo`, `vmProvisionUpdate`, `vmRun`,
+`windowSlow`, `appQuit`, `openEditor`, `provision`, `credentialsTest`,
+`guestBackup`, `guestRestore`, `repoRemoteSet`, `workspaceData`, `turnGraph`,
+`workGraph`, `gitRepos` (machine-facing — check `guestApis` before porting).
 
 ---
 
@@ -87,7 +106,17 @@ Written down because they keep getting re-derived as drift.
 | `vmLogs` | `vmLog` | |
 | `repoTarget` | `repoTargetSet` | |
 | `prComment` | `judgementSay` | narrower — only a judgement's comment |
-| `changeRead` | `compareLog` | narrower — see 3 |
+| `changeRead` | `compare` | across every repository, as it was |
+| `changeDiff` | `compareDiff` | |
+| `changeFile` | `compareDiff --file` | |
+| `hostKeys` | `sshKey` | |
+| `vmRelease` | `vmReturn` | |
+| `vmCredentialsGrab` | `credentialRecover` | |
+| `worker` | `skills` | the worker's own instructions |
+| `logWatch` | `watching` | plus the socket watches behind `okc.use` |
+| `repoDefaults` | `repositories` + `repoBranches` | |
+| `judgementLog` | `vmRunOutput` | a judgement runs through the queue too |
+| `windowShotDone` / `windowShotPending` | folded into `windowShot` | |
 | `supervisor` | `skills` | the skill document, read by name |
 | `supervisorThinking` | folded into `supervisorState` | |
 | the whole approval library | `doors()` in `library/server.js` | see 2a |
@@ -122,6 +151,28 @@ loud that a source read undercounts.
 **The lesson is bigger than this entry:** a static reader of this codebase is a
 FLOOR in both directions. `test/rules/no-pane-relays.test.js` has the same
 blind spot and its zero should be read the same way.
+
+### 2d. Nothing can record what a judgement decided
+
+**The one verified hole that stops the loop closing**, and it was found by
+reading rather than by counting names.
+
+`judge/store.js` has `update` and a `VERDICTS` list. `judge/gate.js` gates on
+`j.state === 'done' && j.by === 'person' && j.verdict`. `judging` reports
+`decided` and `gaveUp` by looking at `verdict`. Everything is built to read one.
+
+**No action writes one.** `judgementCreate`, `judgementQueue`,
+`judgementUnqueue`, `judgementRemove`, `judgementFindings` and `judgementSay`
+are all here; `judgementVerdict` — *"Record what a judgement decided: accepted
+or rejected, and why"* — is not, and neither is `judgementUpdate`.
+
+So a judgement can be asked for, queued, run and read, and then **nothing can
+say what it decided**. A person's judgement, which is `by: 'person'` and exists
+precisely so somebody can read a change themselves, can never reach done with a
+verdict at all.
+
+`taskJudge` is not the same act: it records a verdict on **what a task
+delivered**, not on a judgement.
 
 ### 2b. No repository points at a fork — the whole drill chain is blocked
 
@@ -179,8 +230,6 @@ missing file.
   run log kept on this host, including tasks that were thrown away*; the new pair
   is *one machine's runs* and *a tail*. This is the one that matters for "no run
   goes off and loses its output" — a log tied to a machine dies with the machine.
-* **`changeRead` vs `compareLog`.** Old: per-repository across a whole line. New:
-  one repository.
 * **`taskWorkOn` / `branchWorkOn` vs `vmBorrow`.** `vmBorrow` brings a machine up
   clean; it does not set it up on the branch or open it in VS Code or a terminal.
 * **`Watch it`** on the Supervisor tab. It follows a turn's transcript through an
