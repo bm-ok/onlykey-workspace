@@ -34,7 +34,7 @@ async function plugin(imports, register) {
             makePulls(theme))
     });
 
-    shell.pane({ tab: 'Repositories', name: 'PR cuts', order: 100, Component: makeCuts(theme, okc, remember) });
+    shell.pane({ tab: 'Repositories', name: 'PR cuts', order: 100, Component: makeCuts(theme, okc, remember, shell) });
     shell.pane({ tab: 'Repositories', name: 'New PR Cut', order: 110, Component: makeWriter(theme, okc, remember) });
 
     await register(null, {});

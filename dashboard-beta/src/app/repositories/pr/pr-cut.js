@@ -1,7 +1,7 @@
 var React = require('react');
 var { useState, useEffect, useCallback } = React;
 
-module.exports = function cuts(theme, okc, remember) {
+module.exports = function cuts(theme, okc, remember, shell) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Link,
@@ -40,12 +40,24 @@ module.exports = function cuts(theme, okc, remember) {
 
     //---- the left column ---------------------------------------------------
 
+    //WHERE A CUT STANDS, IN ONE WORD, AND OFF FIELDS THIS APP ACTUALLY ANSWERS
+    //WITH. This read `c.summary`, which is what the app being ported from called
+    //it and nothing here has ever set — so every cut with nothing open fell
+    //through to the literal "sent", including one whose three pull requests had
+    //all been CLOSED WITHOUT MERGING. "Sent" is true of that and says nothing:
+    //it was sent, it was refused, and the badge read the same as a cut still
+    //waiting for a reviewer.
+    //
+    //NOTHING OPEN AND NOT LANDED IS THE CASE WORTH SPELLING OUT, so it says how
+    //many of how many merged rather than a single word — "0 of 3 merged" is the
+    //whole story, and "1 of 3 merged" is a cut that half landed, which is the
+    //shape this app exists to make visible.
     function state(c) {
         if (c.draft) return { kind: 'warn', word: 'written, not sent' };
         if (c.landed) return { kind: 'ok', word: 'landed' };
-        var open = (c.pulls || []).filter(function (p) { return p.state == 'open'; }).length;
-        if (open) return { kind: '', word: open + ' open' };
-        return { kind: 'muted', word: c.summary || 'sent' };
+        if (c.open) return { kind: '', word: c.open + ' open' };
+        if (c.of) return { kind: c.merged ? 'warn' : 'bad', word: c.merged + ' of ' + c.of + ' merged' };
+        return { kind: 'muted', word: 'nothing was opened' };
     }
 
     function Row({ c, on, onPick }) {
@@ -57,9 +69,11 @@ module.exports = function cuts(theme, okc, remember) {
                     and a list of sources alone cannot tell two cuts of the same
                     branch into different targets apart. */}
                 <CardSub>{'into '}<Mono>{c.target}</Mono></CardSub>
+                {/* `c.mergedCount` WAS THE OTHER APP'S NAME FOR IT, so the
+                    ", N merged" half of this line has never once rendered. */}
                 {(c.pulls || []).length
                     ? <CardSub>{c.pulls.length + ' pull request' + (c.pulls.length == 1 ? '' : 's')
-                        + (c.mergedCount ? ', ' + c.mergedCount + ' merged' : '')}</CardSub>
+                        + (c.merged ? ', ' + c.merged + ' merged' : '')}</CardSub>
                     : null}
             </Card>
         );
@@ -231,6 +245,111 @@ module.exports = function cuts(theme, okc, remember) {
             });
         }
 
+        //---- WHAT THE APP BEING PORTED FROM CAN DO TO A CUT -----------------
+        //
+        //THE LIST CAME ACROSS AND THE ACTS DID NOT. This pane could send, merge
+        //and stop tracking; everything else a person does to a cut once it is
+        //out was on the other app's panel and nowhere here — including the one
+        //that matters most when something goes wrong.
+
+        //CLOSING IS THE UNDO FOR SENDING, and its absence was the sharpest edge
+        //in this pane: a cut could be opened from here and there was no way to
+        //take it back. A drill opened three pull requests that should never have
+        //gone out and they had to be closed by hand on GitHub.
+        //
+        //ALL OF THEM, NEVER ONE. The point of a cut is that the pull requests
+        //are one change; closing half of it leaves a landing nothing can finish
+        //and nothing is tracking as broken.
+        function setState(c, want) {
+            var open = (c.pulls || []).filter(function (p) { return p.number && p.state == 'open'; });
+            var shut = (c.pulls || []).filter(function (p) { return p.number && p.state == 'closed'; });
+            var many = want == 'closed' ? open.length : shut.length;
+            ask({
+                title: (want == 'closed' ? 'Close all ' : 'Reopen all ') + many + ' pull request(s) in "' + c.source + '"?',
+                plain: want == 'closed'
+                    ? ['They stay on GitHub and can be reopened. The branches are untouched, and so is this record.',
+                       'Anybody watching those repositories sees them close.']
+                    : ['They go back to open, as they were. GitHub refuses this for one that has been merged.'],
+                cost: 'This changes what other people see on GitHub.',
+                confirm: want == 'closed' ? 'Close all of them' : 'Reopen all of them',
+                protect: true,
+                onYes: function () {
+                    return tell(okc.call('prCutUpdate', { source: c.source, target: c.target, state: want }));
+                }
+            });
+        }
+
+        //ONE TITLE AND ONE DESCRIPTION ACROSS THE WHOLE CUT, which is the reason
+        //a cut is a thing at all: GitHub has no idea the three pull requests are
+        //one change, so keeping their text in step is this app's job. Editing
+        //them one at a time on GitHub is how they drift.
+        function edit(c) {
+            var t = (c.pulls || [])[0] || {};
+            ask({
+                title: 'Write it to all ' + (c.pulls || []).length + ' pull request(s)?',
+                plain: ['The title and description of every pull request in this cut are set to what is below.',
+                    'Left blank, that half is left as it is.'],
+                fields: [
+                    { name: 'title', label: 'Title', value: t.title || '' },
+                    { name: 'body', label: 'What it says', multiline: true, rows: 6,
+                      hint: 'The template blocks are not re-applied here — this is the text as it will stand.' }
+                ],
+                confirm: 'Write it to all of them',
+                protect: true,
+                onYes: function (f) {
+                    if (!(f.title || '').trim() && !(f.body || '').trim()) {
+                        throw new Error('Nothing to change. Give a title, a description, or both.');
+                    }
+                    return tell(okc.call('prCutUpdate', {
+                        source: c.source, target: c.target,
+                        title: (f.title || '').trim() || undefined,
+                        body: (f.body || '').trim() || undefined
+                    }));
+                }
+            });
+        }
+
+        //AFTER A CUT LANDS, EVERY FORK IS BEHIND ITS PARENT. The pane already
+        //says so in a note; the other app put the button that fixes it beside
+        //the sentence, which is the difference between being told and being able
+        //to act.
+        function syncForks() {
+            ask({
+                title: 'Sync every fork with its parent?',
+                plain: ['Each fork\u2019s default branch is pulled up from the repository it was forked from, on GitHub.',
+                    'Nothing here is touched — this host is still behind afterwards, and pulling is separate.'],
+                confirm: 'Sync the forks',
+                protect: true,
+                onYes: function () { return tell(okc.call('repoForkSync', {})); }
+            });
+        }
+
+        //A DRAFT IS THE ONE THING HERE THAT CAN BE UNDONE COMPLETELY, and until
+        //now it could only be sent. A draft written for a branch that no longer
+        //carries anything sat on this list as outstanding work with no way off
+        //it except doing the thing it was asking for.
+        function throwAway(c) {
+            ask({
+                title: 'Throw away what was written for "' + c.source + '"?',
+                plain: ['The text goes. Nothing is on GitHub for this pair, so nothing there changes.',
+                    'It cannot be got back.'],
+                confirm: 'Throw it away',
+                onYes: function () {
+                    return tell(okc.call('prDraftForget', { source: c.source, target: c.target }))
+                        .then(function () { setPicked(null); });
+                }
+            });
+        }
+
+        //EDITING IT HAPPENS WHERE IT WAS WRITTEN. New PR Cut is the pane with
+        //the preview beside the text, and a second smaller copy of that editor
+        //in a dialog here would be the same job done twice and worse.
+        function editDraft(c) {
+            remember.write('prwrite', 'from', c.source);
+            remember.write('prwrite', 'into', c.target);
+            shell.go('Repositories', 'New PR Cut');
+        }
+
         var chip = function (key, word) {
             return <Chip on={only == key} count={counts[key]}
                 onClick={function () { setOnly(only == key ? null : key); }}>{word}</Chip>;
@@ -247,7 +366,11 @@ module.exports = function cuts(theme, okc, remember) {
                         <Finder value={find} onChange={setFind} placeholder="find a source or target" />
                         <Chips>
                             {chip('drafts', 'not sent')}
-                            {chip('open', 'out')}
+                            {/* NOT LANDED, WHICH IS WHAT IT COUNTS. "Out" says
+                                a change is still in flight, and a cut whose pull
+                                requests were all closed unmerged is counted here
+                                and is not in flight at all. */}
+                            {chip('open', 'not landed')}
                             {chip('landed', 'landed')}
                         </Chips>
                         <Stack>
@@ -296,6 +419,14 @@ module.exports = function cuts(theme, okc, remember) {
                                     {on.draft
                                         ? <Button kind="ok" protect onClick={function () { send(on); }}>Send it</Button>
                                         : null}
+                                    {on.draft
+                                        ? <Button onClick={function () { editDraft(on); }}
+                                            title="Open it on New PR Cut, where it was written">Edit it</Button>
+                                        : null}
+                                    {on.draft
+                                        ? <Button kind="danger" onClick={function () { throwAway(on); }}
+                                            title="Nothing is on GitHub for this pair">Throw it away</Button>
+                                        : null}
 
                                     <Button protect
                                         disabled={!openPulls.length}
@@ -306,6 +437,40 @@ module.exports = function cuts(theme, okc, remember) {
                                         {openPulls.length > 1 ? 'Merge all of them' : 'Merge it'}
                                     </Button>
 
+                                    {/* EVERY ONE OF THESE IS DISABLED WITH A
+                                        REASON RATHER THAN HIDDEN. A button that
+                                        comes and goes teaches nobody what the
+                                        rule is; one that is greyed and says why
+                                        answers the question being asked. */}
+                                    {!on.draft
+                                        ? <Button
+                                            disabled={!(on.pulls || []).filter(function (p) { return p.number; }).length}
+                                            title="Set the title and description of every pull request in this cut at once"
+                                            onClick={function () { edit(on); }}>Edit all of them</Button>
+                                        : null}
+
+                                    {!on.draft
+                                        ? (function () {
+                                            var open = (on.pulls || []).filter(function (p) { return p.number && p.state == 'open'; });
+                                            var shut = (on.pulls || []).filter(function (p) { return p.number && p.state == 'closed'; });
+                                            var closing = open.length > 0;
+                                            return (
+                                                <Button kind="danger" protect
+                                                    disabled={!closing && !shut.length}
+                                                    title={closing
+                                                        ? 'Close all ' + open.length + ' of them on GitHub. They can be reopened'
+                                                        : shut.length
+                                                            ? 'Put all ' + shut.length + ' of them back to open'
+                                                            : 'every one of them has merged, and GitHub will not reopen a merged pull request'}
+                                                    onClick={function () { setState(on, closing ? 'closed' : 'open'); }}>
+                                                    {closing
+                                                        ? (open.length > 1 ? 'Close all of them' : 'Close it')
+                                                        : (shut.length > 1 ? 'Reopen all of them' : 'Reopen it')}
+                                                </Button>
+                                            );
+                                        })()
+                                        : null}
+
                                     {!on.draft
                                         ? <Button kind="danger" onClick={function () { forget(on); }}>Stop tracking it</Button>
                                         : null}
@@ -313,10 +478,18 @@ module.exports = function cuts(theme, okc, remember) {
                             )}
 
                             {on && on.landed
-                                ? <Note kind="warn">
-                                    It has landed. Each fork is now behind its parent — sync the forks, then
-                                    this host, before cutting anything new from them.
-                                </Note>
+                                ? <React.Fragment>
+                                    <Note kind="warn">
+                                        It has landed. Each fork is now behind its parent — sync the forks, then
+                                        this host, before cutting anything new from them.
+                                    </Note>
+                                    {/* BESIDE THE SENTENCE THAT SAYS TO DO IT.
+                                        Being told what needs doing and being
+                                        able to do it were two panes apart. */}
+                                    <div className="row" style={{ marginTop: '8px' }}>
+                                        <Button kind="ok" protect onClick={syncForks}>Sync the forks</Button>
+                                    </div>
+                                </React.Fragment>
                                 : null}
                         </Panel>
                     </Col>

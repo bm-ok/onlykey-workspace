@@ -385,6 +385,91 @@ test('with no workspace open there are no cuts, and it does not throw', async ()
 });
 
 //---------------------------------------------------------------------------
+//5. A DRAFT CAN BE THROWN AWAY, AND WHAT IS STILL OUT IS AT THE TOP.
+//
+//The app being ported from can do both and this could do neither. Text written
+//for a pair of lines could be replaced and never removed, so a draft whose
+//branch no longer carried anything sat on the list as outstanding work with no
+//way off it except doing the thing it was asking for. And the list was sorted by
+//date alone, which put thirty finished cuts above the one still in flight.
+//---------------------------------------------------------------------------
+
+test('a draft can be thrown away, and the sentence says nothing on GitHub changed', async () => {
+    const { actions } = await anApp();
+    await actions.call('prDraftSave', { source: 'a', target: 'b', title: 't', body: 'x' });
+
+    const gone = await actions.call('prDraftForget', { source: 'a', target: 'b' });
+    assert.equal(gone.forgotten, 'a -> b');
+    assert.match(gone.note, /Thrown away/);
+    //NOTHING WAS SENT, so nothing anywhere else moved — and this is the moment
+    //to say so, beside a pane whose other buttons all reach GitHub.
+    assert.match(gone.note, /nothing there changed/);
+    assert.equal((await actions.call('prDrafts', {})).drafts.length, 0);
+});
+
+//"THERE WAS NONE" IS NOT "THROWN AWAY". Both leave nothing behind, and only one
+//of them means something was removed.
+test('throwing away a draft that is not there says so, and names the pair', async () => {
+    const { actions } = await anApp();
+    const said = await actions.call('prDraftForget', { source: 'a', target: 'b' });
+    assert.equal(said.forgotten, null);
+    assert.match(said.note, /There was none/);
+    assert.match(said.note, /"a" into "b"/);
+    await assert.rejects(() => actions.call('prDraftForget', { source: 'a' }), /Say which two lines/);
+});
+
+test('a draft whose pair has already been cut is not still waiting to be sent', async () => {
+    const { actions } = await anApp({
+        landings: { 'a -> b': { source: 'a', target: 'b', opened: '2026-01-01T00:00:00Z', pulls: [] } }
+    });
+
+    //WRITTEN FOR THAT CUT, and the cut exists. Listing it again as "not sent" is
+    //asking for the same thing twice, and the copy is the one that reads as
+    //something still to do.
+    await actions.call('prDraftSave', { source: 'a', target: 'b', title: 't', body: 'x' });
+    await actions.call('prDraftSave', { source: 'c', target: 'b', title: 'other', body: 'y' });
+
+    const said = await actions.call('prCuts', {});
+    assert.deepEqual(said.drafts.map((d) => d.source), ['c'],
+        'a draft for a pair that has been cut is still being listed as waiting');
+
+    //AND `prDrafts` STILL HAS BOTH. It answers what is written, which is a
+    //different question from what is outstanding — the writer pane reads it to
+    //find the text for a pair it is editing.
+    assert.equal((await actions.call('prDrafts', {})).drafts.length, 2);
+});
+
+test('what has not landed is above what has, whatever the dates say', async () => {
+    const { actions } = await anApp({
+        landings: {
+            'old-out -> b': {
+                source: 'old-out', target: 'b', opened: '2026-01-01T00:00:00Z',
+                pulls: [{ repo: 'one', number: 1, into: 'anowner/one' }]
+            },
+            'new-landed -> b': {
+                source: 'new-landed', target: 'b', opened: '2026-09-09T00:00:00Z',
+                pulls: [{ repo: 'one', number: 2, into: 'anowner/one', mergedAt: '2026-09-09T01:00:00Z' }]
+            }
+        },
+        answers: {
+            'GET /repos/anowner/one/pulls/1': {
+                status: 200,
+                body: { number: 1, state: 'open', title: 'still out', updated_at: '2026-01-02T00:00:00Z' }
+            }
+        }
+    });
+
+    const said = await actions.call('prCuts', {});
+    assert.deepEqual(said.cuts.map((c) => c.source), ['old-out', 'new-landed'],
+        'the finished one sorted above the one still in flight, which is the wall of green this fixed');
+
+    //AND WHEN IT LAST MOVED CAME BACK WITH IT. The detail panel has always drawn
+    //a "last touched" row and never had a value for it: the field was read off a
+    //shape that did not carry it, so the row simply never appeared.
+    assert.equal(said.cuts[0].pulls[0].updated, '2026-01-02T00:00:00Z');
+});
+
+//---------------------------------------------------------------------------
 //AND WHAT IS OUT AND WAITING ON SOMEBODY.
 //
 //THIS PLUGIN PUT NOTHING IN THE INBOX AT ALL, and that is how three pull

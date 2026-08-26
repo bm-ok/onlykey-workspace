@@ -260,6 +260,12 @@ async function plugin(imports, register) {
             //rejected one, which is the opposite news.
             state: body.merged_at ? 'merged' : body.state,
             mergedAt: body.merged_at || null,
+            //WHEN IT LAST MOVED, which the detail panel has always tried to
+            //draw and never could — `p.updated` was read off a shape that did
+            //not carry it, so the row simply never appeared. For a cut that is
+            //still out this is the only thing on the row that says whether
+            //anybody has touched it since it was opened.
+            updated: body.updated_at || null,
             mergeable: body.mergeable == null ? null : !!body.mergeable
         };
     }
@@ -843,14 +849,36 @@ async function plugin(imports, register) {
                 //top rather than sorted among the finished ones. Seventeen landed
                 //cuts are history and want nothing; the one thing waiting for a
                 //person is the reason somebody opened this pane.
+                //AND A DRAFT WHOSE PAIR HAS ALREADY BEEN CUT IS NOT ONE. The
+                //text was written for that cut and the cut exists; listing it
+                //again as "not sent" is asking for the same thing twice, and the
+                //second copy is the one that reads as outstanding work.
                 var written = (await read(drafts)) || {};
-                var waiting = Object.keys(written).map(function (k) {
-                    return Object.assign({ id: k, draft: true }, written[k]);
-                });
+                var waiting = Object.keys(written)
+                    .filter(function (k) { return !all[k]; })
+                    .map(function (k) {
+                        return Object.assign({ id: k, draft: true }, written[k]);
+                    });
 
                 var live = rows.filter(function (r) { return !r.landed; });
+                //---- WHAT STILL WANTS SOMETHING, FIRST -----------------------
+                //
+                //SORTING BY DATE ALONE PUT A WALL OF GREEN AT THE TOP. Thirty
+                //landed cuts are history and want nothing; one that is still out
+                //is the reason somebody opened this pane, and on a busy day it
+                //sat underneath twenty finished ones from the same afternoon.
+                //
+                //NEWEST FIRST WITHIN EACH GROUP, and no ordering BETWEEN the
+                //groups beyond this one: among the landed there is no more or
+                //less landed.
+                var byWhen = function (a, b) {
+                    return String(b.touched || b.opened).localeCompare(String(a.touched || a.opened));
+                };
+                var stillOut = rows.filter(function (r) { return !r.landed; }).sort(byWhen);
+                var finished = rows.filter(function (r) { return r.landed; }).sort(byWhen);
+
                 return {
-                    cuts: rows.sort(function (a, b) { return String(b.touched || b.opened).localeCompare(String(a.touched || a.opened)); }),
+                    cuts: stillOut.concat(finished),
                     drafts: waiting,
                     note: (waiting.length ? waiting.length + ' written and not sent. ' : '')
                         + (rows.length
@@ -905,6 +933,41 @@ async function plugin(imports, register) {
                 //NOTHING IS SENT, and the sentence says so — this button sits
                 //beside one that does send, and the two must not read alike.
                 return { id: k, draft: all[k], note: 'Kept. Nothing has been pushed and no pull request has been opened.' };
+            }
+        }));
+
+        //A DRAFT IS THE ONE THING HERE THAT CAN BE UNDONE COMPLETELY, because
+        //nothing about it has left this host. Without this, text written for a
+        //pair of lines could be replaced and never removed: a draft whose branch
+        //no longer carries anything sat on the list as something waiting to be
+        //sent, for ever, and the only way to clear it was to send it.
+        //
+        //NOT A GATE. Sending is the act with consequences somewhere else, and it
+        //has one; throwing away a paragraph that never left is not that, and a
+        //confirm dialog on it would teach people to click through the one that
+        //matters.
+        undo.push(actions.define('prDraftForget', {
+            about: 'Throw away what was written for a pair of lines',
+            takes: ['source', 'target'],
+            run: async function (args) {
+                var a = args || {};
+                if (!a.source || !a.target) throw new Error('Say which two lines.');
+                var doc = await drafts();
+                if (!doc) throw new Error('No workspace is open.');
+                var all = doc.read({}) || {};
+                var k = key(a.source, a.target);
+                var had = !!all[k];
+                delete all[k];
+                doc.write(all);
+                //WHAT WAS THERE IS SAID BACK, because this is the last moment
+                //anything could. "Thrown away" with nothing named reads the same
+                //whether it removed a paragraph or nothing at all.
+                return {
+                    forgotten: had ? k : null,
+                    note: had
+                        ? 'Thrown away. Nothing was on GitHub, so nothing there changed.'
+                        : 'There was none — nothing had been written for "' + a.source + '" into "' + a.target + '".'
+                };
             }
         }));
 
