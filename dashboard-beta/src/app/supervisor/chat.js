@@ -66,7 +66,15 @@ module.exports = function chat(theme, okc, markdown) {
         //somebody typed a sentence: that is the point of it and it is not a thing
         //to switch on by accident, so it is a switch rather than a default. It
         //was kept only as a line of text on Settings → General.
-        var conf = okc.use('settings', {}, 0);
+        //ASKED AGAIN, RATHER THAN ONCE. `0` means once — and this is a SWITCH,
+        //so a stale read is a box showing the opposite of what is set. The
+        //setting moves from Settings → General, from the command line, and from
+        //a drill, and none of those reach this pane; only pressing the box
+        //itself did, because its own handler asks again.
+        //
+        //Five seconds, the same as Settings → General, which is the other pane
+        //drawing this value.
+        var conf = okc.use('settings', {}, 5000);
         var [text, setText] = useState('');
         var [said, setSaid] = useState(null);
         var [sending, setSending] = useState(false);
@@ -204,6 +212,19 @@ module.exports = function chat(theme, okc, markdown) {
         //whole of the testing — and the moment one was signed in the header read
         //"ready" and "no credential" side by side.
         var one = rows.filter(function (r) { return r.name === sup.name; })[0] || rows[0] || {};
+
+        //AND THE SETTINGS ARE NESTED, which this read straight through.
+        //`settings` answers `{ settings: {...}, tests: {...} }` — ../settings
+        //and ../ui/banners both take the inner object — and this asked for
+        //`conf.state.supervisorWakes`, one level too shallow. Always undefined,
+        //so the box was drawn UNTICKED whatever the setting said.
+        //
+        //IT MADE A SWITCH THAT ONLY EVER SENT "ON". A controlled checkbox draws
+        //from this, so React forced it back off after every press: a click sent
+        //`true`, the setting turned on, the tick vanished again, and there was
+        //no way to turn it off from the window at all. From outside it reads as
+        //a tick that will not stay — which is what it looked like.
+        var wakesByItself = !!((conf.state && conf.state.settings) || {}).supervisorWakes;
 
         return (
             <Pane>
@@ -368,11 +389,11 @@ module.exports = function chat(theme, okc, markdown) {
                             saying `supervisorWakes (off)` and nothing to press. */}
                         {offline ? null : (
                             <label className="inline" title={
-                                (conf.state && conf.state.supervisorWakes)
+                                wakesByItself
                                     ? 'It wakes and answers when you say something — a machine starts and a model thinks, each time'
                                     : 'It will not wake by itself. What you say waits until you press Wake it.'}>
                                 <input type="checkbox"
-                                    checked={!!(conf.state && conf.state.supervisorWakes)}
+                                    checked={wakesByItself}
                                     onChange={function (e) {
                                         var on = !!e.target.checked;
                                         okc.call('settingSet', { name: 'supervisorWakes', value: on }).then(

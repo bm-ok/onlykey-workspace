@@ -263,6 +263,71 @@ it('and saying something says what would make it read it', async ({ okc, assert,
   log('with the switch off it does not wake, and the note names both ways out')
 })
 
+it('and the switch on the tab is the one that sets it', async ({ okc, assert, state, log }) => {
+  // A TICK THAT WOULD NOT STAY. The pane read `conf.state.supervisorWakes` and
+  // the `settings` answer nests it — `{ settings: {...}, tests: {...} }` — so it
+  // was always undefined and the box was drawn UNTICKED whatever the setting
+  // said. A controlled checkbox draws from that, so React forced it back off
+  // after every press: a click sent "on", the setting turned on, the tick
+  // vanished, and there was no way to turn it OFF from the window at all.
+  //
+  // Nothing failed. The setting changed, the note appeared, and the only sign
+  // was a box that would not stay ticked.
+  //
+  // THE CHECKBOX IS ONLY THERE WHILE ONE IS RUNNING, which is the pane's own
+  // rule — the control row is empty while choosing — so this needs a supervisor
+  // up. It costs no model turn: it presses a checkbox and reads a setting.
+  const st = await okc('supervisorState')
+  assert.needs(st.ready, 'no supervisor is up, and the switch is only on the tab while one is running')
+
+  await remember(okc, state)
+  await okc('show', { tab: 'Supervisor', pane: 'Chat' })
+
+  const tick = async () => {
+    const f = ((await okc('windowControls')).fields || []).find(x => x.label === 'Answers by itself')
+    assert.ok(f, 'there is no "Answers by itself" on the tab, and a supervisor is running')
+    return f.value === true
+  }
+  const setting = async () => (await okc('settings')).settings.supervisorWakes === true
+
+  // THE BOX FOLLOWS THE SETTING, AND NOT IN THE SAME BREATH. The press writes
+  // the setting and then asks for the settings again; the draw that ticks the
+  // box is the one after that answer lands. Asserting the instant `windowFill`
+  // returns is asserting on a race, and it fails on the correct behaviour.
+  //
+  // BOUNDED, at five seconds, because a wait that never settles hangs instead of
+  // failing and a hang cannot be reported.
+  const tickBecomes = async (want) => {
+    for (let i = 0; i < 48; i++) {
+      if (await tick() === want) return true
+      await new Promise(r => setTimeout(r, 250))
+    }
+    return false
+  }
+
+  // BOTH DIRECTIONS, because only one of them was ever possible. Whichever way
+  // it starts, press it and it must land the other way — in the setting AND on
+  // the box, which is the half that was wrong.
+  const from = await setting()
+
+  // THE BOX AGREES WITH THE SETTING BEFORE ANYTHING IS PRESSED, which is the
+  // claim rather than a precondition. It is also what makes the presses below
+  // mean anything: `windowFill` decides whether to click by looking at the BOX,
+  // so with the two out of step it skips the press and reports success, and the
+  // check that follows fails on the wrong sentence. That happened here.
+  assert.ok(await tickBecomes(from),
+    `the setting is ${from} and the box does not show it — a tick that does not track what it sets`)
+
+  await okc('windowFill', { label: 'Answers by itself', value: !from })
+  assert.equal(await setting(), !from, `pressing it did not change the setting from ${from}`)
+  assert.ok(await tickBecomes(!from), 'the setting changed and the box never followed it — a tick that will not stay')
+
+  await okc('windowFill', { label: 'Answers by itself', value: from })
+  assert.equal(await setting(), from, 'it could be pressed one way and not the other')
+  assert.ok(await tickBecomes(from), 'the box never followed it back')
+  log(`pressed it to ${!from} and back to ${from}, and the tick followed both times`)
+})
+
 it('and with the switch on it wakes by itself', async ({ okc, assert, state, log }) => {
   // THE HALF THAT WAS MISSING ENTIRELY. `chatSay` returned a hard-coded
   // `woke: false` under a comment saying wake had not been ported — and it had:

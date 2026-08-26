@@ -370,6 +370,37 @@ async function plugin(imports, register) {
                 ? !(want.value === false || want.value === 'false' || want.value === '' || want.value === '0')
                 : (want.value == null ? '' : String(want.value));
 
+            //A CHECKBOX IS PRESSED, NOT SET, and this is a different fix from
+            //the one below rather than a variation on it.
+            //
+            //React does not raise `onChange` for a checkbox off a `change`
+            //event. It listens for `click` on checkbox and radio inputs and
+            //synthesises the change from it — so everything below, native setter
+            //and all, updated the box on screen and the handler never ran.
+            //
+            //IT REPORTED SUCCESS AND DID NOTHING, which is the same lie the
+            //comment below is about, one input type over: `windowFill` on
+            //"Answers by itself" answered `was: false, now: true`, the tick
+            //appeared, and the setting underneath stayed off. Found by checking
+            //the SETTING rather than the answer — the answer was green.
+            //
+            //`click()` flips `checked` itself and raises a real click, so there
+            //is nothing to set first; setting it first would flip it back. It
+            //also does nothing on a disabled box, which is the truth rather than
+            //a special case.
+            if (f.kind === 'checkbox') {
+                if (f.node.checked !== want2) f.node.click();
+                return {
+                    on: r.where, filled: f.label, was: before,
+                    //WHAT THE BOX SAYS, WHICH IS NOT YET THE ANSWER. A controlled
+                    //checkbox draws from state, and a handler that has to reach
+                    //this app before it comes back has not returned yet — so this
+                    //can read either way for a moment. What it CHANGED is the
+                    //thing to check, and it is never this field.
+                    now: f.node.checked, pressed: true
+                };
+            }
+
             //THROUGH THE NATIVE SETTER, AND NOT AFTER AN ASSIGNMENT. This is the
             //whole trick and the first version got it exactly backwards.
             //
