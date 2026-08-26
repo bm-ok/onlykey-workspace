@@ -177,41 +177,6 @@ module.exports = function repos(theme, okc) {
     function WhereWorkGoes({ r, chain, onWalk, onChanged }) {
         var now = r.target || { on: null, chosen: false };
 
-        //FORGETTING A DECISION THAT MOVED NOTHING. Same call as `keepToItself`
-        //— the target is cleared either way — and a different act to describe,
-        //because the target is already home: what goes is the DECISION, and
-        //what comes back is the question.
-        function undecide() {
-            ask({
-                title: 'Stop saying where ' + r.repo + "'s work goes?",
-                plain: [
-                    'Work stays on ' + (now.on || 'your own remote') + ' either way. Nothing moves, nothing '
-                        + 'already open is touched.',
-                    'What changes is that it goes back to being undecided — so it asks again, and says so on '
-                        + 'the list of what is waiting on you.'
-                ],
-                confirm: 'Back to undecided',
-                onYes: function () {
-                    return okc.call('repoTargetSet', { repo: r.repo, on: '' }).then(function (x) { onChanged(x && x.note, true); });
-                }
-            });
-        }
-
-        function keepToItself() {
-            ask({
-                title: 'Stop sending ' + r.repo + "'s work anywhere?",
-                danger: true,
-                plain: [
-                    'It sends work to ' + now.on + ' now. Afterwards, issues and pull requests both stay on your own remote and nothing upstream is watched.',
-                    'Nothing already open is closed or moved by this. It changes where the next one goes.'
-                ],
-                confirm: 'Keep to itself',
-                onYes: function () {
-                    return okc.call('repoTargetSet', { repo: r.repo, on: '' }).then(function (x) { onChanged(x && x.note, true); });
-                }
-            });
-        }
-
         //---- AND SAYING "IT IS RIGHT AS IT IS" ----------------------------
         //
         //NOTHING PICKED AND KEEPING TO ITSELF ARE THE SAME PLACE AND NOT THE
@@ -243,8 +208,8 @@ module.exports = function repos(theme, okc) {
                         + 'decision rather than a default.',
                     'Issues stay read from ' + l.on + ' and pull requests keep opening into it. Nothing '
                         + 'upstream is watched, which is the same as now.',
-                    'It stops this repository asking to be pointed somewhere — and "Keep to itself" puts it '
-                        + 'back to undecided if that turns out to be wrong.'
+                    'It stops this repository asking to be pointed somewhere. Pick a different link later '
+                        + 'and work goes there instead.'
                 ],
                 fields: [{ name: 'why', label: 'Why (optional)', placeholder: 'this fork is where the work lives' }],
                 confirm: 'Keep it here',
@@ -301,42 +266,28 @@ module.exports = function repos(theme, okc) {
                         somebody forks something — so a panel that walked it on
                         every paint would spend a handful of requests every few
                         seconds on a fact that is stable for months. */}
-                    {/* NAMED FOR WHAT IT IS FOR, not for what it does. "Walk the
+                    {/* ONE BUTTON, AND THE CHAIN DOES THE REST.
+                        There were three: this, "Keep to itself" and "Back to
+                        undecided" — two of them ways of UNDOING a decision, each
+                        right in only one of the states, and both of them a
+                        second place to make a choice the chain below already
+                        makes.
+
+                        Every one of those acts is picking a link: work goes to
+                        your own remote, or to the parent, or to the root. So
+                        there is one way in, the list is the whole interface, and
+                        picking your own remote is how a fork that IS where its
+                        work lives settles the question — which is the one thing
+                        the errand on the inbox is asking for.
+
+                        NAMED FOR WHAT IT IS FOR, not for what it does. "Walk the
                         fork chain" describes the mechanism — one request per
-                        link, following each parent — and the person pressing it
-                        is choosing where work goes. The mechanism is still on the
+                        link, following each parent — and that stays on the
                         hover, where the cost belongs. */}
                     <Button onClick={onWalk}
                         title="One request per link, following each parent until a repository that is not a fork">
                         {chain ? 'Select fork again' : 'Select fork'}
                     </Button>
-
-                    {/* AND THE WAY BACK SAYS WHICH WAY BACK IT IS.
-                        There are two chosen states, and "Keep to itself" is only
-                        the right sentence for one of them:
-
-                          pointed upstream   it MOVES the target home — the label
-                                             names the destination and is right
-                          chosen, but home   it moves nothing. Work already stays
-                                             here; the only thing it changes is
-                                             that the decision is forgotten
-
-                        Offering "Keep to itself" in the second state describes
-                        the state somebody is already in, and quietly puts the
-                        repository back on the inbox for being undecided. That
-                        arrived with "Keep it here": before it, a chosen target
-                        was always somewhere else. */}
-                    {now.chosen
-                        ? (now.upstream
-                            ? <Button onClick={keepToItself}
-                                title="Bring work back to your own remote, and stop watching anything above it">
-                                Keep to itself
-                            </Button>
-                            : <Button onClick={undecide}
-                                title="Forget the decision. Work still stays here — what changes is that this asks again">
-                                Back to undecided
-                            </Button>)
-                        : null}
                 </div>
 
                 {/* THE CHAIN, ONCE IT HAS BEEN WALKED. Each link is a place work
@@ -375,14 +326,24 @@ module.exports = function repos(theme, okc) {
                                                 ? (l.openIssues == null ? '' : l.openIssues + ' open issue(s)')
                                                 : 'this token cannot open a pull request here'}
                                         </span>
-                                        {l.target && !now.chosen && l.self
-                                            ? <Button onClick={function () { keepItHere(l); }}
-                                                title="Record that this is where the work belongs, so it stops asking">
-                                                Keep it here
-                                            </Button>
-                                            : l.target || !l.mayOpen
-                                                ? null
-                                                : <Button kind="ok" onClick={function () { sendWorkHere(l); }}>Send work here</Button>}
+                                        {/* A BUTTON ON EVERY LINK BUT THE
+                                            DECIDED ONE. `target` alone is not
+                                            enough: with nothing picked, your own
+                                            remote IS the target by default, and
+                                            hiding the button there is what left
+                                            the errand unanswerable. So it is
+                                            target AND chosen that means "this is
+                                            settled, nothing to press". */}
+                                        {l.target && now.chosen
+                                            ? null
+                                            : l.self
+                                                ? <Button onClick={function () { keepItHere(l); }}
+                                                    title="Work already goes here — record that as the decision">
+                                                    Keep it here
+                                                </Button>
+                                                : !l.mayOpen
+                                                    ? null
+                                                    : <Button kind="ok" onClick={function () { sendWorkHere(l); }}>Send work here</Button>}
                                     </React.Fragment>
                                 }>
                                     <Mono>{l.on}</Mono>
