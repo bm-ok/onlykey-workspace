@@ -103,7 +103,7 @@ module.exports = function repos(theme, okc) {
         function sync(branch) {
             setBusy(branch || '*');
             okc.call('repoSyncBranch', branch ? { repo: repo, branch: branch } : { repo: repo }).then(
-                function (x) { setBusy(null); q.now(); onMoved(x && x.note, x && x.moved ? null : 'warn'); },
+                function (x) { setBusy(null); q.again(); onMoved(x && x.note, x && x.moved ? null : 'warn'); },
                 function (e) { setBusy(null); onMoved(e.message, 'bad'); }
             );
         }

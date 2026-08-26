@@ -229,7 +229,7 @@ module.exports = function overview(theme, okc, remember) {
 
         function askGitHub() {
             okc.call('repositoriesCheck', {}).then(
-                function (x) { setAsked({ text: x.note }); again(); here.now(); },
+                function (x) { setAsked({ text: x.note }); again(); here.again(); },
                 function (e) { setAsked({ text: e.message, kind: 'bad' }); }
             );
         }

@@ -142,7 +142,7 @@ module.exports = function writer(theme, okc, remember) {
 
         function toggle(b, on) {
             okc.call('prTemplateSet', { id: b.id, on: on }).then(
-                function () { asked.current = null; blocks.now(); },
+                function () { asked.current = null; blocks.again(); },
                 function (e) { setSaid({ kind: 'bad', text: e.message }); }
             );
         }

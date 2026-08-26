@@ -74,7 +74,7 @@ module.exports = function chassis(theme, okc, remember) {
 
             function askGitHub(repo) {
                 okc.call('repositoriesCheck', repo ? { repo: repo } : {}).then(
-                    function (x) { say(x.note); q.now(); },
+                    function (x) { say(x.note); q.again(); },
                     function (e) { say(e.message, 'bad'); }
                 );
             }
@@ -110,7 +110,7 @@ module.exports = function chassis(theme, okc, remember) {
                         </Col>
                         <Col wide>
                             {one
-                                ? <Right r={one} say={say} again={q.now} askGitHub={askGitHub} />
+                                ? <Right r={one} say={say} again={q.again} askGitHub={askGitHub} />
                                 : <Panel><Empty>Pick a repository on the left.</Empty></Panel>}
                         </Col>
                     </Cols>
