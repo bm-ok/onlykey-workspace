@@ -469,16 +469,22 @@ module.exports = function repos(theme, okc) {
                             ) : null}
                         </KvRow>
                     ) : null}
-                    {/* WHERE WORK GOES, above the timestamp, because it is the
-                        thing on this panel that decides what happens to somebody
-                        else's repository. */}
-                    <KvRow label="work goes to">
-                        <Mono>{(r.target && r.target.on) || '(nowhere — no remote)'}</Mono>
-                        <span>{'  '}</span>
-                        {r.target && r.target.chosen
-                            ? <Badge kind="ok">you picked this</Badge>
-                            : <Badge kind="warn">nothing picked — it keeps to itself</Badge>}
-                    </KvRow>
+                    {/* NO "work goes to" ROW. It named the target and carried a
+                        badge saying whether anybody had picked it — and the card
+                        immediately below says the same thing in a sentence, with
+                        the badge, the date it was picked, and the buttons that
+                        change it. After picking, the two sat inches apart saying
+                        one fact twice.
+
+                        THAT IS THE FAULT THE ROW ABOVE THIS ONE WAS ALREADY
+                        RENAMED FOR: "two places knowing one fact and
+                        disagreeing". The app being ported from has both and this
+                        is a deliberate difference from it — the row is the one
+                        with nothing of its own, so the row goes.
+
+                        WHAT IS ABOVE IT STAYS, because "one level up" is a fact
+                        about GitHub rather than a decision about where work
+                        goes, and nothing else carries it. */}
                     <KvRow label="asked GitHub">
                         <span className="muted">{asked ? ago(r.checked) : 'never'}</span>
                     </KvRow>
