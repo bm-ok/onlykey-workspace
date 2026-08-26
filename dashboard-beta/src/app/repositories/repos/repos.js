@@ -1,5 +1,5 @@
 var React = require('react');
-var { useState, useRef } = React;
+var { useState, useRef, useEffect } = React;
 
 //---------------------------------------------------------------------------
 //Repos: what this workspace is made of, and whether the far end of each one can
@@ -174,63 +174,54 @@ module.exports = function repos(theme, okc) {
 
     //---- where work goes ---------------------------------------------------
 
-    function WhereWorkGoes({ r, chain, onWalk, onChanged }) {
+    //---- WHERE WORK GOES, WHICH THE REST OF THE APP TRUSTS ----------------
+    //
+    //ONE SETTING, AND IT IS NOT ONLY THIS PANE'S. The target decides where
+    //issues are read from, where pull requests are opened, and what `prCutMake`
+    //pushes into — so choosing it has to be plain, and what is chosen has to be
+    //legible at a glance afterwards. It was neither: press "Select fork", wait
+    //for a walk, then find the right button among three rows.
+    //
+    //A CHOOSER, NOT A HUNT. The chain is walked on its own — one conditional
+    //request per link, and etags make a repeat free — so by the time anybody
+    //looks, the places work could go are simply listed. Choosing one is picking
+    //it from a list, which is what it always was underneath.
+    //
+    //STILL A CONFIRM. It decides what happens to somebody else's repository,
+    //and that is the one kind of press this app does not do silently.
+    function WhereWorkGoes({ r, chain, onChanged }) {
         var now = r.target || { on: null, chosen: false };
+        var links = (chain && chain.links) || [];
 
-        //---- AND SAYING "IT IS RIGHT AS IT IS" ----------------------------
-        //
-        //NOTHING PICKED AND KEEPING TO ITSELF ARE THE SAME PLACE AND NOT THE
-        //SAME ANSWER. Unpicked means nobody has decided; `chosen` on your own
-        //remote means somebody looked at the chain and said the work belongs
-        //here. The stored shape already tells them apart — `chosen: true` with
-        //`upstream: false` — and nothing could ever produce it.
-        //
-        //SO THE ERRAND COULD NOT BE ANSWERED. "It is a fork and nothing has been
-        //picked" goes on the inbox until a target is chosen, and the one honest
-        //answer for a fork that IS where its work belongs — this one, thanks —
-        //had no button. An errand that cannot be settled is one that teaches
-        //people to ignore the list, which is the whole failure a list of what is
-        //waiting exists to avoid.
-        //
-        //THE APP BEING PORTED FROM HAS THE SAME HOLE: it raises the same errand
-        //and hides the button on the row that is already the target, which the
-        //self row is whenever nothing is picked. Its confirm text even describes
-        //this act — "the same as picking nothing, except that it is recorded as
-        //a decision" — for a press that could not be reached.
-        //
-        //NOTHING UPSTREAM IS WATCHED EITHER WAY. This records a decision; it
-        //does not point anywhere new.
-        function keepItHere(l) {
-            ask({
-                title: 'Keep ' + r.repo + "'s work on " + l.on + '?',
-                plain: [
-                    'It is already where work goes, because nothing has been picked. This records that as a '
-                        + 'decision rather than a default.',
-                    'Issues stay read from ' + l.on + ' and pull requests keep opening into it. Nothing '
-                        + 'upstream is watched, which is the same as now.',
-                    'It stops this repository asking to be pointed somewhere. Pick a different link later '
-                        + 'and work goes there instead.'
-                ],
-                fields: [{ name: 'why', label: 'Why (optional)', placeholder: 'this fork is where the work lives' }],
-                confirm: 'Keep it here',
-                onYes: function (v) {
-                    return okc.call('repoTargetSet', { repo: r.repo, on: l.on, why: v.why || null })
-                        .then(function (x) { onChanged(x && x.note); });
-                }
-            });
+        //WHAT EACH PLACE IS, in one phrase, so the list reads without the badges
+        //a table would have carried.
+        function whatIs(l) {
+            if (l.self) return 'yours — work stays here';
+            if (!l.fork) return 'the project';
+            return 'a fork above yours';
         }
 
-        function sendWorkHere(l) {
+        function choose(on) {
+            var l = links.filter(function (x) { return x.on === on; })[0];
+            if (!l || l.on === now.on) return;
+
             ask({
                 title: 'Send ' + r.repo + "'s work to " + l.on + '?',
                 plain: [
-                    'Issues would be read from ' + l.on + ', and pull requests from this repository would open into it.',
-                    'Nothing above it is watched after this — which is the point: if the project itself were the destination, you would have forked the project.',
-                    l.immediate
-                        ? 'It is the immediate parent, so syncing the fork stays one call to GitHub.'
-                        : 'It is NOT the immediate parent, so syncing the fork cannot use GitHub’s one-call merge-upstream — that would need fetching and merging through this host, and is refused rather than substituted.',
-                    l.self ? 'This is your own remote, which is the same as picking nothing — except that it is recorded as a decision.' : null
-                ].filter(Boolean),
+                    l.self
+                        ? 'Issues stay read from your own remote and pull requests keep opening into it. '
+                            + 'Nothing upstream is watched.'
+                        : 'Issues would be read from ' + l.on + ', and pull requests from this repository '
+                            + 'would open into it.',
+                    l.self
+                        ? 'Recorded as a decision, so this stops asking to be pointed somewhere.'
+                        : 'Nothing above it is watched after this — if the project itself were the '
+                            + 'destination, you would have forked the project.',
+                    l.self || l.immediate
+                        ? 'Syncing the fork stays one call to GitHub.'
+                        : 'It is NOT the immediate parent, so syncing the fork cannot use the one-call '
+                            + 'merge-upstream that GitHub offers.'
+                ],
                 fields: [{ name: 'why', label: 'Why (optional)', placeholder: 'the fork I am collaborating through' }],
                 confirm: 'Send work to ' + l.on,
                 onYes: function (v) {
@@ -247,121 +238,46 @@ module.exports = function repos(theme, okc) {
                     <Grow />
                     <Badge kind={now.chosen ? 'ok' : 'warn'}>{now.chosen ? 'picked' : 'not picked'}</Badge>
                 </CardTitle>
-                {/* SAID IN A SENTENCE. A bare name cannot carry whether anybody
-                    chose it, and that is the whole distinction this card makes. */}
+
+                {/* WHAT IS SET, IN A SENTENCE. A bare name cannot carry whether
+                    anybody chose it, and that is the distinction this card
+                    exists to make: the same remote means two different things
+                    depending on whether somebody decided it. */}
                 <Note>
                     {now.chosen
-                        ? 'Issues are read from ' + now.on + ' and pull requests open into it. You picked that'
-                            + (now.at ? ' on ' + String(now.at).slice(0, 10) : '') + ', and nothing above it is watched.'
+                        ? <span>{'Issues are read from ' + now.on + ' and pull requests open into it.'
+                            + (now.at ? ' You picked that on ' + String(now.at).slice(0, 10) + '.' : '')}</span>
                         : <span>
                             <strong>{'Nothing has been picked, so this keeps to itself. '}</strong>
                             {'Issues and pull requests both stay on ' + (now.on || 'this repository')
-                                + ' — your own remote — and nothing upstream is watched. That is right if this IS the project. '
-                                + 'If it is a fork and work belongs with whoever you forked from, walk the chain and say so.'}
+                                + '. That is right if this IS the project — say so below and it stops asking.'}
                         </span>}
                 </Note>
-                <div className="row">
-                    {/* THE WALK IS ON A BUTTON, NEVER ON THE DRAW LOOP. One
-                        request per link, and the answer only changes when
-                        somebody forks something — so a panel that walked it on
-                        every paint would spend a handful of requests every few
-                        seconds on a fact that is stable for months. */}
-                    {/* ONE BUTTON, AND THE CHAIN DOES THE REST.
-                        There were three: this, "Keep to itself" and "Back to
-                        undecided" — two of them ways of UNDOING a decision, each
-                        right in only one of the states, and both of them a
-                        second place to make a choice the chain below already
-                        makes.
 
-                        Every one of those acts is picking a link: work goes to
-                        your own remote, or to the parent, or to the root. So
-                        there is one way in, the list is the whole interface, and
-                        picking your own remote is how a fork that IS where its
-                        work lives settles the question — which is the one thing
-                        the errand on the inbox is asking for.
+                {chain && chain.stopped ? <Note kind="bad">{chain.stopped}</Note> : null}
 
-                        NAMED FOR WHAT IT IS FOR, not for what it does. "Walk the
-                        fork chain" describes the mechanism — one request per
-                        link, following each parent — and that stays on the
-                        hover, where the cost belongs. */}
-                    <Button onClick={onWalk}
-                        title="One request per link, following each parent until a repository that is not a fork">
-                        {chain ? 'Select fork again' : 'Select fork'}
-                    </Button>
-                </div>
-
-                {/* THE CHAIN, ONCE IT HAS BEEN WALKED. Each link is a place work
-                    could go, with the two facts that decide whether it can: may
-                    this host open a pull request there, and does syncing stay
-                    cheap.
-
-                    `mayOpen`, NOT `mayPush`. This read `l.mayPush` — the field
-                    the app being ported from has — and this one does not have
-                    it. Undefined is falsy, so every link rendered as "this token
-                    cannot push here" and EVERY "Send work here" button was
-                    hidden, on a card whose whole purpose is picking one. The
-                    pane looked complete and offered nothing.
-
-                    The rename was deliberate over here and is the better half of
-                    the two: `mayPush` there is `permissions.push`, which is the
-                    ACCOUNT's claim and not what the token may do — the mistake
-                    this app's own notes warn about. `mayOpen` is a real probe of
-                    `GET /pulls`, and `accountMayPush` is kept beside it,
-                    labelled, so the two can be seen to differ rather than one
-                    standing in for the other.
-
-                    AND THE SENTENCE SAYS WHAT WAS ASKED. "cannot push here" is
-                    not what was probed and not what picking a target needs —
-                    pushing happens to your own fork; the target is where a pull
-                    request is OPENED. */}
-                {chain ? (
-                    <div style={{ marginTop: '10px' }}>
-                        {chain.stopped ? <Note kind="bad">{chain.stopped}</Note> : null}
-                        {(chain.links || []).map(function (l) {
-                            return (
-                                <Part key={l.on} right={
-                                    <React.Fragment>
-                                        <span className={l.mayOpen ? 'muted' : 'bad'}>
-                                            {l.mayOpen
-                                                ? (l.openIssues == null ? '' : l.openIssues + ' open issue(s)')
-                                                : 'this token cannot open a pull request here'}
-                                        </span>
-                                        {/* A BUTTON ON EVERY LINK BUT THE
-                                            DECIDED ONE. `target` alone is not
-                                            enough: with nothing picked, your own
-                                            remote IS the target by default, and
-                                            hiding the button there is what left
-                                            the errand unanswerable. So it is
-                                            target AND chosen that means "this is
-                                            settled, nothing to press". */}
-                                        {l.target && now.chosen
-                                            ? null
-                                            : l.self
-                                                ? <Button onClick={function () { keepItHere(l); }}
-                                                    title="Work already goes here — record that as the decision">
-                                                    Keep it here
-                                                </Button>
-                                                : !l.mayOpen
-                                                    ? null
-                                                    : <Button kind="ok" onClick={function () { sendWorkHere(l); }}>Send work here</Button>}
-                                    </React.Fragment>
-                                }>
-                                    <Mono>{l.on}</Mono>
-                                    {l.self ? <Badge kind="muted">yours</Badge> : null}
-                                    {l.target ? <Badge kind="ok">work goes here</Badge> : null}
-                                    {!l.fork ? <Badge kind="muted">the project</Badge> : null}
-                                </Part>
-                            );
-                        })}
-                    </div>
-                ) : null}
+                {links.length ? (
+                    <KvRow label="send work to">
+                        <select value={now.on || ''} aria-label="send work to"
+                            onChange={function (e) { choose(e.target.value); }}>
+                            {links.map(function (l) {
+                                return (
+                                    <option key={l.on} value={l.on} disabled={!l.self && !l.mayOpen}>
+                                        {l.on + ' — ' + whatIs(l)
+                                            + (!l.self && !l.mayOpen ? ' (this token cannot open one there)' : '')}
+                                    </option>
+                                );
+                            })}
+                        </select>
+                    </KvRow>
+                ) : <Note>Reading the fork chain…</Note>}
             </Card>
         );
     }
 
     //---- the detail --------------------------------------------------------
 
-    function Detail({ r, chain, onWalk, onChanged }) {
+    function Detail({ r, chain, onChanged }) {
         if (!r) return <Panel><Empty>Pick a repository on the left.</Empty></Panel>;
         var rem = r.remote;
         var asked = !!r.checked;
@@ -547,7 +463,7 @@ module.exports = function repos(theme, okc) {
                     </Note>
                 ) : null}
 
-                <WhereWorkGoes r={r} chain={chain} onWalk={onWalk} onChanged={onChanged} />
+                <WhereWorkGoes r={r} chain={chain} onChanged={onChanged} />
 
                 {/* NO "Ask GitHub about this one". Everything here verifies
                     itself when the pane is opened, through the etag drawer, and
@@ -598,6 +514,27 @@ module.exports = function repos(theme, okc) {
         var showing = useRef(r.repo);
         showing.current = r.repo;
 
+        //WALKED WITHOUT BEING ASKED, so the places work could go are simply
+        //listed by the time anybody looks. It is one conditional request per
+        //link and etags make a repeat free — the same reason "Ask GitHub" went.
+        //
+        //ONCE PER REPOSITORY, AND AGAIN WHEN THE TARGET MOVES.
+        //
+        //KEYED ON BOTH, because the chain carries which link is the target — so
+        //after choosing one it is stale in exactly the flag the list is read
+        //for. Keyed on the repository alone, `changed` cleared the chain, the
+        //latch said "already walked", and the chooser DISAPPEARED: the card sat
+        //on "Reading the fork chain…" for the rest of the visit, right after a
+        //press that had worked.
+        var asked = useRef({});
+        useEffect(function () {
+            if (!r || !r.repo) return;
+            var key = r.repo + ' -> ' + ((r.target && r.target.on) || '');
+            if (asked.current[key]) return;
+            asked.current[key] = true;
+            walk();
+        }, [r && r.repo, r && r.target && r.target.on]);
+
         function walk() {
             var want = r.repo;
             okc.call('repoChain', { repo: want }).then(
@@ -611,7 +548,8 @@ module.exports = function repos(theme, okc) {
                     //SENTENCE still did: "3 repositories in the chain above
                     //local-repo-a" sitting on local-repo-c's panel, which is the
                     //same fault one layer up and reads exactly as convincingly.
-                    if (want === showing.current) say(c.note);
+                    //NOBODY PRESSED IT, so it says nothing when it works.
+                    //The list appearing IS the answer.
                 },
                 function (e) { if (want === showing.current) say(e.message, 'bad'); }
             );
@@ -625,7 +563,7 @@ module.exports = function repos(theme, okc) {
 
         return (
             <React.Fragment>
-                <Detail r={r} chain={mine} onWalk={walk} onChanged={changed} />
+                <Detail r={r} chain={mine} onChanged={changed} />
                 <Branches repo={r.repo} onMoved={function (note, kind) { say(note, kind); again(); }} />
             </React.Fragment>
         );

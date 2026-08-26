@@ -87,6 +87,20 @@ async function plugin(imports, register) {
         //as an unlabelled square otherwise. So look up as well as back.
         var up = n.closest('label');
         if (up) return words(up);
+
+        //AND WHAT THE FIELD SAYS IT IS, when the words beside it are not a
+        //`<label>` at all. A select in a labelled ROW — `<th>send work to</th>`
+        //beside it — has no label element anywhere near it, so it came back
+        //nameless and nothing could address it: `windowFill` could not find it,
+        //and neither could a screen reader.
+        //
+        //`aria-label` RATHER THAN THE ROW'S HEADER, because reaching into the
+        //theme's markup from here would make this file know what a KvRow is.
+        //The field naming itself is the standard answer and works wherever it
+        //is put.
+        var said = n.getAttribute && n.getAttribute('aria-label');
+        if (said) return said;
+
         return n.placeholder || '';
     }
 
