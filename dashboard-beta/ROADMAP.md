@@ -98,6 +98,27 @@ a fork, so there is no choice here to lose. Pick one in Repositories → Repos �
 Send work here."* Until that is set, nothing downstream can run — **including
 both session drills**, which is why the session question below has no answer.
 
+**It is not lost migration state, and the repositories ARE forks.** Both things
+are true at once, which is what made this confusing:
+
+    node tools/okc.js repoChain --repo local-repo-a
+
+    bm-sandbox-c/local-repo-a   fork:true  self:true  target:true
+    bm-sandbox-b/local-repo-a   fork:true              <- the parent
+    bm-sandbox-a/local-repo-a   fork:false             <- the root
+
+So `fork: true` on every repository, a real chain above each one, and a `target`
+that is **itself**, with `chosen: false`. The old app's `repos.json` holds one
+key per repository and nothing but `default` and `notedAt` — no target at all —
+so this was never set THERE either. Nothing was dropped in the move; the choice
+has simply never been made.
+
+**One action, and a person's**: it decides where work is sent and where issues
+are read from, so it is not one to make on somebody's behalf. Repositories →
+Repos → **Send work here**, pointing `local-repo-a` at
+`bm-sandbox-b/local-repo-a`. That alone should take *the order* off unrunnable
+and let everything under it run for the first time.
+
 ### 2c. Relayed actions log nowhere we can see
 
 A relayed action does its logging in `dashboard/`, so every line it would have
