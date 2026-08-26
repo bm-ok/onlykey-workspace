@@ -284,12 +284,20 @@ async function plugin(imports, register) {
         //branch that does not exist exits 1 and that is the answer, not a fault
         //— logging every one as a warning paints Live orange during ordinary
         //work and teaches everybody to ignore the colour. So: a warning when
-        //git had something to say, and a plain output line when it simply said
-        //no. Both carry the code, both carry the tag, and neither is lost.
+        //git had something to say, and a plain line when it simply said no.
+        //Both carry the code, both carry the tag, and neither is lost.
+        //
+        //`info` AND NOT `out`. This app's own distinction, written on the Live
+        //pane: `out` is raw command or guest output, `info` is the app's own
+        //sentence about its own act. An exit code reported in English is the
+        //second. Reaching for `out` also broke twenty-eight tests at once,
+        //because the log stubs they build carry the four levels a module was
+        //known to use — which is a fair warning that a fifth was a new idea
+        //rather than the existing one.
         if (said.code !== 0) {
             var what = repo + ': git ' + list.join(' ') + ' exited ' + said.code;
             if (said.stderr) log.warn(what + ' — ' + said.stderr.split('\n')[0]);
-            else log.out(what);
+            else log.info(what);
         }
         return said;
     }
