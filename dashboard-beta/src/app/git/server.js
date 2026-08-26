@@ -272,7 +272,25 @@ async function plugin(imports, register) {
 
         var cwd = await workspace.folderOf(repo);
         var said = await spawnGit(cwd, list);
-        if (said.code !== 0 && said.stderr) log.warn(repo + ': git ' + list[0] + ' — ' + said.stderr.split('\n')[0]);
+
+        //A NON-ZERO EXIT IS NEVER SWALLOWED, and it was: this logged only when
+        //there was stderr to quote, and twenty-two places in this file test
+        //`code !== 0` — six of them `return null` and say nothing at all. A
+        //command that failed and left no line is the exact shape of a run going
+        //off and losing its exit signal, and Live is where both of us look for
+        //it.
+        //
+        //TWO LEVELS, BECAUSE MOST OF THESE ARE QUESTIONS. `rev-parse` on a
+        //branch that does not exist exits 1 and that is the answer, not a fault
+        //— logging every one as a warning paints Live orange during ordinary
+        //work and teaches everybody to ignore the colour. So: a warning when
+        //git had something to say, and a plain output line when it simply said
+        //no. Both carry the code, both carry the tag, and neither is lost.
+        if (said.code !== 0) {
+            var what = repo + ': git ' + list.join(' ') + ' exited ' + said.code;
+            if (said.stderr) log.warn(what + ' — ' + said.stderr.split('\n')[0]);
+            else log.out(what);
+        }
         return said;
     }
 
