@@ -151,6 +151,43 @@ async function plugin(imports, register) {
         return picked || self;
     }
 
+    //---- WHERE THINGS ARE READ FROM, WHICH IS NOT WHERE THEY ARE SENT ------
+    //
+    //ONE VALUE ANSWERED THREE QUESTIONS and they are not the same question.
+    //Issues are read where people FILE them; pull requests are read where they
+    //ARRIVE; a change is SENT to one place and only one. A fork you collaborate
+    //through can be the destination while the issues worth reading are still on
+    //the project above it — and with a single `target` that was unsayable, so
+    //the app read from wherever it happened to send to.
+    //
+    //TWO SETS AND ONE CHOICE. Reading is a set because more than one place can
+    //be worth watching; sending is a single value because a change goes
+    //somewhere, once. `target` keeps its meaning — where pull requests are
+    //OPENED — so `prCutMake` is untouched by this.
+    //
+    //EMPTY MEANS THE TARGET, which is what every record written before this
+    //says by omission and is the behaviour it had. Nothing is migrated: absence
+    //is read as "the same as where work goes", which is both the old answer and
+    //a sensible default.
+    function readsOf(note, remote) {
+        var fallback = targetOf(note, remote).on;
+        var kept = (note && note.reads) || {};
+        function set(which) {
+            var list = Array.isArray(kept[which]) ? kept[which].filter(Boolean) : null;
+            return list && list.length ? list : (fallback ? [fallback] : []);
+        }
+        return {
+            issues: set('issues'),
+            pulls: set('pulls'),
+            //WHETHER ANYBODY SAID SO, kept apart from the value for the same
+            //reason `chosen` is on the target: "the default" and "what somebody
+            //picked" are the same list in different situations.
+            chosen: !!(kept.issues || kept.pulls),
+            at: kept.at || null,
+            by: kept.by || null
+        };
+    }
+
     function targetOf(note, remote) {
         var self = remote && remote.owner ? remote.owner + '/' + remote.repo : null;
         var picked = note && note.target && note.target.on ? String(note.target.on) : null;
@@ -685,6 +722,11 @@ async function plugin(imports, register) {
                         //WHERE ISSUES ARE READ FROM, which is the target and not
                         //the parent. Unset means your own remote.
                         issuesOn: targetOf(note, remote).on,
+                        //THE SETS, BESIDE THE ONE VALUE. `issuesOn` stays what
+                        //it was — the single place, for anything still asking
+                        //that question — and `reads` is where more than one can
+                        //be named.
+                        reads: readsOf(note, remote),
                         target: targetOf(note, remote),
 
                         //COMPUTED HERE RATHER THAN STORED, so it is right even
@@ -851,6 +893,26 @@ async function plugin(imports, register) {
 
                 var notes = await read();
                 var now = targetOf((notes || {})[name] || null, remote);
+
+                //---- KEPT, BECAUSE OTHER THINGS NEED TO KNOW WHAT IS UP THERE
+                //
+                //THE WALK WAS COMPUTED AND THROWN AWAY. Every caller that
+                //wanted to know which places this repository is related to had
+                //to walk it again — and `repoReadsSet`, which must refuse a
+                //place that is not in the chain, had nothing to check against
+                //at all: it would have rejected the parent, which is the
+                //ordinary answer.
+                //
+                //WRITTEN WHOLE rather than merged, because a chain is a shape:
+                //a link that has gone is not a link to keep, and merging would
+                //leave a repository claiming a relationship GitHub no longer
+                //reports.
+                if (notes) {
+                    var was = notes[name] || {};
+                    was.chain = { links: links, walked: new Date().toISOString() };
+                    notes[name] = was;
+                    (await kept()).write(notes);
+                }
 
                 log.on('github', name).info('walked ' + links.length + ' link(s) above ' + name);
                 return {
@@ -1061,6 +1123,91 @@ async function plugin(imports, register) {
                     note: now.chosen
                         ? 'Work from ' + name + ' goes to ' + now.on + ', and its issues are read from there. Check it to gather them.'
                         : 'Cleared. Work from ' + name + ' goes to its own remote, and its issues are read from there.'
+                };
+            }
+        }));
+
+        //---- AND WHERE THEY ARE READ FROM --------------------------------
+        //
+        //A SET PER QUESTION, and the two are set together because they are one
+        //decision on one screen: which places this workspace watches. Sending
+        //stays `repoTargetSet` — a different act, with a different blast
+        //radius, and the one that reaches somebody else's repository.
+        //
+        //NAMES ARE CHECKED AGAINST THE CHAIN, not accepted as typed. A place
+        //this repository has no relationship to is not somewhere its issues
+        //live, and a set holding one would read from a stranger for ever with
+        //nothing to say why.
+        undo.push(actions.define('repoReadsSet', {
+            about: 'Choose which places this repository reads issues and pull requests from',
+            takes: ['repo', 'issues', 'pulls'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.repo || '').trim();
+                if (!name) throw new Error('Which repository?');
+
+                var found = await workspace.repos();
+                if (!found.filter(function (x) { return x.name === name; }).length) {
+                    throw new Error('There is no repository called "' + name + '" here. This workspace has: '
+                        + found.map(function (x) { return x.name; }).join(', ') + '.');
+                }
+
+                var remote = null;
+                try { remote = await refs.origin(name); } catch (e) { remote = null; }
+
+                var doc = await kept();
+                var notes = doc.read({}) || {};
+                var note = notes[name] || {};
+
+                //WHAT THIS REPOSITORY COULD POSSIBLY READ FROM: itself, and
+                //every link above it that has been walked. Unwalked, the chain
+                //is unknown and only its own remote can be vouched for.
+                var chainKnown = (note.chain && note.chain.links) || [];
+                var may = {};
+                if (remote && remote.owner) may[remote.owner + '/' + remote.repo] = true;
+                chainKnown.forEach(function (l) { if (l && l.on) may[l.on] = true; });
+
+                function asList(v) {
+                    if (v == null) return null;
+                    var list = Array.isArray(v) ? v : String(v).split(',');
+                    return list.map(function (x) { return String(x).trim(); }).filter(Boolean);
+                }
+
+                var want = { issues: asList(a.issues), pulls: asList(a.pulls) };
+                ['issues', 'pulls'].forEach(function (which) {
+                    (want[which] || []).forEach(function (on) {
+                        if (Object.keys(may).length && !may[on]) {
+                            throw new Error('"' + on + '" is not this repository or anywhere in the chain above '
+                                + 'it, so its issues and pull requests are not ' + name + "'s. Walk the chain "
+                                + 'and pick from what is there.');
+                        }
+                    });
+                });
+
+                note.reads = {
+                    issues: want.issues == null ? (note.reads || {}).issues : want.issues,
+                    pulls: want.pulls == null ? (note.reads || {}).pulls : want.pulls,
+                    at: new Date().toISOString(),
+                    by: actions.whoAsked(a)
+                };
+
+                //WHAT WAS READ FROM SOMEWHERE ELSE IS NOT THIS PLACE'S ANSWER,
+                //so the stamp goes and the panel asks again — the same rule
+                //`repoTargetSet` follows for the same reason.
+                note.checked = null;
+
+                notes[name] = note;
+                doc.write(notes);
+
+                var now = readsOf(note, remote);
+                log.on('git', name).info('reads issues from ' + (now.issues.join(', ') || 'nowhere')
+                    + '; pull requests from ' + (now.pulls.join(', ') || 'nowhere'));
+
+                return {
+                    repo: name,
+                    reads: now,
+                    note: name + ' reads issues from ' + (now.issues.join(', ') || 'nowhere')
+                        + ' and pull requests from ' + (now.pulls.join(', ') || 'nowhere') + '.'
                 };
             }
         }));
@@ -1329,7 +1476,25 @@ async function plugin(imports, register) {
                     //never a branch being wrong — it was a branch not mentioning
                     //something. A sixth one cannot forget what it is not asked
                     //to remember.
-                    row = Object.assign({}, row, { target: (was && was.target) || null });
+                    //AND IT IS A LIST, BECAUSE THERE IS MORE THAN ONE NOW.
+                    //Naming `target` alone was right while it was the only
+                    //thing here GitHub had not answered. It is not: `reads`
+                    //says which places issues and pull requests are read from,
+                    //and `chain` is the walk this app paid for. Both were
+                    //dropped by the very next check — a set of reads chosen at
+                    //the window survived about eight seconds, which is the same
+                    //fault this comment was written for, one field along.
+                    //
+                    //ANYTHING A PERSON CHOOSES OR THIS APP LEARNS FOR ITSELF
+                    //GOES IN THIS LIST. It is the one edit needed when the next
+                    //one arrives, and it is here rather than in each branch
+                    //because the fault was never a branch being wrong — it was
+                    //a branch not mentioning something.
+                    var keep = {};
+                    ['target', 'reads', 'chain'].forEach(function (field) {
+                        keep[field] = (was && was[field]) || null;
+                    });
+                    row = Object.assign({}, row, keep);
 
                     rows.push(row);
                     notes[row.repo] = row;

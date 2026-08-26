@@ -82,11 +82,18 @@ async function plugin(imports, register) {
     //fallback, because a field with no label still has to be nameable.
     function labelOf(n) {
         var prev = n.previousElementSibling;
-        if (prev && prev.tagName === 'LABEL') return words(prev);
+        if (prev && prev.tagName === 'LABEL' && words(prev)) return words(prev);
         //A checkbox is inside its label rather than after it — the label reads
         //as an unlabelled square otherwise. So look up as well as back.
+        //
+        //AN EMPTY ONE IS NOT AN ANSWER, and stopping at it is what made nine
+        //fields on one pane nameless. A checkbox wrapped in a `<label>` holding
+        //nothing but the box — which is how a ROW of them is built, with the
+        //words in the row's own header — returned "" and returned it before the
+        //fallback below ever ran. `windowFill` could address none of them, and a
+        //screen reader announced nine unlabelled squares.
         var up = n.closest('label');
-        if (up) return words(up);
+        if (up && words(up)) return words(up);
 
         //AND WHAT THE FIELD SAYS IT IS, when the words beside it are not a
         //`<label>` at all. A select in a labelled ROW — `<th>send work to</th>`

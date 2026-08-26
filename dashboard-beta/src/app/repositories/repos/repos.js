@@ -189,9 +189,10 @@ module.exports = function repos(theme, okc) {
     //
     //STILL A CONFIRM. It decides what happens to somebody else's repository,
     //and that is the one kind of press this app does not do silently.
-    function WhereWorkGoes({ r, chain, onChanged }) {
+    function WhereWorkGoes({ r, chain, onChanged, stoppedFor }) {
         var now = r.target || { on: null, chosen: false };
         var links = (chain && chain.links) || [];
+        var reads = r.reads || { issues: [], pulls: [] };
 
         //WHAT EACH PLACE IS, in one phrase, so the list reads without the badges
         //a table would have carried.
@@ -199,6 +200,24 @@ module.exports = function repos(theme, okc) {
             if (l.self) return 'yours — work stays here';
             if (!l.fork) return 'the project';
             return 'a fork above yours';
+        }
+
+        //TOGGLING A READ IS NOT A CONFIRM. Nothing leaves this host and
+        //nothing is written anywhere else: it changes which places this
+        //workspace WATCHES, and getting it wrong is one more press to undo.
+        //Sending is the one with the gate, because that is the one that reaches
+        //somebody else.
+        function toggle(which, on) {
+            var was = reads[which] || [];
+            var next = was.indexOf(on) >= 0
+                ? was.filter(function (x) { return x !== on; })
+                : was.concat([on]);
+            okc.call('repoReadsSet', {
+                repo: r.repo,
+                issues: which === 'issues' ? next : reads.issues,
+                pulls: which === 'pulls' ? next : reads.pulls
+            }).then(function (x) { onChanged(x && x.note); },
+                function (e) { onChanged(e.message, true); });
         }
 
         function choose(on) {
@@ -257,27 +276,83 @@ module.exports = function repos(theme, okc) {
                 {chain && chain.stopped ? <Note kind="bad">{chain.stopped}</Note> : null}
 
                 {links.length ? (
-                    <KvRow label="send work to">
-                        <select value={now.on || ''} aria-label="send work to"
-                            onChange={function (e) { choose(e.target.value); }}>
-                            {links.map(function (l) {
-                                return (
-                                    <option key={l.on} value={l.on} disabled={!l.self && !l.mayOpen}>
-                                        {l.on + ' — ' + whatIs(l)
-                                            + (!l.self && !l.mayOpen ? ' (this token cannot open one there)' : '')}
-                                    </option>
-                                );
-                            })}
-                        </select>
-                    </KvRow>
-                ) : <Note>Reading the fork chain…</Note>}
+                    <div style={{ marginTop: '8px' }}>
+                        {/* ONE ROW PER PLACE, THREE ANSWERS ACROSS IT.
+                            Reading and sending are different questions and were
+                            one value: issues are read where people FILE them,
+                            pull requests where they ARRIVE, and a change is sent
+                            to exactly one place. A fork you collaborate through
+                            can be the destination while the issues worth reading
+                            are still on the project above it — unsayable before,
+                            so the app read from wherever it happened to send to.
+
+                            CHECKBOXES FOR THE TWO READS, because more than one
+                            place can be worth watching. A RADIO FOR SENDING,
+                            because a change goes somewhere, once. */}
+                        <Part right={
+                            <React.Fragment>
+                                <span className="muted">issues</span>
+                                <span className="muted">PRs</span>
+                                <span className="muted">send to</span>
+                            </React.Fragment>
+                        }><span className="muted">read from</span></Part>
+
+                        {links.map(function (l) {
+                            var canSend = l.self || l.mayOpen;
+                            return (
+                                <Part key={l.on} right={
+                                    <React.Fragment>
+                                        <label className="inline" title={'Read issues from ' + l.on}>
+                                            {/* NAMED, because a bare checkbox in
+                                                a row is nameless to everything
+                                                that is not a pair of eyes: the
+                                                driver cannot address it and a
+                                                screen reader announces nothing.
+                                                The words are the question plus
+                                                the place, which is what somebody
+                                                would say out loud. */}
+                                            <input type="checkbox" checked={reads.issues.indexOf(l.on) >= 0}
+                                                aria-label={'read issues from ' + l.on}
+                                                onChange={function () { toggle('issues', l.on); }} />
+                                        </label>
+                                        <label className="inline" title={'Read pull requests from ' + l.on}>
+                                            <input type="checkbox" checked={reads.pulls.indexOf(l.on) >= 0}
+                                                aria-label={'read pull requests from ' + l.on}
+                                                onChange={function () { toggle('pulls', l.on); }} />
+                                        </label>
+                                        {/* DISABLED WHERE A PULL REQUEST CANNOT
+                                            BE OPENED, and the row still says the
+                                            place — it is somewhere issues can
+                                            come from even when nothing can be
+                                            sent there. */}
+                                        <label className="inline"
+                                            title={canSend
+                                                ? 'Open pull requests on ' + l.on
+                                                : 'This token cannot open a pull request on ' + l.on}>
+                                            <input type="radio" name={'sendto-' + r.repo}
+                                                checked={now.on === l.on} disabled={!canSend}
+                                                aria-label={'send pull requests to ' + l.on}
+                                                onChange={function () { choose(l.on); }} />
+                                        </label>
+                                    </React.Fragment>
+                                }>
+                                    <Mono>{l.on}</Mono>
+                                    {l.self ? <Badge kind="muted">yours</Badge> : null}
+                                    {!l.fork ? <Badge kind="muted">the project</Badge> : null}
+                                </Part>
+                            );
+                        })}
+                    </div>
+                ) : <Note kind={stoppedFor ? 'bad' : undefined}>
+                    {stoppedFor || 'Reading the fork chain…'}
+                </Note>}
             </Card>
         );
     }
 
     //---- the detail --------------------------------------------------------
 
-    function Detail({ r, chain, onChanged }) {
+    function Detail({ r, chain, onChanged, stoppedFor }) {
         if (!r) return <Panel><Empty>Pick a repository on the left.</Empty></Panel>;
         var rem = r.remote;
         var asked = !!r.checked;
@@ -463,7 +538,7 @@ module.exports = function repos(theme, okc) {
                     </Note>
                 ) : null}
 
-                <WhereWorkGoes r={r} chain={chain} onChanged={onChanged} />
+                <WhereWorkGoes r={r} chain={chain} onChanged={onChanged} stoppedFor={stoppedFor} />
 
                 {/* NO "Ask GitHub about this one". Everything here verifies
                     itself when the pane is opened, through the etag drawer, and
@@ -526,19 +601,41 @@ module.exports = function repos(theme, okc) {
         //latch said "already walked", and the chooser DISAPPEARED: the card sat
         //on "Reading the fork chain…" for the rest of the visit, right after a
         //press that had worked.
-        var asked = useRef({});
+        //WALKED WHENEVER THERE IS NO CHAIN TO SHOW, which is a condition rather
+        //than a latch — and that difference is the whole of this.
+        //
+        //A LATCH WEDGES. Keyed on the repository, `changed` cleared the chain
+        //and the latch said "already walked": the chooser disappeared for the
+        //rest of the visit, right after a press that had worked. Keyed on the
+        //repository AND the target, it still wedged whenever the target did not
+        //move — picking your own remote when it was already the target changes
+        //`chosen` and not `on`, so the key was identical and the card sat on
+        //"Reading the fork chain…" for good. A third key would have had a fourth
+        //hole.
+        //
+        //THE QUESTION IS NOT "HAVE WE WALKED" BUT "IS THERE A CHAIN". `mine` is
+        //null whenever there is nothing to show — cleared, never fetched, or
+        //belonging to another repository — and that is exactly when walking is
+        //right. It cannot wedge, because what it tests is what the card needs.
+        //
+        //ONE AT A TIME, AND ONE FAILURE IS NOT A LOOP. `walking` stops a second
+        //request going out beside the first; `stopped` remembers a walk that
+        //FAILED, so a chain that cannot be read leaves the reason on screen
+        //rather than asking again every draw.
+        var walking = useRef(null);
+        var stopped = useRef({});
         useEffect(function () {
-            if (!r || !r.repo) return;
-            var key = r.repo + ' -> ' + ((r.target && r.target.on) || '');
-            if (asked.current[key]) return;
-            asked.current[key] = true;
+            if (!r || !r.repo || mine) return;
+            if (walking.current === r.repo || stopped.current[r.repo]) return;
+            walking.current = r.repo;
             walk();
-        }, [r && r.repo, r && r.target && r.target.on]);
+        }, [r && r.repo, mine]);
 
         function walk() {
             var want = r.repo;
             okc.call('repoChain', { repo: want }).then(
                 function (c) {
+                    walking.current = null;
                     //FILED WHATEVER HAPPENS — it cost the requests, and coming
                     //back to that repository shows it without walking again. It
                     //is `mine` above that decides whether it is SHOWN.
@@ -551,7 +648,14 @@ module.exports = function repos(theme, okc) {
                     //NOBODY PRESSED IT, so it says nothing when it works.
                     //The list appearing IS the answer.
                 },
-                function (e) { if (want === showing.current) say(e.message, 'bad'); }
+                function (e) {
+                    walking.current = null;
+                    //REMEMBERED AS FAILED, so the next draw does not ask again
+                    //and again. Said only if it is still about what is on
+                    //screen — see `showing`.
+                    stopped.current[want] = e.message;
+                    if (want === showing.current) say(e.message, 'bad');
+                }
             );
         }
 
@@ -563,7 +667,7 @@ module.exports = function repos(theme, okc) {
 
         return (
             <React.Fragment>
-                <Detail r={r} chain={mine} onChanged={changed} />
+                <Detail r={r} chain={mine} onChanged={changed} stoppedFor={stopped.current[r.repo] || null} />
                 <Branches repo={r.repo} onMoved={function (note, kind) { say(note, kind); again(); }} />
             </React.Fragment>
         );
