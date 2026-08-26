@@ -446,7 +446,20 @@ module.exports = function repos(theme, okc) {
                                 : <span className="muted">{'  its head could not be read'}</span>}
                         </KvRow>
                     ) : null}
-                    {asked && (r.intoTarget || r.intoParent) ? (
+                    {/* NO FALLING BACK TO THE PARENT. This read
+                            `intoTarget || intoParent`, so a repository whose
+                            record predates the target probe — or one where the
+                            probe could not be made — showed the PARENT's answer
+                            under a row labelled "target fork". A verdict about
+                            the wrong repository, presented as being about the
+                            right one, which is the shape of every fault this
+                            panel has produced today.
+
+                            NOT KNOWING IS ITS OWN ANSWER and is said plainly.
+                            The target is named either way, because that part is
+                            never in doubt — it is a decision this app holds, not
+                            something GitHub was asked. */}
+                    {asked ? (
                         //THE TARGET, WHICH IS WHERE A CHANGE WILL ACTUALLY LAND.
                         //
                         //This row said "one level up" and named the immediate
@@ -463,18 +476,37 @@ module.exports = function repos(theme, okc) {
                         //and false of a chosen one. This is the same fault a
                         //second time, and the fix this time is to ASK ABOUT THE
                         //TARGET rather than to rename the row again.
-                        <KvRow label="target fork">
-                            <Mono>{(r.intoTarget || r.intoParent).repo}</Mono>
+                        <KvRow label={r.target && r.target.upstream ? 'target fork' : 'work goes to'}>
+                            <Mono>{(r.target && r.target.on) || '(nowhere — no remote)'}</Mono>
                             <span>{'  '}</span>
-                            <span className={(r.intoTarget || r.intoParent).mayOpen ? 'ok' : 'bad'}>
-                                {(r.intoTarget || r.intoParent).mayOpen
-                                    ? 'this token can open a pull request there'
-                                    : 'this token can NOT open a pull request there'}
-                            </span>
-                            {(r.intoTarget || r.intoParent).why
-                                ? <div className="muted">{(r.intoTarget || r.intoParent).why}</div>
+                            {/* YOUR OWN REMOTE IS NOT A TARGET FORK, and asking
+                                whether this token can open a pull request on it
+                                is a question with one answer. Said that way it
+                                read as a checked destination — "target fork:
+                                your own repository, and yes it can be opened
+                                there" — which is three sentences of nothing
+                                where one fact belongs: work stays here.
+
+                                The label goes with it. "target fork" promises a
+                                fork work is sent TO. */}
+                            {r.target && !r.target.upstream
+                                ? <span className="muted">work stays here — nothing is sent upstream</span>
+                                : !r.intoTarget
+                                    ? <span className="muted">not asked yet</span>
+                                    : <span className={r.intoTarget.mayOpen ? 'ok' : 'bad'}>
+                                        {r.intoTarget.mayOpen
+                                            ? 'this token can open a pull request there'
+                                            : 'this token can NOT open a pull request there'}
+                                    </span>}
+                            {r.target && r.target.upstream && r.intoTarget && r.intoTarget.why
+                                ? <div className="muted">{r.intoTarget.why}</div>
                                 : null}
-                            {r.chained ? (
+                            {/* AND THE GUIDANCE ONLY WHILE IT IS A QUESTION.
+                                "if work belongs somewhere between them, select
+                                the fork below and say so" under a row saying the
+                                target is settled is the panel arguing with
+                                itself. */}
+                            {r.chained && !(r.target && r.target.chosen) ? (
                                 <Note>
                                     <strong>This is a fork of a fork. </strong>
                                     <span>{'One level up is ' + r.parent + '; the root of the network is '
