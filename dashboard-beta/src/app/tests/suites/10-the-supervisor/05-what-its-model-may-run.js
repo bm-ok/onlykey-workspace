@@ -72,7 +72,12 @@ it('and the tool server offers exactly what this host allows', async ({ okc, ass
   }
   assert.ok(offered, `the tool server did not answer the tools/list it was asked: ${listing.slice(0, 300)}`)
 
-  const may = Object.keys(require('../../../core/supervisor').MAY)
+  // ASKED OF THE RUNNING APP. This required `core/supervisor` — the app being
+  // ported from's path — and a drill is a payload beside the server bundle with
+  // no `src/app` next to it, so NO relative require would have reached the list.
+  // It threw where it should have compared, which reads as a broken drill rather
+  // than as an unchecked door.
+  const may = ((await okc('supervisorMay')).may || []).map(m => m.action)
   const extra = offered.filter(n => !may.includes(n))
   const missing = may.filter(n => !offered.includes(n))
   assert.ok(!extra.length, `its tool server offers ${extra.join(', ')}, which this host does not allow a supervisor`)

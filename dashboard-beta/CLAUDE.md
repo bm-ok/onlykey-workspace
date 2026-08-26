@@ -5,7 +5,9 @@ Source of trust is the old dashboard, actually read it for the shape of the app.
 Only use claude credentials for testing worker, judge, and supervisor workflow., 
 Test everything else without credentials as possible.
 
-During port
+During porting, target tests to the features in progress, then run the whole test suite as the final gate.
+
+if provide a scrren shot and markup, read both beucase markkup will show rendered dropdown options the user cant photo
 
 The `dashboard/` app, ported to rectify plugins + React + webpack, running under
 NW.js and in a browser tab.

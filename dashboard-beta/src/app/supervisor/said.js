@@ -62,7 +62,7 @@ var VIA = { window: true, cli: true, test: true, wire: true };
 //document, and a document belongs on a branch.
 var MOST = 20000;
 
-module.exports = function said(doc, readDoc) {
+module.exports = function said(doc, readDoc, fromDoc) {
     function lines() {
         var kept = doc.read({ lines: [] });
         return (kept && kept.lines) || [];
@@ -205,18 +205,54 @@ module.exports = function said(doc, readDoc) {
 
     function all() { return lines(); }
 
+    //---- where the PERSON is reading from ----------------------------------
+    //
+    //NOT A DELETION. "Clear" threw the conversation away, and a conversation
+    //with a supervisor is the record of what was asked for and why — the one
+    //place that says why a task exists at all. Tidying a screen is not a reason
+    //to destroy that, and once it is gone there is nowhere to get it back from.
+    //
+    //So the tidying is a BOOKMARK: everything at or below it stays exactly where
+    //it is and stops being drawn. Move it back to zero and the whole thing is
+    //there again — there is no separate "unhide".
+    //
+    //KEPT ON THE HOST, like the read receipt, because it is a fact about this
+    //installation rather than about one window: a reading position that resets
+    //on every restart is one nobody would bother setting.
+    //
+    //AND IN ITS OWN DOCUMENT, because it is the OPPOSITE pointer into the same
+    //list. One says "the machine has seen up to here", this says "the person
+    //does not want to see before here"; they move independently, and one
+    //document holding both would eventually have one overwrite the other.
+    function fromMark() {
+        var m = fromDoc ? fromDoc.read({}) : {};
+        return { n: Number(m && m.n) || 0, at: (m && m.at) || null, by: (m && m.by) || null };
+    }
+
+    function markFrom(n, by) {
+        var at = Math.max(0, Number(n) || 0);
+        var line = { n: at, at: new Date().toISOString(), by: by || null };
+        if (fromDoc) fromDoc.write(line);
+        return line;
+    }
+
     //THROWN AWAY DELIBERATELY, AND ONLY EVER WHOLE: half a conversation reads
     //worse than none, and there is nothing here worth keeping selectively.
     function clear() {
         var n = lines().length;
         doc.write({ lines: [] });
         readDoc.write({ n: 0, at: new Date().toISOString(), by: null });
+        //AND THE READING BOOKMARK WITH IT. Numbering restarts at one, so a
+        //bookmark left at twelve would hide the next twelve things said — an
+        //empty thread that fills up and still shows nothing.
+        if (fromDoc) fromDoc.write({ n: 0, at: new Date().toISOString(), by: null });
         return n;
     }
 
     return {
         say: say, all: all, since: since, lastNumber: lastNumber,
         readMark: readMark, markRead: markRead, clear: clear,
+        fromMark: fromMark, markFrom: markFrom,
         WHO: Object.keys(WHO), VIA: Object.keys(VIA), MOST: MOST
     };
 };

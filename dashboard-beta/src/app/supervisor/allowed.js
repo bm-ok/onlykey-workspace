@@ -164,7 +164,9 @@ var MAY = {
   // it, and take it back out if it was wrong. Everything else a supervisor wants
   // to do is one of these repeated.
   branchCreate: 'cut a branch across the repositories, which is where a task delivers',
-  taskCreate: 'write a task on a branch that has been cut, under a job and contract a person approved',
+  taskCreate: 'write a task on a branch that has been cut, under a job and contract a person approved — or pass '
+    + 'the task `cutFrom` (a line) and `reason` to cut that branch in the same act, which is the same door the '
+    + 'person at the window presses on Add task',
   taskQueue: 'put a task in the queue, so the next free machine takes it',
   taskUnqueue: 'take a task back out of the queue, for one that should not have gone in',
 

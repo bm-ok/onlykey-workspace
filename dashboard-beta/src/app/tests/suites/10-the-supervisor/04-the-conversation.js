@@ -59,9 +59,21 @@ it('and the supervisor cannot say something as you', async ({ okc, assert, log }
   // Asked of the LIST rather than of a machine, because that is where it is
   // decided: the person's verb is not on a supervisor's allowlist, so from over
   // the wire it does not exist. See core/supervisor.js.
-  const may = new Set(Object.keys(require('../../../core/supervisor').MAY))
+  // ASKED OF THE RUNNING APP, not required out of a module. This said
+  // `require('../../../core/supervisor')` — the app being ported from's path,
+  // which is not here — and a drill is a PAYLOAD beside the server bundle with
+  // no `src/app` next to it, so no relative require would have reached the list
+  // whatever it named. It threw rather than failing, and a check that throws
+  // proves nothing about a list; the six checks under it were unrunnable behind
+  // it the whole time.
+  const may = new Set(((await okc('supervisorMay')).may || []).map(m => m.action))
   assert.ok(!may.has('chatSay'), 'a supervisor may call chatSay, which is the person\'s half of the conversation — it could then write a line as you')
   assert.ok(!may.has('chatClear'), 'a supervisor may throw the conversation away')
+  // AND IT MAY NOT MOVE WHERE THE PERSON IS READING FROM. `chatFrom` deletes
+  // nothing, which is exactly what would make it a quiet one to hold: a machine
+  // that can push the bookmark past its own answers is one that can hide what it
+  // said from the person it said it to.
+  assert.ok(!may.has('chatFrom'), 'a supervisor may move the bookmark the person reads from, and could hide its own answers behind it')
   assert.ok(may.has('supervisorSays'), 'a supervisor cannot say anything at all, which makes it a machine that cannot answer')
   log('the person\'s half of the conversation is not on the supervisor\'s list; its own half is')
 })
@@ -156,6 +168,62 @@ it('and the receipt is still written, which is a different thing', async ({ okc,
   log(`handed over and marked read to ${mark.n} without any reply being written`)
 })
 
+it('and tidying the screen hides the conversation without deleting any of it', async ({ okc, assert, log }) => {
+  // WHAT "CLEAR" IS. A conversation with a supervisor is the record of why work
+  // exists — what was asked for, what it decided, what it was told. The button
+  // beside it says Clear because that is what somebody reaches for when a screen
+  // is long, and what it must do is move a bookmark: everything before it stays
+  // exactly where it is and stops being drawn.
+  //
+  // THE FAILURE THIS IS BUILT AROUND is not a bad press — it is a MISSING
+  // ACTION. This app had no `chatFrom`, and the window's Clear called
+  // `chatClear`, which is not defined here either. An action this app does not
+  // have is not refused: it is relayed to the app being ported from. So the one
+  // conversation that press could reach was the real one, in the one app nothing
+  // here may write to, and every check in this file would have stayed green.
+  const before = (await okc('chat')).messages || []
+  assert.ok(before.length >= 2, 'there is not enough conversation here to hide half of')
+  const last = Number(before[before.length - 1].n)
+
+  const set = await okc('chatFrom', {})
+  assert.equal(Number(set.n), last, `it bookmarked ${set.n} rather than the last message, ${last}`)
+
+  const hidden = await okc('chat')
+  assert.equal(Number(hidden.from && hidden.from.n), last, 'the bookmark is not on the answer, so the window cannot hide anything')
+  // NOTHING WAS DELIVERED ANYWHERE ELSE, and nothing was lost: the messages are
+  // all still handed over, and the hiding is the window's to do.
+  assert.equal((hidden.messages || []).length, before.length,
+    `${before.length - (hidden.messages || []).length} message(s) went missing — this hides, it does not delete`)
+
+  const back = await okc('chatFrom', { n: 0 })
+  assert.equal(Number(back.n), 0, 'zero did not take the bookmark back, so there is no way to see the whole thing again')
+  const whole = await okc('chat')
+  assert.equal(Number(whole.from && whole.from.n), 0, 'the bookmark is still set after being taken back')
+  assert.equal((whole.messages || []).length, before.length, 'the conversation did not come back whole')
+
+  log(`bookmarked at ${last}, all ${before.length} still there, and taken back to 0`)
+})
+
+it('and the destructive one is refused from out here, rather than travelling', async ({ okc, assert, log }) => {
+  // THE SAME HOLE, ONE DOOR OVER. `chatClear` was not defined in this app
+  // either, so asking for it did not fail — it was relayed to the app being
+  // ported from and emptied the real conversation there. This check is what
+  // stands between "it is not ported yet" and "it deleted somebody's record":
+  // it must REFUSE, and refusing is only possible if it exists here.
+  //
+  // A drill is over the wire like the command line is, so this is the same door
+  // a person at a terminal comes through.
+  await assert.refuses(
+    () => okc('chatClear', {}),
+    'chatFrom',
+    'chatClear was not refused from out here — and if it is not defined in this app at all, what it '
+      + 'just emptied is the conversation in the app being ported from')
+
+  const still = (await okc('chat')).messages || []
+  assert.ok(still.length > 0, 'the conversation is empty after a refusal, so something was cleared anyway')
+  log(`refused, and all ${still.length} message(s) are still here`)
+})
+
 it('and two supervisors are never running at once', async ({ okc, assert, state, log }) => {
   // TWO OF THEM DECIDE WHAT WORK THERE IS WITH NO IDEA OF EACH OTHER: the same
   // issue picked up twice, two branches cut for one piece of work, two tasks
@@ -223,3 +291,9 @@ cleanup(async ({ okc, state }) => {
 // remove a message is chatClear, which throws away the WHOLE conversation
 // including everything a person said. A drill that tidied up after itself by
 // deleting somebody's messages would be worse than three labelled lines.
+//
+// AND NOT BY MOVING THE BOOKMARK EITHER, now that there is one. `chatFrom` would
+// hide these lines and delete nothing, which is exactly why it must not be used
+// that way: it is the PERSON's reading position, and a drill that quietly pushes
+// it forward hides whatever they had not read yet along with its own noise. The
+// check above moves it and puts it back at zero in the same breath.

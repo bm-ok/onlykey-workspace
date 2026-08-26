@@ -553,6 +553,26 @@ label.inline > span { flex: 1 1 auto; }
 .form label:has(+ select:disabled),
 .form label:has(+ textarea:disabled) { opacity: .5; }
 
+/* WHICH FIELDS THE FORM WILL REFUSE WITHOUT, said before the press.
+ *
+ * EVERY REFUSAL IN THIS APP IS ALREADY WRITTEN and most of them are good
+ * sentences — but a form whose faults are only legible after pressing it is one
+ * somebody presses three times to find all of them. The mark costs one glyph and
+ * moves every one of those refusals to before the press.
+ *
+ * `--fail`, WHICH IS THE COLOUR OF A REFUSAL EVERYWHERE ELSE HERE, and not
+ * purple: purple is the hazard mark that means "this is the person's and a model
+ * may not use it", and spending it on a form label would make that sentence
+ * false. See the note about it in ../../../CLAUDE.md.
+ *
+ * NOT `content: '*'` ON THE LABEL. A pseudo-element is invisible to
+ * `windowControls`, which reads labels to say what is on screen — so the one
+ * check that could tell somebody the mark had stopped rendering would not see
+ * it. It is a real span with a real character in it.
+ */
+.form label .needed,
+.dlg label .needed { color: var(--fail); margin-left: 3px; font-weight: 700; }
+
 /* ---------- layout ---------- */
 
 main { padding: 16px; }
@@ -1434,6 +1454,12 @@ table.kv.where .sub:last-child { margin-bottom: 0; }
 }
 .chat-offline .why { color: var(--text); margin: 0; }
 .chat-offline .why.muted { color: var(--muted); font-size: 12px; }
+/* THE DECISION ITSELF, ON ONE ROW IN THE MIDDLE. `.row` is left-aligned
+   everywhere else, which is right everywhere else — this is the one place where
+   the row IS the screen, so it is centred here rather than by a new class name
+   a pane would have to know. Wraps, because "Start beta-super1" and "Read what
+   was said" are long buttons on a narrow window. */
+.chat-offline .row { justify-content: center; flex-wrap: wrap; gap: 10px; }
 /* ---- landing a line ---------------------------------------------------
    The comparison is the thing being read, so it gets the width. Everything
    above it is a choice about what is being compared and stays on one row. */

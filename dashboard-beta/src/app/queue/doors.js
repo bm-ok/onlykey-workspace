@@ -236,6 +236,66 @@ module.exports = function doors(store, ask, log) {
                 + 'queued for ever waiting for one.');
         }
 
+        //---- CUTTING THE BRANCH IN THE SAME ACT --------------------------
+        //
+        //THE SUPERVISOR'S OWN SEQUENCE IS THREE CALLS and the first two are one
+        //decision. Its skill says so in the order it gives them: `branchCreate`
+        //to cut a branch from a line, `taskCreate` to write the work on it,
+        //`taskQueue` to give it out. Nobody cuts a branch and then wonders what
+        //to put on it — the work is why the branch exists.
+        //
+        //SO THE TWO ARE OFFERED AS ONE, HERE, WHICH IS THE ONLY PLACE THEY CAN
+        //BE. Doing it in the pane would make it a thing a person can do and a
+        //model cannot, and this app has already been bitten by a rule that lived
+        //in a form: the cut-versus-line filter on Add task was the only thing
+        //enforcing it, so it was enforced in the one place a supervisor never
+        //goes. Whatever the window can do from Add task, this door can do.
+        //
+        //IT IS STILL TWO ACTS AND BOTH REFUSALS STILL APPLY. `branchCreate` owns
+        //what a branch may be called and what it may be cut from, and it is
+        //asked rather than reimplemented — a second opinion about a branch name
+        //is the thing ../../repositories/branches exists to prevent.
+        //
+        //AN EXISTING BRANCH AND A LINE TO CUT FROM IS REFUSED rather than
+        //resolved. "Cut it from `default`" and "it is already there" cannot both
+        //be what somebody meant, and quietly taking the existing one would put
+        //work on a branch cut from somewhere else entirely — which is the one
+        //mistake this whole arrangement is arranged against.
+        var cutFrom = String(it.cutFrom || '').trim();
+        var why = String(it.reason || '').trim();
+        //NEITHER IS PART OF WHAT A TASK CARRIES. They say how to make the branch,
+        //not what the work is, so they never reach the store.
+        delete it.cutFrom;
+        delete it.reason;
+
+        if (cutFrom) {
+            if (!ask.cutBranch) {
+                throw new Error('This host cannot cut a branch while writing a task. Cut it first with branchCreate '
+                    + 'and then write the task on it.');
+            }
+            var wants = String(it.branch || '').trim();
+            if (!wants) {
+                throw new Error('Say what the new branch is called. "Cut it from ' + cutFrom + '" says where it '
+                    + 'starts, not what it is.');
+            }
+            if (!why) {
+                throw new Error('Say what "' + wants + '" is for. A branch with no reason on it is one nobody can '
+                    + 'account for later — the same thing branchCreate asks for, asked here because this is where '
+                    + 'the branch is being made.');
+            }
+            if (await ask.branchExists(wants)) {
+                throw new Error('"' + wants + '" is already here, so it cannot also be cut from "' + cutFrom
+                    + '". Write the task on it without naming a line to cut from, or pick a name nothing is using.');
+            }
+
+            //THE REAL DOOR, ASKED. Its refusals — a name git will not take, a
+            //protected name, a line that names nothing still here — arrive
+            //unchanged, because they are better than anything worth writing
+            //again here.
+            await ask.cutBranch({ branch: wants, reason: why, from: cutFrom });
+            say.good('cut "' + wants + '" from "' + cutFrom + '" to write a task on it');
+        }
+
         var branchWhy = await branchIsReady(it.branch);
         if (branchWhy) throw new Error(branchWhy);
 

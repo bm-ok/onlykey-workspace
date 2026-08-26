@@ -1,5 +1,5 @@
 <!-- generated: node src/app/tests/outline.js --write -->
-<!-- 12 suites, 64 tests, 274 checks, 21 of them drafts -->
+<!-- 12 suites, 64 tests, 276 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -527,7 +527,9 @@ The machine that decides what work there is, rather than one doing it.
   5. and a receipt never goes backwards
   6. and asking twice in one turn gives the same answer twice
   7. and the receipt is still written, which is a different thing
-  8. and two supervisors are never running at once
+  8. and tidying the screen hides the conversation without deleting any of it
+  9. and the destructive one is refused from out here, rather than travelling
+  10. and two supervisors are never running at once
 
 ## 05 — what its model may run
 

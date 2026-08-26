@@ -135,7 +135,19 @@ function Field({ f, value, onChange }) {
                 to offer until a machine is tagged; hidden until then it is a
                 feature that appears one day out of nowhere. Same rule as a
                 button: disable what must not be used, and say why. */}
-            <label>{f.label}</label>
+            {/* A RED `*` ON WHAT THE DOOR WILL REFUSE WITHOUT. Every one of
+                those refusals already exists and most are good sentences — but
+                a form whose faults are only legible after pressing it is one
+                somebody presses three times to find all of them.
+
+                A SPAN AND NOT `content: '*'`. A pseudo-element is invisible to
+                `windowControls`, which reads labels to say what is on screen, so
+                the one check that could notice the mark had stopped rendering
+                would not see it. */}
+            <label>
+                {f.label}
+                {f.needed ? <span className="needed" title="required">*</span> : null}
+            </label>
             {input}
             {/* Where a value comes from is the thing somebody is missing at the
                 moment they are asked for it. */}

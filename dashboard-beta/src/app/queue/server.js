@@ -348,6 +348,16 @@ async function plugin(imports, register) {
             var rows = (said && (said.branches || said.board)) || [];
             return rows.some(function (b) { return b.name === name; });
         },
+        //CUTTING A BRANCH, WHICH IS ../../repositories/branches' ACT AND NOT
+        //THIS PLUGIN'S. Handed in as a lookup like every other gate here, so
+        //./doors.js can offer "cut it and write the work on it" as one act
+        //without this half growing an opinion about branch names. Its refusals
+        //arrive unchanged.
+        cutBranch: async function (it) {
+            return await actions.call('branchCreate', {
+                branch: it.branch, reason: it.reason, group: it.from
+            });
+        },
         judgement: async function (ref) {
             var said = await relayed('judging');
             var all = (said && (said.judgements || said.judging)) || [];
@@ -697,8 +707,9 @@ async function plugin(imports, register) {
         }));
 
         undo.push(actions.define('taskCreate', {
-            about: 'Write a task: what the work is, and the branch it delivers on. '
-                + 'Over the wire it also names the judgement that established the work is real',
+            about: 'Write a task: what the work is, and the branch it delivers on. Give the task `cutFrom` (a line) '
+                + 'and `reason` to cut that branch in the same act. Over the wire it also names the judgement '
+                + 'that established the work is real',
             takes: ['task', 'becauseOf'],
             //THE GATE IS INSIDE ./doors.js AND NOT HERE, because it is a rule
             //about what a task IS rather than about this table. `_overTheWire`

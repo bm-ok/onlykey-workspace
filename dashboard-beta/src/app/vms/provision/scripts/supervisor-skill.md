@@ -297,6 +297,32 @@ Work is a task, and a task delivers on a branch. In order:
     taskCreate     write the task on that branch, under a job and contract
     taskQueue      put it in the queue — the next free machine takes it
 
+**The first two are one decision, so `taskCreate` will do both.** Give the task
+`cutFrom` — a line — and `reason`, and the branch named in `branch` is cut from
+that line before the work is written on it:
+
+    taskCreate {
+      becauseOf: "J12",
+      task: {
+        branch:   "fix/the-thing",       the branch to cut and deliver on
+        cutFrom:  "default",             the line it starts from
+        reason:   "what it is for",      why it exists, as branchCreate asks
+        title: ..., brief: ..., job: ..., contractId: ..., tag: ...
+      }
+    }
+
+Nobody cuts a branch and then wonders what to put on it — the work is why the
+branch exists. Use `branchCreate` on its own when you want a branch and are not
+ready to write the work yet; that is the only difference.
+
+**It refuses rather than resolving.** A branch that is already here cannot also
+be cut from a line — "cut it from `default`" and "it is already there" cannot
+both be what you meant, and taking the existing one would put your work on a
+branch cut from somewhere else. Name a line only when the branch is new.
+
+This is the same door the person at the window presses on Add task. Whatever
+that form can do, you can do.
+
 **Which machine it runs on is not yours to choose** — the queue decides. What
 you may say is what KIND, with a tag. Read `pools` to see what kinds there are,
 how many machines each has and how many are free; a task with no tag takes any

@@ -2,7 +2,7 @@
   "name": "dashboard-beta",
   "title": "Dashboard (beta)",
   "version": "0.1.0",
-  "description": "The dashboard, being taken apart into rectify plugins: the machines and the queue in the process that does not reload, the actions in the half that does, and the window as a client of both",
+  "description": "manages a set of repos and cuts a line between them all",
   "type": "commonjs",
   "main": "main.js",
   "scripts": {

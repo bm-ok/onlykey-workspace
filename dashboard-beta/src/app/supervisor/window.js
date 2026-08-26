@@ -24,14 +24,21 @@ var { useState, useEffect, useRef } = React;
 //a permission list, and a supervisor that could widen its own is not supervised.
 //---------------------------------------------------------------------------
 
-plugin.consumes = ['shell', 'theme', 'okc', 'remember'];
+//`markdown` BECAUSE A SUPERVISOR ANSWERS IN PROSE AND SOMETIMES IN STRUCTURE.
+//A list of three tasks with their branches, or a fenced block of what a job
+//would run, is a wall of dashes and backticks as source — and the formatting it
+//was written with is the thing that does not happen. ../ui/markdown renders it
+//in a frame that can do nothing, which is not a styling convenience: this text
+//came from a model, markdown carries raw HTML through by design, and this window
+//has node and require() in it.
+plugin.consumes = ['shell', 'theme', 'okc', 'remember', 'markdown'];
 plugin.provides = [];
 async function plugin(imports, register) {
-    var { shell, theme, okc, remember } = imports;
+    var { shell, theme, okc, remember, markdown } = imports;
 
 
     shell.tab({ name: 'Supervisor', order: 70 });
-    shell.pane({ tab: 'Supervisor', name: 'Chat', order: 10, Component: makeChat(theme, okc) });
+    shell.pane({ tab: 'Supervisor', name: 'Chat', order: 10, Component: makeChat(theme, okc, markdown) });
     shell.pane({ tab: 'Supervisor', name: 'Todo', order: 20, Component: makeTodo(theme, okc, remember) });
     shell.pane({ tab: 'Supervisor', name: 'Skill', order: 30, Component: makeSkill(theme, okc, remember) });
     shell.pane({ tab: 'Supervisor', name: 'What it may do', order: 40, Component: makeMay(theme, okc) });

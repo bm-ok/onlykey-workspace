@@ -371,6 +371,19 @@ module.exports = function kit(theme) {
                                     hiding the field if somebody can tell. */}
                                 <Field f={{ name: 'b', label: 'There and not usable yet', disabled: true, hint: 'greyed out and still visible, so it can be found and turned on rather than appearing one day out of nowhere' }} value="" onChange={function () { }} />
                                 <Field f={{ name: 'c', label: 'A choice', options: [{ value: 'x', label: 'one' }, { value: 'y', label: 'the other' }] }} value="x" onChange={function () { }} />
+                                {/* WHAT THE DOOR WILL REFUSE WITHOUT, marked
+                                    before the press rather than after it. Every
+                                    refusal in this app is already written and
+                                    most are good sentences — but a form whose
+                                    faults are only legible once you have pressed
+                                    it is one somebody presses three times to
+                                    find all of them.
+
+                                    IT IS `--fail` AND NOT PURPLE. Purple means
+                                    "this is the person's and a model may not
+                                    use it"; spending it on a required mark would
+                                    make the Guarded shelf's sentence false. */}
+                                <Field f={{ name: 'e', label: 'One the door refuses without', needed: true, placeholder: 'a red star, not a colour change', hint: 'a real character in a real span — a pseudo-element would be invisible to windowControls, which reads labels to say what is on screen' }} value="" onChange={function () { }} />
                                 <Field f={{ name: 'd', type: 'checkbox', label: 'A tick', hint: 'its label goes beside it, not over it' }} value={false} onChange={function () { }} />
                             </Form>
                         </Shelf>

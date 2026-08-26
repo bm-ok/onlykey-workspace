@@ -112,6 +112,11 @@ module.exports = function add(theme, okc, remember) {
         var contracts = okc.use('contracts', {}, 0);
         var machines = okc.use('vmList', {}, 0);
         var judging = okc.use('judging', {}, 0);
+        //THE LINES, BECAUSE A CUT IS MADE FROM ONE. Picking a line here means
+        //"cut a new branch from it and put the work on that" — the step the
+        //supervisor takes before it writes a task at all, and `taskCreate` does
+        //both in one call for exactly this reason. See ../queue/doors.js.
+        var lineRows = okc.use('lines', {}, 0);
 
         //WHAT IS TYPED IS KEPT. Writing a brief is not something somebody
         //finishes in one sitting, and this window restarts constantly — see
@@ -196,8 +201,47 @@ module.exports = function add(theme, okc, remember) {
                 //of its own in it and "brads/testing2 — a line — the push is
                 //refused" reads as three things rather than two.
                 var says = claimOn(b);
-                return { value: b.name, label: b.name + (says ? ' · ' + says : '') };
+                return { value: 'cut:' + b.name, label: b.name + (says ? ' · ' + says : '') };
             });
+
+        //---- AND THE LINES, WHICH MEAN "CUT A NEW ONE FROM HERE" ----------
+        //
+        //THE SUPERVISOR'S FIRST TWO CALLS ARE ONE DECISION — `branchCreate` then
+        //`taskCreate` — and nobody cuts a branch and then wonders what to put on
+        //it. So a line is offered here and choosing one asks for the two things
+        //`branchCreate` wants: what the branch is called, and what it is for.
+        //
+        //THE COMPOSING IS `taskCreate`'s, NOT THIS FORM'S, and that is the whole
+        //point. A pane that called branchCreate and then taskCreate would be a
+        //capability a person has and a model does not — which is the fault this
+        //app has just been bitten by twice. `task.cutFrom` and `task.reason` go
+        //down the same door the supervisor uses, and its refusals are the ones
+        //that come back.
+        //
+        //PREFIXED, BECAUSE A LINE AND A CUT CAN SHARE A NAME. They did this
+        //morning: `fix/escape-note-id-in-data-id` was a branch cut AND the line
+        //made out of it, and a bare value would have made "work on the existing
+        //branch" and "cut a new one from that line" the same string.
+        //
+        //NOT FOR A JUDGE. A judgement READS a cut; cutting a fresh branch to
+        //read it would be asking a judge to look at nothing.
+        var lineOpts = kind === 'judge' ? [] : ((lineRows.state && lineRows.state.lines) || [])
+            .map(function (g) {
+                return {
+                    value: 'line:' + g.name,
+                    label: g.name + ' · cut a new branch from this line'
+                        + (g.ends === 'landed' ? ' (its own change has landed)' : '')
+                };
+            });
+
+        //WHAT WAS PICKED, AND WHICH KIND IT IS. A value with no prefix is a cut
+        //somebody chose before this field learned about lines — treated as one
+        //rather than thrown away, so a draft left open across the change still
+        //means what it meant.
+        var picked = String(val('branch') || '');
+        var fromLine = picked.indexOf('line:') === 0 ? picked.slice(5) : null;
+        var onCut = picked.indexOf('cut:') === 0 ? picked.slice(4)
+            : (fromLine ? null : (picked || null));
 
         var ofKind = function (rows) {
             return (rows || []).filter(function (r) { return String(r.kind || 'task') === kind; });
@@ -230,7 +274,17 @@ module.exports = function add(theme, okc, remember) {
 
         function write(andQueue) {
             if (!val('branch')) {
-                return stop('It needs a branch cut. That branch is what comes back and what gets judged.');
+                return stop('It needs somewhere to go — a branch cut, or a line to cut a new one from. '
+                    + 'That branch is what comes back and what gets judged.');
+            }
+            //WHAT `branchCreate` ASKS FOR, ASKED HERE, so the refusal arrives
+            //before the press rather than after it. The door refuses both of
+            //these too — that is the backstop, not the substitute.
+            if (fromLine && !String(val('newBranch') || '').trim()) {
+                return stop('Name the branch cut. "Cut it from ' + fromLine + '" says where it starts, not what it is.');
+            }
+            if (fromLine && !String(val('newWhy') || '').trim()) {
+                return stop('Say what it is for. A branch with no reason on it is one nobody can account for later.');
             }
             if (!val('job')) {
                 return stop(kind === 'judge'
@@ -257,7 +311,9 @@ module.exports = function add(theme, okc, remember) {
                 //each carries a gate this form does not.
                 return okc.call('judgementCreate', {
                     kind: 'branch',
-                    branch: val('branch'),
+                    //A JUDGE READS AN EXISTING CUT. Lines are not offered above
+                    //for a judgement, so this is always one.
+                    branch: onCut,
                     job: val('job'),
                     question: val('words'),
                     tag: val('tag') || undefined
@@ -282,7 +338,13 @@ module.exports = function add(theme, okc, remember) {
                 becauseOf: val('becauseOf'),
                 task: {
                     title: val('title'),
-                    branch: val('branch'),
+                    //EITHER THE CUT THAT EXISTS, OR THE ONE ABOUT TO BE MADE.
+                    //`cutFrom` and `reason` are what turn the second into the
+                    //first, and ../doors.js does that — not this form. See the
+                    //block where `lineOpts` is built.
+                    branch: fromLine ? String(val('newBranch')).trim() : onCut,
+                    cutFrom: fromLine || undefined,
+                    reason: fromLine ? String(val('newWhy')).trim() : undefined,
                     brief: val('words'),
                     job: val('job'),
                     contractId: val('contractId') || undefined,
@@ -321,11 +383,23 @@ module.exports = function add(theme, okc, remember) {
                                     : (val('title') || <span className="muted">no title yet</span>)}
                             </CardTitle>
                             <CardSub>
-                                {val('branch')
-                                    ? <span>{kind === 'judge' ? 'reads ' : 'delivers on '}<Mono>{val('branch')}</Mono></span>
-                                    : <span className="muted">{kind === 'judge'
-                                        ? 'no branch yet — there is nothing for it to read'
-                                        : 'no branch yet — there is nowhere for it to deliver'}</span>}
+                                {/* THE BRANCH, NOT THE VALUE OF THE FIELD. The
+                                    options are prefixed `cut:` and `line:` so a
+                                    line and a cut sharing a name cannot collide,
+                                    and this drew that prefix — "delivers on
+                                    line:default", which is an internal spelling
+                                    on the one panel that exists to say what the
+                                    worker actually gets. */}
+                                {fromLine
+                                    ? (String(val('newBranch') || '').trim()
+                                        ? <span>{'delivers on '}<Mono>{String(val('newBranch')).trim()}</Mono>
+                                            {', cut from '}<Mono>{fromLine}</Mono></span>
+                                        : <span className="muted">{'cut from '}<Mono>{fromLine}</Mono>{' — name it above'}</span>)
+                                    : onCut
+                                        ? <span>{kind === 'judge' ? 'reads ' : 'delivers on '}<Mono>{onCut}</Mono></span>
+                                        : <span className="muted">{kind === 'judge'
+                                            ? 'no branch yet — there is nothing for it to read'
+                                            : 'no branch yet — there is nowhere for it to deliver'}</span>}
                                 {val('tag') ? <span>{' · '}<Badge kind="muted">{val('tag')}</Badge></span> : null}
                             </CardSub>
 
@@ -407,7 +481,7 @@ module.exports = function add(theme, okc, remember) {
                                 }} />
 
                                 <Field f={{
-                                    name: 'branch', label: 'Work in this Branch Cut',
+                                    name: 'branch', label: 'Work in this Branch Cut', needed: true,
                                     hint: 'a cut is a branch made here with a reason — a default branch and a pull request '
                                         + 'fetched from somebody else are not cuts and are not offered. A line is: work is '
                                         + 'normally merged into one rather than done on one, and its push is refused, so it '
@@ -416,13 +490,38 @@ module.exports = function add(theme, okc, remember) {
                                     //built. Each carries what is true of it, so
                                     //picking a line is a choice rather than a
                                     //trap.
-                                    options: [{ value: '', label: cuts.length ? 'pick the cut this work belongs to' : 'there are no cuts yet — make one on Repositories → Branches Cut' }]
-                                        .concat(cuts)
+                                    options: [{
+                                        value: '', label: (cuts.length || lineOpts.length)
+                                            ? 'pick where the work goes'
+                                            : 'there are no cuts or lines yet — make one on Repositories → Branches'
+                                    }].concat(cuts).concat(lineOpts)
                                 }} value={val('branch')} onChange={function (v) { set('branch', v); }} />
+
+                                {/* THE TWO THINGS `branchCreate` ASKS FOR, and
+                                    they appear only when a line was chosen —
+                                    because that is the only time there is a
+                                    branch to make. Both go to `taskCreate` as
+                                    `task.cutFrom` and `task.reason`; the cutting
+                                    is that door's, not this form's. */}
+                                {fromLine ? (
+                                    <Field f={{
+                                        name: 'newBranch', label: 'Name the branch cut', needed: true,
+                                        placeholder: 'fix/the-thing',
+                                        hint: 'it is cut from "' + fromLine + '" across every repository that line names'
+                                    }} value={val('newBranch')} onChange={function (v) { set('newBranch', v); }} />
+                                ) : null}
+
+                                {fromLine ? (
+                                    <Field f={{
+                                        name: 'newWhy', label: 'Why it exists', needed: true,
+                                        placeholder: 'what this branch is for',
+                                        hint: 'a branch with no reason on it is one nobody can account for later — branchCreate asks for this too'
+                                    }} value={val('newWhy')} onChange={function (v) { set('newWhy', v); }} />
+                                ) : null}
 
                                 {kind === 'judge' ? null : (
                                     <Field f={{
-                                        name: 'becauseOf', label: 'Because of — the judgement that established this is real',
+                                        name: 'becauseOf', label: 'Because of — the judgement that established this is real', needed: true,
                                         hint: 'only judgements that have finished reading are offered. The supervisor is refused without one, and so is this',
                                         options: [{
                                             value: '', label: reasons.length
@@ -439,7 +538,7 @@ module.exports = function add(theme, okc, remember) {
                                 )}
 
                                 <Field f={{
-                                    name: 'job', label: words.job,
+                                    name: 'job', label: words.job, needed: true,
                                     hint: 'you may only use a job a person approved — the same rule the supervisor is held to',
                                     options: [{ value: '', label: jobList.length ? words.none : 'nothing approved in this library yet — see the Library' }]
                                         .concat(jobList.map(function (x) {
@@ -470,12 +569,12 @@ module.exports = function add(theme, okc, remember) {
                                 }} value={val('tag')} onChange={function (v) { set('tag', v); }} />
 
                                 {kind === 'judge' ? null : (
-                                    <Field f={{ name: 'title', label: 'Title', placeholder: 'Short enough to read in a list' }}
+                                    <Field f={{ name: 'title', label: 'Title', needed: true, placeholder: 'Short enough to read in a list' }}
                                         value={val('title')} onChange={function (v) { set('title', v); }} />
                                 )}
 
                                 <Field f={{
-                                    name: 'words', label: words.words,
+                                    name: 'words', label: words.words, needed: true,
                                     multiline: true, rows: 8,
                                     placeholder: words.hint
                                 }} value={val('words')} onChange={function (v) { set('words', v); }} />

@@ -75,7 +75,8 @@ async function plugin(imports, register) {
     //AND THE CONVERSATION, in the host's drawer beside the list. It is host-wide
     //in the app being ported from too — a supervisor is one machine for this
     //host, not one per folder somebody happens to be looking at.
-    var talk = makeSaid(imports.state.app.doc('chat'), imports.state.app.doc('chat-read'));
+    var talk = makeSaid(imports.state.app.doc('chat'), imports.state.app.doc('chat-read'),
+        imports.state.app.doc('chat-from'));
 
     //AND THE NOTEBOOK, in the host's drawer for the reason ./carrying.js gives:
     //a supervisor's train of thought spans whatever folder it was looking at.
@@ -184,6 +185,12 @@ async function plugin(imports, register) {
             //per message — see ./said.js.
             var read = talk.readMark();
 
+            //AND WHERE THE PERSON IS READING FROM, which is not where the
+            //supervisor has read TO. Both are pointers into this one list and
+            //they mean opposite things — see ./said.js. The window does the
+            //hiding, because everything is still here: this says where.
+            var from = talk.fromMark();
+
             //AND WHAT IT WOULD NOT SEE IF IT WOKE NOW.
             //
             //`missed` on this answer is always zero and always will be: the
@@ -197,6 +204,7 @@ async function plugin(imports, register) {
 
             return Object.assign({}, rows, {
                 read: read,
+                from: from,
                 beyondReach: beyond,
                 note: rows.messages.length
                     ? rows.messages.length + ' message(s)'
@@ -237,6 +245,82 @@ async function plugin(imports, register) {
                 woke: false,
                 note: 'Said. It reads this when it next wakes.'
             });
+        }
+    }));
+
+    //---- start reading from here -------------------------------------------
+    //
+    //WHAT "CLEAR" SHOULD HAVE BEEN, and the button says Clear because that is
+    //what somebody reaches for when a screen is long. Nothing is deleted: the
+    //bookmark moves and everything before it stops being drawn. Ask with n 0 to
+    //take it back.
+    //
+    //A CONVERSATION WITH A SUPERVISOR IS THE RECORD OF WHY WORK EXISTS — what
+    //was asked for, what it decided, what it was told. Throwing that away to
+    //tidy a screen is a trade nobody would make twice, and it cannot be undone.
+    //
+    //THIS APP HAD NO SUCH ACTION AND ITS BUTTON CALLED `chatClear`, which is not
+    //defined here — so it relayed, and the thing it would have emptied is the
+    //conversation in the app being ported FROM, the one app nothing here may
+    //write to. A destructive action that is missing does not refuse; it travels.
+    undo.push(actions.define('chatFrom', {
+        about: 'Start reading from here: hide what came before without deleting any of it',
+        takes: ['n'],
+        run: function (args) {
+            var a = args || {};
+            //NO ARGUMENT MEANS "FROM NOW", which is the ordinary press.
+            var at = a.n === undefined || a.n === null || a.n === ''
+                ? talk.lastNumber()
+                : Number(a.n);
+            var by = a._fromMachine || (a._overTheWire ? 'the command line'
+                : a._fromTest ? 'a drill' : 'the window');
+            var set = talk.markFrom(at, by);
+
+            return Object.assign({}, set, {
+                of: talk.lastNumber(),
+                note: set.n
+                    ? 'Reading from message ' + (set.n + 1) + ' on. Nothing was deleted — ask for '
+                        + 'chatFrom with n 0 to see all of it again.'
+                    : 'Showing the whole conversation again.'
+            });
+        }
+    }));
+
+    //THE DESTRUCTIVE ONE, AND IT IS HERE TO SHADOW THE RELAY.
+    //
+    //An action this app does not define is not refused. `actions.call` tries
+    //this table and then the pipe to the app being ported from — so while
+    //`chatClear` was missing here, every way of asking for it, the window's own
+    //Clear button included, emptied the REAL conversation over there: the one
+    //app nothing here may write to, and the only copy of what a person asked a
+    //supervisor for. Nothing said so, because a relay is what is SUPPOSED to
+    //happen to an action that has not been ported yet. Defining it is what makes
+    //asking for it land on this app's own record.
+    //
+    //AND WHAT IT LANDS ON IS A REFUSAL, from everywhere except a person at the
+    //window — where there is deliberately no button, because `chatFrom` is what
+    //somebody tidying a screen actually wants and it deletes nothing. So this is
+    //an action that exists in order to say no, and the sentence it says no with
+    //is the useful half.
+    undo.push(actions.define('chatClear', {
+        about: 'Throw the whole conversation away. Refused: chatFrom hides it instead, and deletes nothing',
+        run: function (args) {
+            var a = args || {};
+            if (a._overTheWire || a._driven || a._fromMachine || a._fromTest) {
+                throw new Error(
+                    'Throwing the conversation away is not done from here. It is the record of what was '
+                    + 'asked for and why work exists, and there is nowhere to get it back from. Use '
+                    + 'chatFrom to start reading from a point instead — nothing is deleted and chatFrom '
+                    + 'with n 0 shows all of it again.'
+                );
+            }
+            var n = talk.clear();
+            say('supervisor').warn('the conversation was thrown away');
+            return {
+                cleared: n,
+                note: n + ' message(s) gone. What was DONE is still in the event stream; this was only '
+                    + 'what was said about it.'
+            };
         }
     }));
 
