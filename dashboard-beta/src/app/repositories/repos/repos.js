@@ -250,7 +250,28 @@ module.exports = function repos(theme, okc) {
 
                 {/* THE CHAIN, ONCE IT HAS BEEN WALKED. Each link is a place work
                     could go, with the two facts that decide whether it can: may
-                    this host push there, and does syncing stay cheap. */}
+                    this host open a pull request there, and does syncing stay
+                    cheap.
+
+                    `mayOpen`, NOT `mayPush`. This read `l.mayPush` — the field
+                    the app being ported from has — and this one does not have
+                    it. Undefined is falsy, so every link rendered as "this token
+                    cannot push here" and EVERY "Send work here" button was
+                    hidden, on a card whose whole purpose is picking one. The
+                    pane looked complete and offered nothing.
+
+                    The rename was deliberate over here and is the better half of
+                    the two: `mayPush` there is `permissions.push`, which is the
+                    ACCOUNT's claim and not what the token may do — the mistake
+                    this app's own notes warn about. `mayOpen` is a real probe of
+                    `GET /pulls`, and `accountMayPush` is kept beside it,
+                    labelled, so the two can be seen to differ rather than one
+                    standing in for the other.
+
+                    AND THE SENTENCE SAYS WHAT WAS ASKED. "cannot push here" is
+                    not what was probed and not what picking a target needs —
+                    pushing happens to your own fork; the target is where a pull
+                    request is OPENED. */}
                 {chain ? (
                     <div style={{ marginTop: '10px' }}>
                         {chain.stopped ? <Note kind="bad">{chain.stopped}</Note> : null}
@@ -258,12 +279,12 @@ module.exports = function repos(theme, okc) {
                             return (
                                 <Part key={l.on} right={
                                     <React.Fragment>
-                                        <span className={l.mayPush ? 'muted' : 'bad'}>
-                                            {l.mayPush
+                                        <span className={l.mayOpen ? 'muted' : 'bad'}>
+                                            {l.mayOpen
                                                 ? (l.openIssues == null ? '' : l.openIssues + ' open issue(s)')
-                                                : 'this token cannot push here'}
+                                                : 'this token cannot open a pull request here'}
                                         </span>
-                                        {l.target || !l.mayPush
+                                        {l.target || !l.mayOpen
                                             ? null
                                             : <Button kind="ok" onClick={function () { sendWorkHere(l); }}>Send work here</Button>}
                                     </React.Fragment>
