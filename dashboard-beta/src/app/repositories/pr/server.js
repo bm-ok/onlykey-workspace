@@ -26,7 +26,10 @@
 //belongs beside the pane that uses it — the same arrangement ./revising.js has.
 var allowing = require('./allowing');
 
-plugin.consumes = ['app', 'log', 'git', 'github', 'keys', 'workspace', 'state', 'settings', 'refs'];
+plugin.consumes = ['app', 'log', 'git', 'github', 'keys', 'workspace', 'state', 'settings', 'refs',
+    //`inbox` FOR ONE ERRAND: a change that is out and has not been merged. See
+    //the source at the foot of this file.
+    'inbox'];
 plugin.provides = ['prcuts'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -1331,6 +1334,68 @@ async function plugin(imports, register) {
                     note: 'No longer tracked here. The ' + (was.pulls || []).length
                         + ' pull request(s) on GitHub are untouched — open, merged or closed exactly as they were.'
                 };
+            }
+        }));
+    }
+
+    //---- AND WHAT IS OUT AND WAITING ON SOMEBODY ---------------------------
+    //
+    //THIS PLUGIN PUT NOTHING IN THE INBOX AT ALL, which is how three pull
+    //requests sat open with nothing anywhere saying so. They were found by
+    //reading `prCutState` by hand, after somebody asked why the dashboard had
+    //not mentioned them — and the honest answer was that it had no source for
+    //it. The inbox is "everything waiting on you", and a change that is out and
+    //not merged is the definition of that: by this app's own rule a person
+    //presses merge, so it is waiting on a person from the moment it opens.
+    //
+    //NAMED BY OWNER AND REPOSITORY, NOT BY THE WORKSPACE NAME. The app being
+    //ported from says `local-repo-b #1`, and in a workspace of forks OF forks
+    //that names nothing — "#1 on which one, and into what?" is a real question
+    //somebody asked about a real pull request. So each is `owner/name#n`, with
+    //the branch it would merge into.
+    //
+    //IT ASKS GITHUB, so an inbox that cannot reach it says nothing rather than
+    //guessing — the same rule ../branches follows, and the right way round for
+    //a list whose whole worth is that everything on it is real. The pool and
+    //the etags are `prCuts`'s, so this costs what that pane costs and not a
+    //round trip per cut.
+    if (imports.inbox) {
+        undo.push(imports.inbox.source({
+            name: 'changes that are out and not merged',
+            waiting: async function () {
+                var all = await read(landings);
+                if (!all) return [];
+                var names = Object.keys(all);
+                if (!names.length) return [];
+
+                var rows = [];
+                try {
+                    rows = await github.many(names, function (n) { return stateOf(all[n]); });
+                } catch (e) { return []; }
+
+                return rows.filter(function (c) {
+                    //STILL OPEN SOMEWHERE. `landed` is every pull request merged
+                    //and `open` is how many are neither merged nor closed — a cut
+                    //whose pull requests were all closed unmerged is finished
+                    //with, and nagging about it would be nagging about a decision
+                    //somebody already made.
+                    return !c.landed && c.open > 0;
+                }).map(function (c) {
+                    var where = (c.pulls || []).filter(function (p) {
+                        return p.number && p.state !== 'merged' && p.state !== 'closed';
+                    }).map(function (p) {
+                        return (p.into || p.repo) + '#' + p.number + ' → ' + (p.base || '?');
+                    });
+
+                    return imports.inbox.item(
+                        'change out and not merged',
+                        c.source + ' into ' + c.target,
+                        'Open and waiting on a merge, as last read from GitHub — and merging is a person\'s '
+                            + 'press. ' + where.join(', '),
+                        imports.inbox.at('Repositories', 'PR cuts', c.source),
+                        { since: c.opened || null, id: c.source + ' -> ' + c.target }
+                    );
+                });
             }
         }));
     }

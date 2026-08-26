@@ -86,6 +86,7 @@ async function anApp(opts) {
     });
 
     let prcuts = null;
+    const sources = [];
     await prPlugin({
         app: { host: { actions } },
         log: { on: () => logger },
@@ -94,10 +95,19 @@ async function anApp(opts) {
         workspace: { dir: async () => 'C:\\work\\alpha', repos: async () => [{ name: 'one' }] },
         state,
         settings: { allowed: async () => o.testing || { allowed: false, why: 'The drills are switched off.' } },
-        refs
+        refs,
+        //THE INBOX, KEPT RATHER THAN STUBBED AWAY. `source()` hands back the
+        //`waiting` function so a test can ask it what it would raise — which is
+        //the only way to see this source at all, since the pane that shows it is
+        //in the other half.
+        inbox: {
+            source: (spec) => { sources.push(spec); return () => {}; },
+            item: (kind, which, why, where, more) => Object.assign({ kind, which, why, where }, more || {}),
+            at: (tab, pane, pick) => ({ tab, pane, pick })
+        }
     }, async (_e, s) => { prcuts = s.prcuts; });
 
-    return { actions, prcuts, state, said, asked: gh.asked, pushes };
+    return { actions, prcuts, state, said, asked: gh.asked, pushes, sources };
 }
 
 //---------------------------------------------------------------------------
@@ -372,4 +382,83 @@ test('with no workspace open there are no cuts, and it does not throw', async ()
     const said = await actions.call('prCuts', {});
     assert.deepEqual(said.cuts, []);
     assert.match(said.note, /No workspace is open/);
+});
+
+//---------------------------------------------------------------------------
+//AND WHAT IS OUT AND WAITING ON SOMEBODY.
+//
+//THIS PLUGIN PUT NOTHING IN THE INBOX AT ALL, and that is how three pull
+//requests sat open with nothing anywhere saying so. They were found by reading
+//`prCutState` by hand, after somebody asked why the dashboard had not mentioned
+//them — and the answer was that it had no source for it.
+//
+//A CHANGE THAT IS OUT IS WAITING ON A PERSON BY DEFINITION: by this app's own
+//rule a person presses merge. So it belongs on the list of what is waiting, from
+//the moment it opens until it lands.
+//---------------------------------------------------------------------------
+
+const OUT = {
+    'a -> b': {
+        source: 'a', target: 'b', opened: '2026-08-26T10:00:00.000Z',
+        pulls: [
+            { repo: 'one', number: 7, into: 'anowner/one', base: 'master' },
+            { repo: 'two', number: 9, into: 'anowner/two', base: 'version2' }
+        ]
+    }
+};
+
+test('a change that is out and not merged is waiting on somebody', async () => {
+    const { sources } = await anApp({
+        landings: OUT,
+        answers: {
+            'GET /repos/anowner/one/pulls/7': { status: 200, body: { number: 7, state: 'open', merged_at: null, base: { ref: 'master' }, head: { ref: 'a' } } },
+            'GET /repos/anowner/two/pulls/9': { status: 200, body: { number: 9, state: 'open', merged_at: null, base: { ref: 'version2' }, head: { ref: 'a' } } }
+        }
+    });
+
+    const source = sources.find((s) => /out and not merged/.test(s.name));
+    assert.ok(source, 'this plugin registers nothing with the inbox, so nothing it knows about ever reaches the list');
+
+    const waiting = await source.waiting();
+    assert.equal(waiting.length, 1, 'one cut is open and it raised ' + waiting.length + ' item(s)');
+    assert.equal(waiting[0].kind, 'change out and not merged');
+    assert.equal(waiting[0].which, 'a into b');
+
+    //NAMED BY OWNER AND REPOSITORY, which is the whole point. In a workspace of
+    //forks OF forks, "one #7" says nothing — "#7 on which one, and into what?"
+    //is a real question somebody asked about a real pull request.
+    assert.match(waiting[0].why, /anowner\/one#7 → master/);
+    assert.match(waiting[0].why, /anowner\/two#9 → version2/);
+
+    //AND IT LANDS ON THE CUT, not on a list to go and find it in.
+    assert.deepEqual(waiting[0].where, { tab: 'Repositories', pane: 'PR cuts', pick: 'a' });
+});
+
+test('and one that has landed is not waiting on anybody', async () => {
+    const { sources } = await anApp({
+        landings: OUT,
+        answers: {
+            'GET /repos/anowner/one/pulls/7': { status: 200, body: { number: 7, state: 'closed', merged_at: '2026-08-26T11:00:00.000Z' } },
+            'GET /repos/anowner/two/pulls/9': { status: 200, body: { number: 9, state: 'closed', merged_at: '2026-08-26T11:00:00.000Z' } }
+        }
+    });
+
+    const source = sources.find((s) => /out and not merged/.test(s.name));
+    assert.deepEqual(await source.waiting(), [], 'a change that landed is still being nagged about');
+});
+
+test('and one that was closed unmerged is a decision, not an errand', async () => {
+    //SOMEBODY ALREADY DECIDED. Nagging about a pull request that was closed on
+    //purpose is nagging about a decision that has been made — which is how a
+    //list of what is waiting stops being read.
+    const { sources } = await anApp({
+        landings: OUT,
+        answers: {
+            'GET /repos/anowner/one/pulls/7': { status: 200, body: { number: 7, state: 'closed', merged_at: null } },
+            'GET /repos/anowner/two/pulls/9': { status: 200, body: { number: 9, state: 'closed', merged_at: null } }
+        }
+    });
+
+    const source = sources.find((s) => /out and not merged/.test(s.name));
+    assert.deepEqual(await source.waiting(), [], 'a cut everything was closed on is still on the list');
 });
