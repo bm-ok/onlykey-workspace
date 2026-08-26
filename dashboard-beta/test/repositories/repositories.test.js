@@ -868,3 +868,31 @@ test('and a repository that is nobody\'s fork is never on it', async () => {
     assert.deepEqual(await forkErrand(app).waiting(), [],
         'it asked somebody to pick where work goes for a repository that is not a fork');
 });
+
+test('and settling on your own remote answers the errand without pointing anywhere', async () => {
+    //NOTHING PICKED AND KEEPING TO ITSELF ARE THE SAME PLACE AND NOT THE SAME
+    //ANSWER. Unpicked means nobody decided; chosen-on-your-own means somebody
+    //walked the chain and said the work belongs here.
+    //
+    //WITHOUT THIS THE ERRAND CANNOT BE ANSWERED. A fork that IS where its work
+    //lives would be asked to point somewhere for ever — and an errand that
+    //cannot be settled teaches people to ignore the list, which is the failure a
+    //list of what is waiting exists to avoid. The app being ported from has the
+    //same hole: it raises the errand and hides the button on the row that is
+    //already the target, which the self row is whenever nothing is picked.
+    const app = await anApp(A_FORK);
+    await app.actions.call('repositoriesCheck', { repo: 'repo-one' });
+    assert.equal((await forkErrand(app).waiting()).length, 1, 'nothing was waiting to begin with');
+
+    const set = await app.actions.call('repoTargetSet', {
+        repo: 'repo-one', on: 'anowner/arepo', why: 'this fork is where the work lives'
+    });
+
+    assert.equal(set.target.chosen, true, 'settling on your own remote did not record a decision');
+    //AND IT POINTS NOWHERE NEW. `upstream` is what turns on watching a parent,
+    //and this act must not: it says "here is right", not "follow somebody".
+    assert.equal(set.target.upstream, false, 'it started watching an upstream that was never picked');
+
+    assert.deepEqual(await forkErrand(app).waiting(), [],
+        'the decision was recorded and it is still asking to be pointed somewhere');
+});

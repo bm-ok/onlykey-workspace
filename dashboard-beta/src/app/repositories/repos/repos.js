@@ -192,6 +192,49 @@ module.exports = function repos(theme, okc) {
             });
         }
 
+        //---- AND SAYING "IT IS RIGHT AS IT IS" ----------------------------
+        //
+        //NOTHING PICKED AND KEEPING TO ITSELF ARE THE SAME PLACE AND NOT THE
+        //SAME ANSWER. Unpicked means nobody has decided; `chosen` on your own
+        //remote means somebody looked at the chain and said the work belongs
+        //here. The stored shape already tells them apart — `chosen: true` with
+        //`upstream: false` — and nothing could ever produce it.
+        //
+        //SO THE ERRAND COULD NOT BE ANSWERED. "It is a fork and nothing has been
+        //picked" goes on the inbox until a target is chosen, and the one honest
+        //answer for a fork that IS where its work belongs — this one, thanks —
+        //had no button. An errand that cannot be settled is one that teaches
+        //people to ignore the list, which is the whole failure a list of what is
+        //waiting exists to avoid.
+        //
+        //THE APP BEING PORTED FROM HAS THE SAME HOLE: it raises the same errand
+        //and hides the button on the row that is already the target, which the
+        //self row is whenever nothing is picked. Its confirm text even describes
+        //this act — "the same as picking nothing, except that it is recorded as
+        //a decision" — for a press that could not be reached.
+        //
+        //NOTHING UPSTREAM IS WATCHED EITHER WAY. This records a decision; it
+        //does not point anywhere new.
+        function keepItHere(l) {
+            ask({
+                title: 'Keep ' + r.repo + "'s work on " + l.on + '?',
+                plain: [
+                    'It is already where work goes, because nothing has been picked. This records that as a '
+                        + 'decision rather than a default.',
+                    'Issues stay read from ' + l.on + ' and pull requests keep opening into it. Nothing '
+                        + 'upstream is watched, which is the same as now.',
+                    'It stops this repository asking to be pointed somewhere — and "Keep to itself" puts it '
+                        + 'back to undecided if that turns out to be wrong.'
+                ],
+                fields: [{ name: 'why', label: 'Why (optional)', placeholder: 'this fork is where the work lives' }],
+                confirm: 'Keep it here',
+                onYes: function (v) {
+                    return okc.call('repoTargetSet', { repo: r.repo, on: l.on, why: v.why || null })
+                        .then(function (x) { onChanged(x && x.note); });
+                }
+            });
+        }
+
         function sendWorkHere(l) {
             ask({
                 title: 'Send ' + r.repo + "'s work to " + l.on + '?',
@@ -284,9 +327,14 @@ module.exports = function repos(theme, okc) {
                                                 ? (l.openIssues == null ? '' : l.openIssues + ' open issue(s)')
                                                 : 'this token cannot open a pull request here'}
                                         </span>
-                                        {l.target || !l.mayOpen
-                                            ? null
-                                            : <Button kind="ok" onClick={function () { sendWorkHere(l); }}>Send work here</Button>}
+                                        {l.target && !now.chosen && l.self
+                                            ? <Button onClick={function () { keepItHere(l); }}
+                                                title="Record that this is where the work belongs, so it stops asking">
+                                                Keep it here
+                                            </Button>
+                                            : l.target || !l.mayOpen
+                                                ? null
+                                                : <Button kind="ok" onClick={function () { sendWorkHere(l); }}>Send work here</Button>}
                                     </React.Fragment>
                                 }>
                                     <Mono>{l.on}</Mono>
