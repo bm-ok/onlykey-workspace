@@ -35,7 +35,7 @@ module.exports = function chassis(theme, okc, remember) {
     //is this and how do I ask again" is the same question there. The old window
     //had this as one block of markup ABOVE all of them with the picker hidden
     //underneath; this is that, as a component.
-    function Head({ lead, dir, count, note, said, setSaid, askGitHub }) {
+    function Head({ lead, dir, count, note, said, setSaid }) {
         return (
             <>
                 <Note>{lead}</Note>
@@ -43,7 +43,13 @@ module.exports = function chassis(theme, okc, remember) {
                     <span>Repositories</span>
                     <span className="muted">{count ? '— ' + count + ' in ' + dir : '— none'}</span>
                     <Grow />
-                    <Button onClick={function () { askGitHub(null); }}>Ask GitHub</Button>
+                    {/* NO "Ask GitHub" BUTTON. What it did now happens on its
+                        own — see the effect below — and a button for it would be
+                        asking somebody to do the app's housekeeping by hand.
+
+                        The count and the dir stay: what is HERE is local and
+                        instant, and that is a different fact from what GitHub
+                        last said. */}
                 </TitleRow>
                 <Note>{note}</Note>
                 {said ? <Notice kind={said.kind} onClose={function () { setSaid(null); }}>{said.text}</Notice> : null}
@@ -54,6 +60,51 @@ module.exports = function chassis(theme, okc, remember) {
     //`lead` is the sentence the pane opens with — it differs per pane and is the
     //one thing that says what this half is for. `Right` is given the selected
     //repository, a way to say something, and a way to ask again.
+    //---- KEEPING WHAT IS SHOWN CURRENT, WITHOUT ASKING ANYBODY TO ---------
+    //
+    //THERE WAS A BUTTON FOR THIS AND THERE IS NOT ANY MORE. "Ask GitHub" was
+    //right while a check cost requests — a pane that asks every few seconds
+    //spends somebody's rate limit on being looked at. Every call now carries an
+    //etag and comes back 304 when nothing changed, and GitHub does not charge a
+    //304 against the hourly limit, so the cost that made it a decision is gone.
+    //Measured here: eighteen conditional requests for three repositories, all
+    //served from the drawer, no misses.
+    //
+    //EVERY REPOSITORY, NOT ONE. Repos, Issues, Pull requests and Overview all
+    //read the same stored answers, and three of those four are lists of every
+    //repository at once — checking only what is selected would leave them
+    //showing whatever was last asked about something else.
+    //
+    //ONCE PER VISIT, AND ONLY WHEN THE OLDEST IS OLD. Two minutes: long enough
+    //that moving between these tabs does not re-ask, short enough that nothing
+    //on screen is meaningfully behind.
+    //
+    //QUIET BOTH WAYS. Nobody pressed it, so it says nothing when it works and
+    //nothing when it fails — what could not be learnt is already on the panel,
+    //as "asked GitHub: never" and the reason beside the repository.
+    var STALE = 2 * 60 * 1000;
+
+    function keptFresh(repos, askGitHub) {
+        var asked = useRef(false);
+        useEffect(function () {
+            if (asked.current || !repos.length) return;
+
+            //THE OLDEST DECIDES. One repository checked a moment ago does not
+            //make the other two current.
+            var oldest = repos.reduce(function (at, r) {
+                var when = r.checked ? Date.parse(r.checked) : 0;
+                return when && when < at ? when : at;
+            }, Date.now());
+            if (repos.every(function (r) { return r.checked; }) && Date.now() - oldest < STALE) return;
+
+            //MARKED BEFORE THE CALL, NOT AFTER. Two draws can land before an
+            //answer comes back, and marking it afterwards would send the second
+            //one out alongside the first.
+            asked.current = true;
+            askGitHub(null, true);
+        }, [repos.length]);
+    }
+
     function paneOf(lead, Right) {
         return function ReposPane() {
             var q = okc.use('repositories', {}, 8000);
@@ -102,34 +153,22 @@ module.exports = function chassis(theme, okc, remember) {
             //is left is a panel showing week-old facts about somebody else's
             //repository until a person remembers to ask.
             //
-            //ONE REPOSITORY, THE ONE BEING LOOKED AT, ONCE PER SELECTION. Not a
-            //timer and not all of them: what is on screen is what is worth
-            //spending a round trip on, and a timer would go on asking about a
-            //tab nobody has open.
+            //EVERY REPOSITORY, NOT ONLY THE ONE SELECTED. This pane, Issues and
+            //Pull requests all read the same stored answers, and the two lists
+            //are of every repository at once — checking only what is selected
+            //would leave those two showing whatever was last asked about
+            //something else.
             //
-            //AND ONLY WHEN WHAT IS HELD IS OLD. Five minutes, so moving between
-            //repositories does not re-ask about one that was just read — the
-            //cheap request is still a request, and three of them is two seconds
-            //of a pane looking busy for nothing.
+            //ONCE PER VISIT, AND ONLY WHEN THE OLDEST IS OLD. Measured here:
+            //eighteen conditional requests for three repositories, every one
+            //served from the etag drawer, no misses, no quota. Two minutes is
+            //enough that switching tabs does not re-ask and short enough that
+            //nothing on screen is meaningfully behind.
             //
-            //THE BUTTON STAYS. "Ask GitHub" is now "ask again, now", which is
-            //what somebody wants when they have just changed something over
-            //there and do not want to wait out the five minutes.
-            var STALE = 5 * 60 * 1000;
-            var asked = useRef({});
-            useEffect(function () {
-                if (!one || !one.repo) return;
-                if (asked.current[one.repo]) return;
-
-                var when = one.checked ? Date.parse(one.checked) : 0;
-                if (when && Date.now() - when < STALE) return;
-
-                //MARKED BEFORE THE CALL, NOT AFTER. Two draws can land before an
-                //answer comes back, and marking it afterwards would send the
-                //second one out alongside the first.
-                asked.current[one.repo] = true;
-                askGitHub(one.repo, true);
-            }, [one && one.repo, one && one.checked]);
+            //THERE IS NO BUTTON TO FALL BACK ON any more, which is the point:
+            //asking is not a decision somebody should have to make about a fact
+            //that verifies itself for nothing.
+            keptFresh(repos, askGitHub);
 
             if (q.error && !q.state) return <Pane><Note kind="bad">{q.error}</Note></Pane>;
             if (!q.state) return <Pane><Skeleton rows={4} /></Pane>;
@@ -137,7 +176,7 @@ module.exports = function chassis(theme, okc, remember) {
             return (
                 <Pane>
                     <Head lead={lead} dir={q.state.dir} count={repos.length} note={q.state.note}
-                        said={said} setSaid={setSaid} askGitHub={askGitHub} />
+                        said={said} setSaid={setSaid} />
 
                     <Cols>
                         <Col narrow>
@@ -177,5 +216,9 @@ module.exports = function chassis(theme, okc, remember) {
     //TWO WAYS IN: the whole chassis for a pane that picks a repository, and the
     //head on its own for one that does not.
     paneOf.Head = Head;
+    //AND THE THIRD: keeping what is shown current. Overview uses the head
+    //without the chassis, reads the same stored answers, and would otherwise be
+    //the one pane left showing whatever was last asked for by somebody else.
+    paneOf.keptFresh = keptFresh;
     return paneOf;
 };

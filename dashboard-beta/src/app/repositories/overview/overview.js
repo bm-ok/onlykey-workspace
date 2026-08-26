@@ -31,7 +31,8 @@ module.exports = function overview(theme, okc, remember) {
     //that is not about a repository you chose — but "as of when, and how do I ask
     //again" is the same sentence and the same button, and a second copy of it is
     //a second thing to keep in step.
-    var Head = makeChassis(theme, okc, remember).Head;
+    var chassis = makeChassis(theme, okc, remember);
+    var Head = chassis.Head;
     var {
         Pane, Panel, Card, CardTitle, CardSub, Badge, Badges, Empty, Note, Mono, Muted, Skeleton, Row, Grow,
         Chips, Chip, Finder, Sorter, HeadRow, Controls, Button, Link,
@@ -227,12 +228,18 @@ module.exports = function overview(theme, okc, remember) {
         var [said, setSaid] = useState(null);
         var [asked, setAsked] = useState(null);
 
-        function askGitHub() {
+        //NO BUTTON, AND IT KEEPS ITSELF CURRENT. This pane is every open thing
+        //across every repository, so it is the one most obviously wrong when the
+        //stored answers are a week old — and it read them without ever asking.
+        //`keptFresh` is the chassis's, so the rule about when to ask lives in
+        //one place for all four panes that share these answers.
+        function askGitHub(_repo, quietly) {
             okc.call('repositoriesCheck', {}).then(
-                function (x) { setAsked({ text: x.note }); again(); here.again(); },
-                function (e) { setAsked({ text: e.message, kind: 'bad' }); }
+                function (x) { if (!quietly) setAsked({ text: x.note }); again(); here.again(); },
+                function (e) { if (!quietly) setAsked({ text: e.message, kind: 'bad' }); }
             );
         }
+        chassis.keptFresh((here.state && here.state.repos) || [], askGitHub);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={4} /></Pane>;
@@ -265,7 +272,7 @@ module.exports = function overview(theme, okc, remember) {
                     dir={here.state && here.state.dir}
                     count={here.state ? (here.state.repos || []).length : 0}
                     note={here.state && here.state.note}
-                    said={asked} setSaid={setAsked} askGitHub={askGitHub} />
+                    said={asked} setSaid={setAsked} />
 
                 {error ? <Note kind="bad">{error}</Note> : null}
                 {said ? <Note kind="ok">{said}</Note> : null}

@@ -277,18 +277,19 @@ module.exports = function cuts(theme, okc, remember) {
                     <Col>
                         <h2>Actions <span className="muted">{on ? '— ' + on.source : '— nothing selected'}</span></h2>
                         <Panel>
-                            <div className="row">
-                                {/* READ, NOT REFRESH. Every row on this pane is
-                                    somebody else's fact, and the button says
-                                    where it is being fetched from so nobody
-                                    wonders why it takes a moment. */}
-                                {/* IT TAKES AS LONG AS IT TAKES, and saying so
-                                    is better than a spinner: one question per
-                                    cut, put to somebody else's service. */}
-                                <Button disabled={busy} onClick={read}>
-                                    {busy ? 'asking GitHub…' : 'Read them from GitHub'}
-                                </Button>
-                            </div>
+                            {/* NO "Read them from GitHub" BUTTON. This pane
+                                already reads on the way in — see the effect
+                                above — and every call carries an etag, so the
+                                repeat the button offered is the same conditional
+                                request the mount just made.
+
+                                IT SAYS WHEN IT IS WORKING, which is what the
+                                button was really for: one question per cut, put
+                                to somebody else's service, and that takes a
+                                moment. Opening the pane again re-reads, which is
+                                what somebody wants after merging something over
+                                there. */}
+                            {busy ? <Note>asking GitHub…</Note> : null}
 
                             {!on ? <Empty>pick a cut on the left</Empty> : (
                                 <div className="row" style={{ marginTop: '8px' }}>

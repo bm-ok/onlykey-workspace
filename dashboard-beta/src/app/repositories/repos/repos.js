@@ -400,7 +400,7 @@ module.exports = function repos(theme, okc) {
 
     //---- the detail --------------------------------------------------------
 
-    function Detail({ r, chain, onWalk, onChanged, onAsked }) {
+    function Detail({ r, chain, onWalk, onChanged }) {
         if (!r) return <Panel><Empty>Pick a repository on the left.</Empty></Panel>;
         var rem = r.remote;
         var asked = !!r.checked;
@@ -549,8 +549,11 @@ module.exports = function repos(theme, okc) {
 
                 <WhereWorkGoes r={r} chain={chain} onWalk={onWalk} onChanged={onChanged} />
 
+                {/* NO "Ask GitHub about this one". Everything here verifies
+                    itself when the pane is opened, through the etag drawer, and
+                    a button asking for what already happened is a button that
+                    teaches people the panel cannot be trusted without it. */}
                 <div className="row" style={{ marginTop: '8px' }}>
-                    <Button onClick={onAsked}>Ask GitHub about this one</Button>
                     {rem && rem.kind == 'github'
                         ? <Button onClick={function () { openOut('https://' + rem.host + '/' + rem.owner + '/' + rem.repo); }}>
                             Open it on GitHub
@@ -592,8 +595,7 @@ module.exports = function repos(theme, okc) {
 
         return (
             <React.Fragment>
-                <Detail r={r} chain={chain} onWalk={walk} onChanged={changed}
-                    onAsked={function () { askGitHub(r.repo); }} />
+                <Detail r={r} chain={chain} onWalk={walk} onChanged={changed} />
                 <Branches repo={r.repo} onMoved={function (note, kind) { say(note, kind); again(); }} />
             </React.Fragment>
         );
