@@ -1125,14 +1125,141 @@ async function plugin(imports, register) {
         }
     }));
 
-    //NO `skillSave` AND NO `skillHolding`, DELIBERATELY, and the pane says so.
-    //Saving is refused while a window holds unsaved edits, and that handshake is
-    //the whole point of it — a save action without it is a save that silently
-    //overwrites whoever is typing. Half of that is worse than none of it.
+    //---- AND WRITING ONE, WHICH IS BOTH HALVES OR NEITHER ------------------
     //
-    //THE SUPERVISOR COULD NOT CALL EITHER ANYWAY: neither name is in
-    //./allowed.js, which is where "it may not rewrite its own instructions"
-    //actually lives.
+    //THIS SAID "NO `skillSave` AND NO `skillHolding`, DELIBERATELY" and gave the
+    //reason: saving is refused while a window holds unsaved edits, that handshake
+    //is the whole point, and a save action without it silently overwrites whoever
+    //is typing — half of it being worse than none. That was right, and the drill
+    //beside it has been asking for both ever since: "changing its instructions"
+    //failed on `skillSave` not existing, four of its six checks unrunnable behind
+    //that.
+    //
+    //SO BOTH ARRIVE TOGETHER. Neither is useful alone and neither is safe alone.
+    //
+    //THE SUPERVISOR CANNOT CALL EITHER, and that is not enforced here. Neither
+    //name is in ./allowed.js, which is where "it may not rewrite its own
+    //instructions" actually lives. The app being ported from once carried a
+    //second copy of that rule as "refused over the wire", which caught the
+    //COMMAND LINE — a person with a checkout who can already edit the file with
+    //an editor — and never caught the supervisor, which was never coming through
+    //this door. It is not repeated here.
+    //
+    //WHICH SKILLS A WINDOW IS HOLDING UNSAVED EDITS IN. In memory on purpose: a
+    //restart means no window is open and nothing is being held, and a file kept
+    //on disk would go on claiming otherwise for ever.
+    var held = new Map();
+
+    undo.push(actions.define('skillHolding', {
+        about: 'Say that a skill is open in the window with unsaved edits, so a save from elsewhere does not quietly overwrite them',
+        takes: ['which', 'holding'],
+        run: function (args) {
+            var a = args || {};
+            //ONLY THE WINDOW CAN SAY WHAT THE WINDOW IS HOLDING. Anything else
+            //claiming it would be able to block every save by saying so once.
+            if (a._overTheWire || a._driven) {
+                throw new Error('Only the window can say what the window is holding.');
+            }
+            var key = String(a.which || 'supervisor');
+            if (a.holding === false || a.holding === 'false') held.delete(key);
+            else held.set(key, new Date().toISOString());
+            return { which: key, holding: held.has(key) };
+        }
+    }));
+
+    undo.push(actions.define('skillSave', {
+        about: 'Rewrite a skill. Refused while the window has unsaved edits in it, unless force is passed',
+        takes: ['which', 'text', 'from', 'force'],
+        run: function (args) {
+            var a = args || {};
+            var which = String(a.which || 'supervisor');
+            var one = skillNamed(which);
+            var text = a.text;
+
+            //FROM A FILE, BECAUSE A SKILL DOES NOT FIT ON A COMMAND LINE.
+            //
+            //Two reasons, and the second is the one that actually bit over
+            //there. A skill is twenty-six thousand characters, which is a silly
+            //thing to pass as an argument. And it STARTS WITH `---`: the CLI
+            //reads that as the beginning of a flag, so `--text` arrived empty and
+            //the save was refused for having no frontmatter — an error about the
+            //content of a file that had never been read.
+            //
+            //The window still passes `text`, having the string in hand with no
+            //shell between them.
+            if (a.from && (text == null || text === '')) {
+                try { text = fs.readFileSync(String(a.from), 'utf8'); }
+                catch (e) { throw new Error('Could not read "' + a.from + '": ' + e.message); }
+            }
+
+            //WHAT IS WORTH REFUSING IS OVERWRITING SOMEBODY MID-SENTENCE. The
+            //window says when it is holding unsaved edits; a save from anywhere
+            //else is refused until whoever is typing decides, or until somebody
+            //passes force having decided for them.
+            var holding = held.get(which);
+            var forced = a.force === true || a.force === 'true';
+            if (holding && !forced) {
+                throw new Error('The window has "' + one.title + '" open with unsaved edits (since ' + holding
+                    + '). Saving now would overwrite them without them ever being seen. Save or undo in the '
+                    + 'window, or pass force to overwrite anyway — the window will reload and say that its '
+                    + 'edits were dropped.');
+            }
+
+            var body = String(text == null ? '' : text);
+            if (!body.trim()) {
+                throw new Error('A skill with nothing in it would leave the next waking with no instructions at '
+                    + 'all. To stop using one, empty its content deliberately in a checkout.');
+            }
+
+            //THE FRONTMATTER IS WHAT MAKES IT A SKILL. Without a name and a
+            //description the CLI does not load it, and a supervisor then works
+            //from the wake brief alone — which looks exactly like a model that
+            //has stopped following instructions, and is the most expensive way to
+            //discover a missing header.
+            if (!/^---\s*\n[\s\S]*?\bname:\s*\S/.test(body) || !/\bdescription:\s*\S/.test(body)) {
+                throw new Error('A skill starts with frontmatter carrying "name:" and "description:" — without '
+                    + 'both, the CLI never loads it and the machine works from the wake brief alone, which reads '
+                    + 'as a model that has stopped following instructions.');
+            }
+
+            var file = skillFile(one.stage);
+            var was = '';
+            try { was = fs.readFileSync(file, 'utf8'); }
+            catch (e) { /* new, which is allowed */ }
+
+            if (was === body) {
+                return { which: which, saved: false, characters: body.length,
+                    note: 'Nothing changed, so nothing was written.' };
+            }
+
+            try { fs.writeFileSync(file, body); }
+            catch (e) { throw new Error('Could not write ' + one.title + ': ' + e.message); }
+
+            //FORCED OVER SOMEBODY'S EDITS IS A DIFFERENT EVENT, and is recorded
+            //as one. The window drops what it was holding when it notices the
+            //file moved, so this line is the only place that says what was lost.
+            var trampled = !!holding;
+            held.delete(which);
+            //`say('supervisor')`, NOT `log` — which is tagged `todo` in this
+            //file, and a rewritten skill filed under todos is a line nobody
+            //reading about the supervisor would ever find.
+            say('supervisor')[trampled ? 'warn' : 'good'](one.title + ' was rewritten — ' + was.length + ' to '
+                + body.length + ' characters' + (trampled ? ', forced over unsaved edits open in the window' : ''));
+
+            return {
+                which: which,
+                saved: true,
+                was: was.length,
+                characters: body.length,
+                forced: trampled,
+                where: file,
+                note: trampled
+                    ? 'Saved, over unsaved edits that were open in the window. Those are gone, and the window '
+                        + 'will reload and say so. The next waking fetches this — nothing needs restarting.'
+                    : 'Saved. The next waking fetches it — nothing needs restarting, and no machine is touched.'
+            };
+        }
+    }));
 
     //---- and what it may ask for, which is the fence made readable ---------
     //

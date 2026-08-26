@@ -157,17 +157,63 @@ test('it reads the stage default and never one machine\'s substitute', async () 
 });
 
 //---------------------------------------------------------------------------
-//AND THE HALF THAT IS DELIBERATELY ABSENT.
+//AND THE SAVE, WHICH IS BOTH HALVES OR NEITHER.
+//
+//THIS CHECKED THAT NEITHER EXISTED, and it was right for as long as that was
+//true: `skillSave` is refused while a window holds unsaved edits, `skillHolding`
+//is how it knows, and a save without that silently overwrites whoever is typing.
+//The drill in the kit — "changing its instructions" — had been failing on the
+//absence the whole time, four of its six checks unrunnable behind it.
+//
+//SO THE CLAIM MOVES RATHER THAN GOING. What mattered was never that they were
+//missing; it was that one without the other is worse than neither. That is what
+//is checked now, and it is the check that would catch somebody porting half of
+//it again.
 //---------------------------------------------------------------------------
 
-test('there is no save, because half of the save handshake is worse than none', async () => {
-    //`skillSave` is refused while a window holds unsaved edits, and `skillHolding`
-    //is how it knows. A save without that is a save that silently overwrites
-    //whoever is typing — the pane says so in as many words, and this is what
-    //keeps that sentence true.
+test('the save and the handshake arrive together, or not at all', async () => {
     await loaded(BOTH);
-    assert.equal(defined.has('skillSave'), false);
-    assert.equal(defined.has('skillHolding'), false);
+    assert.equal(defined.has('skillSave'), defined.has('skillHolding'),
+        'one half of the save handshake exists without the other — a save that cannot know '
+        + 'the window is holding unsaved edits is one that silently overwrites them');
+    assert.equal(defined.has('skillSave'), true, 'neither half is here, and the drill asks for both');
+});
+
+test('a save is refused while the window says it is holding unsaved edits', async () => {
+    await loaded(BOTH);
+    const hold = defined.get('skillHolding');
+    const save = defined.get('skillSave');
+    const good = '---\nname: supervising\ndescription: how it works\n---\n\n# Supervising\n\nNew words.\n';
+
+    //ONLY THE WINDOW MAY SAY SO. Anything else claiming it could block every
+    //save for ever by saying it once.
+    assert.throws(() => hold.run({ which: 'supervisor', holding: true, _overTheWire: true }),
+        /Only the window/);
+
+    hold.run({ which: 'supervisor', holding: true });
+    assert.throws(() => save.run({ which: 'supervisor', text: good }), /unsaved edits/);
+
+    //AND FORCE SAYS WHAT IT TRAMPLED, rather than saving quietly.
+    const forced = save.run({ which: 'supervisor', text: good, force: true });
+    assert.equal(forced.saved, true);
+    assert.equal(forced.forced, true, 'it saved over unsaved edits and did not say so');
+
+    //THE HOLD IS CLEARED BY THE SAVE, so the next one is ordinary.
+    assert.equal(hold.run({ which: 'supervisor', holding: false }).holding, false);
+});
+
+test('and a skill without frontmatter is refused, because the CLI would ignore it', async () => {
+    await loaded(BOTH);
+    const save = defined.get('skillSave');
+
+    //WITHOUT A NAME AND A DESCRIPTION THE CLI NEVER LOADS IT, and the machine
+    //works from the wake brief alone — which reads as a model that has stopped
+    //following instructions, and is the most expensive way to find a missing
+    //header.
+    assert.throws(() => save.run({ which: 'supervisor', text: '# Supervising\n\nNo frontmatter.\n' }),
+        /frontmatter/);
+    assert.throws(() => save.run({ which: 'supervisor', text: '   \n' }),
+        /nothing in it/);
 });
 
 test('and a supervisor could not call one anyway', async () => {

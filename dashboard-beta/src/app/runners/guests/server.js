@@ -314,8 +314,41 @@ async function plugin(imports, register) {
         //../../vms/provision/scripts/supervisor.sh, which makes the desk.
         //=====================================================================
 
-        //A SHARED GATE, because all four ask the same two things and a fifth
-        //copy of them is a fifth place to forget one.
+        //---- THE DESK IS BROUGHT UP IF IT IS DOWN --------------------------
+        //
+        //THIS REFUSED, AND THE REFUSAL WAS THE WHOLE FLOW. "It is not dialled in,
+        //so no sign-in can be started. Start it and wait for it to connect." —
+        //said to somebody who has just pressed a button called "Get the link",
+        //on a machine this app owns, about a wait this app knows how to do. The
+        //app being ported from starts it: see `supervisorMachine` in
+        //../../../../dashboard/actions/shared.js, which every sign-in goes
+        //through and which brings the machine up and waits four minutes for it.
+        //
+        //IT COSTS NOTHING TO HAVE RUNNING AND IT IS NOT A RUNNER. The desk is a
+        //user on the supervisor machine that exists for nothing else, so nothing
+        //is borrowed and no queue is disturbed — which is precisely why sign-ins
+        //were moved there.
+        //
+        //NOT FOLDED INTO `desk.which`, on purpose, and its header says why:
+        //deciding which machine and starting one are different jobs, and only
+        //the first can be tested without a machine.
+        //
+        //THE SAME THREE LINES `supervisorWake` ALREADY USES. A second way to
+        //bring a supervisor up would be a second thing to get wrong about
+        //waiting.
+        //
+        //WHICH MACHINES THIS BROUGHT UP, so they can be left as they were found.
+        //In memory, because a restart means this process started nothing.
+        var weStarted = new Set();
+
+        //ONLY BEGINNING ONE STARTS A MACHINE, and the other three still refuse.
+        //
+        //THE FIRST VERSION OF THIS PUT THE START IN THE SHARED GATE, which reads
+        //well and is wrong: `vmAuthCancel` on a machine that is off would boot it
+        //for a minute in order to stop a sign-in that cannot exist, because a
+        //desk that is not running is holding nothing. Same for giving a code
+        //back. For those three, "it is not dialled in" IS the answer — there is
+        //nothing there — and it is free.
         async function atTheDesk(name, what) {
             var on = desk.which(name);
             if (!imports.channel.connected(on)) {
@@ -325,12 +358,54 @@ async function plugin(imports, register) {
             return on;
         }
 
+        async function deskForSigningIn(name) {
+            var on = desk.which(name);
+            if (imports.channel.connected(on)) return on;
+
+            log.on('vm', on).info('starting it — a sign-in needs the desk');
+            await actions.call('vmStart', { name: on });
+            await actions.call('vmAwait', { name: on, for: 'connected', seconds: 240 });
+            weStarted.add(on);
+            log.on('vm', on).good('it is up');
+            return on;
+        }
+
+        //---- AND LEFT AS IT WAS FOUND -------------------------------------
+        //
+        //A MACHINE SOMEBODY HAD RUNNING STAYS RUNNING, and one this brought up
+        //for a sign-in goes back down when the sign-in is over. That rule is the
+        //app being ported from's own, written on `credentialRecover` — "AS IT
+        //WAS FOUND" — and applied here, where its own sign-in path leaves the
+        //machine up instead. This is the one place this goes further than what
+        //it is ported from, and it goes further by following a rule that app
+        //already wrote down.
+        //
+        //ONLY IF THIS STARTED IT. The set is the whole of that: a supervisor
+        //somebody had running, or one woken to think, is not this function's to
+        //switch off.
+        //
+        //NEVER FATAL, AND NEVER BEFORE THE ANSWER. A sign-in that worked is not
+        //undone by a machine that would not stop — the credential is already
+        //kept, and what is left is a machine that is up when it need not be.
+        async function deskIsDone(on) {
+            if (!weStarted.has(on)) return null;
+            weStarted.delete(on);
+            try {
+                await actions.call('vmStop', { name: on });
+                log.on('vm', on).good('stopped it again — it was off before the sign-in');
+                return 'stopped it again';
+            } catch (e) {
+                log.on('vm', on).warn('the sign-in is done and it could not be stopped again: ' + e.message);
+                return null;
+            }
+        }
+
         undo.push(actions.define('vmAuthBegin', {
             about: "Start a sign-in at the desk, and return the URL to visit",
             takes: ['name', 'wait'],
             run: async function (args) {
                 var a = args || {};
-                var on = await atTheDesk(a.name, 'no sign-in can be started');
+                var on = await deskForSigningIn(a.name);
 
                 var wait = Math.max(5, Math.min(Number(a.wait) || 25, 120));
                 var r = await imports.channel.run(on,
@@ -434,7 +509,15 @@ async function plugin(imports, register) {
                     { what: 'stopping a sign-in at the desk', timeout: 30000 });
 
                 log.on('vm', on).warn('the sign-in at the desk was stopped');
-                return Object.assign({ name: on, stopped: true }, signin.read(r.output));
+
+                //AND THE MACHINE GOES BACK DOWN IF THIS BROUGHT IT UP. Giving up
+                //is the other end of the same errand, and leaving a machine
+                //running because somebody changed their mind is the cost this
+                //whole arrangement exists to avoid.
+                var put = await deskIsDone(on);
+
+                return Object.assign({ name: on, stopped: true, machine: put },
+                    signin.read(r.output));
             }
         }));
 
@@ -839,6 +922,17 @@ async function plugin(imports, register) {
                 log.on('guest', called).good('signed in at the desk on ' + on + ' and kept as "'
                     + called + '" (' + kind + ')');
 
+                //---- AND THE MACHINE IS LEFT AS IT WAS FOUND ---------------
+                //
+                //THE ERRAND IS OVER. The credential is kept here and the desk is
+                //empty, so a machine this brought up for the sign-in has nothing
+                //left to do. One somebody already had running is not touched.
+                //
+                //AFTER EVERYTHING ELSE, and that order is the point: the token is
+                //already sealed on this host, so a machine that will not stop
+                //costs a machine left running rather than a sign-in lost.
+                var put = await deskIsDone(on);
+
                 //NAME, ROLE AND FINGERPRINT — never the token. The same rule
                 //every other answer in this plugin is built to.
                 return {
@@ -847,7 +941,9 @@ async function plugin(imports, register) {
                     on: on,
                     fingerprint: made && made.fingerprint,
                     account: made && made.account,
+                    machine: put,
                     note: 'Kept here and taken off the desk. Lend it to a machine when it works.'
+                        + (put ? ' ' + on + ' was off before this and has been stopped again.' : '')
                 };
             }
         }));
