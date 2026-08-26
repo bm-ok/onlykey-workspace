@@ -1,5 +1,5 @@
 var React = require('react');
-var { useState } = React;
+var { useState, useEffect, useRef } = React;
 
 //---------------------------------------------------------------------------
 //What Repos, Issues and Pull requests all are: pick a repository on the left,
@@ -60,10 +60,13 @@ module.exports = function chassis(theme, okc, remember) {
             var [picked, setPicked] = remember.use('repos', 'repo', null);
             var [said, setSaid] = useState(null);
 
-            if (q.error && !q.state) return <Pane><Note kind="bad">{q.error}</Note></Pane>;
-            if (!q.state) return <Pane><Skeleton rows={4} /></Pane>;
-
-            var repos = q.state.repos || [];
+            //THE SELECTION IS WORKED OUT ABOVE THE EARLY RETURNS, and so is
+            //every hook, because the effect below needs it. Hooks after a
+            //`return` run on some draws and not others, and React counts them:
+            //"Rendered more hooks than during the previous render", and the pane
+            //draws its own error instead. This file has two early returns and
+            //the first version of that effect sat under both of them.
+            var repos = (q.state && q.state.repos) || [];
             //Reconciled against what exists. A remembered name for a repository
             //that has since been removed would leave the right-hand half empty
             //with nothing on screen to say why.
@@ -72,12 +75,64 @@ module.exports = function chassis(theme, okc, remember) {
 
             function say(note, kind) { setSaid({ text: note, kind: kind || null }); }
 
-            function askGitHub(repo) {
+            function askGitHub(repo, quietly) {
                 okc.call('repositoriesCheck', repo ? { repo: repo } : {}).then(
-                    function (x) { say(x.note); q.again(); },
-                    function (e) { say(e.message, 'bad'); }
+                    function (x) { if (!quietly) say(x.note); q.again(); },
+                    //A REFRESH NOBODY ASKED FOR SAYS NOTHING WHEN IT FAILS
+                    //EITHER. What it could not learn is already on the panel —
+                    //"asked GitHub: never", and the reason under the repository
+                    //— and a red banner for something nobody pressed is a banner
+                    //about the app's own housekeeping.
+                    function (e) { if (!quietly) say(e.message, 'bad'); }
                 );
             }
+
+            //---- AND IT ASKS ON ITS OWN WHEN WHAT IT HOLDS IS OLD -----------
+            //
+            //THIS PANEL SAID "asked GitHub: 6 days ago" AND WAITED TO BE
+            //PRESSED. That was right when a check cost requests: a pane that
+            //asks GitHub every few seconds spends somebody's rate limit on being
+            //looked at, so it was made a deliberate act with a button.
+            //
+            //IT DOES NOT COST THAT ANY MORE. Every call carries an etag and
+            //comes back 304 when nothing changed, and GitHub does not charge a
+            //304 against the hourly limit. Measured on this workspace: one
+            //repository is three conditional requests, all served from the etag
+            //drawer, no misses. So the reason it was manual has gone, and what
+            //is left is a panel showing week-old facts about somebody else's
+            //repository until a person remembers to ask.
+            //
+            //ONE REPOSITORY, THE ONE BEING LOOKED AT, ONCE PER SELECTION. Not a
+            //timer and not all of them: what is on screen is what is worth
+            //spending a round trip on, and a timer would go on asking about a
+            //tab nobody has open.
+            //
+            //AND ONLY WHEN WHAT IS HELD IS OLD. Five minutes, so moving between
+            //repositories does not re-ask about one that was just read — the
+            //cheap request is still a request, and three of them is two seconds
+            //of a pane looking busy for nothing.
+            //
+            //THE BUTTON STAYS. "Ask GitHub" is now "ask again, now", which is
+            //what somebody wants when they have just changed something over
+            //there and do not want to wait out the five minutes.
+            var STALE = 5 * 60 * 1000;
+            var asked = useRef({});
+            useEffect(function () {
+                if (!one || !one.repo) return;
+                if (asked.current[one.repo]) return;
+
+                var when = one.checked ? Date.parse(one.checked) : 0;
+                if (when && Date.now() - when < STALE) return;
+
+                //MARKED BEFORE THE CALL, NOT AFTER. Two draws can land before an
+                //answer comes back, and marking it afterwards would send the
+                //second one out alongside the first.
+                asked.current[one.repo] = true;
+                askGitHub(one.repo, true);
+            }, [one && one.repo, one && one.checked]);
+
+            if (q.error && !q.state) return <Pane><Note kind="bad">{q.error}</Note></Pane>;
+            if (!q.state) return <Pane><Skeleton rows={4} /></Pane>;
 
             return (
                 <Pane>
