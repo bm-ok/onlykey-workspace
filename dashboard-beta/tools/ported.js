@@ -58,6 +58,43 @@ function area(name) {
     return m ? m[0] : 'other';
 }
 
+//---- AND WHAT IT MIGHT HAVE BECOME --------------------------------------
+//
+//NAMES CHANGED IN THE MOVE, so "not defined here" and "not here" are different
+//claims and the first was reported as the second. `machines` became `vmList`,
+//`branchArtifact` became `branchArtifacts`, `supervisorThinking` was folded into
+//`supervisorState`. A count that treats those as missing is wrong in the
+//direction that makes the work look bigger than it is.
+//
+//MATCHED ON WHAT EACH ONE SAYS IT DOES, not on its name, because a rename is
+//exactly the case where the names do not help. `about:` is one sentence written
+//for a person, and the same act described twice shares most of its words.
+function abouts(text) {
+    const out = new Map();
+    //Both apps write the name and its `about` within a line or two of each other.
+    const re = /(?:^ {2}([a-zA-Z][a-zA-Z0-9]*): \{|actions\.define\(\s*'([A-Za-z0-9_]+)')[\s\S]{0,400}?about:\s*'((?:[^'\\]|\\.)*)'/gm;
+    let m;
+    while ((m = re.exec(text))) out.set(m[1] || m[2], m[3].replace(/\\'/g, "'"));
+    return out;
+}
+
+const STOP = new Set(['the', 'and', 'a', 'an', 'of', 'to', 'it', 'is', 'in', 'on', 'for',
+    'that', 'this', 'what', 'with', 'one', 'its', 'has', 'was', 'are', 'be', 'by', 'or',
+    'from', 'not', 'each', 'every', 'which', 'them', 'they', 'so', 'at', 'as', 'can']);
+
+function words(s) {
+    return new Set(String(s).toLowerCase().match(/[a-z]{3,}/g) || []);
+}
+
+function overlap(a, b) {
+    if (!a || !b) return 0;
+    const x = [...words(a)].filter((w) => !STOP.has(w));
+    const y = new Set([...words(b)].filter((w) => !STOP.has(w)));
+    if (!x.length || !y.size) return 0;
+    const shared = x.filter((w) => y.has(w)).length;
+    return shared / Math.max(x.length, y.size);
+}
+
 const old = theirs();
 const here = ours(path.join(HERE, 'src', 'app'), new Set());
 const missing = [...old].filter((n) => !here.has(n)).sort();
@@ -70,12 +107,45 @@ console.log(`${old.size} actions in the app being ported from`);
 console.log(`${here.size} defined here (${old.size - missing.length} of theirs, plus ${here.size - (old.size - missing.length)} this app added)`);
 console.log(`${missing.length} still relayed — they work only while the other app is running, and log only there\n`);
 
-const byArea = {};
-for (const n of list) (byArea[area(n)] = byArea[area(n)] || []).push(n);
+//---- WHAT EACH MISSING ONE MIGHT ALREADY BE, UNDER ANOTHER NAME ----------
+if (args.includes('--near')) {
+    const theirAbout = new Map();
+    for (const f of fs.readdirSync(OLD)) {
+        if (!f.endsWith('.js')) continue;
+        for (const [k, v] of abouts(fs.readFileSync(path.join(OLD, f), 'utf8'))) theirAbout.set(k, v);
+    }
+    const ourAbout = new Map();
+    (function walk(dir) {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (e.isDirectory()) { if (e.name !== 'vendor') walk(path.join(dir, e.name)); continue; }
+            if (!e.name.endsWith('.js')) continue;
+            for (const [k, v] of abouts(fs.readFileSync(path.join(dir, e.name), 'utf8'))) ourAbout.set(k, v);
+        }
+    })(path.join(HERE, 'src', 'app'));
 
-for (const a of Object.keys(byArea).sort((x, y) => byArea[y].length - byArea[x].length)) {
-    console.log(`  ${a}  (${byArea[a].length})`);
-    if (args.includes('--list') || only) console.log('    ' + byArea[a].join(' '));
+    let looksPorted = 0;
+    for (const n of list) {
+        const mine = theirAbout.get(n);
+        const near = [...ourAbout.entries()]
+            .map(([k, v]) => ({ k, score: overlap(mine, v) }))
+            .filter((c) => c.score > 0.28)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 3);
+        if (near.length) looksPorted++;
+        console.log(`\n  ${n}`);
+        console.log(`    there: ${mine || '(no about)'}`);
+        for (const c of near) console.log(`    ~ ${c.k} (${Math.round(c.score * 100)}%) — ${ourAbout.get(c.k)}`);
+        if (!near.length) console.log('    ~ nothing here describes anything like it');
+    }
+    console.log(`\n${looksPorted} of ${list.length} have something here that sounds like them.`);
+    console.log('A candidate is a thing to CHECK, not an answer — read both and decide.');
+} else {
+    const byArea = {};
+    for (const n of list) (byArea[area(n)] = byArea[area(n)] || []).push(n);
+
+    for (const a of Object.keys(byArea).sort((x, y) => byArea[y].length - byArea[x].length)) {
+        console.log(`  ${a}  (${byArea[a].length})`);
+        if (args.includes('--list') || only) console.log('    ' + byArea[a].join(' '));
+    }
+    if (!args.includes('--list') && !only) console.log('\n  --list for the names, --near for what each may have become');
 }
-
-if (!args.includes('--list') && !only) console.log('\n  --list for the names, or a word to filter by');
