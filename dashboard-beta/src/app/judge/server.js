@@ -752,6 +752,132 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- and what it decided, which nothing could record ----------------
+        //
+        //EVERYTHING HERE WAS BUILT TO READ A VERDICT AND NOTHING WROTE ONE.
+        //`store.js` carries `VERDICTS` and validates one on the way in;
+        //`gate.js` gates a second reading on `state === 'done' && by ===
+        //'person' && verdict`; `judging` counts `decided` and `gaveUp` off that
+        //field. And `judgementQueue`, a few lines up, refuses a person's
+        //judgement with "Record what you decide with judgementVerdict instead"
+        //— naming an action that did not exist.
+        //
+        //So a judgement could be asked for, queued, run and read, and then
+        //nothing could say what it decided. A person's own reading — which is
+        //what `by: 'person'` is FOR — could never reach done with a verdict at
+        //all, and the loop had no end.
+        undo.push(actions.define('judgementVerdict', {
+            about: 'Record what a judgement decided: accepted or rejected, and why',
+            needs: 'workspace',
+            takes: ['ref', 'id', 'verdict', 'note'],
+            run: async function (args) {
+                var a = args || {};
+                var it = await store.get(a.ref || a.id);
+                var ref = it.ref || store.refOf(it.number);
+
+                var said = String(a.verdict == null ? '' : a.verdict).trim().toLowerCase();
+                if (store.VERDICTS.indexOf(said) < 0) {
+                    throw new Error('A verdict is ' + store.VERDICTS.join(' or ') + '. "' + a.verdict
+                        + '" is neither, and a judgement that cannot say which is one that has not been made.');
+                }
+
+                //A REJECTION SAYS WHY. Nothing is automatically re-run and
+                //nothing is sent anywhere — a rejection is a RECORD, and what
+                //happens to the work is a person's decision — so this note is
+                //the whole of what survives it.
+                var why = String(a.note == null ? '' : a.note).trim();
+                if (said === 'rejected' && !why) {
+                    throw new Error('Say why it was rejected. A rejection with no reason cannot be acted on by '
+                        + 'anybody — and nothing is automatically re-run, so this note is the whole of what '
+                        + 'survives.');
+                }
+
+                //WHAT IT WAS READ AGAINST, TAKEN NOW, FROM GIT. This is what
+                //lets the reading go stale later: a judgement made before
+                //another push is a judgement of something else.
+                //
+                //REFUSED WHEN THERE ARE NONE. An empty set of tips is not "no
+                //information" — it is a judgement that will read as current for
+                //ever, which is the shape that lies.
+                var tips = await tipsFor(it.subject);
+                if (!Object.keys(tips).length) {
+                    throw new Error('This host cannot see where ' + (it.subject && it.subject.name)
+                        + ' is now, so a verdict could not record what it was made against — and would read as '
+                        + 'current for ever. Nothing was filed. Check the branch still exists across the '
+                        + 'repositories it was cut in.');
+                }
+
+                var decided = await store.update(it.uid || it.ref, {
+                    state: 'done',
+                    verdict: said,
+                    note: why || null,
+                    tips: tips,
+                    decided: new Date().toISOString()
+                });
+
+                log.on('judging', it.id)[said === 'accepted' ? 'good' : 'warn'](
+                    ref + ' ' + said + ' — ' + (it.subject && it.subject.name)
+                );
+
+                //NO SECOND COPY FILED AGAINST THE CUT. The app being ported from
+                //writes the verdict onto a cut record as well, because its gate
+                //read that file; ./gate.js reads the judgements themselves, by
+                //subject, so a second copy here would be a second answer to one
+                //question — and the two would drift.
+                return Object.assign({}, decided, {
+                    note: 'Recorded against ' + (it.subject && it.subject.name) + '. It stops describing what '
+                        + 'is there the moment anything is pushed to it. Nothing is re-run and nothing is sent '
+                        + 'anywhere — what happens to the work is a person\'s decision.'
+                });
+            }
+        }));
+
+        //WHAT A JUDGEMENT IS READING, as opposed to how it ended. Named here
+        //because the refusal below is about this list and nothing else reads it.
+        var READING = ['subject', 'job', 'kind', 'branch', 'source', 'target', 'on', 'number',
+            'sha', 'question', 'tag', 'remembers', 'by'];
+
+        //AND CHANGING ONE THAT HAS NOT GONE OUT.
+        //
+        //WHAT IT IS READING MAY NOT MOVE WHILE IT READS. Changing the subject or
+        //the job under a machine makes the record describe something that did
+        //not happen. HOW IT ENDED still may: a judgement whose app was
+        //restarted mid-run sits in `given` for ever otherwise — the queue only
+        //looks at `queued`, and the one door that could record it would refuse
+        //because it was in the state that needed recording. A state nothing can
+        //leave is a state nothing should be able to enter.
+        undo.push(actions.define('judgementUpdate', {
+            about: 'Change a judgement that has not been given out yet',
+            needs: 'workspace',
+            takes: ['ref', 'id', 'judgement'],
+            run: async function (args) {
+                var a = args || {};
+                var it = await store.get(a.ref || a.id);
+                var ref = it.ref || store.refOf(it.number);
+
+                var patch = a.judgement;
+                if (typeof patch === 'string') patch = JSON.parse(patch);
+                patch = patch || {};
+
+                if (it.state === 'given') {
+                    var reading = Object.keys(patch).filter(function (k) { return READING.indexOf(k) >= 0; });
+                    if (reading.length) {
+                        throw new Error(ref + ' is out on ' + (it.machine || 'a machine') + ', so '
+                            + reading.join(', ') + ' cannot be changed — changing what it is reading while it '
+                            + 'reads it would make the record describe something that did not happen. How it '
+                            + 'ENDED can still be recorded.');
+                    }
+                }
+
+                if (it.state === 'done') {
+                    throw new Error(ref + ' is decided. A judgement is a record of what somebody thought at a '
+                        + 'moment — edit it and it stops being that. Ask for another one.');
+                }
+
+                return await store.update(it.uid || it.ref, patch);
+            }
+        }));
+
         undo.push(actions.define('judgementRemove', {
             about: 'Throw a judgement away. What it handed back is untouched',
             takes: ['ref'],

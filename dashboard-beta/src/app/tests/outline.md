@@ -1,5 +1,5 @@
 <!-- generated: node src/app/tests/outline.js --write -->
-<!-- 12 suites, 64 tests, 280 checks, 21 of them drafts -->
+<!-- 12 suites, 65 tests, 285 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -480,6 +480,14 @@ Reading what came back and saying yes or no — and it is **work**, not a field.
 ## 04 — what a restart strands
 
   1. **DRAFT** — and a real run survives a real restart
+
+## 05 — what a judgement decided
+
+  1. a person can read a change themselves, and it starts with nothing decided
+  2. and a verdict that is not one is refused
+  3. and a rejection has to say why
+  4. and recording one keeps what it was read against
+  5. and a decided judgement cannot be edited afterwards
 
 # 10 — the supervisor
 
