@@ -541,17 +541,47 @@ module.exports = function repos(theme, okc) {
     return function Repos({ r, say, again, askGitHub }) {
         var [chain, setChain] = useState(null);
 
-        //THE WALK BELONGS TO THE REPOSITORY IT WAS WALKED FOR. Carried across a
-        //selection it would show one repository's fork chain under another's
-        //name — and a fork chain is exactly the kind of thing nobody would
-        //double-check before acting on.
-        var walkedFor = useRef(null);
-        if (walkedFor.current !== r.repo) { walkedFor.current = r.repo; if (chain) setChain(null); }
+        //THE WALK BELONGS TO THE REPOSITORY IT WAS WALKED FOR, and it says which
+        //one on itself — `repoChain` answers with `repo`. Shown only when that
+        //matches what is selected.
+        //
+        //THIS WAS A GUARD IN THE RENDER BODY: if the selection had changed since
+        //the last draw, clear the chain. It cleared what was already there and
+        //could not touch what had not arrived yet — and the walk is a request
+        //per link. Press "Select fork" on one repository, switch to another
+        //before the answer lands, and `setChain` filed one repository's fork
+        //chain under the other's name. A fork chain is exactly the kind of thing
+        //nobody would double-check before acting on.
+        //
+        //TAGGED RATHER THAN TIMED. A late answer is still filed — it cost the
+        //requests, and going back to that repository shows it without walking
+        //again — it is simply not SHOWN under a name it is not about. That also
+        //takes a setState out of the render body, which React tolerates and
+        //nothing should rely on.
+        var mine = chain && chain.repo === r.repo ? chain : null;
+
+        //WHAT IS SELECTED RIGHT NOW, not what was selected when the walk was
+        //asked for. A ref rather than the closure's `r`, which is whatever it
+        //was at the moment of the press.
+        var showing = useRef(r.repo);
+        showing.current = r.repo;
 
         function walk() {
-            okc.call('repoChain', { repo: r.repo }).then(
-                function (c) { setChain(c); say(c.note); },
-                function (e) { say(e.message, 'bad'); }
+            var want = r.repo;
+            okc.call('repoChain', { repo: want }).then(
+                function (c) {
+                    //FILED WHATEVER HAPPENS — it cost the requests, and coming
+                    //back to that repository shows it without walking again. It
+                    //is `mine` above that decides whether it is SHOWN.
+                    setChain(c);
+                    //BUT SAID ONLY IF IT IS STILL ABOUT WHAT IS ON SCREEN. The
+                    //chain stopped appearing under the wrong repository and the
+                    //SENTENCE still did: "3 repositories in the chain above
+                    //local-repo-a" sitting on local-repo-c's panel, which is the
+                    //same fault one layer up and reads exactly as convincingly.
+                    if (want === showing.current) say(c.note);
+                },
+                function (e) { if (want === showing.current) say(e.message, 'bad'); }
             );
         }
 
@@ -563,7 +593,7 @@ module.exports = function repos(theme, okc) {
 
         return (
             <React.Fragment>
-                <Detail r={r} chain={chain} onWalk={walk} onChanged={changed} />
+                <Detail r={r} chain={mine} onWalk={walk} onChanged={changed} />
                 <Branches repo={r.repo} onMoved={function (note, kind) { say(note, kind); again(); }} />
             </React.Fragment>
         );
