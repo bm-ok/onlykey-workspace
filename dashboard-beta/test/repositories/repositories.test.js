@@ -121,6 +121,11 @@ async function anApp(answers, open) {
     //through it now, so a stand-in would check the stand-in.
     const { refs, stop } = await refsFor({ git: git_, workspace, log: { on: () => logger } });
 
+    //THE INBOX, KEPT RATHER THAN LEFT OUT. `source()` hands the `waiting`
+    //function back so a test can ask what it WOULD raise — the pane that shows
+    //it is in the other half and nothing here can see it otherwise.
+    const sources = [];
+
     await reposPlugin({
         app: { host: { actions } },
         log: { on: () => logger },
@@ -128,10 +133,15 @@ async function anApp(answers, open) {
         github: gh.github,
         workspace,
         state,
-        refs
+        refs,
+        inbox: {
+            source: (spec) => { sources.push(spec); return () => {}; },
+            item: (kind, which, why, where2, more) => Object.assign({ kind, which, why, where: where2 }, more || {}),
+            at: (tab, pane, pick) => ({ tab, pane, pick })
+        }
     }, async () => {});
 
-    return { actions, asked: gh.asked, said, git: git_, refs, stop, go: (to) => { where = to; } };
+    return { actions, asked: gh.asked, said, git: git_, refs, stop, sources, go: (to) => { where = to; } };
 }
 
 const REPO_OK = {
@@ -786,4 +796,75 @@ test('and asking about a repository GitHub cannot be asked about does not either
     const now = (await actions.call('repositories')).repos.find((r) => r.repo === 'repo-two');
     assert.equal(now.target.on, 'someone/their-fork',
         'a repository whose remote is not GitHub lost where work goes by being asked about');
+});
+
+
+//---------------------------------------------------------------------------
+//A FORK WITH NOWHERE TO SEND WORK.
+//
+//THE ERRAND THAT WOULD HAVE SAVED AN AFTERNOON. Every repository in the real
+//workspace is a fork, every one has a chain above it, and not one had ever had
+//a target picked — so `target.on` was the repository ITSELF, and nothing said
+//so anywhere.
+//
+//WHAT THAT COSTS IS NOT ABSTRACT. Pull requests are opened on the target, so a
+//change sent out opened three of them against OUR OWN FORK rather than the
+//parent, and "forks of a fork — into what?" had to be answered by hand
+//afterwards.
+//---------------------------------------------------------------------------
+
+const A_FORK = {
+    'GET /repos/anowner/arepo/branches': { status: 200, body: [{ name: 'main', commit: { sha: 'aaa' } }] },
+    'GET /repos/anowner/arepo/pulls': { status: 200, body: [] },
+    '/repos/anowner/arepo': {
+        status: 200,
+        body: { default_branch: 'main', fork: true, permissions: { push: true, admin: true, pull: true } }
+    }
+};
+
+const forkErrand = (app) => app.sources.find((s) => /nowhere to send work/.test(s.name));
+
+test('a fork nobody has picked a target for is waiting on somebody', async () => {
+    const app = await anApp(A_FORK);
+    const source = forkErrand(app);
+    assert.ok(source, 'this plugin raises no fork errand at all, so nothing ever says where work goes');
+
+    //NOTHING IS KNOWN UNTIL GITHUB HAS BEEN ASKED. `fork` is null before that,
+    //and null is not false — raising an errand off an unknown would nag about
+    //repositories nobody has established anything about.
+    assert.deepEqual(await source.waiting(), [],
+        'it raised an errand about a repository nothing has been asked about yet');
+
+    await app.actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    const waiting = await source.waiting();
+    assert.equal(waiting.length, 1, 'a fork with no target picked raised ' + waiting.length + ' errand(s)');
+    assert.equal(waiting[0].kind, 'where work goes');
+    assert.equal(waiting[0].which, 'repo-one');
+    assert.match(waiting[0].why, /stay on anowner\/arepo/);
+    assert.match(waiting[0].why, /Walk the fork chain/);
+
+    //IT LANDS ON THE REPOSITORY, with it already picked — an errand that drops
+    //somebody on a list to find the thing themselves is one they put off.
+    assert.deepEqual(waiting[0].where, { tab: 'Repositories', pane: 'Repos', pick: 'repo-one' });
+});
+
+test('and picking one takes it off the list', async () => {
+    const app = await anApp(A_FORK);
+    await app.actions.call('repositoriesCheck', { repo: 'repo-one' });
+    assert.equal((await forkErrand(app).waiting()).length, 1, 'nothing was waiting to begin with');
+
+    await app.actions.call('repoTargetSet', { repo: 'repo-one', on: 'upstream/theirs', why: 'work goes up the chain' });
+    assert.deepEqual(await forkErrand(app).waiting(), [],
+        'the target was picked and it is still being nagged about');
+});
+
+test('and a repository that is nobody\'s fork is never on it', async () => {
+    //A REPOSITORY THAT IS NOBODY'S FORK IS THE PROJECT, and keeping to itself is
+    //the whole of the right answer. Nagging about that is nagging about nothing,
+    //which is how a list stops being read.
+    const app = await anApp(REPO_OK);
+    await app.actions.call('repositoriesCheck', { repo: 'repo-one' });
+    assert.deepEqual(await forkErrand(app).waiting(), [],
+        'it asked somebody to pick where work goes for a repository that is not a fork');
 });

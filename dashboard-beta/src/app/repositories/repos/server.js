@@ -73,7 +73,9 @@ var revising = require('../pr/revising');
 //A consumes line is a claim about what this plugin can reach, and the boundary
 //test above it only counts for as much as that line is kept honest.
 plugin.consumes = ['app', 'log', 'git', 'github', 'workspace', 'state', 'refs',
-    'ours', 'channel', 'lines', 'prcuts', 'settings'];
+    'ours', 'channel', 'lines', 'prcuts', 'settings',
+    //`inbox` FOR ONE ERRAND: a fork nobody has said where to send work from.
+    'inbox'];
 plugin.provides = ['repositories', 'repoWorkspaces'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -485,6 +487,77 @@ async function plugin(imports, register) {
     });
 
     var undo = [];
+    //---- AND A FORK NOBODY HAS SAID WHERE TO SEND WORK FROM ----------------
+    //
+    //THE ERRAND THAT WOULD HAVE SAVED AN AFTERNOON. Every repository here is a
+    //fork, every one has a real chain above it, and not one has ever had a
+    //target picked — so `target.on` is the repository ITSELF. Nothing said so.
+    //
+    //WHAT THAT COSTS IS NOT ABSTRACT. Issues are read from the target and pull
+    //requests are opened on it, so with nothing picked a change sent out opens
+    //pull requests against OUR OWN FORK rather than the parent, and nothing at
+    //the time says which way it went. That happened: three pull requests, all
+    //on `bm-sandbox-c`, all into its own default branches, and the question
+    //"forks of a fork — into what?" had to be answered by hand afterwards.
+    //
+    //IT ALSO BLOCKS THE DRILLS. "the fork is behind its parent, and syncing
+    //pulls it up" has nothing to exercise while every repository sends work to
+    //itself, which takes `the order` off runnable and everything under it with
+    //it — the guards, a task on a machine, judging, the supervisor.
+    //
+    //ONE ITEM PER REPOSITORY, landing on that repository with it already
+    //picked, because the answer is different for each and a summary would be an
+    //errand somebody has to go and decompose.
+    //
+    //ONLY FOR A FORK. A repository that is nobody's fork IS the project, and
+    //keeping to itself is the whole of the right answer — nagging about that
+    //would be nagging about nothing, which is how a list stops being read.
+    //
+    //NOTHING IS ASKED OF GITHUB. `fork` is on the record and the target is the
+    //record plus the remote, so this costs a document read — which matters for
+    //something the inbox draws on a timer.
+    if (imports.inbox) {
+        undo.push(imports.inbox.source({
+            name: 'forks with nowhere to send work',
+            waiting: async function () {
+                var notes = await read();
+                if (notes === null) return [];
+
+                var found = [];
+                try { found = await workspace.repos(); } catch (e) { return []; }
+
+                var out = [];
+                for (var i = 0; i < found.length; i++) {
+                    var name = found[i].name;
+                    var note = notes[name] || {};
+
+                    //NULL IS NOT FALSE. `fork` is unknown until GitHub has been
+                    //asked once, and "we have not looked" is not "it is not a
+                    //fork" — raising an errand off an unknown would nag about
+                    //repositories nobody has established anything about.
+                    if (note.fork !== true) continue;
+
+                    var remote = null;
+                    try { remote = await refs.origin(name); } catch (e) { remote = null; }
+
+                    var target = targetOf(note, remote);
+                    if (target.chosen) continue;
+
+                    out.push(imports.inbox.item(
+                        'where work goes',
+                        name,
+                        'It is a fork and nothing has been picked, so issues and pull requests both stay on '
+                            + (target.self || 'itself') + ' and nothing upstream is watched. Walk the fork '
+                            + 'chain and say where work goes.',
+                        imports.inbox.at('Repositories', 'Repos', name),
+                        { since: null, id: name }
+                    ));
+                }
+                return out;
+            }
+        }));
+    }
+
     if (actions) {
         undo.push(actions.define('repositories', {
             about: 'Every repository in this workspace: where it is, its default branch, its remote, and what was last learnt about it',
