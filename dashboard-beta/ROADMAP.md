@@ -172,10 +172,16 @@ loud that a source read undercounts.
 FLOOR in both directions. `test/rules/no-pane-relays.test.js` has the same
 blind spot and its zero should be read the same way.
 
-### 2b. Nothing can record what a judgement decided
+### 2b. ~~Nothing can record what a judgement decided~~ — DONE
 
-**The one verified hole that stops the loop closing**, and it was found by
-reading rather than by counting names.
+`judgementVerdict` and `judgementUpdate` are in, on machinery that was already
+here, and `09-judging/05-what-a-judgement-decided` drills them — three of its
+five checks pass by being refused. The three-part gate on sending is in too:
+`judgementsFor` in the judge answers what has been read and what is still
+current, `mustBeJudged` in `repositories/pr` decides what that means for going
+out, and `09-judging/06-nothing-goes-out-unjudged` holds all three parts.
+
+**Kept below because the shape of the hole is worth remembering.**
 
 `judge/store.js` has `update` and a `VERDICTS` list. `judge/gate.js` gates on
 `j.state === 'done' && j.by === 'person' && j.verdict`. `judging` reports
@@ -321,6 +327,21 @@ missing file.
 ---
 
 ## 6. Known small faults
+
+* **A cut can be opened and cannot be closed.** `prCutMake` opens one pull
+  request per repository; the only ways back are `prCutUpdate --state closed`,
+  which is window-only and has NO BUTTON, and "Stop tracking it", which forgets
+  the record and leaves the pull requests open on GitHub. So the app can open
+  three pull requests in one press and offers no press that closes them. Found
+  the hard way: a drill of mine opened three on bm-sandbox-c and a person had to
+  close them by hand, one repository at a time.
+* **A drill can send real work out, and nothing stops it.** That is by design —
+  `01-the-order/03-a-change-goes-out-and-comes-back` exists to do exactly that —
+  but it means a drill that MEANT to test a wire refusal and forgot
+  `_overTheWire: true` does the act instead of testing the guard, and its own
+  cleanup then deletes the branch underneath the pull request. Worth a rule
+  somewhere: a drill calling `prCutMake` either says `_overTheWire` or is
+  deliberately sending something out.
 
 * A drill in *the order* leaves a branch behind: `drill/one-act-<time>`. Its own
   last check catches it — *"Something was left behind"* — so it is a real leak,
