@@ -176,6 +176,28 @@ async function plugin(imports, register) {
     }
 
     //---- one repository, asked ---------------------------------------------
+    //CAN THIS TOKEN OPEN A PULL REQUEST THERE.
+    //
+    //ASKED OF EACH PLACE SEPARATELY, because a token can be granted one
+    //repository and not another — and in a chain that is the ordinary case
+    //rather than an unlucky one.
+    //
+    //AT PLUGIN SCOPE because two callers need it: the whole read below, and
+    //`repoTargetSet`, which has to re-ask the moment somebody points work
+    //somewhere new.
+    async function canOpenIn(full) {
+        if (!full) return null;
+        var bits = String(full).split('/');
+        var up = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/pulls?state=open&per_page=1');
+        return {
+            repo: full,
+            mayOpen: up.status === 200,
+            why: up.status === 200 ? null : (up.status === 404
+                ? 'this token was not granted it, so a pull request cannot be opened there'
+                : (up.body && up.body.message) || ('GitHub answered ' + up.status))
+        };
+    }
+
     async function ask(name, note) {
         var remote = null;
         try { remote = await refs.origin(name); }
@@ -243,22 +265,6 @@ async function plugin(imports, register) {
         var parent = r.body.parent && r.body.parent.full_name ? r.body.parent.full_name : null;
         var source = r.body.source && r.body.source.full_name ? r.body.source.full_name : null;
         var chained = !!(parent && source && parent !== source);
-
-        //ASKED OF EACH SEPARATELY, because a token can be granted one and not the
-        //other — and in a chain that is the ordinary case rather than an unlucky
-        //one.
-        async function canOpenIn(full) {
-            if (!full) return null;
-            var bits = String(full).split('/');
-            var up = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/pulls?state=open&per_page=1');
-            return {
-                repo: full,
-                mayOpen: up.status === 200,
-                why: up.status === 200 ? null : (up.status === 404
-                    ? 'this token was not granted it, so a pull request cannot be opened there'
-                    : (up.body && up.body.message) || ('GitHub answered ' + up.status))
-            };
-        }
 
         var intoParent = parent
             ? Object.assign({}, await canOpenIn(parent), { defaultBranch: r.body.parent.default_branch || null })
@@ -1015,10 +1021,37 @@ async function plugin(imports, register) {
                     };
                 }
 
+                //---- AND WHAT WAS KNOWN ABOUT THE OLD TARGET IS NOW WRONG --
+                //
+                //PICKING A TARGET MAKES THE LAST ANSWER STALE, and nothing said
+                //so. `intoTarget` — whether this token can open a pull request
+                //where work goes — was probed against the PREVIOUS target, and
+                //`checked` was minutes old, so the panel redrew with the same
+                //row and the same verdict about a repository that is no longer
+                //the destination. From outside: "I am selecting target forks and
+                //nothing changes."
+                //
+                //SO THE ANSWER IS REPLACED HERE, not left for a later read. It
+                //is one conditional request against the place work will now go,
+                //and it is the fact the row exists to show.
+                var now = targetOf(note, remote);
+                try {
+                    note.intoTarget = Object.assign({}, await canOpenIn(now.on), { chosen: now.chosen });
+                } catch (e) {
+                    //NOT KNOWING IS ITS OWN ANSWER, and better than the previous
+                    //target's. The row says it plainly rather than showing a
+                    //verdict about somewhere else.
+                    note.intoTarget = { repo: now.on, mayOpen: null, why: 'could not be asked: ' + e.message, chosen: now.chosen };
+                }
+                //AND WHAT IS OPEN THERE IS A DIFFERENT REPOSITORY'S NOW, so the
+                //rest of the read is stale too. Clearing the stamp is what makes
+                //the panel ask again on its next draw — see `keptFresh` in
+                //../chassis — rather than trusting an answer about a place
+                //nobody is sending work to any more.
+                note.checked = null;
+
                 notes[name] = note;
                 doc.write(notes);
-
-                var now = targetOf(note, remote);
                 log.on('git', name).info(now.chosen
                     ? 'work from here goes to ' + now.on + (now.why ? ' — ' + now.why : '')
                     : 'work from here goes to its own remote again');

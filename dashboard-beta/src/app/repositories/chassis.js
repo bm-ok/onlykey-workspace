@@ -85,9 +85,24 @@ module.exports = function chassis(theme, okc, remember) {
     var STALE = 2 * 60 * 1000;
 
     function keptFresh(repos, askGitHub) {
-        var asked = useRef(false);
+        //WHAT WAS ASKED ABOUT LAST TIME, not merely "have we asked". A latch
+        //that only remembers THAT it asked cannot ask again when something makes
+        //the answer stale — and something does: picking a target clears the
+        //stamp on that repository, because what is open and who may open it are
+        //now questions about a different place.
+        //
+        //Without this, choosing a fork wrote the choice, redrew, and showed the
+        //same row with the same verdict about the repository work had just
+        //stopped going to. "I am selecting target forks and nothing changes."
+        var asked = useRef('');
         useEffect(function () {
-            if (asked.current || !repos.length) return;
+            if (!repos.length) return;
+
+            //THE STAMPS ARE THE SIGNATURE. Cleared to null by a target change,
+            //moved forward by a check — either way this differs from what was
+            //asked about last, and either way asking again is right.
+            var now = repos.map(function (r) { return r.repo + ':' + (r.checked || ''); }).join('|');
+            if (asked.current === now) return;
 
             //THE OLDEST DECIDES. One repository checked a moment ago does not
             //make the other two current.
@@ -95,14 +110,19 @@ module.exports = function chassis(theme, okc, remember) {
                 var when = r.checked ? Date.parse(r.checked) : 0;
                 return when && when < at ? when : at;
             }, Date.now());
-            if (repos.every(function (r) { return r.checked; }) && Date.now() - oldest < STALE) return;
+            if (repos.every(function (r) { return r.checked; }) && Date.now() - oldest < STALE) {
+                //STILL RECORD IT. Nothing needed asking this time, and the next
+                //draw must not conclude otherwise and ask anyway.
+                asked.current = now;
+                return;
+            }
 
             //MARKED BEFORE THE CALL, NOT AFTER. Two draws can land before an
             //answer comes back, and marking it afterwards would send the second
             //one out alongside the first.
-            asked.current = true;
+            asked.current = now;
             askGitHub(null, true);
-        }, [repos.length]);
+        }, [repos.map(function (r) { return r.repo + ':' + (r.checked || ''); }).join('|')]);
     }
 
     function paneOf(lead, Right) {
