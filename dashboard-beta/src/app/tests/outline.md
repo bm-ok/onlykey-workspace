@@ -1,5 +1,5 @@
 <!-- generated: node src/app/tests/outline.js --write -->
-<!-- 12 suites, 65 tests, 285 checks, 21 of them drafts -->
+<!-- 12 suites, 66 tests, 289 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -488,6 +488,13 @@ Reading what came back and saying yes or no — and it is **work**, not a field.
   3. and a rejection has to say why
   4. and recording one keeps what it was read against
   5. and a decided judgement cannot be edited afterwards
+
+## 06 — nothing goes out unjudged
+
+  1. a change with something on it, and a line to send it as
+  2. and nothing has read it, so it does not go out
+  3. and a rejection stops it
+  4. and a judgement made before the last push does not count
 
 # 10 — the supervisor
 

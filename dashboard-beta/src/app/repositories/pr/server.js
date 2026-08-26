@@ -272,10 +272,24 @@ async function plugin(imports, register) {
     //and reaches somebody else's repository would be the only step taken on
     //nothing but a model's own confidence.
     //
-    //THAT GATE CANNOT BE PORTED YET, BECAUSE THE JUDGE HAS NOT BEEN. Staleness
-    //is measured by `staleAgainst` and `tipsFor`, which are internals of the
-    //judging half rather than actions anything can ask for — so a port today
-    //could check that a judgement EXISTS and could not check that it describes
+    //IT IS PORTED NOW, AND `notFromThePipe` IS NO LONGER WHAT GUARDS THE
+    //SENDING. `judgementsFor` in ../../judge answers the two facts this could
+    //not work out on its own — what has been read about these branches, and
+    //which of those readings still describes what is there — and `mustBeJudged`
+    //below decides what that means for sending a change out. The staleness rule
+    //stays in the judge, where its `tips` are.
+    //
+    //`notFromThePipe` STAYS ON `prCutUpdate`, which is stricter than the app
+    //being ported from — that one has no wire refusal on it at all — and is
+    //left exactly as it was. Building this gate is not a reason to loosen a
+    //different one.
+    //
+    //The paragraph below is what was true until then, kept because it is the
+    //argument for why a two-thirds gate was refused rather than shipped:
+    //
+    //STALENESS IS MEASURED BY `staleAgainst` AND `tipsFor`, which were internals
+    //of the judging half rather than actions anything could ask for — so a port
+    //then could check that a judgement EXISTS and could not check that it describes
     //what is there NOW.
     //
     //SO THE PIPE IS REFUSED OUTRIGHT INSTEAD. That is stricter than the original,
@@ -284,15 +298,72 @@ async function plugin(imports, register) {
     //read the change, or decided they need not, which is the same boundary as
     //approving a job.
     //
-    //WHEN THE JUDGE PORTS, this becomes the three-part check and not before.
+    //WHEN THE JUDGE PORTS, this becomes the three-part check and not before —
+    //which is `mustBeJudged` below. This is what still guards `prCutUpdate`.
     function notFromThePipe(a) {
         if (!a || !a._overTheWire) return;
         throw new Error(
-            'A change is sent out from the window, by a person. Over the pipe this needs a judgement — '
-            + 'something that has read the code, is not stale against what it read, and did not reject it — '
-            + 'and the judging half has not been ported here yet, so that check cannot be made honestly. '
-            + 'It is refused rather than half-checked: a gate that only asks whether a judgement EXISTS '
-            + 'would pass a judgement of an earlier state, which is exactly as useful as none.');
+            'Changing what a cut says is done in the window, by a person. Over the pipe it is refused: '
+            + 'the words on a pull request are what somebody else reads to decide, and rewriting them '
+            + 'from here would be this app editing its own case after it was made.');
+    }
+
+    //---- AND THE THREE-PART CHECK, WHICH IS THE ONE ON SENDING -------------
+    //
+    //A CHANGE GOES OUT WHEN SOMETHING HAS READ IT. Over the pipe there is no
+    //person looking, so the reading has to exist and has to be worth something:
+    //
+    //    has read it     a judgement, done, of this line or any branch it is
+    //                    made of
+    //    still true      not stale against the tips it was made on
+    //    did not reject  the last current one is not "rejected"
+    //
+    //BY THE NAMES A JUDGE COULD ACTUALLY HAVE READ, which is not only the
+    //line's own. A judgement is made against a BRANCH — `fix/csvstat-lockfile-
+    //ignore` — and `branchAsLine` then gives that branch a line name, `csvstat
+    //lockfile ignore`. Searching only for the LINE name means the flow the
+    //supervisor is told to follow — judge it, make it a line, cut it — cannot
+    //pass its own gate, because the name searched for is one nothing has ever
+    //judged, by construction. Over there it refused with "Nothing has judged
+    //it" about a change that had just been accepted: correct machinery,
+    //true-sounding sentence, wrong fact.
+    //
+    //THE FACTS COME FROM ../../judge AND THE DECISION IS MADE HERE. Staleness
+    //is its rule and its `tips`; what a reading means for SENDING is this
+    //plugin's. Asked through the action table because that plugin consumes
+    //`prcuts`, so consuming it back would be a cycle.
+    //
+    //AND A REFUSAL WHEN IT CANNOT BE ASKED. `relayed` answers null on failure —
+    //if the judge cannot be reached, this does not know whether anything read
+    //the change, and "I could not find out" is not permission.
+    async function mustBeJudged(a, names) {
+        if (!a || !a._overTheWire) return;
+
+        var said = await relayed('judgementsFor', { branches: names });
+        if (!said) {
+            throw new Error('Nothing here could say whether this change has been judged, so it is not being '
+                + 'sent out. A change goes out over the pipe when a judge has read it; not knowing is not '
+                + 'the same as yes.');
+        }
+
+        if (!(said.judgements || []).length) {
+            throw new Error('Nothing has judged "' + names[0] + '" or the branch it is made of, so there is '
+                + 'no reading of this change but your own — and you cannot see the code. Ask for a judgement '
+                + 'of it, read what it handed back, and send it out when a judge has looked.');
+        }
+
+        if (!(said.current || []).length) {
+            throw new Error('Every judgement of "' + names[0] + '" was made before the last push, so none of '
+                + 'them describes what is there now. Judge it again — a judgement of an earlier state is '
+                + 'exactly as useful as none.');
+        }
+
+        var latest = said.latest;
+        if (latest && latest.verdict === 'rejected') {
+            throw new Error(latest.ref + ' read "' + latest.reads + '" and came back "' + latest.verdict
+                + '". Fix what it found and have it judged again — a change goes out when the judge is '
+                + 'satisfied, not when it has been asked twice.');
+        }
     }
 
     //WHICH REPOSITORIES ACTUALLY CARRY SOMETHING. A cut that opens a pull request
@@ -988,7 +1059,6 @@ async function plugin(imports, register) {
             takes: ['source', 'target', 'title', 'body', 'into', 'draft'],
             run: async function (args) {
                 var a = args || {};
-                notFromThePipe(a);
 
                 var source = String(a.source || '').trim();
                 var target = String(a.target || '').trim();
@@ -999,6 +1069,15 @@ async function plugin(imports, register) {
                 if (!pair.on.length) {
                     throw new Error('"' + source + '" carries nothing that "' + target + '" does not already have.');
                 }
+
+                //THE GATE GOES HERE AND NOT AT THE TOP, because it needs the
+                //names a judge could have read — the line's own, and every
+                //branch the line is made of — and those are not known until
+                //`carrying` has worked out what this cut is.
+                //
+                //STILL BEFORE ANYTHING LEAVES THIS HOST: nothing is pushed and
+                //nothing is opened above this line.
+                await mustBeJudged(a, [source].concat(pair.on.map(function (w) { return w.head; })));
 
                 //THE CREDENTIAL COMES FROM ../../keys AND IS NOT LOOKED AT HERE.
                 //`env` and `helper` go straight to git; this file never reads

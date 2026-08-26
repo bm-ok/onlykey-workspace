@@ -752,6 +752,93 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- what has been read about a change, for whoever is sending it ---
+        //
+        //ASKED BY ../repositories/pr BEFORE IT SENDS ANYTHING OUT OVER THE PIPE,
+        //and answered here because the staleness rule is this plugin's. A
+        //second reader of `tips` is a second chance to get "does this reading
+        //still describe the code" slightly different, and the two would drift
+        //in the direction that matters least often and hurts most.
+        //
+        //THROUGH THE ACTION TABLE RATHER THAN A SERVICE, because this plugin
+        //already consumes `prcuts` — the allowance for reading a pull request
+        //is a decision about a pull request — and consuming `judge` back would
+        //be a cycle. Same reason `judgementCreate` reads the library through
+        //`actions.call`.
+        //
+        //FACTS, NOT A VERDICT ON THE SENDING. What a judgement means for
+        //sending a change out is that caller's rule, not this one's; this says
+        //only what was read, what is still current, and what each concluded.
+        undo.push(actions.define('judgementsFor', {
+            about: 'What has been judged about a set of branches, and which of those readings still '
+                + 'describe what is there now',
+            takes: ['branches'],
+            run: async function (args) {
+                var a = args || {};
+                var want = a.branches;
+                if (typeof want === 'string') {
+                    want = want.indexOf('[') === 0 ? JSON.parse(want) : want.split(',');
+                }
+                var names = {};
+                (want || []).forEach(function (n) {
+                    var s = String(n == null ? '' : n).trim();
+                    if (s) names[s] = true;
+                });
+                if (!Object.keys(names).length) throw new Error('Which branches? Nothing was named.');
+
+                var all = await store.all();
+
+                //A CHECK-A-CLAIM IS NOT A REVIEW OF THE CHANGE, so it neither
+                //satisfies a gate nor blocks one. It reads a REPORT — "is what
+                //somebody said about this code true" — and answers
+                //true/false/unclear; whether the change is fit to go out is a
+                //different question that nothing asked it.
+                //
+                //BOTH DIRECTIONS MATTER, and both have happened over there:
+                //counting one as a review let a change out on a judgement that
+                //never assessed it, and letting one block stopped a change
+                //because a reviewer's request had been CONFIRMED — which is the
+                //opposite of what confirming it means.
+                var mine = all.filter(function (j) {
+                    return j.state === 'done'
+                        && j.job !== 'check-a-claim'
+                        && j.subject && j.subject.kind === 'branch'
+                        && names[j.subject.branch];
+                });
+
+                //STALENESS IS MEASURED AGAINST WHAT EACH JUDGEMENT READ, one by
+                //one. Asking for the tips of the LINE name would answer about a
+                //name git does not have, so every judgement would read as
+                //current for ever — the exact failure staleness exists to
+                //prevent.
+                var rows = [];
+                for (var i = 0; i < mine.length; i++) {
+                    var j = mine[i];
+                    var now = await tipsFor(j.subject);
+                    var stale = gate.staleAgainst(j, now);
+                    rows.push({
+                        ref: j.ref, id: j.id, reads: j.subject.branch,
+                        verdict: j.verdict || null, note: j.note || null,
+                        by: j.by || null, job: j.job || null,
+                        decided: j.decided || null, stale: !!stale
+                    });
+                }
+
+                var current = rows.filter(function (r) { return !r.stale; });
+                return {
+                    branches: Object.keys(names),
+                    judgements: rows,
+                    current: current,
+                    //THE LAST CURRENT ONE, because that is the reading that
+                    //stands. Earlier ones are what was thought before.
+                    latest: current.length ? current[current.length - 1] : null,
+                    note: rows.length
+                        ? rows.length + ' reading(s), ' + current.length + ' still describing what is there'
+                        : 'Nothing has judged any of these branches.'
+                };
+            }
+        }));
+
         //---- and what it decided, which nothing could record ----------------
         //
         //EVERYTHING HERE WAS BUILT TO READ A VERDICT AND NOTHING WROTE ONE.

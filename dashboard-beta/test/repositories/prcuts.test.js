@@ -103,22 +103,34 @@ async function anApp(opts) {
 //---------------------------------------------------------------------------
 //1. THE GATE ON SENDING A CHANGE OUT.
 //
-//In the app being ported from, the pipe may send a change only when something
-//has READ it — a judgement, not stale, not rejected. The judging half is not
-//ported, so staleness cannot be checked, so the pipe is refused ENTIRELY.
-//A gate ported at two thirds is worse than none: it reads as the whole one.
+//The pipe may send a change only when something has READ it — a judgement, not
+//stale against what it read, and not rejected. That is `mustBeJudged`, and the
+//facts come from ../../judge because the staleness rule and the `tips` are its.
+//
+//THIS USED TO REFUSE THE PIPE ENTIRELY, and the refusal said why: the judging
+//half was not ported, so staleness could not be checked, and a gate ported at
+//two thirds reads as the whole one. It is ported now — `judgementVerdict`
+//records a verdict and `judgementsFor` answers what is current — so the blanket
+//refusal is gone and the real check is here.
+//
+//WHAT A UNIT TEST CAN HOLD IT TO. The gate needs the branch names a judge could
+//have read, which are not known until the line is resolved — so against a bare
+//app with no lines it is the LINE that is missing, not the judgement, and that
+//is the honest answer. What this pins is the half that matters either way:
+//NOTHING IS PUSHED BEFORE THE REFUSAL, whichever refusal it is. The three-part
+//check itself is drilled against real lines and real judgements in
+//09-judging/06-nothing-goes-out-unjudged.
 //---------------------------------------------------------------------------
 
-test('a change cannot be sent out down the pipe, and the refusal says why not', async () => {
+test('a change is not sent out down the pipe before it has been read', async () => {
     const { actions, pushes } = await anApp();
 
     await assert.rejects(
         () => actions.call('prCutMake', { source: 'a', target: 'b', title: 't', _overTheWire: true }),
-        /sent out from the window, by a person/);
-    await assert.rejects(
-        () => actions.call('prCutMake', { source: 'a', target: 'b', title: 't', _overTheWire: true }),
-        /judging half has not been ported/);
+        /There is no line called/);
 
+    //THE ONE THAT MATTERS. Whatever the sentence, nothing left this host: the
+    //gate and every check before it run before the first push.
     assert.deepEqual(pushes, [], 'it pushed before refusing');
 });
 
