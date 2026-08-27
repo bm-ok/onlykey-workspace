@@ -270,6 +270,29 @@ module.exports = function add(theme, okc, remember) {
         });
         var tags = Object.keys(byTag).sort();
 
+        //---- WHICH KIND OF MACHINE FOLLOWS FROM WHO DOES IT ----------------
+        //
+        //THIS WAS ASKED TWICE AND THE TWO COULD DISAGREE. "Who does it" already
+        //says worker or judge, and then a second dropdown asked which kind of
+        //machine — free to contradict the first. J24 was written that way: a
+        //judging job, on a judge-tagged machine, recorded as done BY A WORKER,
+        //because the form allowed every combination of the two.
+        //
+        //A judge reads somebody else's work and must never be the sign-in that
+        //produced it. That rule is the whole reason the roles exist, and a form
+        //that lets you file a judgement as a worker's is a form that can write
+        //down the one thing the rule forbids.
+        //
+        //DERIVED, AND SAID RATHER THAN ASKED. It is still visible — the line
+        //below states which kind will be wanted and why — because a machine
+        //being chosen invisibly is how somebody ends up not knowing why their
+        //task is waiting.
+        //
+        //A WORKER TAKES ANY FREE MACHINE unless machines are actually grouped
+        //for work, because most workspaces tag nothing and "any free" is the
+        //honest answer there.
+        var wantTag = kind === 'judge' ? 'judge' : (byTag.worker ? 'worker' : '');
+
         function stop(text) { setSaid({ bad: true, text: text }); }
 
         function write(andQueue) {
@@ -316,7 +339,7 @@ module.exports = function add(theme, okc, remember) {
                     branch: onCut,
                     job: val('job'),
                     question: val('words'),
-                    tag: val('tag') || undefined
+                    tag: wantTag || undefined
                 }).then(function (r) {
                     setDraft({ kind: 'judge' });
                     if (!andQueue || !r.ref) return done(r, false);
@@ -348,7 +371,7 @@ module.exports = function add(theme, okc, remember) {
                     brief: val('words'),
                     job: val('job'),
                     contractId: val('contractId') || undefined,
-                    tag: val('tag') || undefined
+                    tag: wantTag || undefined
                 }
             }).then(function (r) {
                 setDraft({});
@@ -400,7 +423,7 @@ module.exports = function add(theme, okc, remember) {
                                         : <span className="muted">{kind === 'judge'
                                             ? 'no branch yet — there is nothing for it to read'
                                             : 'no branch yet — there is nowhere for it to deliver'}</span>}
-                                {val('tag') ? <span>{' · '}<Badge kind="muted">{val('tag')}</Badge></span> : null}
+                                {wantTag ? <span>{' · '}<Badge kind="muted">{wantTag}</Badge></span> : null}
                             </CardSub>
 
                             {val('words')
@@ -555,18 +578,21 @@ module.exports = function add(theme, okc, remember) {
                                     }} value={val('contractId')} onChange={function (v) { set('contractId', v); }} />
                                 )}
 
-                                {/* SHOWN DISABLED RATHER THAN HIDDEN when no
-                                    machine is tagged: a field that appears the
-                                    day somebody tags a machine is a feature
-                                    nobody knew they had. */}
-                                <Field f={{
-                                    name: 'tag',
-                                    label: tags.length ? 'On which kind of machine' : 'On which kind of machine — no machine is tagged yet',
-                                    hint: 'which KIND, never which machine — the queue decides that, and a tag no machine carries makes it wait rather than fall back',
-                                    disabled: !tags.length,
-                                    options: [{ value: '', label: tags.length ? 'any free machine' : 'any free machine — tag one with vmTags to group them' }]
-                                        .concat(tags.map(function (t) { return { value: t, label: t + ' — ' + byTag[t].join(', ') }; }))
-                                }} value={val('tag')} onChange={function (v) { set('tag', v); }} />
+                                {/* SAID, NOT ASKED — see `wantTag` above. And
+                                    said in the same place the question used to
+                                    be, because "which machine" is a thing
+                                    somebody looks for here. */}
+                                <Note kind={wantTag && !byTag[wantTag] ? 'warn' : undefined}>
+                                    {wantTag
+                                        ? (byTag[wantTag]
+                                            ? 'It runs on a machine tagged "' + wantTag + '" — '
+                                                + byTag[wantTag].join(', ') + '. The queue picks which one.'
+                                            : 'It wants a machine tagged "' + wantTag + '" and none carries that tag, '
+                                                + 'so it will wait rather than run somewhere else. Tag one on Runners.')
+                                        : (tags.length
+                                            ? 'It runs on any free machine. Tag machines "worker" on Runners to keep work to a group of them.'
+                                            : 'It runs on any free machine. No machine is tagged yet.')}
+                                </Note>
 
                                 {kind === 'judge' ? null : (
                                     <Field f={{ name: 'title', label: 'Title', needed: true, placeholder: 'Short enough to read in a list' }}
