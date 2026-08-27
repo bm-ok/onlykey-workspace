@@ -333,6 +333,51 @@ module.exports = function judgements(theme, okc, remember) {
             });
         }
 
+        //---- PUTTING ONE BACK IN THE QUEUE ---------------------------------
+        //
+        //THERE WAS NO WAY TO DO THIS AND THE ACTION HAS ALWAYS EXISTED.
+        //`judgementQueue` was reachable only from the Add form, at the moment
+        //one is written — so a judgement that was written and not queued, or
+        //one whose dispatch died before it ran, could not be started from
+        //anywhere. The only way on was to throw it away and write it again,
+        //which loses the question somebody composed.
+        //
+        //ONLY WHEN THERE IS SOMETHING TO START. A decided one is not reopened —
+        //a second reading is a second judgement, with its own question and its
+        //own answer — and the door says so itself, so this offers the press
+        //where it can work rather than letting somebody find out by pressing.
+        function canQueue(j) {
+            return !!j && !j.verdict && (j.state === 'draft' || j.state === 'failed');
+        }
+
+        function queueIt(j) {
+            var ref = j.ref || String(j.number);
+            var again = j.state === 'failed';
+            ask({
+                title: (again ? 'Put ' : 'Queue ') + ref + (again ? ' back in the queue?' : ' in the queue?'),
+                plain: [
+                    'The next free machine tagged for judging takes it, is lent a judge sign-in, reads what it was pointed at and hands back what it found.',
+                    again
+                        ? 'Its last attempt never ran, so nothing was read and nothing was decided — this is a first reading rather than a second one.'
+                        : null,
+                    //THE REASON IT DIED LAST TIME, BESIDE THE BUTTON THAT WOULD
+                    //DO IT AGAIN. Queueing into the same fault is how somebody
+                    //spends a machine twice on one broken thing.
+                    again && j.whyFailed ? 'Last time: ' + j.whyFailed : null,
+                    again ? 'If that has not been put right, this will fail the same way.' : null
+                ],
+                cost: 'It borrows a machine and spends a Claude run.',
+                confirm: again ? 'Queue it again' : 'Queue it',
+                protect: true,
+                onYes: function () {
+                    return okc.call('judgementQueue', { ref: ref }).then(
+                        function (r) { setSaid({ text: r.note || (ref + ' is in the queue.') }); },
+                        function (e) { setSaid({ bad: true, text: e.message }); throw e; }
+                    );
+                }
+            });
+        }
+
         function bin(j) {
             ask({
                 title: 'Throw ' + (j.ref || j.number) + ' away?',
@@ -414,7 +459,23 @@ module.exports = function judgements(theme, okc, remember) {
                                     <KvRow label="which is a">
                                         {KINDS[subjectOf(on).kind] || subjectOf(on).kind || <span className="muted">not recorded</span>}
                                     </KvRow>
-                                    <KvRow label="state">{on.state}</KvRow>
+                                    <KvRow label="state">
+                                        {on.state === 'failed'
+                                            ? <Badge kind="bad">it never ran</Badge>
+                                            : on.state}
+                                    </KvRow>
+                                    {/* THE REASON, WHICH WAS RECORDED AND NEVER
+                                        DRAWN. Without it this pane says a run
+                                        handed nothing back and leaves somebody
+                                        to guess between "the judge would not
+                                        say" and "it could not start" — which
+                                        are opposite answers and have opposite
+                                        fixes. */}
+                                    {on.whyFailed
+                                        ? <KvRow label="why">
+                                            <div className="console short">{on.whyFailed}</div>
+                                        </KvRow>
+                                        : null}
                                     {/* WHAT THE JUDGE RECOMMENDS AND WHETHER IT MAY
                                         GO OUT, on two lines with two labels. */}
                                     <KvRow label="it concluded">
@@ -450,6 +511,14 @@ module.exports = function judgements(theme, okc, remember) {
                                     {subjectOf(on).kind == 'pull'
                                         ? <Button protect onClick={function () { say(on); }}
                                             title="put what it found on the pull request, as a comment">Say it</Button>
+                                        : null}
+                                    {canQueue(on)
+                                        ? <Button kind="ok" protect onClick={function () { queueIt(on); }}
+                                            title={on.state === 'failed'
+                                                ? 'Its last attempt never ran, so nothing was decided'
+                                                : 'Written and not yet queued'}>
+                                            {on.state === 'failed' ? 'Queue it again' : 'Queue it'}
+                                        </Button>
                                         : null}
                                     <Button kind="danger" protect onClick={function () { bin(on); }}>Throw it away</Button>
                                 </div>

@@ -234,6 +234,23 @@ async function plugin(imports, register) {
                     //attempts recorded no exit code at all. "Nothing was
                     //recorded" is its own answer and is not evidence of a clean
                     //run.
+                    //---- AND WHY IT NEVER RAN, WHICH IS ON THE ATTEMPTS ----
+                    //
+                    //THE SAME ARGUMENT AS `crashed` DIRECTLY BELOW, and found
+                    //the same way: the raw material is taken out of this list,
+                    //and something that reads the list then cannot answer a
+                    //question the attempts were carrying.
+                    //
+                    //A DISPATCH THAT DIED WROTE ITS REASON ONTO THE ATTEMPT AND
+                    //NOWHERE ELSE. So the pane drew "done, handed back 0 files"
+                    //over a run whose job had no script, and the sentence saying
+                    //so — in the record, one field away — was never on screen.
+                    //A whole afternoon went into "nothing is happening".
+                    row.whyFailed = (function () {
+                        var last = (j.attempts || []).slice(-1)[0];
+                        return (last && last.failed) || null;
+                    })();
+
                     row.crashed = (function () {
                         var said = (j.attempts || []).filter(function (a) { return a.exit != null; });
                         if (!said.length) return null;
