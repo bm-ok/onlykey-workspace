@@ -967,11 +967,33 @@ async function plugin(imports, register) {
 
         undo.push(actions.define('judgementRemove', {
             about: 'Throw a judgement away. What it handed back is untouched',
-            takes: ['ref'],
+            //---- BOTH NAMES, BECAUSE EVERY CALLER USED THE OTHER ONE --------
+            //
+            //THIS TOOK `ref` AND NOTHING SENT IT. The pane sends `id`, and so do
+            //all six drills that tidy up after themselves — so `args.ref` was
+            //undefined every time and this asked the store to remove the string
+            //"undefined". Pressing "Throw it away" on J4 answered "There is no
+            //judgement \"undefined\"" while the panel beside it was showing J4.
+            //
+            //AND IT WAS SILENT FOR AS LONG AS IT WAS WRONG. Every drill wraps
+            //this in `try { ... } catch { /* already gone */ }`, which is a fair
+            //thing to write and turns a call that CANNOT work into one that
+            //looks like it had nothing to do. The judgements those drills made
+            //are all still on the board.
+            //
+            //`store.remove` ALREADY TAKES SEVERAL KINDS OF HANDLE — a number, a
+            //uid, a ref, a name — so being fussy about which WORD carries it
+            //was a strictness that bought nothing and cost every caller.
+            takes: ['ref', 'id'],
             //THE REFUSAL FOR ONE THAT IS OUT ON A MACHINE IS IN ./store.js,
             //because it is a rule about the record rather than about this table.
             run: async function (args) {
-                return await store.remove((args || {}).ref);
+                var a = args || {};
+                var which = a.ref != null ? a.ref : a.id;
+                if (which == null || String(which).trim() === '') {
+                    throw new Error('Say which judgement to throw away. A number like J3, a uid or a name all work.');
+                }
+                return await store.remove(which);
             }
         }));
     }
