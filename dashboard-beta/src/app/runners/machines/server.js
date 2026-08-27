@@ -367,7 +367,21 @@ async function plugin(imports, register) {
                 //THE SAME GUARD AS EVERY OTHER DOOR HERE, and the first line:
                 //it refuses anything not in this app's register.
                 var was = ours.get(name);
-                var spec = Object.assign({}, was.spec || {});
+
+                //---- THE SPEC IS WHAT IT WAS MADE WITH, NOT WHAT IT IS -------
+                //
+                //`vmTags` writes the RECORD's tags, not the spec's, so a machine
+                //tagged after it was built carries two answers: the spec still
+                //says what was typed into the dialog, and the record says what it
+                //is for now. Rebuilding from the spec alone silently dropped
+                //every tag added since — a machine tagged "worker, judge" came
+                //back as "worker", looking exactly like the one asked for until
+                //the queue would not give it a judgement.
+                //
+                //THE RECORD WINS, because it is the one every reader acts on.
+                var spec = Object.assign({}, was.spec || {}, {
+                    tags: (was.tags && was.tags.length) ? was.tags.slice() : (was.spec || {}).tags
+                });
 
                 if (was.installing) {
                     throw new Error('"' + name + '" is installing. Let it finish or remove it, rather than '
@@ -390,8 +404,16 @@ async function plugin(imports, register) {
                 delete spec.bridge;
                 delete spec.token;
 
+                //AND WHETHER SOMEBODY HAD KEPT IT BACK, which is the same shape
+                //of fact: a decision made after the machine was built, held on
+                //the record, and undone by rebuilding from the spec. A machine
+                //taken out of the pool on purpose must not quietly rejoin it
+                //because it was made again.
+                var keptBack = was.forTasks === false;
+
                 await actions.call('vmRemove', { name: name });
                 var made = await imports.provision.create(spec);
+                if (keptBack) ours.update(name, { forTasks: false });
 
                 //INSTALLING IS THE POINT, and is separable for the same reason
                 //it is separable when a machine is first made: they fail
