@@ -1072,6 +1072,85 @@ async function plugin(imports, register) {
             }
         }));
 
+
+        //---- AND THE SAME TWO FOR A JUDGEMENT -------------------------------
+        //
+        //MOVED OUT OF ../judge WITH THE PAIR ABOVE. Changing a piece of work and
+        //throwing it away are acts the task half of this board has always had,
+        //and having them twice meant two places deciding when work may be
+        //edited — which had already produced two different answers about a
+        //record whose run never started.
+        //
+        //THE RULES ABOUT WHAT A JUDGEMENT IS travelled with them, because they
+        //read the record's own state and are the same shape as the ones above:
+        //one out on a machine may not have what it is reading changed under it,
+        //and a decided one is a record of what somebody thought rather than a
+        //document to edit.
+
+        undo.push(actions.define('judgementUpdate', {
+            about: 'Change a judgement that has not been given out yet',
+            needs: 'workspace',
+            takes: ['ref', 'id', 'judgement'],
+            run: async function (args) {
+                var a = args || {};
+                var it = await imports.judge.get(a.ref || a.id);
+                var ref = it.ref || imports.judge.refOf(it.number);
+
+                var patch = a.judgement;
+                if (typeof patch === 'string') patch = JSON.parse(patch);
+                patch = patch || {};
+
+                if (it.state === 'given') {
+                    var reading = Object.keys(patch).filter(function (k) { return READING.indexOf(k) >= 0; });
+                    if (reading.length) {
+                        throw new Error(ref + ' is out on ' + (it.machine || 'a machine') + ', so '
+                            + reading.join(', ') + ' cannot be changed — changing what it is reading while it '
+                            + 'reads it would make the record describe something that did not happen. How it '
+                            + 'ENDED can still be recorded.');
+                    }
+                }
+
+                if (it.state === 'done') {
+                    throw new Error(ref + ' is decided. A judgement is a record of what somebody thought at a '
+                        + 'moment — edit it and it stops being that. Ask for another one.');
+                }
+
+                return await imports.judge.update(it.uid || it.ref, patch);
+            }
+        }));
+
+        undo.push(actions.define('judgementRemove', {
+            about: 'Throw a judgement away. What it handed back is untouched',
+            //---- BOTH NAMES, BECAUSE EVERY CALLER USED THE OTHER ONE --------
+            //
+            //THIS TOOK `ref` AND NOTHING SENT IT. The pane sends `id`, and so do
+            //all six drills that tidy up after themselves — so `args.ref` was
+            //undefined every time and this asked the store to remove the string
+            //"undefined". Pressing "Throw it away" on J4 answered "There is no
+            //judgement \"undefined\"" while the panel beside it was showing J4.
+            //
+            //AND IT WAS SILENT FOR AS LONG AS IT WAS WRONG. Every drill wraps
+            //this in `try { ... } catch { /* already gone */ }`, which is a fair
+            //thing to write and turns a call that CANNOT work into one that
+            //looks like it had nothing to do. The judgements those drills made
+            //are all still on the board.
+            //
+            //`../judge/store.js`’s remove ALREADY TAKES SEVERAL KINDS OF HANDLE — a number, a
+            //uid, a ref, a name — so being fussy about which WORD carries it
+            //was a strictness that bought nothing and cost every caller.
+            takes: ['ref', 'id'],
+            //THE REFUSAL FOR ONE THAT IS OUT ON A MACHINE IS IN ../judge/store.js,
+            //because it is a rule about the record rather than about this table.
+            run: async function (args) {
+                var a = args || {};
+                var which = a.ref != null ? a.ref : a.id;
+                if (which == null || String(which).trim() === '') {
+                    throw new Error('Say which judgement to throw away. A number like J3, a uid or a name all work.');
+                }
+                return await imports.judge.remove(which);
+            }
+        }));
+
         undo.push(actions.define('taskRemove', {
             about: 'Throw a task away. Its branch, and the logs kept for it, are untouched',
             takes: ['id'],
