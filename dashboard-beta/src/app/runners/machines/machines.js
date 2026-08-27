@@ -248,8 +248,19 @@ module.exports = function machines(theme, okc, remember) {
                             ]
                         },
                         {
-                            name: 'desktop', label: 'Give it a desktop', type: 'checkbox', value: false,
-                            hint: 'Off is a terminal-only runner: no display manager, no session, a fraction of the memory. On installs a small desktop that logs itself in, for a machine somebody is going to sit at. This cannot be changed later.'
+                            //ON BY DEFAULT, because the ordinary machine made
+                            //here is one somebody may end up sitting at, and a
+                            //desktop cannot be added afterwards \u2014 what a machine
+                            //was built to be is a fact about that build.
+                            //
+                            //AND NOT A QUESTION FOR A SUPERVISOR. One has no X
+                            //display at all, so this is disabled and off the
+                            //moment the box below is ticked \u2014 see the kit, which
+                            //draws a disabled checkbox unticked and submits it as
+                            //false, so what is asked for is what was shown.
+                            name: 'desktop', label: 'Give it a desktop', type: 'checkbox', value: true,
+                            disabled: function (v) { return v.supervisor === true; },
+                            hint: 'Off is a terminal-only runner: no display manager, no session, a fraction of the memory. On installs a small desktop that logs itself in, for a machine somebody is going to sit at. This cannot be changed later, and a supervisor never gets one.'
                         },
                         {
                             name: 'supervisor', label: 'Supervisor machine', type: 'checkbox', value: false,
@@ -279,7 +290,11 @@ module.exports = function machines(theme, okc, remember) {
                         var vm = Object.assign({}, f, {
                             memoryMB: Number(f.memoryMB),
                             cpus: Number(f.cpus),
-                            diskMB: Number(f.diskMB)
+                            diskMB: Number(f.diskMB),
+                            //SAID HERE TOO, rather than trusted from the form. A
+                            //supervisor has no X display, and this is the value
+                            //that reaches the builder.
+                            desktop: f.supervisor === true ? false : f.desktop === true
                         });
 
                         //MAKING IT IS WHAT THIS DIALOG DOES, and the promise it

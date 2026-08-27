@@ -201,6 +201,31 @@ function Dialog({ id, spec }) {
         setValues(function (was) { var next = Object.assign({}, was); next[name] = v; return next; });
     }
 
+    //---- A FIELD MAY DEPEND ON WHAT ANOTHER ONE SAYS -----------------------
+    //
+    //`disabled` MAY BE A FUNCTION OF THE VALUES SO FAR. Some choices decide
+    //others: a supervisor machine has no X display, so "give it a desktop" is
+    //not a question once "supervisor" is ticked \u2014 it is a thing that cannot
+    //happen. Showing it disabled says that; leaving it tickable invites
+    //somebody to ask for a machine that cannot be built.
+    //
+    //DISABLED AND STILL TRUE WOULD BE THE WORST OF BOTH. If a box was ticked
+    //before the thing that disables it, the value is still in `values` and
+    //would be SENT \u2014 so the form would show "no desktop" and ask for one. It
+    //is resolved in ONE place rather than in every caller: a disabled checkbox
+    //draws unticked and submits as false, because a value nobody can set is
+    //not a value somebody chose.
+    function fieldNow(f) {
+        if (typeof f.disabled !== 'function') return f;
+        return Object.assign({}, f, { disabled: !!f.disabled(values) });
+    }
+
+    function valueNow(f) {
+        var live = fieldNow(f);
+        if (live.disabled && live.type == 'checkbox') return false;
+        return values[f.name];
+    }
+
     async function yes() {
         setBusy(true);
         setErr(null);
@@ -209,6 +234,13 @@ function Dialog({ id, spec }) {
             var out = {};
             Object.keys(values).forEach(function (k) {
                 out[k] = typeof values[k] == 'string' ? values[k].trim() : values[k];
+            });
+
+            //AND A DISABLED CHECKBOX IS OFF, whatever it was before something
+            //else turned it off. See `valueNow` \u2014 this is the same rule, so
+            //what is sent is what was on the screen.
+            (fields || []).forEach(function (f) {
+                if (f.type == 'checkbox' && fieldNow(f).disabled) out[f.name] = false;
             });
             if (onYes) await onYes(out);
             drop(id, true);
@@ -317,7 +349,7 @@ function Dialog({ id, spec }) {
                     {fields.map(function (f, i) {
                         return (
                             <div key={f.name} ref={i === 0 ? first : null}>
-                                <Field f={f} value={values[f.name]} onChange={function (v) { set(f.name, v); }} />
+                                <Field f={fieldNow(f)} value={valueNow(f)} onChange={function (v) { set(f.name, v); }} />
                             </div>
                         );
                     })}
