@@ -251,6 +251,59 @@ async function plugin(imports, register) {
         //`sshKey` and `sshKeyMake`, and both fell through to the app being
         //ported from. So the pane was showing the OTHER app's key, and a machine
         //built here would have been authorised with it.
+        //---- WHAT COULD BE AUTHORISED ON A NEW MACHINE ---------------------
+        //
+        //THIS APP'S OWN KEY FIRST, AND MADE IF IT IS NOT THERE YET. It is the
+        //one that should go into a new machine: this app can say when it was
+        //made and can rotate it, nothing else on this computer is opened by it,
+        //and it does not vanish with somebody's profile.
+        //
+        //THE PERSON'S OWN KEYS ARE OFFERED UNDERNEATH, because somebody may
+        //deliberately want their own way in — but the default must not be the
+        //key that opens everything else they can reach.
+        //
+        //PUBLIC HALVES ONLY. Nothing here reads a private key and nothing
+        //returns one; see ./ssh.js and ../core/ssh, which hands out paths and
+        //never contents.
+        undo.push(actions.define('hostKeys', {
+            about: "Public ssh keys that could be authorised on a new machine — this app's first",
+            run: async function () {
+                var keys = [];
+
+                try {
+                    ssh.make();
+                    var mine = ssh.publicKey();
+                    if (mine) keys.push({ file: 'id_okc.pub', key: mine, comment: "this app's own key", mine: true });
+                } catch (e) {
+                    //SAID, NOT SWALLOWED. A machine made without this key is one
+                    //this app cannot reach afterwards, and the pane should be
+                    //able to say why the obvious choice is missing.
+                    log.on('keys').warn('could not make this app an ssh key: ' + e.message);
+                }
+
+                var dir = path.join(require('node:os').homedir(), '.ssh');
+                try {
+                    if (fs.existsSync(dir)) {
+                        fs.readdirSync(dir).filter(function (f) { return /\.pub$/.test(f); }).forEach(function (f) {
+                            try {
+                                var text = String(fs.readFileSync(path.join(dir, f), 'utf8')).trim();
+                                if (!text) return;
+                                var said = text.split(/\s+/).slice(2).join(' ');
+                                keys.push({ file: f, key: text, comment: (said || f) + ' — yours', mine: false });
+                            } catch (e) { /* one unreadable key is not the answer */ }
+                        });
+                    }
+                } catch (e) { /* no .ssh folder is an ordinary answer */ }
+
+                return {
+                    keys: keys,
+                    note: keys.length
+                        ? keys.length + ' key(s) could be authorised. This app’s own is first.'
+                        : 'There is no key to authorise, so a new machine would be reachable by password only.'
+                };
+            }
+        }));
+
         undo.push(actions.define('sshKey', {
             about: "The key this app uses to reach the machines it made — its public half and fingerprint",
             run: async function () {

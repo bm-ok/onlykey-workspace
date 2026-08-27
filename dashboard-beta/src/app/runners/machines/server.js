@@ -496,6 +496,29 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- WHAT COULD BE INSTALLED ON A NEW ONE --------------------------
+        //
+        //VirtualBox already knows every image it has been shown, so this is a
+        //read of what is on this computer rather than a list somebody maintains.
+        //Making a machine needs one, and typing an absolute Windows path into a
+        //dialog from memory is how a machine gets made with no installer on it.
+        //
+        //NOT A REFUSAL WHEN THERE ARE NONE. VirtualBox may know of no image at
+        //all, and the pane offers a path to type instead — an empty list is an
+        //ordinary answer here, not a fault.
+        undo.push(actions.define('vmIsos', {
+            about: 'Installer images VirtualBox already knows about',
+            run: async function () {
+                var found = await vbox.isos();
+                return {
+                    isos: found,
+                    note: found.length
+                        ? found.length + ' image(s) VirtualBox knows of.'
+                        : 'VirtualBox knows of no installer image, so one has to be given by path.'
+                };
+            }
+        }));
+
         undo.push(actions.define('vmList', {
             about: 'The virtual machines this app made, with live state and stage',
             run: function () { return ours.all(); }
