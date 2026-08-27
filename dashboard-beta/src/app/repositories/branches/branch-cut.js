@@ -246,9 +246,22 @@ module.exports = function branches(theme, okc, remember) {
 
         var on = all.filter(function (b) { return b.name == picked; })[0] || null;
 
+        //---- RESOLVING IS NOT THE SAME AS HAVING WORKED --------------------
+        //
+        //THIS DREW EVERY ANSWER THAT DID NOT THROW IN THE OK COLOUR, and some of
+        //them are failures. `branchDelete` refuses a branch git says is not
+        //fully merged; it does not throw, because a delete that took in two
+        //repositories of three is not an error either — so it answers with what
+        //happened. "0 of 1 deleted" was drawn in green, beside the red one that
+        //means the same thing on every other pane.
+        //
+        //`ok === false` AND NOT `!ok`, because almost nothing here returns the
+        //field at all: an action that says nothing about it is not claiming to
+        //have failed, and reading `undefined` as failure would turn every
+        //working button red.
         function tell(p) {
             return p.then(
-                function (r) { setSaid({ text: r.note || 'Done.' }); again(); },
+                function (r) { setSaid({ bad: !!(r && r.ok === false), text: (r && r.note) || 'Done.' }); again(); },
                 function (e) { setSaid({ bad: true, text: e.message }); throw e; }
             );
         }

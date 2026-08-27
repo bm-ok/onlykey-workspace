@@ -889,15 +889,55 @@ async function plugin(imports, register) {
                     if (notes[name]) { delete notes[name]; doc.write(notes); }
                 }
 
-                log.warn('deleted ' + name + ' from ' + gone + ' repositor' + (gone === 1 ? 'y' : 'ies'));
+                //SAID AS WHAT HAPPENED, WHICH IS SOMETIMES NOTHING. This read
+                //"deleted X from 0 repositories" on a delete that was entirely
+                //refused, which is the one line somebody greps for afterwards.
+                if (gone) {
+                    log.warn('deleted ' + name + ' from ' + gone + ' repositor' + (gone === 1 ? 'y' : 'ies')
+                        + (kept.length ? ', and ' + kept.length + ' refused it' : ''));
+                } else {
+                    log.warn(name + ' was not deleted anywhere — ' + kept.length + ' repositor'
+                        + (kept.length === 1 ? 'y' : 'ies') + ' refused it');
+                }
+
+                //---- AND GIT'S OWN WORDS ARE NOT A SENTENCE ------------------
+                //
+                //`why` IS RAW STDERR AND WENT STRAIGHT ONTO THE SCREEN. What a
+                //person read was "local-repo-a - error: the branch 'pull/13' is
+                //not fully merged Deleting it anyway needs `force`" — git's
+                //lowercase "error:" prefix left in the middle of the app's own
+                //sentence, no punctuation where the two meet, and the backticks
+                //drawn as backticks because this is a banner and not markdown.
+                //
+                //THE UNMERGED CASE GETS THE APP'S WORDS, because it is the one
+                //refusal here that is a DECISION rather than a fault: the branch
+                //carries commits that are nowhere else, and the fix is to choose,
+                //not to retry. Anything else still shows what git said, tidied,
+                //because an unexpected refusal is exactly when the raw text is
+                //what somebody needs.
+                function saidBy(k) {
+                    if (k.unmerged) {
+                        return k.repo + ' still has it: it carries commits that are not merged anywhere else';
+                    }
+                    var why = String(k.why || 'it refused, and said nothing about why').trim()
+                        .replace(/^(error|fatal|warning):\s*/i, '');
+                    return k.repo + ' still has it: ' + why;
+                }
+
                 return {
                     branch: name, on: done, removed: gone,
                     //UNMERGED IS ITS OWN ANSWER, because the fix for it is a
                     //decision rather than a retry.
                     unmerged: kept.some(function (k) { return k.unmerged; }),
+                    //WHETHER THIS WENT, AS A FIELD RATHER THAN AS A SENTENCE TO
+                    //PARSE. The pane drew "0 of 1 deleted" in the ok colour for
+                    //want of this: the call resolved, so every caller read it as
+                    //having worked. See ./branch-cut.js.
+                    ok: !kept.length,
                     note: kept.length
-                        ? gone + ' of ' + done.length + ' deleted. ' + kept.map(function (k) { return k.repo + ' — ' + k.why; }).join('; ')
-                            + (kept.some(function (k) { return k.unmerged; }) ? ' Deleting it anyway needs `force`, and what it carries goes with it.' : '')
+                        ? gone + ' of ' + done.length + ' deleted. ' + kept.map(saidBy).join('; ') + '.'
+                            + (kept.some(function (k) { return k.unmerged; })
+                                ? ' Deleting it anyway needs force, and what it carries goes with it.' : '')
                         : 'Gone from ' + gone + ' repositor' + (gone === 1 ? 'y' : 'ies') + '.'
                 };
             }
