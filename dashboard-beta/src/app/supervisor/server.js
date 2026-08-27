@@ -85,6 +85,22 @@ async function plugin(imports, register) {
     //a supervisor's train of thought spans whatever folder it was looking at.
     var notebook = makeCarrying(imports.state.app.doc('triage'));
 
+    //---- WHERE A PROPOSED SKILL WAITS --------------------------------------
+    //
+    //NOT IN THE PROVISIONING FOLDER, and that is the whole safety property. A
+    //skill is a file ../vms/provision serves to a machine at the head of every
+    //waking; a proposal kept anywhere that search path looks would be fetched,
+    //and a supervisor proposing its own instructions would be reading them back
+    //on its next turn. Self-modification with one extra step.
+    //
+    //So a proposal lives in this app's own drawer, which nothing serves, and
+    //becomes the served file only when a person moves it there.
+    //
+    //IN THE HOST'S DRAWER RATHER THAN THE WORKSPACE'S. A skill is what the
+    //supervisor IS; it does not change because somebody opened a different
+    //folder of repositories.
+    var proposals = imports.state.app.doc('skill-proposals');
+
     //ONE SHAPE FOR EVERY ANSWER THAT RETURNS THE LIST, so the window and a model
     //are reading the same thing.
     function board() {
@@ -1379,7 +1395,33 @@ async function plugin(imports, register) {
                 characters: text.length,
                 lines: text.split('\n').length,
                 edited: when,
-                where: file
+                where: file,
+
+                //---- AND WHAT IS WAITING TO REPLACE IT --------------------
+                //
+                //BESIDE THE LIVE ONE, NEVER INSTEAD OF IT. A reader asking for a
+                //skill is asking what a machine is being given; a proposal is a
+                //different question and would be a dangerous answer to confuse
+                //with it. So `text` stays the served document and this is a
+                //second field somebody has to look at deliberately.
+                //
+                //IT CARRIES THE ARGUMENT, not just the diff. What is being
+                //approved is the reasoning — see `skillPropose`, which refuses
+                //one without it.
+                proposed: (function () {
+                    var it = (proposals.read({}) || {})[String(which)];
+                    if (!it) return null;
+                    return {
+                        text: it.text, why: it.why, by: it.by, at: it.at,
+                        characters: it.characters,
+                        //HOW MUCH BIGGER OR SMALLER, said plainly. A skill that
+                        //halved is a different kind of proposal from one that
+                        //gained a paragraph, and that is visible before reading
+                        //either.
+                        was: it.wasCharacters,
+                        replaced: it.replaced || null
+                    };
+                })()
             };
         }
     }));
@@ -1423,6 +1465,180 @@ async function plugin(imports, register) {
             if (a.holding === false || a.holding === 'false') held.delete(key);
             else held.set(key, new Date().toISOString());
             return { which: key, holding: held.has(key) };
+        }
+    }));
+
+    //---- PROPOSING ONE, WHICH IS THE SUPERVISOR'S HALF ---------------------
+    //
+    //THE SAME SHAPE AS A JOB, A PROMPT OR A CONTRACT. It writes; a person reads
+    //and decides. `jobSave` already says it out loud — "what it writes is
+    //unapproved and cannot run until a person reads it" — and a skill is the one
+    //document that decides what the supervisor believes it is, so it is the last
+    //thing that should be the exception.
+    //
+    //IT MAY NOT WRITE THE SERVED FILE. `skillSave` is a person's door and stays
+    //one; this puts text somewhere nothing serves. The difference is not a
+    //convention: a proposal in the provisioning folder would be fetched on the
+    //next waking, which is a supervisor rewriting its own instructions.
+    //
+    //ONE PER SKILL, REPLACED RATHER THAN QUEUED. Two proposals for one document
+    //is a decision about which to read first that nobody asked for; the newer
+    //one is what it thinks now.
+    //
+    //IT HAS TO SAY WHY. A diff without an argument is a change somebody has to
+    //reconstruct the reasoning for before they can agree with it — and the
+    //reasoning is the part a person is actually approving.
+    undo.push(actions.define('skillPropose', {
+        about: 'Propose a change to a skill. It waits for a person: nothing is served until one approves it',
+        takes: ['which', 'text', 'from', 'why'],
+        run: function (args) {
+            var a = args || {};
+            var which = String(a.which || 'supervisor');
+            var one = skillNamed(which);
+
+            var text = a.text;
+            if (a.from && (text == null || text === '')) {
+                try { text = fs.readFileSync(String(a.from), 'utf8'); }
+                catch (e) { throw new Error('Could not read "' + a.from + '": ' + e.message); }
+            }
+
+            var body = String(text == null ? '' : text);
+            if (!body.trim()) {
+                throw new Error('A skill with nothing in it would leave the next waking with no instructions '
+                    + 'at all. Say what it should be.');
+            }
+            if (!/^---\s*\n[\s\S]*?\bname:/.test(body) || !/\bdescription:/.test(body)) {
+                throw new Error('A skill starts with frontmatter carrying "name:" and "description:" — '
+                    + 'without it nothing loads it.');
+            }
+
+            var why = String(a.why == null ? '' : a.why).trim();
+            if (!why) {
+                throw new Error('Say why. A proposed skill with no argument for it is a diff somebody has to '
+                    + 'reconstruct the reasoning for before they can agree with it, and the reasoning is what '
+                    + 'is actually being approved.');
+            }
+
+            //WHAT IT IS PROPOSING TO CHANGE, kept beside the proposal. Read six
+            //weeks later, "the skill as it was" is the half that says what this
+            //would have done.
+            var was = '';
+            try { was = fs.readFileSync(skillFile(one.stage), 'utf8'); } catch (e) { was = ''; }
+
+            var all = proposals.read({}) || {};
+            var already = all[which] || null;
+
+            all[which] = {
+                which: which,
+                text: body,
+                why: why,
+                by: actions.whoAsked(a),
+                at: new Date().toISOString(),
+                characters: body.length,
+                wasCharacters: was.length,
+                //REPLACED, NOT QUEUED — and it says so, because a proposal that
+                //quietly disappeared is one somebody is still waiting to read.
+                replaced: already ? already.at : null
+            };
+            proposals.write(all);
+
+            log.on('supervisor').warn('a change to ' + one.title + ' is proposed and waiting on a person'
+                + (already ? ' (replacing one from ' + already.at + ')' : '') + ' — ' + why.slice(0, 160));
+
+            return {
+                which: which, proposed: true, characters: body.length,
+                was: was.length, replaced: already ? already.at : null,
+                note: 'Proposed, and nothing is served from it. ' + one.title + ' is unchanged until a person '
+                    + 'approves it — skillApprove, or skillReject with a reason.'
+            };
+        }
+    }));
+
+    //---- AND THE PERSON'S HALF ---------------------------------------------
+    //
+    //APPROVING IS WRITING IT, through the same door a person writes any skill
+    //with, so there is one path that changes what a machine is served and one
+    //set of rules on it — the frontmatter check, the empty check, and the
+    //handshake with a window that has unsaved edits.
+    undo.push(actions.define('skillApprove', {
+        about: 'Approve a proposed skill: it becomes the one served from the next waking',
+        takes: ['which', 'force'],
+        protect: true,
+        run: async function (args) {
+            var a = args || {};
+            var which = String(a.which || 'supervisor');
+            skillNamed(which);
+
+            var all = proposals.read({}) || {};
+            var it = all[which];
+            if (!it) throw new Error('Nothing is proposed for "' + which + '".');
+
+            var said = await actions.call('skillSave', {
+                which: which, text: it.text, force: a.force
+            });
+
+            //ONLY WHEN IT LANDED. `skillSave` refuses while a window holds
+            //unsaved edits, and dropping the proposal on a refusal would lose
+            //the thing that was waiting to be read.
+            if (said && said.saved === false) return said;
+
+            delete all[which];
+            proposals.write(all);
+
+            log.on('supervisor').good('the proposed change to ' + which + ' was approved and is now what is served'
+                + ' — it was proposed because: ' + String(it.why).slice(0, 160));
+
+            return Object.assign({}, said, {
+                approved: true, why: it.why, proposedBy: it.by, proposedAt: it.at,
+                note: 'Approved. It is what the next waking is given. Proposed because: ' + it.why
+            });
+        }
+    }));
+
+    undo.push(actions.define('skillReject', {
+        about: 'Throw away a proposed skill. Say why — that answer is the whole of what it learns',
+        takes: ['which', 'why'],
+        run: function (args) {
+            var a = args || {};
+            var which = String(a.which || 'supervisor');
+            skillNamed(which);
+
+            var why = String(a.why == null ? '' : a.why).trim();
+            //THE REASON IS THE POINT. A proposal that is silently dropped teaches
+            //nothing, and the same one comes back next week; the sentence saying
+            //no is the only thing that changes what is proposed next.
+            if (!why) {
+                throw new Error('Say why it is being turned down. That sentence is the whole of what the next '
+                    + 'proposal has to go on — without it the same one comes back.');
+            }
+
+            var all = proposals.read({}) || {};
+            var it = all[which];
+            if (!it) throw new Error('Nothing is proposed for "' + which + '".');
+
+            delete all[which];
+            proposals.write(all);
+
+            //SAID WHERE IT WILL BE READ. The supervisor reads the conversation at
+            //the head of every waking; a refusal filed only in a log is one it
+            //never sees.
+            //NOT SWALLOWED. The first version of this wrapped the call in a
+            //`catch` that dropped the error, got the argument shape wrong, and
+            //reported "it has been told why" about a message that was never
+            //written — the exact failure this whole day was spent finding.
+            talk.say({
+                who: 'person',
+                via: 'window',
+                text: 'The proposed change to your skill was turned down: ' + why
+                    + ' (you had asked because: ' + String(it.why).slice(0, 200) + ')'
+            });
+
+            log.on('supervisor').warn('a proposed change to ' + which + ' was turned down — ' + why.slice(0, 160));
+
+            return {
+                which: which, rejected: true, why: why, hadAsked: it.why,
+                note: 'Thrown away, and it has been told why.'
+            };
         }
     }));
 

@@ -33,7 +33,18 @@ function aHostWith(files) {
     return {
         app: { host: { actions: { define: (name, spec) => { defined.set(name, spec); return () => {}; } } } },
         log: { on: () => ({ good() {}, warn() {}, bad() {}, info() {} }) },
-        state: { app: { doc: () => ({ get: () => ({}), set() {} }) } },
+        //A DOC IS `read`/`write`, which this stub did not have — nothing in
+        //this file had ever asked one for anything. `skillPropose` keeps what
+        //is waiting in one, so the fake now answers the interface the real one
+        //has rather than a shape nobody checked.
+        state: {
+            app: {
+                doc: () => {
+                    let held = {};
+                    return { read: (or) => (held === null ? (or || {}) : held), write: (v) => { held = v; } };
+                }
+            }
+        },
         ours: {},
         guestApi: { api: () => () => {} },
         provision: {
@@ -220,7 +231,19 @@ test('and a supervisor could not call one anyway', async () => {
     //WHERE "IT MAY NOT REWRITE ITS OWN INSTRUCTIONS" ACTUALLY LIVES. Not in a
     //refusal here — in the allowlist, which is the only door it has.
     const allowed = require('../../src/app/supervisor/allowed');
-    ['skillSave', 'skillHolding', 'skills'].forEach((name) => {
+    ['skillSave', 'skillHolding', 'skills', 'skillApprove'].forEach((name) => {
         assert.equal(allowed.may(name), false, name + ' is on the supervisor\'s list');
     });
+
+    //---- AND THE ONE THING IT MAY DO WITH THEM -------------------------
+    //
+    //IT MAY ASK. The line is between proposing and approving, exactly as it is
+    //for a job, a prompt and a contract — and a system meant to get better at
+    //this over time cannot be shut out of the one document that says what it
+    //is. What it writes is served to nobody until a person moves it.
+    //
+    //ASSERTED HERE BECAUSE THE ALLOWLIST IS THE ONLY DOOR. A refusal written
+    //anywhere else is a second opinion about the same question.
+    assert.equal(allowed.may('skillPropose'), true,
+        'it cannot say what it thinks is wrong with its own instructions');
 });

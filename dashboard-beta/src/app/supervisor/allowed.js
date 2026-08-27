@@ -242,6 +242,28 @@ var MAY = {
   promptSave: 'propose a prompt, or a change to one. It waits for a person the same way',
   contractSave: 'propose a contract, or a change to one. It waits for a person the same way',
 
+  // ---- AND ITS OWN INSTRUCTIONS, WHICH IS THE ONE IT WAS LOCKED OUT OF -----
+  //
+  // A system meant to get better at this over time cannot be shut out of the one
+  // document that says what it is. It had no skill action at all: it could not
+  // read its own instructions as a tool, and could not say what it thought was
+  // wrong with them.
+  //
+  // THE SAME SHAPE AS THE THREE ABOVE, and for the same reason. It proposes; a
+  // person approves. `skillPropose` writes somewhere nothing serves — see
+  // ./server.js, where a proposal is deliberately kept out of the provisioning
+  // folder, because a proposal a machine could fetch is a supervisor rewriting
+  // its own instructions with one extra step.
+  //
+  // NO `skills` EITHER, WHICH WAS ALREADY DECIDED. The plain read is off this
+  // list deliberately — see test/tabs/supervisor-skills.test.js, which asserts
+  // it — and nothing is lost by that: the document is fetched onto the machine
+  // at the head of every waking, so it is already in front of it. What it did
+  // not have was a way to say what it thought was wrong with it.
+  //
+  // NO `skillApprove` AND NO `skillSave` HERE, and that is the whole line.
+  skillPropose: 'propose a change to a skill, saying why. Nothing is served from it until a person approves it',
+
   // ---- and what it may send onward -----------------------------------------
   //
   // THE FAR END OF THE SAME FLOW, and the reason a supervisor exists: work that
