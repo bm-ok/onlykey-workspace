@@ -89,7 +89,28 @@ async function plugin(imports, register) {
     //AND WHAT THE PROJECT BRINGS. Outside the app on purpose: project-specific
     //content is exactly what belongs there, and it is why the check that keeps
     //this app generic does not scan it.
-    var workspaceDir = process.env.OKC_PROVISION_DIR || null;
+    //
+    //---- THE DEFAULT CAME ACROSS AS `null` -----------------------------------
+    //
+    //The app being ported from falls back to <repo>/workspace/provision and this
+    //did not, so the project's half was fetched only if somebody happened to set
+    //an environment variable \u2014 and nothing anywhere sets it.
+    //
+    //IT IS INVISIBLE, BECAUSE A SUPERVISOR STILL WORKS. `supervisor-user.sh` is
+    //one of the app's OWN scripts and installs Claude itself, so supervisor
+    //machines came up complete and proved the whole install path. A runner's
+    //Claude comes from the project's `extra-user.sh` \u2014 the app's
+    //`toolchain-user.sh` deliberately does not install it \u2014 so every runner
+    //built here came up without one, installed cleanly, snapshotted, reported
+    //ready, and then refused its first job with "claude is not installed on this
+    //machine". Fifteen minutes to find that out, with nothing in the install log
+    //saying a script had been skipped, because none had: there was no second
+    //folder to read.
+    //
+    //`searchPath` DROPS A FOLDER THAT IS NOT THERE, so naming one costs nothing
+    //when a project brings no scripts of its own \u2014 see ./scripts.js.
+    var workspaceDir = process.env.OKC_PROVISION_DIR
+        || path.join(__dirname, '..', '..', 'workspace', 'provision');
 
     var scripts = makeScripts({ appDir: appDir, workspaceDir: workspaceDir });
 
