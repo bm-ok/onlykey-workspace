@@ -112,11 +112,31 @@ module.exports = function ours(deps) {
 
     //FORGETTING IS NOT DELETING, and the message says so because the two are one
     //click apart and only one of them can be undone.
-    function forget(name) {
+    //---- AND THE SENTENCE HAS TO KNOW WHICH OF THE TWO HAPPENED ----------
+    //
+    //THIS IS CALLED BY BOTH DOORS AND SAID THE SAME THING TO EACH. `vmForget`
+    //drops the record and leaves the machine alone, where "the virtual machine
+    //itself was not deleted" is the whole point. `vmRemove` destroys the machine
+    //and its disks FIRST and then calls this, so the log read:
+    //
+    //    VBoxManage unregistervm beta-worker1 --delete
+    //    beta-worker1 and its disks are gone.
+    //    Removed "beta-worker1" from this app's list. The virtual machine
+    //      itself was not deleted.
+    //
+    //Three lines, the last one contradicting the two above it. Somebody reads
+    //the last line, believes the machine is still in VirtualBox, and either goes
+    //looking for something that is not there or leaves alone something they
+    //meant to clean up.
+    //
+    //ASKED OF THE CALLER, because only the caller knows. The default is the
+    //cautious one: a bare `forget` has not deleted anything.
+    function forget(name, alsoDestroyed) {
         var vm = get(name);
         write(read().filter(function (v) { return v.name !== name; }));
-        say('vm', name).info('Removed "' + name + '" from this app\'s list. '
-            + 'The virtual machine itself was not deleted.');
+        say('vm', name).info(alsoDestroyed
+            ? 'Removed "' + name + '" from this app\'s list, and its disks went with it.'
+            : 'Removed "' + name + '" from this app\'s list. The virtual machine itself was not deleted.');
         return { forgotten: vm.name };
     }
 

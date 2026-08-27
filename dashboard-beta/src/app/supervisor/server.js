@@ -255,32 +255,39 @@ async function plugin(imports, register) {
             //not be watching a spinner for it. What it says arrives in the
             //conversation, and the conversation is on screen.
             //
-            //OFF BY DEFAULT, because a sentence typed here otherwise starts a
-            //machine and spends a model's time.
-            var wakes = false;
-            try { wakes = imports.settings.read().supervisorWakes === true; }
-            catch (e) { /* no settings is not a reason to lose the message */ }
-
-            if (wakes) {
-                //ALREADY THINKING IS `supervisorWake`'s OWN QUESTION. It folds a
-                //second call into the turn in flight rather than starting two —
-                //see `alsoWake` — so asking here as well would be a second
-                //opinion about the same thing, and the two would drift.
-                actions.call('supervisorWake', { why: 'you said something' })
-                    .catch(function (e) {
-                        say('supervisor').warn('it could not be woken: ' + e.message);
-                    });
-            }
+            //---- SPEAKING TO IT IS THE ASKING -----------------------------
+            //
+            //THIS WAS GATED ON `supervisorWakes` AND IT IS THE WRONG GATE. That
+            //setting is about the supervisor waking for reasons NOBODY ASKED FOR
+            //— ../queue/dispatching.js reads the same flag to decide whether the
+            //queue may wake it after a task, which is the thing that should need
+            //granting. Somebody typing a sentence and pressing send has already
+            //asked; making that a second, separate permission means a message
+            //sits unread beside a machine that is up, signed in and idle.
+            //
+            //THE COST ARGUMENT IS REAL AND POINTS THE OTHER WAY. Yes, this
+            //starts a machine turn and spends a model's time — that is what was
+            //being asked for. The old note admitted it: it told somebody to go
+            //and press "Wake it", which spends exactly the same thing, one step
+            //later, having first shown them a message that looked ignored.
+            //
+            //NOT AWAITED. A turn is the better part of a minute — the machine
+            //may have to start first — and somebody who typed a sentence should
+            //not be watching a spinner for it. What it says arrives in the
+            //conversation, and the conversation is on screen.
+            //
+            //ALREADY THINKING IS `supervisorWake`'s OWN QUESTION. It folds a
+            //second call into the turn in flight rather than starting two — see
+            //`alsoWake` — so asking here as well would be a second opinion about
+            //the same thing, and the two would drift.
+            actions.call('supervisorWake', { why: 'you said something' })
+                .catch(function (e) {
+                    say('supervisor').warn('it could not be woken: ' + e.message);
+                });
 
             return Object.assign({}, line, {
-                woke: wakes,
-                //AND THE NOTE SAYS WHAT TO PRESS. "It reads this when it next
-                //wakes" is true and leaves somebody watching a message sit
-                //unread with nothing saying what would change that.
-                note: wakes
-                    ? 'Said, and it is waking to read it. What it says back appears here.'
-                    : 'Said. It reads this when it next wakes — press "Wake it" to do that now, or '
-                        + 'switch on "Answers by itself".'
+                woke: true,
+                note: 'Said, and it is waking to read it. What it says back appears here.'
             });
         }
     }));

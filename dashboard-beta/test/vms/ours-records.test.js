@@ -94,9 +94,42 @@ test('each stage in turn, and the later fact wins', () => {
 
     assert.equal(at({}), 'created');
     assert.equal(at({ installing: true }), 'installing');
-    assert.equal(at({ installing: true, reported: 'x' }), 'online');
+
+    //---- EXCEPT `installing`, WHICH IS NOT AN EARLIER FACT ----------------
+    //
+    //This asserted `online`, on the reading that reporting happens after an
+    //install begins. But `installing` is not a record of something that
+    //happened — it is a flag CLEARED when the install ends, so while it is set
+    //the install is happening NOW. And a machine reports throughout one: that
+    //is what fills the live log. So the first line it said flipped this to
+    //`online` and the install was never mentioned again.
+    //
+    //IT MADE A CORRECT GUARD UNREACHABLE. ../../src/app/ui/banners/trouble.js
+    //filters idle machines with `v.stage !== 'installing'` and a comment saying
+    //"it is being built" — so it told somebody to shut down a machine in the
+    //middle of a twenty-five minute install.
+    assert.equal(at({ installing: true, reported: 'x' }), 'installing');
+
     assert.equal(at({ reported: 'x', baseSnapshot: 'base' }), 'ready');
     assert.equal(at({ baseSnapshot: 'base' }, { connected: true }), 'connected');
+});
+
+test('a machine being built can be told from one that has finished', () => {
+    //THE RULE THE BANNER DEPENDS ON, asserted as the banner asks it rather than
+    //as a list of stages: whatever it is called, the two must not be the same
+    //word. They were, for the whole of an install.
+    const mid = stageOf({ installing: true, reported: 'x' }, { live: true, connected: false });
+    const done = stageOf({ reported: 'x', baseSnapshot: 'base' }, { live: true, connected: false });
+
+    assert.notEqual(mid, done, 'a machine mid-install reads the same as one that finished');
+    assert.equal(mid, 'installing');
+});
+
+test('and an agent that is talking is past installing, whatever the flag says', () => {
+    //THE ONE CASE WHERE THE NEWER FACT SHOULD WIN. A flag left set by an install
+    //that ended badly must not make a machine that is up and answering look like
+    //it is still being built.
+    assert.equal(stageOf({ installing: true }, { live: true, connected: true }), 'connected');
 });
 
 test('connected beats everything, because it is the agent talking right now', () => {

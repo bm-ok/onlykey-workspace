@@ -473,7 +473,9 @@ async function plugin(imports, register) {
                     imports.channel.drop(name, 'was deleted');
 
                     var out = await vbox.destroy(name);
-                    return Object.assign({}, out, ours.forget(name));
+                    //DESTROYED, SO SAY SO. See ../../vms/ours/store.js: the
+                    //same call is used by `vmForget`, which does the opposite.
+                    return Object.assign({}, out, ours.forget(name, true));
                 });
             }
         }));

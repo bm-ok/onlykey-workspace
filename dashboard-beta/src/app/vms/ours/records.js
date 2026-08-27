@@ -72,11 +72,27 @@ function stageOf(vm, seen) {
     var s = seen || {};
     var v = vm || {};
 
+    //---- ORDER IS THE WHOLE OF THIS, AND IT WAS WRONG -------------------
+    //
+    //`installing` WAS BELOW `reported` AND SO COULD NEVER BE REACHED. A machine
+    //reports while it is being installed — that is what fills the live log — so
+    //the first line it says flips this to "online" and the install is never
+    //mentioned again. The stage said `online` for the twenty-five minutes a
+    //machine was being built, with nothing anywhere saying otherwise.
+    //
+    //IT MADE A CORRECT GUARD UNREACHABLE. ../../ui/banners/trouble.js filters
+    //idle machines with `v.stage !== 'installing'` and a comment saying "it is
+    //being built" — right, deliberate, and dead. So the banner told somebody to
+    //shut down a machine in the middle of its install.
+    //
+    //`connected` STAYS ABOVE IT, because a machine whose agent is talking is
+    //past installing whatever a leftover flag says — that is the one case where
+    //the newer fact should win.
     if (!s.live) return 'defined';        //we wrote it down; VirtualBox has no such machine
     if (s.connected) return 'connected';  //its agent is talking to us now
+    if (v.installing) return 'installing';//an unattended install is under way
     if (v.baseSnapshot) return 'ready';   //has a snapshot to reset to
     if (v.reported) return 'online';      //it has reported in at least once
-    if (v.installing) return 'installing';//an unattended install was started
     return 'created';                     //exists, never heard from
 }
 
