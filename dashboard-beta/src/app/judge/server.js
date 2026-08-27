@@ -241,7 +241,22 @@ async function plugin(imports, register) {
                     })();
 
                     return row;
-                });
+                //---- NEWEST FIRST ----------------------------------------
+                //
+                //THIS HAD NO ORDER AT ALL and came out in whatever order the
+                //store had written them, which is oldest first. So the top of
+                //the list was the least interesting thing on it — J4, judged
+                //days ago — and the one just asked for was at the bottom,
+                //below nineteen finished ones, off the end of a short window.
+                //
+                //THE SAME WAY THE TASKS BOARD IS SORTED, by number descending
+                //— see ../queue/server.js. Two lists of the same shape on two
+                //tabs, ordered opposite ways, is a difference nobody decided.
+                //
+                //BY NUMBER RATHER THAN BY DATE, because the number is what the
+                //list is labelled with and what somebody asks for by name. A
+                //list sorted by a field it does not show reads as unsorted.
+                }).sort(function (a, b) { return (b.number || 0) - (a.number || 0); });
 
                 return {
                     judgements: short,
