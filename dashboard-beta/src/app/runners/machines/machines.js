@@ -261,7 +261,7 @@ module.exports = function machines(theme, okc, remember) {
         //THE LIST CAME ACROSS AND THE WAY TO ADD TO IT DID NOT. Every act this
         //pane offers reads. `vmCreate` has been answerable the whole time with
         //nothing anywhere to press it, so a workspace with no machines had a
-        //Runners tab that could only describe an empty list \u2014 and thirty-two
+        //Runners tab that could only describe an empty list — and thirty-two
         //of the thirty-four vm actions were in the same position.
         //
         //THE TWO LISTS ARE FETCHED FIRST, because a dialog cannot wait on a read
@@ -270,7 +270,7 @@ module.exports = function machines(theme, okc, remember) {
         //Typing an absolute path from memory is how a machine gets made with no
         //installer on it.
         //
-        //MAKE, THEN INSTALL \u2014 TWO ACTS, NOT ONE. They fail differently and the
+        //MAKE, THEN INSTALL — TWO ACTS, NOT ONE. They fail differently and the
         //second takes about twenty-five minutes: if the install will not start,
         //the machine still exists and can be told to try again. The app being
         //ported from does the same, for the same reason.
@@ -321,12 +321,12 @@ module.exports = function machines(theme, okc, remember) {
                         {
                             //ON BY DEFAULT, because the ordinary machine made
                             //here is one somebody may end up sitting at, and a
-                            //desktop cannot be added afterwards \u2014 what a machine
+                            //desktop cannot be added afterwards — what a machine
                             //was built to be is a fact about that build.
                             //
                             //AND NOT A QUESTION FOR A SUPERVISOR. One has no X
                             //display at all, so this is disabled and off the
-                            //moment the box below is ticked \u2014 see the kit, which
+                            //moment the box below is ticked — see the kit, which
                             //draws a disabled checkbox unticked and submits it as
                             //false, so what is asked for is what was shown.
                             name: 'desktop', label: 'Give it a desktop', type: 'checkbox', value: true,
@@ -388,7 +388,7 @@ module.exports = function machines(theme, okc, remember) {
                             //THIS RETURNED THE INSTALL AND THE DIALOG SAT OPEN ON
                             //IT. `vmInstall` holds this host until the installer
                             //has actually started and then runs for another
-                            //twenty-five minutes inside the machine \u2014 so the
+                            //twenty-five minutes inside the machine — so the
                             //form stayed up, looking stuck, over a machine that
                             //already existed and was already installing in the
                             //list behind it.

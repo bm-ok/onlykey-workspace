@@ -205,13 +205,13 @@ function Dialog({ id, spec }) {
     //
     //`disabled` MAY BE A FUNCTION OF THE VALUES SO FAR. Some choices decide
     //others: a supervisor machine has no X display, so "give it a desktop" is
-    //not a question once "supervisor" is ticked \u2014 it is a thing that cannot
+    //not a question once "supervisor" is ticked — it is a thing that cannot
     //happen. Showing it disabled says that; leaving it tickable invites
     //somebody to ask for a machine that cannot be built.
     //
     //DISABLED AND STILL TRUE WOULD BE THE WORST OF BOTH. If a box was ticked
     //before the thing that disables it, the value is still in `values` and
-    //would be SENT \u2014 so the form would show "no desktop" and ask for one. It
+    //would be SENT — so the form would show "no desktop" and ask for one. It
     //is resolved in ONE place rather than in every caller: a disabled checkbox
     //draws unticked and submits as false, because a value nobody can set is
     //not a value somebody chose.
@@ -237,7 +237,7 @@ function Dialog({ id, spec }) {
             });
 
             //AND A DISABLED CHECKBOX IS OFF, whatever it was before something
-            //else turned it off. See `valueNow` \u2014 this is the same rule, so
+            //else turned it off. See `valueNow` — this is the same rule, so
             //what is sent is what was on the screen.
             (fields || []).forEach(function (f) {
                 if (f.type == 'checkbox' && fieldNow(f).disabled) out[f.name] = false;

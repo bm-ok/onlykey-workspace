@@ -521,8 +521,8 @@ async function plugin(imports, register) {
         //and takes twenty-five minutes against twelve.
         //
         //WHAT WAS LEFT OUT IS RETURNED, NOT DROPPED. A list that silently
-        //shortens is one somebody argues with \u2014 "it is right there in
-        //VirtualBox" \u2014 so the others come back under their own name with the
+        //shortens is one somebody argues with — "it is right there in
+        //VirtualBox" — so the others come back under their own name with the
         //reason, and a pane can offer them to somebody who insists.
         function serverImage(name) {
             var n = String(name || '').toLowerCase();

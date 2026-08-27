@@ -288,7 +288,7 @@ module.exports = function judgements(theme, okc, remember) {
         //
         //TWO CALLS, AND THIS PANE USED TO MAKE ONE. It opened the gate with
         //three sentences ABOUT the comment and posted whatever the judge had
-        //written, sight unseen \u2014 which is the one thing the two-call design
+        //written, sight unseen — which is the one thing the two-call design
         //exists to prevent. `judgementSay` composes what would go up and posts
         //nothing when asked to preview, and the whole reason it does is that
         //what goes out is read first, IN FULL, by the person whose account it
@@ -315,7 +315,7 @@ module.exports = function judgements(theme, okc, remember) {
                     //THE WHOLE THING, NOT A SUMMARY OF IT. Summarising a judge's
                     //reservations means choosing which of them the author gets
                     //to see, and the section a summary drops first is "what I
-                    //could not check" \u2014 the one that makes the rest honest.
+                    //could not check" — the one that makes the rest honest.
                     reads: p.body,
                     readsAre: 'What will be posted',
                     cost: 'A comment on somebody else\u2019s pull request. It can be deleted on GitHub, not from here.',

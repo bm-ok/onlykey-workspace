@@ -76,7 +76,7 @@ var header = require('./header');
 //"what does building a machine actually need" is not a question the source can
 //answer. Here it is a list, it is enforced, and a missing one does not build.
 plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir', 'tls', 'cron', 'guestApi',
-    'ssh'];
+    'ssh', 'workspace'];
 plugin.provides = ['provision'];
 async function plugin(imports, register) {
     var log = imports.log.on('vm');
@@ -94,13 +94,13 @@ async function plugin(imports, register) {
     //
     //The app being ported from falls back to <repo>/workspace/provision and this
     //did not, so the project's half was fetched only if somebody happened to set
-    //an environment variable \u2014 and nothing anywhere sets it.
+    //an environment variable — and nothing anywhere sets it.
     //
     //IT IS INVISIBLE, BECAUSE A SUPERVISOR STILL WORKS. `supervisor-user.sh` is
     //one of the app's OWN scripts and installs Claude itself, so supervisor
     //machines came up complete and proved the whole install path. A runner's
-    //Claude comes from the project's `extra-user.sh` \u2014 the app's
-    //`toolchain-user.sh` deliberately does not install it \u2014 so every runner
+    //Claude comes from the project's `extra-user.sh` — the app's
+    //`toolchain-user.sh` deliberately does not install it — so every runner
     //built here came up without one, installed cleanly, snapshotted, reported
     //ready, and then refused its first job with "claude is not installed on this
     //machine". Fifteen minutes to find that out, with nothing in the install log
@@ -108,11 +108,33 @@ async function plugin(imports, register) {
     //folder to read.
     //
     //`searchPath` DROPS A FOLDER THAT IS NOT THERE, so naming one costs nothing
-    //when a project brings no scripts of its own \u2014 see ./scripts.js.
-    var workspaceDir = process.env.OKC_PROVISION_DIR
-        || path.join(__dirname, '..', '..', 'workspace', 'provision');
+    //when a project brings no scripts of its own — see ./scripts.js.
+    //---- AND IT IS THE WORKSPACE'S FOLDER, NOT A GUESS AT THE LAYOUT --------
+    //
+    //The first repair of this walked up from `__dirname` to <repo>/workspace,
+    //which is this repository's shape and no other's — the one thing nothing
+    //in this app is allowed to know. ../../workspace is the plugin that owns
+    //the question, so it is asked.
+    //
+    //ASKED EACH TIME, NOT ONCE. `workspace.dir()` is async and refuses when
+    //nothing is open, and the answer changes when somebody opens a different
+    //workspace — so this keeps the last good answer and hands ./scripts.js a
+    //function rather than a value. Read once at startup it would be null on a
+    //cold boot and stale for every workspace after the first.
+    var projectDir = null;
 
-    var scripts = makeScripts({ appDir: appDir, workspaceDir: workspaceDir });
+    async function noteProjectDir() {
+        try {
+            projectDir = path.join(await imports.workspace.dir(), 'provision');
+        } catch (e) {
+            //NO WORKSPACE OPEN IS NOT A FAULT. Nothing can be built without one
+            //either, and `searchPath` drops a folder that is not there.
+            projectDir = null;
+        }
+        return projectDir;
+    }
+
+    var scripts = makeScripts({ appDir: appDir, workspaceDir: function () { return projectDir; } });
 
     var spec = makeSpec({
         //ISSUED BY THE THING THAT CHECKS THEM. A token this app makes and a
@@ -173,6 +195,11 @@ async function plugin(imports, register) {
         if (!vbox.available()) {
             throw new Error('VirtualBox is not installed, or not where this expected to find it.');
         }
+
+        //WHICH WORKSPACE THIS IS BEING BUILT FOR, asked now rather than at
+        //startup: a machine is built for the workspace that is open when it is
+        //built, and that is where its scripts come from.
+        await noteProjectDir();
 
         //---- THE APP'S OWN SSH KEY, UNLESS ONE WAS NAMED ------------------
         //

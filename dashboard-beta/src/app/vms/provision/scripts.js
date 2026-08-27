@@ -97,7 +97,21 @@ module.exports = function scripts(deps) {
     //
     //THE PROJECT'S IS FIRST, so a replacement wins.
     var appDir = d.appDir;
-    var workspaceDir = d.workspaceDir || null;
+
+    //WHERE THE PROJECT'S HALF IS, ASKED EACH TIME RATHER THAN FIXED AT STARTUP.
+    //
+    //It may be a plain path or a function that returns one. A function because
+    //the folder is the OPEN WORKSPACE's, which is not known when this module is
+    //built and changes when somebody opens a different one — a value read once
+    //would be a stale answer for every workspace after the first.
+    //
+    //`null` IS AN ORDINARY ANSWER: no workspace open yet, or a project that
+    //brings no scripts of its own. `searchPath` drops it.
+    var askedFor = d.workspaceDir || null;
+    function workspaceDirNow() {
+        var at = typeof askedFor === 'function' ? askedFor() : askedFor;
+        return at || null;
+    }
 
     var there = d.there || function (p) {
         try { return fs.existsSync(p); } catch (e) { return false; }
@@ -106,7 +120,7 @@ module.exports = function scripts(deps) {
     var readDir = d.readDir || function (p) { return fs.readdirSync(p); };
 
     function searchPath() {
-        return [workspaceDir, appDir].filter(function (dir) { return dir && there(dir); });
+        return [workspaceDirNow(), appDir].filter(function (dir) { return dir && there(dir); });
     }
 
     //ONLY EVER A PLAIN FILENAME, AND ONLY INSIDE ONE OF THOSE DIRECTORIES.
@@ -173,7 +187,8 @@ module.exports = function scripts(deps) {
 
     //WHERE A SCRIPT CAME FROM, so the log can say whose copy ran.
     function sourceOf(file) {
-        return (workspaceDir && String(file).indexOf(workspaceDir) === 0) ? 'the project' : 'the app';
+        var ws = workspaceDirNow();
+        return (ws && String(file).indexOf(ws) === 0) ? 'the project' : 'the app';
     }
 
     //WHICH STAGE A REQUESTED FILENAME BELONGS TO, so a request for one by name
