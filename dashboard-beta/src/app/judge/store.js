@@ -54,6 +54,12 @@ var crypto = require('crypto');
 //here reads as "somebody looked and would not say". They are opposite answers.
 var STATES = ['draft', 'queued', 'given', 'done', 'failed'];
 
+//THE TWO WAYS A JUDGEMENT IS OVER, as a set rather than as a comparison spelt
+//out at each site. ../queue/server.js has had one of these since before this
+//store had a second ending; the two must agree about what "still going" means
+//or the board and the queue answer differently about the same record.
+var ENDED = { done: true, failed: true };
+
 //PENDING IS A VERDICT. A judge that read a change and could not settle it has
 //reached a real conclusion — "I looked and I cannot say" — and it is different
 //from having not looked. Without it an unsettled reading has to pretend to be
@@ -219,8 +225,15 @@ module.exports = function judgements(docs, log) {
         //and the board then has to explain which is the answer. Re-judging AFTER
         //one is decided is the case that matters and is allowed — that is the
         //sequence the record is built for.
+        //
+        //`ENDED` RATHER THAN `!== 'done'`, because there are two ways to end
+        //now. A judgement whose dispatch died never read anything and reached no
+        //verdict, so it is not a competing answer to anything — and reading it
+        //as one blocked writing a fresh judgement about a change nobody had
+        //looked at yet. Which is worse than it sounds: the way out it offered
+        //was "wait for it", and it was never going to run.
         var already = list.filter(function (j) {
-            return j.subject && j.subject.name === subject.name && j.state !== 'done';
+            return j.subject && j.subject.name === subject.name && !ENDED[j.state];
         })[0];
         if (already) {
             throw new Error(refOf(already.number) + ' is already reading ' + subject.name + ' and has not '

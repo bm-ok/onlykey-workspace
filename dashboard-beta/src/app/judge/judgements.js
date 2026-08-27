@@ -186,7 +186,7 @@ module.exports = function judgements(theme, okc, remember) {
             <div className="card">
                 <div className="card-title">
                     <Mono>{j.ref || ('J' + j.number)}</Mono>{' '}
-                    <Badge kind={j.state == 'done' ? '' : 'run'}>{j.state}</Badge>{' '}
+                    <Badge kind={j.state == 'done' ? '' : j.state == 'failed' ? 'bad' : 'run'}>{j.state}</Badge>{' '}
                     {j.verdict
                         ? <Badge kind={j.verdict == 'accepted' ? 'ok' : 'bad'}>{j.verdict}</Badge>
                         : null}
@@ -429,7 +429,7 @@ module.exports = function judgements(theme, okc, remember) {
                                         <CardTitle>
                                             <span><Mono>{id}</Mono>{' ' + (j.title || subjectOf(j).name)}</span>
                                             <Grow />
-                                            <Badge kind={j.state == 'done' ? '' : 'run'}>{j.state}</Badge>
+                                            <Badge kind={j.state == 'done' ? '' : j.state == 'failed' ? 'bad' : 'run'}>{j.state}</Badge>
                                             {j.crashed === true ? <Badge kind="bad">crashed</Badge> : null}
                                         </CardTitle>
                                         <CardSub><Mono>{subjectOf(j).name}</Mono></CardSub>
