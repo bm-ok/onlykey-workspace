@@ -137,8 +137,12 @@ async function plugin(imports, register) {
         });
     }
 
-    function close() {
-        roster.dropAll('this host is shutting down');
+    //A REASON, BECAUSE THERE ARE NOW TWO OF THEM. This is called on shutdown and
+    //on every reload of this half, and a machine told "this host is shutting
+    //down" by a save is being told something untrue — in the one log a person
+    //reads to find out why a machine went quiet.
+    function close(why) {
+        roster.dropAll(why || 'this host is shutting down');
         return new Promise(function (done) {
             if (!server) return done();
             server.close(function () { server = null; done(); });
@@ -146,7 +150,44 @@ async function plugin(imports, register) {
     }
 
     await register(null, {
-        onDestroy: stopSweeping,
+        //---- AND THE LISTENER GOES WITH THE RELOAD --------------------------
+        //
+        //THIS TOOK OFF THE SWEEPER AND NOTHING ELSE. The TLS server, the
+        //`connection` handler bound into it, and every agent in the roster were
+        //all left behind by each reload of this half — so after N saves a
+        //machine's line was being read by N parsers and every command written to
+        //it N times.
+        //
+        //IT IS INVISIBLE UNTIL IT IS NOT, which is what makes it worth the
+        //words. Nothing fails: the machine does the work, twice, and the second
+        //copy collides with the first somewhere deep enough that the error names
+        //something else entirely. It surfaced as one press of "Open the sign-in
+        //page" starting two sign-ins, opening two browser windows, and the
+        //second one failing its auth against a desk the first was already
+        //holding — none of which points here.
+        //
+        //AND IT IS A FRESH APP'S BUG TOO, in the sense that matters: a restart
+        //hides it completely, so every measurement taken early in a session is
+        //right and every one taken late is quietly doubled. That is worse than a
+        //bug that is always there.
+        //
+        //THE CONTRACT IS ALREADY WRITTEN DOWN TWICE. See ../../core/io/server.js,
+        //which takes off its own `connection` handler and says why it may not use
+        //`removeAllListeners`, and ../../core/okc/server.js: "each reload would
+        //leave another one open and another set of handlers listening, which is
+        //what the whole onDestroy contract is for". This half was the one
+        //subsystem not honouring it.
+        //
+        //`close()` IS WHAT SHUTDOWN ALREADY CALLS, so this is not a second way to
+        //stop: it drops the roster with a reason and closes the server. A reload
+        //and a shutdown want exactly the same thing here.
+        onDestroy: function () {
+            stopSweeping();
+            //THE REASON IS SAID, because a machine that goes quiet with nothing
+            //explaining it is the state the sweeper above exists to notice — and
+            //this one is ordinary, not a fault.
+            return close('the server half is reloading');
+        },
         channel: {
             listen: listen,
             close: close,
