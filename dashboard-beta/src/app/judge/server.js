@@ -708,81 +708,22 @@ async function plugin(imports, register) {
             }
         }));
 
-        //---- PUTTING ONE IN THE QUEUE ------------------------------------
+        //---- THE QUEUE'S HALF OF THIS LIVES IN ../queue ---------------------
         //
-        //AHEAD OF ANY TASK WAITING, and that is a rule rather than a
-        //convenience: a judgement READS work that is already waiting to land,
-        //and a task MAKES more of it. Letting tasks go first means the thing
-        //that decides whether existing work is good queues behind the thing
-        //that produces more of it.
+        //`judgementQueue` AND `judgementUnqueue` WERE DEFINED HERE, and putting
+        //a piece of work into the queue is the queue's rule, not this plugin's.
+        //They decided what may enter it, what goes ahead of what, and what a
+        //finished record means — three answers the task half of the same board
+        //already had, written a second time here because judging arrived as its
+        //own system.
         //
-        //WITHOUT THIS A JUDGEMENT COULD BE ASKED FOR AND NEVER RUN. That is
-        //where this host was: `judgementCreate` was ported and this was not, so
-        //a supervisor could write down a question and nothing would ever read
-        //it — the gate its whole method turns on, with nothing behind it.
-        undo.push(actions.define('judgementQueue', {
-            about: 'Put a judgement in the queue. It goes ahead of tasks, because it reads work that is '
-                + 'already waiting',
-            needs: 'workspace',
-            takes: ['ref', 'id'],
-            run: async function (args) {
-                var a = args || {};
-                var it = await store.get(a.ref || a.id);
-                var ref = it.ref || store.refOf(it.number);
-
-                //ALREADY DECIDED IS NOT REOPENED. The record of what was thought,
-                //and when, is the thing being kept — a second reading is a second
-                //judgement, with its own question and its own answer.
-                if (it.state === 'done') {
-                    throw new Error(ref + ' has already been decided. Ask for a new judgement rather than '
-                        + 'reopening one — the record of what was thought, and when, is the thing being kept.');
-                }
-
-                //A PERSON'S JUDGEMENT HAS NO MACHINE IN IT. Queueing one would
-                //hand a reading somebody meant to do themselves to a worker.
-                if (it.by === 'person') {
-                    throw new Error(ref + ' is for a person to read. The queue would give it to a machine '
-                        + 'and run a worker over it. Record what you decide with judgementVerdict instead.');
-                }
-
-                //AND NOTHING TO RUN IS NOTHING TO QUEUE. A judgement without a
-                //chain is an opinion with nothing behind it.
-                if (!it.job) {
-                    throw new Error(ref + ' has no job, so there is nothing for a machine to run. A '
-                        + 'judgement without a chain is an opinion with nothing behind it.');
-                }
-
-                var queued = await store.update(it.id, { state: 'queued' });
-                log.on('judging', it.id).good(ref + ' queued — reads '
-                    + ((it.subject && it.subject.name) || 'a change'));
-
-                return Object.assign({}, queued, {
-                    note: 'Queued ahead of any task waiting. A judgement reads work that is already waiting '
-                        + 'to land; a task makes more of it.'
-                });
-            }
-        }));
-
-        undo.push(actions.define('judgementUnqueue', {
-            about: 'Take a judgement back out of the queue. Does not stop one already running',
-            needs: 'workspace',
-            takes: ['ref', 'id'],
-            run: async function (args) {
-                var a = args || {};
-                var it = await store.get(a.ref || a.id);
-                var ref = it.ref || store.refOf(it.number);
-
-                //ONE ALREADY GIVEN OUT IS NOT CALLED BACK BY THIS. The machine is
-                //reading, and stopping it is a different act on a different
-                //thing — said rather than silently doing half of it.
-                if (it.state !== 'queued') {
-                    throw new Error(ref + ' is "' + it.state + '", not queued. One already given out is not '
-                        + 'called back by this — the machine is reading and would have to be stopped on it.');
-                }
-
-                return await store.update(it.id, { state: 'draft' });
-            }
-        }));
+        //THIS PLUGIN KEEPS WHAT JUDGING MEANS: what was read, what it found,
+        //what it concluded, what a person decided, and whether a reading still
+        //describes the code. ../queue owns whether any of it runs.
+        //
+        //IT ALREADY HAD WHAT IT NEEDED. ../queue consumes `judge` and holds this
+        //store, so the acts moved without either plugin learning anything new
+        //about the other.
 
         //---- what has been read about a change, for whoever is sending it ---
         //
