@@ -64,6 +64,25 @@ module.exports = function spec(deps) {
         //somebody can remove is not a guarantee.
         var supervisor = yes(it.supervisor);
 
+        //---- AND A SUPERVISOR NEVER GETS A DESKTOP -------------------------
+        //
+        //IT HAS NO X DISPLAY AT ALL. A supervisor is installed slim \u2014 node and
+        //Claude Code \u2014 and gets none of the project's provisioning, so asking
+        //for a desktop on one is asking for something that cannot be built.
+        //
+        //THESE WERE READ INDEPENDENTLY and both were kept, so `vmCreate` would
+        //happily record a supervisor that wanted a desktop and then build one
+        //without: the record said one thing and the machine was another, and
+        //every reader afterwards believed the record. The window refuses the
+        //combination now, and a rule the window enforces alone is a rule the
+        //command line does not have.
+        //
+        //TAKEN QUIETLY RATHER THAN REFUSED, because it is not a mistake worth
+        //stopping for \u2014 nothing is lost, the machine is the one that was asked
+        //for in every other respect, and `desktop: false` is what a supervisor
+        //means. What must not happen is the record claiming otherwise.
+        if (supervisor) desktop = false;
+
         return {
             name: name,
 

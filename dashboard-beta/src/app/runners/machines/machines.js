@@ -163,8 +163,79 @@ module.exports = function machines(theme, okc, remember) {
                         {snaps.length ? snaps.join(', ') : <span className="muted">none</span>}
                         {v.baseSnapshot ? <span className="muted">{' — base is ' + v.baseSnapshot}</span> : null}
                     </KvRow>
+                    <KvRow label="stage">{v.stage || <span className="muted">not recorded</span>}</KvRow>
+                </Kv>
+
+                {/*---- HOW IT WAS BUILT, WHICH IS A DIFFERENT QUESTION --------
+
+                    WHAT A MACHINE IS DOING CHANGES AND WHAT IT WAS BUILT AS DOES
+                    NOT, so they are two tables rather than one long one. The
+                    live half above is what somebody checks repeatedly; this half
+                    is what they read once and copy values out of.
+
+                    AND THE TWO THAT CANNOT BE CHANGED AT ALL COME FIRST. A
+                    desktop and a supervisor are decided when the machine is
+                    made and never again \u2014 ../../vms/provision/spec.js says so
+                    and the dialog says so \u2014 and neither was shown ANYWHERE
+                    afterwards. So the one pair of facts you can never fix by
+                    changing your mind was the one pair you could not look up.
+
+                    NOTHING SECRET IS DRAWN HERE. `spec` also carries the
+                    machine's password, its token and an ssh key; `capture`
+                    writes this whole panel to a file with no redaction, so what
+                    is chosen here is chosen deliberately. */}
+                <h2>How it was built</h2>
+                <Kv>
+                    <KvRow label="what kind">
+                        {v.supervisor
+                            ? <span><Badge kind="warn">supervisor</Badge>{' '}
+                                <span className="muted">decides what work to give, and never takes any</span></span>
+                            : <span><Badge>runner</Badge>{' '}
+                                <span className="muted">takes work from the queue</span></span>}
+                    </KvRow>
+                    {/* WHAT IT WAS BUILT WITH, WHICH IS `desktopWanted`. The
+                        first version of this row read `v.desktop` \u2014 which is
+                        what the MACHINE REPORTS, off its agent facts \u2014 and so
+                        said "no" about a machine built with a desktop, for the
+                        whole time it was installing and had not dialled in.
+
+                        THREE ANSWERS, NOT TWO. Built with one and reporting one;
+                        built with one and reporting none, which is a fault worth
+                        seeing; and built with one while nothing has been heard
+                        from it yet, which is ordinary and is not evidence of
+                        anything. Collapsing the last two says a machine is
+                        broken because it is still installing. */}
+                    <KvRow label="desktop">
+                        {v.desktopWanted
+                            ? <span>yes<span className="muted">{' \u2014 a display manager that logs itself in'}</span></span>
+                            : <span>no<span className="muted">{v.supervisor
+                                ? ' \u2014 a supervisor never gets one'
+                                : ' \u2014 terminal only, which boots faster and idles on less'}</span></span>}
+                        {v.desktopWanted && v.connected && !v.desktop
+                            ? <span className="muted">{' \u2014 but it is not reporting one'}</span>
+                            : null}
+                        {v.desktopWanted && !v.connected
+                            ? <span className="muted">{' \u2014 not heard from yet, so it has not said'}</span>
+                            : null}
+                    </KvRow>
                     <KvRow label="made">{when(v.created)}</KvRow>
-                    <KvRow label="size">{(sp.cpus || '?') + ' cpu, ' + (sp.memoryMB || '?') + ' MB, ' + Math.round((sp.diskMB || 0) / 1024) + ' GB'}</KvRow>
+                    <KvRow label="memory">{(sp.memoryMB || '?') + ' MB'}</KvRow>
+                    <KvRow label="processors">{String(sp.cpus || '?')}</KvRow>
+                    <KvRow label="disk">{Math.round((sp.diskMB || 0) / 1024) + ' GB'}</KvRow>
+                    <KvRow label="network">
+                        {sp.network === 'nat'
+                            ? <span>nat<span className="muted">{' \u2014 private, ssh on 127.0.0.1:' + (sp.sshPort || '?')}</span></span>
+                            : <span>bridged{sp.bridge ? <span className="muted">{' on ' + sp.bridge}</span> : null}
+                                <span className="muted">{' \u2014 it can reach this app'}</span></span>}
+                    </KvRow>
+                    <KvRow label="user">{sp.user ? <Mono>{sp.user}</Mono> : <span className="muted">not recorded</span>}</KvRow>
+                    <KvRow label="hostname">{sp.hostname ? <Mono>{sp.hostname}</Mono> : <span className="muted">not recorded</span>}</KvRow>
+                    <KvRow label="installer image">
+                        {sp.iso
+                            ? <Mono>{String(sp.iso).split(/[\\/]/).pop()}</Mono>
+                            : <span className="muted">none \u2014 nothing was installed on it</span>}
+                    </KvRow>
+                    <KvRow label="image type">{sp.ostype || <span className="muted">not recorded</span>}</KvRow>
                 </Kv>
                 {v.description ? <Note>{v.description}</Note> : null}
                 {v.borrowed && v.borrowed.why ? <Note kind="warn">{'borrowed: ' + v.borrowed.why}</Note> : null}

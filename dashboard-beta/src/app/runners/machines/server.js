@@ -506,15 +506,46 @@ async function plugin(imports, register) {
         //NOT A REFUSAL WHEN THERE ARE NONE. VirtualBox may know of no image at
         //all, and the pane offers a path to type instead — an empty list is an
         //ordinary answer here, not a fault.
+        //---- AND ONLY THE ONES THAT COULD ACTUALLY BUILD A MACHINE ---------
+        //
+        //VirtualBox knows every image it has ever been shown, and most of them
+        //are not an operating system to install. `VBoxGuestAdditions.iso` sat in
+        //this list looking exactly like a choice: pick it and the machine builds,
+        //boots, installs nothing, and the reason points nowhere near the answer.
+        //
+        //UBUNTU SERVER, BECAUSE THAT IS WHAT THIS APP BUILDS. The spec names
+        //`Ubuntu24_LTS_64` and the provisioning is written for it. A desktop
+        //image is not wrong so much as redundant and slow: every machine is
+        //installed from the server image and a desktop is ADDED afterwards when
+        //asked for, so a desktop image arrives with a large one already on it
+        //and takes twenty-five minutes against twelve.
+        //
+        //WHAT WAS LEFT OUT IS RETURNED, NOT DROPPED. A list that silently
+        //shortens is one somebody argues with \u2014 "it is right there in
+        //VirtualBox" \u2014 so the others come back under their own name with the
+        //reason, and a pane can offer them to somebody who insists.
+        function serverImage(name) {
+            var n = String(name || '').toLowerCase();
+            return /ubuntu/.test(n) && /(live-)?server/.test(n);
+        }
+
         undo.push(actions.define('vmIsos', {
-            about: 'Installer images VirtualBox already knows about',
+            about: 'Ubuntu server installer images VirtualBox knows about, which are the ones this app builds from',
             run: async function () {
                 var found = await vbox.isos();
+                var good = found.filter(function (i) { return serverImage(i.name); });
+                var rest = found.filter(function (i) { return !serverImage(i.name); });
+
                 return {
-                    isos: found,
-                    note: found.length
-                        ? found.length + ' image(s) VirtualBox knows of.'
-                        : 'VirtualBox knows of no installer image, so one has to be given by path.'
+                    isos: good,
+                    //NAMED, SO THE ANSWER CAN BE ARGUED WITH.
+                    others: rest,
+                    note: good.length
+                        ? good.length + ' Ubuntu server image(s).'
+                            + (rest.length ? ' ' + rest.length + ' other image(s) are not offered: this app installs from a server image and adds a desktop only if one is asked for.' : '')
+                        : (rest.length
+                            ? 'None of the ' + rest.length + ' image(s) VirtualBox knows of is an Ubuntu server installer, so one has to be given by path.'
+                            : 'VirtualBox knows of no installer image, so one has to be given by path.')
                 };
             }
         }));
