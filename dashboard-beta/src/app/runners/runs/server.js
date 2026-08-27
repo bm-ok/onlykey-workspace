@@ -307,12 +307,30 @@ async function plugin(imports, register) {
                         + 'different pieces of work and the run belongs to one of them.');
                 }
 
+                //---- AWAITED, WHICH IT WAS NOT --------------------------
+                //
+                //BOTH STORES READ FROM DISK AND BOTH `get`s ARE ASYNC. Neither
+                //was awaited, so `work` was a PROMISE — and a promise is an
+                //object, so `if (!work)` was satisfied and the run carried on
+                //holding it. Every field read off it afterwards was undefined.
+                //
+                //IT FAILED AS "#undefined has no brief, so there is nothing to
+                //give the job", which names neither the real fault nor the piece
+                //of work: `work.ref` and `work.number` are both absent on a
+                //promise, so even the thing being refused could not be printed.
+                //
+                //THIS PATH HAD NEVER WORKED, for a task or for a judgement. It
+                //is the last step before a job is handed to a machine, so
+                //everything upstream — the queue, the tick, the claim, the boot,
+                //the credential handover — was correct and the run died at the
+                //door. The drills that would have caught it need real machines
+                //and are skipped without them.
                 var work = null;
                 if (a.task) {
-                    work = imports.queue.task.get(a.task);
+                    work = await imports.queue.task.get(a.task);
                     if (!work) throw new Error('There is no task called "' + a.task + '".');
                 } else if (a.judgement) {
-                    work = imports.judge.get(a.judgement);
+                    work = await imports.judge.get(a.judgement);
                     if (!work) throw new Error('There is no judgement called "' + a.judgement + '".');
                 }
 
