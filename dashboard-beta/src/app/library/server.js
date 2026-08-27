@@ -95,6 +95,29 @@ async function plugin(imports, register) {
         context: jobsDir,
         bodyOf: function (e, dir) { return codeOf(e, dir); },
 
+        //---- WHETHER THE SCRIPT IS ACTUALLY THERE -------------------------
+        //
+        //NOTHING SET THIS AND TWO PLACES READ IT, OPPOSITE WAYS. ../runners/runs
+        ///joborder.js refuses with `if (!job.there)`, and `undefined` is falsy —
+        //so EVERY job failed at the first step with "its file is missing from
+        //the jobs folder", whether or not it was. ./chain.js reads the same
+        //field as `j.there !== false`, where `undefined` passes, so the Jobs
+        //pane listed all of them as runnable at the same time.
+        //
+        //Eight jobs, eight scripts on disk, every run dead on arrival and the
+        //pane saying everything was fine. Found by asking why a judgement came
+        //back "done" having handed back nothing.
+        //
+        //EXISTENCE, NOT CONTENT. `bodyOf` reads the file and answers '' when it
+        //cannot, which cannot tell an empty script from an absent one — and
+        //those have different fixes: one is written, the other is restored.
+        alsoOf: function (e, dir) {
+            var at = codePath(dir, e.id);
+            var here = false;
+            try { here = !!at && fs.statSync(at).isFile(); } catch (x) { here = false; }
+            return { there: here };
+        },
+
         onSave: async function (made, input, dir) {
             if (input.code === undefined) return;
             if (!dir) {

@@ -74,6 +74,13 @@ function idFor(name) {
 module.exports = function library(what, doc, opts) {
     var o = opts || {};
     var bodyOf = o.bodyOf || function (e) { return e.text; };
+
+    //FACTS ABOUT AN ENTRY THAT ONLY ITS KIND KNOWS. A job's script is a file on
+    //disk, so "is it actually there" is a question this file cannot answer and
+    //the job library can. Everything reads entries through `all` and `get`, so
+    //anything worked out here reaches every caller — which is the point: the
+    //runner asks `get` and the panes ask `all`, and they were disagreeing.
+    var alsoOf = o.alsoOf || null;
     var writes = o.writes || [];
 
     async function read() {
@@ -112,7 +119,7 @@ module.exports = function library(what, doc, opts) {
                 //asked everywhere is "has it been set aside", never "has it been
                 //marked usable".
                 setAside: e.setAside === true
-            });
+            }, alsoOf ? alsoOf(e, ctx) : null);
         });
     }
 
