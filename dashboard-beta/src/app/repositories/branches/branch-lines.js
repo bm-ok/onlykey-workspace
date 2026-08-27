@@ -10,10 +10,16 @@ var { useState } = React;
 //reading and the thing that gets scrolled past. One at a time, with its reason
 //in full.
 //
-//THE DEFAULT BRANCHES CARD IS FIRST AND IS NOT A LINE. It is what each
-//repository counts from right now, read from git, and it is here because it is
-//the answer to "what would a new line be made of" — and because a repository's
-//own default is always protected whether or not any line names it.
+//THE HEAD BRANCHES CARD IS FIRST AND IS NOT A LINE. It is what each repository
+//counts from right now, read from git, and it is here because it is where
+//everything starts — and because a repository's own HEAD is always protected
+//whether or not any line names it.
+//
+//CALLED "HEAD BRANCHES" BECAUSE THAT IS WHAT THEY ARE. This said "Default
+//branches", which invites the question "default for what" and has a different
+//answer on GitHub than it does here. The value comes from `refs.head` of each
+//repository — literally its HEAD — and naming it after the thing it is read
+//from is the only name that cannot drift from it.
 //
 //`marked` AND NOT `proposed`. The first version of this file read `g.proposed`,
 //which the action has never returned, so the badge could not render and a line
@@ -275,7 +281,7 @@ module.exports = function lines(theme, okc, shell, remember) {
                                 because it is what a new one would be made of. */}
                             <Card>
                                 <CardTitle>
-                                    Default branches
+                                    HEAD branches
                                     <Grow />
                                     <Plus disabled={busy === '*'} onClick={syncDefaults}
                                         title="Fetch from origin and fast-forward every default branch. Only fast-forwards: anything that has moved on here is reported and left alone.">
@@ -288,9 +294,10 @@ module.exports = function lines(theme, okc, shell, remember) {
                                     })}
                                 </Kv>
                                 <Note>
-                                    A repository's own default, read from git and always protected. A branch is
-                                    measured against the line it was cut from, not against these — except when it
-                                    was cut before lines existed.
+                                    What each repository is on, read from git and always protected. This is where
+                                    work starts: cut a branch from here on Branches Cut, and name that cut a line
+                                    once it carries something. A branch is measured against the line it was cut
+                                    from, not against these.
                                 </Note>
                             </Card>
 

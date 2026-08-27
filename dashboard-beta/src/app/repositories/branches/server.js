@@ -764,7 +764,7 @@ async function plugin(imports, register) {
         //DIFFERENT branch in each repository, which is the whole reason cutting
         //from one is not the same as cutting from a branch name.
         undo.push(actions.define('branchCreate', {
-            about: 'Cut a branch across every repository, from a named line or from another branch',
+            about: 'Cut a branch across every repository, from a named line, from another branch, or from HEAD — each repository’s own default',
             takes: ['branch', 'reason', 'group', 'from'],
             run: async function (args) {
                 var a = args || {};
@@ -798,6 +798,39 @@ async function plugin(imports, register) {
                         if (p.stillHere && p.there) where.push({ repo: p.repo, from: p.branch });
                     });
                     if (!where.length) throw new Error('"' + line + '" names nothing that is still here, so there is nowhere to cut from.');
+                } else if (from === 'HEAD') {
+                    //---- WHERE IT ALL STARTS, AND THE ONLY WAY INTO AN EMPTY
+                    //     WORKSPACE ------------------------------------------
+                    //
+                    //A LINE IS MADE OUT OF A CUT AND A CUT WAS MADE OUT OF A
+                    //LINE, so a workspace with neither could not be started and
+                    //could not be recovered. Forgetting the last line left the
+                    //"Cut from" list empty, `branchCreate` refusing for want of
+                    //a starting point, and `branchAsLine` with nothing to
+                    //promote — a closed cycle with no door in it. Found by
+                    //deleting the only line and then being unable to make
+                    //anything at all.
+                    //
+                    //HEAD RATHER THAN NAMING THE DEFAULTS AS A LINE. Both would
+                    //break the cycle and only one keeps the rule: work starts by
+                    //cutting a branch. A line stays what a cut BECOMES.
+                    //
+                    //PER REPOSITORY, WHICH IS THE WHOLE POINT AND IS WHY THIS IS
+                    //NOT JUST ANOTHER BRANCH NAME. These repositories are on
+                    //master, master and version2; a single name would cut two of
+                    //three and quietly leave the third out of the change.
+                    //
+                    //`HEAD` IS SAFE AS THE WORD FOR IT because git will not let a
+                    //branch be called that, so this can never shadow a real one.
+                    //
+                    //THE SAME SOURCE THE PANE DRAWS ITS CARD FROM, so the list
+                    //and the card cannot disagree about what a repository is on.
+                    var heads = await baselines();
+                    heads.forEach(function (h) { if (h.on) where.push({ repo: h.repo, from: h.on }); });
+                    if (!where.length) {
+                        throw new Error('No repository here says what it is on, so there is no HEAD to cut from. '
+                            + 'That usually means the workspace has no repositories in it yet.');
+                    }
                 } else {
                     var found = await workspace.repos();
                     for (var i = 0; i < found.length; i++) {

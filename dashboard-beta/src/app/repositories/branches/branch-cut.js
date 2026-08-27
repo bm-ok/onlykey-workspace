@@ -293,6 +293,36 @@ module.exports = function branches(theme, okc, remember) {
                     return { value: 'branch:' + b.name, label: b.name + ' — a branch cut' };
                 })));
 
+        //---- AND WHERE IT ALL STARTS -------------------------------------
+        //
+        //THE HEAD BRANCHES, WHICH WERE NOT OFFERED AND HAD TO BE. A line is made
+        //out of a cut and a cut was made out of a line, so a workspace with
+        //neither could not be started and could not be recovered: forgetting the
+        //last line left this list EMPTY, and a dialog whose only real field has
+        //nothing in it reads as the app being broken. Found by deleting the only
+        //line and then being unable to make anything at all.
+        //
+        //LAST, NOT FIRST. A select takes its first option as the value, and the
+        //ordinary answer is the line this work belongs to — cutting from HEAD
+        //is starting something new, which is the rarer of the two and should not
+        //be what a press lands on by accident. When there is nothing else it is
+        //first because it is the only one, which is exactly the case it exists
+        //for.
+        //
+        //ONE ENTRY, NOT ONE PER REPOSITORY, because it is one starting point in
+        //the same way a line is: `branchCreate` reads each repository's own HEAD,
+        //so a workspace on master, master and version2 cuts from all three
+        //correctly and a single branch name could not.
+        var heads = (lines.state && lines.state.repos) || [];
+        if (heads.length) {
+            startingPoints = startingPoints.concat([{
+                value: 'branch:HEAD',
+                label: 'HEAD branches — ' + heads.map(function (h) {
+                    return h.repo + ':' + (h.on || '(none)');
+                }).join(', ')
+            }]);
+        }
+
         function cut() {
             ask({
                 title: 'Cut a branch',
