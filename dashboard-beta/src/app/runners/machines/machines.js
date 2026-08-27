@@ -282,6 +282,10 @@ module.exports = function machines(theme, okc, remember) {
                             diskMB: Number(f.diskMB)
                         });
 
+                        //MAKING IT IS WHAT THIS DIALOG DOES, and the promise it
+                        //hands back is what closes it. So only the making is
+                        //waited on: that is quick, it either worked or it did
+                        //not, and the answer belongs in this dialog.
                         return okc.call('vmCreate', { vm: vm }).then(function () {
                             setPicked(f.name);
                             again();
@@ -293,13 +297,31 @@ module.exports = function machines(theme, okc, remember) {
                                 return;
                             }
 
-                            return okc.call('vmInstall', { name: f.name }).then(function () {
-                                setSaid({ text: f.name + ' is installing and will set itself up. Watch it on Live.' });
+                            //---- AND THE INSTALL IS STARTED, NOT AWAITED --------
+                            //
+                            //THIS RETURNED THE INSTALL AND THE DIALOG SAT OPEN ON
+                            //IT. `vmInstall` holds this host until the installer
+                            //has actually started and then runs for another
+                            //twenty-five minutes inside the machine \u2014 so the
+                            //form stayed up, looking stuck, over a machine that
+                            //already existed and was already installing in the
+                            //list behind it.
+                            //
+                            //THE DIALOG IS FOR THE DECISION, NOT FOR THE WAIT.
+                            //Every way of watching this is somewhere else and is
+                            //better: the card says "installing", Live carries the
+                            //machine reporting its own progress, and a screenshot
+                            //answers "is it stuck" in a way no spinner here could.
+                            //
+                            //ITS FAILURE STILL LANDS, on the banner rather than in
+                            //a dialog that has gone. The machine exists either
+                            //way, which is the whole reason these are two acts.
+                            setSaid({ text: f.name + ' is made and installing. It sets itself up and reports into Live \u2014 about twenty-five minutes.' });
+                            okc.call('vmInstall', { name: f.name }).then(function () {
                                 again();
                             }, function (e) {
-                                //THE MACHINE EXISTS EITHER WAY, which is the whole
-                                //reason these are two acts and not one.
                                 setSaid({ bad: true, text: f.name + ' was made, but the install would not start: ' + e.message });
+                                again();
                             });
                         }, function (e) { setSaid({ bad: true, text: e.message }); throw e; });
                     }
