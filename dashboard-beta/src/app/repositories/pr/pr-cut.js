@@ -447,12 +447,45 @@ module.exports = function cuts(theme, okc, remember, shell) {
 
                             {!on ? <Empty>pick a cut on the left</Empty> : (
                                 <div className="row" style={{ marginTop: '8px' }}>
+                                    {/* DISABLED WHEN THERE IS NOTHING TO SEND,
+                                        which the app being ported from does and
+                                        this did not. A draft can outlive the work
+                                        it was written for, and this is the one
+                                        button on the row that reaches GitHub —
+                                        pressing it then spends a push and a
+                                        refusal to be told what the panel beside
+                                        it already knows.
+
+                                        `undefined` WHILE IT IS STILL COMPOSING.
+                                        "Cannot" and "not known yet" are different
+                                        and only one of them is a dead end. */}
                                     {on.draft
-                                        ? <Button kind="ok" protect onClick={function () { send(on); }}>Send it</Button>
+                                        ? <Button kind="ok" protect
+                                            disabled={!!(composed && !composed.asking && !composed.text)}
+                                            title={composed && !composed.asking && !composed.text
+                                                ? (composed.why || composed.note || 'nothing would be opened for this pair')
+                                                : 'Pushes the branches and opens the pull requests. This is the step that reaches GitHub'}
+                                            onClick={function () { send(on); }}>Send it</Button>
                                         : null}
+                                    {/* AND NOT WHEN THE PAIR IS NOT TWO LINES ANY
+                                        MORE. New PR Cut works in LINE names and
+                                        reconciles a remembered pair against the
+                                        list every time it draws — so a draft
+                                        naming something that has stopped being a
+                                        line took you there, quietly showed a
+                                        DIFFERENT pair, and overwrote where you
+                                        were standing on the way. Nothing said
+                                        so. The preview beside this already knows
+                                        the pair is dead; that is the reason on
+                                        the button. */}
                                     {on.draft
-                                        ? <Button onClick={function () { editDraft(on); }}
-                                            title="Open it on New PR Cut, where it was written">Edit it</Button>
+                                        ? <Button
+                                            disabled={!!(composed && !composed.asking && !composed.text)}
+                                            onClick={function () { editDraft(on); }}
+                                            title={composed && !composed.asking && !composed.text
+                                                ? (composed.why || composed.note || 'this pair carries nothing')
+                                                    + ' — New PR Cut works in lines, so there is nothing there to edit'
+                                                : 'Open it on New PR Cut, where it was written'}>Edit it</Button>
                                         : null}
                                     {on.draft
                                         ? <Button kind="danger" onClick={function () { throwAway(on); }}

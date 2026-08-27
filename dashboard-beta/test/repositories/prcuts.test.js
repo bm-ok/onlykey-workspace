@@ -470,6 +470,152 @@ test('what has not landed is above what has, whatever the dates say', async () =
 });
 
 //---------------------------------------------------------------------------
+//6. CHANGING WHAT IS ALREADY OUT.
+//
+//`prCutUpdate` is the reason a cut is a thing rather than three pull requests:
+//GitHub has no idea they are one change, so keeping their text and their state
+//in step is this app's job. It had one test, and that test was about the pipe
+//being refused — nothing held it to what it does when it is allowed.
+//---------------------------------------------------------------------------
+
+const CUT_OUT = {
+    'a -> b': {
+        source: 'a', target: 'b', opened: '2026-01-01T00:00:00Z',
+        pulls: [
+            { repo: 'one', number: 1, into: 'anowner/one' },
+            { repo: 'two', number: 2, into: 'anowner/two' }
+        ]
+    }
+};
+
+test('one title and one description are written to every pull request in the cut', async () => {
+    const { actions, asked } = await anApp({
+        landings: CUT_OUT,
+        answers: {
+            'PATCH /repos/anowner/one/pulls/1': { status: 200, body: { number: 1 } },
+            'PATCH /repos/anowner/two/pulls/2': { status: 200, body: { number: 2 } }
+        }
+    });
+
+    const said = await actions.call('prCutUpdate', { source: 'a', target: 'b', title: 'one sentence', body: 'the rest' });
+    assert.equal(said.changed, 2);
+    assert.match(said.note, /2 of 2 changed/);
+
+    //BOTH OF THEM, AND EACH WHERE IT ACTUALLY LIVES. A cut spans repositories,
+    //so a loop that used one address for all of them would edit one pull request
+    //twice and report two.
+    const patched = asked.filter((x) => x.method === 'PATCH').map((x) => x.at);
+    assert.deepEqual(patched.sort(), ['/repos/anowner/one/pulls/1', '/repos/anowner/two/pulls/2']);
+
+    //AND WHAT WAS SAID IS KEPT, so the next thing that composes a body starts
+    //from what is on the pull requests rather than from what was typed once.
+    const kept = (await actions.call('prCuts', {})).cuts.find((c) => c.source === 'a');
+    assert.equal(kept.said.title, 'one sentence');
+});
+
+//ONE OF THEM FAILING IS THE CASE THIS EXISTS FOR. A cut half-edited is exactly
+//the drift a cut is meant to prevent, so the answer names which one and why.
+test('a pull request that refuses the change is named, and the others still go', async () => {
+    const { actions } = await anApp({
+        landings: CUT_OUT,
+        answers: {
+            'PATCH /repos/anowner/one/pulls/1': { status: 200, body: { number: 1 } },
+            'PATCH /repos/anowner/two/pulls/2': { status: 403, body: { message: 'Resource not accessible by integration' } }
+        }
+    });
+
+    const said = await actions.call('prCutUpdate', { source: 'a', target: 'b', title: 't' });
+    assert.equal(said.changed, 1);
+    assert.match(said.note, /1 of 2 changed/);
+    assert.match(said.note, /two #2/);
+    assert.match(said.note, /not accessible/);
+});
+
+test('closing a cut closes every pull request in it, and only "open" or "closed" is a state', async () => {
+    const { actions, asked } = await anApp({
+        landings: CUT_OUT,
+        answers: {
+            'PATCH /repos/anowner/one/pulls/1': { status: 200, body: { number: 1 } },
+            'PATCH /repos/anowner/two/pulls/2': { status: 200, body: { number: 2 } }
+        }
+    });
+
+    await actions.call('prCutUpdate', { source: 'a', target: 'b', state: 'closed' });
+    const shut = asked.filter((x) => x.method === 'PATCH');
+    assert.equal(shut.length, 2);
+    assert.ok(shut.every((x) => x.body && x.body.state === 'closed'),
+        'a state was sent that is not the one asked for');
+
+    //REFUSED BEFORE ANYTHING IS SENT. A word GitHub does not know reached it as
+    //a change to somebody's repository and came back as a 422 naming a field
+    //rather than the word that was wrong — once per repository.
+    const before = asked.length;
+    await assert.rejects(
+        () => actions.call('prCutUpdate', { source: 'a', target: 'b', state: 'merged' }),
+        /"open" or "closed"/);
+    assert.equal(asked.length, before, 'it asked GitHub something before refusing the state');
+
+    await assert.rejects(
+        () => actions.call('prCutUpdate', { source: 'a', target: 'b' }),
+        /Say what to change/);
+});
+
+//---------------------------------------------------------------------------
+//7. THE READS THAT NOTHING HELD.
+//
+//`prCutState`, `prDraft` and `prTemplate` had no test at all. None of them
+//changes anything, which is exactly why they went unnoticed: a read that answers
+//the wrong thing is silent, and every one of these is what a pane draws from.
+//---------------------------------------------------------------------------
+
+test('what became of one cut is asked per pull request, where each one lives', async () => {
+    const { actions } = await anApp({
+        landings: CUT_OUT,
+        answers: {
+            'GET /repos/anowner/one/pulls/1': { status: 200, body: { number: 1, state: 'open', title: 'still out' } },
+            'GET /repos/anowner/two/pulls/2': {
+                status: 200,
+                body: { number: 2, state: 'closed', merged_at: '2026-02-02T00:00:00Z', title: 'in' }
+            }
+        }
+    });
+
+    const said = await actions.call('prCutState', { source: 'a', target: 'b' });
+    assert.equal(said.landed, false, 'one of two merged is not landed');
+    assert.equal(said.merged, 1);
+    assert.equal(said.of, 2);
+    assert.equal(said.partly, true, 'half a landing is the state this app exists to make visible');
+    assert.equal(said.pulls.find((p) => p.repo === 'two').state, 'merged',
+        'GitHub reports a merged pull request as closed, and reading that alone turns a landing into a rejection');
+});
+
+test('a pair with nothing written says so rather than answering with a blank draft', async () => {
+    const { actions } = await anApp();
+    const empty = await actions.call('prDraft', { source: 'a', target: 'b' });
+    assert.equal(empty.draft, null);
+    assert.match(empty.note, /Nothing written/);
+
+    await actions.call('prDraftSave', { source: 'a', target: 'b', title: 't', body: 'x' });
+    const one = await actions.call('prDraft', { source: 'a', target: 'b' });
+    assert.equal(one.draft.title, 't');
+    assert.equal(one.note, null, 'a pair that HAS text should not also carry a sentence saying it has none');
+
+    await assert.rejects(() => actions.call('prDraft', { source: 'a' }), /Say which two lines/);
+});
+
+test('the template says which blocks are on, and that is what gets added', async () => {
+    const { actions } = await anApp();
+    const said = await actions.call('prTemplate', {});
+    assert.ok(said.blocks.length >= 3, 'only ' + said.blocks.length + ' block(s) — the scan is broken, not the template');
+    assert.ok(said.blocks.every((b) => b.id && b.label), 'a block with no id or label cannot be switched on by name');
+
+    //THE SENTENCE COUNTS WHAT IS ON, and it is the only thing on the pane that
+    //says a pull request will not be only what somebody typed.
+    const on = said.blocks.filter((b) => b.on).length;
+    assert.match(said.note, on ? new RegExp(on + ' of ' + said.blocks.length) : /What is typed is what is sent/);
+});
+
+//---------------------------------------------------------------------------
 //AND WHAT IS OUT AND WAITING ON SOMEBODY.
 //
 //THIS PLUGIN PUT NOTHING IN THE INBOX AT ALL, and that is how three pull

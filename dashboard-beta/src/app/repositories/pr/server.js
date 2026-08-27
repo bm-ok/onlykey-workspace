@@ -1363,7 +1363,23 @@ async function plugin(imports, register) {
                 var fields = {};
                 if (a.title != null) fields.title = String(a.title);
                 if (a.body != null) fields.body = String(a.body);
-                if (a.state != null) fields.state = String(a.state);
+
+                //A PULL REQUEST IS "open" OR "closed", AND NOTHING ELSE. The app
+                //being ported from refused anything else here and this passed the
+                //string straight into a PATCH — so "close", "merged" or a typo
+                //reached GitHub as a change to somebody's repository and came
+                //back as a 422 naming a field rather than the word that was
+                //wrong. Refused before anything is sent, which is also the
+                //difference between one bad word and one bad word per repository.
+                if (a.state != null) {
+                    var want = String(a.state).trim().toLowerCase();
+                    if (want !== 'open' && want !== 'closed') {
+                        throw new Error('A pull request is "open" or "closed" — "' + a.state + '" is neither. '
+                            + 'Merging one is `prCutLand`, which is a different act and has its own rules.');
+                    }
+                    fields.state = want;
+                }
+
                 if (!Object.keys(fields).length) throw new Error('Say what to change — a title, a description, or the state.');
 
                 var done = [];
