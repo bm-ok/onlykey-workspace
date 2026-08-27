@@ -330,6 +330,98 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- MAKING IT AGAIN, WHICH IS THREE ACTS AND ONE DECISION ----------
+        //
+        //REMOVE, MAKE, INSTALL. Installing over the top is not the same thing
+        //and is not offered: a machine carries whatever the last install left,
+        //and the failures that send somebody here are usually exactly that. The
+        //way out of a bad machine is a new one, which is what the app being
+        //ported from does too.
+        //
+        //ONE ACTION RATHER THAN THREE PRESSES, because the middle one has to
+        //carry the spec across and getting that wrong silently makes a
+        //DIFFERENT machine: no tags, no image, half the memory. The spec is
+        //taken from the register rather than asked for again.
+        //
+        //WHAT IS NOT CARRIED OVER is what the build decided last time — its
+        //disk, its serial port, which adapter it was bridged onto — because
+        //those are answers to "how was it built", and it is about to be built
+        //again.
+        //
+        //AND NOT ITS TOKEN. A rebuilt machine is a new machine: its disk is
+        //destroyed and a token that outlived it would be one this host still
+        //accepts, for something that no longer exists. `spec.fill` mints a new
+        //one when none is given.
+        //
+        //THE REFUSALS ARE ABOUT LOSING SOMETHING, not about tidiness. A sign-in
+        //goes with the disk if nobody takes it back first, and a claimed branch
+        //means work is on this machine right now.
+        undo.push(actions.define('vmRebuild', {
+            about: 'Remove a machine and make it again from the same spec, then install it. '
+                + 'Its disk is destroyed',
+            takes: ['name', 'install'],
+            run: async function (args) {
+                var a = args || {};
+                var name = a.name;
+
+                //THE SAME GUARD AS EVERY OTHER DOOR HERE, and the first line:
+                //it refuses anything not in this app's register.
+                var was = ours.get(name);
+                var spec = Object.assign({}, was.spec || {});
+
+                if (was.installing) {
+                    throw new Error('"' + name + '" is installing. Let it finish or remove it, rather than '
+                        + 'destroying a machine mid-install.');
+                }
+                if (was.holdsCredential) {
+                    throw new Error('"' + name + '" is holding the sign-in "' + (was.guest || 'one of them')
+                        + '". Take it back first — it would go with the disk, and this host would still '
+                        + 'think it was lent out.');
+                }
+                if (was.branch) {
+                    throw new Error('"' + name + '" claims "' + was.branch + '", so work is on it. '
+                        + 'Let that finish, or take the branch back, before destroying the machine.');
+                }
+
+                //WHAT THE LAST BUILD DECIDED IS NOT WHAT THE NEXT ONE STARTS
+                //FROM.
+                delete spec.disk;
+                delete spec.serial;
+                delete spec.bridge;
+                delete spec.token;
+
+                await actions.call('vmRemove', { name: name });
+                var made = await imports.provision.create(spec);
+
+                //INSTALLING IS THE POINT, and is separable for the same reason
+                //it is separable when a machine is first made: they fail
+                //differently, and a machine that exists can be told to try
+                //again. `install: false` makes it again and stops.
+                var wanted = a.install !== false && a.install !== 'false';
+                if (!wanted) {
+                    return Object.assign({}, made, {
+                        installed: false,
+                        note: '"' + name + '" was destroyed and made again from its own spec. '
+                            + 'Nothing is installed on it yet.'
+                    });
+                }
+                if (!spec.iso) {
+                    return Object.assign({}, made, {
+                        installed: false,
+                        note: '"' + name + '" was destroyed and made again, but it names no installer image, '
+                            + 'so there is nothing to install.'
+                    });
+                }
+
+                await actions.call('vmInstall', { name: name });
+                return Object.assign({}, made, {
+                    installed: true,
+                    note: '"' + name + '" was destroyed, made again from its own spec, and is installing. '
+                        + 'It sets itself up and reports as it goes.'
+                });
+            }
+        }));
+
         //---- AND UNMAKING ONE, WHICH ONLY EVER MEANS ONE OF OURS ------------
         //
         //`ours.get` IS THE WHOLE GUARD AND IT IS THE FIRST LINE. It refuses

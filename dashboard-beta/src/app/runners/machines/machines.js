@@ -47,13 +47,53 @@ module.exports = function machines(theme, okc, remember) {
 
     //---- the middle column -------------------------------------------------
 
-    function Acts({ v, again }) {
+    function Acts({ v, again, setSaid, setPicked }) {
         if (!v) return <Panel><Empty>pick a machine on the left</Empty></Panel>;
 
         var run = async function (action, args) {
             await okc.call(action, args || { name: v.name });
             again();
         };
+
+        function rebuild(m) {
+            var sp = m.spec || {};
+            ask({
+                title: 'Rebuild ' + m.name + '?',
+                plain: [
+                    'It is destroyed — the machine and its disk — and made again from its own spec, then installed from the beginning.',
+                    'Everything on it now is gone: anything left in its home, any snapshot it has taken, anything a task wrote and did not hand back.',
+                    'It comes back with the same name, size, tags and installer image' + (sp.iso ? '' : ' — though it names no installer image, so nothing would be installed on it') + '.',
+                    (m.tags || []).length ? 'Tags kept: ' + (m.tags || []).join(', ') + '.' : null,
+                    'A rebuilt machine is a new machine, so it is given a new token — the old one stops being accepted here.'
+                ],
+                cost: 'Its disk is destroyed, and installing takes about twenty-five minutes.',
+                confirm: 'Rebuild it',
+                danger: true,
+                protect: true,
+                onYes: function () {
+                    //REMOVE AND MAKE ARE WAITED ON; INSTALLING IS NOT. Their
+                    //answer belongs in this dialog — it either got a machine
+                    //back or it did not — and the twenty-five minutes after it
+                    //belong on the banner, where the card and Live are already
+                    //saying more than a dialog could.
+                    return okc.call('vmRebuild', { name: m.name, install: false }).then(function () {
+                        setPicked(m.name);
+                        again();
+
+                        if (!sp.iso) {
+                            setSaid({ text: m.name + ' was made again. It names no installer image, so there is nothing to install.' });
+                            return;
+                        }
+
+                        setSaid({ text: m.name + ' was made again and is installing. It sets itself up and reports into Live — about twenty-five minutes.' });
+                        okc.call('vmInstall', { name: m.name }).then(function () { again(); }, function (e) {
+                            setSaid({ bad: true, text: m.name + ' was made again, but the install would not start: ' + e.message });
+                            again();
+                        });
+                    }, function (e) { setSaid({ bad: true, text: e.message }); throw e; });
+                }
+            });
+        }
 
         return (
             <Panel>
@@ -127,6 +167,29 @@ module.exports = function machines(theme, okc, remember) {
                         }}>
                         {v.forTasks === false ? 'Let the queue use it' : 'Keep it back'}
                     </Button>
+
+                    {/*---- AND MAKING IT AGAIN --------------------------------
+
+                        THE WAY OUT OF A BAD MACHINE IS A NEW ONE. Installing
+                        over the top carries whatever the last install left, and
+                        that is usually the thing that sent somebody here.
+
+                        DISABLED WITH THE REASON rather than hidden, and the
+                        reasons are about losing something: a sign-in goes with
+                        the disk if nobody takes it back, and a claimed branch
+                        means work is on this machine right now. The action
+                        refuses all three as well — a rule the window enforces
+                        alone is a rule the command line does not have. */}
+                    <Button kind="danger" protect
+                        disabled={!!v.installing || !!v.holdsCredential || !!v.branch}
+                        title={v.installing
+                            ? 'it is installing'
+                            : v.holdsCredential
+                                ? 'it is holding a sign-in — take that back first, or it goes with the disk'
+                                : v.branch
+                                    ? 'it claims ' + v.branch + ', so work is on it'
+                                    : 'destroy it and make it again from the same spec, then install it'}
+                        onClick={function () { rebuild(v); }}>Rebuild</Button>
                 </div>
 
                 {v.installing ? <Note kind="warn">It is installing. Nothing else comes up while it does, and a restart of this app at the wrong moment throws the install away.</Note> : null}
@@ -477,7 +540,7 @@ module.exports = function machines(theme, okc, remember) {
 
                     <Col>
                         <h2>Actions <span className="muted">{on ? '— ' + on.name : '— nothing selected'}</span></h2>
-                        <Acts v={on} again={again} />
+                        <Acts v={on} again={again} setSaid={setSaid} setPicked={setPicked} />
                     </Col>
 
                     <Col wide>
