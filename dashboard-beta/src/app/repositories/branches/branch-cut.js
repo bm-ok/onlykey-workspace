@@ -385,7 +385,72 @@ module.exports = function branches(theme, okc, remember) {
                 confirm: 'Delete it',
                 danger: true,
                 onYes: function () {
-                    return tell(okc.call('branchDelete', { branch: b.name })).then(function () { setPicked(null); });
+                    //ASKED WITHOUT FORCE, ALWAYS. Offering it up front makes it
+                    //a thing to tick past; asking for it only once git has said
+                    //it is needed makes it a decision about a specific branch
+                    //that carries specific work.
+                    return okc.call('branchDelete', { branch: b.name }).then(function (r) {
+                        setSaid({ bad: r.ok === false, text: r.note });
+                        again();
+                        if (r.ok) { setPicked(null); return; }
+                        //AND THE WAY TO DO WHAT IT JUST TOLD YOU TO DO. The
+                        //refusal ends "Deleting it anyway needs force" and there
+                        //was nothing anywhere that could pass it — the same
+                        //shape as being told to sync the forks by a pane with no
+                        //button for it. A sentence naming an act nobody can
+                        //reach is worse than no sentence: it reads as a bug in
+                        //the app rather than as a decision waiting to be made.
+                        if (r.unmerged) forceRemove(b, r);
+                    }, function (e) { setSaid({ bad: true, text: e.message }); throw e; });
+                }
+            });
+        }
+
+        //---- AND THE SECOND ASKING, WHICH IS A DIFFERENT QUESTION -----------
+        //
+        //NOT A RETRY. The first press asked "delete this branch"; git answered
+        //that the branch carries commits that are nowhere else, so this one asks
+        //"throw that work away", which is the only question left and is not the
+        //one already answered. It covers the first dialog rather than replacing
+        //this pane's banner, so the refusal stays readable underneath.
+        //
+        //A TICK RATHER THAN A SECOND CONFIRM BUTTON, because the two presses are
+        //not the same weight and a dialog whose confirm does something worse
+        //than the one before it is how somebody deletes work by rhythm.
+        function forceRemove(b, said) {
+            var carried = (said.on || []).filter(function (o) { return !o.removed && o.unmerged; })
+                .map(function (o) { return o.repo; });
+
+            ask({
+                title: 'Throw away what "' + b.name + '" carries?',
+                plain: [
+                    'It carries commits that are not merged anywhere else' +
+                        (carried.length ? ' — in ' + carried.join(', ') + '.' : '.'),
+                    b.summary || null,
+                    //WHAT WOULD MAKE THIS UNNECESSARY, said here because here is
+                    //where somebody is deciding. Deleting is one of two ways out
+                    //and it is the only one this dialog can do.
+                    'If the work is wanted, close this and land it first — merge it into a line, or send it out as a PR cut. Nothing here can get it back afterwards.'
+                ],
+                fields: [{
+                    name: 'force',
+                    type: 'checkbox',
+                    label: 'Delete it anyway, and lose what it carries',
+                    hint: 'This is what git refused to do without being told twice.'
+                }],
+                cost: 'The commits on it are gone from this host, in every repository that still has it.',
+                confirm: 'Delete it anyway',
+                danger: true,
+                protect: true,
+                onYes: function (f) {
+                    //THE TICK IS THE CONSENT AND THE BUTTON IS NOT. Pressing
+                    //through without it is the ordinary way somebody arrives
+                    //here by rhythm, so it refuses rather than assuming.
+                    if (f.force !== true) {
+                        throw new Error('Tick the box to say the work on it can go. Nothing was deleted.');
+                    }
+                    return tell(okc.call('branchDelete', { branch: b.name, force: true }))
+                        .then(function () { setPicked(null); });
                 }
             });
         }
