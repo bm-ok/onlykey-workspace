@@ -373,16 +373,28 @@ test('and it is not fired when there is no workspace', async () => {
 
 //---- and where a failure lands ------------------------------------------------
 
-test('a task that threw on the way up is marked done, not left in given', async () => {
+test('a task that threw on the way up is marked failed, not left in given', async () => {
     //IT STAYED IN `given` FOR EVER: not queued, so nothing would pick it up; not
-    //done, so the board showed it working with no worker anywhere.
+    //ended, so the board showed it working with no worker anywhere.
+    //
+    //`failed` RATHER THAN `done`, WHICH IS WHAT THIS SAID. Both are ended, so
+    //the rule this test is about is unchanged — what changed is that there is
+    //now a word for "it never ran". `done` means the run ENDED, and reading it
+    //on something that died on the way up files "we learnt nothing" as the
+    //outcome of work that never started. The note in the source beside the
+    //identity case below said exactly that and then wrote `done` anyway,
+    //because there was nothing else to write.
     throws.task = new Error('the machine would not boot');
     await tick().once();
     await settle();
 
     const wrote = updated.filter((u) => u.what === 'taskUpdate')[0];
     assert.ok(wrote, 'the task landed nowhere: ' + JSON.stringify(updated));
-    assert.equal(wrote.args.task.state, 'done');
+    assert.equal(wrote.args.task.state, 'failed');
+    //AND THE RULE ITSELF, rather than the word for it: whatever it is called, it
+    //is not still in flight and it is not waiting to be picked up again.
+    assert.ok(!['given', 'queued'].includes(wrote.args.task.state),
+        'a dispatch that threw was left somewhere the queue will act on again');
     assert.equal(wrote.args.task.attempts.slice(-1)[0].failed, 'the machine would not boot');
     assert.ok(said.some((m) => /BAD #7 — the machine would not boot/.test(m)), said.join(' | '));
 });
@@ -429,7 +441,7 @@ test('a judgement that threw on the way up lands in its own store', async () => 
 
     const wrote = updated.filter((u) => u.what === 'judging.update')[0];
     assert.ok(wrote, 'the judgement landed nowhere');
-    assert.equal(wrote.args.patch.state, 'done');
+    assert.equal(wrote.args.patch.state, 'failed');
     assert.equal(wrote.args.patch.attempts.slice(-1)[0].failed, 'it reads nothing this workspace has');
     assert.ok(said.some((m) => /BAD J36 — it reads nothing this workspace has/.test(m)), said.join(' | '));
 });
@@ -448,7 +460,12 @@ test('a judgement is never re-queued by the landing, whatever it threw', async (
     await tick().once();
     await settle();
 
-    assert.equal(updated.filter((u) => u.what === 'judging.update')[0].args.patch.state, 'done');
+    //THE RULE IS "NOT BACK IN THE QUEUE", not "called done". `failed` is ended,
+    //so nothing picks it up again and the loop this test guards against cannot
+    //start — a person re-queues it once the reason is gone.
+    const landed = updated.filter((u) => u.what === 'judging.update')[0].args.patch.state;
+    assert.equal(landed, 'failed');
+    assert.notEqual(landed, 'queued', 'the landing put it back in the queue, which is the loop this guards');
 });
 
 //---- and the tick reports what it did ------------------------------------------

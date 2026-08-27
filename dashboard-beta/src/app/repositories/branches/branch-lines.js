@@ -51,7 +51,12 @@ module.exports = function lines(theme, okc, shell, remember) {
         var { state, error, reads, again } = okc.use('lines', {}, 10000);
         //THE CUTS, so the press below can offer them. Asked here rather than
         //inside it because a dialog cannot wait on a read.
-        var board = okc.use('branchBoard', {}, 15000).state;
+        //TWO NAMES ON PURPOSE. `okc.use` hands back { state, error, reads, again }
+        //and test/rules/ask-hook-shape.test.js holds every pane to reading only
+        //those — so a hook assigned straight to its `.state` reads, to that
+        //check, as a pane inventing fields on the hook itself.
+        var boardRead = okc.use('branchBoard', {}, 15000);
+        var board = boardRead.state;
         var [picked, setPicked] = remember.use('lines', 'line', null);
         var [said, setSaid] = useState(null);
         var [busy, setBusy] = useState(null);

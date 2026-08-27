@@ -49,7 +49,10 @@ var crypto = require('crypto');
 //from a queued one on a board built to show what is left.
 //---------------------------------------------------------------------------
 
-var STATES = ['draft', 'queued', 'given', 'done'];
+//`failed` IS NOT `done`. See ../queue/store.js: a run that never started — its
+//job had no script, its machine would not take it — was filed as done, which
+//here reads as "somebody looked and would not say". They are opposite answers.
+var STATES = ['draft', 'queued', 'given', 'done', 'failed'];
 
 //PENDING IS A VERDICT. A judge that read a change and could not settle it has
 //reached a real conclusion — "I looked and I cannot say" — and it is different

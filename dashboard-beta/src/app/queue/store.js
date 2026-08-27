@@ -47,7 +47,18 @@
 //waiting for a verdict. Without it a finished task sits in `given` for ever, the
 //queue picks it up again on every restart, puts its machine away again, and
 //reports the same completion as though it had just happened.
-var STORED = ['draft', 'queued', 'given', 'done', 'accepted', 'rejected'];
+//`failed` MEANS IT NEVER RAN, which is not the same as ending with nothing to
+//say. A dispatch that dies before the job starts — no script, no machine, a
+//refusal on the way out — read as `done` here, so "the job's file is missing"
+//and "a judge read the change and would not commit" were the same word, and the
+//record said the second one. ../queue/server.js has counted `failed` as an
+//ended state since before anything could store it.
+//
+//IT IS ENDED, NOT WAITING. Sending it back to `queued` would have the queue
+//claim a machine, fail the same way and try again every fifteen seconds — the
+//loop the note in ./tick.js is written against. A person re-queues it once the
+//reason is gone.
+var STORED = ['draft', 'queued', 'given', 'done', 'accepted', 'rejected', 'failed'];
 
 //WHO DOES THE WORK — a slot with three implementations, not a special case.
 //

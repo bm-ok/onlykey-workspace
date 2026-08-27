@@ -230,8 +230,22 @@ module.exports = function tick(deps) {
             runJudgement(entry, machine).catch(function (e) {
                 say('queue', machine).bad(entry.ref + ' — ' + e.message);
                 try {
+                    //---- IT NEVER RAN, SO IT IS NOT DONE -------------------
+                    //
+                    //`done` HERE MEANS "SOMEBODY LOOKED AND WOULD NOT SAY",
+                    //which is a real and useful answer and is the opposite of
+                    //what happened. This dispatch died on the way out — the
+                    //job's script was missing, or the machine would not take it
+                    //— and filing that as done put "we learnt nothing" on a
+                    //reading that never started.
+                    //
+                    //IT ALSO LOCKED IT SHUT: ../judge/server.js refuses to
+                    //queue anything already `done`, rightly, because a second
+                    //reading is a second judgement. So one bad dispatch ended
+                    //the record for good, with the reason recorded on an
+                    //attempt the pane does not draw.
                     judging.update(entry.id, {
-                        state: 'done',
+                        state: 'failed',
                         attempts: (entry.attempts || []).concat([
                             { machine: machine, at: stamp(), failed: e.message }
                         ])
@@ -274,8 +288,19 @@ module.exports = function tick(deps) {
                     id: entry.id,
                     task: nothingToGiveIt
                         ? { state: 'queued', machine: null, run: null }
+                        //`failed`, NOT `done` — THE SAME REASON AS ABOVE. The
+                        //note above this block already says it: nothing was
+                        //read, nothing was written and no code was even
+                        //fetched, so `done` files "we learnt nothing" as the
+                        //outcome of a task that never started. It said so and
+                        //then wrote `done` anyway, because there was no other
+                        //word for it. There is now.
+                        //
+                        //STILL ENDED, so this cannot become the every-fifteen-
+                        //seconds loop that note is written against. A person
+                        //re-queues it once the reason is gone.
                         : {
-                            state: 'done',
+                            state: 'failed',
                             attempts: (entry.attempts || []).concat([
                                 { machine: machine, at: stamp(), failed: e.message }
                             ])
