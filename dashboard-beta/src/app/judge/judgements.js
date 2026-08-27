@@ -229,9 +229,31 @@ module.exports = function judgements(theme, okc, remember) {
 
     function Judgements() {
         var { state, error, reads } = okc.use('judging', {}, 8000);
+
+        //---- AND THE ONE THAT IS OPEN, IN FULL -----------------------------
+        //
+        //THE LIST IS CUT SHORT AND THE PANEL WAS READING THE LIST. `judging`
+        //trims `question` to 160 characters and `note` to 240 — right for a
+        //sidebar of twenty rows, and wrong for the panel beside it, which is
+        //where somebody goes to CHECK what a judge was asked.
+        //
+        //IT IS AN AUDIT SURFACE. The whole arrangement rests on a person being
+        //able to read what was asked and what came back; a question ending in an
+        //ellipsis is one nobody can approve or object to, and the missing half
+        //is exactly where an instruction nobody intended would sit.
+        //
+        //ASKED BY REF, WHICH THE ACTION ALREADY ANSWERS. `judging --ref J30`
+        //returns the record whole — the same door the command line uses — so
+        //this is a second read of one row rather than a second shape of answer.
         var [find, setFind] = useState('');
         var [only, setOnly] = remember.use('judge', 'only', null);
         var [picked, setPicked] = remember.use('judge', 'picked', null);
+
+        //AFTER `picked` IS DECLARED, WHICH IT WAS NOT. `var` hoists, so reading
+        //it above its own declaration is `undefined` rather than an error — the
+        //ref was always empty, this always fetched the list, and the panel went
+        //on showing the shortened row it was meant to replace.
+        var whole = okc.use('judging', { ref: picked || '' }, 15000);
         var [said, setSaid] = useState(null);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
@@ -257,7 +279,15 @@ module.exports = function judgements(theme, okc, remember) {
             return true;
         });
 
-        var on = all.filter(function (j) { return (j.ref || String(j.number)) == picked; })[0] || null;
+        var row = all.filter(function (j) { return (j.ref || String(j.number)) == picked; })[0] || null;
+
+        //THE FULL ONE WHEN IT HAS ARRIVED, the row until then. Not `||` on the
+        //whole object: a read still in flight would blank the panel somebody is
+        //reading, and the row is a correct if shortened answer in the meantime.
+        var full = (whole.state && whole.state.judgement) || null;
+        var on = (full && row && (full.ref || String(full.number)) === (row.ref || String(row.number)))
+            ? Object.assign({}, row, full)
+            : row;
 
         //NOT PORTED: "WAITING TO BE READ", and this is a deliberate stop rather
         //than an oversight.
