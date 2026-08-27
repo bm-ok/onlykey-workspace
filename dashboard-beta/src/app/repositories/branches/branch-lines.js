@@ -132,17 +132,45 @@ module.exports = function lines(theme, okc, shell, remember) {
                 return b.cut && !b.protected && !(b.asDefault || []).length;
             });
 
-            if (!could.length) {
+            //---- AND THE HEAD BRANCHES, WHICH ARE ALWAYS THERE ------------
+            //
+            //THIS PANE WAS A DEAD END WITH NOTHING TO PROMOTE. A line was made
+            //out of a cut and nothing else, so a workspace with no cuts had a
+            //`+` that existed only to refuse — and the message told you to go
+            //to another pane, cut a branch, and come back, which is a long way
+            //round for "name where these repositories are now".
+            //
+            //THE SAME STARTING POINT ../branches OFFERS. Branches Cut takes HEAD
+            //as a place to cut from; this takes it as a place to name. One idea,
+            //offered in both places, rather than a rule that holds on one pane
+            //and not the other.
+            //
+            //A DIFFERENT DOOR, BECAUSE IT IS A DIFFERENT ACT. Promoting a cut is
+            //`branchAsLine` — one branch name, found wherever it exists. The
+            //HEADs are a branch PER REPOSITORY and may differ, which is the whole
+            //reason a line exists here, and `lineSave` is the door that takes
+            //them.
+            var heads = repos.filter(function (r) { return r.on; });
+            var picks = could.map(function (b) {
+                return { value: 'cut:' + b.name, label: b.name + ' — ' + (b.summary || 'nothing on it yet') };
+            });
+            if (heads.length) {
+                picks = picks.concat([{
+                    value: 'head:',
+                    label: 'HEAD branches — ' + heads.map(function (r) { return r.repo + ':' + r.on; }).join(', ')
+                }]);
+            }
+
+            if (!picks.length) {
                 setSaid({
                     bad: true,
-                    text: 'There is no cut to make a line out of. A line is what a branch cut becomes once it '
-                        + 'carries something — cut one on Branches Cut first, put the work on it, then come back.'
+                    text: 'There is nothing to make a line out of — this workspace has no repositories in it.'
                 });
                 return;
             }
 
             ask({
-                title: 'Make a line out of a cut',
+                title: 'Name a line',
                 plain: [
                     'A line is one branch per repository, moved and compared as one thing. This moves nothing and pushes nothing — it names a cut that already exists.',
                     //THE PROTECTION IS THE POINT AND IT IS EASY TO MISS. Said in
@@ -152,18 +180,29 @@ module.exports = function lines(theme, okc, shell, remember) {
                     'AND IT PROTECTS THE BRANCH: no machine may push to it afterwards. Work goes onto its own cut and is merged in, which is what makes chaining safe.'
                 ],
                 fields: [
-                    {
-                        name: 'branch', label: 'Which cut', options: could.map(function (b) {
-                            return { value: b.name, label: b.name + ' — ' + (b.summary || 'nothing on it yet') };
-                        })
-                    },
+                    { name: 'branch', label: 'Which point', options: picks },
                     { name: 'name', label: 'Call the line', placeholder: 'leave blank to keep the branch name' },
                     { name: 'why', label: 'Why it exists', placeholder: 'what it is for, read six weeks from now' }
                 ],
-                cost: 'Machines stop being able to push to it.',
-                confirm: 'Make it a line',
+                cost: 'Machines stop being able to push to what it names.',
+                confirm: 'Name it',
                 onYes: function (f) {
-                    var b = f.branch || could[0].name;
+                    var pick = f.branch || picks[0].value;
+
+                    //FROM THE HEADS. `lineSave` with nothing to go on takes what
+                    //each repository is on, which is exactly this. It needs a
+                    //name of its own because there is no branch name to fall
+                    //back on — the whole point is that they may differ.
+                    if (pick === 'head:') {
+                        var said = (f.name || '').trim();
+                        if (!said) throw new Error('Give the line a name. These repositories are on ' +
+                            heads.map(function (r) { return r.repo + ':' + r.on; }).join(', ') +
+                            ', so there is no one branch name to call it after.');
+                        return tell(okc.call('lineSave', { name: said, why: f.why || undefined }))
+                            .then(function () { setPicked(said); });
+                    }
+
+                    var b = pick.replace(/^cut:/, '');
                     var title = (f.name || '').trim() || b;
                     return tell(okc.call('branchAsLine', { branch: b, name: title, why: f.why || undefined }))
                         .then(function () { setPicked(title); });
