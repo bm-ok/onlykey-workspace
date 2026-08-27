@@ -43,6 +43,9 @@ module.exports = function lines(theme, okc, shell, remember) {
 
     return function Lines() {
         var { state, error, reads, again } = okc.use('lines', {}, 10000);
+        //THE CUTS, so the press below can offer them. Asked here rather than
+        //inside it because a dialog cannot wait on a read.
+        var board = okc.use('branchBoard', {}, 15000).state;
         var [picked, setPicked] = remember.use('lines', 'line', null);
         var [said, setSaid] = useState(null);
         var [busy, setBusy] = useState(null);
@@ -91,26 +94,73 @@ module.exports = function lines(theme, okc, shell, remember) {
             ).then(function () { setBusy(null); });
         }
 
-        //NAMED FROM WHAT EACH REPOSITORY IS ON NOW, which is what `lineSave`
-        //defaults to. A line is usually something somebody has just finished
-        //arranging one repository at a time, and asking them to type it all
-        //again is how the two drift apart.
+        //---- A LINE IS MADE OUT OF A CUT ------------------------------------
+        //
+        //THIS BUTTON USED TO CALL `lineSave` WITH NOTHING, which names whatever
+        //branch each repository is on right now — and on this host that can
+        //only ever be the default branches. `branchCreate` uses `git branch`
+        //and not `checkout -b`, deliberately, so cutting a branch does not move
+        //HEAD; and ../branches/freeing.js actively steps this host BACK onto its
+        //defaults so a guest is able to push. Nothing in this app moves a
+        //repository onto a work branch, because the work does not happen here.
+        //
+        //SO THE ONLY LINE THAT PRESS COULD EVER MAKE WAS A SECOND COPY OF
+        //`default`, under a different name. It read as the way to make a line,
+        //it was the only such button on the pane that lists lines, and it was
+        //the one shape the chain does not have. Somebody asked for a line, was
+        //given this, and made a branch cut instead — which is the same wrong
+        //turn from the other direction.
+        //
+        //THE CHAIN IS: line → cut → LINE → PR cut. A line is what a cut
+        //becomes once it carries something, so this asks which cut, and calls
+        //the door that does that — the same `branchAsLine` the Branches Cut
+        //pane calls. It is offered here as well because this is the pane
+        //somebody is looking at when they want a line.
+        //
+        //`lineSave` IS NOT GONE and is not offered here. It is how the baseline
+        //itself was made, once, and the CLI still has it.
         function name() {
+            var could = (board && board.branches || []).filter(function (b) {
+                //A CUT, NOT YET A LINE. `protected` covers both halves — a
+                //branch a line already names, and a repository's own default.
+                return b.cut && !b.protected && !(b.asDefault || []).length;
+            });
+
+            if (!could.length) {
+                setSaid({
+                    bad: true,
+                    text: 'There is no cut to make a line out of. A line is what a branch cut becomes once it '
+                        + 'carries something — cut one on Branches Cut first, put the work on it, then come back.'
+                });
+                return;
+            }
+
             ask({
-                title: 'Name a line',
+                title: 'Make a line out of a cut',
                 plain: [
-                    'It names whatever branch each repository is on right now, so arrange them first and then name the arrangement.',
-                    'Nothing is created and nothing is pushed — a line is a name for branches that already exist.',
-                    'Its branches become protected: work is merged into a line and never done on one.'
+                    'A line is one branch per repository, moved and compared as one thing. This moves nothing and pushes nothing — it names a cut that already exists.',
+                    //THE PROTECTION IS THE POINT AND IT IS EASY TO MISS. Said in
+                    //the same words as the Branches Cut pane says it, because it
+                    //is the same act and two descriptions of one act is how the
+                    //two drift apart.
+                    'AND IT PROTECTS THE BRANCH: no machine may push to it afterwards. Work goes onto its own cut and is merged in, which is what makes chaining safe.'
                 ],
                 fields: [
-                    { name: 'name', label: 'Name', placeholder: 'what this change is' },
+                    {
+                        name: 'branch', label: 'Which cut', options: could.map(function (b) {
+                            return { value: b.name, label: b.name + ' — ' + (b.summary || 'nothing on it yet') };
+                        })
+                    },
+                    { name: 'name', label: 'Call the line', placeholder: 'leave blank to keep the branch name' },
                     { name: 'why', label: 'Why it exists', placeholder: 'what it is for, read six weeks from now' }
                 ],
-                confirm: 'Name it',
+                cost: 'Machines stop being able to push to it.',
+                confirm: 'Make it a line',
                 onYes: function (f) {
-                    if (!f.name) throw new Error('Give the line a name — it is what a task will be based on.');
-                    return tell(okc.call('lineSave', { name: f.name, why: f.why })).then(function () { setPicked(f.name); });
+                    var b = f.branch || could[0].name;
+                    var title = (f.name || '').trim() || b;
+                    return tell(okc.call('branchAsLine', { branch: b, name: title, why: f.why || undefined }))
+                        .then(function () { setPicked(title); });
                 }
             });
         }
@@ -217,7 +267,7 @@ module.exports = function lines(theme, okc, shell, remember) {
                             renders as nothing at all. */}
                         <TitleRow>
                             Lines<Grow />
-                            <Plus title="Name a line from what each repository is on now" onClick={name} />
+                            <Plus title="Make a line out of a branch cut — a line is what a cut becomes once it carries something" onClick={name} />
                         </TitleRow>
                         <Stack>
                             {/* WHAT EACH REPOSITORY COUNTS FROM RIGHT NOW, read from
