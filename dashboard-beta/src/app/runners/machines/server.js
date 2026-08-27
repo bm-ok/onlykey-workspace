@@ -612,6 +612,55 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- RUNNING SOMETHING ON ONE, WHICH IS THE PUSH HALF ---------------
+        //
+        //TWO DIRECTIONS, AND THIS IS ONE OF THEM. The host pushes down the
+        //channel — this, and everything ../../vms/dispatch does — and the guest
+        //pulls back over https with its own token, which is ../../vms/provision's
+        //guest API. Neither can do the other's work: a machine cannot be told
+        //something it did not ask for through the API, and this side cannot read
+        //anything the guest did not offer.
+        //
+        //IT WAS NEVER PORTED AND THE DRILLS ASSUME IT. `okc('vmRun', ...)` is
+        //how a drill asks a machine anything at all — every endpoint check in
+        //08-a-task-on-a-machine goes through it — so the suites that exercise a
+        //real machine could not run on this host and nothing said why.
+        //
+        //REFUSED WHEN IT IS NOT DIALLED IN, rather than waited on. A command to
+        //a machine that is off waits out its whole timeout and then reports
+        //something that reads like the command failing, when the machine was
+        //never there to run it.
+        //
+        //NOT `quiet`. The one caller that wants output kept out of the live log
+        //is reading a credential, and it is inside this app — see
+        //../../vms/channel/jobs.js. A door that let anything ask for silence
+        //would be a way to run something on a machine and leave no trace of what
+        //it said.
+        undo.push(actions.define('vmRun', {
+            about: 'Run a command on a dialled-in machine and wait for it',
+            takes: ['name', 'command', 'what', 'timeout'],
+            run: async function (args) {
+                var a = args || {};
+                var name = a.name;
+
+                //OURS ONLY, the same first line as every other door here.
+                ours.get(name);
+
+                var command = String(a.command == null ? '' : a.command).trim();
+                if (!command) throw new Error('Say what to run.');
+
+                if (!imports.channel.connected(name)) {
+                    throw new Error('"' + name + '" is not dialled in, so there is nothing to run a command on. '
+                        + 'Start it and wait for it to connect.');
+                }
+
+                return await imports.channel.run(name, command, {
+                    what: a.what || command,
+                    timeout: a.timeout ? Number(a.timeout) : undefined
+                });
+            }
+        }));
+
         //---- WHAT COULD BE INSTALLED ON A NEW ONE --------------------------
         //
         //VirtualBox already knows every image it has been shown, so this is a

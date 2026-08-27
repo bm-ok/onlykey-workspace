@@ -218,7 +218,18 @@ module.exports = function onejudgement(deps) {
                 //verdict is recorded by a person, and a supervisor has no tool
                 //for either. Kept apart in the record for the same reason they
                 //are kept apart in the flow.
-                concluded: concluded || null,
+                //SAID BEATS INFERRED, AND NEITHER IS DISCARDED. There are two
+                //sources for this: the judge POSTing /verdict at the end of its
+                //session, and this side reading a conclusion out of what it
+                //handed back. The first is the judge SAYING what it concluded;
+                //the second is working it out from a document.
+                //
+                //THIS WROTE `null` OVER THE SAID ONE. A judgement that posted
+                //"accept" and handed back a report this parser could not read a
+                //verdict from ended with `concluded: null` — the recommendation
+                //arrived, was recorded, and was erased seconds later by the run
+                //that was reporting the same event.
+                concluded: concluded || (latest && latest.concluded) || null,
                 tips: read
             });
 

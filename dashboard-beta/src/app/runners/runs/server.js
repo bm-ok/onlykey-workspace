@@ -78,7 +78,10 @@ async function plugin(imports, register) {
     var order = makeJobOrder({
         jobs: imports.library.jobs,
         prompts: imports.library.prompts,
-        contracts: imports.library.contracts
+        contracts: imports.library.contracts,
+        //THE SCRIPT, NOT JUST THE RECORD. See ./joborder.js: a job entry
+        //describes its code and does not carry it.
+        codeFor: imports.library.codeFor
     });
 
     var briefing = makeBriefing({

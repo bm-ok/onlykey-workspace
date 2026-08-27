@@ -28,7 +28,12 @@ function orderWith(over) {
             }
         },
         prompts: { all: async () => o.prompts || [PROMPT] },
-        contracts: { all: async () => o.contracts || [CONTRACT] }
+        contracts: { all: async () => o.contracts || [CONTRACT] },
+
+        //THE SCRIPT ITSELF, WHICH THE RECORD DOES NOT CARRY. A job entry
+        //describes its code; the code is a file beside it. `o.code === null`
+        //stands for a file that is gone or unreadable.
+        codeFor: async () => (o.code === undefined ? '// the tidy job\n' : o.code)
     });
 }
 
@@ -43,6 +48,29 @@ const messageOf = async (fn) => {
 
 test('an approved job with a script is accepted', async () => {
     assert.equal((await orderWith({}).jobFor('tidy')).id, 'tidy');
+});
+
+//---- AND IT COMES BACK WITH ITS SCRIPT -------------------------------------
+//
+//THIS IS THE ONE THAT BROKE EVERY JOB. The caller dispatches `job.code`, and a
+//job record has every field ABOUT the script and not the script — so it was
+//undefined, always. ../../src/app/vms/dispatch reads `it.job` to decide WHICH
+//KIND of run this is, so an undefined one silently turned every job into a plain
+//task with an empty brief, dispatched as `claude -p ""`. Every judgement and
+//every scripted task failed with Claude's "Input must be provided", which names
+//neither the job nor the fault.
+test('the job that comes back carries its script, not just a note that it has one', async () => {
+    const job = await orderWith({}).jobFor('tidy');
+    assert.equal(job.id, 'tidy');
+    assert.ok(job.code && job.code.trim(), 'the job came back without its code, which reads downstream as "not a job"');
+});
+
+test('a job whose script is empty is refused rather than dispatched as nothing', async () => {
+    //`there` SAYS THE FILE EXISTED A MOMENT AGO; this is the file. An empty one
+    //is not a job that does nothing — it is a job that cannot run, and letting
+    //it through is how the fault above stayed invisible.
+    await assert.rejects(() => orderWith({ code: '' }).jobFor('tidy'), /has no script to run/);
+    await assert.rejects(() => orderWith({ code: null }).jobFor('tidy'), /has no script to run/);
 });
 
 test('a job that does not exist is refused by the name that was asked for', async () => {

@@ -41,6 +41,7 @@ module.exports = function joborder(deps) {
     var d = deps || {};
 
     var jobs = d.jobs;            //get(id)
+    var codeFor = d.codeFor || null;   //the script itself, read on demand
     var prompts = d.prompts;      //all()
     var contracts = d.contracts;  //all()
 
@@ -59,7 +60,23 @@ module.exports = function joborder(deps) {
         var why = approvalOf(job, 'job');
         if (why) throw new Error(why);
 
-        return job;
+        //---- WITH ITS SCRIPT, WHICH THE RECORD DOES NOT CARRY ---------------
+        //
+        //A job entry describes the script; it is not the script. The caller
+        //dispatches `job.code`, and without this that is undefined — which
+        //../../vms/dispatch reads as "this is not a job", turning every job into
+        //a plain task with an empty brief. Fetched here because this is the
+        //function whose whole answer is "the job to run".
+        //
+        //REFUSED IF IT IS NOT THERE, in the same breath as the check above it.
+        //`there` says the file existed a moment ago; this is the file.
+        var code = codeFor ? await codeFor(job.id) : null;
+        if (!String(code == null ? '' : code).trim()) {
+            throw new Error('"' + job.name + '" has no script to run. Its file is in the jobs folder and is empty, '
+                + 'or could not be read.');
+        }
+
+        return Object.assign({}, job, { code: code });
     }
 
     //---- AND WHAT IT IS TOLD ----------------------------------------------

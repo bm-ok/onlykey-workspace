@@ -29,6 +29,31 @@
 var SAYS = /failed to authenticate|oauth|invalid_grant|unauthor|api key|credit balance|401/i;
 var FATAL = /^(error|fatal)/i;
 
+//---- AND WHAT IS THIS HOST REFUSING, WHICH IS NOT THE SIGN-IN --------------
+//
+//A GUEST TALKS TO TWO THINGS AND ONLY ONE OF THEM IS ANTHROPIC. It calls the
+//model, and it calls back to THIS dashboard over https with its own machine
+//token. Both can answer 401, and they mean opposite things: one is "your Claude
+//sign-in is no good", the other is "this host will not serve that route".
+//
+//IT COST A WORKING CREDENTIAL. A judgement ran for three minutes, thirty turns,
+//a dollar of model time, wrote its report — and then handed it back to a route
+//this app did not serve. The guest said, accurately:
+//
+//    Error: the dashboard answered 401: {"error":"This host does not answer to
+//    that."}
+//
+//which starts with "Error" and contains "401", so it was read as an
+//authentication failure. The sign-in that had just done the work was paused,
+//"nothing will spend a machine on it again until it is replaced", and the
+//finished judgement was re-queued as never read.
+//
+//MATCHED ON WHAT THE GUEST CALLS IT. The message names the responder — this
+//app's own words, written by ../../vms/dispatch/guest/job-api.js and
+//../../vms/https/server.js — so the test is whose 401 it was rather than a
+//guess at the shape of somebody else's error.
+var OURS = /the dashboard answered|this host does not answer/i;
+
 //AT MOST THREE, AT MOST 600 CHARACTERS. This ends up in a log line a person
 //reads; the whole of a model's complaint is not that.
 var MOST_LINES = 3;
@@ -44,6 +69,11 @@ var NEWLINE = String.fromCharCode(10);
 //something authentication-shaped. Matching the phrases alone on plain text would
 //catch a worker DISCUSSING an api key, which is a thing workers do.
 function authTrouble(line) {
+    //THIS HOST'S OWN REFUSAL IS NEVER THE SIGN-IN'S FAULT. Checked before
+    //anything else, and for both shapes, because a guest reports our 401 as
+    //plain text and can also carry it inside a stream-json result.
+    if (OURS.test(line)) return null;
+
     if (line.charAt(0) !== '{') {
         return FATAL.test(line) && SAYS.test(line) ? line : null;
     }

@@ -300,6 +300,35 @@ module.exports = function store(deps) {
     //a LABEL change — nothing is re-sealed, nothing is re-read, and the
     //fingerprint is the same afterwards, which is how you can tell it was a
     //relabelling and not a replacement.
+    //---- LETTING A PAUSED ONE BE LENT AGAIN ------------------------------
+    //
+    //THE PAUSE IS CLEARED, NOT OVERWRITTEN WITH A PASS. `lastCheck` is what a
+    //MACHINE established, and nothing here tested anything — writing
+    //`ready: true` would be this host claiming a result it does not have. The
+    //record goes back to "nobody has checked", which is what is true.
+    //
+    //WHY IT WAS LET GO IS KEPT, because the sentence that paused it is about to
+    //stop being visible and somebody will want to know what was overruled.
+    function resume(name, why) {
+        var rows = read();
+        var i = index(rows, name);
+        if (i < 0) return null;
+
+        var was = rows[i].lastCheck || null;
+        rows[i] = Object.assign({}, rows[i], {
+            lastCheck: null,
+            letGo: {
+                at: now(),
+                why: why || null,
+                //WHAT IT WAS PAUSED FOR, carried onto the record so the history
+                //is not lost with the flag.
+                over: was && was.why ? String(was.why).slice(0, 400) : null
+            }
+        });
+        write(rows);
+        return get(name);
+    }
+
     function roleOf(name, want) {
         var rows = read();
         var i = index(rows, name);
@@ -556,7 +585,7 @@ module.exports = function store(deps) {
 
     return {
         all: all, get: get, add: add, forget: forget, token: token,
-        checked: checked, roleOf: roleOf, lentTo: lentTo, backFrom: backFrom,
+        checked: checked, resume: resume, roleOf: roleOf, lentTo: lentTo, backFrom: backFrom,
         noteAccount: noteAccount, ensurePlans: ensurePlans, supervisorKey: supervisorKey,
         freeFor: freeFor, pausedFor: pausedFor, forQueue: forQueue,
         fileFor: fileFor, root: root,

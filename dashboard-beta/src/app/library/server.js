@@ -472,7 +472,35 @@ async function plugin(imports, register) {
         library: {
             jobs: jobs, prompts: prompts, contracts: contracts,
             resolved: resolved,
-            starters: starters
+            starters: starters,
+
+            //---- AND THE SCRIPT ITSELF, WHICH NOTHING COULD REACH -----------
+            //
+            //A JOB'S CODE IS A FILE BESIDE ITS RECORD and `codeOf` is the only
+            //thing that reads it — a detail of this plugin, used for hashing the
+            //approval and for counting lines. So a job entry has every field
+            //ABOUT the script and not the script, and ../runners/runs asked it
+            //for `job.code`: undefined, always.
+            //
+            //THE CONSEQUENCE WAS NOT A MISSING SCRIPT, WHICH WOULD HAVE BEEN
+            //OBVIOUS. ../../vms/dispatch reads `it.job` to decide WHICH KIND OF
+            //RUN this is — a job, a shell command, or a plain task — so an
+            //undefined one silently made every job into a plain task, dispatched
+            //as `claude -p "$(cat task.txt)"` with a task file that was also
+            //empty. Every judgement and every scripted task since died as
+            //`claude -p ""`, reported by Claude as "Input must be provided
+            //either through stdin or as a prompt argument", which names neither
+            //the job nor the fault.
+            //
+            //ON DEMAND RATHER THAN ON THE ENTRY. Attaching it would put a few
+            //thousand characters of script on every row of a list that panes
+            //draw and `capture` photographs, to serve the one caller that
+            //actually runs one.
+            codeFor: async function (id) {
+                var dir = await jobsDir();
+                var entry = await jobs.get(id);
+                return entry ? codeOf(entry, dir) : null;
+            }
         },
         onDestroy: function () { while (undo.length) undo.pop()(); }
     });

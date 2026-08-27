@@ -355,7 +355,31 @@ module.exports = {
     // Defaulting to the prompt is the ordinary case, not a shortcut: a job whose
     // work IS the prompt should not have to name it.
     const brief = String(text == null ? (PROMPT ? PROMPT.text : '') : text).trim()
-    if (!brief) throw new Error('there is no brief to give a worker — pass one, or run this job with a prompt')
+    if (!brief) {
+      // SAYING WHICH OF THE THREE WAYS IT IS EMPTY. "There is no brief" was
+      // true and told nobody where to look: a job that passed nothing and had
+      // no prompt, a run dispatched without one, and a prompt file that arrived
+      // empty are three different faults with three different fixes.
+      throw new Error('there is no brief to give a worker — '
+        + (text != null
+          ? 'the job passed one and it was empty'
+          : PROMPT
+            ? `this run's prompt file (${PROMPT.id}) is empty`
+            : 'this run carries no prompt at all, so the job must pass one')
+        + '.')
+    }
+
+    // WHAT IT IS ABOUT TO BE GIVEN, SAID BEFORE IT IS GIVEN. A worker that
+    // refuses its own arguments leaves a log holding one line of somebody
+    // else's error and nothing about what was handed over — and every question
+    // afterwards is "what did it actually get", which nothing could answer.
+    //
+    // THE LENGTH AND THE FIRST LINE, not the brief. It is long, it is already
+    // kept on the host with the work, and a log is read by more people than the
+    // work is.
+    process.stdout.write(`okc: giving the worker ${brief.length} characters`
+      + (PROMPT && text == null ? ` from ${PROMPT.id}` : ' from the job')
+      + ` — "${brief.split('\n')[0].slice(0, 60)}..."\n`)
 
     // THE RUN'S OWN CONTRACT UNLESS THE JOB SAYS OTHERWISE, and "otherwise"
     // includes saying none. Tested with `in` rather than by a default value,
@@ -435,7 +459,31 @@ module.exports = {
     // every task with a script behind it — the log stayed empty for the whole
     // run and arrived complete at the end. The exact fault that was supposedly
     // fixed, in the path that does most of the work.
-    const args = ['-p', brief, '--dangerously-skip-permissions', '--output-format', 'stream-json', '--verbose']
+    // ---- THE BRIEF GOES IN ON STDIN, NOT AS AN ARGUMENT --------------------
+    //
+    // THIS WAS `['-p', brief, ...]` AND CLAUDE STOPPED ACCEPTING IT. Every job
+    // — which is every judgement, and every task with a script behind it — died
+    // instantly with its whole log being one line:
+    //
+    //     Error: Input must be provided either through stdin or as a prompt
+    //     argument when using --print
+    //
+    // NOT A PORT BUG. The app this came from has the identical argv and the
+    // identical stdio, so both are equally broken by it: the CLI moved. Nothing
+    // pins a version — the project's extra-user.sh installs
+    // @anthropic-ai/claude-code at latest — so this arrives on whatever machine
+    // is built next, without anything here changing.
+    //
+    // STDIN IS WHAT THE ERROR ITSELF OFFERS, and it is the half that does not
+    // depend on where a positional sits among flags that keep being added. The
+    // supervisor's own launcher passes `-p "..."` LAST and works, which is the
+    // other shape — but a rule about argument ORDER is one the next flag breaks
+    // again, quietly, on a machine nobody is watching.
+    //
+    // `--print` RATHER THAN `-p`, spelt out, because `-p` taking a value is
+    // exactly the ambiguity being stepped away from: with no argument after it,
+    // a short flag that expects one swallows whatever comes next.
+    const args = ['--print', '--dangerously-skip-permissions', '--output-format', 'stream-json', '--verbose']
     if (rulesFile) args.push('--append-system-prompt-file', rulesFile)
     if (resume) args.push('--resume', String(resume))
 
@@ -473,6 +521,11 @@ module.exports = {
       cp.execFileSync('claude', args, {
         cwd: cwd || process.cwd(),
         timeout,
+        // THE BRIEF, ON STDIN. `input` makes stdin a pipe and writes this into
+        // it -- which is why stdin below is 'pipe' where it used to be
+        // 'ignore'. stdout and stderr are untouched and still go straight to
+        // the file by descriptor, for the reason given below.
+        input: brief,
         // STRAIGHT INTO THE FILE, by descriptor. No pipe, so nothing is held in
         // this process while the worker thinks -- the events land as they
         // happen and `tail -F` shows them.
@@ -480,7 +533,7 @@ module.exports = {
         // It also means a worker that is KILLED leaves its transcript behind.
         // Captured through a pipe, a timeout threw away everything it had said,
         // which is the moment the transcript is worth the most.
-        stdio: ['ignore', 1, 1]
+        stdio: ['pipe', 1, 1]
       })
     } catch (e) {
       died = e

@@ -207,6 +207,55 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- AND A WAY BACK FOR ONE THAT WAS STOPPED BY MISTAKE ------------
+        //
+        //A PAUSE IS A CONCLUSION DRAWN FROM A RUN, and a conclusion can be
+        //wrong. It was: this host answered 401 to a route it did not serve, the
+        //guest reported that accurately, and the reading of it paused a sign-in
+        //that had just worked for three minutes. Without this the only way back
+        //was to throw the credential away and sign in again — which destroys a
+        //working thing to correct a wrong opinion about it.
+        //
+        //A PERSON'S PRESS, NEVER AUTOMATIC. See ./shape.js: a probe may condemn
+        //a credential and may not absolve one, precisely because a probe said
+        //yes three times about a dead credential and erased what a real run had
+        //established. This is the other kind of answer — somebody looked and
+        //decided — so it is a door rather than a rule.
+        //
+        //IT SAYS WHAT IT IS OVERTURNING. A resume with no reason is how the same
+        //credential gets un-paused every week and nobody learns why it keeps
+        //failing.
+        undo.push(actions.define('guestResume', {
+            about: 'Let a paused sign-in be lent again. It does not test it — it says the pause was wrong',
+            takes: ['name', 'why'],
+            run: async function (args) {
+                var a = args || {};
+                var name = String(a.name || '').trim();
+                if (!name) throw new Error('Say which sign-in.');
+
+                var was = store.get(name);
+                if (!was) throw new Error('There is no sign-in called "' + name + '".');
+                if (!(was.lastCheck && was.lastCheck.ready === false)) {
+                    return Object.assign({}, was, {
+                        note: '"' + name + '" is not paused, so there is nothing to let go.'
+                    });
+                }
+
+                var stopped = was.lastCheck.why || 'it did not say';
+                var now = store.resume(name, a.why ? String(a.why).trim() : null);
+
+                log.on('keys', name).warn('"' + name + '" may be lent again'
+                    + (a.why ? ' — ' + String(a.why).trim() : '')
+                    + '. It was paused because: ' + String(stopped).slice(0, 160));
+
+                return Object.assign({}, now || {}, {
+                    note: '"' + name + '" may be lent again. It was paused because: '
+                        + String(stopped).slice(0, 200)
+                        + ' — nothing was tested just now; this says that reading was wrong.'
+                });
+            }
+        }));
+
         undo.push(actions.define('guestRole', {
             about: 'Change what a Claude sign-in is for: a worker, a judge, or a supervisor. '
                 + 'The token is untouched',
