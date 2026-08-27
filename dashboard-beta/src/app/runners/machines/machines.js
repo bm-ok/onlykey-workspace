@@ -55,6 +55,42 @@ module.exports = function machines(theme, okc, remember) {
             again();
         };
 
+        //---- AND UNMAKING ONE FOR GOOD -------------------------------------
+        //
+        //THE SAME DESTRUCTION AS A REBUILD WITH NOTHING AFTER IT, which is the
+        //whole difference and is what this dialog has to say. A rebuild ends
+        //with the machine back; this ends with it gone, and the register no
+        //longer knowing the name.
+        //
+        //WHAT IT TOUCHES IS SAID PLAINLY, because "remove" is a mild word for
+        //deleting a 60 GB disk out of VirtualBox. It is also worth saying what
+        //it does NOT touch: this app refuses any machine it did not make, so
+        //nothing else on the computer is in reach of this button.
+        function remove(m) {
+            ask({
+                title: 'Remove ' + m.name + '?',
+                plain: [
+                    'The machine and its disks are deleted from VirtualBox, and this app forgets the name.',
+                    'Everything on it goes: anything left in its home, every snapshot it has taken, anything a task wrote and did not hand back.',
+                    'Only machines this app made can be removed — nothing else on this computer is in reach of this.',
+                    'To get the same machine back afterwards, make it again from scratch. Rebuild is the button that keeps the spec.'
+                ],
+                cost: 'Its disks are deleted. There is nothing to undo it with.',
+                confirm: 'Remove it',
+                danger: true,
+                protect: true,
+                onYes: function () {
+                    return okc.call('vmRemove', { name: m.name }).then(function (r) {
+                        //THE SELECTION GOES WITH IT. A panel describing a machine
+                        //that no longer exists is the one somebody presses next.
+                        setPicked(null);
+                        again();
+                        setSaid({ text: (r && r.note) || (m.name + ' is gone, and its disks with it.') });
+                    }, function (e) { setSaid({ bad: true, text: e.message }); throw e; });
+                }
+            });
+        }
+
         function rebuild(m) {
             var sp = m.spec || {};
             ask({
@@ -190,6 +226,20 @@ module.exports = function machines(theme, okc, remember) {
                                     ? 'it claims ' + v.branch + ', so work is on it'
                                     : 'destroy it and make it again from the same spec, then install it'}
                         onClick={function () { rebuild(v); }}>Rebuild</Button>
+
+                    {/* AND THE END OF ONE. Same three refusals as Rebuild and
+                        for the same reason — both destroy the disk — with one
+                        difference that matters: nothing comes back. */}
+                    <Button kind="danger" protect
+                        disabled={!!v.installing || !!v.holdsCredential || !!v.branch}
+                        title={v.installing
+                            ? 'it is installing'
+                            : v.holdsCredential
+                                ? 'it is holding a sign-in — take that back first, or it goes with the disk'
+                                : v.branch
+                                    ? 'it claims ' + v.branch + ', so work is on it'
+                                    : 'delete it and its disks from VirtualBox, and forget it here'}
+                        onClick={function () { remove(v); }}>Remove</Button>
                 </div>
 
                 {v.installing ? <Note kind="warn">It is installing. Nothing else comes up while it does, and a restart of this app at the wrong moment throws the install away.</Note> : null}

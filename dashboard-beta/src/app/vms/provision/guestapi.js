@@ -31,6 +31,10 @@ module.exports = function guestapi(deps) {
     var scripts = d.scripts;
     var settle = d.settle;
     var say = d.say;
+
+    //ASKED BEFORE EVERY SCRIPT IS SERVED. Handed in rather than reached for, so
+    //this file goes on knowing nothing about workspaces.
+    var freshen = d.freshen || function () {};
     var where = d.where;     //the ports and fingerprint a rendered script is told
 
     //---- the file a machine is fetching ------------------------------------
@@ -47,6 +51,18 @@ module.exports = function guestapi(deps) {
     //used for nothing but the log line, and that asymmetry is deliberate: a
     //guest naming a destination is a guest naming somebody else's.
     async function file(at) {
+        //WHERE THE PROJECT'S SCRIPTS ARE, ASKED NOW RATHER THAN REMEMBERED --
+        //the same rule as `where` below, and for a sharper reason. A machine
+        //asks for these twenty-five minutes after it was made, and this half of
+        //the app is rebuilt on every save in between: anything worked out when
+        //the machine was created is gone by the time it asks.
+        //
+        //It cost an install. A save mid-install left a fresh copy of this plugin
+        //with no idea where the project's folder was, and the guest spent ten
+        //minutes being told "There is no provisioning script called extra.sh"
+        //about a file that was on disk the whole time.
+        await freshen();
+
         var vm = at.vm;
         var name = at.url.pathname.split('/').pop();
         var stage = scripts.stageOfFile(name);

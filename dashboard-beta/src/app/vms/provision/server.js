@@ -292,6 +292,11 @@ async function plugin(imports, register) {
         settle: settle,
         say: imports.log.on,
 
+        //WHICH WORKSPACE'S SCRIPTS, ASKED PER REQUEST. See ./guestapi.js: a
+        //machine asks for these long after it was made, and this half is
+        //rebuilt on every save in between.
+        freshen: noteProjectDir,
+
         //WHAT A RENDERED SCRIPT IS TOLD ABOUT THIS HOST. Asked at the moment it
         //is rendered rather than remembered: the address can change between one
         //machine being built and the next, and a script carrying yesterday's is
