@@ -131,13 +131,48 @@ async function plugin(imports, register) {
             label: 'That this app opened it',
             about: 'A line saying which tool made the pull request, so a reader knows what wrote the rest of the body.',
             write: function () { return '_Opened by the dashboard, as one act across every repository this change touches._'; }
+        },
+        //---- THE ONE BLOCK THAT IS ON UNLESS SOMEBODY TURNS IT OFF ----------
+        //
+        //THE OTHERS PUBLISH THIS APP'S INTERNAL NOTES and are rightly off. This
+        //publishes GITHUB'S OWN FACT ABOUT GITHUB'S OWN OBJECT -- which issue the
+        //change is for -- and the person who tagged that issue asked for exactly
+        //this link. Off, the failure is the one the drills already record: the
+        //issue stays open through the merge and is closed by hand. On, the cost
+        //is one line a reader expects to find. It writes nothing at all when the
+        //cut has no issue, so a branch cut by hand is untouched.
+        //
+        //"Closes" IS GITHUB'S KEYWORD, and what it does is theirs: the issue
+        //closes when the pull request merges into the DEFAULT branch of the
+        //repository the issue lives on -- or, across repositories, when the
+        //person merging has write access there. Into a fork, or into a branch
+        //that is not the default, it links the two and closes nothing. That is
+        //the case `issueClose` still exists for.
+        {
+            id: 'closes',
+            label: 'The issue it closes',
+            about: 'Closes owner/repo#N, from the issue the branch was cut for. GitHub then closes that issue when this merges into the default branch of the repository it lives on (or when the person merging has write access there); into a fork or a non-default branch it links but does not close.',
+            defaultOn: true,
+            write: function (c) {
+                var it = c && c.note && c.note.issue;
+                if (!it || !it.on || !(it.number > 0)) return null;
+                return 'Closes ' + it.on + '#' + it.number;
+            }
         }
     ];
+
+    //ON OR OFF, WITH THE DEFAULT BELONGING TO THE BLOCK. A block nobody has
+    //decided about is what its author said it is; a block somebody switched
+    //is what they switched it to, including an explicit false written over a
+    //default of true.
+    function isOn(chosen, b) {
+        return chosen[b.id] === undefined ? !!b.defaultOn : !!chosen[b.id];
+    }
 
     async function blocksOn() {
         var chosen = (await read(template)) || {};
         return BLOCKS.map(function (b) {
-            return { id: b.id, label: b.label, about: b.about, manyOnly: !!b.manyOnly, on: !!chosen[b.id] };
+            return { id: b.id, label: b.label, about: b.about, manyOnly: !!b.manyOnly, on: isOn(chosen, b) };
         });
     }
 
@@ -150,7 +185,7 @@ async function plugin(imports, register) {
 
         for (var i = 0; i < BLOCKS.length; i++) {
             var b = BLOCKS[i];
-            if (!chosen[b.id]) continue;
+            if (!isOn(chosen, b)) continue;
             if (b.manyOnly && (context.repos || []).length < 2) continue;
             var text = null;
             try { text = b.write(context, context.me); } catch (e) { text = null; }
@@ -1108,10 +1143,20 @@ async function plugin(imports, register) {
                     });
                 }
 
+                //THE CUT NOTE, WHICH THE PREVIEW NEVER HAD. `reason`, `cutfrom`
+                //and `commits` all read from it and all previewed as nothing --
+                //the block appeared only on the real pull request, which is the
+                //one place a surprise is expensive. Same lookup prCutMake makes.
+                var headName = (pair.on[0] || {}).head;
+                var board = headName ? ((await relayed('branchBoard')) || {}) : {};
+                var row = ((board.branches) || []).filter(function (b) { return b.name === headName; })[0] || null;
+
                 var context = {
-                    branch: (pair.on[0] || {}).head,
+                    branch: headName,
                     me: which,
                     repos: on,
+                    note: row ? row.note : null,
+                    carries: row ? row.on : [],
                     pulls: pulls
                 };
 

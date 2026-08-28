@@ -292,7 +292,12 @@ module.exports = function doors(store, ask, log) {
             //protected name, a line that names nothing still here — arrive
             //unchanged, because they are better than anything worth writing
             //again here.
-            await ask.cutBranch({ branch: wants, reason: why, from: cutFrom });
+            //THE ISSUE GOES WITH THE CUT. The branch is where the pull request
+            //is later made from, and the cut note is the one record that
+            //survives to that moment -- the task does not, and the line does
+            //not carry extras. So it is handed over here, at the act of
+            //cutting, or the PR can never say what it closes.
+            await ask.cutBranch({ branch: wants, reason: why, from: cutFrom, issue: it.issue || null });
             say.good('cut "' + wants + '" from "' + cutFrom + '" to write a task on it');
         }
 

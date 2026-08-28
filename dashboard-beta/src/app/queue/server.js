@@ -293,7 +293,10 @@ async function plugin(imports, register) {
             //A TAGGED ENTRY WAITS FOR ITS OWN KIND OF MACHINE rather than taking
             //somebody else's — so a row that is not moving has its reason here
             //rather than in a log line nobody was watching.
-            tag: t.tag || null
+            tag: t.tag || null,
+            //WHICH ISSUE IT IS FOR, so a board row can say so without a second
+            //read. Null for most tasks.
+            issue: t.issue || null
         };
     }
 
@@ -355,7 +358,7 @@ async function plugin(imports, register) {
         //arrive unchanged.
         cutBranch: async function (it) {
             return await actions.call('branchCreate', {
-                branch: it.branch, reason: it.reason, group: it.from
+                branch: it.branch, reason: it.reason, group: it.from, issue: it.issue || undefined
             });
         },
         judgement: async function (ref) {

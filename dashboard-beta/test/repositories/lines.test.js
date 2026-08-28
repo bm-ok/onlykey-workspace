@@ -548,3 +548,60 @@ test('with no workspace open there are no lines, and it does not throw', async (
     assert.deepEqual(said.lines, []);
     assert.match(said.note, /No workspace is open/);
 });
+
+//---------------------------------------------------------------------------
+//WHICH ISSUE A CUT IS FOR.
+//
+//THE CUT NOTE IS THE ONE RECORD THAT SURVIVES TO THE PULL REQUEST, so it is
+//where the issue has to ride -- the task does not reach that moment and a line
+//carries no extras. ../pr/server.js writes "Closes owner/repo#N" from it.
+//---------------------------------------------------------------------------
+
+test('a cut records the issue it is for, and a later cut may fill a missing one', async () => {
+    const { actions, state } = await anApp(THREE);
+
+    await actions.call('branchCreate', {
+        branch: 'fix/for-17', reason: 'the header wraps', group: 'the-change',
+        issue: { on: 'someone/their-repo', number: 17 }
+    });
+    const note = (await state.here.doc('cuts')).read({})['fix/for-17'];
+    assert.deepEqual(note.issue, { on: 'someone/their-repo', number: 17 });
+    //NOT CALLED `from`. That key is the per-repository base ref and is already
+    //on the same record; the two must never be confused.
+    assert.deepEqual(note.from, { one: 'work', two: 'work', three: 'work' });
+
+    //A BRANCH CUT BY HAND, THEN WRITTEN A TASK ON FROM AN ISSUE. The reason
+    //stays as first written; the issue is the one field a later cut may fill.
+    await actions.call('branchCreate', { branch: 'fix/by-hand', reason: 'first reason', group: 'the-change' });
+    await actions.call('branchCreate', {
+        branch: 'fix/by-hand', reason: 'a different reason', group: 'the-change',
+        issue: { on: 'a/b', number: 4 }
+    });
+    const later = (await state.here.doc('cuts')).read({})['fix/by-hand'];
+    assert.match(later.reason, /first reason/, 'cutting it again rewrote why');
+    assert.deepEqual(later.issue, { on: 'a/b', number: 4 }, 'the later cut did not fill the missing issue');
+
+    //BUT NOT REPLACE ONE. Two issues for one branch is a different branch.
+    await actions.call('branchCreate', {
+        branch: 'fix/by-hand', reason: 'x', group: 'the-change', issue: { on: 'a/b', number: 5 }
+    });
+    assert.deepEqual((await state.here.doc('cuts')).read({})['fix/by-hand'].issue, { on: 'a/b', number: 4 });
+});
+
+test('the command line spells an issue owner/name#N, and a malformed one is refused', async () => {
+    const { actions, state } = await anApp(THREE);
+
+    await actions.call('branchCreate', {
+        branch: 'fix/typed', reason: 'r', group: 'the-change', issue: 'someone/their-repo#9'
+    });
+    assert.deepEqual((await state.here.doc('cuts')).read({})['fix/typed'].issue, { on: 'someone/their-repo', number: 9 });
+
+    //REFUSED RATHER THAN DROPPED. A caller that thought it named an issue and
+    //did not would otherwise get a pull request that closes nothing, silently.
+    for (const bad of ['17', 'their-repo#17', 'a/b#0', { on: 'a', number: 1 }, { on: 'a/b' }]) {
+        await assert.rejects(
+            () => actions.call('branchCreate', { branch: 'fix/bad', reason: 'r', group: 'the-change', issue: bad }),
+            /is not one/,
+            'accepted a malformed issue: ' + JSON.stringify(bad));
+    }
+});

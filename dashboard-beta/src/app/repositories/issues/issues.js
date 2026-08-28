@@ -102,7 +102,15 @@ module.exports = function issues(theme, okc, remember, shell) {
         remember.write('addtask', 'draft', {
             title: i.title,
             brief: (words ? says + '\n\n' + words.trim() + '\n\n' : '')
-                + 'From ' + (i.on || '') + ' issue #' + i.number + ' — ' + i.url
+                + 'From ' + (i.on || '') + ' issue #' + i.number + ' — ' + i.url,
+            //THE ISSUE AS A FACT, BESIDE THE ISSUE AS PROSE. The line above is
+            //for the worker to read. This is for the machinery: the task keeps
+            //it, the branch cut keeps it, and the pull request says "Closes
+            //owner/repo#N" from it -- which is how GitHub closes the issue on
+            //merge without anybody here pressing anything. Flattened into text
+            //alone, none of that could happen, and it did not.
+            issue: i.on && i.number ? { on: i.on, number: i.number } : undefined,
+            parent: i.parent && i.parent.number ? { on: i.parent.on || i.on, number: i.parent.number } : undefined
         });
         shell.go('Queue', 'Add task');
     }

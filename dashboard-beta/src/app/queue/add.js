@@ -1,5 +1,5 @@
 var React = require('react');
-var { useState } = React;
+var { useState, useEffect } = React;
 
 //---------------------------------------------------------------------------
 //Add task: the same form the supervisor fills in, with a person at it.
@@ -135,6 +135,21 @@ module.exports = function add(theme, okc, remember) {
             });
         };
         var val = function (k) { return draft && draft[k] != null ? draft[k] : ''; };
+
+        //A DRAFT WRITTEN BY THE ISSUES PANE SAYS `brief`; THIS FORM READS
+        //`words`. Nothing mapped one to the other, so "Write a task from it"
+        //carried the title and lost the whole brief -- the quotation, the URL,
+        //the sentence saying a person decided. Moved across once, here, and the
+        //old key dropped so it cannot come back on the next save and overwrite
+        //what somebody has since typed.
+        useEffect(function () {
+            if (!draft || draft.brief == null || draft.words) return;
+            setDraft(function (was) {
+                var next = Object.assign({}, was, { words: was.brief });
+                delete next.brief;
+                return next;
+            });
+        }, [draft && draft.brief]);
 
         //AN ERROR BEFORE THE SPINNER, or a call that failed is indistinguishable
         //from one still on its way and the pane sits on a skeleton for ever.
@@ -371,7 +386,11 @@ module.exports = function add(theme, okc, remember) {
                     brief: val('words'),
                     job: val('job'),
                     contractId: val('contractId') || undefined,
-                    tag: wantTag || undefined
+                    tag: wantTag || undefined,
+                    //WHICH ISSUE THIS IS FOR, if it came from one. Carried as
+                    //data so the branch cut and the pull request can name it;
+                    //see writeTaskFrom in ../repositories/issues/issues.js.
+                    issue: val('issue') || undefined
                 }
             }).then(function (r) {
                 setDraft({});
@@ -424,6 +443,13 @@ module.exports = function add(theme, okc, remember) {
                                             ? 'no branch yet — there is nothing for it to read'
                                             : 'no branch yet — there is nowhere for it to deliver'}</span>}
                                 {wantTag ? <span>{' · '}<Badge kind="muted">{wantTag}</Badge></span> : null}
+                                {/* THE ISSUE IT IS FOR, on the card that says what
+                                    the worker actually gets -- because the pull
+                                    request will say "Closes" from this, and that
+                                    is worth seeing before the task is written. */}
+                                {val('issue') && val('issue').number
+                                    ? <span>{' · for '}<Mono>{val('issue').on + '#' + val('issue').number}</Mono></span>
+                                    : null}
                             </CardSub>
 
                             {val('words')

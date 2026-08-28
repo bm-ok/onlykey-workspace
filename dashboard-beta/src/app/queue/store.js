@@ -89,6 +89,17 @@ var WORKERS = ['claude', 'shell', 'person'];
 //therefore sorts by creation, which makes a directory of kept logs read in the
 //order the work happened.
 var counter = 0;
+//THE ISSUE A TASK IS FOR, or null. `on` must be owner/name and `number` a
+//positive integer; anything else is not an issue and is not kept.
+function issueOf(x) {
+    if (!x || typeof x !== 'object') return null;
+    var on = String(x.on == null ? '' : x.on).trim();
+    var n = Number(x.number);
+    if (on.split('/').length !== 2 || !on.split('/')[0] || !on.split('/')[1]) return null;
+    if (!(n > 0) || n !== Math.floor(n)) return null;
+    return { on: on, number: n };
+}
+
 function makeUid() {
     counter = (counter + 1) % 0x10000;
     return Date.now().toString(36)
@@ -304,6 +315,19 @@ module.exports = function makeTasks(docs, log) {
             //wrote: they had their own reasons and are not asked to file them.
             becauseOf: it.becauseOf ? String(it.becauseOf) : null,
             becauseOfId: it.becauseOfId ? String(it.becauseOfId) : null,
+
+            //WHICH GITHUB ISSUE THIS WORK IS FOR, when it is for one. `{on,
+            //number}`, `on` being owner/name as GitHub spells it. A fact rather
+            //than a sentence in the brief, because things downstream act on it:
+            //the branch cut records it and the pull request says "Closes" from
+            //it, which is how the issue closes on merge with nobody here
+            //pressing anything. Null for work that came from nowhere in
+            //particular, which is most of it.
+            //
+            //VALIDATED RATHER THAN TRUSTED. A malformed one is dropped to null
+            //here, at the one place it enters, so nothing later has to defend
+            //against `{on: 'x'}` reaching a pull request body.
+            issue: issueOf(it.issue),
 
             worker: who,
 

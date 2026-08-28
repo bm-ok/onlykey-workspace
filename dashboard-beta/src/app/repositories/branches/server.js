@@ -765,11 +765,30 @@ async function plugin(imports, register) {
         //from one is not the same as cutting from a branch name.
         undo.push(actions.define('branchCreate', {
             about: 'Cut a branch across every repository, from a named line, from another branch, or from HEAD — each repository’s own default',
-            takes: ['branch', 'reason', 'group', 'from'],
+            takes: ['branch', 'reason', 'group', 'from', 'issue'],
             run: async function (args) {
                 var a = args || {};
                 var name = String(a.branch || '').trim();
                 if (!name) throw new Error('Say what the branch is called.');
+
+                //WHICH ISSUE THE BRANCH IS FOR, if one. `{on: owner/name,
+                //number}`. Refused when malformed rather than dropped: a caller
+                //that thought it named an issue and did not would otherwise get
+                //a pull request that closes nothing, and never know why.
+                var issue = null;
+                if (a.issue != null && a.issue !== '') {
+                    var io = typeof a.issue === 'string' ? (function () {
+                        //`owner/name#N`, which is how a command line says it.
+                        var m = /^([^/#\s]+\/[^/#\s]+)#(\d+)$/.exec(String(a.issue).trim());
+                        return m ? { on: m[1], number: Number(m[2]) } : null;
+                    }()) : a.issue;
+                    var okOn = io && String(io.on || '').split('/').length === 2 && String(io.on).split('/').every(Boolean);
+                    var okN = io && Number(io.number) > 0 && Number(io.number) === Math.floor(Number(io.number));
+                    if (!okOn || !okN) {
+                        throw new Error('An issue is named owner/name#number — "' + JSON.stringify(a.issue) + '" is not one.');
+                    }
+                    issue = { on: String(io.on), number: Number(io.number) };
+                }
                 if (!String(a.reason || '').trim()) {
                     throw new Error('Say what "' + name + '" is for. A branch with no reason on it is one nobody can account for later.');
                 }
@@ -863,8 +882,21 @@ async function plugin(imports, register) {
                         cutIn: made.filter(function (m) { return m.created; }).map(function (m) { return m.repo; }),
                         group: line,
                         cutFrom: from,
-                        from: from2
+                        from: from2,
+                        //THE ISSUE THIS BRANCH IS FOR. This note is the one
+                        //record that survives to the pull request, and
+                        //../pr/server.js writes "Closes owner/repo#N" from it.
+                        //Not called `from`: that is the per-repository base
+                        //ref, two lines up.
+                        issue: issue
                     };
+                    doc.write(notes);
+                } else if (issue && !notes[name].issue) {
+                    //THE ONE FIELD A LATER CUT MAY FILL. The reason stays as
+                    //first written -- but a branch cut by hand, then written a
+                    //task on from an issue, should still get its link rather
+                    //than being the one branch whose pull request says nothing.
+                    notes[name].issue = issue;
                     doc.write(notes);
                 }
 
