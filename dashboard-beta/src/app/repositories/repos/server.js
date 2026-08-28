@@ -527,6 +527,34 @@ async function plugin(imports, register) {
                     why: 'issues are switched off on this repository' });
                 continue;
             }
+            //---- AND WHETHER THERE IS ROOM TO GO ON ----------------------
+            //
+            //CHECKED BETWEEN PLACES, WHICH IS THE ONLY HONEST PLACE TO STOP. A
+            //place is read whole or not at all: stopping halfway through one
+            //would produce a list that is short for a reason nothing on the
+            //answer distinguishes from the tracker being short.
+            //
+            //THE BUDGET IS PER TOKEN AND SHARED BY EVERYTHING. A sweep runs
+            //unattended and a person pressing a button does not, so the sweep is
+            //the one that leaves room -- otherwise the first interactive action
+            //after a big sweep is the one that gets refused, which reads as the
+            //app being broken rather than as the crawler having eaten it all.
+            //
+            //IT IS NOT AN ERROR AND MUST NOT PRINT AS ONE. Nothing is wrong; the
+            //hour is nearly spent and the rest is read next time. What would be
+            //wrong is a short list that says nothing.
+            if (github.spare && !github.spare()) {
+                var b = github.budget ? github.budget() : {};
+                issuesFrom.push({
+                    on: on, count: null, off: false, asked: false, more: true,
+                    why: 'not read this time — ' + (b.left == null ? 'the hourly budget' : b.left + ' GitHub requests')
+                        + ' left of ' + (b.limit || 'the hour') + ', and this sweep stops with '
+                        + (b.keepBack || 'some') + ' spare so pressing something still works'
+                        + (b.resets ? '. It comes back at ' + b.resets : '')
+                });
+                continue;
+            }
+
             var bits = on.split('/');
             //ALL OF THEM, NOT THE FIRST HUNDRED. This call was
             //`per_page=100` and took what came back, so a tracker with five
@@ -626,26 +654,74 @@ async function plugin(imports, register) {
         //ONLY WHERE THERE ARE ANY, and only for issues, which is why the count
         //above is carried: a request per issue is a request per issue, and most
         //have nothing under them.
-        for (var ci = 0; ci < (issues || []).length; ci++) {
-            var one = issues[ci];
-            if (!one.comments) { one.said = []; continue; }
+        //---- ALL AT ONCE, RATHER THAN ONE ROUND TRIP AT A TIME ------------
+        //
+        //THIS WAS A `for` LOOP WITH AN `await` IN IT, which is the exact shape
+        //../../github/many.js was written about: the fingerprints saved the
+        //payload and the tab was still slow, because a 304 crosses the network
+        //exactly as slowly as a 200 does.
+        //
+        //AND IT IS THE COST THAT ACTUALLY SCALES HERE. An unchanged thread comes
+        //back 304, which GitHub does not charge against the hourly quota at all
+        //— so on a busy tracker the quota is not what runs out. Two hundred
+        //sequential round trips is thirty seconds of a five-minute poll spent
+        //waiting, and that is what does.
+        //
+        //THE POOL IS ../../github/many.js AND THE NUMBER IS ITS OWNER'S. Eight
+        //at once, decided beside the connection rather than here — a caller
+        //choosing its own concurrency is a caller deciding how hard to lean on
+        //somebody else's service.
+        var wants = (issues || []).filter(function (one) {
+            if (!one.comments) { one.said = []; return false; }
+            //`on` IS `owner/name` OR THIS CANNOT ASK. Filtered rather than
+            //thrown, because one malformed row must not take the sweep with it.
+            if (String(one.on || '').split('/').length !== 2) { one.said = []; return false; }
+            return true;
+        });
 
-            var where = String(one.on || '').split('/');
-            if (where.length !== 2) { one.said = []; continue; }
+        //THE SAME FLOOR BEFORE THE EXPENSIVE HALF. The list of issues is one
+        //request per place; the threads are one per issue, and on a busy tracker
+        //that is where an hour actually goes. Reading the list and then stopping
+        //leaves a usable answer -- every issue, with its own words -- and only
+        //the replies missing, which `saidWhy` says on each row.
+        if (github.spare && !github.spare()) {
+            wants.forEach(function (one) {
+                one.said = null;
+                one.saidWhy = 'the replies were not read this time — the hourly GitHub budget is nearly spent, '
+                    + 'and this sweep stops with room left so pressing something still works';
+            });
+            wants = [];
+        }
 
-            var replies = await github.call('GET',
-                '/repos/' + where[0] + '/' + where[1] + '/issues/' + one.number + '/comments?per_page=100');
+        var threads = await github.many(wants, function (one) {
+            var where = String(one.on).split('/');
+            //PAGED, LIKE THE LIST ABOVE. A thread with more than a hundred
+            //replies is unusual and completely ordinary on a busy project, and
+            //the marker is most likely in the LAST of them — which is the half
+            //that was being dropped.
+            return github.all('/repos/' + where[0] + '/' + where[1] + '/issues/' + one.number + '/comments');
+        });
+
+        for (var ci = 0; ci < wants.length; ci++) {
+            var one = wants[ci];
+            var replies = threads[ci];
 
             //A THREAD THAT COULD NOT BE READ IS SAID, not silently empty. "No
             //replies" and "the replies could not be fetched" are different
             //answers, and one of them means somebody should look.
-            if (replies.status !== 200 || !Array.isArray(replies.body)) {
+            if (!replies || !replies.ok || !Array.isArray(replies.items)) {
                 one.said = null;
-                one.saidWhy = 'the replies could not be read: ' + (replies.status || 'no answer');
+                one.saidWhy = 'the replies could not be read: '
+                    + ((replies && (replies.why || replies.status)) || 'no answer');
                 continue;
             }
 
-            one.said = replies.body.map(function (c) {
+            //AND A THREAD READ ONLY IN PART SAYS SO. The marker is most likely
+            //in the most recent reply, which is exactly the one a truncated
+            //read is missing.
+            one.saidWhy = replies.more ? replies.why : null;
+
+            one.said = replies.items.map(function (c) {
                 var asItself = {
                     number: one.number, on: one.on,
                     by: c.user && c.user.login,

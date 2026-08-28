@@ -101,6 +101,21 @@ var AT_ONCE = 8;
 //the same defect as not paging at all, wearing better clothes.
 var MOST_PAGES = 20;
 
+//HOW MUCH OF THE HOURLY BUDGET IS NOT THE CRAWLER'S TO SPEND.
+//
+//THE BUDGET IS PER TOKEN AND SHARED BY EVERYTHING. A sweep of ten repositories
+//and a person pressing a button go through the same five thousand an hour, and
+//the sweep is the one that runs unattended -- so the sweep is the one that has
+//to leave room. Without a floor the first interactive action after a big sweep
+//is the one that gets refused, which reads as the app being broken rather than
+//as the crawler having eaten everything.
+//
+//FIVE HUNDRED IS ROOM FOR A WORKING SESSION. Opening a pull request, reading a
+//few branches, checking a token -- tens of requests, with margin. It is not
+//tuned; it is chosen to be obviously enough, because the cost of it being too
+//large is a sweep that finishes next tick instead of this one.
+var KEEP_BACK = 500;
+
 //WHAT IS KEPT OF A RESPONSE, BY NAME. The answer and a few headers that describe
 //it — never the whole header block, which is written to disk and grows whatever
 //GitHub decides to send next. The request headers, which are the ones carrying
@@ -123,6 +138,34 @@ async function plugin(imports, register) {
     var actions = host && host.actions;
     var log = imports.log.on('github');
     var keys = imports.keys;
+
+    //---- WHAT GITHUB LAST SAID ABOUT THE BUDGET --------------------------
+    //
+    //EVERY RESPONSE CARRIES IT, so knowing how much is left costs nothing --
+    //which matters, because the obvious way to find out is to ask `/rate_limit`
+    //and that is a request made to find out whether to make requests.
+    //
+    //TAKEN FROM THE LIVE RESPONSE AND NOT FROM THE DRAWER. A 304 is turned back
+    //into a 200 below using the headers that were KEPT, and those are last
+    //week's -- so reading the budget off the answer a caller gets would report a
+    //number from whenever that page was first fetched. It is read here, once,
+    //before that conversion, which is also why a 304 updates it correctly: the
+    //remaining count is real even though nothing was charged.
+    var budget = { limit: null, left: null, resets: null, at: null };
+
+    function noteBudget(headers) {
+        if (!headers) return;
+        var left = headers['x-ratelimit-remaining'];
+        if (left == null) return;
+        budget.left = Number(left);
+        budget.limit = headers['x-ratelimit-limit'] == null ? budget.limit : Number(headers['x-ratelimit-limit']);
+        //SECONDS SINCE THE EPOCH, which is what GitHub sends. Kept as an ISO
+        //string as well, because the number is unreadable in a pane and the
+        //question somebody asks is "when does this come back".
+        var when = headers['x-ratelimit-reset'];
+        budget.resets = when == null ? budget.resets : new Date(Number(when) * 1000).toISOString();
+        budget.at = new Date().toISOString();
+    }
 
     //ONE DRAWER FOR EVERY GITHUB READ THERE WILL EVER BE, keyed on the host and
     //path together — a fingerprint from github.com means nothing to an
@@ -193,6 +236,10 @@ async function plugin(imports, register) {
                     //GitHub answers HTML for some errors.
                     try { json = text ? JSON.parse(text) : null; } catch (e) { /* not json */ }
                     var answer = { status: res.statusCode, headers: res.headers, body: json, text: text, movedTo: went };
+
+                    //BEFORE ANYTHING ELSE, INCLUDING THE 304 PATH BELOW, which
+                    //returns headers that were kept rather than these.
+                    noteBudget(res.headers);
 
                     //---- NOTHING HAS CHANGED, so the answer is the one we have -
                     if (mayKeep && res.statusCode === 304) {
@@ -486,6 +533,14 @@ async function plugin(imports, register) {
             //ASKING FOR MANY THINGS AT ONCE, with the bound decided here rather
             //than by each caller. See above.
             many: many,
+            //WHAT IS LEFT OF THE HOUR, from the last answer rather than from
+            //a request made to find out. `spare()` is the question a sweep
+            //actually asks: is there room to go on without eating the margin a
+            //person needs. Null when nothing has been asked yet -- which reads
+            //as "go ahead", because refusing to start on no information would
+            //make a cold app unable to do anything.
+            budget: function () { return Object.assign({}, budget, { keepBack: KEEP_BACK }); },
+            spare: function () { return budget.left == null || budget.left > KEEP_BACK; },
             //AND ASKING FOR ALL OF SOMETHING rather than the first page of it.
             //Answers `{ items, pages, more, why }`; `more` is true when the list
             //is longer than what came back, and `why` is the sentence to print.

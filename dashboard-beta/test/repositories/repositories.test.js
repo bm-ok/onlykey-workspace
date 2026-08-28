@@ -8,6 +8,7 @@ const child = require('node:child_process');
 const actionsPlugin = require('../../src/app/core/actions/main');
 const statePlugin = require('../../src/app/core/state/main');
 const Paged = require('../../src/app/github/paged');
+const Many = require('../../src/app/github/many');
 const gitPlugin = require('../../src/app/git/server');
 const reposPlugin = require('../../src/app/repositories/repos/server');
 const { refsFor } = require('../../tools/test-parts');
@@ -65,8 +66,16 @@ after(() => {
 
 //WHAT GITHUB SAID, AND WHAT WAS ASKED. The stand-in records every path so a test
 //can assert the PROBE happened rather than trusting that it did.
-function aGitHub(answers) {
+function aGitHub(answers, budget) {
     const asked = [];
+    //THE HOURLY BUDGET, WHICH A TEST HAS TO BE ABLE TO RUN DOWN. Every response
+    //from GitHub carries it, so this is what the real one reads too -- and the
+    //behaviour under a nearly-spent hour is the whole reason it is read.
+    //THE CALLER'S OBJECT BY REFERENCE, not a copy of it. A budget that cannot
+    //move during a sweep is not a budget: what is being tested is what happens
+    //when reading one thing is what spends the room to read the next.
+    const money = budget || { limit: 5000, left: 5000, resets: null, keepBack: 500 };
+    if (money.keepBack == null) money.keepBack = 500;
 
     const call = async (method, at) => {
         asked.push(method + ' ' + at);
@@ -92,13 +101,19 @@ function aGitHub(answers) {
             //day the app stopped following `link` — which is the exact defect it
             //was written for.
             all: Paged(call, 20),
+            //THE REAL POOL, for the reason ./prcuts.test.js already uses it: a
+            //sequential stand-in passes every check a pooled one does, so the
+            //tests would go on passing on the day this stopped being concurrent.
+            many: Many(8),
+            budget: () => money,
+            spare: () => money.left == null || money.left > money.keepBack,
             check: async () => ({ ok: true }),
             apiHost: () => 'api.github.com'
         }
     };
 }
 
-async function anApp(answers, open) {
+async function anApp(answers, open, budget) {
     let actions = null;
     await actionsPlugin({}, async (_e, s) => { actions = s.actions; });
 
@@ -128,7 +143,7 @@ async function anApp(answers, open) {
     let git_ = null;
     await gitPlugin({ app: { host: {} }, log: { on: () => logger }, workspace }, async (_e, s) => { git_ = s.git; });
 
-    const gh = aGitHub(answers || {});
+    const gh = aGitHub(answers || {}, budget);
 
     //THE REAL ../../src/app/repositories/repositories/refs. This pane reads
     //through it now, so a stand-in would check the stand-in.
@@ -789,6 +804,70 @@ test('and when there are more than it will read, it says so rather than truncati
     const said = row.issuesFrom.find((x) => x.on === 'anowner/arepo');
     assert.equal(said.more, true, 'a truncated list reported itself as complete');
     assert.match(said.why, /not all of them/);
+});
+
+//---------------------------------------------------------------------------
+//AND WHEN THE HOUR IS NEARLY SPENT.
+//
+//THE BUDGET IS PER TOKEN AND SHARED BY EVERYTHING. A sweep runs unattended and
+//a person pressing a button does not, so the sweep is the one that has to leave
+//room -- otherwise the first interactive action after a big sweep is the one
+//that gets refused, and that reads as the app being broken rather than as the
+//crawler having eaten the hour.
+//---------------------------------------------------------------------------
+
+test('a sweep stops with room left rather than spending the last of the hour', async () => {
+    const { actions, asked } = await anApp(Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/issues': {
+            status: 200,
+            body: [{ number: 7, title: 'a real issue', user: { login: 'someone' }, comments: 3 }]
+        }
+    }), undefined, { left: 12, limit: 5000, keepBack: 500, resets: '2026-08-28T09:00:00.000Z' });
+
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+
+    //NOT ASKED, and the row says which place and why. A count of zero would be
+    //a lie of exactly the kind the paging fix was about.
+    const said = row.issuesFrom.find((x) => x.on === 'anowner/arepo');
+    assert.equal(said.asked, false, 'the place was read with the hour nearly gone');
+    assert.equal(said.count, null, 'not reading something was reported as finding nothing');
+    assert.match(said.why, /12 GitHub requests/);
+    assert.match(said.why, /so pressing something still works/);
+
+    //AND NOTHING WAS ACTUALLY ASKED OF GITHUB FOR IT. The sentence is worth
+    //nothing if the requests went out anyway.
+    assert.ok(!asked.some((a) => /\/issues/.test(a)), 'it said it was stopping and asked anyway');
+});
+
+test('and reading the issues but not the replies is a usable answer that says so', async () => {
+    //THE FLOOR IS CHECKED TWICE ON PURPOSE. The list is one request per place;
+    //the threads are one per issue, and on a busy tracker that is where an hour
+    //actually goes. Stopping between them leaves every issue with its own words
+    //and only the replies missing.
+    const money = { left: 501, limit: 5000, keepBack: 500 };
+
+    const { actions, asked } = await anApp(Object.assign({}, REPO_OK, {
+        //READING THE LIST IS WHAT SPENDS THE ROOM TO READ THE REPLIES, which is
+        //how this happens in life: there was margin to start and not to finish.
+        '/repos/anowner/arepo/issues': () => {
+            money.left = 3;
+            return { status: 200, body: [{ number: 7, title: 'a real issue', user: { login: 'someone' }, comments: 3 }] };
+        }
+    }), undefined, money);
+
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+
+    //THE ISSUES SURVIVED and the replies did not, which is the whole claim.
+    assert.equal(row.issues.length, 1, 'the issues were thrown away along with the replies');
+    assert.equal(row.issues[0].title, 'a real issue');
+    assert.equal(row.issues[0].said, null, 'the replies were read with the hour nearly gone');
+    assert.match(row.issues[0].saidWhy, /not read this time/);
+
+    //AND THE EXPENSIVE HALF NEVER WENT OUT. The sentence is worth nothing if
+    //the requests were made anyway.
+    assert.ok(!asked.some((a) => /\/comments/.test(a)), 'it said it was stopping and asked for the replies anyway');
 });
 
 //---------------------------------------------------------------------------
