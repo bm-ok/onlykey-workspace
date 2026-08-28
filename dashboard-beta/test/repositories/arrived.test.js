@@ -51,6 +51,23 @@ test('a newer marked reply on an issue already tagged is a new ask', () => {
     assert.deepEqual(same.issues, []);
 });
 
+test('a marked comment under a pull request is an ask, and a second one is a second ask', () => {
+    //THE REVIEWS WERE READ AND THE COMMENTS WERE NOT, so "okc: change the
+    //hex" under a pull request this host had just opened reached nobody.
+    const PULL = (n, over) => Object.assign({ on: 'o/r', number: n, title: 'change ' + n }, over || {});
+    const first = { where: 'a reply', by: 'bmatusiak', at: '2026-08-28T20:30:00Z' };
+    const out = diffArrived({ issues: [], pulls: [PULL(2)] }, { issues: [], pulls: [PULL(2, { asked: first })] });
+    assert.deepEqual(out.pulls.map((p) => [p.number, p.kind]), [[2, 'asked']]);
+    assert.deepEqual(out.pulls[0].asked, first);
+
+    const later = { where: 'a reply', by: 'bmatusiak', at: '2026-08-28T20:41:00Z' };
+    const again = diffArrived({ issues: [], pulls: [PULL(2, { asked: first })] }, { issues: [], pulls: [PULL(2, { asked: later })] });
+    assert.deepEqual(again.pulls.map((p) => [p.number, p.kind]), [[2, 'asked']]);
+
+    const same = diffArrived({ issues: [], pulls: [PULL(2, { asked: later })] }, { issues: [], pulls: [PULL(2, { asked: later })] });
+    assert.deepEqual(same.pulls, []);
+});
+
 test('a pull request not seen before is new; a closed issue is nothing', () => {
     const out = diffArrived({ issues: [ISSUE(1), ISSUE(2)], pulls: [PULL(7)] }, { issues: [ISSUE(1)], pulls: [PULL(7), PULL(8)] });
     assert.deepEqual(out.issues, [], 'an issue that closed was reported as arriving');

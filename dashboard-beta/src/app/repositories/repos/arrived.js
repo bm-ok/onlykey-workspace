@@ -61,10 +61,21 @@ function diffArrived(was, now) {
         }
     });
 
+    //THE SAME TWO CASES FOR A PULL REQUEST. A marked comment under one is a
+    //person saying what they want done about the code, and it went unheard
+    //once because only the reviews were read.
     var hadPull = {};
-    (was.pulls || []).forEach(function (p) { hadPull[keyOf(p)] = true; });
+    (was.pulls || []).forEach(function (p) { hadPull[keyOf(p)] = p; });
     (now.pulls || []).forEach(function (p) {
-        if (!hadPull[keyOf(p)]) out.pulls.push(Object.assign(pick(p), { kind: 'new' }));
+        var k = keyOf(p);
+        var before = hadPull[k];
+        if (!before) {
+            out.pulls.push(Object.assign(pick(p), { kind: 'new', asked: p.asked || null }));
+            return;
+        }
+        if (p.asked && (!before.asked || (p.asked.at && before.asked.at !== p.asked.at))) {
+            out.pulls.push(Object.assign(pick(p), { kind: 'asked', asked: p.asked }));
+        }
     });
 
     return out;

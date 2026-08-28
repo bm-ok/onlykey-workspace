@@ -259,6 +259,14 @@ async function plugin(imports, register) {
             on: on,
                     number: p.number, title: p.title, state: p.state, draft: !!p.draft,
                     merged: !!p.merged_at,
+                    //WHAT WAS WRITTEN WHEN IT WAS OPENED, because a pull request
+                    //is an issue with code attached and its description is read
+                    //for the marker the same way an issue's body is.
+                    body: p.body || null, byId: p.user && p.user.id,
+                    //WHAT WAS WRITTEN WHEN IT WAS OPENED, because a pull request
+                    //is an issue with code attached and its description is read
+                    //for the marker the same way an issue's body is.
+                    body: p.body || null, byId: p.user && p.user.id,
                     head: p.head && p.head.ref, base: p.base && p.base.ref,
                     by: p.user && p.user.login, at: p.created_at, updated: p.updated_at,
                     url: p.html_url,
@@ -865,6 +873,134 @@ async function plugin(imports, register) {
                 if (pullList === null) pullList = [];
                 pullList = pullList.concat(pGot.body.map(onePull.bind(null, pOn)));
             }
+        }
+
+        //---- AND WHETHER ANYBODY ASKED FOR SOMETHING ON A PULL REQUEST -------
+        //
+        //A PULL REQUEST HAS A CONVERSATION TOO, on the same path an issue's
+        //replies live on, and a maintainer answering THERE with the marker is
+        //the same conversation as the issue, moved to where the code is. It
+        //went unheard once: the reviews on each open pull request were read
+        //and the comments under it were not, so "okc: ..." beneath a pull
+        //request this host had just opened reached nobody. Open ones only,
+        //pooled like the issue threads, under the same budget floor.
+        if (pullList && pullList.length) {
+            var openPulls = pullList.filter(function (p) { return p.state === 'open' && !p.merged; });
+            if (github.spare && !github.spare()) {
+                openPulls.forEach(function (p) {
+                    p.said = null;
+                    p.saidWhy = 'the conversation was not read this time — the hourly GitHub budget is nearly spent';
+                });
+                openPulls = [];
+            }
+            var pThreads = await github.many(openPulls, function (p) {
+                var w = String(p.on).split('/');
+                return github.all('/repos/' + w[0] + '/' + w[1] + '/issues/' + p.number + '/comments');
+            });
+            openPulls.forEach(function (p, i) {
+                var rep = pThreads[i];
+                var opened = readingOf({
+                    number: p.number, on: p.on, title: p.title, body: p.body,
+                    by: p.by, byId: p.byId, labels: []
+                });
+                p.reading = opened;
+                var pAsked = opened.kind === 'request'
+                    ? { where: 'the pull request', by: opened.by, at: p.at, why: opened.why }
+                    : null;
+                if (!rep || !rep.ok || !Array.isArray(rep.items)) {
+                    p.said = null;
+                    p.saidWhy = 'the conversation could not be read: ' + ((rep && (rep.why || rep.status)) || 'no answer');
+                } else {
+                    p.saidWhy = rep.more ? rep.why : null;
+                    p.said = rep.items.map(function (c) {
+                        var asItself = {
+                            number: p.number, on: p.on,
+                            by: c.user && c.user.login, byId: c.user && c.user.id,
+                            body: c.body || null, labels: []
+                        };
+                        var how = readingOf(asItself);
+                        //THE LAST ONE WINS, the same rule as an issue thread.
+                        if (how.kind === 'request') pAsked = { where: 'a reply', by: how.by, at: c.created_at, why: how.why };
+                        return {
+                            at: c.created_at, by: asItself.by, url: c.html_url,
+                            role: trust.roleOf(c.user, c.author_association),
+                            reading: how, text: asItself.body, body: trust.fenced(asItself, how)
+                        };
+                    });
+                }
+                if (pAsked) {
+                    pAsked.act = 'the pull request';
+                    pAsked.means = (pAsked.by || 'somebody') + ' marked '
+                        + (pAsked.where === 'a reply' ? 'a comment under' : '') + ' the pull request, which is how '
+                        + 'they say they want something done about it. Read the whole conversation with issueRead; '
+                        + 'what is wanted is usually in the comment, since the code is already there.';
+                }
+                p.asked = pAsked;
+            });
+        }
+
+        //---- AND WHETHER ANYBODY ASKED FOR SOMETHING ON A PULL REQUEST -------
+        //
+        //A PULL REQUEST HAS A CONVERSATION TOO, on the same path an issue's
+        //replies live on, and a maintainer answering THERE with the marker is
+        //the same conversation as the issue, moved to where the code is. It
+        //went unheard once: the reviews on each open pull request were read
+        //and the comments under it were not, so "okc: ..." beneath a pull
+        //request this host had just opened reached nobody. Open ones only,
+        //pooled like the issue threads, under the same budget floor.
+        if (pullList && pullList.length) {
+            var openPulls = pullList.filter(function (p) { return p.state === 'open' && !p.merged; });
+            if (github.spare && !github.spare()) {
+                openPulls.forEach(function (p) {
+                    p.said = null;
+                    p.saidWhy = 'the conversation was not read this time — the hourly GitHub budget is nearly spent';
+                });
+                openPulls = [];
+            }
+            var pThreads = await github.many(openPulls, function (p) {
+                var w = String(p.on).split('/');
+                return github.all('/repos/' + w[0] + '/' + w[1] + '/issues/' + p.number + '/comments');
+            });
+            openPulls.forEach(function (p, i) {
+                var rep = pThreads[i];
+                var opened = readingOf({
+                    number: p.number, on: p.on, title: p.title, body: p.body,
+                    by: p.by, byId: p.byId, labels: []
+                });
+                p.reading = opened;
+                var pAsked = opened.kind === 'request'
+                    ? { where: 'the pull request', by: opened.by, at: p.at, why: opened.why }
+                    : null;
+                if (!rep || !rep.ok || !Array.isArray(rep.items)) {
+                    p.said = null;
+                    p.saidWhy = 'the conversation could not be read: ' + ((rep && (rep.why || rep.status)) || 'no answer');
+                } else {
+                    p.saidWhy = rep.more ? rep.why : null;
+                    p.said = rep.items.map(function (c) {
+                        var asItself = {
+                            number: p.number, on: p.on,
+                            by: c.user && c.user.login, byId: c.user && c.user.id,
+                            body: c.body || null, labels: []
+                        };
+                        var how = readingOf(asItself);
+                        //THE LAST ONE WINS, the same rule as an issue thread.
+                        if (how.kind === 'request') pAsked = { where: 'a reply', by: how.by, at: c.created_at, why: how.why };
+                        return {
+                            at: c.created_at, by: asItself.by, url: c.html_url,
+                            role: trust.roleOf(c.user, c.author_association),
+                            reading: how, text: asItself.body, body: trust.fenced(asItself, how)
+                        };
+                    });
+                }
+                if (pAsked) {
+                    pAsked.act = 'the pull request';
+                    pAsked.means = (pAsked.by || 'somebody') + ' marked '
+                        + (pAsked.where === 'a reply' ? 'a comment under' : '') + ' the pull request, which is how '
+                        + 'they say they want something done about it. Read the whole conversation with issueRead; '
+                        + 'what is wanted is usually in the comment, since the code is already there.';
+                }
+                p.asked = pAsked;
+            });
         }
 
         var now = new Date().toISOString();
@@ -1749,16 +1885,18 @@ async function plugin(imports, register) {
                         + ((got.body && got.body.message) || got.status));
                 }
                 //A PULL REQUEST ANSWERS ON THE ISSUES PATH, which is GitHub's
-                //design and not a mistake to paper over. Said plainly, because
-                //the fields differ and a caller expecting an issue would read
-                //half of them as missing.
-                if (got.body.pull_request) {
-                    throw new Error(on + '#' + number + ' is a pull request, not an issue. '
-                        + 'They share a numbering and this reads issues.');
-                }
+                //design: a pull request IS an issue with code attached, and its
+                //conversation lives where an issue's does. This used to refuse
+                //one -- "they share a numbering and this reads issues" -- and a
+                //maintainer's "okc: ..." under a pull request this host had
+                //opened had nowhere to be read. Said on the answer as `kind`,
+                //because the fields differ: there is no tree, the code is
+                //somewhere else, and a review is a different thing again.
+                var isPull = !!got.body.pull_request;
 
                 var x = got.body;
                 var asIssue = {
+                    kind: isPull ? 'pull' : 'issue',
                     number: number, on: on, title: x.title || null, body: x.body || null,
                     by: x.user && x.user.login, byId: x.user && x.user.id, at: x.created_at,
                     role: trust.roleOf(x.user, x.author_association),
@@ -1781,7 +1919,7 @@ async function plugin(imports, register) {
                 //field is worth reading rather than just asking.
                 var tree = { parent: null, children: [], summary: x.sub_issues_summary || null };
 
-                if (x.parent_issue_url) {
+                if (!isPull && x.parent_issue_url) {
                     //THE PATH, PARSED RATHER THAN THE WHOLE URL KEPT. A number
                     //and a repository are what anything downstream can act on;
                     //an api.github.com address is not something a person or a
@@ -1790,7 +1928,7 @@ async function plugin(imports, register) {
                     if (up) tree.parent = { on: up[1] + '/' + up[2], number: Number(up[3]) };
                 }
 
-                if (x.sub_issues_summary && x.sub_issues_summary.total > 0) {
+                if (!isPull && x.sub_issues_summary && x.sub_issues_summary.total > 0) {
                     var kids = await github.all('/repos/' + bits[0] + '/' + bits[1] + '/issues/' + number + '/sub_issues');
                     if (kids.ok && Array.isArray(kids.items)) {
                         tree.children = kids.items.map(function (k) {
@@ -1842,7 +1980,14 @@ async function plugin(imports, register) {
                         asked = { where: 'a reply', by: c.reading.by, at: c.at, why: c.reading.why };
                     }
                 });
-                if (asked) {
+                if (asked && isPull) {
+                    if (asked.where === 'the issue') asked.where = 'the pull request';
+                    asked.act = 'the pull request';
+                    asked.means = (asked.by || 'somebody') + ' marked '
+                        + (asked.where === 'a reply' ? 'a comment under' : '') + ' the pull request, which is how '
+                        + 'they say they want something done about it. What is wanted is usually in the comment, '
+                        + 'since the code is already there.';
+                } else if (asked) {
                     asked.act = 'the issue';
                     asked.means = asked.where === 'a reply'
                         ? (asked.by || 'somebody') + ' marked a reply, which is how they say they want this issue '
@@ -1853,6 +1998,10 @@ async function plugin(imports, register) {
                 }
 
                 return {
+                    kind: isPull ? 'pull' : 'issue',
+                    //WHERE THE CODE IS, when this is a pull request: the page a
+                    //person opens, and whether GitHub already merged it.
+                    pull: isPull ? { url: x.pull_request.html_url || null, merged: !!x.pull_request.merged_at } : null,
                     on: on, number: number, url: x.html_url, title: x.title || null,
                     by: asIssue.by, at: x.created_at, updated: x.updated_at, state: x.state || 'open',
                     labels: asIssue.labels,
@@ -2867,19 +3016,26 @@ async function plugin(imports, register) {
                     kept2.pulls = (kept2.pulls || []).concat(came.pulls.map(stamp)).slice(-200);
                     box.write(kept2);
 
-                    var asked = came.issues.filter(function (i) { return i.kind === 'asked'; });
+                    //A MARKED COMMENT UNDER A PULL REQUEST IS THE SAME ASK, and
+                    //wakes the same way -- said to be one, since the reply goes
+                    //to a different place.
+                    var asked = came.issues.filter(function (i) { return i.kind === 'asked'; })
+                        .concat(came.pulls.filter(function (p) { return p.kind === 'asked'; })
+                            .map(function (p) { return Object.assign({}, p, { pull: true }); }));
                     if (asked.length) {
                         var wakes = false;
                         try { wakes = (await imports.settings.read()).supervisorWakes === true; } catch (e) { wakes = false; }
                         asked.forEach(function (i) {
-                            log.on('github', i.on).good(i.on + '#' + i.number + ' was tagged by ' + (i.asked && i.asked.by || 'somebody'));
+                            log.on('github', i.on).good(i.on + '#' + i.number + (i.pull ? ' (a pull request)' : '')
+                                + ' was tagged by ' + (i.asked && i.asked.by || 'somebody'));
                         });
                         if (wakes) {
                             //FIRE AND FORGET, the same shape ../../queue/onejudgement.js
                             //uses: a slow supervisor is not a reason for a sweep
                             //to hang, and one wake names all of them.
                             var why = asked.map(function (i) {
-                                return i.on + '#' + i.number + ' was tagged by ' + (i.asked && i.asked.by || 'somebody')
+                                return i.on + '#' + i.number + (i.pull ? ' (a pull request)' : '')
+                                    + ' was tagged by ' + (i.asked && i.asked.by || 'somebody')
                                     + ' — "' + String(i.title || '').slice(0, 80) + '"';
                             }).join('; ');
                             Promise.resolve(actions.call('supervisorWake', { why: why })).catch(function (e) {

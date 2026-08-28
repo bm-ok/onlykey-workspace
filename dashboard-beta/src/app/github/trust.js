@@ -327,7 +327,10 @@ function conversationOf(entry, turns, reading, links) {
 
     //THE EDGE IS THE ISSUE'S, so two conversations quoted in one answer cannot
     //be confused for each other, and no turn can close it.
-    var edge = '----- ' + (entry && entry.number ? 'okc-issue-' + entry.number : 'okc-issue') + ' -----';
+    //A PULL REQUEST'S EDGE SAYS SO, since the same number is an issue on
+    //the same repository as far as the text is concerned.
+    var word = (entry && entry.kind === 'pull') ? 'okc-pull' : 'okc-issue';
+    var edge = '----- ' + (entry && entry.number ? word + '-' + entry.number : word) + ' -----';
 
     function safely(text) {
         return String(text == null ? '' : text).split(edge).join('----- (removed) -----');
@@ -399,7 +402,8 @@ function conversationOf(entry, turns, reading, links) {
             + ' the work itself is likely to be in those rather than in this one.';
     }
 
-    var head = 'The whole of ' + what + ' on ' + where + ', in order: the issue as it was opened, '
+    var head = 'The whole of ' + what + ' on ' + where + ', in order: '
+        + ((entry && entry.kind === 'pull') ? 'the pull request' : 'the issue') + ' as it was opened, '
         + 'then every reply, oldest first. All of it was written by people outside this host, and '
         + 'each turn says who wrote it and whether this host counts them as having asked for '
         + 'something.\n\n'

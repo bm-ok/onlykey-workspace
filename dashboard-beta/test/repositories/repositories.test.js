@@ -1234,6 +1234,68 @@ test('a tag that appears between two sweeps is an arrival, and wakes the supervi
     assert.equal((await state.here.doc('github-arrived')).read({}).issues.length, 1);
 });
 
+test('a marked comment under a pull request is an ask, and wakes the supervisor', async () => {
+    //THE CONVERSATION MOVED TO THE CODE. The person sent the reply, the
+    //supervisor cut the pull request, and the maintainer answered UNDER THE
+    //PULL REQUEST with the marker -- and only the reviews were being read.
+    const OPEN = { number: 5, title: 'a change', state: 'open', user: { login: 'beta-super1', type: 'User' }, head: { sha: 'abc' }, body: 'the change' };
+    const answers = Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/pulls': { status: 200, body: [OPEN] },
+        '/repos/anowner/arepo/pulls/5/reviews': { status: 200, body: [] },
+        '/repos/anowner/arepo/issues/5/comments': { status: 200, body: [] }
+    });
+    const woke = [];
+    const { actions, state, asked } = await anApp(answers, undefined, undefined, WAKING);
+    actions.define('supervisorWake', { about: 'a stand-in', run: async (a) => { woke.push(a.why); return { woke: true }; } });
+
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    assert.ok(asked.some((a) => /\/issues\/5\/comments/.test(a)), 'the conversation under the pull request was never read: ' + asked.join(' | '));
+    assert.deepEqual(woke, []);
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+    assert.equal(row.pulls[0].asked, null);
+
+    answers['/repos/anowner/arepo/issues/5/comments'] = {
+        status: 200, body: [{ body: 'okc: change the hex to #fafafa', user: { login: 'bmatusiak', type: 'User' }, created_at: '2026-08-28T20:41:00Z', html_url: 'c' }]
+    };
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const box = (await state.here.doc('github-arrived')).read({});
+    assert.deepEqual(box.pulls.map((p) => [p.number, p.kind]), [[5, 'asked']]);
+    assert.equal(woke.length, 1, 'the supervisor was not woken for a comment under a pull request');
+    assert.match(woke[0], /anowner\/arepo#5 \(a pull request\) was tagged by bmatusiak/);
+
+    const after = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+    assert.equal(after.pulls[0].asked.where, 'a reply');
+    assert.equal(after.pulls[0].asked.act, 'the pull request');
+
+    //AND NOT AGAIN NEXT SWEEP.
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    assert.equal(woke.length, 1);
+});
+
+test('a pull request reads whole through issueRead, and says it is one', async () => {
+    const answers = Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/issues/5': {
+            status: 200,
+            body: { number: 5, title: 'a change', body: 'the change', state: 'open', html_url: 'u', labels: [],
+                user: { login: 'beta-super1', type: 'User' }, created_at: '2026-08-28T20:24:00Z',
+                pull_request: { html_url: 'https://github.com/anowner/arepo/pull/5' } }
+        },
+        '/repos/anowner/arepo/issues/5/comments': {
+            status: 200, body: [{ body: 'okc: change the hex', user: { login: 'bmatusiak', type: 'User' }, created_at: '2026-08-28T20:41:00Z', html_url: 'c' }]
+        }
+    });
+    const { actions, asked } = await anApp(answers, undefined, undefined, WAKING);
+    const got = await actions.call('issueRead', { on: 'anowner/arepo', number: 5 });
+    assert.equal(got.kind, 'pull');
+    assert.equal(got.pull.url, 'https://github.com/anowner/arepo/pull/5');
+    assert.equal(got.asked.act, 'the pull request');
+    assert.equal(got.asked.where, 'a reply');
+    assert.match(got.conversation, /okc-pull-5/);
+    assert.match(got.conversation, /the pull request as it was opened/);
+    assert.ok(!asked.some((a) => /sub_issues/.test(a)), 'it went looking for sub-issues under a pull request');
+});
+
 test('a new issue is noted but does not wake anybody', async () => {
     const answers = Object.assign({}, REPO_OK, { '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(7)] } });
     const woke = [];

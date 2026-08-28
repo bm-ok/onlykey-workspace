@@ -170,7 +170,7 @@ var MAY = {
   // and arrives on the same answer as everything this host knows for certain.
   // Being trusted means somebody's asking counts; it does not make their
   // sentences part of what a supervisor was told to do.
-  issueRead: 'one issue in full: what it says, every reply in order, and whether anybody trusted asked for something',
+  issueRead: 'one issue in full: what it says, every reply in order, and whether anybody trusted asked for something; a pull request by its number reads the same way, with kind: pull',
   issueDrafts: 'replies and closes already written and waiting for a person to release them — so the same thing is not written twice',
   // pulls: NOT PORTED YET -- see the note at the foot of this file.
   repositories: 'the repositories this workspace holds, and where each points',
