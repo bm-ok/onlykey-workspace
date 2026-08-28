@@ -1379,7 +1379,22 @@ async function plugin(imports, register) {
 
                         return {
                             which: key, title: one.title, about: one.about,
-                            bytes: bytes, edited: edited, there: bytes !== null
+                            bytes: bytes, edited: edited, there: bytes !== null,
+                            //---- AND THE TWO THINGS A LIST HAS TO CARRY ----
+                            //
+                            //WHETHER SOMETHING IS WAITING ON A PERSON. A pane
+                            //that shows one skill at a time hides a proposal
+                            //behind whichever one is not selected, and a
+                            //proposal nobody sees is one nobody answers — which
+                            //is silence doing the work of a decision.
+                            //
+                            //NOT THE PROPOSAL ITSELF. This is a listing; the
+                            //text and the argument for it come from reading one.
+                            waiting: !!(proposals.read({}) || {})[key],
+                            //AND HOW MUCH OF ITS PAST IS KEPT, which is a
+                            //readdir and answers "is there anything to compare
+                            //this against" before somebody opens it.
+                            kept: imports.versions.list('skill', key).length
                         };
                     }),
                     note: 'Editing one changes the next waking. It is fetched from this host at the head '
@@ -1464,6 +1479,63 @@ async function plugin(imports, register) {
     //restart means no window is open and nothing is being held, and a file kept
     //on disk would go on claiming otherwise for ever.
     var held = new Map();
+
+    //---- WHAT THIS SKILL HAS BEEN ------------------------------------------
+    //
+    //THE SAME TWO DOORS ../library GIVES A CONTRACT, and for the same reason: a
+    //skill is the document that says what a machine IS, it is rewritten in
+    //place, and until copies were kept the previous answer was simply gone. "It
+    //has been working to different instructions since Tuesday" was not a
+    //question anybody could ask.
+    //
+    //NOT SCOPED TO A WORKSPACE. All three skills are this host's — a supervisor
+    //is not per workspace and neither is what a worker is told — so the id is
+    //the plain `which`. See ../library/server.js, where a job is the exception.
+    undo.push(actions.define('skillVersions', {
+        about: 'Every version of a skill that a person put their name to, newest first',
+        takes: ['which'],
+        run: function (args) {
+            var a = args || {};
+            var which = String(a.which || 'supervisor');
+            var one = skillNamed(which);
+
+            var all = imports.versions.list('skill', which);
+            var newest = all.length ? imports.versions.newest('skill', which) : null;
+
+            return {
+                which: which, title: one.title, versions: all,
+                newest: newest ? Object.assign({}, newest, {
+                    changed: newest.rows ? imports.versions.asText({ rows: newest.rows }) : null
+                }) : null,
+                note: all.length
+                    ? all.length + ' version(s) kept. Ask for one by `at` to read it and what changed to reach '
+                        + 'it. Anything written before copies were kept is not here.'
+                    : 'Nothing has been kept for this yet. Versions start at the first save or approval made '
+                        + 'through this app, not at the first time the file existed.'
+            };
+        }
+    }));
+
+    undo.push(actions.define('skillVersion', {
+        about: 'One kept version of a skill: the text as it stood, and what changed to reach it',
+        takes: ['which', 'at'],
+        run: function (args) {
+            var a = args || {};
+            var which = String(a.which || 'supervisor');
+            skillNamed(which);
+
+            var it = a.at ? imports.versions.read('skill', which, a.at) : imports.versions.newest('skill', which);
+            if (!it) {
+                throw new Error(a.at
+                    ? 'Nothing was kept for "' + which + '" at "' + a.at + '".'
+                    : 'Nothing has been kept for "' + which + '" yet.');
+            }
+
+            return Object.assign({}, it, {
+                changed: it.rows ? imports.versions.asText({ rows: it.rows }) : null
+            });
+        }
+    }));
 
     undo.push(actions.define('skillHolding', {
         about: 'Say that a skill is open in the window with unsaved edits, so a save from elsewhere does not quietly overwrite them',
@@ -1577,11 +1649,36 @@ async function plugin(imports, register) {
     undo.push(actions.define('skillApprove', {
         about: 'Approve a proposed skill: it becomes the one served from the next waking',
         takes: ['which', 'force'],
-        protect: true,
         run: async function (args) {
             var a = args || {};
             var which = String(a.which || 'supervisor');
             skillNamed(which);
+
+            //---- A PERSON'S PRESS, AND ONLY A PERSON'S -------------------
+            //
+            //THIS CARRIED `protect: true` AND IT MEANT NOTHING. Nothing in
+            //../core/actions or ../guards reads that field off an action — it is
+            //the prop a WINDOW control takes — so it read as a guard, sat in the
+            //source looking like one, and refused nothing. `okc.js skillApprove`
+            //went straight through to the door's own checks.
+            //
+            //WHICH IS THE ONE THING THIS MUST NOT ALLOW. What is being approved
+            //here is a document a model wrote about its own instructions, and
+            //the whole line the library rests on is that the thing that wrote it
+            //may not ratify it. A purple button with no refusal behind it is
+            //theatre: the command line simply calls the action instead.
+            //
+            //THE SAME SENTENCE AS ../library/server.js, deliberately — one rule
+            //said one way, so nobody has to work out whether they are different.
+            //
+            //NOT `_fromTest`. A drill may approve, exactly as it may for a
+            //contract: it is how a run gets something it can then dispatch.
+            if (a._overTheWire || a._driven) {
+                throw new Error('Approving a skill is done in the window, by somebody who has read it. That '
+                    + 'is the whole of what an approval means here — a model may write one and may not '
+                    + 'ratify its own. A press driven from the command line is the command line, whichever '
+                    + 'button it lands on.');
+            }
 
             var all = proposals.read({}) || {};
             var it = all[which];
@@ -1676,6 +1773,29 @@ async function plugin(imports, register) {
             var one = skillNamed(which);
             var text = a.text;
 
+            //---- AND WRITING ONE IS A PERSON'S TOO -----------------------
+            //
+            //BECAUSE A SAVE HERE IS AN APPROVAL. Nothing but the window can be
+            //trusted to have read twenty-six thousand characters, and this door
+            //now keeps a version stamped "the window" every time it writes — so
+            //a save down the pipe would file a model's rewrite as something a
+            //person put their name to, which is worse than not keeping one.
+            //
+            //THIS COSTS `--from`, which existed for the command line: a skill
+            //starts with `---` and the CLI reads that as a flag, so a file was
+            //the only way to pass one. That way in is closed, and the way in it
+            //was standing in for now exists — ./skill.js has an editor, which is
+            //where reading it and rewriting it belong together anyway.
+            //
+            //NOT `_fromTest`, the same as approving: a drill may write one, and
+            //the drill that exercises this is the reason both halves were built.
+            if (a._overTheWire || a._driven) {
+                throw new Error('Rewriting a skill is done in the window, by somebody who has read it — '
+                    + 'Supervisor → Skill, where what is served and what you are writing are side by '
+                    + 'side. A save from the command line would be filed as a person having read it, and '
+                    + 'nothing here can tell the difference afterwards.');
+            }
+
             //FROM A FILE, BECAUSE A SKILL DOES NOT FIT ON A COMMAND LINE.
             //
             //Two reasons, and the second is the one that actually bit over
@@ -1734,6 +1854,27 @@ async function plugin(imports, register) {
 
             try { fs.writeFileSync(file, body); }
             catch (e) { throw new Error('Could not write ' + one.title + ': ' + e.message); }
+
+            //---- AND A COPY OF WHAT WAS WRITTEN --------------------------
+            //
+            //WRITING IT AT THE WINDOW IS THE READING, which is ../library's
+            //oldest rule and is just as true here: nothing but the window can
+            //reach this door, so a save IS a person putting their name to a
+            //document. `skillApprove` already kept one; this did not, so half
+            //of what a skill has ever been was kept and half was overwritten.
+            //
+            //AFTER THE WRITE, unlike the library's — there the record and the
+            //copy are both this app's and settle together, and here the file on
+            //disk is the thing that is true. A copy kept of a write that then
+            //failed would be a version of something never served.
+            try {
+                imports.versions.keep('skill', which, body, {
+                    by: 'the window',
+                    why: holding
+                        ? 'Written at the window, forced over unsaved edits it was holding.'
+                        : 'Written at the window.'
+                });
+            } catch (e) { /* ../core/versions says so in the log */ }
 
             //FORCED OVER SOMEBODY'S EDITS IS A DIFFERENT EVENT, and is recorded
             //as one. The window drops what it was holding when it notices the

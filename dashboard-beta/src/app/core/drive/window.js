@@ -193,7 +193,28 @@ async function plugin(imports, register) {
                 })
                 .filter(function (x) { return x.label; }));
 
-        var fields = [].slice.call(r.node.querySelectorAll('input, select, textarea')).filter(seen)
+        //---- AND NOT THE ONES A PERSON CANNOT SEE OR TOUCH ------------------
+        //
+        //`seen` IS `offsetParent`, WHICH IS ABOUT BEING LAID OUT rather than
+        //about being visible. An editor keeps a real `<textarea>` under its own
+        //rendering to catch keystrokes — one pixel square, fully transparent,
+        //parked under the caret — and it is laid out, so it counted as a control
+        //on the pane.
+        //
+        //IT REACHED THE GUARDS LIST, which is where it does actual harm: a
+        //person browsing what they can guard was offered "Cursor at row 23", and
+        //a guard set on that stops matching the moment the caret moves, without
+        //saying so. It is also in every answer about what is on screen, where it
+        //is simply untrue.
+        //
+        //A SIZE RATHER THAN A CLASS NAME, so this stays about what is on the
+        //screen instead of about which editor happens to be vendored. Anything a
+        //person is meant to click is bigger than a checkbox.
+        var touchable = function (n) {
+            return seen(n) && n.offsetWidth > 4 && n.offsetHeight > 4;
+        };
+
+        var fields = [].slice.call(r.node.querySelectorAll('input, select, textarea')).filter(touchable)
             .map(function (n) {
                 //A PROTECTED FIELD'S VALUE NEVER LEAVES THE PAGE.
                 //

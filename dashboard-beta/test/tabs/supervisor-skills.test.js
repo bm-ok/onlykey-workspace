@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const plugin = require('../../src/app/supervisor/server');
+const versionsPlugin = require('../../src/app/core/versions/server');
 
 //---------------------------------------------------------------------------
 //THE INSTRUCTIONS A MODEL IS GIVEN, READ IN THE WINDOW.
@@ -20,12 +21,13 @@ const plugin = require('../../src/app/supervisor/server');
 //guest: it is fetched from this host at the head of every turn.
 //---------------------------------------------------------------------------
 
-let dir, defined, asked;
+let dir, kept, versions, defined, asked;
 
 //A REAL DIRECTORY WITH REAL FILES IN IT, because what this does is stat and read
 //them — and the two answers that matter are "how big and when" and "the text".
 function aHostWith(files) {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-skills-'));
+    kept = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-skills-kept-'));
     Object.keys(files).forEach((name) => fs.writeFileSync(path.join(dir, name), files[name]));
 
     const STAGES = {
@@ -43,6 +45,10 @@ function aHostWith(files) {
         //has rather than a shape nobody checked.
         state: {
             app: {
+                //WHERE COPIES OF WHAT WAS APPROVED GO. ../../src/app/core/versions
+                //roots itself here, so without it every version is dropped with a
+                //warning and this file would prove nothing about keeping any.
+                where: kept,
                 doc: () => {
                     let held = {};
                     return { read: (or) => (held === null ? (or || {}) : held), write: (v) => { held = v; } };
@@ -51,6 +57,11 @@ function aHostWith(files) {
         },
         ours: {},
         guestApi: { api: () => () => {} },
+        //THE REAL ONE, NOT A FAKE. What has to hold is that a save and an
+        //approval keep a copy that can be READ BACK — and a stub of `versions`
+        //here would agree with whatever this file did and prove nothing. It is
+        //rooted at `state.app.where`, which is why the stub above grew one.
+        versions: versions,
         provision: {
             STAGES,
             //THE REAL ONE THROWS when a stage is not on the search path, and the
@@ -70,7 +81,15 @@ async function loaded(files) {
     defined = new Map();
     asked = [];
     let service = null;
-    await plugin(aHostWith(files), async (_e, s) => { service = s; });
+    //THE HOST IS BUILT FIRST, because standing `versions` up needs the
+    //folder it makes -- and the supervisor is handed the result.
+    const host = aHostWith(files);
+    await versionsPlugin(
+        { app: host.app, log: host.log, state: host.state },
+        async (_e, v) => { versions = v.versions; }
+    );
+    host.versions = versions;
+    await plugin(host, async (_e, s) => { service = s; });
     assert.ok(service, 'the plugin did not register');
     return defined.get('skills');
 }
@@ -272,4 +291,192 @@ test('and a supervisor could not call one anyway', async () => {
     //anywhere else is a second opinion about the same question.
     assert.equal(allowed.may('skillPropose'), true,
         'it cannot say what it thinks is wrong with its own instructions');
+});
+
+//---------------------------------------------------------------------------
+//AND WHAT IT HAS BEEN.
+//
+//A SKILL IS REWRITTEN IN PLACE, so before ../../src/app/core/versions the
+//previous answer was simply gone — "it has been working to different
+//instructions since Tuesday" was not a question anybody could ask.
+//
+//THE HALF THAT WAS MISSING WAS THE SAVE. `skillApprove` kept a copy from the
+//day proposals existed and `skillSave` kept nothing, so half of what a skill
+//had ever been was kept and half was overwritten. It is the same asymmetry
+//../library had, and the same answer: writing it at the window IS the reading,
+//because nothing but the window can reach the door.
+//---------------------------------------------------------------------------
+
+const A_SKILL = '---\nname: supervising\ndescription: what to do\n---\n\n# Supervising\n\nOne.\n';
+
+test('a save keeps a copy of what was written, and it reads back', async () => {
+    const skills = await loaded(ALL);
+    assert.equal(defined.get('skillVersions').run({ which: 'supervisor' }).versions.length, 0);
+
+    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+
+    const said = defined.get('skillVersions').run({ which: 'supervisor' });
+    assert.equal(said.versions.length, 1);
+    assert.equal(said.versions[0].first, true);
+    assert.equal(said.newest.text, A_SKILL);
+    assert.equal(said.newest.by, 'the window');
+    //A FIRST VERSION IS NOT A CHANGE TO ANYTHING, and drawing it as one would
+    //mark every line as added.
+    assert.equal(said.newest.changed, null);
+});
+
+test('a second save keeps what changed, against what was written before it', async () => {
+    const skills = await loaded(ALL);
+    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL.replace('One.', 'One.\nAnd two.') });
+
+    const said = defined.get('skillVersions').run({ which: 'supervisor' });
+    assert.equal(said.versions.length, 2);
+    assert.equal(said.newest.added, 1);
+    assert.equal(said.newest.gone, 0);
+    assert.match(said.newest.changed, /^\+ And two\.$/m);
+});
+
+test('a save that changes nothing keeps nothing, because nothing was written', async () => {
+    const skills = await loaded(ALL);
+    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+    const again = defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+
+    assert.equal(again.saved, false);
+    assert.equal(defined.get('skillVersions').run({ which: 'supervisor' }).versions.length, 1);
+});
+
+test('each skill has its own past, and they do not share one', async () => {
+    const skills = await loaded(ALL);
+    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+
+    //ALL THREE ARE THIS HOST'S, so the id is the plain name — no workspace in
+    //front of it, unlike a job. What must still hold is that they are three
+    //separate histories.
+    assert.equal(defined.get('skillVersions').run({ which: 'supervisor' }).versions.length, 1);
+    assert.equal(defined.get('skillVersions').run({ which: 'worker' }).versions.length, 0);
+    assert.equal(defined.get('skillVersions').run({ which: 'judge' }).versions.length, 0);
+});
+
+test('the listing says which one has something waiting and how much is kept', async () => {
+    const skills = await loaded(ALL);
+    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+
+    const rows = skills.run({}).skills;
+    const sup = rows.find((r) => r.which === 'supervisor');
+    //WITHOUT THESE THE MASTER COLUMN CANNOT SAY ANYTHING ABOUT A SKILL IT IS
+    //NOT SHOWING — and a proposal hidden behind an unselected row is a decision
+    //made by silence.
+    assert.equal(sup.kept, 1);
+    assert.equal(sup.waiting, false);
+    assert.equal(rows.find((r) => r.which === 'judge').kept, 0);
+});
+
+test('an older version is read by the moment it was written, and the newest by default', async () => {
+    const skills = await loaded(ALL);
+    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL.replace('One.', 'Two.') });
+
+    const all = defined.get('skillVersions').run({ which: 'supervisor' }).versions;
+    const first = all[all.length - 1];
+
+    assert.match(defined.get('skillVersion').run({ which: 'supervisor', at: first.at }).text, /One\./);
+    assert.match(defined.get('skillVersion').run({ which: 'supervisor' }).text, /Two\./);
+});
+
+test('asking for a version of something that is not a skill is refused', async () => {
+    const skills = await loaded(ALL);
+    assert.throws(() => defined.get('skillVersions').run({ which: 'operator' }), /not a skill/);
+    assert.throws(() => defined.get('skillVersion').run({ which: 'operator' }), /not a skill/);
+});
+
+test('nothing kept is an answer, not a failure', async () => {
+    const skills = await loaded(ALL);
+    const said = defined.get('skillVersions').run({ which: 'judge' });
+
+    //"NOTHING KEPT" AND "IT COULD NOT BE READ" ARE DIFFERENT SENTENCES, and a
+    //panel that drew an error for the ordinary state of a file nobody has
+    //rewritten yet is one nobody would trust.
+    assert.deepEqual(said.versions, []);
+    assert.equal(said.newest, null);
+    assert.match(said.note, /Versions start at the first save or approval/);
+    //READING one, though, is a refusal: there is nothing to hand back.
+    assert.throws(() => defined.get('skillVersion').run({ which: 'judge' }), /Nothing has been kept/);
+});
+
+//---------------------------------------------------------------------------
+//THE GUARDS.
+//
+//`skillApprove` CARRIED `protect: true` AND IT MEANT NOTHING. Nothing in
+//../../src/app/core/actions or ../../src/app/guards reads that field off an
+//ACTION — it is the prop a window CONTROL takes — so it sat in the source
+//looking exactly like a guard and refused nothing at all. `okc.js skillApprove`
+//went straight through to the door's own checks.
+//
+//WHICH IS THE ONE THING THIS MUST NOT ALLOW: what is approved here is a
+//document a model wrote about its own instructions. A purple button with no
+//refusal behind it is theatre — the command line calls the action instead of
+//pressing the button.
+//---------------------------------------------------------------------------
+
+test('approving a skill is refused down the pipe and when a press is driven', async () => {
+    const skills = await loaded(ALL);
+    const approve = defined.get('skillApprove');
+
+    for (const mark of ['_overTheWire', '_driven']) {
+        await assert.rejects(
+            () => approve.run({ which: 'supervisor', [mark]: true }),
+            /may not ratify its own/,
+            mark + ' reached the approval'
+        );
+    }
+});
+
+test('rewriting a skill is refused down the pipe, because a save here is an approval', async () => {
+    const skills = await loaded(ALL);
+    const save = defined.get('skillSave');
+
+    for (const mark of ['_overTheWire', '_driven']) {
+        assert.throws(
+            () => save.run({ which: 'supervisor', text: A_SKILL, [mark]: true }),
+            /done in the window/,
+            mark + ' rewrote a skill'
+        );
+    }
+
+    //AND NOTHING WAS WRITTEN OR KEPT BY THE ATTEMPT, which is the half that
+    //would be silent: a refusal that has already had its effect is not one.
+    assert.equal(defined.get('skillVersions').run({ which: 'supervisor' }).versions.length, 0);
+});
+
+test('a drill may still do both, exactly as it may for a contract', async () => {
+    //`_fromTest` IS NOT `_overTheWire`, DELIBERATELY. It is how a run gets
+    //something it can then dispatch, and the app being ported from draws the
+    //same line — see ../../src/app/library/server.js.
+    const skills = await loaded(ALL);
+    const said = defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL, _fromTest: true });
+    assert.equal(said.saved, true);
+});
+
+test('no action declares protect, because on an action it does nothing', async () => {
+    //THE FIELD IS REAL ON A WINDOW CONTROL AND DEAD ON AN ACTION, which is the
+    //worst kind of dead: it reads as a guard to whoever adds the next one. If
+    //this ever fails, either the field became real — in which case delete this
+    //test — or somebody wrote a guard that is not one.
+    const fs2 = require('node:fs');
+    const path2 = require('node:path');
+    const APP = path2.join(__dirname, '..', '..', 'src', 'app');
+
+    const found = [];
+    (function walk(at) {
+        for (const e of fs2.readdirSync(at, { withFileTypes: true })) {
+            const here = path2.join(at, e.name);
+            if (e.isDirectory()) { if (e.name !== 'vendor') walk(here); continue; }
+            if (e.name !== 'server.js' && e.name !== 'main.js') continue;
+            const src = fs2.readFileSync(here, 'utf8');
+            if (/^\s*protect:\s*true\s*,?\s*$/m.test(src)) found.push(path2.relative(APP, here));
+        }
+    })(APP);
+
+    assert.deepEqual(found, [], 'these declare a guard that refuses nothing: ' + found.join(', '));
 });
