@@ -81,6 +81,16 @@ This has already happened once, to a judge that read for three and a half
 minutes and wrote twelve thousand characters: the ending was fine English and
 was not one of these, so the answer recorded was that it had concluded nothing.
 
+**Your last line goes onto the pull request.** A `RECOMMENDATION` or a
+`RECOMMEND` of a pull request becomes a review on GitHub — `accept`/`yes` an
+approval, `reject`/`no` a request for changes, nothing a comment — with the
+file you hand back as its body, under a header that names the commit you read.
+On a pull request this host opened itself it is posted as a comment, since
+GitHub takes no approval from the author. A person reads it before it goes, but
+they read what you wrote: write the body for the stranger who opened the pull
+request, not for the machine that parses the last line. Say what you checked,
+what you could not, and why the line at the end is the line at the end.
+
 **`CLAIM: unclear` is the honest answer when you have one.** A branch you could
 not build, a test suite that would not run, a change whose point you could not
 establish — those are facts somebody needs, and the judgement says which. A
