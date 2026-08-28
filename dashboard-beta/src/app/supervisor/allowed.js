@@ -264,6 +264,23 @@ var MAY = {
   // NO `skillApprove` AND NO `skillSave` HERE, and that is the whole line.
   skillPropose: 'propose a change to a skill, saying why. Nothing is served from it until a person approves it',
 
+  // AND THE TWO READS THAT MAKE PROPOSING WORTH ANYTHING.
+  //
+  // IT COULD ASK AND NOT FIND OUT. An answered proposal disappears — approving
+  // keeps a version and drops it, refusing drops it and says why — so the drawer
+  // is empty afterwards either way, and an empty drawer reads exactly like never
+  // having asked. Something that cannot tell "still waiting" from "turned down"
+  // either asks again into silence or stops asking.
+  //
+  // NEITHER HANDS BACK A DOCUMENT, which is why they are here and `skills` is
+  // not. `skillAsked` says whether something is waiting and how the last few
+  // were answered; `skillHistory` says when this changed and by how much. The
+  // skill itself is already in front of it — the CLI loads it at the head of
+  // every waking — so a verb that hands it over again widens what a model can
+  // reach and buys nothing.
+  skillAsked: 'whether a change you proposed is still waiting, and how the last few were answered',
+  skillHistory: 'what a skill has been: when it changed, by how much, and the argument made for each change',
+
   // ---- and what it may send onward -----------------------------------------
   //
   // THE FAR END OF THE SAME FLOW, and the reason a supervisor exists: work that

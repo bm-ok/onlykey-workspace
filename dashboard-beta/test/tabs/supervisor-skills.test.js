@@ -577,3 +577,135 @@ test('a proposal is what a person writing one makes too, so both are approved th
     assert.ok(skills.run({ which: 'supervisor' }).proposed);
     assert.equal(skills.run({}).skills.find((r) => r.which === 'supervisor').waiting, true);
 });
+
+//---------------------------------------------------------------------------
+//ASKING, AND THEN FINDING OUT.
+//
+//THE GAP THESE CLOSE: a supervisor could propose a change to its own
+//instructions and had no way to learn what happened to it. Approving keeps a
+//version and drops the proposal; refusing drops it and says why into the
+//conversation. Both are right, and between them the drawer is empty afterwards
+//either way — and an empty drawer reads exactly like never having asked.
+//
+//Something that cannot tell "still waiting" from "turned down" either asks
+//again into silence or stops asking. Neither is a thing improving itself.
+//---------------------------------------------------------------------------
+
+test('with nothing asked, it says so rather than looking like a refusal', async () => {
+    await loaded(ALL);
+    const said = defined.get('skillAsked').run({ which: 'supervisor' });
+
+    assert.equal(said.waiting, null);
+    assert.deepEqual(said.decided, []);
+    assert.match(said.note, /nothing has been asked/i);
+});
+
+test('a proposal that is waiting says so, and says since when', async () => {
+    await loaded(ALL);
+    defined.get('skillPropose').run({
+        which: 'supervisor', text: A_SKILL, why: 'the loop skipped a step', _overTheWire: true
+    });
+
+    const said = defined.get('skillAsked').run({ which: 'supervisor' });
+    assert.equal(said.waiting.why, 'the loop skipped a step');
+    assert.ok(said.waiting.at);
+    assert.match(said.note, /Waiting on a person/);
+
+    //AND NEVER THE TEXT, of the proposal or of the skill. This answers what
+    //happened, not what either document says — see ../../src/app/supervisor/allowed.js.
+    assert.equal(JSON.stringify(said).indexOf('Supervising'), -1);
+});
+
+test('an approval is an answer it can find, not only a document that changed under it', async () => {
+    await loaded(ALL);
+    defined.get('skillPropose').run({
+        which: 'supervisor', text: A_SKILL, why: 'because the loop skipped a step', _overTheWire: true
+    });
+    await defined.get('skillApprove').run({ which: 'supervisor' });
+
+    const said = defined.get('skillAsked').run({ which: 'supervisor' });
+    assert.equal(said.waiting, null);
+    assert.equal(said.decided[0].what, 'approved');
+    assert.equal(said.decided[0].why, 'because the loop skipped a step');
+    assert.match(said.note, /last answer was "approved"/);
+});
+
+test('a refusal carries the reason, which is the whole of what changes the next one', async () => {
+    await loaded(ALL);
+    defined.get('skillPropose').run({
+        which: 'supervisor', text: A_SKILL, why: 'I want to skip the judge', _overTheWire: true
+    });
+    defined.get('skillReject').run({ which: 'supervisor', why: 'a judge is the point, not an obstacle' });
+
+    const said = defined.get('skillAsked').run({ which: 'supervisor' });
+    assert.equal(said.decided[0].what, 'turned down');
+    //BOTH HALVES. "Turned down" on its own says nothing about which idea was
+    //turned down, and the person's reason is what the next proposal has to go on.
+    assert.equal(said.decided[0].why, 'I want to skip the judge');
+    assert.equal(said.decided[0].because, 'a judge is the point, not an obstacle');
+});
+
+test('the answers are kept newest first, and do not grow without limit', async () => {
+    await loaded(ALL);
+    for (let i = 0; i < 15; i++) {
+        defined.get('skillPropose').run({
+            which: 'supervisor', text: A_SKILL, why: 'try ' + i, _overTheWire: true
+        });
+        defined.get('skillReject').run({ which: 'supervisor', why: 'no, ' + i });
+    }
+
+    const all = defined.get('skillAsked').run({ which: 'supervisor' });
+    //THE SHAPE OF RECENT ANSWERS IS WHAT IS USEFUL — that three in a row were
+    //turned down for the same reason is worth knowing, and the one from March
+    //is not. Six come back; twelve are kept.
+    assert.equal(all.decided.length, 6);
+    assert.equal(all.decided[0].why, 'try 14');
+});
+
+test('each skill has its own answers, and they do not run together', async () => {
+    await loaded(ALL);
+    defined.get('skillPropose').run({ which: 'worker', text: A_SKILL, why: 'a worker thing', _overTheWire: true });
+    defined.get('skillReject').run({ which: 'worker', why: 'not that' });
+
+    assert.equal(defined.get('skillAsked').run({ which: 'worker' }).decided.length, 1);
+    assert.equal(defined.get('skillAsked').run({ which: 'supervisor' }).decided.length, 0);
+    assert.equal(defined.get('skillAsked').run({ which: 'judge' }).decided.length, 0);
+});
+
+//---- and what it has been -------------------------------------------------
+
+test('it can read how its instructions have changed, without being handed them', async () => {
+    await loaded(ALL);
+    await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+    await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL.replace('One.', 'One.\nTwo.') });
+
+    const said = defined.get('skillHistory').run({ which: 'supervisor' });
+    assert.equal(said.versions.length, 2);
+    assert.equal(said.versions[0].added, 1);
+    assert.equal(said.versions[1].first, true);
+    assert.ok(said.versions[0].characters > 0);
+
+    //NO TEXT. Four versions of a twenty-seven-thousand-character skill would be
+    //a hundred thousand characters handed back to answer "has this been getting
+    //longer" — and the document itself is already in front of it.
+    assert.equal(JSON.stringify(said).indexOf('Supervising'), -1);
+});
+
+test('both reads refuse a name that is not a skill', async () => {
+    await loaded(ALL);
+    assert.throws(() => defined.get('skillAsked').run({ which: 'operator' }), /not a skill/);
+    assert.throws(() => defined.get('skillHistory').run({ which: 'operator' }), /not a skill/);
+});
+
+test('a supervisor may ask both, and still may not read or ratify the document', async () => {
+    const allowed = require('../../src/app/supervisor/allowed');
+
+    //THE POINT OF THE PAIR: proposing is worth something only if the answer can
+    //be found, and neither of these hands back a document.
+    assert.equal(allowed.may('skillAsked'), true);
+    assert.equal(allowed.may('skillHistory'), true);
+
+    ['skills', 'skillSave', 'skillApprove', 'skillHolding'].forEach((name) => {
+        assert.equal(allowed.may(name), false, name + ' is on the supervisor\'s list');
+    });
+});

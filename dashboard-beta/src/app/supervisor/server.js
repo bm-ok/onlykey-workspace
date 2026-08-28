@@ -103,6 +103,45 @@ async function plugin(imports, register) {
     //folder of repositories.
     var proposals = imports.state.app.doc('skill-proposals');
 
+    //---- AND WHAT WAS DECIDED ABOUT THEM -----------------------------------
+    //
+    //A PROPOSAL THAT IS ANSWERED DISAPPEARS. Approving keeps a version and drops
+    //the proposal; turning one down drops it and says why into the conversation.
+    //Both are right, and between them they left the thing that ASKED with no way
+    //to find out what happened: it proposes, and then the drawer is empty, and
+    //an empty drawer reads the same as never having asked.
+    //
+    //THE CONVERSATION CARRIES A REFUSAL and that is where it belongs — it is
+    //read at the head of every waking. But a conversation is a stream, and
+    //"what happened to the thing I asked for" is a question, not a thing to
+    //notice going past.
+    //
+    //THE LAST FEW, AND NOT A LOG. What is useful is the shape of recent answers
+    //— that three were turned down for the same reason is worth knowing, and the
+    //one from March is not.
+    var decided = imports.state.app.doc('skill-decided');
+    var KEEPS = 12;
+
+    function decide(which, what, why, because) {
+        var all = decided.read({}) || {};
+        var mine = Array.isArray(all[which]) ? all[which] : [];
+
+        mine.unshift({
+            at: new Date().toISOString(),
+            what: what,
+            //THE ARGUMENT IT MADE, kept beside the answer. Read later, "turned
+            //down" on its own says nothing about which idea was turned down.
+            why: String(why == null ? '' : why).slice(0, 400) || null,
+            //AND THE PERSON'S REASON, where there is one. Approving needs no
+            //sentence; refusing does, and it is the whole of what changes what
+            //gets proposed next.
+            because: because ? String(because).slice(0, 400) : null
+        });
+
+        all[which] = mine.slice(0, KEEPS);
+        decided.write(all);
+    }
+
     //ONE SHAPE FOR EVERY ANSWER THAT RETURNS THE LIST, so the window and a model
     //are reading the same thing.
     function board() {
@@ -1538,6 +1577,94 @@ async function plugin(imports, register) {
         }
     }));
 
+    //---- WHAT HAPPENED TO WHAT IT ASKED FOR --------------------------------
+    //
+    //THE ONE READ A SUPERVISOR IS GIVEN ABOUT ITS OWN INSTRUCTIONS, and it is
+    //deliberately not `skills`. That one hands back the whole document and
+    //anything waiting on it, and it is off the allowlist on purpose: the skill
+    //is already in front of a supervisor — the CLI loads it at the head of every
+    //waking — so a verb that hands it over again buys nothing and widens what a
+    //model can reach.
+    //
+    //WHAT IT COULD NOT ASK WAS WHETHER ANYBODY ANSWERED. It proposes, the
+    //proposal disappears when somebody decides, and an empty drawer reads
+    //exactly like never having asked. A refusal reaches it through the
+    //conversation, which is right — but a conversation is a stream, and this is
+    //a question.
+    //
+    //NO TEXT IN THE ANSWER, of the proposal or of the skill. What is here is
+    //whether something is waiting, and how the last few were answered.
+    undo.push(actions.define('skillAsked', {
+        about: 'Whether a change you proposed is still waiting, and how the last few were answered',
+        takes: ['which'],
+        run: function (args) {
+            var a = args || {};
+            var which = String(a.which || 'supervisor');
+            var one = skillNamed(which);
+
+            var pending = (proposals.read({}) || {})[which] || null;
+            var lately = ((decided.read({}) || {})[which] || []).slice(0, 6);
+
+            return {
+                which: which,
+                title: one.title,
+                waiting: pending
+                    ? {
+                        at: pending.at,
+                        why: pending.why,
+                        characters: pending.characters,
+                        was: pending.wasCharacters,
+                        replaced: pending.replaced || null
+                    }
+                    : null,
+                decided: lately,
+                note: pending
+                    ? 'Waiting on a person since ' + pending.at + '. Nothing is served from it until they '
+                        + 'answer, and proposing again replaces it rather than queueing a second.'
+                    : (lately.length
+                        ? 'Nothing is waiting. The last answer was "' + lately[0].what + '" on '
+                            + lately[0].at + '.'
+                        : 'Nothing is waiting and nothing has been answered, so nothing has been asked.')
+            };
+        }
+    }));
+
+    //---- AND WHAT IT HAS BEEN ----------------------------------------------
+    //
+    //METADATA AND NEVER THE TEXT. What is useful to the thing being changed is
+    //the SHAPE of its own history — how often it changes, in which direction,
+    //and what argument was accepted each time — and none of that needs the
+    //documents. Handing back four versions of a twenty-seven-thousand-character
+    //skill would be handing back a hundred thousand characters to answer "has
+    //this been getting longer".
+    undo.push(actions.define('skillHistory', {
+        about: 'What a skill has been: when it changed, by how much, and the argument made for each change',
+        takes: ['which'],
+        run: function (args) {
+            var a = args || {};
+            var which = String(a.which || 'supervisor');
+            var one = skillNamed(which);
+
+            var all = imports.versions.list('skill', which).map(function (v) {
+                return {
+                    at: v.at, by: v.by, why: v.why,
+                    characters: v.characters,
+                    added: v.added, gone: v.gone,
+                    first: !!v.first, note: v.note
+                };
+            });
+
+            return {
+                which: which, title: one.title, versions: all,
+                note: all.length
+                    ? all.length + ' version(s) kept, newest first. The text of each is not here — this is '
+                        + 'about how it has changed, not what it says, which you already have.'
+                    : 'Nothing has been kept for this yet. Versions start at the first save or approval made '
+                        + 'through the app, not at the first time the file existed.'
+            };
+        }
+    }));
+
     undo.push(actions.define('skillHolding', {
         about: 'Say that a skill is open in the window with unsaved edits, so a save from elsewhere does not quietly overwrite them',
         takes: ['which', 'holding'],
@@ -1707,6 +1834,11 @@ async function plugin(imports, register) {
             //first wins and the second deduplicates away, so this one never had
             //any effect except to look like the place attribution came from.
 
+            //AND WHAT WAS DECIDED, so the thing that asked can find out. See
+            //`decide`: an answered proposal disappears, and an empty drawer
+            //reads exactly like never having asked.
+            decide(which, 'approved', it.why, null);
+
             log.on('supervisor').good('the proposed change to ' + which + ' was approved and is now what is served'
                 + ' — it was proposed because: ' + String(it.why).slice(0, 160));
 
@@ -1740,6 +1872,8 @@ async function plugin(imports, register) {
 
             delete all[which];
             proposals.write(all);
+
+            decide(which, 'turned down', it.why, why);
 
             //SAID WHERE IT WILL BE READ. The supervisor reads the conversation at
             //the head of every waking; a refusal filed only in a log is one it
