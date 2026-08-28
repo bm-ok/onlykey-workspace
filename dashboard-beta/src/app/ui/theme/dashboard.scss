@@ -1632,7 +1632,30 @@ table.kv.where .sub:last-child { margin-bottom: 0; }
   align-self: stretch;
   align-items: stretch;
 }
-.msg.woke .msg-body {
+.msg.woke /* Somebody else's words, drawn as somebody else's -- see `Quoted` in bits.js.
+   The left edge is the whole point: it has to read as a quotation at a glance,
+   because the failure this guards against is text from outside arriving
+   indistinguishable from what this app says for itself. Muted rather than
+   alarming -- most of it is an honest bug report from a stranger. */
+.quoted {
+  margin: 6px 0 0;
+  padding: 7px 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* A thread is a list. One very long comment must not push every other reply
+     off the bottom of the pane. */
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.msg-body {
   background: none;
   border: 1px solid var(--warn);
   color: var(--muted);

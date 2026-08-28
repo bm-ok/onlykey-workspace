@@ -82,6 +82,23 @@ function Note({ children, kind }) { return <p className={'note' + (kind ? ' ' + 
 function Mono({ children }) { return <span className="mono">{children}</span>; }
 function Muted({ children }) { return <span className="muted">{children}</span>; }
 
+//---- SOMEBODY ELSE'S WORDS, DRAWN AS SOMEBODY ELSE'S ----------------------
+//
+//TEXT FROM OUTSIDE THIS HOST: an issue body, a comment, a pull request. It is
+//written by anybody on the internet and it has to LOOK like a quotation on the
+//screen for the same reason it is fenced on the way to a model — the failure is
+//not a clever sentence, it is text arriving indistinguishable from what this app
+//says for itself.
+//
+//NOT `Code` AND NOT `Markdown`. Code is an editor, which is right for a hundred
+//lines somebody is about to approve and heavy for a two-line reply. Markdown
+//RENDERS it, which for untrusted text means somebody else deciding what is a
+//heading here — and a rendered quotation is one that no longer looks quoted.
+//
+//WRAPPED AND PRE-SERVED. Line breaks in what somebody wrote are theirs and
+//meaningful; a long URL is not a reason to widen the pane.
+function Quoted({ children }) { return <pre className="quoted">{children}</pre>; }
+
 //---- marks ---------------------------------------------------------------
 
 function Badge({ children, kind, title }) {
@@ -559,7 +576,7 @@ function KvRow({ label, children }) { return <tr><th>{label}</th><td>{children}<
 
 module.exports = {
     setGuardCheck, guardsChanged, useGuard,
-    Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted,
+    Panel, Card, CardTitle, CardSub, Empty, Note, Mono, Muted, Quoted,
     Badge, Badges, Chips, Chip, Views,
     Button, Toggle, Plus, Cog, Finder, Sorter, Form, HeadRow, Controls,
     Skeleton, Notice, Banner, Link, Linky, Spec, Kv, KvRow, Part, PartWhy, Group, Head, Act, ago, openOut, setOpener
