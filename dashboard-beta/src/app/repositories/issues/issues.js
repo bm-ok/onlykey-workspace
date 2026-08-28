@@ -397,8 +397,13 @@ module.exports = function issues(theme, okc, remember, shell) {
                     ? <Panel>
                         <CardTitle>
                             <span className="grow">
-                                {mine.kind === 'close' ? 'Waiting to close this issue' : 'Waiting to be sent'}
+                                {mine.kind === 'close' ? 'Waiting to close this issue'
+                                    : mine.kind === 'review' ? 'Waiting to be posted as a review'
+                                    : 'Waiting to be sent'}
                             </span>
+                            {mine.kind === 'review'
+                                ? <Badge kind={mine.event === 'APPROVE' ? 'ok' : mine.event === 'REQUEST_CHANGES' ? 'bad' : 'muted'}>{mine.event}</Badge>
+                                : null}
                             <Badge kind="warn">not sent</Badge>
                         </CardTitle>
                         <Note>
@@ -408,6 +413,10 @@ module.exports = function issues(theme, okc, remember, shell) {
                                     : '')
                                 + '. Nothing has gone out.'}
                         </Note>
+                        {/* WHY AN APPROVAL WENT OUT AS A COMMENT, said on the
+                            draft: this is your own cut, and GitHub does not
+                            take an approval from its author. */}
+                        {mine.kind === 'review' && mine.forced ? <Note kind="warn">{mine.why}</Note> : null}
                         {mine.text
                             ? <Quoted>{mine.text}</Quoted>
                             : <Empty>Closing it with nothing said.</Empty>}
@@ -417,7 +426,7 @@ module.exports = function issues(theme, okc, remember, shell) {
                                 exact act the draft exists to keep a person in
                                 front of. */}
                             <Button kind="ok" protect onClick={function () { release('issueApprove'); }}>
-                                {mine.kind === 'close' ? 'Close it' : 'Send it'}
+                                {mine.kind === 'close' ? 'Close it' : mine.kind === 'review' ? 'Post the review' : 'Send it'}
                             </Button>
                             {/* NOT PURPLE, AND THE SAME REASONING AS EVERY OTHER
                                 REFUSAL HERE: throwing a draft away sends

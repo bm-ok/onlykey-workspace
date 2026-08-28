@@ -77,6 +77,11 @@ function aJudge(over) {
             },
             github: {
                 call: async (method, path, body) => {
+                    //THE PULL REQUEST AS IT IS NOW, which a review draft reads
+                    //before anything else: its author and its head.
+                    if (method === 'GET') {
+                        return { status: 200, body: { user: { login: 'a-stranger' }, head: { sha: 'abcdef1234567890' }, state: 'open' } };
+                    }
                     did.posted.push({ method, path, body });
                     return o.githubSays || { status: 201, body: { html_url: 'https://github.com/x/y/issues/42#c1' } };
                 }
@@ -217,71 +222,36 @@ test('"reject" is read as NO', async () => {
 //AND WHO IS ALLOWED TO PRESS IT.
 //---------------------------------------------------------------------------
 
-test('posting is refused over the wire, and nothing reaches GitHub', async () => {
-    //A SUPERVISOR CANNOT REACH THIS ANYWAY — it is not on its allowlist — and
-    //this is the second stop, for the command line and for anything driving the
-    //window from outside.
-    const w = await withJudgement({});
+//---------------------------------------------------------------------------
+//IT WRITES A DRAFT NOW, AND POSTS NOTHING ITSELF.
+//
+//`judgementSay` used to post a plain comment and refuse the pipe. It is the
+//same door onto the review machinery: it writes a review draft that a person
+//releases with `issueApprove`, which is where the refusal lives now. Writing a
+//draft is not speech; releasing it is. See ./review-draft.test.js for the
+//review itself.
+//---------------------------------------------------------------------------
 
-    await assert.rejects(() => w.say.run({ ref: w.ref, _overTheWire: true }),
-        /done in the window, by a person who has read what is about to be posted/);
+test('a press writes a draft and nothing reaches GitHub', async () => {
+    const w = await withJudgement({});
+    const said = await w.say.run({ ref: w.ref });
+    assert.equal(said.posted, false);
+    assert.equal(said.waiting, true);
+    assert.deepEqual(w.did.posted, [], 'a draft reached GitHub');
+    assert.match(said.note, /waiting/);
+});
+
+test('over the wire it is the same draft, not a refusal', async () => {
+    //THE OLD REFUSAL CONTRADICTED THE SUPERVISOR'S LIST, which names this verb.
+    const w = await withJudgement({});
+    const said = await w.say.run({ ref: w.ref, _overTheWire: true });
+    assert.equal(said.waiting, true);
     assert.deepEqual(w.did.posted, []);
 });
 
-test('and refused to a driven click, for the same reason', async () => {
-    const w = await withJudgement({});
-    await assert.rejects(() => w.say.run({ ref: w.ref, _driven: true }), /cannot be unsent/);
-    assert.deepEqual(w.did.posted, []);
-});
-
-test('a PREVIEW is allowed over the wire, because it publishes nothing', async () => {
-    //THE READ HALF IS NOT THE DANGEROUS HALF. Refusing it would make the command
-    //line unable to show what a press would do, which is the opposite of the
-    //point.
+test('a preview is still a preview', async () => {
     const w = await withJudgement({});
     const said = await w.say.run({ ref: w.ref, preview: true, _overTheWire: true });
     assert.equal(said.posted, false);
     assert.deepEqual(w.did.posted, []);
-});
-
-//---------------------------------------------------------------------------
-//AND WHERE IT GOES.
-//---------------------------------------------------------------------------
-
-test('a person\'s press posts to the issues endpoint of the repository it is ON', async () => {
-    //A PULL REQUEST IS AN ISSUE ON GITHUB. The pulls endpoint carries review
-    //comments, which are a different thing attached to lines of a diff.
-    const w = await withJudgement({});
-    const said = await w.say.run({ ref: w.ref });
-
-    assert.equal(w.did.posted.length, 1);
-    assert.equal(w.did.posted[0].method, 'POST');
-    assert.equal(w.did.posted[0].path, '/repos/someone/their-repo/issues/42/comments');
-    assert.equal(w.did.posted[0].body.body, said.body || w.did.posted[0].body.body);
-    assert.equal(said.posted, true);
-    assert.match(said.note, /nothing was merged, changed or pushed/);
-});
-
-test('a repository this workspace does not have is refused before anything is sent', async () => {
-    const w = await withJudgement({ repos: [{ repo: 'something-else', issuesOn: 'me/something-else' }] });
-    await assert.rejects(() => w.say.run({ ref: w.ref }), /is not a repository in this workspace/);
-    assert.deepEqual(w.did.posted, []);
-});
-
-test('a GitHub that refuses the comment is reported, and nothing is recorded as said', async () => {
-    const w = await withJudgement({ githubSays: { status: 403, body: { message: 'Resource not accessible' } } });
-    await assert.rejects(() => w.say.run({ ref: w.ref }), /Resource not accessible/);
-
-    const after = await w.service.judge.get(w.ref);
-    assert.equal(after.saidOn, undefined, 'it recorded a comment GitHub refused');
-});
-
-test('and a comment that went is written down with where it went', async () => {
-    const w = await withJudgement({});
-    await w.say.run({ ref: w.ref });
-
-    const after = await w.service.judge.get(w.ref);
-    assert.ok(after.saidOn, 'nothing was recorded');
-    assert.equal(after.saidOn.recommend, 'YES');
-    assert.match(after.saidOn.url, /github\.com/);
 });

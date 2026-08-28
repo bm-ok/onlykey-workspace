@@ -145,6 +145,9 @@ var DEFAULTS = {
     //not unsay it.
     githubReplyDirect: false,
     githubCloseDirect: false,
+    //AND A REVIEW, which is the one of the three a maintainer reads as a
+    //verdict. APPROVE from this host's token is this host's owner approving.
+    githubReviewDirect: false,
 
     //WHETHER THE QUEUE COMES UP RUNNING, and it is off until somebody says
     //otherwise.
@@ -220,7 +223,7 @@ var DEFAULTS = {
 //people are half the permission and the word is the other half; guarding one is
 //the mistake this list was already made to correct once.
 var ATTHEWINDOW = ['testsEnabled', 'testsFor', 'testsAsked', 'githubTrusted', 'githubMarker',
-    'githubReplyDirect', 'githubCloseDirect'];
+    'githubReplyDirect', 'githubCloseDirect', 'githubReviewDirect'];
 
 //WHY EACH ONE IS REFUSED, IN ITS OWN WORDS. It was a ternary on `testsEnabled`
 //while there was one permission here; with two, the second branch -- written for
@@ -237,7 +240,8 @@ var WHYREFUSED = {
     githubTrusted: 'Naming somebody trusted opens a channel from the internet into what this host acts on: from then on their marked words are read as somebody asking for something. A caller able to add a name could add one it controls and commission its own work through an issue. It is done in the window, in Settings → Trust, where the account is looked up and its picture shown first.',
     githubMarker: 'The marker is the other half of that same permission, and it is applied to text that already exists — set it to a word a trusted person writes habitually and their old comments become requests, with nobody having written anything new. It is chosen in Settings → Trust, in the window.',
     githubReplyDirect: 'That switch is what stands between a model writing a reply and a stranger reading it, on somebody else\'s repository, under this host\'s token. A caller able to turn it on could approve its own words by removing the step where somebody reads them. It is turned on in the window, in Settings → Trust, by a person who has decided to let that happen.',
-    githubCloseDirect: 'Closing tells somebody outside that their report is finished with, and re-opening does not unsay it. The switch that removes the person from that decision is not one a caller may reach — it is turned on in the window, in Settings → Trust.'
+    githubCloseDirect: 'Closing tells somebody outside that their report is finished with, and re-opening does not unsay it. The switch that removes the person from that decision is not one a caller may reach — it is turned on in the window, in Settings → Trust.',
+    githubReviewDirect: 'A review is a verdict on somebody else\'s pull request, posted under this host\'s token — an APPROVE from here is this host\'s owner approving, and a maintainer may merge on it. A caller able to turn this on could approve its own reading by removing the person who reads it first. It is turned on in the window, in Settings → Trust.'
 };
 
 function truth(v) {

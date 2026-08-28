@@ -255,6 +255,12 @@ module.exports = function judgements(theme, okc, remember) {
         //on showing the shortened row it was meant to replace.
         var whole = okc.use('judging', { ref: picked || '' }, 15000);
         var [said, setSaid] = useState(null);
+        //THE REVIEW DRAFTS, polled here rather than beside the function that
+        //reads them: a hook below the two early returns just under this line
+        //is a hook React sees on some renders and not others, and the pane
+        //crashed with "rendered more hooks than during the previous render"
+        //the first time the list finished loading.
+        var drafts = okc.use('issueDrafts', {}, 4000);
 
         if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
         if (!state) return <Pane><Skeleton rows={5} /></Pane>;
@@ -331,29 +337,57 @@ module.exports = function judgements(theme, okc, remember) {
         //SO THE PREVIEW IS FETCHED BEFORE THE GATE OPENS, and the gate shows it.
         //A dialog that cannot be filled in is not offered: if the preview fails,
         //the reason is what appears, and nothing is posted.
+        //---- WAITING TO GO OUT ----------------------------------------------
+        //
+        //THE ONE FOR THE PICKED JUDGEMENT, read and released on this pane
+        //beside the judgement it came from. `issueApprove` is the same
+        //protected press the Issues pane uses; the door refuses the pipe, a
+        //drill and a driven press. (`drafts` itself is polled above, with the
+        //other hooks.)
+        function waitingFor(j) {
+            var ref = j && (j.ref || ('J' + j.number));
+            return ((drafts.state && drafts.state.drafts) || []).filter(function (d) {
+                return d.kind === 'review' && d.judgement === ref;
+            });
+        }
+        function release(what, d) {
+            setSaid(null);
+            return okc.call(what, { on: d.on, number: d.number }).then(
+                function (r) { setSaid({ text: r.note || 'Done.' }); },
+                function (e) { setSaid({ bad: true, text: e.message }); }
+            );
+        }
+
+        //SAY WRITES A DRAFT NOW. It used to preview, then post a plain comment
+        //behind a gate; the gate is the same, the thing behind it is a review
+        //draft that waits on this pane to be read and released. A review can
+        //carry APPROVE, which a maintainer may merge on, and a plain comment
+        //never could.
         function say(j) {
             var id = j.ref || String(j.number);
             return okc.call('judgementSay', { ref: id, preview: true }).then(function (p) {
+                var one = p.reviews ? p.reviews[0] : p;
                 ask({
-                    title: 'Put this judgement on ' + p.on + '#' + p.number + '?',
+                    title: 'Write this judgement as a review of ' + one.on + '#' + one.number + '?',
                     plain: [
-                        'It goes on the pull request as a comment, signed by this host, where the person who opened it will read it.',
-                        'It is not a review and it approves nothing. It is what the judge found, said out loud.',
-                        'Somebody else opened that pull request. This is publishing to their repository.',
-                        'Read it. This is exactly what will appear, and a comment cannot be unsent.'
+                        'It becomes a ' + one.event + ' review draft, waiting here for you to read and post. Nothing goes out until you press that.',
+                        one.forced ? 'This is your own pull request, so GitHub records it as a comment with the recommendation in the header.'
+                            : 'On GitHub a review carries a verdict a maintainer may merge on. It is what the judge found.',
+                        'Somebody else may have opened that pull request. Posting it later is publishing to their repository.',
+                        'Read it. This is exactly what will appear.'
                     ],
                     //THE WHOLE THING, NOT A SUMMARY OF IT. Summarising a judge's
                     //reservations means choosing which of them the author gets
                     //to see, and the section a summary drops first is "what I
                     //could not check" — the one that makes the rest honest.
-                    reads: p.body,
+                    reads: one.body,
                     readsAre: 'What will be posted',
-                    cost: 'A comment on somebody else\u2019s pull request. It can be deleted on GitHub, not from here.',
-                    confirm: 'Say it',
+                    cost: 'Nothing yet. The draft waits on this pane; posting it is a second, protected press.',
+                    confirm: 'Write the draft',
                     protect: true,
                     onYes: function () {
                         return okc.call('judgementSay', { ref: id }).then(
-                            function (r) { setSaid({ text: r.note || 'Said.' }); },
+                            function (r) { setSaid({ text: r.note || 'Written.' }); },
                             function (e) { setSaid({ bad: true, text: e.message }); throw e; }
                         );
                     }
@@ -538,9 +572,12 @@ module.exports = function judgements(theme, okc, remember) {
                                         request and nowhere else, and showing it
                                         always would be offering an act with no
                                         destination. */}
-                                    {subjectOf(on).kind == 'pull'
+                                    {/* A PULL REQUEST, OR A CUT THIS HOST SENT: both
+                                        have somewhere for a review to go now. A bare
+                                        branch still does not. */}
+                                    {subjectOf(on).kind == 'pull' || subjectOf(on).kind == 'cut'
                                         ? <Button protect onClick={function () { say(on); }}
-                                            title="put what it found on the pull request, as a comment">Say it</Button>
+                                            title="write what it found as a review draft of the pull request">Write the review</Button>
                                         : null}
                                     {canQueue(on)
                                         ? <Button kind="ok" protect onClick={function () { queueIt(on); }}
@@ -552,6 +589,29 @@ module.exports = function judgements(theme, okc, remember) {
                                         : null}
                                     <Button kind="danger" protect onClick={function () { bin(on); }}>Throw it away</Button>
                                 </div>
+
+                                {/* THE REVIEW THIS JUDGEMENT WROTE, WAITING. Read
+                                    here in full and released with the same
+                                    protected press the Issues pane uses. Outside
+                                    the button row: a flex child does not shrink
+                                    below its content, and a review is long. */}
+                                {waitingFor(on).map(function (d) {
+                                    return (
+                                        <Card key={d.on + '#' + d.number}>
+                                            <CardTitle>
+                                                <span className="grow">{'Review of ' + d.on + '#' + d.number + ', waiting'}</span>
+                                                <Badge kind={d.event === 'APPROVE' ? 'ok' : d.event === 'REQUEST_CHANGES' ? 'bad' : 'muted'}>{d.event}</Badge>
+                                                <Badge kind="warn">not sent</Badge>
+                                            </CardTitle>
+                                            {d.forced ? <Note kind="warn">{d.why}</Note> : null}
+                                            <Code text={d.text} tall />
+                                            <div className="row" style={{ marginTop: '6px' }}>
+                                                <Button kind="ok" protect onClick={function () { release('issueApprove', d); }}>Post the review</Button>
+                                                <Button onClick={function () { release('issueDiscard', d); }}>Throw it away</Button>
+                                            </div>
+                                        </Card>
+                                    );
+                                })}
                                 <Note>
                                     &ldquo;Open in VS Code&rdquo; and &ldquo;Open a terminal&rdquo; are not built here yet
                                     &mdash; they need the Terminal tab.

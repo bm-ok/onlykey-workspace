@@ -1406,6 +1406,57 @@ async function plugin(imports, register) {
             takes: ['on', 'number'],
             run: async function (a) {
                 return releasing(a, async function (one) {
+                    //---- A REVIEW ---------------------------------------
+                    //
+                    //NOT GATED ON THE TAG. A review exists because a person
+                    //allowed the judge to read that pull request (or because
+                    //this host sent it), and a person is pressing this button
+                    //now: that is the authorisation, and a tag is a fact about
+                    //issues that a pull request from a stranger will not have.
+                    //
+                    //RE-READ BEFORE POSTING. A review is pinned to a commit; if
+                    //the author pushed since the judge read it, posting would
+                    //approve code nobody read. Refused rather than re-pinned,
+                    //and the draft stays so the refusal can be read.
+                    if (one.kind === 'review') {
+                        var pb = String(one.on || '').split('/');
+                        var fresh = await github.call('GET', '/repos/' + pb[0] + '/' + pb[1] + '/pulls/' + one.number, null, { fresh: true });
+                        if (fresh.status !== 200 || !fresh.body) {
+                            throw new Error('GitHub would not say what ' + one.on + '#' + one.number + ' is now: '
+                                + ((fresh.body && fresh.body.message) || fresh.status));
+                        }
+                        var headNow = (fresh.body.head && fresh.body.head.sha) || null;
+                        if (one.sha && headNow && headNow !== one.sha) {
+                            throw new Error('The head of ' + one.on + '#' + one.number + ' moved since ' + (one.judgement || 'the judge')
+                                + ' read it (' + String(one.sha).slice(0, 7) + ' → ' + String(headNow).slice(0, 7)
+                                + '). A review pinned to an older commit would read as approval of code nobody read — judge it again.');
+                        }
+                        if (String(fresh.body.state) !== 'open') {
+                            throw new Error(one.on + '#' + one.number + ' is ' + fresh.body.state + ' now; there is nothing left to review.');
+                        }
+                        //THE OWN-AUTHOR RULE, APPLIED AGAIN NOW. The token may
+                        //have changed since the draft was written.
+                        var me = null;
+                        try { me = ((await actions.call('githubHeld', {})) || {}).login || null; } catch (e) { me = null; }
+                        var author = fresh.body.user && fresh.body.user.login;
+                        var event = one.event || 'COMMENT';
+                        if (me && author && String(me).toLowerCase() === String(author).toLowerCase() && event !== 'COMMENT') {
+                            event = 'COMMENT';
+                        }
+                        var rv = await github.call('POST', '/repos/' + pb[0] + '/' + pb[1] + '/pulls/' + one.number + '/reviews',
+                            { commit_id: headNow, body: one.text, event: event });
+                        if (rv.status !== 200) {
+                            throw new Error('GitHub would not take the review: '
+                                + ((rv.body && rv.body.message) || rv.status));
+                        }
+                        log.on('github', one.on).good('reviewed #' + one.number + ' as ' + event + ', released at the window');
+                        return {
+                            posted: true, review: true, event: event, on: one.on, number: one.number,
+                            url: (rv.body && rv.body.html_url) || null,
+                            note: 'Posted as a ' + event + ' review at ' + String(headNow || '').slice(0, 7) + '.'
+                        };
+                    }
+
                     //RE-CHECKED ON THE WAY OUT. The draft may have been written
                     //an hour ago and the tag withdrawn since; a person approving
                     //is approving the words, not re-deciding whether anybody

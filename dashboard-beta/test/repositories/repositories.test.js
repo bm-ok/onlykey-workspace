@@ -1289,3 +1289,62 @@ test("handing an issue over is a person's press, and it puts the whole conversat
     assert.match(chat[0], /handing it to you myself/);
     assert.equal(woke.length, 1);
 });
+
+//---------------------------------------------------------------------------
+//RELEASING A REVIEW DRAFT: pinned to the commit the judge read.
+//---------------------------------------------------------------------------
+
+const PULL_ROW = (over) => Object.assign({
+    number: 42, user: { login: 'a-stranger' }, head: { sha: 'abcdef1234567890' }, state: 'open'
+}, over || {});
+
+async function withReviewDraft(pullOver, login) {
+    const answers = Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/pulls/42/reviews': { status: 200, body: { html_url: 'https://github.com/anowner/arepo/pull/42#pullrequestreview-9' }, headers: {} },
+        '/repos/anowner/arepo/pulls/42': { status: 200, body: PULL_ROW(pullOver), headers: {} }
+    });
+    const { actions, state, asked } = await anApp(answers, undefined, undefined, { settings: { read: async () => ({}) } });
+    actions.define('githubHeld', { about: 'a stand-in', run: async () => ({ held: true, login: login === undefined ? 'bmatusiak' : login }) });
+    const box = await state.here.doc('github-drafts');
+    box.write({
+        'anowner/arepo#42': {
+            kind: 'review', on: 'anowner/arepo', number: 42, sha: 'abcdef1234567890', event: 'APPROVE',
+            text: '**Recommend Pulling: YES**\n\nfine', at: 'x', by: 'J3', judgement: 'J3'
+        }
+    });
+    return { actions, state, asked, box };
+}
+
+test('releasing a review posts it as a review, at the commit it read', async () => {
+    const { actions, asked, box } = await withReviewDraft();
+    const said = await actions.call('issueApprove', { on: 'anowner/arepo', number: 42 });
+    assert.equal(said.review, true);
+    assert.equal(said.event, 'APPROVE');
+    assert.ok(asked.some((a) => a === 'POST /repos/anowner/arepo/pulls/42/reviews'), 'it did not post a review');
+    assert.ok(!asked.some((a) => /\/issues\/42\/comments/.test(a)), 'it posted a comment instead of a review');
+    assert.deepEqual(box.read({}), {}, 'the released draft was left waiting');
+});
+
+test('a head that moved since the judge read it is refused, and the draft stays', async () => {
+    //A REVIEW PINNED TO AN OLDER COMMIT READS AS APPROVAL OF CODE NOBODY READ.
+    const { actions, asked, box } = await withReviewDraft({ head: { sha: 'fedcba0987654321' } });
+    await assert.rejects(() => actions.call('issueApprove', { on: 'anowner/arepo', number: 42 }), /moved since J3 read it/);
+    assert.ok(!asked.some((a) => /\/reviews$/.test(a) && /^POST/.test(a)), 'it posted anyway');
+    assert.ok(box.read({})['anowner/arepo#42'], 'the refused draft was thrown away');
+});
+
+test('on this host\'s own pull request the event is forced to a comment at release too', async () => {
+    //THE TOKEN MAY HAVE CHANGED SINCE THE DRAFT WAS WRITTEN; GitHub is asked
+    //who the author is at the moment of posting.
+    const { actions } = await withReviewDraft({ user: { login: 'bmatusiak' } });
+    const said = await actions.call('issueApprove', { on: 'anowner/arepo', number: 42 });
+    assert.equal(said.event, 'COMMENT');
+});
+
+test('a review is released by a person and nobody else', async () => {
+    const { actions } = await withReviewDraft();
+    for (const mark of ['_overTheWire', '_driven', '_fromTest']) {
+        const a = { on: 'anowner/arepo', number: 42 }; a[mark] = true;
+        await assert.rejects(() => actions.call('issueApprove', a), /released by a person at the window/);
+    }
+});

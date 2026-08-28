@@ -164,6 +164,22 @@ it('and neither can the word that makes them a request', async ({ okc, assert, l
     'the marker changed anyway, so the sentence was an apology rather than a refusal')
 })
 
+it('and nor can the switch that posts a review unread', async ({ okc, assert, log }) => {
+  // A REVIEW IS A VERDICT ON SOMEBODY ELSE'S PULL REQUEST, posted under this
+  // host's token -- an APPROVE from here is this host's owner approving, and a
+  // maintainer may merge on it. A caller able to turn this on could approve its
+  // own reading by removing the person who reads it first.
+  const before = await okc('settings')
+  const refusal = await assert.refuses(
+    () => okc('settingSet', { name: 'githubReviewDirect', value: true }),
+    'approve its own reading',
+    'the switch that posts a judge\'s review unread was set by something other than a person at the window')
+  log(refusal.message.slice(0, 150))
+  const after = await okc('settings')
+  assert.equal(after.settings.githubReviewDirect, before.settings.githubReviewDirect,
+    'the switch moved anyway, so the sentence was an apology rather than a refusal')
+})
+
 it('and the settings that can be changed are named, not assumed', async ({ okc, assert, log }) => {
   // A SMALL ONE THAT KEEPS THE ONE ABOVE HONEST. `settingSet` refuses a name it
   // does not know rather than writing it — so a typo cannot create a setting that

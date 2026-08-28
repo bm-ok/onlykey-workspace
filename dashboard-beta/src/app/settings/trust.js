@@ -309,6 +309,37 @@ module.exports = function makeTrust(theme, okc) {
 
                 <Panel>
                     <div className="card-title">
+                        <span className="grow">Speaking in your name</span>
+                        {s.githubReplyDirect || s.githubCloseDirect || s.githubReviewDirect
+                            ? <Badge kind="warn">some go out unread</Badge>
+                            : <Badge kind="ok">everything is read first</Badge>}
+                    </div>
+                    <Note>
+                        A reply, a close and a review each go on somebody else's repository under this host's
+                        token, so they read as you having said it. Off, each is written as a draft and waits for
+                        you to read the whole thing and release it. On, it goes out the moment it is written.
+                        The tag is still required either way — an untagged issue is one nobody asked about.
+                    </Note>
+                    {/* PURPLE, ALL THREE. Each is the switch between a model
+                        writing something and a stranger reading it in your
+                        name; ../settings/server.js refuses them down the pipe
+                        with their own sentence, and this is the half a person
+                        can see. */}
+                    <div className="stack">
+                        <Toggle protect on={!!s.githubReplyDirect} onChange={function (v) { save('githubReplyDirect', v); }}>
+                            Post replies to issues without me reading them first
+                        </Toggle>
+                        <Toggle protect on={!!s.githubCloseDirect} onChange={function (v) { save('githubCloseDirect', v); }}>
+                            Close issues without me reading the close first
+                        </Toggle>
+                        <Toggle protect on={!!s.githubReviewDirect} onChange={function (v) { save('githubReviewDirect', v); }}>
+                            Post a judge's review on a pull request without me reading it first
+                        </Toggle>
+                    </div>
+                </Panel>
+
+                <Panel>
+                    <div className="card-title">
                         <span className="grow">Whose word counts</span>
                         {people.length ? <Badge>{String(people.length)}</Badge> : null}
                     </div>

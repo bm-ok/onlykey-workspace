@@ -1,4 +1,5 @@
 var makeJudgements = require('./store');
+var reviewing = require('./reviewing');
 var gate = require('./gate');
 
 //---------------------------------------------------------------------------
@@ -570,141 +571,236 @@ async function plugin(imports, register) {
         //of a judge's reservations the author gets to see — and the section a
         //summary drops first is "what I could not check", which is the section
         //that makes the rest honest.
-        undo.push(actions.define('judgementSay', {
-            about: 'Put a judgement of an arrived pull request on GitHub as a comment: preview it, or say it',
-            needs: 'workspace',
-            takes: ['ref', 'id', 'preview'],
-            run: async function (args) {
+        //---- WHAT A JUDGE HANDED BACK, AS THE TEXT OF A REVIEW ---------------
+        //
+        //THE LARGEST NON-EMPTY FILE IT HANDED BACK, under a header that says
+        //what the judge recommended, at which commit, and that it ran nothing.
+        //Lifted out of the old judgementSay so the preview, the draft and the
+        //direct post all compose the same text -- the line at the top must not
+        //be able to say one thing while the review under it says another.
+        async function reviewText(it, at) {
+            var ref = it.ref || store.refOf(it.number);
+            if (it.state !== 'done') throw new Error(ref + ' has not finished reading yet.');
+
+            var handed = await artifacts.list(it.uid);
+            if (!handed.length) {
+                throw new Error(ref + ' handed nothing back, so there is nothing to say. A judgement '
+                    + 'that read nothing is not a review.');
+            }
+            var body = '';
+            var from = null;
+            for (var i = 0; i < handed.length; i++) {
+                var text = '';
+                try { text = String(((await artifacts.read(it.uid, handed[i].file)) || {}).text || ''); }
+                catch (e) { continue; }
+                if (!text.trim()) continue;
+                if (text.length > body.length) { body = text; from = handed[i].file; }
+            }
+            if (!body.trim()) {
+                throw new Error(ref + ' handed back ' + handed.length + ' file(s) and none of them has '
+                    + 'anything in it.');
+            }
+
+            //THE RECOMMENDATION IS READ FROM THE REVIEW, not from the record, so
+            //the header cannot disagree with the text under it.
+            var said = body.match(/^\s*RECOMMEND(?:ATION)?:\s*(yes|no|accept|reject)\s*$/mi);
+            var concluded = said ? (/^(yes|accept)$/i.test(said[1]) ? 'accept' : 'reject') : null;
+
+            return { ref: ref, body: body, from: from, concluded: concluded, at: at };
+        }
+
+        function headerFor(plan, sha, forcedWhy) {
+            return [
+                '**Recommend Pulling: ' + plan.call + '**',
+                '',
+                'Read at ' + String(sha || '').slice(0, 7) + ' by an automated judge on the '
+                    + "maintainer's host. It fetched this change and read it; it ran nothing from it, "
+                    + 'and changed nothing anywhere.',
+                plan.call === 'UNSTATED'
+                    ? 'It did not end with a recommendation in the form it was asked for, so the answer '
+                        + 'above is not its answer — read the review.'
+                    : null,
+                forcedWhy ? '_' + forcedWhy + '_' : null,
+                '',
+                '---',
+                ''
+            ].filter(function (x) { return x !== null; }).join('\n');
+        }
+
+        //---- A JUDGEMENT BECOMES A PULL REQUEST REVIEW, DRAFTED ---------------
+        //
+        //A JUDGEMENT LIVED ONLY HERE. Its recommendation was a field on a record
+        //in this app, and the one way it reached GitHub was a plain comment --
+        //which carries no state, satisfies no branch rule, and reads to a
+        //maintainer as somebody talking rather than somebody reviewing. GitHub's
+        //object for "a reviewer concluded X at commit Y" is a review, and that
+        //is what this writes: APPROVE, REQUEST_CHANGES, or COMMENT. See
+        //./reviewing.js for the map and the two things that bend it.
+        //
+        //DRAFTED, NOT POSTED. A review goes on somebody else's pull request under
+        //this host's token, so it reads as the person who owns the token having
+        //said it. It waits in `github-drafts` beside the issue replies, keyed
+        //the same way (a pull request IS an issue on GitHub), and the same
+        //protected press in the window releases it -- `issueApprove`, which
+        //re-reads the pull request first and refuses if the head has moved. The
+        //only way past the person is `githubReviewDirect`, set at the window.
+        //
+        //CALLED BY THE QUEUE when a judgement finishes, by `judgementSay` when a
+        //person or the supervisor asks, and by nothing else. Drafting is not
+        //speech; it is refused to nobody.
+        async function draftReview(args) {
                 var a = args || {};
                 var it = await store.get(a.ref || a.id);
                 var ref = it.ref || store.refOf(it.number);
                 var subject = it.subject || {};
+                var wantPreview = a.preview === true || a.preview === 'true';
 
-                //ONLY AN ARRIVAL HAS SOMEWHERE TO BE SAID. A cut of this host's
-                //own work is answered by landing it or not.
-                if (subject.kind !== 'pull') {
-                    throw new Error(ref + ' reads ' + (subject.name || 'something that is not a pull request')
-                        + '. Only a judgement of an arrived pull request has somewhere to be said — a cut of '
-                        + "this host's own work is answered by landing it or not.");
-                }
-                if (it.state !== 'done') throw new Error(ref + ' has not finished reading yet.');
-
-                var handed = await artifacts.list(it.uid);
-                if (!handed.length) {
-                    throw new Error(ref + ' handed nothing back, so there is nothing to say. A judgement '
-                        + 'that read nothing is not a review.');
-                }
-
-                //THE FILE THE PERSON WOULD READ, which is the same file this
-                //posts. Two accounts of one judgement is one too many.
-                var body = '';
-                var from = null;
-                for (var i = 0; i < handed.length; i++) {
-                    var text = '';
-                    try { text = String(((await artifacts.read(it.uid, handed[i].file)) || {}).text || ''); }
-                    catch (e) { continue; }
-                    if (!text.trim()) continue;
-                    if (text.length > body.length) { body = text; from = handed[i].file; }
-                }
-                if (!body.trim()) {
-                    throw new Error(ref + ' handed back ' + handed.length + ' file(s) and none of them has '
-                        + 'anything in it.');
-                }
-
-                //WHAT IT RECOMMENDED, IN THE WORDS THE PROMPT ASKED FOR. Read
-                //from the FILE rather than from the record, so the line at the
-                //top cannot say one thing while the review under it says another.
-                var said = body.match(/^\s*RECOMMEND(?:ATION)?:\s*(yes|no|accept|reject)\s*$/mi);
-                var yes = said ? /^(yes|accept)$/i.test(said[1]) : null;
-                var call = yes === null ? 'UNSTATED' : (yes ? 'YES' : 'NO');
-
-                var head = [
-                    '**Recommend Pulling: ' + call + '**',
-                    '',
-                    'Read at ' + String(subject.sha || '').slice(0, 7) + ' by an automated judge on the '
-                        + "maintainer's host. It fetched this change and read it; it ran nothing from it, "
-                        + 'and changed nothing anywhere.',
-                    yes === null
-                        ? 'It did not end with a recommendation in the form it was asked for, so the answer '
-                            + 'above is not its answer — read the review.'
-                        : null,
-                    '',
-                    '---',
-                    ''
-                ].filter(function (x) { return x !== null; }).join('\n');
-
-                var full = head + body.trim() + '\n';
-
-                if (a.preview || a.preview === 'true') {
-                    return {
-                        ref: ref,
-                        on: subject.on,
-                        number: subject.number,
-                        recommend: call,
-                        from: from,
-                        body: full,
-                        characters: full.length,
-                        posted: false,
-                        note: 'This is exactly what would appear on ' + subject.on + '#' + subject.number
-                            + '. Nothing has been posted.'
-                    };
-                }
-
-                if (a._overTheWire || a._driven) {
-                    throw new Error("Saying something on somebody else's pull request is done in the "
-                        + 'window, by a person who has read what is about to be posted. It appears under an '
-                        + 'account with a name on it and a comment cannot be unsent.');
-                }
-
-                //WHERE IT GOES, RESOLVED THROUGH THE REPOSITORY LIST rather than
-                //from the judgement's own string. A pull request is named by the
-                //repository it is ON, which for a fork is the parent — and that
-                //is a different name from the workspace folder.
-                var said2 = await actions.call('repositories', {});
-                var rows = (said2 && said2.repos) || [];
-                var row = rows.filter(function (r) {
-                    return r.repo === subject.on
-                        || r.issuesOn === subject.on
-                        || (r.target && r.target.on === subject.on);
-                })[0];
-                if (!row) throw new Error(subject.on + ' is not a repository in this workspace.');
-
-                var into = String((row.target && row.target.on) || row.issuesOn || subject.on).split('/');
-
-                //THE ISSUES ENDPOINT, which is where a pull request's
-                //conversation lives — a pull request IS an issue on GitHub, and
-                //the pulls endpoint carries review comments, which are a
-                //different thing attached to lines of a diff.
-                var r = await imports.github.call('POST',
-                    '/repos/' + into[0] + '/' + into[1] + '/issues/' + Number(subject.number) + '/comments',
-                    { body: full });
-
-                if (r.status !== 201) {
-                    throw new Error('GitHub would not take the comment on ' + subject.on + '#'
-                        + subject.number + ': ' + ((r.body && r.body.message) || ('it answered ' + r.status)));
-                }
-
-                await store.update(it.id, {
-                    saidOn: {
-                        at: new Date().toISOString(),
-                        url: (r.body && r.body.html_url) || null,
-                        recommend: call
+                //WHERE IT GOES: one pull request, or every pull request a cut
+                //landed as. A branch is neither -- it has not been sent
+                //anywhere, and a judgement of it is answered by sending it or
+                //not.
+                var targets = [];
+                if (subject.kind === 'pull') {
+                    targets.push({ on: subject.on, number: subject.number, pinned: subject.sha || null });
+                } else if (subject.kind === 'cut') {
+                    var all = (prcuts && prcuts.all) ? await prcuts.all() : {};
+                    var rec = all[subject.name] || null;
+                    ((rec && rec.pulls) || []).forEach(function (p) {
+                        if (p.number && p.into) targets.push({ on: p.into, number: p.number, pinned: null });
+                    });
+                    if (!targets.length) {
+                        throw new Error(ref + ' reads the cut "' + subject.name + '", which has no pull request yet. '
+                            + 'Send the cut and judge it again, or decide it here by landing it or not.');
                     }
-                });
+                } else {
+                    throw new Error(ref + ' reads ' + (subject.name || 'something that is not a pull request')
+                        + '. Only a judgement of a pull request has somewhere to be said — a branch of '
+                        + "this host's own work is answered by sending it, or by landing it or not.");
+                }
 
-                log.on('github', row.repo).good(ref + ' said on #' + subject.number
-                    + ' — recommend pulling: ' + call);
+                var plan0 = reviewing.reviewPlan({ concluded: it.concluded, job: it.job });
+                if (plan0.skip) {
+                    return { ref: ref, drafted: false, posted: false, why: plan0.why,
+                        note: ref + ' is a claim check, and ' + plan0.why + '.' };
+                }
 
-                return {
-                    ref: ref,
-                    on: into.join('/'),
-                    number: subject.number,
-                    url: (r.body && r.body.html_url) || null,
-                    recommend: call,
-                    posted: true,
-                    note: ref + ' is on ' + subject.on + '#' + subject.number + '. The author can read it; '
-                        + 'nothing was merged, changed or pushed.'
-                };
+                var review = await reviewText(it);
+                //THE TEXT'S OWN RECOMMENDATION, AND ONLY THAT, as it always has
+                //been: the header must not say one thing while the review under
+                //it says another. A record that says "accept" over a review that
+                //recommends nothing is UNSTATED -- the review is what a
+                //maintainer reads.
+                var concluded = review.concluded || null;
+
+                //WHO THIS HOST IS, without a request. Null when never checked,
+                //which reads as "not the author" and lets GitHub be the judge
+                //of that -- a 422 is loud, and the alternative is guessing.
+                var me = null;
+                try { me = ((await actions.call('githubHeld', {})) || {}).login || null; } catch (e) { me = null; }
+
+                var direct = false;
+                try { direct = ((await actions.call('settings', {})) || {}).settings.githubReviewDirect === true; }
+                catch (e) { direct = false; }
+
+                var out = [];
+                for (var t = 0; t < targets.length; t++) {
+                    var tg = targets[t];
+                    var bits = String(tg.on || '').split('/');
+                    //THE PULL REQUEST AS IT IS NOW: its author, for the own-author
+                    //rule, and its head, which the review is pinned to.
+                    var got = await imports.github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/pulls/' + tg.number, null, { fresh: true });
+                    if (got.status !== 200 || !got.body) {
+                        throw new Error('GitHub would not say what ' + tg.on + '#' + tg.number + ' is now: '
+                            + ((got.body && got.body.message) || got.status));
+                    }
+                    var author = got.body.user && got.body.user.login;
+                    var headNow = (got.body.head && got.body.head.sha) || null;
+                    var own = !!(me && author && String(me).toLowerCase() === String(author).toLowerCase());
+                    var sha = tg.pinned || headNow;
+
+                    var plan = reviewing.reviewPlan({ concluded: concluded, job: it.job, ownAuthor: own });
+                    var full = headerFor(plan, sha, plan.why) + review.body.trim() + '\n';
+
+                    var draft = {
+                        kind: 'review', on: tg.on, number: tg.number, sha: sha, headNow: headNow,
+                        event: plan.event, recommend: plan.call, forced: plan.forced, why: plan.why, own: own,
+                        text: full, at: new Date().toISOString(),
+                        by: typeof actions.whoAsked === 'function' ? actions.whoAsked(a) : 'the app', judgement: ref
+                    };
+
+                    if (wantPreview) {
+                        out.push({ ref: ref, on: tg.on, number: tg.number, recommend: plan.call, event: plan.event,
+                            forced: plan.forced, from: review.from, body: full, characters: full.length, posted: false,
+                            note: 'This is exactly what would appear on ' + tg.on + '#' + tg.number
+                                + ' as a ' + plan.event + ' review. Nothing has been posted.' });
+                        continue;
+                    }
+
+                    if (direct) {
+                        var r = await imports.github.call('POST',
+                            '/repos/' + bits[0] + '/' + bits[1] + '/pulls/' + tg.number + '/reviews',
+                            { commit_id: headNow, body: full, event: plan.event });
+                        if (r.status !== 200) {
+                            throw new Error('GitHub would not take the review on ' + tg.on + '#' + tg.number + ': '
+                                + ((r.body && r.body.message) || ('it answered ' + r.status)));
+                        }
+                        var was = (await store.get(it.id)).reviewed || [];
+                        await store.update(it.id, { reviewed: was.concat([{
+                            on: tg.on, number: tg.number, sha: headNow, event: plan.event,
+                            url: (r.body && r.body.html_url) || null, at: new Date().toISOString()
+                        }]) });
+                        log.on('github', tg.on).good(ref + ' reviewed ' + tg.on + '#' + tg.number + ' — ' + plan.event
+                            + ' (Settings → Trust has direct reviews on)');
+                        out.push({ ref: ref, on: tg.on, number: tg.number, recommend: plan.call, event: plan.event,
+                            url: (r.body && r.body.html_url) || null, posted: true, waiting: false,
+                            note: 'Posted as a ' + plan.event + ' review. Settings → Trust has direct reviews switched on, so nobody read it first.' });
+                        continue;
+                    }
+
+                    var box = await state.here.doc('github-drafts');
+                    var kept = box.read({}) || {};
+                    //ONE PER PULL REQUEST. A second judgement of the same change
+                    //replaces the first draft: two answers to one question is
+                    //not a queue.
+                    kept[tg.on + '#' + tg.number] = draft;
+                    box.write(kept);
+                    log.on('github', tg.on).info(ref + ' wrote a ' + plan.event + ' review of ' + tg.on + '#' + tg.number + ' — waiting to be released');
+                    out.push({ ref: ref, on: tg.on, number: tg.number, recommend: plan.call, event: plan.event,
+                        forced: plan.forced, posted: false, waiting: true, characters: full.length,
+                        note: 'Written and waiting as a ' + plan.event + ' review. Nothing has been sent: a person reads '
+                            + 'it and releases it — on the Judge tab, or under the pull request in Repositories → Issues. '
+                            + 'Turning that step off is done in the window, in Settings → Trust.' });
+                }
+
+                //ONE ANSWER FOR ONE PULL REQUEST, a list for a cut across several.
+                return out.length === 1 ? out[0] : { ref: ref, reviews: out, posted: out.every(function (x) { return x.posted; }),
+                    waiting: out.some(function (x) { return x.waiting; }),
+                    note: out.length + ' review(s): ' + out.map(function (x) { return x.on + '#' + x.number + ' ' + x.event; }).join(', ') };
+        }
+
+        undo.push(actions.define('reviewDraft', {
+            about: 'Write a judgement of a pull request as a review draft: APPROVE, REQUEST_CHANGES or COMMENT, waiting for a person to release it',
+            needs: 'workspace',
+            takes: ['ref', 'id', 'preview'],
+            run: draftReview
+        }));
+
+        //---- THE OLD NAME, ONTO THE SAME MACHINERY ---------------------------
+        //
+        //`judgementSay` posted a plain comment and refused the pipe. It is the
+        //door the supervisor's list and its skill name, so it stays -- and
+        //answers now with a DRAFT, the way issueSay does, which is what the
+        //list's own note about it promised and the refusal contradicted. The
+        //refusal has moved to release, where it belongs: writing a draft is not
+        //speech, releasing it is.
+        undo.push(actions.define('judgementSay', {
+            about: 'Put a judgement on its pull request as a review: preview it, or write it as a draft for a person to release',
+            needs: 'workspace',
+            takes: ['ref', 'id', 'preview'],
+            run: async function (args) {
+                //THE FUNCTION, NOT THE TABLE: one door, two names, and a test
+                //that loads this plugin alone can reach both.
+                return await draftReview(args || {});
             }
         }));
 

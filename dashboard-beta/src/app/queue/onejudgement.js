@@ -233,6 +233,34 @@ module.exports = function onejudgement(deps) {
                 tips: read
             });
 
+            //---- AND ITS REVIEW, DRAFTED ----------------------------------
+            //
+            //A judgement of a pull request -- somebody else's, or a cut this
+            //host sent -- becomes a review draft the moment it lands, so a
+            //person finds it waiting rather than remembering to ask. Fire and
+            //forget, the same shape as the wake below: a slow GitHub is not a
+            //reason for the run to hang. `reviewDraft` itself declines a claim
+            //check and a bare branch, so nothing is decided here.
+            if (subject.kind === 'pull' || subject.kind === 'cut') {
+                Promise.resolve(call('reviewDraft', { ref: ref })).catch(function (e) {
+                    say('supervisor').warn(ref + ' finished but its review could not be drafted: ' + e.message);
+                });
+            }
+
+            //---- AND ITS REVIEW, DRAFTED ----------------------------------
+            //
+            //A judgement of a pull request -- somebody else's, or a cut this
+            //host sent -- becomes a review draft the moment it lands, so a
+            //person finds it waiting rather than remembering to ask. Fire and
+            //forget, the same shape as the wake below: a slow GitHub is not a
+            //reason for the run to hang. `reviewDraft` itself declines a claim
+            //check and a bare branch, so nothing is decided here.
+            if (subject.kind === 'pull' || subject.kind === 'cut') {
+                Promise.resolve(call('reviewDraft', { ref: ref })).catch(function (e) {
+                    say('supervisor').warn(ref + ' finished but its review could not be drafted: ' + e.message);
+                });
+            }
+
             to[handed.length ? 'good' : 'warn'](
                 ref + ' done — ' + outcome.state
                 + (outcome.exit === undefined ? '' : ' (exit ' + outcome.exit + ')')
