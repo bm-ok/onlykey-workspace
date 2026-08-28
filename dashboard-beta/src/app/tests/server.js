@@ -796,7 +796,8 @@ async function plugin(imports, register) {
     if (actions) {
         undo.push(actions.define('suites', {
             about: 'Every drill there is, and what happened last time each one ran',
-            run: board
+            //GATED FIRST, THEN THE NAMED FUNCTION -- see mustBeOn above.
+            run: async function (args) { await mustBeOn(); return board(args); }
         }));
 
         //---- WHAT THE DRILLS LEFT BEHIND ---------------------------------
@@ -819,7 +820,6 @@ async function plugin(imports, register) {
             about: 'What the drills left behind — drill/ branches and drill: tasks. Pass remove to take them away',
             takes: ['remove'],
             run: async function (args) {
-                await mustBeOn();
                 await mustBeOn();
                 var a = args || {};
                 var doIt = a.remove === true || a.remove === 'true';
@@ -1125,20 +1125,20 @@ async function plugin(imports, register) {
         undo.push(actions.define('suiteSource', {
             about: 'What one check actually does, which is the only way to know what its tick means',
             takes: ['suite', 'test', 'check'],
-            run: sourceOf
+            //GATED FIRST, THEN THE NAMED FUNCTION -- see mustBeOn above.
+            run: async function (args) { await mustBeOn(); return sourceOf(args); }
         }));
 
         undo.push(actions.define('suiteRun', {
             about: 'Run the drills, or one suite or one test of them',
             takes: ['suite', 'test', 'check', 'slow', 'teardown', 'keepGoing'],
-            run: runIt
+            //GATED FIRST, THEN THE NAMED FUNCTION -- see mustBeOn above.
+            run: async function (args) { await mustBeOn(); return runIt(args); }
         }));
 
         undo.push(actions.define('suiteStop', {
             about: 'Ask the run to stop after the check it is on',
             run: async function () {
-                await mustBeOn();
-                await mustBeOn();
                 await mustBeOn();
                 if (!going) return { stopping: false, note: 'Nothing is running.' };
                 stopAsked = true;
