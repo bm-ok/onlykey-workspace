@@ -93,7 +93,7 @@ var MAY = {
   // since last time", across the conversation, the board and this host's own
   // record. One bookmark, handed back each time, instead of a model keeping four
   // of them correctly across a restart.
-  whatsNew: 'everything that changed since a bookmark: what was said to you, what finished, what is waiting',
+  whatsNew: 'everything that changed since a bookmark: what was said to you, what finished, what is waiting; add events: true for the last thirty lines of the event trail',
   supervisorSays: 'say something to the person — it appears on the Chat tab, signed with this machine',
 
   // ---- what it may see -----------------------------------------------------

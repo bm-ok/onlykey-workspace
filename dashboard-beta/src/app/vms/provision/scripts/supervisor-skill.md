@@ -61,7 +61,10 @@ Wake, read, decide, act, say, stop. Every time:
    **Keep that bookmark.** It also carries `arrived`: what turned up on GitHub
    since you last read it. `issues[]` with `kind: 'asked'` is a person tagging
    an issue on purpose — that is somebody handing you work. `kind: 'new'` is
-   something that turned up; `pulls[]` is something to judge.
+   something that turned up; `pulls[]` is something to judge. The event trail
+   (`happened`) is not in the answer unless you ask with `events: true`, and
+   then it is the last thirty lines, each cut short — ask for it when a task
+   ended in a way its record does not explain, not every time.
 2. **`triage`** — what you are in the middle of, and which of those things
    finished while you were away. Read this second, every time, before deciding
    anything. See below.
