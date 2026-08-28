@@ -6,7 +6,7 @@ answer with a sentence instead, and the sentence is the reason.
 
 | setting | what it does | why it is the window's |
 |---|---|---|
-| `testsEnabled` / `testsFor` | the drills, on for one folder | they write a task and take a credential off a machine — a decision about somebody's repository, not a flag |
+| `testsEnabled` / `testsFor` | the drills, on for one folder; off, the Test tab is gone and every action in it refuses | they write a task and take a credential off a machine — a decision about somebody's repository, not a flag |
 | `githubTrusted` | who may ask this app for something through GitHub | naming a person is naming a person |
 | `githubMarker` | the word that makes a comment a request | blank turns tagging off |
 | `githubReplyDirect` | replies go out without the draft step | speech in your name |

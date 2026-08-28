@@ -11,6 +11,11 @@ General → *Testing mode*, which names the folder it is on for. The yellow
 banner says so while it is. From the command line `testsAsk --why ...`
 asks; a person answers in the window (`testsAnswer`).
 
+**Off, the plugin is off.** The Test tab is not in the row, and every
+action in it — `suites`, `suiteRun`, `suiteSource`, `drillSweep`,
+`drillCommit`, `testsForget` — answers with the switch's own sentence.
+A drill cannot switch itself on: the press is refused to a driven window.
+
 ## Steps
 
 1. **Test** → pick a suite → **Run the suite**, or one test, or one check.
