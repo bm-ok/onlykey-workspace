@@ -46,7 +46,13 @@ module.exports = function papers(deps) {
     }
 
     async function deliver(judgementId, machine, to) {
-        var from = judging.get(judgementId);
+        //AWAITED. The store's `get` is async, and read without the await it
+        //is a Promise: truthy, with no `uid` on it -- so `handedBack(undefined)`
+        //answered nothing and NO WORKER EVER RECEIVED A JUDGE'S REPORT. Every
+        //task raised because of a judgement was logged "the judgement handed
+        //nothing back" and worked from its brief alone, while the report sat in
+        //the drawer. Four tasks in a row said it before anybody read the line.
+        var from = await judging.get(judgementId);
         if (!from) return [];
 
         var all = (await handedBack(from.uid)) || [];

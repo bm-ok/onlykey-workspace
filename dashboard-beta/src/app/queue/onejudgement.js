@@ -191,7 +191,11 @@ module.exports = function onejudgement(deps) {
             if (concluded) to.info(ref + ' concluded: ' + concluded);
 
             spent.total = now() - began;
-            var latest = judging.get(id) || judgement;
+            //AWAITED -- see ./papers.js for what the bare call cost. Here it
+            //cost the mark on the attempt: a Promise has no `attempts`, so the
+            //exit code was written onto an empty list and the record kept
+            //nothing about how the run ended.
+            var latest = (await judging.get(id)) || judgement;
 
             //HOW THE RUN ENDED, KEPT ON THE ATTEMPT. The log said "exit 1" and
             //the record did not, so a judgement that CRASHED and one that read
@@ -446,7 +450,7 @@ module.exports = function onejudgement(deps) {
     //Found by porting, not by running: the two paths were written apart and only
     //one of them was fixed. It is why they are now written to look alike.
     async function backInTheQueue(id, judgement, who, ref, to) {
-        var attempts = ((judging.get(id) || judgement).attempts) || [];
+        var attempts = (((await judging.get(id)) || judgement).attempts) || [];
         var already = attempts.filter(function (a) { return a.authFailed; }).length;
 
         //AND NOTHING IS FABRICATED WHEN THERE IS NOTHING TO MARK. An empty list

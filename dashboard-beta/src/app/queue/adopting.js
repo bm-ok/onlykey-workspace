@@ -243,7 +243,7 @@ module.exports = function adopting(deps) {
             //ordinary path does it: the attempt is where "it crashed" and "it
             //finished and said nothing" are told apart, and an adopted run was
             //leaving both blank.
-            var latest = judging.get(j.id) || j;
+            var latest = (await judging.get(j.id)) || j;
             var marked = (latest.attempts || []).map(function (a) {
                 if (a.run !== j.run) return a;
                 return Object.assign({}, a, {

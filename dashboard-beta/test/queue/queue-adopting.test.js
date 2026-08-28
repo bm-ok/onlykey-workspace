@@ -60,7 +60,7 @@ function adopting(over) {
         tasksNow: async () => tasks,
         judgementsNow: async () => judgements,
         judging: {
-            get: (id) => judgements.filter((j) => j.id === id)[0],
+            get: async (id) => judgements.filter((j) => j.id === id)[0],
             update: (id, patch) => {
                 wrote.push({ what: 'judging.update', args: { id, patch } });
                 Object.assign(judgements.filter((j) => j.id === id)[0] || {}, patch);

@@ -71,7 +71,8 @@ function onejudgement(over, j) {
             keepForLooking: async (m, why) => { asked.push('keepForLooking:' + m); said.push('kept: ' + why); }
         },
         judging: {
-            get: () => rec,
+            //ASYNC, LIKE THE REAL STORE -- see ./queue-papers.test.js.
+            get: async () => rec,
             update: (id, patch) => { asked.push('judging.update'); Object.assign(rec, patch); }
         },
         release: (m) => released.push(m),
@@ -411,7 +412,7 @@ test('and nothing is fabricated when there is no attempt to mark', async () => {
     metered = { row: null, failedAuthAs: 'a-judge' };
     const o = onejudgement({
         judging: {
-            get: () => Object.assign({}, rec, { attempts: [] }),
+            get: async () => Object.assign({}, rec, { attempts: [] }),
             update: (id, patch) => { asked.push('judging.update'); Object.assign(rec, patch); }
         }
     });

@@ -28,7 +28,9 @@ beforeEach(() => {
 
 function papers(over) {
     return makePapers(Object.assign({
-        judging: { get: (id) => (judgement && judgement.id === id ? judgement : null) },
+        //ASYNC, LIKE THE REAL STORE. A synchronous stand-in hid a bare call
+        //that delivered nothing to any worker, ever.
+        judging: { get: async (id) => (judgement && judgement.id === id ? judgement : null) },
         handedBack: () => files,
         readHanded: (uid, file) => ({ text: texts[file] }),
         run: async (machine, command, opts) => { ran.push({ machine, command, opts }); return {}; }
