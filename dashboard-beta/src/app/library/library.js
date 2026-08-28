@@ -101,6 +101,25 @@ module.exports = function library(theme, okc, remember) {
             //actions -- a job's script edited on disk -- still arrives within
             //twenty seconds. This makes the common case immediate; it is not the
             //only way a list can change.
+            //---- AND EVERYTHING ELSE THIS PANE ASKED FOR ONCE ----------------
+            //
+            //THE VERSIONS READS BELOW HAVE NO CADENCE, deliberately: what was
+            //approved does not change on its own. But it changes when somebody
+            //approves something, and that is precisely the moment this pane is
+            //being looked at — so asked once at mount and never again, the pane
+            //went on believing whatever was true when it was opened.
+            //
+            //IT SAID SO ON SCREEN. Approve, then open the dialog: "nothing has
+            //been approved for this before, so there is nothing on the left",
+            //with the copy sitting on disk. Refreshing the list and not the
+            //thing hung off the list is the whole fault, and it is invisible
+            //because switching tab and back fixes it.
+            //
+            //A REF BECAUSE THE LISTENER IS BOUND ONCE. The handler below is
+            //registered with `[]` and would otherwise hold the first render's
+            //`again`, which belongs to a read for whatever was picked then.
+            var refresh = React.useRef(function () {});
+
             useEffect(function () {
                 var alive = true;
                 function heard(said) {
@@ -110,6 +129,7 @@ module.exports = function library(theme, okc, remember) {
                     //reads for one change.
                     if (said && said.what && said.what !== which) return;
                     again();
+                    refresh.current();
                 }
                 okc.io.on('library:changed', heard);
                 return function () { alive = false; okc.io.off('library:changed', heard); };
@@ -140,6 +160,10 @@ module.exports = function library(theme, okc, remember) {
             //down with the listing because it is the one a lapsed entry is a
             //change FROM; the rest are read one at a time, when picked.
             var older = okc.use(picked && atVer ? K.version : null, { id: picked, at: atVer }, 0);
+
+            //WIRED TO THE LISTENER ABOVE, on every render, so what it calls is
+            //always this render's reads rather than the first one's.
+            refresh.current = function () { kept.again(); older.again(); };
 
             //A VERSION BELONGS TO THE THING IT IS OF. Kept across a change of
             //selection it is an `at` from one contract asked of another, which
