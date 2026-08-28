@@ -108,6 +108,27 @@ async function plugin(imports, register) {
         catch (e) { return null; }
     }
 
+    //THE ISSUE A SUBJECT WAS CUT FOR, from the cut note, or nothing. A cut's
+    //rows carry their note already; a branch is looked up in the same drawer
+    //../repositories/branches keeps the notes in. Never thrown: a judgement
+    //with no issue behind it is the ordinary case.
+    async function issueBehind(subject, facts) {
+        try {
+            if (subject.kind === 'cut') {
+                var one = ((facts && facts.cuts) || []).filter(function (c) {
+                    return c && c.source === subject.source;
+                })[0];
+                return (one && one.note && one.note.issue) || null;
+            }
+            if (subject.kind === 'branch' && subject.branch && imports.state && imports.state.here) {
+                var notes = (await imports.state.here.doc('cuts')).read({}) || {};
+                var mine = notes[subject.branch];
+                return (mine && mine.issue) || null;
+            }
+        } catch (e) { return null; }
+        return null;
+    }
+
     //A WORKSPACE NAME TO THE NAME GITHUB KNOWS IT BY. See the block in
     //`judgementCreate` for what this cost.
     async function ownerAndName(name) {
@@ -433,6 +454,21 @@ async function plugin(imports, register) {
                     throw new Error(gate.askedWithNoJudge(can));
                 }
                 if (asked) chain.brief = gate.withQuestion(chain.brief, asked);
+
+                //---- AND THE ISSUE THE BRANCH WAS CUT FOR, WHOLE -------------
+                //
+                //FOUND BY THIS APP, NOT REMEMBERED BY THE SUPERVISOR. The cut
+                //note carries the issue as a fact (branchCreate `issue`), so a
+                //judge of that branch, or of a cut made from it, is handed the
+                //conversation itself -- fenced, from issueRead -- rather than
+                //whatever the supervisor chose to say about it. This is the
+                //loop it saves: J33 passed a change the maintainer would not
+                //have, because the maintainer's words never reached it.
+                var forIssue = await issueBehind(subject, facts);
+                if (forIssue) {
+                    var told = await relayed('issueRead', { on: forIssue.on, number: forIssue.number });
+                    if (told && told.conversation) chain.brief = gate.withAsked(chain.brief, told.conversation);
+                }
 
                 var made = await store.add(Object.assign({
                     subject: subject, by: a.by, tag: a.tag,

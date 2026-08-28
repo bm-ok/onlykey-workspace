@@ -1790,9 +1790,31 @@ async function plugin(imports, register) {
                         if (f.more) short.push(f.on + ': ' + f.why);
                     });
 
+                    //OPEN PULL REQUESTS ON THE SAME LIST, marked. A pull
+                    //request is an issue with code attached and its
+                    //conversation is read the same way -- and a reply drafted
+                    //under one had nowhere to be released, because the only
+                    //pane with a Send button listed issues and nothing else.
+                    (note.pulls || []).forEach(function (p) {
+                        if (p.state !== 'open' || p.merged) return;
+                        if (only && !p.asked) return;
+                        rows.push({
+                            kind: 'pull',
+                            on: p.on, number: p.number, title: p.title, url: p.url,
+                            by: p.by, at: p.at, updated: p.updated, labels: [],
+                            replies: (p.said || []).length,
+                            head: p.head || null, base: p.base || null, draft: !!p.draft,
+                            subs: null, parent: null,
+                            asked: p.asked || null,
+                            reading: p.reading ? p.reading.kind : null,
+                            repo: found[i].name
+                        });
+                    });
+
                     list.forEach(function (x) {
                         if (only && !x.asked) return;
                         rows.push({
+                            kind: 'issue',
                             on: x.on, number: x.number, title: x.title, url: x.url,
                             by: x.by, at: x.at, updated: x.updated, labels: x.labels || [],
                             replies: (x.said || []).length,

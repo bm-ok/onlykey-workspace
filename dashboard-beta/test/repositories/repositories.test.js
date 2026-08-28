@@ -1273,6 +1273,29 @@ test('a marked comment under a pull request is an ask, and wakes the supervisor'
     assert.equal(woke.length, 1);
 });
 
+test('an open pull request is on the issues list, marked, so its draft has somewhere to be released', async () => {
+    const OPEN = { number: 5, title: 'a change', state: 'open', user: { login: 'beta-super1', type: 'User' }, head: { ref: 'fix/x', sha: 'abc' }, base: { ref: 'master' }, body: 'the change', html_url: 'p' };
+    const answers = Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/pulls': { status: 200, body: [OPEN, Object.assign({}, OPEN, { number: 6, state: 'closed' })] },
+        '/repos/anowner/arepo/pulls/5/reviews': { status: 200, body: [] },
+        '/repos/anowner/arepo/pulls/6/reviews': { status: 200, body: [] },
+        '/repos/anowner/arepo/issues/5/comments': { status: 200, body: [{ body: 'okc: change the hex', user: { login: 'bmatusiak', type: 'User' }, created_at: '2026-08-28T20:41:00Z', html_url: 'c' }] },
+        '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(7)] }
+    });
+    const { actions } = await anApp(answers, undefined, undefined, WAKING);
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const said = await actions.call('issues', {});
+    const kinds = said.issues.map((r) => [r.number, r.kind]).sort();
+    assert.deepEqual(kinds, [[5, 'pull'], [7, 'issue']], 'the open pull request is missing, or the closed one is there');
+    const pull = said.issues.find((r) => r.number === 5);
+    assert.equal(pull.asked.where, 'a reply');
+    assert.equal(pull.head, 'fix/x');
+    assert.equal(pull.url, 'p');
+    //AND ONLY THE ASKED-ABOUT ONES, WHEN THAT IS WHAT WAS ASKED.
+    const only = await actions.call('issues', { asked: true });
+    assert.deepEqual(only.issues.map((r) => r.number), [5]);
+});
+
 test('a pull request reads whole through issueRead, and says it is one', async () => {
     const answers = Object.assign({}, REPO_OK, {
         '/repos/anowner/arepo/issues/5': {

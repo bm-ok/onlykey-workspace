@@ -303,6 +303,20 @@ test('a repository that has gone makes it stale — part of what was read is not
         { 'repo-a': 'aaa1111' }), true);
 });
 
+test('the issue a branch was cut for goes under the brief, whole and fenced', () => {
+    //J33 READ A CHANGE AGAINST THE SUPERVISOR'S ACCOUNT OF THE ISSUE and passed
+    //it; the maintainer's own words, which it did not satisfy, were never in
+    //front of the judge. The conversation arrives as issueRead hands it back.
+    const out = gate.withAsked('the approved words', '----- okc-issue-17 -----\n[1] Opened by them\nmake it off white\n----- okc-issue-17 -----');
+    assert.ok(out.startsWith('the approved words'));
+    assert.ok(out.indexOf(gate.ASKED) > 0);
+    assert.ok(out.indexOf('okc-issue-17') > out.indexOf(gate.ASKED), 'the issue was not under its heading');
+    assert.match(out, /does what THESE people asked for/);
+    //NOTHING TO ADD IS NOTHING ADDED.
+    assert.equal(gate.withAsked('the approved words', ''), 'the approved words');
+    assert.equal(gate.withAsked('the approved words', null), 'the approved words');
+});
+
 test('the same count of repositories under different names is stale', () => {
     //A LENGTH CHECK ALONE WOULD PASS THIS, and it is two different changes.
     assert.equal(gate.staleAgainst(

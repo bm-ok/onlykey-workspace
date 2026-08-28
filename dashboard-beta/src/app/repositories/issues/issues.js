@@ -129,7 +129,15 @@ module.exports = function issues(theme, okc, remember, shell) {
     }
 
     return function Issues({ r }) {
-        var list = r.issues || null;
+        //OPEN PULL REQUESTS ON THE SAME LIST, marked `kind: 'pull'` -- the
+        //same rows the `issues` action hands the command line. A pull request
+        //is a conversation too, and a reply drafted under one had nowhere to
+        //be released while this list held issues alone.
+        var pulls = (r.pulls || []).filter(function (p) { return p.state === 'open' && !p.merged; })
+            .map(function (p) { return Object.assign({ kind: 'pull', comments: (p.said || []).length }, p); });
+        var list = r.issues
+            ? r.issues.map(function (x) { return Object.assign({ kind: 'issue' }, x); }).concat(pulls)
+            : (pulls.length ? pulls : null);
         var from = ((r.reads && r.reads.issues) || []).filter(Boolean);
         var said = r.issuesFrom || [];
         var mine = (r.target && r.target.self) || null;
@@ -237,6 +245,14 @@ module.exports = function issues(theme, okc, remember, shell) {
                                                 </CardTitle>
                                                 <CardSub><span>{i.title}</span></CardSub>
                                                 <Badges>
+                                                    {/* A PULL REQUEST ON THE SAME LIST, SAID.
+                                                        Its conversation reads and answers the
+                                                        same way; what differs is that the code
+                                                        is already there, so there is no task to
+                                                        write from it. */}
+                                                    {i.kind === 'pull'
+                                                        ? <Badge kind="warn" title={'A pull request' + (i.head ? ' from ' + i.head : '') + (i.base ? ' into ' + i.base : '')}>pull request</Badge>
+                                                        : null}
                                                     {whatItIs(i.on)
                                                         ? <Badge kind="muted">{whatItIs(i.on)}</Badge>
                                                         : null}
@@ -370,10 +386,12 @@ module.exports = function issues(theme, okc, remember, shell) {
                     : null}
 
                 <div className="row" style={{ marginTop: '6px' }}>
-                    <Button kind="ok" onClick={function () { writeTaskFrom(i); }}
-                        title="Opens Add task with this issue as the brief">
-                        Write a task from it
-                    </Button>
+                    {i.kind === 'pull'
+                        ? null
+                        : <Button kind="ok" onClick={function () { writeTaskFrom(i); }}
+                            title="Opens Add task with this issue as the brief">
+                            Write a task from it
+                        </Button>}
                     <Button onClick={function () { openOut(i.url); }}>Read it on GitHub</Button>
                     {/* THE OTHER WAY TO FLAG IT. A tag on GitHub is a public
                         reply on somebody else's repository; this hands the whole

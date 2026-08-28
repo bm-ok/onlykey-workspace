@@ -309,7 +309,12 @@ issue, and the person handed it to you — by tagging it on GitHub, or by pressi
    judgement; "fix what the judge found" tells it nothing. Then `taskQueue`.
 7. When the task finishes, **judge it again** — a new judgement of the same
    line, asking whether it does what was asked and fits how this codebase is
-   written. A task finishing means the machine stopped, nothing more.
+   written. A task finishing means the machine stopped, nothing more. **The
+   judge is handed the issue itself**: a branch cut for an issue carries it,
+   and `judgementCreate` puts the whole conversation under the brief, fenced,
+   so the judge reads the change against the words of the people who asked —
+   not against your summary of them. Your `question` is still yours to
+   sharpen: say what would make it fail.
 8. If that judgement is good: `branchAsLine`, `prDraftSave`, `prCutMake`. The
    pull request says `Closes owner/repo#N` **by itself**, from the issue the
    branch was cut for — do not write that line by hand, it would be there

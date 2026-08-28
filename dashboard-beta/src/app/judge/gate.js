@@ -278,6 +278,22 @@ function chainFor(job, said, prompt, contract) {
 //contract still governs, and the contract is the half that says what a judge may
 //not do.
 var HEADING = '## What you are being asked about, specifically';
+var ASKED = '## What was asked for, in the words of the people who asked';
+
+//THE ISSUE ITSELF, UNDER THE BRIEF. A judgement of a change made for an issue
+//was being given the supervisor's SUMMARY of the issue and never the issue:
+//J33 read a one-line change against "the account given in my instructions",
+//accepted it, and the maintainer's own words -- which the change did not
+//visibly satisfy -- were on a GitHub page the judge had never seen. The
+//conversation comes fenced from issueRead, so what a stranger wrote arrives
+//marked as a stranger's and never as an instruction.
+function withAsked(brief, conversation) {
+    var c = String(conversation == null ? '' : conversation).trim();
+    if (!c) return brief;
+    return String(brief) + '\n\n---\n\n' + ASKED + '\n\n'
+        + 'The branch you are reading was cut for this. Whether the change does what THESE '
+        + 'people asked for is the first question, before whether it is tidy.\n\n' + c;
+}
 
 function withQuestion(brief, asked) {
     var q = String(asked == null ? '' : asked).trim();
@@ -310,6 +326,8 @@ module.exports = {
     whyNotCommission: whyNotCommission,
     chainFor: chainFor,
     withQuestion: withQuestion,
+    withAsked: withAsked,
     askedWithNoJudge: askedWithNoJudge,
-    HEADING: HEADING
+    HEADING: HEADING,
+    ASKED: ASKED
 };
