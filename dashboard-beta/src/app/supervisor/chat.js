@@ -120,12 +120,19 @@ module.exports = function chat(theme, okc, markdown) {
         var ready = !!(state.state && state.state.ready);
         useEffect(function () { if (ready) setReading(false); }, [ready]);
 
-        //THE LAST THING SAID IS THE ONE BEING READ. A conversation that opens at
-        //the top is one somebody scrolls every time they look at it.
-        var count = talk.state ? (talk.state.messages || []).length : 0;
-        useEffect(function () {
-            if (bottom.current) bottom.current.scrollIntoView({ block: 'end' });
-        }, [count]);
+        //THE LAST THING SAID IS THE ONE BEING READ, and the scrolling that does
+        //it lives in `Messages` — the component that owns the box that scrolls.
+        //
+        //IT USED TO LIVE HERE AND THAT IS WHY IT ONLY SOMETIMES WORKED. This
+        //pane reads two things on separate polls: the conversation, and whether
+        //the supervisor is up. The thread is only rendered once the SECOND one
+        //has arrived (`showThread` below), and the effect here fired on the
+        //first — so whenever the conversation landed first, it scrolled a thread
+        //that did not exist yet and never ran again. Which of two independent
+        //reads answers first is not something to build on.
+        //
+        //IN `Messages` IT MOUNTS WITH THE BOX, always, whichever order they
+        //arrive in.
 
         if (!state.state && state.error) return <Pane><Note kind="bad">{state.error}</Note></Pane>;
         if (!state.state) return <Pane><Skeleton rows={3} /></Pane>;
@@ -684,6 +691,76 @@ module.exports = function chat(theme, okc, markdown) {
     //person typing and something on the wire, and it is the whole reason a
     //conversation is worth keeping rather than just the answers.
     function Messages({ msgs, bottom, readTo }) {
+        //---- THE THREAD OPENS AT THE END OF ITSELF -------------------------
+        //
+        //HERE, AND NOT IN THE PANE ABOVE, because this is the component that
+        //owns the box that scrolls — so it mounts exactly when there is a box to
+        //scroll. Over there it fired on the conversation arriving, while the
+        //thread is only rendered once a SECOND, independent read says whether
+        //the supervisor is up: whenever the conversation answered first, it
+        //scrolled a thread that did not exist and never ran again. That is the
+        //whole of why it worked some of the time.
+        //
+        //AND IT WAITS FOR THE CONTENT RATHER THAN FOR A DURATION. A message is
+        //laid out when its text and any frame in it have arrived, and the
+        //browser says when that changes — so this listens instead of guessing.
+        //A delay long enough for a slow day is a visible jump on a fast one.
+        var thread = useRef(null);
+        var pinned = useRef(true);
+        var was = useRef(0);
+
+        useEffect(function () {
+            var box = thread.current;
+            if (!box) return;
+
+            function toBottom() {
+                box.scrollTop = box.scrollHeight;
+                was.current = box.scrollTop;
+            }
+
+            //ARRIVING AT A CONVERSATION IS ARRIVING AT THE END OF IT.
+            pinned.current = true;
+            toBottom();
+
+            //ONLY SCROLLING *UP* MEANS SOMEBODY HAS TAKEN OVER. "Are we at the
+            //end" is the obvious test and it is wrong here: the thread grows as
+            //it settles, growing moves the end away from where the scroll is,
+            //and the first thing to land would unpin it for good.
+            function scrolled() {
+                var now = box.scrollTop;
+                if (now < was.current - 4) pinned.current = false;
+                else if (box.scrollHeight - now - box.clientHeight < 24) pinned.current = true;
+                was.current = now;
+            }
+            box.addEventListener('scroll', scrolled, { passive: true });
+
+            function settled() { if (pinned.current) toBottom(); }
+
+            //WHATEVER CHANGES SIZE, WHENEVER IT DOES: a message that rewraps, a
+            //font that arrives, a frame that finishes loading, the window
+            //changing width. One observer covers all of them, and it is an event
+            //rather than a poll.
+            var watching = null;
+            if (typeof ResizeObserver === 'function') {
+                watching = new ResizeObserver(settled);
+                watching.observe(box);
+                for (var i = 0; i < box.children.length; i++) watching.observe(box.children[i]);
+            }
+
+            //AND A FRAME SAYS SO ITSELF. An iframe's height is reserved before it
+            //loads, so this is belt and braces rather than the mechanism — but a
+            //frame that lays out taller than the estimate is exactly the case
+            //that would otherwise leave the last message half off the bottom.
+            var frames = [].slice.call(box.querySelectorAll('iframe'));
+            frames.forEach(function (f) { f.addEventListener('load', settled); });
+
+            return function () {
+                box.removeEventListener('scroll', scrolled);
+                frames.forEach(function (f) { f.removeEventListener('load', settled); });
+                if (watching) watching.disconnect();
+            };
+        }, [msgs.length]);
+
         //`.chat-thread`, NOT `.console tall`. The console is a fixed-height box —
         //`calc(100vh - 220px)` — which is right for a log that is the whole pane
         //and wrong for anything with something under it: it took the viewport and
@@ -693,7 +770,7 @@ module.exports = function chat(theme, okc, markdown) {
         //AND IT IS THERE WHEN IT IS EMPTY, so the composer does not jump up the
         //screen on the first message.
         return (
-            <div className="chat-thread">
+            <div className="chat-thread" ref={thread}>
                 {msgs.length ? null : <Empty>No conversation yet.</Empty>}
                 {msgs.map(function (m) {
                     var mine = m.who == 'person' || m.who == 'you' || m.who == 'the person';
