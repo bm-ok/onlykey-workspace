@@ -161,9 +161,27 @@ module.exports = function library(theme, okc, remember) {
             //change FROM; the rest are read one at a time, when picked.
             var older = okc.use(picked && atVer ? K.version : null, { id: picked, at: atVer }, 0);
 
+            //---- AND THE ONE THAT IS PICKED, IN FULL -------------------------
+            //
+            //A JOB'S BODY IS NOT ON THE LIST AND CANNOT BE. It is a script on
+            //disk — three kilobytes each — and putting every one of them on a
+            //listing that is re-read every twenty seconds to serve the one that
+            //is open is the wrong trade in the obvious direction.
+            //
+            //THE PANE ALREADY SAID SO, in the sentence under "The script": "the
+            //job list does not carry the text — ask for it by id on the command
+            //line". That was true and it was also a shrug: the window IS the
+            //place you read it, and it was sending people to a terminal.
+            //
+            //AND THE APPROVE DIALOG INHERITED IT. Both sides of the diff came up
+            //empty for a job, which is the worst possible version of this —
+            //approving still worked, because the door reads the file itself, so
+            //the dialog showed nothing at all about something that then ran.
+            var full = okc.use(picked ? K.one : null, { id: picked }, 0);
+
             //WIRED TO THE LISTENER ABOVE, on every render, so what it calls is
             //always this render's reads rather than the first one's.
-            refresh.current = function () { kept.again(); older.again(); };
+            refresh.current = function () { kept.again(); older.again(); full.again(); };
 
             //A VERSION BELONGS TO THE THING IT IS OF. Kept across a change of
             //selection it is an `at` from one contract asked of another, which
@@ -207,8 +225,15 @@ module.exports = function library(theme, okc, remember) {
             //flag: an entry rewritten down the pipe has had its approval CLEARED
             //rather than lapsed, and that is the ordinary way a contract comes
             //to differ from the copy somebody last read.
+            //WHEREVER THE BODY ACTUALLY IS. A contract and a prompt carry their
+            //text on the list, so for two of the three this is the same string
+            //twice; a job's script is only on the full read above.
+            var theBody = full.state && full.state[K.body] != null
+                ? full.state[K.body]
+                : (on ? on[K.body] : null);
+
             var newestKept = (kept.state && kept.state.newest) || null;
-            var drifted = !!(newestKept && on && String(newestKept.text) !== String(on[K.body] == null ? '' : on[K.body]));
+            var drifted = !!(newestKept && on && String(newestKept.text) !== String(theBody == null ? '' : theBody));
 
             function tell(p) {
                 return p.then(
@@ -224,7 +249,10 @@ module.exports = function library(theme, okc, remember) {
             //action itself, and a confirmation that does not put the thing in
             //front of the person is a confirmation that they read the title.
             function approve(x) {
-                var body = x[K.body];
+                //THE BODY FROM THE FULL READ, NOT FROM THE ROW. A job's script
+                //is not on the list, so a dialog built from the row shows an
+                //empty diff about something that then runs.
+                var body = theBody;
 
                 //---- AND WHAT IT WAS WHEN THEY LAST READ IT ------------------
                 //
@@ -484,9 +512,14 @@ module.exports = function library(theme, okc, remember) {
                                             {'This is what approving it is about. '
                                                 + (on.lines ? on.lines + ' line(s).' : '')}
                                         </CardSub>
-                                        {on[K.body]
-                                            ? <Code text={on[K.body]} mode={which == 'job' ? 'javascript' : undefined} />
-                                            : <Empty>{'the ' + K.one + ' list does not carry the text — ask for it by id on the command line'}</Empty>}
+                                        {theBody
+                                            ? <Code text={theBody} mode={which == 'job' ? 'javascript' : undefined} />
+                                            : (full.state
+                                                //READ AND GENUINELY EMPTY, which for a job means the
+                                                //script is missing from the jobs folder rather than
+                                                //blank — see `there` in ./server.js.
+                                                ? <Empty>{'there is no ' + K.body + ' here to read'}</Empty>
+                                                : <Skeleton rows={3} />)}
                                     </Panel>
 
                                     {/*---- AND WHAT WAS APPROVED BEFORE ------
@@ -580,7 +613,7 @@ module.exports = function library(theme, okc, remember) {
                                                                 left; what it says now is on the right, and only that
                                                                 is what approving it again would agree to.
                                                             </Note>
-                                                            <Diff left={showing.text} right={on[K.body]}
+                                                            <Diff left={showing.text} right={theBody}
                                                                 mode={which == 'job' ? 'javascript' : 'markdown'}
                                                                 height={340} />
                                                         </div>
