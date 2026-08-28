@@ -137,7 +137,10 @@ module.exports = function issues(theme, okc, remember, shell) {
         //WHICH ONE IS BEING READ. Kept by its whole name, `on#number`, because
         //two forks in a chain both have a #1 and a bare number picks whichever
         //came first.
-        var [picked, setPicked] = useState(null);
+        //REMEMBERED, so the inbox can land on one: "Go to" writes the pick first
+        //and switches pane second, and a pane that keeps its selection in
+        //component state arrives at the top of its list every time.
+        var [picked, setPicked] = remember.use('issues', 'picked', null);
 
         //WHAT TO CALL A PLACE IN ONE WORD. The full name is what GitHub knows it
         //by and is never dropped; this is the extra word that says WHY it is in

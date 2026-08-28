@@ -388,14 +388,27 @@ async function plugin(imports, register) {
         }
 
         //---- PROBED, NOT READ. See the header. ------------------------------
-        var branchList = await github.call('GET', at + '/branches?per_page=100');
+        //STARTED TOGETHER, AWAITED IN TURN. Neither read needs the other's
+        //answer, and the three probes below need only the repository's own; a
+        //304 is a full round trip whether or not it carries a body, so the
+        //waits are the cost and they are paid once, side by side.
+        var branchList$ = github.call('GET', at + '/branches?per_page=100');
+        var pulls$ = github.call('GET', at + '/pulls?state=open&per_page=100');
+        var parent0 = r.body.parent && r.body.parent.full_name ? r.body.parent.full_name : null;
+        var source0 = r.body.source && r.body.source.full_name ? r.body.source.full_name : null;
+        var wantOn0 = targetOf(note, remote).on;
+        var parent$ = parent0 ? canOpenIn(parent0) : null;
+        var source$ = (parent0 && source0 && parent0 !== source0) ? canOpenIn(source0) : null;
+        var target$ = wantOn0 ? canOpenIn(wantOn0) : null;
+
+        var branchList = await branchList$;
         var canReadCode = branchList.status === 200;
 
         //THE PROBE, WHICH IS A DIFFERENT QUESTION FROM THE READ BELOW. This asks
         //whether the token may use Pull requests ON THIS REPOSITORY, and feeds
         //the missing-permission sentence. WHICH repositories are read from is a
         //decision somebody made — see the `reads.pulls` loop further down.
-        var pulls = await github.call('GET', at + '/pulls?state=open&per_page=100');
+        var pulls = await pulls$;
         var canReadPulls = pulls.status === 200;
 
         //NAMED THE WAY GITHUB NAMES THEM in the token's own settings page, so
@@ -423,10 +436,10 @@ async function plugin(imports, register) {
         var chained = !!(parent && source && parent !== source);
 
         var intoParent = parent
-            ? Object.assign({}, await canOpenIn(parent), { defaultBranch: r.body.parent.default_branch || null })
+            ? Object.assign({}, await parent$, { defaultBranch: r.body.parent.default_branch || null })
             : null;
         var intoSource = chained
-            ? Object.assign({}, await canOpenIn(source), { defaultBranch: r.body.source.default_branch || null })
+            ? Object.assign({}, await source$, { defaultBranch: r.body.source.default_branch || null })
             : null;
 
         //---- AND THE ONE THAT ACTUALLY MATTERS: THE TARGET ------------------
@@ -448,7 +461,7 @@ async function plugin(imports, register) {
         //right until somebody picks a different link and silently wrong after.
         var wantOn = targetOf(note, remote).on;
         var intoTarget = wantOn
-            ? Object.assign({}, await canOpenIn(wantOn), { chosen: !!(note && note.target && note.target.on) })
+            ? Object.assign({}, await target$, { chosen: !!(note && note.target && note.target.on) })
             : null;
 
         //REPORTED AGAINST THE TARGET, not the parent. This said "Pull requests
@@ -835,16 +848,18 @@ async function plugin(imports, register) {
         var pullFrom = readsOf(note, remote).pulls;
         var pullList = null;
         var pullsFrom = [];
+        //EVERY PLACE AT ONCE; the loop below keeps the order the places were
+        //named in, which is the order the panes list them.
+        var pGots = await github.many(pullFrom, function (pOn) {
+            var b2 = pOn.split('/');
+            return (pOn === mineFull)
+                ? Promise.resolve(pulls)
+                : github.call('GET', '/repos/' + b2[0] + '/' + b2[1] + '/pulls?state=open&per_page=100');
+        });
         for (var pi = 0; pi < pullFrom.length; pi++) {
             var pOn = pullFrom[pi];
             var pBits = pOn.split('/');
-            //THE PROBE ANSWERED THIS ONE ALREADY when the set is just this
-            //repository, which is the common case. Asking twice would be
-            //harmless — the second is a 304 — but it would be two lines in the
-            //log for one question.
-            var pGot = (pOn === mineFull)
-                ? pulls
-                : await github.call('GET', '/repos/' + pBits[0] + '/' + pBits[1] + '/pulls?state=open&per_page=100');
+            var pGot = pGots[pi];
             pullsFrom.push(whatItSaid(pOn, pGot, 'pulls'));
             if (pGot.status === 200 && Array.isArray(pGot.body)) {
                 if (pullList === null) pullList = [];
@@ -1074,6 +1089,49 @@ async function plugin(imports, register) {
     //record plus the remote, so this costs a document read — which matters for
     //something the inbox draws on a timer.
     if (imports.inbox) {
+        //---- WHAT IS WRITTEN AND NOT SENT ------------------------------------
+        //
+        //A REPLY, A CLOSE OR A REVIEW WAITING FOR A PERSON TO RELEASE IT. Each
+        //is stopped until somebody reads it -- that is the whole design -- and
+        //the only place it showed was the card of the one issue it belonged to,
+        //two clicks down a pane nobody had a reason to open. The inbox is where
+        //a person is told what is waiting on them.
+        undo.push(imports.inbox.source({
+            name: 'replies, closes and reviews written and not sent',
+            waiting: async function () {
+                //THE DOC BY NAME, not through `drafts()`: that helper is declared
+                //inside the actions block below, out of this scope, and the
+                //reference threw on every read -- into a catch that answered []
+                //and looked exactly like nothing waiting.
+                var box = null;
+                try { box = await state.here.doc('github-drafts'); } catch (e) { return []; }
+                if (!box) return [];
+                var all = box.read({}) || {};
+                return Object.keys(all).map(function (k) {
+                    var d = all[k] || {};
+                    var kind = d.kind === 'review' ? 'a review is waiting to be posted'
+                        : d.kind === 'close' ? 'a close is waiting to be released'
+                        : 'a reply is waiting to be sent';
+                    var where = d.kind === 'review' && d.judgement
+                        ? imports.inbox.at('Judge', 'Judgement', d.judgement)
+                        : imports.inbox.at('Repositories', 'Issues', k);
+                    var text = String(d.text || '').trim();
+                    return imports.inbox.item(
+                        kind,
+                        k + (d.judgement ? ' — from ' + d.judgement : ''),
+                        'Written ' + (d.by ? 'by ' + d.by + ' ' : '') + 'and stopped here until you read it and '
+                            + 'press ' + (d.kind === 'review' ? 'Post the review' : d.kind === 'close' ? 'Close it' : 'Send it')
+                            + '. It goes out under your name.'
+                            + (d.kind === 'review' && d.event ? ' As a ' + d.event + ' review.' : '')
+                            + (d.forced && d.why ? ' ' + d.why + '.' : '')
+                            + (text ? ' It begins: "' + text.split('\n')[0].slice(0, 120) + '"' : ''),
+                        where,
+                        { since: d.at || null, id: k }
+                    );
+                });
+            }
+        }));
+
         undo.push(imports.inbox.source({
             name: 'forks with nowhere to send work',
             waiting: async function () {
@@ -2670,10 +2728,23 @@ async function plugin(imports, register) {
             }
         }));
 
-        undo.push(actions.define('repositoriesCheck', {
-            about: 'Ask GitHub about the repositories: reachability, what the token may do, and what is open',
-            takes: ['repo'],
-            run: async function (args) {
+        //---- ONE SWEEP AT A TIME, HOWEVER MANY ASK -----------------------------
+        //
+        //EVERY SWEEP WAS RUNNING THREE TIMES OVER. The events showed each
+        //repository reported three times in the same second: three askers in
+        //the window -- the chassis under more than one pane, each keeping the
+        //list fresh on its own -- and every one of them started a whole sweep.
+        //Thirty-nine round trips became a hundred and seventeen, all 304s,
+        //all waited for, and the Repos pane was "slow to load".
+        //
+        //A SWEEP ALREADY RUNNING IS THE ANSWER TO A SECOND ASKER. The second
+        //and third get the first one's promise and read the same result; only
+        //a check of ONE named repository bypasses this, since it is a different
+        //question. Cleared in `finally`, so a sweep that throws does not leave
+        //every later asker waiting on a promise that will never settle.
+        var sweeping = null;
+
+        async function sweepAll(args) {
                 var a = args || {};
                 var found = await workspace.repos();
                 if (!found.length) throw new Error('There are no repositories in this workspace to ask about.');
@@ -2691,9 +2762,22 @@ async function plugin(imports, register) {
                 //can be worked out after the write. See ./arrived.js.
                 var pairs = [];
 
+                //---- SIDE BY SIDE, NOT ONE AFTER ANOTHER ---------------------
+                //
+                //THE FINGERPRINTS MADE EVERY READ FREE AND THE SWEEP WAS STILL
+                //EIGHTEEN SECONDS: thirty-nine 304s, each a full round trip,
+                //each waited for before the next began. Three repositories in a
+                //`for` loop with an `await` in it is the shape ../../github/
+                //many.js was written about. Every previous answer is read before
+                //any fresh one is filed, so nothing here sees a half-written
+                //note; the bookkeeping below runs in order, as before.
+                var fresh = await github.many(want, function (w) {
+                    return ask(w.name, notes[w.name] || null);
+                });
+
                 for (var i = 0; i < want.length; i++) {
                     var was = notes[want[i].name] || null;
-                    var row = await ask(want[i].name, was);
+                    var row = fresh[i];
 
                     //WHAT SOMEBODY CHOSE IS NOT SOMETHING GITHUB ANSWERED, and
                     //this is the one line that keeps those apart.
@@ -2815,6 +2899,20 @@ async function plugin(imports, register) {
                             + stuck.map(function (r) { return r.repo + ' — ' + r.why; }).join('; ')
                         : 'All ' + rows.length + ' are reachable and the token may use them.')
                 };
+        }
+
+        undo.push(actions.define('repositoriesCheck', {
+            about: 'Ask GitHub about the repositories: reachability, what the token may do, and what is open',
+            takes: ['repo'],
+            run: async function (args) {
+                var a = args || {};
+                if (a.repo) return await sweepAll(a);
+                if (sweeping) return await sweeping;
+                sweeping = (async function () {
+                    try { return await sweepAll(a); }
+                    finally { sweeping = null; }
+                }());
+                return await sweeping;
             }
         }));
     }

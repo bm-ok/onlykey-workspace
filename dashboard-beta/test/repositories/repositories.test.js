@@ -369,6 +369,9 @@ test('no token held is reported per repository rather than thrown', async () => 
     //WHAT ../../keys ACTUALLY SAYS when there is nothing held.
     const github = {
         call: async () => { throw new Error('This host holds no GitHub token. Add one on the Keys tab; nothing here can reach GitHub until it has one.'); },
+        //THE REAL POOL, as everywhere else in this file: the sweep asks its
+        //repositories side by side, and a stand-in without it is not a GitHub.
+        many: Many(8),
         check: async () => ({ ok: false }),
         apiHost: () => 'api.github.com'
     };
@@ -1347,4 +1350,44 @@ test('a review is released by a person and nobody else', async () => {
         const a = { on: 'anowner/arepo', number: 42 }; a[mark] = true;
         await assert.rejects(() => actions.call('issueApprove', a), /released by a person at the window/);
     }
+});
+
+//---------------------------------------------------------------------------
+//WHAT IS WRITTEN AND NOT SENT IS IN THE INBOX.
+//
+//A draft is stopped until a person reads it; the inbox is where a person is
+//told what is stopped on them. The first version of this source read the doc
+//through a helper declared in another scope, threw, and caught its own throw
+//into "nothing waiting" -- which is why this asserts the item, not the absence
+//of an error.
+//---------------------------------------------------------------------------
+
+test('a reply, a close and a review waiting to go out are each an inbox errand', async () => {
+    const { state, sources } = await anApp(REPO_OK, undefined, undefined, { settings: { read: async () => ({}) } });
+    const src = sources.filter((s) => /written and not sent/.test(s.name))[0];
+    assert.ok(src, 'the drafts source is not registered');
+
+    assert.deepEqual(await src.waiting(), [], 'an empty drafts doc reported something waiting');
+
+    (await state.here.doc('github-drafts')).write({
+        'them/repo#3': { kind: 'reply', on: 'them/repo', number: 3, text: 'Looking now.', at: 'x', by: 'J1' },
+        'them/repo#4': { kind: 'close', on: 'them/repo', number: 4, text: null, at: 'y', by: 'the supervisor' },
+        'them/repo#5': { kind: 'review', on: 'them/repo', number: 5, text: '**Recommend Pulling: YES**', at: 'z', by: 'J9', judgement: 'J9', event: 'APPROVE' }
+    });
+    const items = await src.waiting();
+    assert.equal(items.length, 3);
+    const byKind = {};
+    items.forEach((i) => { byKind[i.kind] = i; });
+    assert.ok(byKind['a reply is waiting to be sent'], 'the reply is not an errand');
+    assert.ok(byKind['a close is waiting to be released'], 'the close is not an errand');
+    assert.ok(byKind['a review is waiting to be posted'], 'the review is not an errand');
+    //A REVIEW GOES TO THE JUDGEMENT IT CAME FROM; a reply goes to its issue.
+    //PANE AND PICK, not the whole address: the stand-in `inbox.at` spells the
+    //tab as `tab` where the real one says `view`, and that spelling is the
+    //inbox's business.
+    assert.equal(byKind['a review is waiting to be posted'].where.pane, 'Judgement');
+    assert.equal(byKind['a review is waiting to be posted'].where.pick, 'J9');
+    assert.equal(byKind['a reply is waiting to be sent'].where.pane, 'Issues');
+    assert.equal(byKind['a reply is waiting to be sent'].where.pick, 'them/repo#3');
+    assert.match(byKind['a review is waiting to be posted'].why, /APPROVE review/);
 });

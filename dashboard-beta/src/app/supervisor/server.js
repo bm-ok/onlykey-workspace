@@ -45,7 +45,10 @@ plugin.consumes = ['app', 'log', 'state', 'ours', 'guestApi', 'provision', 'gues
     'versions',
     //`settings` FOR ONE FLAG: whether saying something wakes it. Read at the
     //moment it would be rather than remembered, the same way ../queue reads it.
-    'settings'];
+    'settings',
+    //`inbox` FOR ONE ERRAND: a skill change the supervisor proposed and nobody
+    //has answered. See the source at the foot of this file.
+    'inbox'];
 plugin.provides = [];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -103,6 +106,7 @@ async function plugin(imports, register) {
     //folder of repositories.
     var proposals = imports.state.app.doc('skill-proposals');
 
+
     //---- AND WHAT WAS DECIDED ABOUT THEM -----------------------------------
     //
     //A PROPOSAL THAT IS ANSWERED DISAPPEARS. Approving keeps a version and drops
@@ -151,6 +155,39 @@ async function plugin(imports, register) {
     }
 
     var undo = [];
+
+    //---- WHAT IS WAITING ON A PERSON HERE --------------------------------------
+    //
+    //A PROPOSED SKILL CHANGE IS THE ONE THING THIS PLUGIN STOPS ON. The
+    //supervisor argues for a change to its own instructions and nothing is
+    //served from it until a person approves -- and the only place that showed
+    //was the Review tab under Supervisor → Skill, which is not where anybody
+    //looks for things waiting on them. A proposal sat there for a day. The
+    //inbox is where a person is told; this says so there.
+    if (imports.inbox) {
+        undo.push(imports.inbox.source({
+            name: 'skill changes proposed and not answered',
+            waiting: async function () {
+                var all = proposals.read({}) || {};
+                return Object.keys(all).map(function (which) {
+                    var p = all[which] || {};
+                    var one = null;
+                    try { one = skillNamed(which); } catch (e) { one = { title: which }; }
+                    var why = String(p.why || '').trim();
+                    return imports.inbox.item(
+                        'a skill change is proposed',
+                        one.title || which,
+                        (p.by || 'something') + ' proposed a change of ' + (p.characters || '?') + ' characters '
+                            + '(it is ' + (p.wasCharacters || '?') + ' now). Nothing is served from it until you '
+                            + 'read it and approve or reject it. The argument made for it: '
+                            + (why.length > 400 ? why.slice(0, 400) + '…' : why),
+                        imports.inbox.at('Supervisor', 'Skill', which),
+                        { since: p.at || null, id: which }
+                    );
+                });
+            }
+        }));
+    }
 
     undo.push(actions.define('todos', {
         about: 'The list of things to do: what is open, what is being done, and what is finished',

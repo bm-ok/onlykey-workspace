@@ -53,8 +53,16 @@ module.exports = function inbox(theme, okc, remember) {
             //writing it before switching means arriving with the thing selected
             //rather than at the top of a list.
             if (w.pick) {
-                var area = { Todo: 'todo', 'PR cuts': 'cuts', 'Branches Cut': 'branches', 'Virtual machines': 'machines' }[pane];
-                if (area) remember.write(area, 'picked', w.pick);
+                //WHICH AREA, AND WHICH KEY. Most panes remember their row as
+                //`picked`; the Skill pane remembers `which`. A pick written to
+                //the wrong key is a pane that opens at the top of its list and
+                //an inbox that looks like it does nothing.
+                var slot = {
+                    Todo: ['todo', 'picked'], 'PR cuts': ['cuts', 'picked'], 'Branches Cut': ['branches', 'picked'],
+                    'Virtual machines': ['machines', 'picked'], Judgement: ['judge', 'picked'],
+                    Issues: ['issues', 'picked'], Skill: ['skill', 'which']
+                }[pane];
+                if (slot) remember.write(slot[0], slot[1], w.pick);
             }
             okc.call('show', { tab: tab, pane: pane || undefined }).then(
                 function () { },
