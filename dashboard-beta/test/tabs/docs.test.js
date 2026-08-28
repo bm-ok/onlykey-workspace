@@ -79,6 +79,26 @@ test('a name cannot leave the folder, and nothing but markdown is a page', async
     assert.equal(none.name, null);
 });
 
+test('a search finds the word in titles and bodies, says which lines, and leaves the rest out', async () => {
+    const { actions } = await anApp();
+    await actions.call('docWrite', { name: 'find/one', text: '# Merge rules\n\nthe person merges.\nnobody else merges.\n' });
+    await actions.call('docWrite', { name: 'find/two', text: '# Elsewhere\n\nnothing here.\n' });
+    await actions.call('docWrite', { name: 'find/three', text: '# Three\n\nwho may MERGE what\n' });
+
+    const said = await actions.call('docs', { q: 'merge' });
+    const names = said.docs.map((d) => d.name);
+    assert.ok(names.includes('find/one.md') && names.includes('find/three.md'), names.join());
+    assert.ok(!names.includes('find/two.md'), 'a page that does not say it was listed');
+    const one = said.docs.find((d) => d.name === 'find/one.md');
+    assert.equal(one.inTitle, true);
+    assert.equal(one.matches, 4, 'the title, and three lines including the heading');
+    assert.deepEqual(one.hits.map((h) => h.line), [1, 3, 4]);
+    assert.match(one.hits[1].text, /the person merges/);
+    //MOST SAID FIRST.
+    assert.equal(said.docs[0].name, 'find/one.md');
+    assert.match(said.note, /2 page\(s\) say "merge"/);
+});
+
 test('deleting is a person\'s press, and it is refused down the pipe', async () => {
     const { actions } = await anApp();
     await actions.call('docWrite', { name: 'gone', text: 'x' });

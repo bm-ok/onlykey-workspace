@@ -15,7 +15,7 @@ var { useState, useEffect } = React;
 
 module.exports = function docs(theme, okc, remember, markdown) {
     var { Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
-        Badge, Badges, Button, Empty, Note, Notice, Skeleton, Editor, ask } = theme;
+        Badge, Badges, Button, Empty, Note, Notice, Skeleton, Editor, Finder, ask } = theme;
     var Frame = markdown.Frame;
 
     function ago(when) {
@@ -125,7 +125,12 @@ module.exports = function docs(theme, okc, remember, markdown) {
     }
 
     return function Docs() {
-        var list = okc.use('docs', {}, 4000);
+        //SEARCH IS THE SERVER'S: titles and bodies, with the lines that match.
+        //With a word in the box the pages column is every page that says it,
+        //across suites, most said first, and the suites column counts them.
+        var [q, setQ] = useState('');
+        var list = okc.use('docs', q.trim() ? { q: q.trim() } : {}, 4000);
+        var searching = !!(list.state && list.state.q);
         var [suite, setSuite] = remember.use('docs', 'suite', 'docs');
         var [picked, setPicked] = remember.use('docs', 'picked', null);
         var [said, setSaid] = useState(null);
@@ -136,10 +141,11 @@ module.exports = function docs(theme, okc, remember, markdown) {
         suites.sort(function (a, b) { return a === 'docs' ? -1 : b === 'docs' ? 1 : a.localeCompare(b); });
         //THE SUITE'S README FIRST, then the rest as listed. A suite's front
         //page is the one to read first, whatever letter it starts with.
-        var here = pages.filter(function (p) { return suiteOf(p.name) === suite; })
+        var here = pages.filter(function (p) { return searching || suiteOf(p.name) === suite; })
             .sort(function (a, b) {
                 var ra = /^README\.md$/i.test(inSuite(a.name)) ? 0 : 1;
                 var rb = /^README\.md$/i.test(inSuite(b.name)) ? 0 : 1;
+                if (searching) return (b.matches || 0) - (a.matches || 0);
                 return ra - rb || inSuite(a.name).localeCompare(inSuite(b.name));
             });
         var known = pages.some(function (p) { return p.name === picked; });
@@ -171,6 +177,8 @@ module.exports = function docs(theme, okc, remember, markdown) {
                 </Note>
                 {said ? <Notice kind={said.bad ? 'bad' : 'ok'} onClose={function () { setSaid(null); }}>{said.text}</Notice> : null}
 
+                <Finder value={q} onChange={setQ} placeholder="find a word in titles and pages" />
+
                 <Cols>
                     <Col narrow>
                         <TitleRow>
@@ -180,21 +188,23 @@ module.exports = function docs(theme, okc, remember, markdown) {
                         {list.error ? <Note kind="bad">{list.error}</Note> : null}
                         {!list.state
                             ? <Skeleton rows={3} />
-                            : <Stack>
-                                {suites.map(function (sname) {
-                                    var count = pages.filter(function (p) { return suiteOf(p.name) === sname; }).length;
-                                    return (
-                                        <Card key={sname} pick on={sname === suite} onClick={function () { setSuite(sname); }}>
-                                            <CardTitle><span className="mono">{sname}</span></CardTitle>
-                                            <CardSub><span>{count + ' page(s)'}</span></CardSub>
-                                        </Card>
-                                    );
-                                })}
-                            </Stack>}
+                            : !suites.length
+                                ? <Empty>{searching ? 'Nothing says "' + list.state.q + '".' : 'No suites yet.'}</Empty>
+                                : <Stack>
+                                    {suites.map(function (sname) {
+                                        var count = pages.filter(function (p) { return suiteOf(p.name) === sname; }).length;
+                                        return (
+                                            <Card key={sname} pick on={!searching && sname === suite} onClick={function () { setSuite(sname); }}>
+                                                <CardTitle><span className="mono">{sname}</span></CardTitle>
+                                                <CardSub><span>{count + (searching ? ' page(s) say it' : ' page(s)')}</span></CardSub>
+                                            </Card>
+                                        );
+                                    })}
+                                </Stack>}
                     </Col>
                     <Col narrow>
                         <TitleRow>
-                            Pages<Grow />
+                            {searching ? 'Pages that say it' : 'Pages'}<Grow />
                             <span className="muted">{list.state ? here.length : ''}</span>
                         </TitleRow>
                         <div className="row" style={{ marginBottom: '8px' }}>
@@ -203,17 +213,26 @@ module.exports = function docs(theme, okc, remember, markdown) {
                         {!list.state
                             ? <Skeleton rows={4} />
                             : !here.length
-                                ? <Empty>No pages in this suite. New page makes the first.</Empty>
+                                ? <Empty>{searching ? 'Nothing says "' + list.state.q + '".' : 'No pages in this suite. New page makes the first.'}</Empty>
                                 : <Stack>
                                     {here.map(function (p) {
                                         return (
-                                            <Card key={p.name} pick on={p.name === picked} onClick={function () { setPicked(p.name); }}>
+                                            <Card key={p.name} pick on={p.name === picked}
+                                                onClick={function () { setSuite(suiteOf(p.name)); setPicked(p.name); }}>
                                                 <CardTitle><span>{p.title}</span></CardTitle>
-                                                <CardSub><span className="mono">{inSuite(p.name)}</span></CardSub>
+                                                <CardSub><span className="mono">{searching ? p.name : inSuite(p.name)}</span></CardSub>
                                                 <Badges>
+                                                    {searching ? <Badge kind="ok">{p.matches + ' hit(s)'}</Badge> : null}
                                                     <span className="muted">{ago(p.modified)}</span>
                                                     <span className="muted">{p.bytes + ' bytes'}</span>
                                                 </Badges>
+                                                {/* WHERE IT SAYS IT, so the page need not be
+                                                    opened to know whether it is the one. */}
+                                                {searching && p.hits && p.hits.length
+                                                    ? p.hits.map(function (h) {
+                                                        return <CardSub key={h.line}><span className="muted">{h.line + ': '}</span><span>{h.text}</span></CardSub>;
+                                                    })
+                                                    : null}
                                             </Card>
                                         );
                                     })}

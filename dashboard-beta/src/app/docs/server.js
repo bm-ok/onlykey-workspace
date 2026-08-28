@@ -91,22 +91,50 @@ async function plugin(imports, register) {
     var undo = [];
     if (actions) {
         undo.push(actions.define('docs', {
-            about: 'Every page in the docs folder: its name, its title, its size and when it last changed',
-            takes: [],
-            run: async function () {
+            about: 'Every page in the docs folder: its name, its title, its size and when it last changed. '
+                + 'With `q`, only the pages whose title or text contain it, each with the lines that do',
+            takes: ['q'],
+            run: async function (args) {
+                var a = args || {};
+                var q = String(a.q == null ? '' : a.q).trim().toLowerCase();
                 var names = walk(dir, '');
-                var pages = names.map(function (name) {
+                var pages = [];
+                names.forEach(function (name) {
                     var text = '';
                     try { text = fs.readFileSync(fullOf(name), 'utf8'); } catch (e) { text = ''; }
                     var st = statOf(name);
-                    return { name: name, title: titleOf(text, name), bytes: st.bytes, modified: st.modified };
+                    var row = { name: name, title: titleOf(text, name), bytes: st.bytes, modified: st.modified };
+                    if (q) {
+                        //TITLES AND BODIES, plainly: the words, case aside, on
+                        //any line. The lines that match come back so a list can
+                        //show WHERE without opening the page -- three of them,
+                        //since a page that says the word forty times is one hit
+                        //to a person.
+                        var inTitle = row.title.toLowerCase().indexOf(q) >= 0;
+                        var hits = [];
+                        var n = 0;
+                        text.split('\n').forEach(function (line, i) {
+                            if (line.toLowerCase().indexOf(q) < 0) return;
+                            n++;
+                            if (hits.length < 3) hits.push({ line: i + 1, text: line.trim().slice(0, 160) });
+                        });
+                        if (!inTitle && !n) return;
+                        row.inTitle = inTitle;
+                        row.matches = n + (inTitle ? 1 : 0);
+                        row.hits = hits;
+                    }
+                    pages.push(row);
                 });
+                if (q) pages.sort(function (p1, p2) { return (p2.matches || 0) - (p1.matches || 0); });
                 return {
                     dir: dir,
+                    q: q || null,
                     docs: pages,
-                    note: pages.length
-                        ? pages.length + ' page(s) in ' + dir + '. docRead reads one; docWrite writes one.'
-                        : 'No pages yet in ' + dir + '. docWrite with a name and text makes the first.'
+                    note: q
+                        ? pages.length + ' page(s) say "' + q + '"' + (pages.length ? '. docRead reads one.' : '.')
+                        : pages.length
+                            ? pages.length + ' page(s) in ' + dir + '. docRead reads one; docWrite writes one.'
+                            : 'No pages yet in ' + dir + '. docWrite with a name and text makes the first.'
                 };
             }
         }));
