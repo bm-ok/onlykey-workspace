@@ -1,5 +1,6 @@
 var React = require('react');
 var makeGeneral = require('./general');
+var makeTrust = require('./trust');
 var { useState, useEffect } = React;
 
 //the Settings tab: one question, asked about one place.
@@ -49,6 +50,12 @@ async function plugin(imports, register) {
     //to work, it is somewhere you go to change one thing and come back from.
     shell.tab({ name: 'Settings', order: 200 });
     shell.pane({ tab: 'Settings', name: 'General', order: 10, Component: makeGeneral(theme, okc, shell) });
+
+    //A SECOND PANE, AND THE TAB'S ONE QUESTION IS NOW TWO OF THE SAME KIND.
+    //Both are "what may happen here without somebody saying so each time" —
+    //General answers it about the drills, this one about text arriving from
+    //somebody else's service. Neither is a preference; both ship off.
+    shell.pane({ tab: 'Settings', name: 'Trust', order: 20, Component: makeTrust(theme, okc) });
 
     await register(null, {});
 }

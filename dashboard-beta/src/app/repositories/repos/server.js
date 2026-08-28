@@ -533,11 +533,21 @@ async function plugin(imports, register) {
                         reading: readingOf({
                             number: x.number, on: on, body: x.body || null,
                             by: x.user && x.user.login,
+                            //THE ACCOUNT NUMBER AS WELL AS THE NAME. A login can
+                            //be changed and the old one taken by somebody else;
+                            //the number never is. ../../github/trust.js prefers
+                            //it whenever the trusted entry carries one.
+                            byId: x.user && x.user.id,
                             labels: (x.labels || []).map(function (l) { return typeof l == 'string' ? l : l.name; })
                         }),
                         body: fencedBody({
                             number: x.number, on: on, body: x.body || null,
                             by: x.user && x.user.login,
+                            //THE ACCOUNT NUMBER AS WELL AS THE NAME. A login can
+                            //be changed and the old one taken by somebody else;
+                            //the number never is. ../../github/trust.js prefers
+                            //it whenever the trusted entry carries one.
+                            byId: x.user && x.user.id,
                             labels: (x.labels || []).map(function (l) { return typeof l == 'string' ? l : l.name; })
                         })
                     };
@@ -584,6 +594,7 @@ async function plugin(imports, register) {
                 var asItself = {
                     number: one.number, on: one.on,
                     by: c.user && c.user.login,
+                    byId: c.user && c.user.id,
                     body: c.body || null,
                     //A COMMENT CARRIES NO LABELS. The marker has to be in what
                     //was written, which is the point: a label is the issue's and

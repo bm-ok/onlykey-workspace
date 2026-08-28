@@ -115,6 +115,55 @@ it('and a request to run them cannot answer itself', async ({ okc, assert, log }
   log(refusal.message.slice(0, 150))
 })
 
+// ---------------------------------------------------------------------------
+// AND THE OTHER PERMISSION IN THAT FILE, which is not about the drills at all.
+//
+// WHOSE WORDS FROM GITHUB MAY BE READ AS A REQUEST. It does not open a door, it
+// opens a CHANNEL: text written on somebody else's service, arriving here as
+// something this host acts on. A caller able to write the list could name an
+// account it controls, open an issue on it, and commission its own work through
+// a door nobody watched it open.
+//
+// TWO KEYS AND BOTH ARE THE PERMISSION, which is the mistake this suite already
+// caught once with `testsEnabled` and `testsFor`. Guarding the people and
+// leaving the word is the same shape of hole: the word is applied to text that
+// ALREADY EXISTS, so setting it to something a trusted person writes habitually
+// turns their old comments into requests without anybody writing anything new.
+
+it('and whose words from GitHub count cannot be decided down the pipe', async ({ okc, assert, log }) => {
+  const before = await okc('settings')
+
+  const refusal = await assert.refuses(
+    () => okc('settingSet', { name: 'githubTrusted', value: ['an-account-i-control'] }),
+    'opens a channel from the internet',
+    'a name was added to the trusted list by something that is not a person at the window — which is a model granting itself an input from the internet')
+  log(refusal.message.slice(0, 150))
+
+  // AND THE LIST DID NOT MOVE. The refusal is the message; this is whether it
+  // was thrown before the write or after it.
+  const after = await okc('settings')
+  assert.equal(
+    JSON.stringify(after.settings.githubTrusted),
+    JSON.stringify(before.settings.githubTrusted),
+    'the list changed anyway, so the sentence was an apology rather than a refusal')
+})
+
+it('and neither can the word that makes them a request', async ({ okc, assert, log }) => {
+  // THE HALF THAT LOOKS HARMLESS. A marker on its own trusts nobody, so guarding
+  // it reads as ceremony until you notice what it is applied to.
+  const before = await okc('settings')
+
+  const refusal = await assert.refuses(
+    () => okc('settingSet', { name: 'githubMarker', value: 'Update' }),
+    'applied to text that already exists',
+    'the marker was set by something other than a person, so every "Update: ..." a trusted person ever wrote becomes a request')
+  log(refusal.message.slice(0, 150))
+
+  const after = await okc('settings')
+  assert.equal(after.settings.githubMarker, before.settings.githubMarker,
+    'the marker changed anyway, so the sentence was an apology rather than a refusal')
+})
+
 it('and the settings that can be changed are named, not assumed', async ({ okc, assert, log }) => {
   // A SMALL ONE THAT KEEPS THE ONE ABOVE HONEST. `settingSet` refuses a name it
   // does not know rather than writing it — so a typo cannot create a setting that

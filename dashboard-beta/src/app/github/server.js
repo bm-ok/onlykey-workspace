@@ -391,6 +391,68 @@ async function plugin(imports, register) {
                 });
             }
         }));
+        //---- WHO A NAME ACTUALLY BELONGS TO ---------------------------------
+        //
+        //FOR NAMING SOMEBODY WHOSE WORDS MAY BE READ AS A REQUEST — see
+        //./trust.js and Settings. Typing a login into a box and hoping is how a
+        //typo becomes a trusted stranger: `bmatusiakk` is available, and looks
+        //right at a glance in a list.
+        //
+        //THE ID IS THE PART THAT MATTERS, and it is why this returns one. A
+        //login can be CHANGED and the old one taken by somebody else, so a list
+        //of names is a list that can quietly come to mean different people. The
+        //numeric id never changes and is never reissued.
+        //
+        //THE PICTURE AND THE NAME ARE FOR THE PERSON, not for the check. What
+        //stops a lookalike is seeing the wrong face beside the right-looking
+        //name, which no comparison here can do.
+        undo.push(actions.define('githubWho', {
+            about: 'Who a GitHub login belongs to: the account, its id, and its picture, so a name can be confirmed before it is trusted',
+            takes: ['login'],
+            run: async function (args) {
+                var want = String((args || {}).login == null ? '' : (args || {}).login).trim();
+                if (!want) throw new Error('Say which login to look up.');
+
+                //A LOGIN AND NOT A PATH. It is joined to a URL, and a name with
+                //a slash in it would ask about something else entirely.
+                if (!/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(want)) {
+                    throw new Error('"' + want + '" is not a GitHub login. They are letters, numbers and '
+                        + 'single dashes, up to 39 characters.');
+                }
+
+                var got = await call('GET', '/users/' + want);
+                if (got.status === 404) {
+                    throw new Error('GitHub has no account called "' + want + '". A name that does not exist '
+                        + 'cannot be trusted, and one letter out is somebody else.');
+                }
+                if (got.status !== 200 || !got.body) {
+                    throw new Error('GitHub would not say who "' + want + '" is: ' + got.status + '.');
+                }
+
+                return {
+                    login: got.body.login,
+                    id: got.body.id,
+                    name: got.body.name || null,
+                    kind: got.body.type || null,
+                    avatar: got.body.avatar_url || null,
+                    url: got.body.html_url || null,
+                    since: got.body.created_at || null,
+                    //SAID RATHER THAN LEFT TO BE NOTICED. GitHub answers for an
+                    //organisation on the same path, and an organisation does not
+                    //write comments — so trusting one traps nothing and looks
+                    //like it worked.
+                    note: got.body.type === 'User'
+                        ? 'Confirm the picture and the name are who you mean before trusting it. What is kept '
+                            + 'is the id (' + got.body.id + '), which never changes — a login can be renamed '
+                            + 'and the old one taken by somebody else.'
+                        : (function () {
+                            var kind = String(got.body.type || 'account').toLowerCase();
+                            return 'That is ' + (/^[aeiou]/.test(kind) ? 'an ' : 'a ') + kind + ', not a person. '
+                                + 'Comments are written by people, so trusting this would trust nobody.';
+                        }())
+                };
+            }
+        }));
     }
 
     await register(null, {

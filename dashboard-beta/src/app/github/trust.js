@@ -86,6 +86,45 @@ function marked(entry, marker) {
     return new RegExp('(^|[^A-Za-z0-9_])' + safe + '\\s*:', 'i').test(text);
 }
 
+//---- AND WHETHER ONE OF THEM IS THE PERSON WHO WROTE THIS ------------------
+//
+//AN ENTRY IS EITHER A LOGIN OR `{login, id}`, and the second is what the window
+//writes: it looks the name up before adding it, so it has the number and there
+//is no reason to throw it away.
+//
+//WHY THE NUMBER IS WORTH CARRYING. A GitHub login can be CHANGED, and the old
+//one becomes available for anybody to register. So a list of names is a list
+//that can quietly come to mean different people: the person you trusted renames,
+//somebody else takes the name they left behind, and every comment they write
+//from then on reads here as a request from somebody you vouched for. Nothing
+//visible changes — the list still says what it always said.
+//
+//THE ID NEVER CHANGES AND IS NEVER REISSUED, so when both sides have one it is
+//the answer and the name is not consulted at all. The `continue` is the point:
+//an entry that carries an id and does not match STOPS THERE rather than falling
+//through to the name, or the rename it exists to defend against would be let in
+//by the fallback.
+//
+//A PLAIN STRING STILL WORKS, because a list can be typed on a command line and
+//because that is what was already stored before this. It is weaker in exactly
+//the way described above, which is why the window does not write one.
+function trusts(list, who, id) {
+    var names = list || [];
+    for (var i = 0; i < names.length; i++) {
+        var one = names[i];
+        var isText = typeof one === 'string';
+        var name = isText ? one : (one && one.login);
+        var num = isText ? null : (one && one.id);
+
+        if (num != null && id != null) {
+            if (String(num) === String(id)) return true;
+            continue;
+        }
+        if (same(name, who)) return true;
+    }
+    return false;
+}
+
 //---- WHAT THIS IS, IN ONE WORD ---------------------------------------------
 //
 //    request     a trusted person asked for this, and said so
@@ -98,7 +137,7 @@ function marked(entry, marker) {
 function readingOf(entry, how) {
     var o = how || {};
     var who = (entry && entry.by) || null;
-    var trusted = (o.trusted || []).some(function (name) { return same(name, who); });
+    var trusted = trusts(o.trusted, who, entry && entry.byId);
 
     if (!trusted) {
         return {
@@ -163,4 +202,4 @@ function fenced(entry, reading) {
     return head + '\n' + edge + '\n' + body + '\n' + edge;
 }
 
-module.exports = { readingOf: readingOf, fenced: fenced, marked: marked, same: same };
+module.exports = { readingOf: readingOf, fenced: fenced, marked: marked, same: same, trusts: trusts };

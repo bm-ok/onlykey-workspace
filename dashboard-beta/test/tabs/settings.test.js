@@ -322,3 +322,77 @@ test('the standing request is written by asking, not by setting', async () => {
         () => actions.call('settingSet', { name: 'testsAsked', value: 'anything', _overTheWire: true }),
         /window|testsAsk/);
 });
+
+//---------------------------------------------------------------------------
+//AND THE OTHER PERMISSION IN THAT FILE: whose words from GitHub may be read as
+//a request. See ../../src/app/github/trust.js.
+//
+//IT IS NOT A PREFERENCE. Naming somebody opens a channel from the internet into
+//what this host acts on, which is why it sits beside the drills rather than
+//beside the theme.
+//---------------------------------------------------------------------------
+
+test('nothing from GitHub can be a request until somebody says who and what', async () => {
+    const { settings } = await anApp();
+    const now = settings.read();
+    //THE STATE THIS SHIPS IN, asserted rather than assumed. A default this app
+    //picked for the marker would be a word an attacker could read out of the
+    //source.
+    assert.deepEqual(now.githubTrusted, [], 'somebody was trusted before anybody said so');
+    assert.equal(now.githubMarker, '', 'a marker was set out of the box');
+});
+
+test('the pipe cannot decide whose words count, in either half', async () => {
+    const { actions, settings } = await anApp();
+
+    await assert.rejects(
+        () => actions.call('settingSet', { name: 'githubTrusted', value: ['an-account-i-control'], _overTheWire: true }),
+        /opens a channel from the internet/);
+
+    //THE HALF THAT LOOKS HARMLESS AND IS NOT. The marker is applied to text that
+    //already exists: set it to a word a trusted person writes habitually and
+    //their old comments become requests, with nobody having written anything new.
+    await assert.rejects(
+        () => actions.call('settingSet', { name: 'githubMarker', value: 'Update', _overTheWire: true }),
+        /text that already exists/);
+
+    //A DRILL IS NOT A PERSON EITHER, and neither is a driven press. Both reach
+    //this door, and only `_overTheWire` was ever watched here once before.
+    await assert.rejects(
+        () => actions.call('settingSet', { name: 'githubMarker', value: 'okc', _fromTest: true }),
+        /window/);
+    await assert.rejects(
+        () => actions.call('settingSet', { name: 'githubTrusted', value: ['x'], _driven: true }),
+        /window/);
+
+    const now = settings.read();
+    assert.deepEqual(now.githubTrusted, [], 'the list moved anyway');
+    assert.equal(now.githubMarker, '', 'the marker moved anyway');
+});
+
+test('a list setting is stored as a list, whatever it was typed as', async () => {
+    const { actions, settings } = await anApp();
+
+    //THE SAME DEFECT AS `watchGitHub false` WEARING DIFFERENT CLOTHES. A command
+    //line has no types, and `--value bmatusiak` is the obvious thing to type —
+    //stored as a string it is not an array, so trust.js reads it as nobody being
+    //trusted while this reports "Saved."
+    await actions.call('settingSet', { name: 'githubTrusted', value: 'someone, another ,' });
+    assert.deepEqual(settings.read().githubTrusted, ['someone', 'another'],
+        'a typed list was kept as whatever came in');
+
+    //THE TRAILING COMMA IS THE POINT OF THE THIRD ENTRY ABOVE. An empty name in
+    //the list is what `same()` in trust.js has to defend against; dropping it
+    //here is the other half of that defence.
+
+    //JSON TOO, because that is what a script hands over.
+    await actions.call('settingSet', { name: 'githubTrusted', value: '["a-person","a-person"]' });
+    assert.deepEqual(settings.read().githubTrusted, ['a-person'], 'the same name was kept twice');
+
+    //AND A SHAPE SURVIVES BEING A SHAPE. The window looks the account up before
+    //adding it, so it has the number — which is what makes the entry survive a
+    //rename, and is worth nothing if this flattens it back to a string.
+    await actions.call('settingSet', { name: 'githubTrusted', value: [{ login: 'bmatusiak', id: 1822932 }] });
+    assert.deepEqual(settings.read().githubTrusted, [{ login: 'bmatusiak', id: 1822932 }],
+        'the account number was dropped on the way in');
+});

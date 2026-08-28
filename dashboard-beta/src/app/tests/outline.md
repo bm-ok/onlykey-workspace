@@ -1,5 +1,5 @@
 <!-- generated: node src/app/tests/outline.js --write -->
-<!-- 12 suites, 66 tests, 289 checks, 21 of them drafts -->
+<!-- 12 suites, 66 tests, 291 checks, 21 of them drafts -->
 <!-- What this app can do, in the order a person does it. Generated; do not edit. -->
 <!--
   TWO USES, AND THE SECOND IS THE ONE THAT GETS FORGOTTEN:
@@ -161,9 +161,11 @@ What this app will not do, proved by asking it to do each thing and reading what
   2. and the folder they are on for is part of the same door
   3. and a request to run them cannot be forged, only asked for
   4. and a request to run them cannot answer itself
-  5. and the settings that can be changed are named, not assumed
-  6. a press driven from the command line is still the command line
-  7. and the whole way round it, from outside, ends where it started
+  5. and whose words from GitHub count cannot be decided down the pipe
+  6. and neither can the word that makes them a request
+  7. and the settings that can be changed are named, not assumed
+  8. a press driven from the command line is still the command line
+  9. and the whole way round it, from outside, ends where it started
 
 ## 05 — one permission many gates
 

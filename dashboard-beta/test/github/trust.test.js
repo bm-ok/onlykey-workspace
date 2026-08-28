@@ -89,6 +89,66 @@ test('a marker with regex in it is a string, not a pattern', () => {
     assert.equal(trust.marked({ number: 1, by: 'me', body: 'axb: go', labels: [] }, 'a.b'), false);
 });
 
+//---- an entry may be a name, or a name and a number ------------------------
+//
+//THE ATTACK THE NUMBER EXISTS TO STOP. A GitHub login can be CHANGED, and the
+//one left behind becomes available for anybody to register. So a list of names
+//is a list that can quietly come to mean different people, with nothing visible
+//changing: the list still says exactly what it always said.
+
+const NUMBERED = { marker: 'okc', trusted: [{ login: 'bmatusiak', id: 1822932 }] };
+
+test('a numbered entry matches the account, not the name', () => {
+    const renamed = { number: 9, by: 'somebody-else-entirely', byId: 1822932, body: 'okc: go', labels: [] };
+    //THE SAME PERSON, WRITING UNDER A NAME THEY CHANGED TO. Trusting the account
+    //rather than the string is what makes this keep working.
+    assert.equal(trust.readingOf(renamed, NUMBERED).kind, 'request');
+});
+
+test('and somebody who took the name they left behind is not them', () => {
+    //THE WHOLE POINT. Same login, different account. A name-only list reads this
+    //as the person who was trusted; this must not.
+    const impostor = { number: 10, by: 'bmatusiak', byId: 99999999, body: 'okc: go', labels: [] };
+    assert.equal(trust.readingOf(impostor, NUMBERED).kind, 'evidence');
+});
+
+test('the number does not fall through to the name when it disagrees', () => {
+    //THE BUG THIS SHAPE INVITES: check the id, and on a mismatch carry on to
+    //compare the name anyway — which lets in exactly what the id was added to
+    //keep out, while every test about renaming still passes.
+    assert.equal(trust.trusts([{ login: 'bmatusiak', id: 1 }], 'bmatusiak', 2), false);
+});
+
+test('a name-only entry still works, and matches on the name', () => {
+    //WHAT IS ALREADY STORED, and what a command line can express. Weaker in
+    //exactly the way above, which is why the window does not write one.
+    assert.equal(trust.trusts(['bmatusiak'], 'bmatusiak', 1822932), true);
+    assert.equal(trust.trusts(['bmatusiak'], 'BMatusiak', null), true);
+});
+
+test('a numbered entry falls back to the name when the item has no number', () => {
+    //AN ANSWER READ FROM SOMEWHERE THAT DID NOT CARRY ONE. Falling back is the
+    //right call — the id is a strengthening, not the only check — and it is
+    //written down because the alternative reads as safer and would silently stop
+    //trusting somebody who is trusted.
+    assert.equal(trust.trusts([{ login: 'bmatusiak', id: 1822932 }], 'bmatusiak', null), true);
+});
+
+test('a mixed list is searched all the way through', () => {
+    const list = [{ login: 'a-person', id: 5 }, 'another-person'];
+    assert.equal(trust.trusts(list, 'another-person', 77), true);
+    assert.equal(trust.trusts(list, 'a-person', 5), true);
+    assert.equal(trust.trusts(list, 'a-stranger', 6), false);
+});
+
+test('a malformed entry trusts nobody rather than everybody', () => {
+    //NOTHING IS EVER THE SAME AS NOTHING, one level up: an entry with no login
+    //must not match an author with no name.
+    assert.equal(trust.trusts([{ id: 5 }], null, null), false);
+    assert.equal(trust.trusts([{ login: '' }], '', null), false);
+    assert.equal(trust.trusts([null], null, null), false);
+});
+
 //---- the fence ------------------------------------------------------------
 
 test('every body is fenced and labelled, whoever wrote it', () => {

@@ -177,7 +177,42 @@ var DEFAULTS = {
 //so the next setting that joins this gate is a name added here rather than a
 //second `if` somebody has to remember.
 //---------------------------------------------------------------------------
-var ATTHEWINDOW = ['testsEnabled', 'testsFor', 'testsAsked'];
+//---- AND THE OTHER PERMISSION IN THIS FILE --------------------------------
+//
+//WHOSE WORDS FROM GITHUB MAY BE READ AS A REQUEST is the same kind of decision
+//as arming the drills, one step further out: it does not open a door, it opens a
+//CHANNEL -- text written on somebody else's service, arriving here as something
+//this host acts on. See ../github/trust.js.
+//
+//A MODEL THAT COULD WRITE THE LIST COULD GRANT ITSELF AN INPUT. Name an account
+//you control, open an issue on it, and you have commissioned your own work
+//through a door nobody watched you open. That is the whole of it, and it is why
+//the list is here rather than left as an ordinary setting.
+//
+//THE MARKER IS NOT THE LESSER HALF, which is the tempting reading -- a word on
+//its own trusts nobody, so guarding it can look like ceremony. It is not, and
+//the reason is that the marker is applied to text that ALREADY EXISTS. Set it to
+//`Update` and every "Update: I fixed the thing" a trusted person has ever
+//written becomes a request, retroactively, without anybody writing a word. The
+//people are half the permission and the word is the other half; guarding one is
+//the mistake this list was already made to correct once.
+var ATTHEWINDOW = ['testsEnabled', 'testsFor', 'testsAsked', 'githubTrusted', 'githubMarker'];
+
+//WHY EACH ONE IS REFUSED, IN ITS OWN WORDS. It was a ternary on `testsEnabled`
+//while there was one permission here; with two, the second branch -- written for
+//`testsFor` and about the folder the drills run in -- would have been the
+//sentence somebody got back for naming a person on GitHub.
+//
+//`testsEnabled` KEEPS ITS WORDING EXACTLY, because a drill in ../tests/suites/
+//02-the-refusals reads this message. A refusal whose wording drifts is a check
+//that goes red for a reason that is not the one it is about.
+var WHYREFUSED = {
+    testsEnabled: 'The drills are switched on in the window, by somebody who knows what folder is open. They write a task and take a credential off a machine — that is a decision about somebody\'s repository, not a flag to be set down a pipe.',
+    testsFor: '"testsFor" is the other half of that same permission. The drills are allowed when testsEnabled is on AND testsFor is the folder open now — so moving the folder arms them against whatever is in front of you without the switch ever being touched. It is decided in the same place, in the window, by somebody who can see which folder that is. Ask with testsAsk instead.',
+    testsAsked: '"testsAsked" is the other half of that same permission seen from the other side: it is a raised hand, and forging one puts a question in front of a person that nobody actually asked. It is written by testsAsk, which takes a reason and stamps the folder itself, and answered in the window.',
+    githubTrusted: 'Naming somebody trusted opens a channel from the internet into what this host acts on: from then on their marked words are read as somebody asking for something. A caller able to add a name could add one it controls and commission its own work through an issue. It is done in the window, in Settings → Trust, where the account is looked up and its picture shown first.',
+    githubMarker: 'The marker is the other half of that same permission, and it is applied to text that already exists — set it to a word a trusted person writes habitually and their old comments become requests, with nobody having written anything new. It is chosen in Settings → Trust, in the window.'
+};
 
 function truth(v) {
     return v === true || v === 'true' || v === 1 || v === '1' || v === 'on' || v === 'yes';
@@ -203,6 +238,52 @@ function truth(v) {
 //an empty name is null rather than "".
 function shaped(key, v) {
     if (typeof DEFAULTS[key] === 'boolean') return truth(v);
+
+    //A LIST DEFAULT MEANS A LIST, and this is the same defect as the boolean one
+    //above wearing different clothes. `settingSet --name githubTrusted --value
+    //bmatusiak` is the obvious thing to type and hands over a STRING, which
+    //stored as-is is not an array — so ../github/trust.js reads it as nobody
+    //being trusted, and this reports "Saved." The direction is the safe one, but
+    //the silence is not: somebody has named a person and been told it worked.
+    //
+    //COMMA-SEPARATED, because that is what a person types into one box, and a
+    //login cannot contain a comma. JSON is accepted too, since that is what a
+    //script hands over.
+    if (Array.isArray(DEFAULTS[key])) {
+        var items = Array.isArray(v) ? v : String(v == null ? '' : v).split(',');
+        if (!Array.isArray(v)) {
+            var text = String(v == null ? '' : v).trim();
+            if (text.charAt(0) === '[') {
+                try {
+                    var parsed = JSON.parse(text);
+                    if (Array.isArray(parsed)) items = parsed;
+                } catch (e) { /* not JSON: it was a name with a bracket in it */ }
+            }
+        }
+        var out = [];
+        var seen = {};
+        items.forEach(function (one) {
+            //AN ENTRY MAY BE A SHAPE. `githubTrusted` holds `{login, id}` when
+            //the window wrote it — it looked the name up before adding it, so it
+            //has the number, and the number is what survives a rename. A bare
+            //name still works and is what a command line can express.
+            var name = (one && typeof one === 'object') ? String(one.login || '').trim()
+                : String(one == null ? '' : one).trim();
+            //BLANKS DROPPED HERE, at the one place they can enter. A trailing
+            //comma is how an empty entry gets into a list, and `same()` in
+            //../github/trust.js has to defend against one reaching it — this is
+            //the other half of that defence, and the reason it stays cheap.
+            if (!name) return;
+            var key = name.toLowerCase();
+            if (seen[key]) return;
+            seen[key] = true;
+            out.push((one && typeof one === 'object' && one.id != null)
+                ? { login: name, id: one.id }
+                : name);
+        });
+        return out;
+    }
+
     if (v === null || v === undefined) return null;
     //AN OBJECT IS ALREADY A SHAPE. This is only here because a COMMAND LINE has
     //no types; a caller that hands over a structure has already said what it
@@ -357,9 +438,7 @@ async function plugin(imports, register) {
                 //to be refused; with nothing marking it, being refused or not
                 //said nothing about anybody else.
                 if (ATTHEWINDOW.indexOf(key) !== -1 && (a._overTheWire || a._driven || a._fromTest)) {
-                    throw new Error(key === 'testsEnabled'
-                        ? 'The drills are switched on in the window, by somebody who knows what folder is open. They write a task and take a credential off a machine — that is a decision about somebody\'s repository, not a flag to be set down a pipe.'
-                        : '"' + key + '" is the other half of that same permission. The drills are allowed when testsEnabled is on AND testsFor is the folder open now — so moving the folder arms them against whatever is in front of you without the switch ever being touched. It is decided in the same place, in the window, by somebody who can see which folder that is. Ask with testsAsk instead.');
+                    throw new Error(WHYREFUSED[key]);
                 }
 
                 var on = truth(a.value);
