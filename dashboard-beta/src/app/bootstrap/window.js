@@ -137,52 +137,39 @@ function makeBootstrap(theme, okc) {
             });
         }
 
-        function backItUp() {
+        //---- THE ONE THAT SHIPPED, WHOSE PATH NOBODY HAS TO KNOW ---------
+        //
+        //THE OTHER TWO CONTROLS ASKED SOMEBODY TO TYPE A FOLDER, and typing a
+        //path is guessing until you get it right — with no help, no completion,
+        //and a refusal that only tells you it was wrong. A file picker and a
+        //download are the two questions everybody already knows how to answer,
+        //so those are the two this pane asks.
+        //
+        //THIS ONE KEEPS THE FOLDER DOOR because there is nothing to guess: the
+        //path is the app's own, it comes down with the read, and it is on screen
+        //above the button.
+        function restoreShipped() {
             ask({
-                title: 'Write a bundle?',
+                title: 'Restore the set that shipped with this app?',
                 plain: [
-                    'Every contract, prompt, job and skill that is here, written to a folder as files — one '
-                        + 'readable document each, plus a manifest of what points at what.',
-                    'Nothing about approvals is written. Anything restored from this arrives waiting to be '
-                        + 'read, because an approval is a person saying they read that text here.',
-                    'The folder is made if it is not there. A bundle already in it is written over.'
-                ],
-                fields: [
-                    { name: 'to', label: 'A folder to write it to', needed: true,
-                      placeholder: 'a path, or a folder name beside the app' }
-                ],
-                confirm: 'Write it',
-                onYes: function (f) {
-                    if (!(f.to || '').trim()) throw new Error('Say where to write it.');
-                    return tell(okc.call('bootstrapExport', { to: f.to.trim() }));
-                }
-            });
-        }
-
-        function restore(from, what) {
-            ask({
-                title: 'Restore from ' + what + '?',
-                plain: [
-                    'Everything in the bundle that is not already here is written in, waiting to be read. '
-                        + 'Nothing can run until somebody approves it.',
+                    'Everything in it that is not already here is written in, waiting to be read. Nothing can '
+                        + 'run until somebody approves it.',
                     //THE DEFAULT IS THE SAFE ONE AND THE DIALOG SAYS SO, because
                     //the dangerous half of restoring is landing on top of work
                     //somebody has been doing rather than on an empty drawer.
                     'Anything already here is LEFT ALONE unless you tick the box — an id that exists is not '
                         + 'overwritten by something that happens to share its name.',
-                    'The three skills are written to this workspace’s own copy, so nothing the app ships is '
-                        + 'touched.'
+                    'The three skills are written to this workspace’s own copy, so nothing the app ships '
+                        + 'is touched.'
                 ],
                 fields: [
-                    { name: 'from', label: 'The folder to read', needed: true, value: from || '' },
                     { name: 'over', label: 'Write over anything already here', kind: 'tick' }
                 ],
                 cost: 'It changes what a supervisor, a worker and a judge are each told they are.',
                 confirm: 'Restore it',
                 protect: true,
                 onYes: function (f) {
-                    if (!(f.from || '').trim()) throw new Error('Say which folder to read.');
-                    return tell(okc.call('bootstrapImport', { from: f.from.trim(), over: !!f.over }));
+                    return tell(okc.call('bootstrapImport', { from: state.shipped, over: !!f.over }));
                 }
             });
         }
@@ -195,16 +182,8 @@ function makeBootstrap(theme, okc) {
                     <div className="head-row">
                         <CardTitle>What this workspace has been taught</CardTitle>
                         <div className="head-controls">
-                            {/* THE FILE IS THE ORDINARY WAY and is first. The
-                                folder is for a checkout — writing a set into a
-                                repository, where each document is read and
-                                diffed on its own. */}
                             <Button kind="ok" onClick={download}>Save it as a file</Button>
                             <Button kind="ok" protect onClick={pickAndRestore}>Restore from a file</Button>
-                            <Button onClick={backItUp}>Write it to a folder</Button>
-                            <Button protect onClick={function () { restore('', 'a folder'); }}>
-                                Restore from a folder
-                            </Button>
                         </div>
                     </div>
                     <CardSub>
@@ -260,7 +239,7 @@ function makeBootstrap(theme, okc) {
                                 <KvRow label="read from"><Mono>{state.shipped}</Mono></KvRow>
                             </Kv>
                             <Button kind="ok" protect
-                                onClick={function () { restore(state.shipped, 'the set that shipped'); }}>
+                                onClick={restoreShipped}>
                                 Restore from it
                             </Button>
                         </div>
