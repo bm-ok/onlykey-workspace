@@ -60,7 +60,11 @@ module.exports = function inbox(theme, okc, remember) {
                 var slot = {
                     Todo: ['todo', 'picked'], 'PR cuts': ['cuts', 'picked'], 'Branches Cut': ['branches', 'picked'],
                     'Virtual machines': ['machines', 'picked'], Judgement: ['judge', 'picked'],
-                    Issues: ['issues', 'picked'], Skill: ['skill', 'which']
+                    Issues: ['issues', 'picked'], Skill: ['skill', 'which'],
+                    //TWO THAT WERE MISSING, FOUND BY PRESSING: a line to retire
+                    //landed on Branches Lines with the last pick still picked,
+                    //and a fork behind lands on Repos, whose pick is `repo`.
+                    'Branches Lines': ['lines', 'line'], Repos: ['repos', 'repo']
                 }[pane];
                 if (slot) remember.write(slot[0], slot[1], w.pick);
             }
