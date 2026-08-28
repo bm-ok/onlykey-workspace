@@ -80,14 +80,38 @@ async function plugin(imports, register) {
     //is filed under the workspace it belongs to, and without that two
     //workspaces with a job of the same name would share one history and each
     //would look as though the other had been editing it.
-    function keeping(kind, scoped) {
+    //
+    //WRITTEN ONCE, WHICH IT WAS NOT UNTIL SOMETHING READ THESE BACK. A copy kept
+    //under one id and looked for under another is not an error — it is an empty
+    //history, which reads exactly like "this has never been approved" and is the
+    //one answer nobody would question.
+    var SCOPED = { job: true, prompt: false, contract: false };
+
+    async function versionId(kind, id) {
+        var where = '';
+        if (SCOPED[kind]) {
+            try { where = path.basename(await state.here.where()) + '--'; }
+            catch (e) { where = ''; }
+        }
+        return where + String(id);
+    }
+
+    //THE FROZEN DIFF AS TEXT, ADDED WHEREVER A VERSION GOES OUT. `rows` is the
+    //record — worked out when the version was kept, against what was approved
+    //before it, and never recomputed — and this is the same thing in the form a
+    //command line and `ace/mode/diff` both read. One function because two copies
+    //of "how a change is written down" is how two surfaces come to disagree
+    //about what changed.
+    function withChange(it) {
+        if (!it) return null;
+        return Object.assign({}, it, {
+            changed: it.rows ? imports.versions.asText({ rows: it.rows }) : null
+        });
+    }
+
+    function keeping(kind) {
         return async function (entry, body) {
-            var where = '';
-            if (scoped) {
-                try { where = path.basename(await state.here.where()) + '--'; }
-                catch (e) { where = ''; }
-            }
-            imports.versions.keep(kind, where + entry.id, body, {
+            imports.versions.keep(kind, await versionId(kind, entry.id), body, {
                 by: entry.approval && entry.approval.by,
                 at: entry.approval && entry.approval.at
             });
@@ -95,13 +119,13 @@ async function plugin(imports, register) {
     }
 
     var contracts = makeLibrary('contract', function () { return state.app.doc('contracts'); }, {
-        keepApproved: keeping('contract', false),
+        keepApproved: keeping('contract'),
         writes: ['text'],
         needsBody: 'Write the rules. An empty contract would be handed to a worker as no limits at all.'
     });
 
     var prompts = makeLibrary('prompt', function () { return state.app.doc('prompts'); }, {
-        keepApproved: keeping('prompt', false),
+        keepApproved: keeping('prompt'),
         writes: ['text', 'contractId'],
         //THE CONTRACT IS PART OF WHAT WAS APPROVED. See ./entries.js.
         approvedWith: ['contractId'],
@@ -109,7 +133,7 @@ async function plugin(imports, register) {
     });
 
     var jobs = makeLibrary('job', async function () { return await state.here.doc('jobs'); }, {
-        keepApproved: keeping('job', true),
+        keepApproved: keeping('job'),
         writes: ['promptId', 'tags'],
         approvedWith: ['promptId'],
         //THE BODY IS THE CODE, AND THE CODE IS ON DISK. The approval is against
@@ -393,6 +417,68 @@ async function plugin(imports, register) {
                     var now = await store.use(a.id, a.on, { by: by(a) });
                     changed(what);
                     return now;
+                }
+            }));
+
+            //---- WHAT WAS APPROVED BEFORE THIS ----------------------------
+            //
+            //THE LIBRARY KEPT THESE AND NOTHING COULD READ THEM. ../core/versions
+            //has written a copy on every approval since it existed, and the only
+            //way to that copy was `approved --kind X --id Y` with the id spelled
+            //the way THIS file files it — which a pane has no business knowing
+            //and a person has no way of guessing.
+            //
+            //A DOOR PER KIND, LIKE THE OTHER FIVE. `contractVersions --id x`
+            //reads the way the rest of this surface reads, and the alternative —
+            //one door taking a `which` — is a second grammar for one subject.
+            undo.push(actions.define(what + 'Versions', {
+                about: 'Every version of this ' + what + ' that a person approved, newest first',
+                takes: ['id'],
+                run: async function (args) {
+                    var a = args || {};
+                    var one = await store.get(a.id);
+                    if (!one) throw new Error('There is no ' + what + ' called "' + a.id + '".');
+
+                    var filed = await versionId(what, a.id);
+                    var all = imports.versions.list(what, filed);
+                    return {
+                        id: one.id, name: one.name, versions: all,
+                        //THE NEWEST IN FULL, AND ONLY THE NEWEST. The listing is
+                        //metadata for the reason ../core/versions says — twenty
+                        //versions of a contract is half a megabyte nobody asked
+                        //to read — but the newest is the one a LAPSED entry is a
+                        //change from, so a pane that had to ask twice to show
+                        //that would be asking twice on every selection.
+                        newest: all.length ? withChange(imports.versions.newest(what, filed)) : null,
+                        //LAPSED IS THE STATE THIS ANSWER IS FOR, so it is said
+                        //here rather than left to be worked out from two fields.
+                        lapsed: !!one.lapsed,
+                        note: all.length
+                            ? all.length + ' version(s) kept. Ask for one by `at` to read it and what changed to '
+                                + 'reach it.'
+                            : 'Nothing has been approved for this yet, so there is nothing kept. Versions start at '
+                                + 'the first approval, not at the first save.'
+                    };
+                }
+            }));
+
+            undo.push(actions.define(what + 'Version', {
+                about: 'One approved version of this ' + what + ': the text as approved, and what changed to reach it',
+                takes: ['id', 'at'],
+                run: async function (args) {
+                    var a = args || {};
+                    var one = await store.get(a.id);
+                    if (!one) throw new Error('There is no ' + what + ' called "' + a.id + '".');
+
+                    var filed = await versionId(what, a.id);
+                    var it = a.at ? imports.versions.read(what, filed, a.at) : imports.versions.newest(what, filed);
+                    if (!it) {
+                        throw new Error(a.at
+                            ? 'Nothing was approved for "' + a.id + '" at "' + a.at + '".'
+                            : 'Nothing has been approved for "' + a.id + '" yet, so there is no version to read.');
+                    }
+
+                    return withChange(it);
                 }
             }));
 

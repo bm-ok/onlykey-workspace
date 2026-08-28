@@ -4,7 +4,7 @@ var { useState, useEffect } = React;
 module.exports = function library(theme, okc, remember) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Plus, Card, CardTitle, CardSub,
-        Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Code,
+        Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Code, Diff,
         Kv, KvRow, Notice, ask
     } = theme;
 
@@ -17,19 +17,22 @@ module.exports = function library(theme, okc, remember) {
             title: 'Jobs', list: 'jobs', one: 'job', body: 'code',
             about: 'a script that takes a prompt and does something with it',
             read: 'Say a job is fit to run, having read its script.',
-            approve: 'jobApprove', withdraw: 'jobWithdraw', forget: 'jobForget', use: 'jobUse'
+            approve: 'jobApprove', withdraw: 'jobWithdraw', forget: 'jobForget', use: 'jobUse',
+            versions: 'jobVersions', version: 'jobVersion'
         },
         prompt: {
             title: 'Prompts', list: 'prompts', one: 'prompt', body: 'text',
             about: 'what a worker is told, written once and kept',
             read: 'Say a prompt is fit to be sent to a worker, having read it.',
-            approve: 'promptApprove', withdraw: 'promptWithdraw', forget: 'promptForget', use: 'promptUse'
+            approve: 'promptApprove', withdraw: 'promptWithdraw', forget: 'promptForget', use: 'promptUse',
+            versions: 'promptVersions', version: 'promptVersion'
         },
         contract: {
             title: 'Contracts', list: 'contracts', one: 'contract', body: 'text',
             about: 'the rules a worker is given, written once and kept',
             read: 'Say a contract is fit to govern a run, having read it.',
-            approve: 'contractApprove', withdraw: 'contractWithdraw', forget: null, use: 'contractUse'
+            approve: 'contractApprove', withdraw: 'contractWithdraw', forget: null, use: 'contractUse',
+            versions: 'contractVersions', version: 'contractVersion'
         }
     };
 
@@ -121,6 +124,29 @@ module.exports = function library(theme, okc, remember) {
             var [picked, setPicked] = remember.use(where, 'picked', null);
             var [said, setSaid] = useState(null);
 
+            //---- WHAT WAS APPROVED BEFORE, FOR THE ONE THAT IS PICKED --------
+            //
+            //ASKED SEPARATELY RATHER THAN CARRIED ON THE LIST. Twenty contracts
+            //with every version of each is a listing nobody reads, paid for on
+            //every poll, so that one of them can be looked at.
+            //
+            //NOT ASKED AT ALL WITH NOTHING PICKED. See ../core/okc/ask.js: a
+            //falsy action is "not yet", because a door asked for an entry with
+            //no id rightly refuses and the pane would hold that refusal.
+            var [atVer, setAtVer] = useState(null);
+            var kept = okc.use(picked ? K.versions : null, { id: picked }, 0);
+
+            //AND ONE OLDER ONE, ONLY WHEN SOMEBODY ASKS FOR IT. The newest comes
+            //down with the listing because it is the one a lapsed entry is a
+            //change FROM; the rest are read one at a time, when picked.
+            var older = okc.use(picked && atVer ? K.version : null, { id: picked, at: atVer }, 0);
+
+            //A VERSION BELONGS TO THE THING IT IS OF. Kept across a change of
+            //selection it is an `at` from one contract asked of another, which
+            //is a door refusing rather than a panel showing the wrong history —
+            //but only because the door checks. Do not rely on that.
+            useEffect(function () { setAtVer(null); }, [picked]);
+
             if (!state && error) return <Pane><Note kind="bad">{error}</Note></Pane>;
             if (!state) return <Pane><Skeleton rows={4} /></Pane>;
 
@@ -148,6 +174,11 @@ module.exports = function library(theme, okc, remember) {
 
             var on = all.filter(function (x) { return x.id == picked; })[0] || null;
 
+            //WHICH KEPT VERSION IS BEING READ. Nothing picked means the newest,
+            //which came down with the listing — so the ordinary case draws
+            //without a second read and without a moment of empty panel.
+            var showing = atVer ? older.state : ((kept.state && kept.state.newest) || null);
+
             function tell(p) {
                 return p.then(
                     function (r) { setSaid({ text: r.note || 'Done.' }); again(); },
@@ -163,6 +194,22 @@ module.exports = function library(theme, okc, remember) {
             //front of the person is a confirmation that they read the title.
             function approve(x) {
                 var body = x[K.body];
+
+                //---- AND WHAT IT WAS WHEN THEY LAST READ IT ------------------
+                //
+                //"IT WAS APPROVED BEFORE AND HAS BEEN EDITED SINCE" WAS A
+                //SENTENCE AND NOTHING ELSE. The dialog then showed the whole
+                //document as it stands, which is the right thing to show and
+                //answers the wrong question: somebody who read this a week ago
+                //is not asking what it says, they are asking what is different
+                //about it — and finding that by reading four pages and
+                //remembering is how the edit nobody meant gets approved.
+                //
+                //ONLY WHEN THERE IS ONE TO COMPARE AGAINST. A copy is kept from
+                //the first approval on, so anything approved before this app
+                //could keep them is honestly lapsed with nothing behind it.
+                var was = x.lapsed && kept.state && kept.state.newest ? kept.state.newest : null;
+
                 ask({
                     title: 'Approve "' + (x.name || x.id) + '"?',
                     plain: [
@@ -172,9 +219,22 @@ module.exports = function library(theme, okc, remember) {
                             : which == 'prompt'
                                 ? 'It is what a worker is told, word for word.'
                                 : 'It is the rules a worker is given — what it may do and what it may not.',
-                        x.lapsed ? 'It was approved before and has been edited since. What follows is the version as it stands now.' : null,
-                        //THE THING ITSELF, IN THE DIALOG.
-                        body ? <Code key="body" text={body} mode={which == 'job' ? 'javascript' : undefined} /> : null
+                        x.lapsed
+                            ? (was
+                                ? 'It was approved before and has been edited since. On the left is what you read on '
+                                    + day(was.at) + '; on the right is what you would be approving now.'
+                                : 'It was approved before and has been edited since. No copy of what was read is '
+                                    + 'kept — it was approved before this app kept them — so what follows is only '
+                                    + 'the version as it stands now.')
+                            : null,
+                        //THE THING ITSELF, IN THE DIALOG — as a difference where
+                        //there is something to differ from, and whole where
+                        //there is not. A first approval is not a change to
+                        //anything and drawing it as one would mark every line.
+                        was
+                            ? <Diff key="body" left={was.text} right={body || ''}
+                                mode={which == 'job' ? 'javascript' : 'markdown'} height={300} />
+                            : (body ? <Code key="body" text={body} mode={which == 'job' ? 'javascript' : undefined} /> : null)
                     ],
                     fields: [{ name: 'note', label: 'A note, if it needs one', placeholder: 'what you checked' }],
                     cost: which == 'job'
@@ -369,6 +429,107 @@ module.exports = function library(theme, okc, remember) {
                                             ? <Code text={on[K.body]} mode={which == 'job' ? 'javascript' : undefined} />
                                             : <Empty>{'the ' + K.one + ' list does not carry the text — ask for it by id on the command line'}</Empty>}
                                     </Panel>
+
+                                    {/*---- AND WHAT WAS APPROVED BEFORE ------
+
+                                        A COPY HAS BEEN KEPT ON EVERY APPROVAL
+                                        SINCE ../core/versions EXISTED, and until
+                                        now nothing could look at one. The state
+                                        this is for is `lapsed` — approved, then
+                                        edited — where the app could say your
+                                        agreement was stale and not what you had
+                                        agreed TO.
+
+                                        NOTHING HERE WHEN NOTHING IS KEPT, rather
+                                        than an empty panel: the first approval is
+                                        where a history starts, and a panel
+                                        promising one before then is a promise
+                                        about the past that cannot be kept. */}
+                                    {kept.state && (kept.state.versions || []).length ? (
+                                        <Panel>
+                                            <CardTitle>
+                                                {'Approved before'}{' '}
+                                                <Badge kind="muted">{kept.state.versions.length + ' kept'}</Badge>
+                                            </CardTitle>
+                                            <CardSub>
+                                                A copy is kept every time a person approves it — what they approved,
+                                                and what changed to reach it.
+                                            </CardSub>
+
+                                            {/* NEWEST FIRST, AND THE FIRST CHIP
+                                                IS THE ONE THAT STANDS. */}
+                                            <Chips>
+                                                {kept.state.versions.map(function (v, i) {
+                                                    var mineNow = atVer ? atVer == v.at : i === 0;
+                                                    return (
+                                                        <Chip key={v.at} on={mineNow}
+                                                            onClick={function () { setAtVer(i === 0 ? null : v.at); }}>
+                                                            {day(v.at) + (v.first
+                                                                ? ' · first'
+                                                                : ' · +' + v.added + ' / -' + v.gone)}
+                                                        </Chip>
+                                                    );
+                                                })}
+                                            </Chips>
+
+                                            {showing ? (
+                                                <div>
+                                                    <Kv>
+                                                        <KvRow label="approved by">
+                                                            {(showing.by || 'somebody') + ', ' + day(showing.at)}
+                                                        </KvRow>
+                                                        <KvRow label="what changed">{showing.note}</KvRow>
+                                                        {/* WHY, WHERE THERE IS A REASON. A skill
+                                                            carries the argument something made for
+                                                            it; a contract edited at the window
+                                                            carries nothing, and that is honest. */}
+                                                        {showing.why ? <KvRow label="because">{showing.why}</KvRow> : null}
+                                                    </Kv>
+
+                                                    {/* THE FROZEN DIFF, NOT ONE WORKED OUT NOW.
+                                                        It was computed against what was approved
+                                                        BEFORE it and kept beside it, so what this
+                                                        version was a change to cannot be quietly
+                                                        rewritten by whatever is newest today.
+                                                        `ace/mode/diff` is why that mode is
+                                                        vendored. */}
+                                                    {showing.first
+                                                        ? <Code text={showing.text}
+                                                            mode={which == 'job' ? 'javascript' : 'markdown'} tall />
+                                                        : <Code text={showing.changed || ''} mode="diff" tall />}
+                                                    {showing.first
+                                                        ? <Note>
+                                                            The first version kept of this, so it is not a change to
+                                                            anything — what is above is the document as it was
+                                                            approved.
+                                                        </Note>
+                                                        : null}
+
+                                                    {/*---- AND WHAT HAS HAPPENED SINCE ------
+
+                                                        THE ONE COMPARISON THAT IS NOT A RECORD.
+                                                        Everything above is frozen; this is the
+                                                        newest approved version against the
+                                                        document as it stands, which is the
+                                                        question somebody is actually asking when
+                                                        the badge says "edited since it was
+                                                        read". */}
+                                                    {kept.state.lapsed && !atVer && on[K.body] ? (
+                                                        <div>
+                                                            <Note kind="warn">
+                                                                And it has been edited since. What was approved is on
+                                                                the left; what it says now is on the right, and only
+                                                                that is what approving it again would agree to.
+                                                            </Note>
+                                                            <Diff left={showing.text} right={on[K.body]}
+                                                                mode={which == 'job' ? 'javascript' : 'markdown'}
+                                                                height={340} />
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            ) : <Skeleton rows={3} />}
+                                        </Panel>
+                                    ) : null}
                                 </div>
                             )}
 

@@ -82,6 +82,23 @@ module.exports = function useAsk(okc, action, args, everyMs) {
         var id = mine.current;
         var io = okc && okc.io;
 
+        //---- NOTHING TO ASK YET, WHICH IS NOT THE SAME AS ASKING FOR NOTHING --
+        //
+        //A PANE WITH A SELECTION HAS A STATE WITH NOTHING SELECTED, and asking
+        //`contractVersions` with no id is a question with no answer: the door
+        //rightly refuses it, the pane holds the refusal, and a person who has
+        //picked nothing is told something could not be read.
+        //
+        //A HOOK CANNOT BE SKIPPED — React counts them — so the SKIP IS HERE, and
+        //a falsy action means "not yet". It also clears, because the answer to
+        //the last question is about something that is no longer picked, and a
+        //stale one under a new selection is worse than an empty panel.
+        if (!action) {
+            setState(null);
+            setError(null);
+            return function () { alive.current = false; now.current = function () {}; };
+        }
+
         //WHAT COMES BACK, FROM EITHER DIRECTION. A read this pane asked for and
         //an update the server pushed are the same event as far as the screen is
         //concerned, so they land in one place.

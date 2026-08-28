@@ -200,6 +200,32 @@ module.exports = function library(what, doc, opts) {
         });
 
         var was = at === -1 ? null : list[at];
+
+        //---- THE OLD BODY, READ BEFORE ANYTHING IS WRITTEN OVER IT ----------
+        //
+        //A JOB'S BODY IS A FILE, AND `onSave` IS WHAT WRITES IT. Read after that
+        //and the comparison below is the new script against itself.
+        var before = was ? bodyOf(was, ctx) : null;
+
+        //---- AND THE NEW ONE, WHICH MEANS WRITING IT FIRST ------------------
+        //
+        //THIS USED TO HAPPEN AFTER THE APPROVAL WAS STAMPED, and for the two
+        //kinds whose body is a field in the record it made no difference — which
+        //is why it stood. For a job, whose body is a file, everything the
+        //approval is made of was read from the PREVIOUS script:
+        //
+        //  the hash recorded what was there before, not what was approved
+        //  `changed` compared the old file to itself and was always false
+        //  the copy kept by ../core/versions was the old script, or none at all
+        //
+        //And then the very next read hashed the file that had since been
+        //written, disagreed with the stored hash, and showed a job as EDITED
+        //SINCE IT WAS READ the instant it was written and approved.
+        //
+        //Found by ../../test/library/versions.test.js asking a job for the text
+        //somebody had approved and being handed an empty string.
+        if (o.onSave) await o.onSave(made, it, ctx);
+
         var body = bodyOf(made, ctx);
         if (o.needsBody && !String(body == null ? '' : body).trim()) {
             throw new Error(o.needsBody);
@@ -208,7 +234,7 @@ module.exports = function library(what, doc, opts) {
         //WHAT COUNTS AS A CHANGE. The body, and anything the caller says is part
         //of what was approved — the contract a prompt runs under is, because
         //changing which rules it is held to changes what somebody agreed to.
-        var changed = !was || hash(bodyOf(was, ctx)) !== hash(body)
+        var changed = !was || hash(before) !== hash(body)
             || (o.approvedWith || []).some(function (f) { return (was[f] || null) !== (made[f] || null); });
 
         if (!was) {
@@ -257,9 +283,6 @@ module.exports = function library(what, doc, opts) {
             catch (e) { /* ../core/versions says so in the log */ }
         }
 
-        //WRITTEN FIRST, so anything the body lives outside the record in — a
-        //job's script — is already on disk when the record naming it is.
-        if (o.onSave) await o.onSave(made, it, ctx);
         await write(list);
         return Object.assign({}, await get(key), { created: at === -1 });
     }
