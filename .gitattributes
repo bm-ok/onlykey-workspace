@@ -66,3 +66,18 @@ dashboard-beta/src/app/vms/dispatch/guest/* text eol=lf
 # so it failing to run is the most expensive version of this mistake available.
 dashboard/repos/hooks/* text eol=lf
 dashboard-beta/src/app/repositories/gitserve/hooks/* text eol=lf
+
+# A BUNDLE IS BYTES, AND THE RULES ABOVE ARE ABOUT TEXT.
+#
+# `okc-bootstrap.tar` is a whole set of skills, jobs, prompts and contracts in
+# one file -- what somebody restores from after their data directory has gone.
+# Git guesses at binary and usually guesses right, but a tar is mostly ASCII
+# inside: the headers are padded text and so is nearly every document in this
+# one, so it is exactly the shape git can decide is text and then "fix" on
+# checkout. autocrlf would rewrite bytes inside the archive, the checksums in
+# the headers would no longer match, and it would fail to open.
+#
+# WHICH IT WOULD DO ONLY IN A CLONE, never on the machine it was written on --
+# the same failure as the shell scripts above, at the moment somebody is already
+# recovering from having lost everything.
+*.tar binary
