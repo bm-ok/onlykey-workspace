@@ -118,11 +118,28 @@ async function plugin(imports, register) {
         try { ed.renderer.$cursorLayer.element.style.display = 'none'; } catch (e) { /* older ace */ }
     }
 
-    function Editor({ text, mode, min, max, look: wanted }) {
+    //---- ONE EDITOR, AND `editable` IS WHAT IT IS FOR -----------------------
+    //
+    //THE SAME PROP AS `Diff` TAKES, and the same shape of answer: read-only by
+    //default, and with `editable` the content takes typing and `onChange` gets
+    //what is in it. A caller that wants a place to WRITE a document -- rather
+    //than to resolve a change between two of them -- has one editor to fill, and
+    //until now this plugin only offered that as half of a comparison.
+    //
+    //THE FOUR REFUSALS BELOW ARE UNDONE TOGETHER OR NOT AT ALL. Read-only is
+    //four things, not one -- the content, the cursor, the active line and the
+    //worker -- and turning one of them round and leaving the others is an editor
+    //that takes typing and does not look like one.
+    function Editor({ text, mode, min, max, look: wanted, editable, onChange }) {
         var host = useRef(null);
         var edRef = useRef(null);
         var skin = wanted || DARK;
         var body = String(text == null ? '' : text);
+
+        //THE CALLBACK THROUGH A REF, and a flag saying WE are the ones writing.
+        var back = useRef(onChange);
+        back.current = onChange;
+        var writing = useRef(false);
         var lo = min || 3;
         var hi = max == null ? HUGE : max;
 
@@ -141,15 +158,17 @@ async function plugin(imports, register) {
             //
             //`ace/mode/text` needs no mode file; it is in the core.
             ed.session.setMode('ace/mode/' + (mode || 'text'));
-            //NO WORKER. It is a syntax checker for something being written, and
-            //nothing here is being written — so it is a thread and a round of
-            //parsing spent to put squiggles under somebody else's code.
-            ed.session.setUseWorker(false);
+            //NO WORKER UNLESS SOMETHING IS BEING WRITTEN. It is a syntax
+            //checker, and spending a thread and a round of parsing to put
+            //squiggles under somebody else's finished document is the cost with
+            //none of the benefit — but under what a person is typing right now,
+            //that is exactly the benefit.
+            ed.session.setUseWorker(!!editable);
             ed.setValue(body, -1);
-            ed.setReadOnly(true);
+            ed.setReadOnly(!editable);
             ed.setOptions({
-                highlightActiveLine: false,
-                highlightGutterLine: false,
+                highlightActiveLine: !!editable,
+                highlightGutterLine: !!editable,
                 showPrintMargin: false,
                 fontSize: 12,
                 //WRAPPED, because the alternative is a horizontal scrollbar on
@@ -167,21 +186,39 @@ async function plugin(imports, register) {
                 maxLines: hi
             });
             //THE CURSOR IS A PROMISE THAT YOU CAN TYPE. Read-only already
-            //refuses the typing; this stops it being offered.
-            hideCursor(ed);
+            //refuses the typing; this stops it being offered -- and where typing
+            //IS the point, the promise is one this keeps.
+            if (!editable) hideCursor(ed);
 
             //The height guessed before ace saw the box was for one frame only.
             //Ace owns it now, and leaving the guess behind would fight it.
             host.current.style.height = '';
 
+            //---- AND WHAT WAS TYPED, THROUGH A REF ---------------------------
+            //
+            //The same arrangement as `Diff`'s, for the same reason: a caller
+            //passing an inline function would otherwise tear this editor down
+            //and rebuild it on every render of the page around it, and with
+            //`editable` on, that is somebody's typing.
+            //
+            //`writing` GUARDS THE PROGRAMMATIC WRITE below, so setting the text
+            //from a prop does not come back out as though a person had typed it.
+            var typed = function () {
+                if (writing.current) return;
+                var fn = back.current;
+                if (fn) fn(ed.getValue());
+            };
+            if (editable) ed.session.on('change', typed);
+
             return function () {
                 edRef.current = null;
+                if (editable) ed.session.off('change', typed);
                 //DESTROYED, NOT LEFT. Ace attaches window resize listeners and a
                 //text layer; a pane that mounts one of these on every selection
                 //would otherwise leak an editor per click.
                 try { ed.destroy(); } catch (e) { /* already gone */ }
             };
-        }, [mode, lo, hi]);
+        }, [mode, lo, hi, editable]);
 
         //RECOLOURING NEVER REBUILDS. Putting the palette in the dependency list
         //of the effect above would throw away the scroll position on every mode
@@ -196,7 +233,15 @@ async function plugin(imports, register) {
         //cursor at the start rather than selecting everything.
         useEffect(function () {
             var ed = edRef.current;
-            if (ed && ed.getValue() !== body) ed.setValue(body, -1);
+            if (!ed || ed.getValue() === body) return;
+            //FLAGGED, SO THIS DOES NOT COME BACK OUT AS TYPING. Without it a
+            //caller that echoes `onChange` into the `text` prop -- which is the
+            //ordinary way to hold a draft in React -- gets its own write handed
+            //back to it as a change, and the cursor jumps to the start on every
+            //keystroke.
+            writing.current = true;
+            try { ed.setValue(body, -1); }
+            finally { writing.current = false; }
         }, [body]);
 
         //A HEIGHT BEFORE ACE SEES IT. Ace measures its container to lay out, so

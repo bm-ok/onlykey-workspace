@@ -1684,8 +1684,13 @@ async function plugin(imports, register) {
             var it = all[which];
             if (!it) throw new Error('Nothing is proposed for "' + which + '".');
 
+            //THE ATTRIBUTION TRAVELS WITH IT. `skillSave` keeps the copy now,
+            //and without these it would file somebody else's proposal as having
+            //been written at the window — losing both who asked for it and the
+            //argument that was actually approved.
             var said = await actions.call('skillSave', {
-                which: which, text: it.text, force: a.force
+                which: which, text: it.text, force: a.force,
+                by: it.by, why: it.why
             });
 
             //ONLY WHEN IT LANDED. `skillSave` refuses while a window holds
@@ -1696,16 +1701,10 @@ async function plugin(imports, register) {
             delete all[which];
             proposals.write(all);
 
-            //KEPT AS IT WAS APPROVED, before anything else can edit it. See
-            //../core/versions: what a person approved is the one text worth
-            //being able to go back to, and until now it was overwritten.
-            try {
-                imports.versions.keep('skill', which, it.text, { by: it.by, why: it.why });
-            } catch (e) {
-                //NOT FATAL, AND SAID. Approving is the act; keeping a copy is a
-                //service to whoever reads later.
-                log.on('supervisor').warn('approved, but a version could not be kept: ' + e.message);
-            }
+            //THE COPY WAS KEPT BY THE SAVE ABOVE, which is the door that
+            //writes. Keeping a second one here wrote the same text twice: the
+            //first wins and the second deduplicates away, so this one never had
+            //any effect except to look like the place attribution came from.
 
             log.on('supervisor').good('the proposed change to ' + which + ' was approved and is now what is served'
                 + ' — it was proposed because: ' + String(it.why).slice(0, 160));
@@ -1766,7 +1765,11 @@ async function plugin(imports, register) {
 
     undo.push(actions.define('skillSave', {
         about: 'Rewrite a skill. Refused while the window has unsaved edits in it, unless force is passed',
-        takes: ['which', 'text', 'from', 'force'],
+        //`by` AND `why` ARE FOR `skillApprove`, which calls this to do the
+        //writing. They are safe on the surface because this door refuses the
+        //command line outright, so nothing outside can use them to claim
+        //somebody else wrote something.
+        takes: ['which', 'text', 'from', 'force', 'by', 'why'],
         run: function (args) {
             var a = args || {};
             var which = String(a.which || 'supervisor');
@@ -1869,10 +1872,17 @@ async function plugin(imports, register) {
             //failed would be a version of something never served.
             try {
                 imports.versions.keep('skill', which, body, {
-                    by: 'the window',
-                    why: holding
+                    //WHOSE IT IS, WHERE SOMEBODY KNOWS BETTER. `skillApprove`
+                    //calls this door to do the writing, and what it is writing
+                    //is somebody else's proposal — so without this the copy is
+                    //filed as "the window" and the argument that was actually
+                    //approved is lost. Two keeps of the same text deduplicate,
+                    //and the FIRST one wins, so the one with the attribution
+                    //has to be this one.
+                    by: a.by || 'the window',
+                    why: a.why || (holding
                         ? 'Written at the window, forced over unsaved edits it was holding.'
-                        : 'Written at the window.'
+                        : 'Written at the window.')
                 });
             } catch (e) { /* ../core/versions says so in the log */ }
 

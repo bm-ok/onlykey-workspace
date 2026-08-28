@@ -37,8 +37,34 @@ function aHostWith(files) {
     };
 
     return {
-        app: { host: { actions: { define: (name, spec) => { defined.set(name, spec); return () => {}; } } } },
-        log: { on: () => ({ good() {}, warn() {}, bad() {}, info() {} }) },
+        //---- THE ACTION TABLE, WITH THE TWO THINGS THE REAL ONE HAS --------
+        //
+        //`define` WAS THE WHOLE FAKE, and that was enough only for as long as
+        //nothing here was exercised end to end. `skillApprove` does its writing
+        //by CALLING `skillSave` through the table, and `skillPropose` asks who
+        //is asking — so a stub with neither could only ever test doors that
+        //talk to nobody.
+        app: {
+            host: {
+                actions: {
+                    define: (name, spec) => { defined.set(name, spec); return () => {}; },
+                    call: (name, args) => {
+                        const door = defined.get(name);
+                        assert.ok(door, 'nothing defined "' + name + '"');
+                        return door.run(args || {});
+                    },
+                    //THE SAME ANSWER THE REAL ONE GIVES, which is the whole of
+                    //what attribution rests on: down the pipe it is the command
+                    //line, and at the window it is the window.
+                    whoAsked: (a) => ((a && (a._overTheWire || a._driven)) ? 'the command line' : 'the window')
+                }
+            }
+        },
+        //A LOGGER THAT CAN BE NARROWED AGAIN, which the real one can: this
+        //file tags itself `todo` and then says supervisor things through
+        //`log.on('supervisor')`, because a rewritten skill filed under todos is
+        //a line nobody reading about the supervisor would ever find.
+        log: { on: function again() { return { on: again, good() {}, warn() {}, bad() {}, info() {} }; } },
         //A DOC IS `read`/`write`, which this stub did not have — nothing in
         //this file had ever asked one for anything. `skillPropose` keeps what
         //is waiting in one, so the fake now answers the interface the real one
@@ -479,4 +505,54 @@ test('no action declares protect, because on an action it does nothing', async (
     })(APP);
 
     assert.deepEqual(found, [], 'these declare a guard that refuses nothing: ' + found.join(', '));
+});
+
+//---------------------------------------------------------------------------
+//AND WHOSE CHANGE IT WAS.
+//
+//`skillApprove` DOES ITS WRITING BY CALLING `skillSave`, and `skillSave` is
+//what keeps the copy. Two keeps of the same text deduplicate and the FIRST one
+//wins — so without the attribution travelling with it, every approved proposal
+//was filed as "written at the window" and both who asked for it and the
+//argument that was actually approved were lost.
+//---------------------------------------------------------------------------
+
+test('an approved proposal is kept as the proposer, with the argument made for it', async () => {
+    const skills = await loaded(ALL);
+
+    defined.get('skillPropose').run({
+        which: 'supervisor',
+        text: A_SKILL.replace('One.', 'One, and a reason.'),
+        why: 'the loop skipped a step nobody could see',
+        _overTheWire: true
+    });
+
+    await defined.get('skillApprove').run({ which: 'supervisor' });
+
+    const said = defined.get('skillVersions').run({ which: 'supervisor' });
+    assert.equal(said.versions.length, 1);
+    assert.equal(said.newest.why, 'the loop skipped a step nobody could see');
+    assert.notEqual(said.newest.by, 'the window');
+    assert.match(said.newest.text, /One, and a reason\./);
+});
+
+test('a proposal is what a person writing one makes too, so both are approved the same way', async () => {
+    //THE PANE SAVES BY PROPOSING. Writing the file straight from the window
+    //would make a skill the one document in this app that changes what a machine
+    //is told on a single press, while a contract of forty words needs somebody
+    //to read it and say so afterwards.
+    //
+    //WHICH MEANS ONE REVIEW SURFACE, whoever wrote the thing being reviewed —
+    //asserted here because nothing else would notice if `skillPropose` started
+    //refusing the window.
+    const skills = await loaded(ALL);
+    const said = defined.get('skillPropose').run({
+        which: 'supervisor', text: A_SKILL, why: 'because I said so'
+    });
+
+    assert.equal(said.which, 'supervisor');
+    //NOTHING IS SERVED FROM IT YET, which is the whole of what proposing means.
+    assert.match(skills.run({ which: 'supervisor' }).text, /You decide what work there is/);
+    assert.ok(skills.run({ which: 'supervisor' }).proposed);
+    assert.equal(skills.run({}).skills.find((r) => r.which === 'supervisor').waiting, true);
 });

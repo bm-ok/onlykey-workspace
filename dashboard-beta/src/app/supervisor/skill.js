@@ -37,7 +37,7 @@ module.exports = function skill(theme, okc, remember) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Button, Chips, Chip, Views, Skeleton, Empty, Note, Mono, Kv, KvRow,
-        Notice, Code, Diff, ask
+        Notice, Code, Editor, Diff, ask
     } = theme;
 
     var day = function (s) { return s ? String(s).replace('T', ' ').slice(0, 16) : null; };
@@ -75,8 +75,18 @@ module.exports = function skill(theme, okc, remember) {
         var [which, setWhich] = remember.use('skill', 'which', 'supervisor');
         var [said, setSaid] = useState(null);
 
-        //READING OR WRITING, AND NEVER BOTH AT ONCE. Two documents on one screen
-        //both claiming to be the skill is the state this pane must not be in.
+        //---- THREE VIEWS, AND EACH IS ONE OF THE THREE ACTS -----------------
+        //
+        //  Read     what is served right now
+        //  Write    changing it -- one editor, the document as it stands
+        //  Review   what is waiting on a person, and what it has been
+        //
+        //WRITE WAS A SIDE-BY-SIDE AND THAT WAS THE CONFUSION. Two panes of the
+        //same document, one of them typeable, asks you to work out which half
+        //you are in before you can start -- and the comparison is not what you
+        //want while writing anyway. It is what you want when DECIDING, which is
+        //a different view and now a different tab.
+        //
         //NOT REMEMBERED. Reading is what this pane is for and writing is an act;
         //a pane that reopens in the editor because somebody was typing in it last
         //week is a pane that opens holding a lock nobody meant to take.
@@ -141,28 +151,43 @@ module.exports = function skill(theme, okc, remember) {
             );
         }
 
-        //---- writing it ----------------------------------------------------
-
+        //---- writing it, which is not the same as serving it ----------------
+        //
+        //A SAVE HERE PROPOSES; IT DOES NOT WRITE. Writing the file straight out
+        //would make this the one document in the app that changes what a machine
+        //is told with a single press, while a contract of forty words needs a
+        //person to read it and say so afterwards. A skill is twenty-seven
+        //thousand characters and outranks the brief.
+        //
+        //SO THE TWO ACTS STAY APART, and they are apart for the supervisor too:
+        //what it proposes and what you write land in the same place, are read
+        //the same way, and are approved by the same press. One review surface,
+        //whoever wrote the thing being reviewed.
+        //
+        //WHICH ALSO MEANS THE DRAFT SURVIVES THE PANE. It is kept where a
+        //proposal is kept rather than in this component, so switching away and
+        //coming back does not silently throw away an afternoon.
         function save() {
             ask({
-                title: 'Rewrite ' + it.title + '?',
+                title: 'Propose this as ' + it.title + '?',
                 plain: [
-                    'It is fetched onto a machine at the head of the next turn, and every turn after it. '
-                        + 'Nothing restarts and no machine is touched.',
-                    'What is served now is on the left; what you have written is on the right.',
-                    //THE SAME COMPONENT AS THE APPROVAL DIALOG, because it is
-                    //the same question: what is different about the document I
-                    //am about to put my name to. `plain` takes nodes; `extra` is
-                    //an extra BUTTON and putting content there draws nothing.
-                    <Diff key="body" left={served} right={writing} mode="markdown" height={340} />
+                    'Nothing is served from this yet. It goes to Review, beside anything the supervisor has '
+                        + 'proposed, and takes effect when it is approved there.',
+                    'Saying why is not a formality: it is what you or somebody else will be reading in Review '
+                        + 'when deciding, and six weeks from now it is the only record of what this was for.'
                 ],
-                wide: true,
-                cost: 'It changes what ' + it.title.replace(/^(the|a) /, '') + ' believes it is, from the next turn on.',
-                confirm: 'Save it',
+                fields: [
+                    { name: 'why', label: 'What you changed, and why', needed: true, multiline: true, rows: 3,
+                      placeholder: 'what this changes about how it works' }
+                ],
+                confirm: 'Propose it',
                 protect: true,
-                onYes: function () {
-                    return tell(okc.call('skillSave', { which: which, text: writing }))
-                        .then(function () { setDraft(null); setLook('Read'); });
+                onYes: function (f) {
+                    if (!(f.why || '').trim()) {
+                        throw new Error('Say why. It is the half of this that is actually being approved.');
+                    }
+                    return tell(okc.call('skillPropose', { which: which, text: writing, why: f.why.trim() }))
+                        .then(function () { setDraft(null); setLook('Review'); });
                 }
             });
         }
@@ -170,7 +195,7 @@ module.exports = function skill(theme, okc, remember) {
         function discard() {
             ask({
                 title: 'Throw away these edits?',
-                plain: ['Nothing has been saved, so what is served does not change.'],
+                plain: ['Nothing has been proposed, so nothing changes anywhere.'],
                 confirm: 'Throw them away',
                 danger: true,
                 onYes: function () { setDraft(null); setLook('Read'); }
@@ -185,8 +210,8 @@ module.exports = function skill(theme, okc, remember) {
                 plain: [
                     'It becomes the document fetched onto the machine at the head of the next turn, and every '
                         + 'one after it.',
-                    'It asked for this because: ' + proposed.why,
-                    'What is served is on the left; the proposal is on the right.',
+                    'The argument made for it: ' + proposed.why,
+                    'What is served is on the left; what would replace it is on the right.',
                     <Diff key="body" left={served} right={proposed.text} mode="markdown" height={340} />
                 ],
                 wide: true,
@@ -249,65 +274,19 @@ module.exports = function skill(theme, okc, remember) {
                     </Col>
 
                     <Col>
-                        {/*---- WHAT IS WAITING, FIRST -----------------------
-
-                            ABOVE THE DOCUMENT, WHICH IS THE ONE PLACE THIS PANE
-                            PUTS SOMETHING ABOVE WHAT IS SERVED. A proposal is
-                            the only thing here that is waiting on a person, and
-                            a decision that has to be scrolled to is a decision
-                            made by silence. */}
-                        {proposed ? (
-                            <Panel>
-                                <div className="head-row">
-                                    <CardTitle>
-                                        It has asked for a change{' '}
-                                        <Badge kind="warn">waiting on you</Badge>
-                                    </CardTitle>
-                                    <div className="head-controls">
-                                        <Button kind="ok" protect onClick={approve}>Approve it</Button>
-                                        <Button kind="danger" onClick={reject}>Turn it down</Button>
-                                    </div>
-                                </div>
-
-                                <Kv>
-                                    <KvRow label="because">{proposed.why}</KvRow>
-                                    <KvRow label="asked by">{proposed.by || 'not recorded'}</KvRow>
-                                    <KvRow label="asked at">{day(proposed.at)}</KvRow>
-                                    <KvRow label="size">
-                                        {proposed.characters + ' characters, against ' + proposed.was}
-                                        <span className="muted">
-                                            {' — ' + (proposed.characters >= proposed.was ? '+' : '')
-                                                + (proposed.characters - proposed.was)}
-                                        </span>
-                                    </KvRow>
-                                    {proposed.replaced
-                                        ? <KvRow label="replaced">
-                                            <span className="muted">{'an earlier proposal from '
-                                                + day(proposed.replaced) + ', which was never answered'}</span>
-                                        </KvRow>
-                                        : null}
-                                </Kv>
-
-                                <Note>
-                                    Nothing is served from this. What is served is on the left, the proposal is on
-                                    the right, and only the changed lines are marked.
-                                </Note>
-                                <Diff left={served} right={proposed.text} mode="markdown" height={420} />
-                            </Panel>
-                        ) : null}
 
                         <Panel>
                             <div className="head-row">
                                 <CardTitle>{it.title}</CardTitle>
                                 <div className="head-controls">
-                                    {/* READ OR WRITE, AS A PAIR OF VIEWS rather
-                                        than an "edit" button that changes what
-                                        is under the pointer. Which one you are
-                                        in is readable without pressing. */}
-                                    <Views names={['Read', 'Write']} on={look} onPick={setLook} />
+                                    {/* THREE VIEWS, AND EACH IS ONE ACT. Not an
+                                        "edit" button that changes what is under
+                                        the pointer: which one you are in is
+                                        readable without pressing anything. */}
+                                    <Views names={['Read', 'Write', 'Review']} on={look} onPick={setLook} />
                                     {look == 'Write'
                                         ? <Button kind="ok" protect disabled={writing === served}
-                                            title={writing === served ? 'nothing has changed' : 'save it'}
+                                            title={writing === served ? 'nothing has changed' : 'propose it'}
                                             onClick={save}>Save it</Button>
                                         : null}
                                     {look == 'Write' && draft != null
@@ -317,139 +296,190 @@ module.exports = function skill(theme, okc, remember) {
                             </div>
                             <CardSub>{it.about}</CardSub>
 
+                            {/* SAID WHEREVER YOU ARE STANDING. A change waiting
+                                on a person, visible only from the tab nobody is
+                                on, is a decision made by silence — which is the
+                                fault the master column was rebuilt for and is
+                                just as true one tab away. */}
+                            {proposed && look != 'Review'
+                                ? <Note kind="warn">
+                                    A change is waiting on you. Read it in <strong>Review</strong> — nothing is
+                                    served from it until it is approved there.
+                                </Note>
+                                : null}
+
                             <Kv>
                                 <KvRow label="size">{sized(it.characters) + ' · ' + it.lines + ' lines'}</KvRow>
                                 <KvRow label="last written">{day(it.edited) || 'not known'}</KvRow>
                                 <KvRow label="read from"><Mono>{it.where}</Mono></KvRow>
                             </Kv>
 
-                            {look == 'Write' ? (
-                                <div>
-                                    {/* SERVED ON THE LEFT AND NEVER EDITABLE, so
-                                        what is being changed stays visible while
-                                        it is being changed. The right side takes
-                                        the typing; the gutter grows arrows for
-                                        pulling a line back across. */}
-                                    <Note kind="warn">
-                                        On the left is what is served now; the right side is yours to type in.
-                                        Nothing is written until you press Save it, and while there are unsaved
-                                        edits here a save from anywhere else is refused rather than allowed to
-                                        overwrite them.
-                                    </Note>
-                                    {/*---- WHERE IT ACTUALLY GOES ------------
-
-                                        A SKILL IS RESOLVED FROM A SEARCH PATH —
-                                        the open workspace's provision folder
-                                        first, then the app's own copy. Saving
-                                        writes back over whichever file was
-                                        FOUND, and when that is the app's copy in
-                                        a checkout being watched, the next
-                                        rebuild copies the source over it again
-                                        and the edit is gone with nothing said.
-
-                                        SO THE PATH IS ON SCREEN, and it is the
-                                        one thing here worth reading before
-                                        pressing. A project that wants an edit
-                                        that stays puts a file of the same name
-                                        in its own provision folder, which wins
-                                        the search path and is checked in. */}
-                                    <Note>
-                                        It is written back to <Mono>{it.where}</Mono>. If that is the app&apos;s own
-                                        copy rather than this project&apos;s, a rebuild will put the shipped one
-                                        back over it — a change meant to last belongs in the workspace&apos;s
-                                        provision folder, which is read first.
-                                    </Note>
-                                    <Diff left={served} right={writing} mode="markdown" height={520}
-                                        editable onChange={setDraft} />
-                                </div>
-                            ) : (
+                            {look == 'Read' ? (
                                 //A SKILL IS A MARKDOWN FILE, so it is read as one.
                                 <Code text={served} mode="markdown" tall />
-                            )}
+                            ) : null}
+
+                            {look == 'Write' ? (
+                                <div>
+                                    {/*---- ONE EDITOR, NOT A COMPARISON --------
+
+                                        THIS WAS SIDE BY SIDE AND IT WAS THE
+                                        WRONG TOOL FOR THE JOB. Two panes of the
+                                        same document with one of them typeable
+                                        asks somebody to work out which half they
+                                        are in before they can start a sentence —
+                                        and while WRITING, the comparison answers
+                                        a question nobody is asking yet. It is
+                                        the question you ask when DECIDING, which
+                                        is the next tab along. */}
+                                    <Note kind="warn">
+                                        This is the document as it stands, and it takes typing. Nothing is served
+                                        from what you write here: pressing Save it puts it in <strong>Review</strong>,
+                                        where it is read against what is served now and approved or turned down.
+                                    </Note>
+                                    <Note>
+                                        While there are unsaved edits here, a save from anywhere else is refused
+                                        rather than allowed to overwrite them.
+                                    </Note>
+                                    <Editor text={writing} mode="markdown" min={20} max={900}
+                                        editable onChange={setDraft} />
+                                </div>
+                            ) : null}
                         </Panel>
 
-                        {/*---- AND WHAT IT HAS BEEN -------------------------
+                        {look == 'Review' ? (
+                            <div>
+                            {/*---- WHAT IS WAITING, FIRST -----------------------
 
-                            NOTHING HERE UNTIL SOMETHING IS KEPT, rather than an
-                            empty panel: a copy is kept from the first save or
-                            approval made through this app, and a file that
-                            existed before that has no past this can show. */}
-                        {versions.length ? (
-                            <Panel>
-                                <CardTitle>
-                                    {'What it has been'}{' '}
-                                    <Badge kind="muted">{versions.length + ' kept'}</Badge>
-                                </CardTitle>
-                                <CardSub>
-                                    A copy is kept every time a person writes one or approves one — what they put
-                                    their name to, and what changed to reach it.
-                                </CardSub>
-
-                                <Chips>
-                                    {versions.map(function (v, i) {
-                                        var mineNow = atVer ? atVer == v.at : i === 0;
-                                        return (
-                                            <Chip key={v.at} on={mineNow}
-                                                onClick={function () { setAtVer(i === 0 ? null : v.at); }}>
-                                                {day(v.at) + (v.first ? ' · first' : ' · +' + v.added + ' / -' + v.gone)}
-                                            </Chip>
-                                        );
-                                    })}
-                                </Chips>
-
-                                {showing ? (
-                                    <div>
-                                        <Kv>
-                                            <KvRow label="written by">
-                                                {(showing.by || 'somebody') + ', ' + day(showing.at)}
-                                            </KvRow>
-                                            <KvRow label="what changed">{showing.note}</KvRow>
-                                            {showing.why ? <KvRow label="because">{showing.why}</KvRow> : null}
-                                        </Kv>
-
-                                        {/* THE FROZEN DIFF, NOT ONE WORKED OUT
-                                            NOW. It was computed against what
-                                            stood before it and kept beside it, so
-                                            what this version was a change TO
-                                            cannot be quietly rewritten by
-                                            whatever is newest today. */}
-                                        {showing.first
-                                            ? <Code text={showing.text} mode="markdown" tall />
-                                            : <Code text={showing.changed || ''} mode="diff" tall />}
-                                        {showing.first
-                                            ? <Note>
-                                                The first version kept of this, so it is not a change to anything —
-                                                what is above is the document as it stood.
-                                            </Note>
-                                            : null}
-
-                                        {/* AND THE ONE COMPARISON THAT IS NOT A
-                                            RECORD: the newest kept version
-                                            against the file as it is now. They
-                                            differ when something wrote it
-                                            outside this app. */}
-                                        {!atVer && String(showing.text) !== String(served) ? (
-                                            <div>
-                                                <Note kind="warn">
-                                                    And the file has changed since. What was kept is on the left;
-                                                    what is served now is on the right — something wrote it without
-                                                    coming through this pane.
-                                                </Note>
-                                                <Diff left={showing.text} right={served} mode="markdown" height={340} />
-                                            </div>
-                                        ) : null}
+                                ABOVE THE DOCUMENT, WHICH IS THE ONE PLACE THIS PANE
+                                PUTS SOMETHING ABOVE WHAT IS SERVED. A proposal is
+                                the only thing here that is waiting on a person, and
+                                a decision that has to be scrolled to is a decision
+                                made by silence. */}
+                            {proposed ? (
+                                <Panel>
+                                    <div className="head-row">
+                                        <CardTitle>
+                                            It has asked for a change{' '}
+                                            <Badge kind="warn">waiting on you</Badge>
+                                        </CardTitle>
+                                        <div className="head-controls">
+                                            <Button kind="ok" protect onClick={approve}>Approve it</Button>
+                                            <Button kind="danger" onClick={reject}>Turn it down</Button>
+                                        </div>
                                     </div>
-                                ) : <Skeleton rows={3} />}
-                            </Panel>
-                        ) : (
-                            <Panel>
-                                <CardTitle>What it has been</CardTitle>
-                                <Empty>
-                                    Nothing kept yet. A copy is kept from the first save or approval made here —
-                                    what the file was before that is not recoverable.
-                                </Empty>
-                            </Panel>
-                        )}
+
+                                    <Kv>
+                                        <KvRow label="because">{proposed.why}</KvRow>
+                                        <KvRow label="asked by">{proposed.by || 'not recorded'}</KvRow>
+                                        <KvRow label="asked at">{day(proposed.at)}</KvRow>
+                                        <KvRow label="size">
+                                            {proposed.characters + ' characters, against ' + proposed.was}
+                                            <span className="muted">
+                                                {' — ' + (proposed.characters >= proposed.was ? '+' : '')
+                                                    + (proposed.characters - proposed.was)}
+                                            </span>
+                                        </KvRow>
+                                        {proposed.replaced
+                                            ? <KvRow label="replaced">
+                                                <span className="muted">{'an earlier proposal from '
+                                                    + day(proposed.replaced) + ', which was never answered'}</span>
+                                            </KvRow>
+                                            : null}
+                                    </Kv>
+
+                                    <Note>
+                                        Nothing is served from this. What is served is on the left, the proposal is on
+                                        the right, and only the changed lines are marked.
+                                    </Note>
+                                    <Diff left={served} right={proposed.text} mode="markdown" height={420} />
+                                </Panel>
+                            ) : null}
+                            {/*---- AND WHAT IT HAS BEEN -------------------------
+
+                                NOTHING HERE UNTIL SOMETHING IS KEPT, rather than an
+                                empty panel: a copy is kept from the first save or
+                                approval made through this app, and a file that
+                                existed before that has no past this can show. */}
+                            {versions.length ? (
+                                <Panel>
+                                    <CardTitle>
+                                        {'What it has been'}{' '}
+                                        <Badge kind="muted">{versions.length + ' kept'}</Badge>
+                                    </CardTitle>
+                                    <CardSub>
+                                        A copy is kept every time a person writes one or approves one — what they put
+                                        their name to, and what changed to reach it.
+                                    </CardSub>
+
+                                    <Chips>
+                                        {versions.map(function (v, i) {
+                                            var mineNow = atVer ? atVer == v.at : i === 0;
+                                            return (
+                                                <Chip key={v.at} on={mineNow}
+                                                    onClick={function () { setAtVer(i === 0 ? null : v.at); }}>
+                                                    {day(v.at) + (v.first ? ' · first' : ' · +' + v.added + ' / -' + v.gone)}
+                                                </Chip>
+                                            );
+                                        })}
+                                    </Chips>
+
+                                    {showing ? (
+                                        <div>
+                                            <Kv>
+                                                <KvRow label="written by">
+                                                    {(showing.by || 'somebody') + ', ' + day(showing.at)}
+                                                </KvRow>
+                                                <KvRow label="what changed">{showing.note}</KvRow>
+                                                {showing.why ? <KvRow label="because">{showing.why}</KvRow> : null}
+                                            </Kv>
+
+                                            {/* THE FROZEN DIFF, NOT ONE WORKED OUT
+                                                NOW. It was computed against what
+                                                stood before it and kept beside it, so
+                                                what this version was a change TO
+                                                cannot be quietly rewritten by
+                                                whatever is newest today. */}
+                                            {showing.first
+                                                ? <Code text={showing.text} mode="markdown" tall />
+                                                : <Code text={showing.changed || ''} mode="diff" tall />}
+                                            {showing.first
+                                                ? <Note>
+                                                    The first version kept of this, so it is not a change to anything —
+                                                    what is above is the document as it stood.
+                                                </Note>
+                                                : null}
+
+                                            {/* AND THE ONE COMPARISON THAT IS NOT A
+                                                RECORD: the newest kept version
+                                                against the file as it is now. They
+                                                differ when something wrote it
+                                                outside this app. */}
+                                            {!atVer && String(showing.text) !== String(served) ? (
+                                                <div>
+                                                    <Note kind="warn">
+                                                        And the file has changed since. What was kept is on the left;
+                                                        what is served now is on the right — something wrote it without
+                                                        coming through this pane.
+                                                    </Note>
+                                                    <Diff left={showing.text} right={served} mode="markdown" height={340} />
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ) : <Skeleton rows={3} />}
+                                </Panel>
+                            ) : (
+                                <Panel>
+                                    <CardTitle>What it has been</CardTitle>
+                                    <Empty>
+                                        Nothing kept yet. A copy is kept from the first save or approval made here —
+                                        what the file was before that is not recoverable.
+                                    </Empty>
+                                </Panel>
+                            )}
+                            </div>
+                        ) : null}
+
                     </Col>
                 </Cols>
             </Pane>
