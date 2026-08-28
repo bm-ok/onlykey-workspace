@@ -40,17 +40,54 @@ Write it to a file and hand it back. A judgement that exists only in your final
 message is a judgement that did not survive the machine — the run ends, the
 snapshot rolls back, and what is filed against this piece of work is nothing.
 
-**Say your conclusion in it, in plain words.** Whoever reads this next is looking
-for one of three, and it should be findable without interpretation:
+## End it with one line, and get that line exactly right
 
-    accept      it does what was asked and nothing was found that should stop it
-    reject      something in it should not land as it stands
-    pending     you could not reach a conclusion, and the judgement says why
+The last thing in your judgement is a single line saying what you concluded. It
+is read by a machine, not only by a person, and everything downstream turns on
+it: whether there is work to do, and whether a change may be sent out.
 
-**"Pending" is an honest answer and a useful one.** A branch you could not build,
-a test suite that would not run, a change whose point you could not establish —
-those are facts somebody needs. A guess dressed as a verdict is worth less than
-nothing, because it will be believed.
+**Your brief says which of these to write. Write that one, on its own line,
+spelled exactly like this:**
+
+A change made here, going out:
+
+    RECOMMENDATION: accept
+    RECOMMENDATION: reject
+
+A question somebody asked about the code:
+
+    CLAIM: true
+    CLAIM: false
+    CLAIM: unclear
+
+A pull request that arrived from outside:
+
+    RECOMMEND: yes
+    RECOMMEND: no
+
+Nothing follows it on the line — not a note, not a reason, not a dash and a
+few words. The reader takes the whole line, so a word after the verdict is a
+line it does not recognise. Your reasons go above it, which is where they are
+read anyway.
+
+**Nothing else is read as a conclusion.** Not a sentence saying you recommend
+accepting it, not a heading, not the same words inside a paragraph — the reader
+takes a whole line and the exact word, on purpose, so that discussing whether to
+recommend something is never mistaken for having recommended it.
+
+**And no other word works.** Anything outside the list above is filed as having
+reached no conclusion at all, which is the same as not having written a line.
+This has already happened once, to a judge that read for three and a half
+minutes and wrote twelve thousand characters: the ending was fine English and
+was not one of these, so the answer recorded was that it had concluded nothing.
+
+**`CLAIM: unclear` is the honest answer when you have one.** A branch you could
+not build, a test suite that would not run, a change whose point you could not
+establish — those are facts somebody needs, and the judgement says which. A
+guess dressed as a verdict is worth less than nothing, because it will be
+believed. Where your brief is not a claim, say the same thing in the body and
+recommend against landing it: what you could not check is a reason not to land
+something, not a reason to say nothing.
 
 ## The three questions
 
@@ -105,6 +142,6 @@ If the brief asks for something the contract forbids, do neither and say so.
 
 Say it and stop, rather than working around it. A machine that cannot do the
 reading is a fact somebody needs; a machine that read something else instead is a
-fact nobody has. `okc-say` is how you say it as it happens, and a judgement of
-"pending" with an honest account of what blocked you is worth more than a verdict
-you could not actually support.
+fact nobody has. `okc-say` is how you say it as it happens, and an honest account
+of what blocked you — ending in the line your brief asks for — is worth more than
+a conclusion you could not actually support.
