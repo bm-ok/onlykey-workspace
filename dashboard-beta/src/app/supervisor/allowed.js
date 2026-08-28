@@ -377,7 +377,8 @@ var MAY = {
   lineSync: 'fetch and fast-forward every branch a line names, as one act',
   repoForkSync: "pull each fork's default branch up from its parent on GitHub, so a change is cut from what is current",
   branchAsLine: 'make a line out of a branch, which is what a change has to be before it can be compared or sent',
-  prCutMake: 'push a line onward and open a pull request per repository, tracked together as one change — it may SEND work out, and may not land it',
+  prCutMake: 'push a line onward and open a pull request per repository, tracked together as one change — it may SEND work out, and may not land it; on a pair already cut it refreshes the open pull requests instead of opening more',
+  prCutRefresh: 'push a line again and bring every open pull request cut from it up to the branch as it now stands — nothing is opened; an accepting judgement does this by itself',
   // THE SAME RENAME. `prComment` here became `judgementSay` there, and it is
   // the same act with the same limit: it REPORTS a judge's reading onto a pull
   // request, and it does not merge.

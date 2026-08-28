@@ -296,6 +296,22 @@ test('the drawer answers with a promise, and the conclusion is still read', asyn
     assert.ok(said.some((m) => /GOOD J36 done — finished \(exit 0\) — 1 file\(s\) handed back/.test(m)), said.join(' | '));
 });
 
+test('an accepting judgement of a branch brings its live cut up to the branch; a rejecting one does not', async () => {
+    //THE PULL REQUEST SAT ON A REJECTED COMMIT FOR AN HOUR while the accepted
+    //fix existed here, because only opening pushed.
+    await onejudgement().run(snapshot(rec = JUDGEMENT()), 'kit-1');
+    assert.equal(rec.concluded, 'accept');
+    await new Promise((r) => setImmediate(r));
+    assert.ok(asked.includes('prCutRefresh'), 'the live cut was not brought up to the branch: ' + asked.join(' | '));
+
+    asked.length = 0;
+    texts = { 'verdict.md': 'no.\n\nRECOMMENDATION: reject' };
+    await onejudgement().run(snapshot(rec = JUDGEMENT()), 'kit-1');
+    assert.equal(rec.concluded, 'reject');
+    await new Promise((r) => setImmediate(r));
+    assert.ok(!asked.includes('prCutRefresh'), 'a rejected branch was pushed onto its pull request');
+});
+
 test('a reading that would not say is done with no conclusion, not a failure', async () => {
     //"NOBODY HAS LOOKED" AND "SOMEBODY LOOKED AND WOULD NOT SAY" are different,
     //and both are useful to see.

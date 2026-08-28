@@ -257,18 +257,23 @@ module.exports = function onejudgement(deps) {
                 });
             }
 
-            //---- AND ITS REVIEW, DRAFTED ----------------------------------
+            //---- AND THE LIVE CUT, BROUGHT UP TO THE BRANCH ---------------
             //
-            //A judgement of a pull request -- somebody else's, or a cut this
-            //host sent -- becomes a review draft the moment it lands, so a
-            //person finds it waiting rather than remembering to ask. Fire and
-            //forget, the same shape as the wake below: a slow GitHub is not a
-            //reason for the run to hang. `reviewDraft` itself declines a claim
-            //check and a bare branch, so nothing is decided here.
-            if (subject.kind === 'pull' || subject.kind === 'cut') {
-                Promise.resolve(call('reviewDraft', { ref: ref })).catch(function (e) {
-                    say('supervisor').warn(ref + ' finished but its review could not be drafted: ' + e.message);
-                });
+            //A JUDGE ACCEPTED THE BRANCH AS IT NOW STANDS, and if a pull
+            //request is already open from it, that pull request should carry
+            //this commit -- not the one a judge rejected an hour ago. The push
+            //waited on somebody remembering to cut again, and nobody did.
+            //`prCutRefresh` opens nothing; with no live cut it says so and
+            //stops. Fire and forget, like the review.
+            if (concluded === 'accept' && (subject.kind === 'branch' || subject.kind === 'cut')) {
+                var line = subject.kind === 'cut' ? subject.source : subject.branch;
+                if (line) {
+                    Promise.resolve(call('prCutRefresh', { source: line })).then(function (r) {
+                        if (r && r.refreshed) to.good(ref + ' accepted, so the open pull request(s) from "' + line + '" now carry the branch as it stands');
+                    }).catch(function (e) {
+                        to.warn(ref + ' accepted, but the pull request(s) from "' + line + '" could not be brought up to it: ' + e.message);
+                    });
+                }
             }
 
             to[handed.length ? 'good' : 'warn'](

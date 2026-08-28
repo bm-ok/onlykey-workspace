@@ -315,7 +315,12 @@ issue, and the person handed it to you — by tagging it on GitHub, or by pressi
    so the judge reads the change against the words of the people who asked —
    not against your summary of them. Your `question` is still yours to
    sharpen: say what would make it fail.
-8. If that judgement is good: `branchAsLine`, `prDraftSave`, `prCutMake`. The
+8. If that judgement is good: `branchAsLine`, `prDraftSave`, `prCutMake`. **Once
+   a pull request is open from a line, it follows the line**: a later task on
+   the same branch, judged and accepted, is pushed onto that pull request by
+   the host itself (`prCutRefresh`), and `prCutMake` on the same pair refreshes
+   rather than opening a second one. Never open another pull request for work
+   that already has one — say the existing one has moved. The
    pull request says `Closes owner/repo#N` **by itself**, from the issue the
    branch was cut for — do not write that line by hand, it would be there
    twice. GitHub closes the issue when the maintainer merges. That is the

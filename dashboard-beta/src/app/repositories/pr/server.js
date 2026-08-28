@@ -1253,8 +1253,149 @@ async function plugin(imports, register) {
         //
         //AND THE CROSSLINKS ARE WRITTEN LAST, in a second pass, because the
         //numbers do not exist until every one of them is open.
+        //---- A LIVE CUT FOLLOWS ITS BRANCH ----------------------------------
+        //
+        //THE PULL REQUEST SAT ON A REJECTED COMMIT FOR AN HOUR while the fix
+        //existed here. A follow-up task landed on the branch, a judge accepted
+        //it, and nothing pushed: the only thing that pushes was prCutMake, which
+        //is for OPENING, and running it again on a pair that already has pull
+        //requests got as far as the push and then "Validation Failed" from
+        //GitHub for the pull request that already existed. It worked by
+        //accident, and the supervisor believed the pull request had moved
+        //before it had.
+        //
+        //SO THIS: for every open pull request in a cut, push its branch and
+        //re-compose its description from what was said at the cut plus the
+        //template blocks (the commit list, the Closes line) as they now stand.
+        //Nothing is opened. The same judging gate as opening, for a caller on
+        //the pipe: a pushed commit is code a maintainer can merge.
+        //
+        //AND PRCUTMAKE ON A LIVE PAIR IS THIS, NOT A SECOND PULL REQUEST. A
+        //branch with a pull request open gets that pull request updated;
+        //"as it wants, un-requested" is the failure the person named.
+        async function refreshCut(a, source, target) {
+            var all = await read(landings);
+            var rec = all && all[key(source, target)];
+            //A NUMBER IS THE FACT. `opened` is what the LAST attempt said, and
+            //a re-run that got "Validation Failed" from GitHub for a pull
+            //request that already existed wrote opened:false over a record that
+            //still had its number -- which then read as "no live cut".
+            var live = ((rec && rec.pulls) || []).filter(function (p) {
+                return p.number && p.state !== 'closed' && !p.merged;
+            });
+            if (!live.length) return null;
+
+            var pair = { on: [] };
+            try { pair = await carrying(source, target); } catch (e) { pair = { on: [] }; }
+            await mustBeJudged(a, [source].concat(pair.on.map(function (w) { return w.head; })));
+
+            var env = keys.github.envForPush();
+            var helper = keys.github.credentialHelper;
+            var board = (await relayed('branchBoard')) || {};
+            var said = (rec.said || {});
+            var done = [];
+
+            for (var i = 0; i < live.length; i++) {
+                var p = live[i];
+                //THE BRANCH BY ITS OWN NAME. A record from a cross-repository
+                //cut keeps `head` as owner:branch, which is GitHub's spelling
+                //and not git's.
+                var w = pair.on.filter(function (x) { return x.repo === p.repo; })[0]
+                    || { repo: p.repo, head: String(p.head || '').replace(/^[^:]+:/, ''), base: p.base };
+                if (!w.head) { done.push({ repo: p.repo, number: p.number, pushed: false, why: 'no branch is recorded for it' }); continue; }
+
+                var sent = await git.push(p.repo, w.head, { env: env, helper: helper });
+                if (!sent.pushed) {
+                    done.push({ repo: p.repo, number: p.number, pushed: false, why: 'it could not be pushed — ' + sent.why });
+                    continue;
+                }
+
+                //THE DESCRIPTION, RE-COMPOSED, when what was said at the cut is
+                //still here. Composing over a body already composed would put
+                //every block in twice, so a cut that never recorded its words
+                //keeps the description it has and says so.
+                var patched = null;
+                if (said.body != null) {
+                    var row = ((board.branches) || []).filter(function (b) { return b.name === w.head; })[0] || null;
+                    var body = await compose(said.body, {
+                        branch: w.head, me: p.repo,
+                        repos: live.map(function (x) { return x.repo; }),
+                        note: row ? row.note : null,
+                        carries: row ? row.on : [],
+                        pulls: live
+                    });
+                    var fields = { body: body };
+                    if (said.title) fields.title = String(said.title);
+                    var bits = String(p.into || '').split('/');
+                    if (bits.length !== 2) {
+                        var remote = await refs.origin(p.repo);
+                        bits = [remote.owner, remote.repo];
+                    }
+                    var r = await github.call('PATCH', '/repos/' + bits[0] + '/' + bits[1] + '/pulls/' + p.number, fields);
+                    patched = r.status === 200 ? true : ((r.body && r.body.message) || ('GitHub answered ' + r.status));
+                }
+                done.push({ repo: p.repo, number: p.number, url: p.url || null, pushed: true, head: w.head, described: patched });
+            }
+
+            var doc = await landings();
+            var now = doc.read({}) || {};
+            var k = key(source, target);
+            if (now[k]) {
+                now[k] = Object.assign({}, now[k], { touched: new Date().toISOString(), refreshed: new Date().toISOString() });
+                doc.write(now);
+            }
+
+            var went = done.filter(function (d) { return d.pushed; });
+            log.good('refreshed the cut "' + source + '" into "' + target + '" — ' + went.length + ' of ' + done.length
+                + ' pull request(s) now carry the branch as it stands');
+            return {
+                source: source, target: target, pulls: done, refreshed: went.length,
+                note: went.length + ' of ' + done.length + ' pull request(s) updated to the branch as it stands. '
+                    + (said.body == null
+                        ? 'Their descriptions were left as they are — nothing here recorded what was said at the cut. '
+                        : 'Their descriptions were re-composed from what was said at the cut. ')
+                    + 'Nothing was opened.'
+            };
+        }
+
+        undo.push(actions.define('prCutRefresh', {
+            about: 'Push a line again and bring every open pull request cut from it up to the branch as it now stands. '
+                + 'Nothing is opened; a cut that is already live follows its branch',
+            takes: ['source', 'target'],
+            run: async function (args) {
+                var a = args || {};
+                var source = String(a.source || '').trim();
+                if (!source) throw new Error('Say which line, by name.');
+                var target = String(a.target || '').trim();
+
+                var all = (await read(landings)) || {};
+                var pairs = Object.keys(all).filter(function (k) {
+                    var c = all[k];
+                    return c && c.source === source && (!target || c.target === target);
+                });
+                var out = [];
+                for (var i = 0; i < pairs.length; i++) {
+                    var got = await refreshCut(a, all[pairs[i]].source, all[pairs[i]].target);
+                    if (got) out.push(got);
+                }
+                if (!out.length) {
+                    return {
+                        source: source, target: target || null, cuts: [], refreshed: 0,
+                        note: 'No live cut is open from "' + source + '"' + (target ? ' into "' + target + '"' : '')
+                            + '. Nothing to bring up to date — prCutMake is what opens one.'
+                    };
+                }
+                return {
+                    source: source, target: target || null, cuts: out,
+                    refreshed: out.reduce(function (n, c) { return n + c.refreshed; }, 0),
+                    note: out.map(function (c) { return c.target + ': ' + c.note; }).join(' ')
+                };
+            }
+        }));
+
         undo.push(actions.define('prCutMake', {
-            about: 'Push a line onward and open a pull request per repository, tracked together as one landing',
+            about: 'Push a line onward and open a pull request per repository, tracked together as one landing. '
+                + 'On a pair that is already cut, the open pull requests are brought up to the branch instead',
             takes: ['source', 'target', 'title', 'body', 'into', 'draft'],
             run: async function (args) {
                 var a = args || {};
@@ -1263,6 +1404,27 @@ async function plugin(imports, register) {
                 var target = String(a.target || '').trim();
                 if (!source || !target) throw new Error('Say which line is being proposed and which it would go into.');
                 if (!String(a.title || '').trim()) throw new Error('Give it a title — it is the first thing a reviewer reads.');
+
+                //ALREADY CUT: REFRESH, NEVER A SECOND PULL REQUEST. What was
+                //said this time replaces what was said before, so a re-cut with
+                //new words is how the description is rewritten.
+                var had = await read(landings);
+                var have = had && had[key(source, target)];
+                if (have && (have.pulls || []).some(function (p) { return p.number && p.state !== 'closed' && !p.merged; })) {
+                    var doc0 = await landings();
+                    var now0 = doc0.read({}) || {};
+                    now0[key(source, target)] = Object.assign({}, now0[key(source, target)], {
+                        said: Object.assign({}, (have.said || {}), { title: String(a.title).trim(), body: String(a.body || ''), at: new Date().toISOString() })
+                    });
+                    doc0.write(now0);
+                    var again = await refreshCut(a, source, target);
+                    if (again) {
+                        return Object.assign({}, again, {
+                            opened: 0, pulls: again.pulls,
+                            note: '"' + source + '" into "' + target + '" was already cut, so nothing was opened: ' + again.note
+                        });
+                    }
+                }
 
                 var pair = await carrying(source, target);
                 if (!pair.on.length) {
@@ -1323,9 +1485,25 @@ async function plugin(imports, register) {
                 var merged = was.pulls.slice();
                 opened.forEach(function (p) {
                     var at = merged.map(function (x) { return x.repo; }).indexOf(p.repo);
-                    if (at < 0) merged.push(p); else merged[at] = Object.assign({}, merged[at], p);
+                    if (at < 0) { merged.push(p); return; }
+                    //A FAILED ATTEMPT DOES NOT ERASE A PULL REQUEST THAT EXISTS.
+                    //"Validation Failed" for a pull request already open was
+                    //being written over its number's row as opened:false, and
+                    //the cut then read as having nothing live.
+                    if (!p.opened && merged[at].number) {
+                        merged[at] = Object.assign({}, merged[at], { lastTry: p.why || null, triedAt: new Date().toISOString() });
+                        return;
+                    }
+                    merged[at] = Object.assign({}, merged[at], p);
                 });
-                all[k] = Object.assign({}, was, { pulls: merged, touched: new Date().toISOString() });
+                all[k] = Object.assign({}, was, {
+                    pulls: merged, touched: new Date().toISOString(),
+                    //WHAT WAS SAID, KEPT, so a refresh can compose the body
+                    //again over the same words. Before this only prCutUpdate
+                    //recorded it, and a cut never edited had no words to
+                    //re-compose from.
+                    said: Object.assign({}, was.said || {}, { title: String(a.title).trim(), body: String(a.body || ''), at: new Date().toISOString() })
+                });
                 doc.write(all);
 
                 //AND THE DRAFT IS DONE WITH, because it has been sent.

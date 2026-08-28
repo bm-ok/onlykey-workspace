@@ -531,6 +531,102 @@ test('a pull request that refuses the change is named, and the others still go',
     assert.match(said.note, /not accessible/);
 });
 
+//---------------------------------------------------------------------------
+//A LIVE CUT FOLLOWS ITS BRANCH. The pull request sat on a rejected commit for
+//an hour while the accepted fix existed here, because only opening pushed.
+//---------------------------------------------------------------------------
+
+const CUT_LIVE = {
+    'a -> b': {
+        source: 'a', target: 'b', opened: '2026-01-01T00:00:00Z',
+        said: { title: 'one sentence', body: 'the rest' },
+        pulls: [
+            { repo: 'one', number: 1, into: 'anowner/one', head: 'a', base: 'master', state: 'open', url: 'u1' },
+            { repo: 'two', number: 2, into: 'anowner/two', head: 'a', base: 'master', state: 'open', url: 'u2' }
+        ]
+    }
+};
+
+test('refreshing a live cut pushes every branch again and re-composes every description, opening nothing', async () => {
+    const { actions, asked, pushes } = await anApp({
+        landings: CUT_LIVE,
+        answers: {
+            'PATCH /repos/anowner/one/pulls/1': { status: 200, body: { number: 1 } },
+            'PATCH /repos/anowner/two/pulls/2': { status: 200, body: { number: 2 } }
+        }
+    });
+    const said = await actions.call('prCutRefresh', { source: 'a' });
+    assert.equal(said.refreshed, 2);
+    assert.deepEqual(pushes.map((p) => p.repo + ':' + p.branch).sort(), ['one:a', 'two:a']);
+    assert.ok(!asked.some((x) => x.method === 'POST'), 'it opened a pull request');
+    const patched = asked.filter((x) => x.method === 'PATCH');
+    assert.deepEqual(patched.map((x) => x.at).sort(), ['/repos/anowner/one/pulls/1', '/repos/anowner/two/pulls/2']);
+    //FROM WHAT WAS SAID AT THE CUT, plus the blocks as they now stand.
+    assert.match(patched[0].body.body, /the rest/);
+    assert.equal(patched[0].body.title, 'one sentence');
+});
+
+test('cutting a pair that is already live refreshes it instead of opening a second pull request', async () => {
+    const { actions, asked, pushes } = await anApp({
+        landings: CUT_LIVE,
+        answers: {
+            'PATCH /repos/anowner/one/pulls/1': { status: 200, body: { number: 1 } },
+            'PATCH /repos/anowner/two/pulls/2': { status: 200, body: { number: 2 } }
+        }
+    });
+    const said = await actions.call('prCutMake', { source: 'a', target: 'b', title: 'new words', body: 'a rewritten description' });
+    assert.equal(said.opened, 0);
+    assert.match(said.note, /already cut, so nothing was opened/);
+    assert.ok(!asked.some((x) => x.method === 'POST'), 'a second pull request was opened for a branch that has one');
+    assert.equal(pushes.length, 2);
+    //THE NEW WORDS ARE WHAT THE PULL REQUESTS NOW SAY.
+    const patched = asked.filter((x) => x.method === 'PATCH')[0];
+    assert.equal(patched.body.title, 'new words');
+    assert.match(patched.body.body, /a rewritten description/);
+    const kept = (await actions.call('prCuts', {})).cuts.find((c) => c.source === 'a');
+    assert.equal(kept.said.title, 'new words');
+});
+
+test('a pull request that a failed re-open marked opened:false still counts as live', async () => {
+    //WHAT ACTUALLY HAPPENED: prCutMake was run again on a live pair before it
+    //knew to refresh, GitHub said "Validation Failed" for the pull request
+    //that already existed, and opened:false was merged over the row that
+    //still carried its number. The number is the fact.
+    const clobbered = JSON.parse(JSON.stringify(CUT_LIVE));
+    clobbered['a -> b'].pulls[0].opened = false;
+    clobbered['a -> b'].pulls[0].head = 'someone:a';
+    const { actions, pushes } = await anApp({
+        landings: clobbered,
+        answers: {
+            'PATCH /repos/anowner/one/pulls/1': { status: 200, body: { number: 1 } },
+            'PATCH /repos/anowner/two/pulls/2': { status: 200, body: { number: 2 } }
+        }
+    });
+    const said = await actions.call('prCutRefresh', { source: 'a' });
+    assert.equal(said.refreshed, 2);
+    //AND THE BRANCH IS PUSHED BY ITS OWN NAME, not GitHub's owner:branch.
+    assert.deepEqual(pushes.map((p) => p.branch), ['a', 'a']);
+});
+
+test('with no live cut, refreshing says so and pushes nothing', async () => {
+    const { actions, pushes } = await anApp({ landings: CUT_OUT });
+    const said = await actions.call('prCutRefresh', { source: 'zzz' });
+    assert.equal(said.refreshed, 0);
+    assert.match(said.note, /No live cut/);
+    assert.deepEqual(pushes, []);
+});
+
+test('a cut that never recorded its words is pushed and its description left alone, and it says so', async () => {
+    const bare = JSON.parse(JSON.stringify(CUT_OUT));
+    bare['a -> b'].pulls.forEach((p) => { p.head = 'a'; p.state = 'open'; });
+    const { actions, asked, pushes } = await anApp({ landings: bare });
+    const said = await actions.call('prCutRefresh', { source: 'a', target: 'b' });
+    assert.equal(said.refreshed, 2);
+    assert.equal(pushes.length, 2);
+    assert.ok(!asked.some((x) => x.method === 'PATCH'), 'it composed over a description it did not have the words for');
+    assert.match(said.note, /left as they are/);
+});
+
 test('closing a cut closes every pull request in it, and only "open" or "closed" is a state', async () => {
     const { actions, asked } = await anApp({
         landings: CUT_OUT,
