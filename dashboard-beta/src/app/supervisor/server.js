@@ -941,15 +941,24 @@ async function plugin(imports, register) {
                 arrived: await arrivedSince(a)
             };
 
-            //AND WHAT THIS HOST DID, when asked for. Off by default because it is
-            //the long half and a supervisor mostly wants the short one.
-            if (a.events !== false && a.events !== 'false') {
+            //AND WHAT THIS HOST DID, when asked for. OFF UNLESS ASKED -- the
+            //comment said so and the code included it unless told not to, so
+            //sixty raw events rode along on every waking: 43,000 of a 71,000-
+            //character answer, over the tool limit, saved to a file the
+            //supervisor has no way to read. It worked that waking from `triage`
+            //alone and said so. Pass `events: true` to have them, and they come
+            //bounded: thirty, each line cut to two hundred characters.
+            if (a.events === true || a.events === 'true') {
                 try {
-                    var happened = ((await actions.call('events', { limit: 60 })) || {}).events || [];
+                    var happened = ((await actions.call('events', { limit: 30 })) || {}).events || [];
                     out.happened = happened.map(function (e) {
-                        return { at: e.at, level: e.level, tags: e.tags, text: e.text };
+                        return { at: e.at, level: e.level, tags: e.tags, text: String(e.text || '').slice(0, 200) };
                     });
-                } catch (e) { out.notRead.push('happened — the event stream would not answer'); }
+                } catch (e) {
+                    out.notRead = (out.notRead || []).concat(['happened — the event stream would not answer']);
+                }
+            } else {
+                out.eventsNote = 'The event log is not in this answer; pass events=true for the last thirty lines.';
             }
 
             out.note = said.messages.length
