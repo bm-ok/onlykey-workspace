@@ -200,6 +200,21 @@ module.exports = function issues(theme, okc, remember, shell) {
                     </Note>
                     : null}
 
+                {/* A LIST THAT IS NOT ALL OF THEM SAYS SO, LOUDLY.
+                    This whole list used to be the first hundred of whatever was
+                    there, reported as the list — no error, no warning, because
+                    from inside one request a full page and a last page look
+                    identical. It is paged now, and the page cap is a bound the
+                    plugin decides; a bound nobody is told about is the same
+                    defect with a nicer implementation.
+
+                    `bad` RATHER THAN MUTED. Somebody points at an issue, it is
+                    not on the list, and the answer they get is that it does not
+                    exist — that is not a footnote. */}
+                {said.filter(function (x) { return x.more; }).map(function (x) {
+                    return <Note key={x.on} kind="bad">{x.on + ': ' + x.why}</Note>;
+                })}
+
                 {list == null
                     ? <Empty>Not asked yet — this reads issues from the places chosen under Repos.</Empty>
                     : list.length

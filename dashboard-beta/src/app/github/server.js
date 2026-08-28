@@ -1,5 +1,6 @@
 var https = require('node:https');
 var Many = require('./many');
+var Paged = require('./paged');
 
 //---------------------------------------------------------------------------
 //THE ONE PLACE THAT TALKS TO GITHUB.
@@ -84,6 +85,21 @@ var SAFE = { GET: 1, HEAD: 1 };
 //connection rather than being guessed at again in every pane that wants a list.
 //What a pool IS lives in ./many.js, so a test can use the real one.
 var AT_ONCE = 8;
+
+//HOW MANY PAGES OF ONE LIST THIS WILL READ BEFORE STOPPING AND SAYING SO.
+//
+//TWENTY IS TWO THOUSAND ROWS at a hundred a page, which covers every tracker
+//anybody here is likely to attach and still bounds what one repository can spend
+//of an hourly budget shared by all of them. A sweep of ten places must not be
+//able to disappear into the first one.
+//
+//THE NUMBER IS HERE AND THE MECHANISM IS IN ./paged.js, the same split as
+//AT_ONCE above: how much is too much is a judgement about GitHub and belongs
+//with the plugin that owns the connection.
+//
+//AND HITTING IT IS NOT SILENT -- see ./paged.js. A cap nobody is told about is
+//the same defect as not paging at all, wearing better clothes.
+var MOST_PAGES = 20;
 
 //WHAT IS KEPT OF A RESPONSE, BY NAME. The answer and a few headers that describe
 //it — never the whole header block, which is written to disk and grows whatever
@@ -317,6 +333,12 @@ async function plugin(imports, register) {
     //GitHub and belongs with the plugin that owns the connection.
     var many = Many(AT_ONCE);
 
+    //READING A WHOLE LIST RATHER THAN THE FIRST HUNDRED OF IT. Nothing in this
+    //app followed the `link` header until now: a tracker with five hundred open
+    //issues answered with a hundred and was reported as a hundred, because from
+    //inside one request a full page and a last page look identical.
+    var all = Paged(call, MOST_PAGES);
+
     //---- is it any good ----------------------------------------------------
     //
     //THE ONLY PROOF IS ASKING GITHUB. A token is an opaque string; nothing about
@@ -464,6 +486,10 @@ async function plugin(imports, register) {
             //ASKING FOR MANY THINGS AT ONCE, with the bound decided here rather
             //than by each caller. See above.
             many: many,
+            //AND ASKING FOR ALL OF SOMETHING rather than the first page of it.
+            //Answers `{ items, pages, more, why }`; `more` is true when the list
+            //is longer than what came back, and `why` is the sentence to print.
+            all: all,
             check: check,
             apiHost: function () { return keys.github.apiHost(); }
         },

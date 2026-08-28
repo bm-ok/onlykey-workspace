@@ -198,8 +198,38 @@ async function plugin(imports, register) {
     //to do on a fork, and is why bm-sandbox-b/local-repo-b returns nothing. Read
     //as a failure it reads as "the token cannot see it" and sends somebody to
     //the permissions page for a checkbox on the repository's own settings.
+    //`got` IS EITHER ONE RESPONSE OR A PAGED READ, and both arrive here. A
+    //paged read carries `items` and, when the list was longer than what came
+    //back, `more` and a sentence saying so -- which is the one thing a count
+    //cannot express and the reason this function exists at all.
     function whatItSaid(on, got, what) {
-        var said = { on: on, count: null, off: false, asked: true, why: null };
+        var said = { on: on, count: null, off: false, asked: true, why: null, more: false };
+
+        //---- A LIST THAT WAS READ IN PAGES -------------------------------
+        if (Array.isArray(got.items)) {
+            said.count = got.items.length;
+            //PARTIAL IS NOT THE SAME AS COMPLETE AND MUST NOT PRINT AS IT. This
+            //is the whole defect being fixed: a hundred of five hundred used to
+            //read as five hundred not existing.
+            said.more = !!got.more;
+            said.why = got.why || null;
+            return said;
+        }
+        if (got.ok === false) {
+            said.why = got.why || ('GitHub answered ' + got.status);
+            if (got.status === 410) {
+                said.off = true;
+                said.count = 0;
+                said.why = what === 'issues'
+                    ? 'issues are switched off on this repository'
+                    : 'pull requests are switched off on this repository';
+            }
+            if (got.status === 404) {
+                said.why = 'GitHub says 404 - either it does not exist, or this token was not granted it';
+            }
+            return said;
+        }
+
         if (got.status === 200 && Array.isArray(got.body)) {
             said.count = got.body.length;
             return said;
@@ -489,14 +519,28 @@ async function plugin(imports, register) {
                 //NOT ASKED, and the row says so rather than saying zero. `asked`
                 //is what separates "there is no issues tab here" from "there is
                 //one and it is empty" — they look the same in a count.
-                issuesFrom.push({ on: on, count: 0, off: true, asked: false,
+                //`more: false` STATED RATHER THAN LEFT OFF. Every other row
+                //carries it, and a pane reading `.more` should not get undefined
+                //from one branch and false from the rest — that is how a check
+                //comes to depend on which way a row was built.
+                issuesFrom.push({ on: on, count: 0, off: true, asked: false, more: false,
                     why: 'issues are switched off on this repository' });
                 continue;
             }
             var bits = on.split('/');
-            var got = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/issues?state=open&per_page=100');
+            //ALL OF THEM, NOT THE FIRST HUNDRED. This call was
+            //`per_page=100` and took what came back, so a tracker with five
+            //hundred open issues answered with a hundred and this reported a
+            //hundred -- no error, no warning, and no way to tell from inside one
+            //request that a full page is not a last page.
+            //
+            //IT IS THE COMPLETENESS THAT MATTERS RATHER THAN THE COST. Somebody
+            //points at an issue, it is not on the list, and the answer they get
+            //is that it does not exist.
+            var got = await github.all('/repos/' + bits[0] + '/' + bits[1] + '/issues?state=open');
             issuesFrom.push(whatItSaid(on, got, 'issues'));
-            if (got.status === 200 && Array.isArray(got.body)) {
+            if (got.ok && Array.isArray(got.items)) {
+                got = { status: 200, body: got.items };
                 //NULL UNTIL SOMETHING ANSWERS. An empty array means "asked, and
                 //there are none", which is a different answer from "could not
                 //ask" — and the panes tell them apart.

@@ -7,6 +7,7 @@ const child = require('node:child_process');
 
 const actionsPlugin = require('../../src/app/core/actions/main');
 const statePlugin = require('../../src/app/core/state/main');
+const Paged = require('../../src/app/github/paged');
 const gitPlugin = require('../../src/app/git/server');
 const reposPlugin = require('../../src/app/repositories/repos/server');
 const { refsFor } = require('../../tools/test-parts');
@@ -66,19 +67,31 @@ after(() => {
 //can assert the PROBE happened rather than trusting that it did.
 function aGitHub(answers) {
     const asked = [];
+
+    const call = async (method, at) => {
+        asked.push(method + ' ' + at);
+        //LONGEST PREFIX WINS, so a test can answer `/repos/o/r` and have
+        //`/repos/o/r/branches?per_page=100` still find its own entry.
+        const pre = Object.keys(answers)
+            .filter((k) => at.startsWith(k))
+            .sort((a, b) => b.length - a.length)[0];
+        //AN ANSWER MAY BE A FUNCTION, so a test can answer differently per page.
+        //Needed because a fixed answer carrying a `link` header would point at
+        //itself and page for ever, which tests the cap rather than the paging.
+        if (pre) return typeof answers[pre] === 'function' ? answers[pre](at) : answers[pre];
+        return { status: 404, body: { message: 'nothing said about ' + at } };
+    };
+
     return {
         asked,
         github: {
-            call: async (method, at) => {
-                asked.push(method + ' ' + at);
-                //LONGEST PREFIX WINS, so a test can answer `/repos/o/r` and have
-                //`/repos/o/r/branches?per_page=100` still find its own entry.
-                const pre = Object.keys(answers)
-                    .filter((k) => at.startsWith(k))
-                    .sort((a, b) => b.length - a.length)[0];
-                if (pre) return answers[pre];
-                return { status: 404, body: { message: 'nothing said about ' + at } };
-            },
+            call,
+            //THE REAL PAGING, NOT A STAND-IN FOR IT. Same reason ./prcuts.test.js
+            //uses the real `many`: a version that reads one page passes every
+            //check a paging one does, so a stub here would go on passing on the
+            //day the app stopped following `link` — which is the exact defect it
+            //was written for.
+            all: Paged(call, 20),
             check: async () => ({ ok: true }),
             apiHost: () => 'api.github.com'
         }
@@ -709,6 +722,73 @@ test('a pull request is not counted as an issue', async () => {
 
     assert.equal(row.openIssues, 1, 'a pull request was counted as an issue');
     assert.equal(row.issues[0].number, 7);
+});
+
+//---------------------------------------------------------------------------
+//A TRACKER LONGER THAN ONE PAGE.
+//
+//THE DEFECT THIS COVERS WAS SILENT AND IT WAS ABOUT COMPLETENESS, not cost.
+//Every read was `per_page=100` and nothing anywhere in the app followed the
+//`link` header, so a repository with five hundred open issues answered with a
+//hundred and this reported a hundred — no error, no warning, and no way to tell
+//from inside one request that a full page is not a last page.
+//
+//WHICH MATTERS BECAUSE OF WHAT PEOPLE DO WITH THE LIST. Somebody points at an
+//issue, it is not on the list, and the answer they get is that it does not
+//exist.
+//---------------------------------------------------------------------------
+
+test('all the issues arrive, not the first page of them', async () => {
+    //A HUNDRED AND FIFTY, WHICH IS TWO PAGES. The stand-in hands back a `link`
+    //header exactly as GitHub does, and the second page only exists if
+    //something followed it.
+    const page1 = Array.from({ length: 100 }, (_, i) => ({ number: i + 1, title: 'issue ' + (i + 1), user: { login: 'someone' } }));
+    const page2 = Array.from({ length: 50 }, (_, i) => ({ number: i + 101, title: 'issue ' + (i + 101), user: { login: 'someone' } }));
+
+    const { actions } = await anApp(Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/issues': (at) => (/page=2/.test(at)
+            ? { status: 200, body: page2, headers: {} }
+            : {
+                status: 200, body: page1,
+                headers: { link: '<https://api.github.com/repos/anowner/arepo/issues?per_page=100&page=2>; rel="next"' }
+            })
+    }));
+
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+
+    assert.equal(row.issues.length, 150, 'the tail of the tracker was dropped');
+    //THE LAST ONE BY NUMBER, not just the count: a length alone would pass if
+    //the first page had been counted twice.
+    assert.ok(row.issues.some((i) => i.number === 150), 'the second page was never read');
+
+    //AND THE PLACE DOES NOT CLAIM TO BE SHORT OF ANYTHING. `more` is what says
+    //a list is incomplete, and saying it when it is not would make the warning
+    //worthless the first time somebody saw it.
+    const said = row.issuesFrom.find((x) => x.on === 'anowner/arepo');
+    assert.equal(said.count, 150);
+    assert.equal(said.more, false);
+});
+
+test('and when there are more than it will read, it says so rather than truncating quietly', async () => {
+    //A `link` HEADER THAT NEVER ENDS, which is what a very large tracker looks
+    //like from here. The cap stops it; the point of the assertion is that the
+    //stopping is REPORTED.
+    const page = Array.from({ length: 100 }, (_, i) => ({ number: i + 1, title: 'x', user: { login: 'someone' } }));
+
+    const { actions } = await anApp(Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/issues': () => ({
+            status: 200, body: page,
+            headers: { link: '<https://api.github.com/repos/anowner/arepo/issues?per_page=100&page=99>; rel="next"' }
+        })
+    }));
+
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+
+    const said = row.issuesFrom.find((x) => x.on === 'anowner/arepo');
+    assert.equal(said.more, true, 'a truncated list reported itself as complete');
+    assert.match(said.why, /not all of them/);
 });
 
 //---------------------------------------------------------------------------
