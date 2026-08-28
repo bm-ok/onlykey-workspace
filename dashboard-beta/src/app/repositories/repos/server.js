@@ -1328,7 +1328,7 @@ async function plugin(imports, register) {
                         bt.self + ' ' + bt.head + ' is ' + bt.behind + ' commit(s) behind ' + bt.on + ' ' + bt.base
                             + (bt.ahead ? ', and ' + bt.ahead + ' ahead' : '')
                             + ' — a change that landed there is not on the fork, so anything cut from it now starts '
-                            + 'from before it. Sync the fork to bring ' + bt.head + ' up.',
+                            + 'from before it. Sync fork on its card brings ' + bt.head + ' up, then Pull it here.',
                         imports.inbox.at('Repositories', 'Repos', name),
                         { since: (notes[name] || {}).checked || null, id: name }
                     ));

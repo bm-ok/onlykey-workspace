@@ -367,6 +367,79 @@ module.exports = function repos(theme, okc) {
 
     //---- the detail --------------------------------------------------------
 
+    //---- BEHIND WHERE ITS WORK GOES, AND THE TWO HALVES OF CATCHING UP ------
+    //
+    //THE SYNC BETWEEN THIS HOST AND ITS REMOTE HAD A BUTTON (the Branches card)
+    //AND THE ONE BETWEEN THE REMOTE AND THE FORK ITS WORK GOES TO HAD NONE:
+    //repoForkSync existed as a verb only. After a merge upstream that is the
+    //half that matters first -- the fork is behind by the merge, and pulling
+    //here before syncing the fork fast-forwards to a copy that is itself
+    //behind. So: the fact from the sweep, then the two halves in order.
+    function Behind({ r, onChanged }) {
+        var [busy, setBusy] = useState(null);
+        var bt = r.behindTarget || null;
+        if (!bt) return null;
+
+        function forkSync() {
+            setBusy('fork');
+            okc.call('repoForkSync', { repo: r.repo }).then(function (x) {
+                //THE FACT IS RE-READ, not assumed: the sweep is what says how
+                //far behind, and GitHub has just moved.
+                return okc.call('repositoriesCheck', { repo: r.repo }).then(function () {
+                    setBusy(null); onChanged((x && x.note) || 'Synced.', null);
+                });
+            }, function (e) { setBusy(null); onChanged(e.message, 'bad'); });
+        }
+        function pullHere() {
+            setBusy('here');
+            okc.call('repoSyncBranch', { repo: r.repo, branch: bt.head }).then(
+                function (x) { setBusy(null); onChanged((x && x.note) || 'Pulled.', x && x.moved ? null : 'warn'); },
+                function (e) { setBusy(null); onChanged(e.message, 'bad'); }
+            );
+        }
+
+        var behind = bt.behind > 0;
+        return (
+            <Card>
+                <CardTitle>
+                    <span>Against where its work goes</span>
+                    <Grow />
+                    {bt.why
+                        ? <Badge kind="warn">could not compare</Badge>
+                        : behind
+                            ? <Badge kind="warn">{bt.behind + ' behind'}</Badge>
+                            : <Badge kind="ok">level</Badge>}
+                </CardTitle>
+                <Kv>
+                    <KvRow label="your fork"><Mono>{bt.self + ' ' + bt.head}</Mono></KvRow>
+                    <KvRow label="work goes to"><Mono>{bt.on + ' ' + bt.base}</Mono></KvRow>
+                    <KvRow label="standing">
+                        {bt.why
+                            ? <span className="muted">{bt.why}</span>
+                            : <span>{(bt.behind || 0) + ' commit(s) behind' + (bt.ahead ? ', ' + bt.ahead + ' ahead' : '')}</span>}
+                    </KvRow>
+                    <KvRow label="here">
+                        <span className={r.inStep ? 'ok' : ''}>
+                            {r.inStep === null ? 'not known' : r.inStep ? 'same commit as your fork' : 'behind your fork — pull it here'}
+                        </span>
+                    </KvRow>
+                </Kv>
+                <div className="row" style={{ marginTop: '8px' }}>
+                    <Button kind="ok" disabled={!!busy || !behind} onClick={forkSync}
+                        title={behind
+                            ? 'One call to GitHub: merge ' + bt.on + ' ' + bt.base + ' into the fork’s ' + bt.head + ', the way the Sync fork button does'
+                            : 'The fork is level with where its work goes'}>
+                        {busy === 'fork' ? 'syncing the fork…' : 'Sync fork from ' + bt.on.split('/')[0]}
+                    </Button>
+                    <Button disabled={!!busy || r.inStep === true} onClick={pullHere}
+                        title={r.inStep === true ? 'This host is at the same commit as your fork' : 'Fetch from your remote and fast-forward ' + bt.head + ' here'}>
+                        {busy === 'here' ? 'pulling…' : 'Pull ' + bt.head + ' here'}
+                    </Button>
+                </div>
+            </Card>
+        );
+    }
+
     function Detail({ r, chain, onChanged, stoppedFor }) {
         if (!r) return <Panel><Empty>Pick a repository on the left.</Empty></Panel>;
         var rem = r.remote;
@@ -554,6 +627,8 @@ module.exports = function repos(theme, okc) {
                 ) : null}
 
                 <WhereWorkGoes r={r} chain={chain} onChanged={onChanged} stoppedFor={stoppedFor} />
+
+                <Behind r={r} onChanged={onChanged} />
 
                 {/* NO "Ask GitHub about this one". Everything here verifies
                     itself when the pane is opened, through the etag drawer, and
