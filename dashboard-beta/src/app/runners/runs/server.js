@@ -622,6 +622,77 @@ async function plugin(imports, register) {
         //TWO OF THE FIVE READINGS THROW. Everything downstream treats a
         //successful stop as "the machine is free now", so a machine still
         //running work nobody is watching must never be reported as free.
+        //---- WHAT THE MODEL ON A MACHINE IS DOING, RIGHT NOW -----------------
+        //
+        //`vmRunOutput` ABOVE IS THE RAW LOG and is the right thing to keep: one
+        //JSON object per line, most of them token counts. It is the wrong thing
+        //to put in front of a person.
+        //
+        //RENDERED ON THE MACHINE. The guest already carries `watch.js` — it is
+        //what `okc-watch` pipes through when somebody follows a run in a
+        //terminal — so this asks the machine to render its own log rather than
+        //growing a second renderer here. Two of those would drift, and the copy
+        //on this host would be the one nobody notices is wrong.
+        //
+        //ONE ACTION FOR BOTH KINDS, because the question is the same one: what
+        //is the model on that machine doing. A runner writes a log per run and a
+        //supervisor relinks one file across wakings — which is exactly what lets
+        //somebody watch a supervisor rather than race a button — and both are
+        //`<box>/watch.js` over a file.
+        //
+        //THE LINE COUNT COMES BACK WITH IT so a reader can paint only what is
+        //new. It is the RAW count: the rendered text changes length as a turn is
+        //summarised, and a number that means something different between two
+        //reads is worse than none. Same shape as `vmLog`, which the console pane
+        //already reads this way.
+        undo.push(actions.define('vmWatching', {
+            about: 'What the model on a machine is doing now, rendered as a person can read it',
+            takes: ['name', 'lines'],
+            run: async function (args) {
+                var a = args || {};
+                asking.reachable(a.name, 'what it is doing cannot be read');
+
+                //WHICH KIND OF BOX, ASKED OF THE MACHINE'S OWN RECORD rather
+                //than guessed from its name. A machine tagged `supervisor` is
+                //one; anything else keeps its logs per run.
+                var vm = await imports.ours.get(a.name);
+                var isSupervisor = !!(vm && (vm.tags || []).indexOf('supervisor') >= 0);
+
+                var lines = a.lines == null ? 400 : Number(a.lines);
+                var r = await channel.run(a.name, dispatch.watching(isSupervisor ? 'supervisor' : 'run', lines),
+                    { what: 'reading what ' + a.name + ' is doing', timeout: 60000 });
+
+                //THE COUNT IS THE FIRST LINE THAT IS ONE, WHICH IS NOT THE FIRST
+                //LINE. `channel.run` echoes what it was asked to do as a `$ ...`
+                //line above the output, so reading line zero as the number gave
+                //NaN — which became `of: 0`, which reads as "nothing is running"
+                //while nine kilobytes of rendering sat underneath it. The pane
+                //said the machine was idle in the middle of a turn.
+                //
+                //FOUND BY LOOKING AT THE PANE, not by the number being obviously
+                //wrong: a zero here is a sentence rather than an error.
+                var all = String(r.output == null ? '' : r.output).split('\n');
+                var at = 0;
+                while (at < all.length && !/^\s*\d+\s*$/.test(all[at])) at++;
+
+                var of = at < all.length ? Number(all[at].trim()) : NaN;
+                var text = all.slice(at + 1).join('\n');
+
+                return {
+                    name: a.name,
+                    supervisor: isSupervisor,
+                    //`of` IS HOW MANY RAW LINES THE LOG HAS, not how many are
+                    //below. A caller polls this and paints the difference.
+                    of: isNaN(of) ? 0 : of,
+                    asked: lines,
+                    text: imports.secret.redact(text),
+                    note: (isNaN(of) || of === 0)
+                        ? 'Nothing is running on ' + a.name + ' — there is no log to read yet.'
+                        : null
+                };
+            }
+        }));
+
         undo.push(actions.define('vmRunStop', {
             about: 'Stop a run on a machine, and everything it started',
             takes: ['name', 'run'],

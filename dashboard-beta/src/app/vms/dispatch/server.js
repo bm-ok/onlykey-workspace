@@ -59,6 +59,10 @@ async function plugin(imports, register) {
             checkId: runsOf.checkId,
             stop: runsOf.stop,
             output: runsOf.output,
+            //THE SAME LOG, RENDERED BY THE MACHINE'S OWN watch.js — see
+            //./runs.js. One renderer, on the machine, so a pane and a terminal
+            //show the same thing.
+            watching: runsOf.watching,
             list: runsOf.list,
             runs: runsOf.runs,
 

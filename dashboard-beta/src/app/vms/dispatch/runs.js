@@ -1,4 +1,10 @@
 var quoting = require('../shell/quoting');
+
+//WHERE A SUPERVISOR KEEPS ITS BOX. Required rather than restated: this file
+//already owns `RUNS` and a second spelling of the other one is how the two come
+//to disagree about where a log is. No cycle — ./supervisor.js requires only the
+//quoting helper above.
+var SUPERVISOR = require('./supervisor').SUPERVISOR;
 var q = quoting.q;
 
 //---------------------------------------------------------------------------
@@ -102,6 +108,45 @@ function output(id, lines) {
         + ' || echo "okc: no output for that run"';
 }
 
+//---- AND THE SAME LOG AS A PERSON CAN READ IT ------------------------------
+//
+//THE RAW ONE IS `stream-json`, which is what `output` above returns: one JSON
+//object per line, most of them token counts. It is the right thing to keep and
+//the wrong thing to show anybody.
+//
+//RENDERED ON THE MACHINE, BY THE MACHINE'S OWN `watch.js` — the same program
+//`okc-watch` pipes through when somebody follows a run in a terminal. Not a
+//second renderer on this host: two of those would drift, and the one on the
+//host would be the one nobody notices is wrong.
+//
+//THE COUNT FIRST, THEN THE TEXT. A reader that polls needs to know how much it
+//has already seen, and the raw line count is the only number that means the
+//same thing between two reads — the rendered length changes as a turn is
+//summarised. Same shape as `vmLog` and the console pane that reads it.
+//
+//A SUPERVISOR'S IS ONE FILE, RELINKED. A run happens once and its log is named
+//after it; a supervisor wakes over and over on one machine, so what it writes
+//is `current.log` in its own box and this reads that by name — which is what
+//lets somebody open this between wakes and already be in place when the next
+//one starts.
+function watching(where, lines) {
+    var n = Number(lines);
+    if (!(n > 0)) n = 400;
+
+    var box = where === 'supervisor' ? SUPERVISOR : RUNS;
+    var log = where === 'supervisor' ? box + '/current.log' : box + '/current/out.log';
+
+    return [
+        'if [ ! -f "' + log + '" ]; then echo 0; echo "okc: nothing is running here"; exit 0; fi',
+        'wc -l < "' + log + '"',
+        //`|| true` BECAUSE A HALF-WRITTEN LAST LINE IS ORDINARY. The file is
+        //being appended to while this reads it, so the renderer meeting a
+        //truncated JSON object is the normal case rather than a fault, and it
+        //must not take the whole read down with it.
+        'tail -n ' + Math.floor(n) + ' "' + log + '" | node "' + box + '/watch.js" 2>/dev/null || true'
+    ].join('\n');
+}
+
 //---- every run on the machine ----------------------------------------------
 //
 //THREE STATES, NOT TWO. A missing `status` used to mean running, full stop,
@@ -201,3 +246,4 @@ module.exports = {
     runs: runs,
     q: q
 };
+module.exports.watching = watching;

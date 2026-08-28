@@ -132,6 +132,129 @@ module.exports = function terminal(theme, okc, shell) {
         );
     }
 
+    //---- what the model on a machine is doing ---------------------------------
+    //
+    //THE OTHER TERMINAL THIS TAB CAN HONESTLY SHOW, and for the same reason as
+    //the console above: it is a FILE being read, not bytes travelling both ways.
+    //A shell needs a relay this half does not have; a log does not.
+    //
+    //RENDERED ON THE MACHINE, BY THE MACHINE. `vmWatching` asks the guest to run
+    //its own `watch.js` over its own log — the same program `okc-watch` pipes
+    //through when somebody follows a run in a terminal — so what is on this pane
+    //and what is in a terminal are the same rendering rather than two that drift.
+    //
+    //ONE TAB PER MACHINE, KEPT ACROSS TURNS. A run happens once; a supervisor
+    //wakes over and over on one machine and relinks one log, so a pane opened
+    //between wakes is already in place when the next one starts. That is the
+    //difference between watching a supervisor and racing a button.
+    //
+    //READ-ONLY. No `onData`, so ../ui/xterm gives it no cursor: a blinking cursor
+    //on something nothing can be typed into is a promise this cannot keep.
+    function Doing({ vms }) {
+        var [on, setOn] = useState(null);
+        var [err, setErr] = useState(null);
+        var [note, setNote] = useState(null);
+        var term = useRef(null);
+        var seen = useRef(0);
+
+        //A MACHINE THAT IS DIALLED IN. Anything else has no log to read and no
+        //way to be asked for one.
+        var reachable = (vms || []).filter(function (v) { return v.connected; });
+
+        useEffect(function () {
+            if (!on) return;
+
+            var alive = true;
+            seen.current = 0;
+            if (term.current) term.current.clear();
+
+            async function read() {
+                try {
+                    var got = await okc.call('vmWatching', { name: on, lines: 400 });
+                    if (!alive) return;
+
+                    setErr(null);
+
+                    //NOTHING RUNNING IS AN ANSWER, and a different one from a
+                    //machine that cannot be reached.
+                    if (got.note) { setNote(got.note); return; }
+
+                    //ONLY WHAT IS NEW, AND THE COUNT IS THE RAW ONE. The
+                    //rendering shortens as a turn is summarised, so its length
+                    //means something different between two reads; the number of
+                    //raw lines does not. Nothing new means nothing is written,
+                    //which is what keeps a selection and a scroll position.
+                    if (got.of === seen.current) return;
+
+                    //THE WHOLE RENDERING, REWRITTEN, THE FIRST TIME ONLY. After
+                    //that only the difference — worked out in raw lines and
+                    //applied to rendered ones, which is approximate on purpose:
+                    //too much is a repeated line, too little is a gap, and a
+                    //repeat is the survivable one.
+                    var text = String(got.text || '');
+                    if (!seen.current) {
+                        term.current && term.current.write(text.split('\n').join('\r\n'));
+                    } else {
+                        var fresh = text.split('\n');
+                        var behind = Math.max(0, got.of - seen.current);
+                        term.current && term.current.write(
+                            fresh.slice(Math.max(0, fresh.length - behind)).join('\r\n') + '\r\n'
+                        );
+                        if (behind > fresh.length) {
+                            setNote(behind - fresh.length + ' line(s) went by faster than this could read them');
+                        }
+                    }
+
+                    seen.current = got.of;
+                } catch (e) {
+                    if (alive) setErr(e.message);
+                }
+            }
+
+            read();
+            //THE SAME CADENCE AS THE CONSOLE. A model's turn is minutes long and
+            //the interesting parts arrive in bursts, so a second is fast enough
+            //to feel live and slow enough to cost nothing.
+            var t = setInterval(read, 1500);
+            return function () { alive = false; clearInterval(t); };
+        }, [on]);
+
+        return (
+            <Panel>
+                <TitleRow>
+                    <span>What a machine is doing</span>
+                    <Grow />
+                    {on ? <Badge kind="run">{on}</Badge> : null}
+                </TitleRow>
+
+                {!reachable.length
+                    ? <Empty>No machine is dialled in, so there is nothing being run to watch.</Empty>
+                    : <Row>
+                        {reachable.map(function (v) {
+                            return (
+                                <Button key={v.name} kind={v.name === on ? 'ok' : undefined}
+                                    onClick={function () { setOn(v.name === on ? null : v.name); setNote(null); }}>
+                                    {v.name}
+                                </Button>
+                            );
+                        })}
+                    </Row>}
+
+                {err ? <Note kind="bad">{err}</Note> : null}
+                {note ? <Note kind="warn">{note}</Note> : null}
+
+                {on
+                    ? <Term ref={term} height={420} />
+                    : reachable.length
+                        ? <Note>Pick a machine to watch what its model is doing &mdash; what it reached for,
+                            what came back, and what it said. A supervisor keeps one log across every waking,
+                            so this stays in place between turns rather than needing to be opened at the
+                            right moment.</Note>
+                        : null}
+            </Panel>
+        );
+    }
+
     function Terminal() {
         var q = okc.use('vmList', {}, 8000);
 
@@ -190,6 +313,13 @@ module.exports = function terminal(theme, okc, shell) {
 
                     <Button onClick={function () { shell.go('Worker', 'Board'); }}>Go to the tasks</Button>
                 </Panel>
+
+                {/* FIRST, BECAUSE IT IS THE ONE SOMEBODY COMES HERE FOR. A
+                    console answers "did this machine boot"; this answers "what
+                    is the model doing right now", which is the question asked
+                    while something is running rather than while it is being
+                    built. */}
+                <Doing vms={(q.state && q.state.vms) || []} />
 
                 <Console vms={(q.state && q.state.vms) || []} />
 
