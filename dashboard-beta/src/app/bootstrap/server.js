@@ -97,7 +97,11 @@ async function plugin(imports, register) {
     //whose data directory has gone has no export of their own to point at, and
     //asking them to find a folder inside an app they just reinstalled is asking
     //them to already know the answer.
-    var shipped = path.join(__dirname, 'bootstrap');
+    //A FILE AND NOT A FOLDER, because the repo kept the set twice and two
+    //copies of anything drift the moment one is edited. The tar is the one that
+    //gets RESTORED FROM, so it is the one that is true — and a folder of the
+    //same documents beside it was a second answer to the same question.
+    var shipped = path.join(__dirname, 'okc-bootstrap.tar');
 
     //---- PUTTING A SET BACK, WHEREVER IT WAS READ FROM ---------------------
     //
@@ -167,6 +171,52 @@ async function plugin(imports, register) {
         };
     }
 
+    //---- A BUNDLE THAT ARRIVED AS BYTES ------------------------------------
+    //
+    //THE SAME SHAPE `bundle.read` HANDS BACK, so one importer serves every way
+    //of getting at a set and there is nowhere for a folder and a file to start
+    //meaning different things.
+    function readTar(raw) {
+        var seen = imports.archive.inside(raw);
+        if (seen.unreadable) {
+            throw new Error('That file is not a bundle this app wrote: ' + seen.unreadable);
+        }
+
+        var manifestEntry = imports.archive.find(seen.entries, 'library.json');
+        if (!manifestEntry) {
+            throw new Error('There is no library.json in that file, so it is not a bundle. The manifest '
+                + 'is what says which of the files in it belong to the set.');
+        }
+
+        var manifest;
+        try { manifest = JSON.parse(imports.archive.text(manifestEntry)); }
+        catch (e) { throw new Error('The manifest in that file could not be read: ' + e.message); }
+
+        //THE SAME SHAPE `bundle.read` HANDS BACK, so one importer serves
+        //both doors and there is nowhere for the two to disagree about
+        //what a bundle means.
+        var had = { kinds: {}, skills: [] };
+
+        Object.keys(FOLDERS).forEach(function (kind) {
+            had.kinds[kind] = ((manifest.kinds || {})[kind] || []).map(function (e) {
+                var want = FOLDERS[kind] + '/' + safe(e.id) + SUFFIXES[kind];
+                var found = imports.archive.find(seen.entries, want);
+                if (!found) {
+                    throw new Error('The manifest lists the ' + kind + ' "' + e.id + '" and there is no '
+                        + want + ' in the file. Importing it would write an empty one.');
+                }
+                return Object.assign(carried(kind, e), { body: imports.archive.text(found) });
+            });
+        });
+
+        (manifest.skills || []).forEach(function (sk) {
+            var found = imports.archive.find(seen.entries, 'skills/' + safe(sk.which) + '.md');
+            if (!found) throw new Error('The manifest lists the skill "' + sk.which + '" and it is not in the file.');
+            had.skills.push({ which: sk.which, title: sk.title || sk.which, text: imports.archive.text(found) });
+        });
+        return had;
+    }
+
     var undo = [];
     if (actions) {
         undo.push(actions.define('bootstrap', {
@@ -179,7 +229,7 @@ async function plugin(imports, register) {
                 counts.skill = here.skills.length;
 
                 var have = false;
-                try { have = fs.statSync(path.join(shipped, 'library.json')).isFile(); }
+                try { have = fs.statSync(shipped).isFile(); }
                 catch (e) { have = false; }
 
                 return {
@@ -305,50 +355,13 @@ async function plugin(imports, register) {
                 try { raw = Buffer.from(String(a.bytes || ''), 'base64'); }
                 catch (e) { throw new Error('That was not a bundle: the bytes could not be read.'); }
 
-                var seen = imports.archive.inside(raw);
-                if (seen.unreadable) {
-                    throw new Error('That file is not a bundle this app wrote: ' + seen.unreadable);
-                }
-
-                var manifestEntry = imports.archive.find(seen.entries, 'library.json');
-                if (!manifestEntry) {
-                    throw new Error('There is no library.json in that file, so it is not a bundle. The manifest '
-                        + 'is what says which of the files in it belong to the set.');
-                }
-
-                var manifest;
-                try { manifest = JSON.parse(imports.archive.text(manifestEntry)); }
-                catch (e) { throw new Error('The manifest in that file could not be read: ' + e.message); }
-
-                //THE SAME SHAPE `bundle.read` HANDS BACK, so one importer serves
-                //both doors and there is nowhere for the two to disagree about
-                //what a bundle means.
-                var had = { kinds: {}, skills: [] };
-
-                Object.keys(FOLDERS).forEach(function (kind) {
-                    had.kinds[kind] = ((manifest.kinds || {})[kind] || []).map(function (e) {
-                        var want = FOLDERS[kind] + '/' + safe(e.id) + SUFFIXES[kind];
-                        var found = imports.archive.find(seen.entries, want);
-                        if (!found) {
-                            throw new Error('The manifest lists the ' + kind + ' "' + e.id + '" and there is no '
-                                + want + ' in the file. Importing it would write an empty one.');
-                        }
-                        return Object.assign(carried(kind, e), { body: imports.archive.text(found) });
-                    });
-                });
-
-                (manifest.skills || []).forEach(function (sk) {
-                    var found = imports.archive.find(seen.entries, 'skills/' + safe(sk.which) + '.md');
-                    if (!found) throw new Error('The manifest lists the skill "' + sk.which + '" and it is not in the file.');
-                    had.skills.push({ which: sk.which, title: sk.title || sk.which, text: imports.archive.text(found) });
-                });
-
+                var had = readTar(raw);
                 return await putItBack(had, a.over === true || a.over === 'over');
             }
         }));
 
         undo.push(actions.define('bootstrapImport', {
-            about: 'Read a folder written by bootstrapExport and put what is in it here. Everything arrives '
+            about: 'Read a bundle — a folder or a saved file — and put what is in it here. Everything arrives '
                 + 'waiting to be read',
             takes: ['from', 'over'],
             run: async function (args) {
@@ -367,7 +380,20 @@ async function plugin(imports, register) {
                 var at = String(a.from == null ? '' : a.from).trim();
                 if (!at) throw new Error('Say which folder to read.');
 
-                var had = bundle.read(at);
+                //---- A FOLDER OR A FILE, AND IT IS TOLD APART BY LOOKING --
+                //
+                //THE SET THAT SHIPS IS A TAR NOW, and the pane restores from it
+                //by naming its path — so this door has to take both. Deciding by
+                //what is actually THERE rather than by the suffix: a bundle
+                //saved without one is still a bundle, and a folder called
+                //`x.tar` is still a folder.
+                var isFile = false;
+                try { isFile = fs.statSync(at).isFile(); }
+                catch (e) {
+                    throw new Error('There is nothing at "' + at + '" to read.');
+                }
+
+                var had = isFile ? readTar(fs.readFileSync(at)) : bundle.read(at);
                 var over = a.over === true || a.over === 'over';
 
                 return Object.assign({ from: at }, await putItBack(had, over));

@@ -365,3 +365,40 @@ test('a manifest naming a body that is not in the file is refused', async () => 
 
     await assert.rejects(() => call('bootstrapFromFile', { bytes: short.toString('base64') }), /no contracts/);
 });
+
+test('a bundle named by path may be a saved file as well as a folder', async () => {
+    await aLibrary();
+    const made = await call('bootstrapFile', {});
+
+    //THE SET THAT SHIPS WITH THE APP IS A TAR, and the pane restores from it by
+    //naming its path — so the door that takes a path has to take both shapes.
+    const saved = path.join(bundleAt + '-file.tar');
+    fs.mkdirSync(path.dirname(saved), { recursive: true });
+    fs.writeFileSync(saved, Buffer.from(made.bytes, 'base64'));
+
+    await library.contracts.write([]);
+    const said = await call('bootstrapImport', { from: saved });
+
+    assert.equal(said.wrote.contract, 1);
+    assert.equal((await call('contract', { id: 'rules' })).text, 'do not push');
+});
+
+test('told apart by what is there, not by the name on the end', async () => {
+    await aLibrary();
+
+    //A FOLDER CALLED `.tar` IS STILL A FOLDER, and a bundle saved without a
+    //suffix is still a bundle. Deciding on the suffix would get both wrong.
+    const oddly = bundleAt + '.tar';
+    await call('bootstrapExport', { to: oddly });
+    await library.contracts.write([]);
+
+    const said = await call('bootstrapImport', { from: oddly });
+    assert.equal(said.wrote.contract, 1);
+});
+
+test('a path with nothing at it says so, rather than reading as an empty bundle', async () => {
+    await assert.rejects(
+        () => call('bootstrapImport', { from: path.join(bundleAt, 'nowhere-at-all') }),
+        /nothing at/
+    );
+});

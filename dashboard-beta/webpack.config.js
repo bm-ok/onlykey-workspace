@@ -135,7 +135,13 @@ module.exports = (env, argv = {}) => {
         //can be brought back up from. Shipped rather than generated, because the
         //moment it is needed is the moment there is nothing here to generate it
         //from -- see src/app/bootstrap.
-        { from: path.join(__dirname, 'bootstrap'), to: 'bootstrap' },
+        //
+        //ONE FILE AND NOT A FOLDER OF THE SAME DOCUMENTS. The repo held both for
+        //a day and two copies of anything drift the moment one is edited; the
+        //tar is the one that gets restored FROM, so it is the one that is true.
+        //It is pinned `binary` in .gitattributes, because a checkout that
+        //"fixed" the line endings inside it would break its own checksums.
+        { from: path.join(__dirname, 'okc-bootstrap.tar'), to: 'okc-bootstrap.tar' },
 
         //THE GIT HOOK, WHICH RUNS ON THIS HOST AND IS THE THING THAT REFUSES.
         //
