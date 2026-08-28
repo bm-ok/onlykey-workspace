@@ -103,7 +103,18 @@ async function plugin(imports, register) {
     //EVERYTHING INTERESTING ABOUT A CONNECTION HAPPENS AFTER IT IS ACCEPTED,
     //and none of it needs TLS to be checked — so it is ./session.js, and what
     //is left here is the three lines of node that make a server.
+    //EVERY OPEN SOCKET, so close() can end them. `server.close()` only stops
+    //ACCEPTING; a connection already up keeps the port bound until it ends,
+    //and a guest's channel is deliberately long-lived. So on every save of this
+    //half the old listener sat on 7385 with one live socket, the new half got
+    //EADDRINUSE, and the events said "nothing is listening for machines". A
+    //machine that dropped and dialled again could not get in until the whole
+    //app was restarted -- twelve hours of "starting up, not dialled in yet".
+    var open = new Set();
+
     function onConnection(socket) {
+        open.add(socket);
+        socket.once('close', function () { open.delete(socket); });
         makeSession(socket, { say: log.on, roster: roster, jobs: jobs });
     }
 
@@ -143,9 +154,19 @@ async function plugin(imports, register) {
     //reads to find out why a machine went quiet.
     function close(why) {
         roster.dropAll(why || 'this host is shutting down');
+        //ENDED, NOT ONLY NO LONGER ACCEPTED. The guest reconnects on its own;
+        //what it must not do is keep the old half's port from the new half.
+        open.forEach(function (socket) { try { socket.destroy(); } catch (e) { /* already gone */ } });
+        open.clear();
         return new Promise(function (done) {
             if (!server) return done();
-            server.close(function () { server = null; done(); });
+            var settled = false;
+            function finish() { if (settled) return; settled = true; server = null; done(); }
+            server.close(finish);
+            //AND NOT FOR EVER. A close that never calls back is a reload that
+            //never finishes; two seconds is longer than any socket takes to go.
+            var giveUp = setTimeout(finish, 2000);
+            if (giveUp.unref) giveUp.unref();
         });
     }
 
