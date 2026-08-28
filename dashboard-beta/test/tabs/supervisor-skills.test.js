@@ -21,13 +21,17 @@ const versionsPlugin = require('../../src/app/core/versions/server');
 //guest: it is fetched from this host at the head of every turn.
 //---------------------------------------------------------------------------
 
-let dir, kept, versions, defined, asked;
+let dir, kept, mineDir, versions, defined, asked;
 
 //A REAL DIRECTORY WITH REAL FILES IN IT, because what this does is stat and read
 //them — and the two answers that matter are "how big and when" and "the text".
 function aHostWith(files) {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-skills-'));
     kept = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-skills-kept-'));
+    //THE WORKSPACE'S OWN PROVISION FOLDER, kept apart from `dir` on purpose:
+    //a test where read-from and written-to are the same folder cannot tell
+    //the two apart, which is the whole thing that went wrong.
+    mineDir = fs.mkdtempSync(path.join(os.tmpdir(), 'okc-skills-mine-'));
     Object.keys(files).forEach((name) => fs.writeFileSync(path.join(dir, name), files[name]));
 
     const STAGES = {
@@ -90,14 +94,31 @@ function aHostWith(files) {
         versions: versions,
         provision: {
             STAGES,
+            //WHERE A PERSON'S OWN COPY GOES, which is NOT where one is read
+            //from. A skill is read off a search path and written to the
+            //workspace's own drawer -- writing back over whichever file it had
+            //read is what put an edit inside a build output, where the next
+            //rebuild silently reverted it.
+            keptFor: async (stage) => path.join(mineDir, STAGES[stage]),
+            freshen: async () => {},
             //THE REAL ONE THROWS when a stage is not on the search path, and the
             //list has to survive that rather than take the whole answer down.
             fileFor: (vm, stage) => {
                 asked.push({ vm, stage });
                 const name = (((vm && vm.spec) || {}).scripts || {})[stage] || STAGES[stage];
-                const at = path.join(dir, name || '');
-                if (!name || !fs.existsSync(at)) throw new Error('There is no provisioning script called "' + name + '".');
-                return at;
+                if (!name) throw new Error('There is no provisioning script called "' + name + '".');
+
+                //THE SEARCH PATH, IN THE ORDER THE REAL ONE USES IT: what a
+                //person wrote, then what the app ships. Modelling only the
+                //second made a second save unable to see what the first one had
+                //written, so "nothing changed, so nothing was written" could
+                //never happen -- which is the one behaviour that tells a save
+                //apart from a no-op.
+                for (const where of [mineDir, dir]) {
+                    const at = path.join(where, name);
+                    if (fs.existsSync(at)) return at;
+                }
+                throw new Error('There is no provisioning script called "' + name + '".');
             }
         }
     };
@@ -273,10 +294,10 @@ test('a save is refused while the window says it is holding unsaved edits', asyn
         /Only the window/);
 
     hold.run({ which: 'supervisor', holding: true });
-    assert.throws(() => save.run({ which: 'supervisor', text: good }), /unsaved edits/);
+    await assert.rejects(() => save.run({ which: 'supervisor', text: good }), /unsaved edits/);
 
     //AND FORCE SAYS WHAT IT TRAMPLED, rather than saving quietly.
-    const forced = save.run({ which: 'supervisor', text: good, force: true });
+    const forced = await save.run({ which: 'supervisor', text: good, force: true });
     assert.equal(forced.saved, true);
     assert.equal(forced.forced, true, 'it saved over unsaved edits and did not say so');
 
@@ -292,9 +313,9 @@ test('and a skill without frontmatter is refused, because the CLI would ignore i
     //works from the wake brief alone — which reads as a model that has stopped
     //following instructions, and is the most expensive way to find a missing
     //header.
-    assert.throws(() => save.run({ which: 'supervisor', text: '# Supervising\n\nNo frontmatter.\n' }),
+    await assert.rejects(() => save.run({ which: 'supervisor', text: '# Supervising\n\nNo frontmatter.\n' }),
         /frontmatter/);
-    assert.throws(() => save.run({ which: 'supervisor', text: '   \n' }),
+    await assert.rejects(() => save.run({ which: 'supervisor', text: '   \n' }),
         /nothing in it/);
 });
 
@@ -339,7 +360,7 @@ test('a save keeps a copy of what was written, and it reads back', async () => {
     const skills = await loaded(ALL);
     assert.equal(defined.get('skillVersions').run({ which: 'supervisor' }).versions.length, 0);
 
-    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+    await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
 
     const said = defined.get('skillVersions').run({ which: 'supervisor' });
     assert.equal(said.versions.length, 1);
@@ -353,8 +374,8 @@ test('a save keeps a copy of what was written, and it reads back', async () => {
 
 test('a second save keeps what changed, against what was written before it', async () => {
     const skills = await loaded(ALL);
-    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
-    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL.replace('One.', 'One.\nAnd two.') });
+    await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+    await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL.replace('One.', 'One.\nAnd two.') });
 
     const said = defined.get('skillVersions').run({ which: 'supervisor' });
     assert.equal(said.versions.length, 2);
@@ -365,8 +386,8 @@ test('a second save keeps what changed, against what was written before it', asy
 
 test('a save that changes nothing keeps nothing, because nothing was written', async () => {
     const skills = await loaded(ALL);
-    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
-    const again = defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+    await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+    const again = await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
 
     assert.equal(again.saved, false);
     assert.equal(defined.get('skillVersions').run({ which: 'supervisor' }).versions.length, 1);
@@ -374,7 +395,7 @@ test('a save that changes nothing keeps nothing, because nothing was written', a
 
 test('each skill has its own past, and they do not share one', async () => {
     const skills = await loaded(ALL);
-    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+    await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
 
     //ALL THREE ARE THIS HOST'S, so the id is the plain name — no workspace in
     //front of it, unlike a job. What must still hold is that they are three
@@ -386,7 +407,7 @@ test('each skill has its own past, and they do not share one', async () => {
 
 test('the listing says which one has something waiting and how much is kept', async () => {
     const skills = await loaded(ALL);
-    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+    await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
 
     const rows = skills.run({}).skills;
     const sup = rows.find((r) => r.which === 'supervisor');
@@ -400,8 +421,8 @@ test('the listing says which one has something waiting and how much is kept', as
 
 test('an older version is read by the moment it was written, and the newest by default', async () => {
     const skills = await loaded(ALL);
-    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
-    defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL.replace('One.', 'Two.') });
+    await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL });
+    await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL.replace('One.', 'Two.') });
 
     const all = defined.get('skillVersions').run({ which: 'supervisor' }).versions;
     const first = all[all.length - 1];
@@ -463,7 +484,7 @@ test('rewriting a skill is refused down the pipe, because a save here is an appr
     const save = defined.get('skillSave');
 
     for (const mark of ['_overTheWire', '_driven']) {
-        assert.throws(
+        await assert.rejects(
             () => save.run({ which: 'supervisor', text: A_SKILL, [mark]: true }),
             /done in the window/,
             mark + ' rewrote a skill'
@@ -480,7 +501,7 @@ test('a drill may still do both, exactly as it may for a contract', async () => 
     //something it can then dispatch, and the app being ported from draws the
     //same line — see ../../src/app/library/server.js.
     const skills = await loaded(ALL);
-    const said = defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL, _fromTest: true });
+    const said = await defined.get('skillSave').run({ which: 'supervisor', text: A_SKILL, _fromTest: true });
     assert.equal(said.saved, true);
 });
 

@@ -76,7 +76,7 @@ var header = require('./header');
 //"what does building a machine actually need" is not a question the source can
 //answer. Here it is a list, it is enforced, and a missing one does not build.
 plugin.consumes = ['app', 'log', 'ours', 'channel', 'vbox', 'dataDir', 'tls', 'cron', 'guestApi',
-    'ssh', 'workspace'];
+    'ssh', 'workspace', 'state'];
 plugin.provides = ['provision'];
 async function plugin(imports, register) {
     var log = imports.log.on('vm');
@@ -134,7 +134,46 @@ async function plugin(imports, register) {
         return projectDir;
     }
 
-    var scripts = makeScripts({ appDir: appDir, workspaceDir: function () { return projectDir; } });
+    //---- AND WHERE A PERSON'S OWN COPY IS KEPT -----------------------------
+    //
+    //THE WORKSPACE'S DRAWER, beside its jobs — which is where everything else
+    //somebody authors already lives. A skill written at the window used to be
+    //saved back over whichever file it had been READ from, and in a checkout
+    //that is the app's own copy inside a build output: the next rebuild copied
+    //the shipped one over it and the edit was gone with nothing said.
+    //
+    //THE SAME SHAPE AS `projectDir` ABOVE, and for the same reason: which
+    //workspace is open is not known when this is built and changes when
+    //somebody opens another, so ./scripts.js is handed a function.
+    var keptDir = null;
+
+    async function noteKeptDir() {
+        try {
+            var at = await imports.state.here.where();
+            keptDir = at ? path.join(at, 'provision') : null;
+        } catch (e) {
+            //NO WORKSPACE OPEN IS NOT A FAULT, exactly as above: `searchPath`
+            //drops a folder that is not there, and the app's shipped copy
+            //answers instead.
+            keptDir = null;
+        }
+        return keptDir;
+    }
+
+    //BOTH TOGETHER, BECAUSE THEY ARE ONE QUESTION -- which workspace is open.
+    //Refreshing one and not the other is how a machine gets this project's
+    //scripts and last project's skills.
+    async function noteWhere() {
+        await noteWhere();
+        await noteKeptDir();
+        return { project: projectDir, kept: keptDir };
+    }
+
+    var scripts = makeScripts({
+        appDir: appDir,
+        workspaceDir: function () { return projectDir; },
+        keptDir: function () { return keptDir; }
+    });
 
     var spec = makeSpec({
         //ISSUED BY THE THING THAT CHECKS THEM. A token this app makes and a
@@ -295,7 +334,7 @@ async function plugin(imports, register) {
         //WHICH WORKSPACE'S SCRIPTS, ASKED PER REQUEST. See ./guestapi.js: a
         //machine asks for these long after it was made, and this half is
         //rebuilt on every save in between.
-        freshen: noteProjectDir,
+        freshen: noteWhere,
 
         //WHAT A RENDERED SCRIPT IS TOLD ABOUT THIS HOST. Asked at the moment it
         //is rendered rather than remembered: the address can change between one
@@ -438,6 +477,25 @@ async function plugin(imports, register) {
             render: scripts.render,
             raw: scripts.raw,
             fileFor: scripts.fileFor,
+
+            //---- WHERE A PERSON'S OWN COPY GOES, ASKED RATHER THAN GUESSED ---
+            //
+            //A CALLER THAT WRITES ONE NEEDS THIS AND MUST NOT WORK IT OUT. The
+            //search path is this file's arrangement -- what a person wrote, then
+            //the project's, then the app's shipped copy -- and a writer that
+            //derived its own path would be a second opinion about it, right
+            //until the day the two disagreed.
+            //
+            //IT IS AWAITED, because which workspace is open changes and the
+            //answer is refreshed rather than held.
+            keptFor: async function (stage) {
+                await noteWhere();
+                if (!keptDir) return null;
+                var name = scripts.STAGES[stage];
+                if (!name) throw new Error('"' + stage + '" is not a provisioning stage.');
+                return path.join(keptDir, name);
+            },
+            freshen: noteWhere,
             has: scripts.has,
             list: scripts.list,
             resolve: scripts.resolve,

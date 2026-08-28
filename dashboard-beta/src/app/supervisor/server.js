@@ -1,4 +1,5 @@
 var fs = require('fs');
+var path = require('path');
 
 var makeGuestApi = require('./guestapi');
 var makeTodos = require('./todos');
@@ -1770,7 +1771,10 @@ async function plugin(imports, register) {
         //command line outright, so nothing outside can use them to claim
         //somebody else wrote something.
         takes: ['which', 'text', 'from', 'force', 'by', 'why'],
-        run: function (args) {
+        //ASYNC BECAUSE WHERE A PERSON'S COPY GOES IS ASKED, NOT DERIVED. See
+        //../vms/provision's `keptFor`: which workspace is open changes, so the
+        //answer is refreshed rather than held.
+        run: async function (args) {
             var a = args || {};
             var which = String(a.which || 'supervisor');
             var one = skillNamed(which);
@@ -1845,18 +1849,45 @@ async function plugin(imports, register) {
                     + 'as a model that has stopped following instructions.');
             }
 
+            //---- WHAT IT SAYS NOW, AND WHERE THE NEW ONE GOES ------------
+            //
+            //THESE ARE NOT THE SAME FILE, AND THAT IS THE FIX. This used to
+            //write back over whichever file it had READ, which in a checkout is
+            //the app's own shipped copy inside a build output: the next rebuild
+            //copied the source over it and an edit made at the window was gone
+            //with nothing said. It was found by looking, after two skills had
+            //been rewritten and approved.
+            //
+            //EVERYTHING ELSE A PERSON AUTHORS ALREADY LIVES IN THE WORKSPACE'S
+            //DRAWER -- its jobs, their scripts, its contracts and prompts -- and
+            //what is checked in is a shipped DEFAULT. Skills were the one
+            //exception and are not any more.
+            //
+            //READ FROM WHEREVER IT RESOLVES, WRITTEN TO OURS. The comparison
+            //below is against what is actually SERVED, which may still be the
+            //app's copy the first time somebody rewrites one; the write goes to
+            //the copy that will answer next time.
             var file = skillFile(one.stage);
             var was = '';
             try { was = fs.readFileSync(file, 'utf8'); }
             catch (e) { /* new, which is allowed */ }
+
+            var mine = await imports.provision.keptFor(one.stage);
+            if (!mine) {
+                throw new Error('No workspace is open, so there is nowhere of your own to keep ' + one.title
+                    + '. It is kept beside that workspace’s jobs, the same as everything else written '
+                    + 'here — open one and try again.');
+            }
 
             if (was === body) {
                 return { which: which, saved: false, characters: body.length,
                     note: 'Nothing changed, so nothing was written.' };
             }
 
-            try { fs.writeFileSync(file, body); }
-            catch (e) { throw new Error('Could not write ' + one.title + ': ' + e.message); }
+            try {
+                fs.mkdirSync(path.dirname(mine), { recursive: true });
+                fs.writeFileSync(mine, body);
+            } catch (e) { throw new Error('Could not write ' + one.title + ': ' + e.message); }
 
             //---- AND A COPY OF WHAT WAS WRITTEN --------------------------
             //
@@ -1903,7 +1934,7 @@ async function plugin(imports, register) {
                 was: was.length,
                 characters: body.length,
                 forced: trampled,
-                where: file,
+                where: mine,
                 note: trampled
                     ? 'Saved, over unsaved edits that were open in the window. Those are gone, and the window '
                         + 'will reload and say so. The next waking fetches this — nothing needs restarting.'

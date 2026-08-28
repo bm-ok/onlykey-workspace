@@ -121,6 +121,28 @@ module.exports = function scripts(deps) {
         return at || null;
     }
 
+    //---- AND WHAT A PERSON WROTE AT THE WINDOW, WHICH BEATS BOTH ------------
+    //
+    //THE RULE THE REST OF THIS APP ALREADY FOLLOWS. A contract, a prompt, a
+    //job's script -- everything somebody authors -- is kept in the app's own
+    //drawer, and what is checked in is a shipped DEFAULT. Skills were the one
+    //exception: `skillSave` wrote back over whichever file it had read, which in
+    //a checkout is the app's own copy under a build output, so an edit made at
+    //the window was reverted by the next rebuild with nothing said.
+    //
+    //FIRST, FOR THE SAME REASON THE PROJECT'S HALF BEATS THE APP'S: the more
+    //specific answer wins, and "what the person running this wrote" is the most
+    //specific there is.
+    //
+    //A FUNCTION FOR THE SAME REASON TOO -- ../core/state settles where its
+    //drawer is at run time, and a value read once here would be read before it
+    //had settled.
+    var mineAsked = d.keptDir || null;
+    function keptDirNow() {
+        var at = typeof mineAsked === 'function' ? mineAsked() : mineAsked;
+        return at || null;
+    }
+
     var there = d.there || function (p) {
         try { return fs.existsSync(p); } catch (e) { return false; }
     };
@@ -128,7 +150,7 @@ module.exports = function scripts(deps) {
     var readDir = d.readDir || function (p) { return fs.readdirSync(p); };
 
     function searchPath() {
-        return [workspaceDirNow(), appDir].filter(function (dir) { return dir && there(dir); });
+        return [keptDirNow(), workspaceDirNow(), appDir].filter(function (dir) { return dir && there(dir); });
     }
 
     //ONLY EVER A PLAIN FILENAME, AND ONLY INSIDE ONE OF THOSE DIRECTORIES.

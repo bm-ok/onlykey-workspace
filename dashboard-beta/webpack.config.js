@@ -131,6 +131,12 @@ module.exports = (env, argv = {}) => {
         { from: path.join(__dirname, 'src', 'app', 'keys', 'credential-helper.js'), to: 'credential-helper.js' },
         { from: path.join(__dirname, 'src', 'app', 'vms', 'provision', 'scripts'), to: 'provision' },
 
+        //THE SEED SET: the skills, jobs, prompts and contracts a fresh install
+        //can be brought back up from. Shipped rather than generated, because the
+        //moment it is needed is the moment there is nothing here to generate it
+        //from -- see src/app/bootstrap.
+        { from: path.join(__dirname, 'bootstrap'), to: 'bootstrap' },
+
         //THE GIT HOOK, WHICH RUNS ON THIS HOST AND IS THE THING THAT REFUSES.
         //
         //`core.hooksPath` points git at this folder when it runs `receive-pack`,
