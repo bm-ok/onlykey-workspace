@@ -99,7 +99,7 @@ var MAY = {
   // ---- what it may see -----------------------------------------------------
   tasks: 'the board: every task, and whether its branch has anything on it yet',
   taskProgress: 'every attempt at one task, and what its worker is doing now',
-  taskLog: "one attempt's output, so it can read why a run did what it did",
+  // taskLog: NOT PORTED YET -- see the note at the foot of this file.
   branchBoard: 'every branch, who claims it, and what is on it',
   lines: 'the named lines, which are what a branch is cut from',
   jobs: 'the jobs it may write a task under — a job is a script a person approved',
@@ -109,7 +109,11 @@ var MAY = {
   contract: 'one contract with its rules in full',
   prCuts: 'every change that has been sent out, and how far each has got',
   prCutState: 'what became of one change once it was sent, read from GitHub rather than remembered',
-  judgements: 'what has been judged about a change, and whether it still describes what is there',
+  // RENAMED WHEN THE OLD APP'S tasks-AND-judge SPLIT INTO queue, worker AND
+  // judge. This list was carried over verb for verb and the verbs themselves
+  // moved underneath it, so `judgements` went on being offered as a tool and
+  // answering nothing.
+  judgementsFor: 'what has been judged about a set of branches, and which of those readings still describe what is there now',
   // ---- WHAT IT MAY NOT SEE: THE CODE ITSELF --------------------------------
   //
   // Five entries were here and are deliberately gone: taskArtifact, taskDiff,
@@ -141,7 +145,7 @@ var MAY = {
   // is, and it exists because a supervisor went looking for one and had nowhere
   // to look: it asked `taskLog` three times and was refused three times, because
   // a judgement is not a task.
-  judgementLog: "the output of a judgement's run, kept on this host — the only thing that says WHY one came back empty",
+  // judgementLog: NOT PORTED YET -- see the note at the foot of this file.
   // WHAT KINDS OF MACHINE THERE ARE, which is what a task's tag names. Without
   // this it could put a tag on a task and had no way to know which tags exist —
   // and the queue WAITS for a tagged machine rather than falling back, so a
@@ -153,8 +157,8 @@ var MAY = {
   // somebody writing a task. A supervisor deciding what to do next is mostly
   // reading this. Paged on purpose: a busy tracker has thousands, and a hundred
   // of five thousand is not a short list, it is a wrong one.
-  issues: "a repository's issues, a page at a time — this workspace's, or any repository named owner/name",
-  pulls: "a repository's pull requests, a page at a time — everything open there, not only what this host cut",
+  // issues: NOT PORTED YET -- see the note at the foot of this file.
+  // pulls: NOT PORTED YET -- see the note at the foot of this file.
   repositories: 'the repositories this workspace holds, and where each points',
   repoBranches: "one repository's branches: where each is here, where origin has it, and which are out of step",
 
@@ -335,7 +339,11 @@ var MAY = {
   repoForkSync: "pull each fork's default branch up from its parent on GitHub, so a change is cut from what is current",
   branchAsLine: 'make a line out of a branch, which is what a change has to be before it can be compared or sent',
   prCutMake: 'push a line onward and open a pull request per repository, tracked together as one change — it may SEND work out, and may not land it',
-  prComment: 'say what a judge found on a pull request, ending in whether it is recommended for pulling — it may REPORT, and may not merge',};
+  // THE SAME RENAME. `prComment` here became `judgementSay` there, and it is
+  // the same act with the same limit: it REPORTS a judge's reading onto a pull
+  // request, and it does not merge.
+  judgementSay: 'put a judgement of an arrived pull request on GitHub as a comment — it may REPORT, and may not merge'
+};
 
 //---- asking whether -------------------------------------------------------
 //
@@ -393,3 +401,28 @@ module.exports = {
     MAY: MAY, may: may, refuse: refuse, list: list,
     noteAsked: noteAsked, asksSoFar: asksSoFar
 };
+
+// ---- WHAT IS NOT HERE YET, AND WHY IT IS COMMENTED OUT RATHER THAN LEFT IN --
+//
+// `taskLog`, `judgementLog`, `issues` and `pulls` are on the old app's list and
+// nothing in this one answers them. They are commented out rather than deleted
+// because each is a real gap in the port and the line is where somebody will
+// look for it.
+//
+// LEAVING THEM IN WAS THE WORSE OPTION, AND IT WAS THE ONE IN PLACE. A name on
+// this list is an MCP tool in front of the model — see the scripts folder's
+// okc-mcp.js, which builds one tool per name — so an unported verb is not a
+// refusal. `actions.call` tries this app and then relays to the old one, so it
+// fails with "the dashboard this relays to is not running": a sentence about
+// another program, said to a model that does not know another program exists.
+//
+// IT COST SOMETHING ALREADY. Asked to review its own instructions, a supervisor
+// read this list, saw `judgementLog`, and wrote a section telling itself to read
+// that before concluding anything about a judgement that came back empty. The
+// advice is right and the tool answers nothing here, and its check could not
+// have caught that: the tool list IS this list, so "no tool it names is missing"
+// was true and meant nothing.
+//
+// `judgementLog` IS THE ONE WORTH PORTING FIRST. It is what separates a
+// judgement that found nothing from a run that died — and this app has already
+// had the second read as the first, on J26.

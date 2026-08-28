@@ -84,7 +84,12 @@ test('it may open a pull request and may not land one', () => {
     //THE LINE RATHER THAN AN ABSENCE OF ONE. Landing changes what everybody else
     //builds on, and everything before it is reversible from GitHub.
     assert.equal(allowed.may('prCutMake'), true, 'it cannot send work out at all');
-    assert.equal(allowed.may('prComment'), true);
+    //`prComment` IS WHAT THIS WAS CALLED IN THE APP BEING PORTED FROM. The act
+    //is the same and so is its limit — it REPORTS a judge's reading onto a pull
+    //request and does not merge — but nothing here answered that name, so the
+    //supervisor was being offered a tool that failed. See supervisor-may.test.js.
+    assert.equal(allowed.may('judgementSay'), true);
+    assert.equal(allowed.may('prComment'), false, 'the old name is still offered, and nothing answers it');
     assert.equal(allowed.may('prCutLand'), false, 'it can merge');
     assert.equal(allowed.may('prCutUpdate'), false, 'it can close somebody else\'s pull requests');
 });
