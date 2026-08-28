@@ -142,6 +142,10 @@ module.exports = (env, argv = {}) => {
         //It is pinned `binary` in .gitattributes, because a checkout that
         //"fixed" the line endings inside it would break its own checksums.
         { from: path.join(__dirname, 'okc-bootstrap.tar'), to: 'okc-bootstrap.tar' },
+        //THE DOCS, beside the bundle, for a packaged app with no repository
+        //above it. In development the app reads ../docs -- the repository's
+        //copy, the one git sees -- and this copy is never read.
+        { from: path.join(__dirname, 'docs'), to: 'docs' },
 
         //THE GIT HOOK, WHICH RUNS ON THIS HOST AND IS THE THING THAT REFUSES.
         //
