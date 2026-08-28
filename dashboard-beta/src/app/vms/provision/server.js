@@ -164,7 +164,7 @@ async function plugin(imports, register) {
     //Refreshing one and not the other is how a machine gets this project's
     //scripts and last project's skills.
     async function noteWhere() {
-        await noteWhere();
+        await noteProjectDir();
         await noteKeptDir();
         return { project: projectDir, kept: keptDir };
     }
@@ -238,7 +238,11 @@ async function plugin(imports, register) {
         //WHICH WORKSPACE THIS IS BEING BUILT FOR, asked now rather than at
         //startup: a machine is built for the workspace that is open when it is
         //built, and that is where its scripts come from.
-        await noteProjectDir();
+        //
+        //BOTH HALVES, because they are one question. A machine built with this
+        //project's scripts and last project's skills is the failure refreshing
+        //only one of them produces.
+        await noteWhere();
 
         //---- THE APP'S OWN SSH KEY, UNLESS ONE WAS NAMED ------------------
         //
