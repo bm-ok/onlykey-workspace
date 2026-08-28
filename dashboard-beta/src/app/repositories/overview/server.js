@@ -116,7 +116,21 @@ async function plugin(imports, register) {
                             //Carried so a task can be written from this list
                             //without going back to the per-repository tab to find
                             //the words again.
-                            body: i.body || null, parts: null
+                            //
+                            //FENCED, AND SAYING SO. `body` is the quoted form
+                            //built in ../repos/server.js, which travels correctly
+                            //on its own -- but `reading` and `asked` did not
+                            //come with it, so this list carried the words while
+                            //dropping the two fields that say whether anybody
+                            //asked for anything. Something reading only this
+                            //would have to decide that for itself, which is the
+                            //one decision ../../github/trust.js exists to have
+                            //already made.
+                            body: i.body || null,
+                            reading: i.reading || null,
+                            asked: i.asked || null,
+                            said: i.said || null,
+                            parts: null
                         });
                     });
                 });

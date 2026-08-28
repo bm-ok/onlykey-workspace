@@ -531,7 +531,7 @@ async function plugin(imports, register) {
                         //settings means everything here is a quotation, which is
                         //what this ships as.
                         reading: readingOf({
-                            number: x.number, on: on, body: x.body || null,
+                            number: x.number, on: on, title: x.title || null, body: x.body || null,
                             by: x.user && x.user.login,
                             //THE ACCOUNT NUMBER AS WELL AS THE NAME. A login can
                             //be changed and the old one taken by somebody else;
@@ -541,7 +541,7 @@ async function plugin(imports, register) {
                             labels: (x.labels || []).map(function (l) { return typeof l == 'string' ? l : l.name; })
                         }),
                         body: fencedBody({
-                            number: x.number, on: on, body: x.body || null,
+                            number: x.number, on: on, title: x.title || null, body: x.body || null,
                             by: x.user && x.user.login,
                             //THE ACCOUNT NUMBER AS WELL AS THE NAME. A login can
                             //be changed and the old one taken by somebody else;
