@@ -175,6 +175,15 @@ async function plugin(imports, register) {
         keptDir: function () { return keptDir; }
     });
 
+    //LEARNED NOW, NOT WHEN SOMETHING HAPPENS TO ASK. `keptDir` was null from
+    //the moment this half was rebuilt -- which is every save -- until a
+    //machine dialled in or a skill was saved, and in that window every read
+    //of a skill resolved to the app's shipped copy over the one a person had
+    //approved. `skillReading` answered 32k characters about a 38k file, and
+    //said nothing was wrong. Fire-and-forget: a state that is not ready yet
+    //answers null and the next asker notes again.
+    Promise.resolve().then(noteWhere).catch(function () { /* noted by the next asker */ });
+
     var spec = makeSpec({
         //ISSUED BY THE THING THAT CHECKS THEM. A token this app makes and a
         //token this app accepts must come from one place, or the two drift and

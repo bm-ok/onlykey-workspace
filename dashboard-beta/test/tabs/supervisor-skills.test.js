@@ -736,7 +736,7 @@ test('a supervisor may ask both, and still may not read or ratify the document',
 
 test('it can read the document it is governed by', async () => {
     const skills = await loaded(ALL);
-    const said = defined.get('skillReading').run({ which: 'supervisor' });
+    const said = await defined.get('skillReading').run({ which: 'supervisor' });
 
     assert.match(said.text, /You decide what work there is/);
     assert.equal(said.characters, said.text.length);
@@ -751,7 +751,7 @@ test('the name in its own frontmatter is a name this app answers to', async () =
     //`supervising` IS WHAT THE WAKE BRIEF SAYS AND WHAT THE FILE CALLS ITSELF.
     //A refusal that is correct and unguessable reads as the feature not being
     //there — which is how it was reported.
-    assert.equal(defined.get('skillReading').run({ which: 'supervising' }).which, 'supervisor');
+    assert.equal((await defined.get('skillReading').run({ which: 'supervising' })).which, 'supervisor');
     assert.equal(defined.get('skillAsked').run({ which: 'supervising' }).which, 'supervisor');
     assert.equal(defined.get('skillHistory').run({ which: 'supervising' }).which, 'supervisor');
 });
@@ -770,7 +770,7 @@ test('an alias files under one name, so a history is not split in two', async ()
 
 test('a name that is neither a skill nor an alias is still refused', async () => {
     const skills = await loaded(ALL);
-    assert.throws(() => defined.get('skillReading').run({ which: 'operator' }), /not a skill/);
+    await assert.rejects(() => defined.get('skillReading').run({ which: 'operator' }), /not a skill/);
 });
 
 test('with no answers recorded it says so without claiming none were ever asked', async () => {

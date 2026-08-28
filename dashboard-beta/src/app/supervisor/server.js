@@ -1674,10 +1674,16 @@ async function plugin(imports, register) {
     undo.push(actions.define('skillReading', {
         about: 'The instructions you are working to, in full, so you can say what is wrong with them',
         takes: ['which'],
-        run: function (args) {
+        run: async function (args) {
             var a = args || {};
             var which = keyFor(a.which);
             var one = skillNamed(which);
+
+            //THE KEPT FOLDER, NOTED FIRST. Without this, a read made before
+            //anything else had asked where the workspace keeps its scripts
+            //resolved to the app's shipped copy and reported it as the skill --
+            //32k characters about a 38k file, with nothing saying so.
+            try { await imports.provision.freshen(); } catch (e) { /* the search path says what it can */ }
 
             var text;
             try { text = fs.readFileSync(skillFile(one.stage), 'utf8'); }
