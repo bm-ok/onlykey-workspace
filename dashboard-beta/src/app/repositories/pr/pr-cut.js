@@ -90,6 +90,24 @@ module.exports = function cuts(theme, okc, remember, shell) {
                     <Mono>{p.repo}</Mono>
                     {p.number ? <Mono>{'#' + p.number}</Mono> : null}
                     <Badge kind={kind}>{word}</Badge>
+                    {/* GITHUB'S ANSWER TO "IS IT REVIEWED", read off the pull
+                        request rather than remembered here. Silent when GitHub
+                        would not say, which is not the same as nobody having
+                        reviewed it. */}
+                    {p.reviews && p.reviews.changesRequested
+                        ? <Badge kind="bad">{p.reviews.changesRequested + ' asked for changes'}</Badge>
+                        : null}
+                    {p.reviews && p.reviews.approved
+                        ? <Badge kind="ok">{p.reviews.approved + ' approved'}</Badge>
+                        : null}
+                    {p.reviews && !p.reviews.approved && !p.reviews.changesRequested && p.reviews.commented
+                        ? <Badge kind="muted">{p.reviews.commented + ' commented'}</Badge>
+                        : null}
+                    {p.reviews && p.reviews.latestByThisHost
+                        ? <Badge kind="muted" title={'this host reviewed it at ' + String(p.reviews.latestByThisHost.sha || '').slice(0, 7)}>
+                            {'you: ' + String(p.reviews.latestByThisHost.event || '').toLowerCase().replace('_', ' ')}
+                        </Badge>
+                        : null}
                 </CardTitle>
                 {p.title ? <CardSub>{p.title}</CardSub> : null}
                 <Kv>

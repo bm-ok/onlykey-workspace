@@ -25,6 +25,7 @@
 //A MODULE, NOT A SERVICE. What an allowance MEANS is a rule about two values and
 //belongs beside the pane that uses it — the same arrangement ./revising.js has.
 var allowing = require('./allowing');
+var reviewsIn = require('./reviews');
 
 plugin.consumes = ['app', 'log', 'git', 'github', 'keys', 'workspace', 'state', 'settings', 'refs',
     //`inbox` FOR ONE ERRAND: a change that is out and has not been merged. See
@@ -254,6 +255,11 @@ async function plugin(imports, register) {
                         if (r2.status === 200 && r2.body) found = shapePull(r2.body);
                     }
                 }
+                //REVIEWS, FOR THE ONES STILL OPEN. This is GitHub's answer to
+                //"is it reviewed", read rather than remembered.
+                if (found && found.state === 'open') {
+                    found.reviews = await reviewsOf(found.into || where, p.number);
+                }
                 now.push(found
                     ? Object.assign({}, p, found)
                     : Object.assign({}, p, { state: 'could not be found', why: (p.into || p.repo) + ' did not answer for #' + p.number }));
@@ -281,7 +287,11 @@ async function plugin(imports, register) {
     }
 
     function shapePull(body) {
-        return {
+        //`into` ONLY WHEN GITHUB SAID. The landing record already carries the
+        //address this host opened it at, and `stateOf` lays this answer over
+        //that record -- a null here would erase a name that was right.
+        var onRepo = (body.base && body.base.repo && body.base.repo.full_name) || null;
+        var out = {
             number: body.number,
             title: body.title,
             url: body.html_url,
@@ -301,8 +311,45 @@ async function plugin(imports, register) {
             //still out this is the only thing on the row that says whether
             //anybody has touched it since it was opened.
             updated: body.updated_at || null,
-            mergeable: body.mergeable == null ? null : !!body.mergeable
+            mergeable: body.mergeable == null ? null : !!body.mergeable,
+            //THE COMMIT, THE AUTHOR'S NUMBER, AND THE REPOSITORY IT IS ON.
+            //Dropped until now, and a review needs all three: it is pinned to a
+            //commit, GitHub refuses one from the pull request's own author, and
+            //the reviews live on the repository the pull request is open on --
+            //which for a fork is the parent, not where the branch was pushed.
+            headSha: (body.head && body.head.sha) || null,
+            byId: (body.user && body.user.id) || null
         };
+        if (onRepo) out.into = onRepo;
+        return out;
+    }
+
+    //---- WHAT GITHUB SAYS ABOUT WHETHER IT IS REVIEWED ----------------------
+    //
+    //ONE MORE REQUEST PER OPEN PULL REQUEST, and only open ones: a merged or
+    //closed pull request's reviews are history. Fingerprinted like every read,
+    //so an unchanged list is a 304 and costs nothing against the hour. Null
+    //when GitHub would not say -- a read that failed is not "nobody reviewed
+    //it", and the two must not look alike on a pane.
+    //
+    //`latestByThisHost` IS THE ONE FACT ONLY THIS HOST CAN ADD: which review
+    //was its own, by the login the token signs in as. The judge must not review
+    //the same commit twice, and a person releasing a review draft should see
+    //one is already there. See ./reviews.js for GitHub's own counting rule.
+    async function reviewsOf(on, number) {
+        var bits = String(on || '').split('/');
+        if (bits.length !== 2 || !bits[0] || !bits[1] || !(number > 0)) return null;
+        var me = null;
+        try {
+            var held = imports.keys && imports.keys.github && typeof imports.keys.github.held === 'function'
+                ? imports.keys.github.held() : null;
+            me = held && held.login ? held.login : null;
+        } catch (e) { me = null; }
+        try {
+            var got = await github.all('/repos/' + bits[0] + '/' + bits[1] + '/pulls/' + number + '/reviews');
+            if (!got || !got.ok || !Array.isArray(got.items)) return null;
+            return reviewsIn.summariseReviews(got.items, me);
+        } catch (e) { return null; }
     }
 
     //=======================================================================
@@ -633,6 +680,17 @@ async function plugin(imports, register) {
                             said: may.said || null
                         });
                     });
+                }
+
+                //AND WHETHER ANYBODY HAS REVIEWED EACH ONE, THIS HOST INCLUDED.
+                //A judge that already reviewed this commit should not be sent
+                //to read it again, and that is a fact GitHub holds. One request
+                //per open pull request, fingerprinted; null when it would not
+                //say.
+                for (var ri = 0; ri < rows.length; ri++) {
+                    rows[ri].reviews = await reviewsOf(rows[ri].on, rows[ri].number);
+                    rows[ri].reviewedHere = !!(rows[ri].reviews && rows[ri].reviews.latestByThisHost
+                        && rows[ri].reviews.latestByThisHost.sha === rows[ri].headSha);
                 }
 
                 var waiting = rows.filter(function (x) { return !x.ours && !x.allowed; });
