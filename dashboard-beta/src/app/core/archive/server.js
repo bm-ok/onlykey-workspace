@@ -390,6 +390,32 @@ async function plugin(imports, register) {
 
     //ONE ENTRY, BY NAME OR BY A TEST. Null rather than a throw, because "there
     //is no such file in it" is an ordinary answer about somebody else's archive.
+    //---- AND MAKING ONE, WHICH IS THE OTHER DIRECTION --------------------
+    //
+    //THIS PLUGIN ONLY EVER READ. Everything about it was written for bytes
+    //ARRIVING — a machine hands something back and this unpacks it — and the tar
+    //library vendored for that has always been able to write one too.
+    //
+    //THE CALLER THAT NEEDED IT: ../../bootstrap, handing somebody a single file
+    //they can put where they like. A folder of twenty-five files is the right
+    //shape on disk and the wrong shape to hand to a person, who wants one thing
+    //they can name and move and mail to themselves.
+    //
+    //    files   [{ name, data }] -- data is a string or bytes
+    //
+    //ONE TAR AND NOT A ZIP, because the reader for it is already here and
+    //`inside` will take back exactly what this writes. Two formats would mean
+    //this app could produce something it could not read.
+    function make(files) {
+        var made = (files || []).map(function (f) {
+            return {
+                name: String(f.name),
+                data: typeof f.data === 'string' ? Buffer.from(f.data, 'utf8') : f.data
+            };
+        });
+        return Buffer.from(nanotar.createTar(made));
+    }
+
     function find(entries, want) {
         var all = entries || [];
         if (typeof want === 'function') return all.filter(want)[0] || null;
@@ -408,6 +434,7 @@ async function plugin(imports, register) {
     await register(null, {
         archive: {
             store: store,
+            make: make,
             inside: inside,
             find: find,
             text: text,

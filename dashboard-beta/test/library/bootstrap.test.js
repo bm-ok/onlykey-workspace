@@ -8,6 +8,7 @@ const statePlugin = require('../../src/app/core/state/main');
 const versionsPlugin = require('../../src/app/core/versions/server');
 const libraryPlugin = require('../../src/app/library/server');
 const bootstrapPlugin = require('../../src/app/bootstrap/server');
+const archivePlugin = require('../../src/app/core/archive/server');
 
 //---------------------------------------------------------------------------
 //DELETE EVERYTHING AND PUT IT BACK.
@@ -27,7 +28,11 @@ const bootstrapPlugin = require('../../src/app/bootstrap/server');
 //set of jobs arrive ready to run on a machine nobody had shown them to.
 //---------------------------------------------------------------------------
 
-let dataDir, work, bundleAt, mineDir, defined, library;
+let dataDir, work, bundleAt, mineDir, defined, library, archive;
+
+//HANDED OUT so the tests can read back what the app wrote with the same reader
+//the app uses -- see the file tests at the bottom.
+function archiveOf() { return archive; }
 
 function call(name, args) {
     const door = defined.get(name);
@@ -88,7 +93,12 @@ async function setUp() {
         keptFor: async (stage) => path.join(mineDir, SKILLS[stage])
     };
 
-    await bootstrapPlugin({ app, log, library, provision }, async () => {});
+    //THE REAL TAR WRITER AND READER, not a fake: what has to hold is that
+    //what this app WRITES is what it can READ BACK, and a stub of one half
+    //would agree with whatever the other half did.
+    await archivePlugin({ state }, async (_e, s) => { archive = s.archive; });
+
+    await bootstrapPlugin({ app, log, library, provision, archive }, async () => {});
 }
 
 beforeEach(setUp);
@@ -258,4 +268,100 @@ test('a file nobody listed is not imported, because the manifest is what says wh
     await call('bootstrapImport', { from: bundleAt });
     assert.equal(await library.contracts.get('smuggled'), null,
         'a file dropped into the folder was imported without being listed');
+});
+
+//---------------------------------------------------------------------------
+//THE SAME SET AS ONE FILE.
+//
+//A FOLDER IS THE RIGHT SHAPE ON DISK AND THE WRONG ONE TO HAND A PERSON.
+//Twenty-five files is what you want in a repository, where each is read and
+//diffed on its own; it is not the answer to "where do I keep this so I can put
+//it back", which is one file you can name and move.
+//
+//WHAT MUST HOLD ACROSS BOTH: a bundle means the same thing whichever way it was
+//carried. Two importers is where that would stop being true, so there is one —
+//and these tests exist to catch the day somebody adds a second.
+//---------------------------------------------------------------------------
+
+test('the whole set comes back as one file that this app can read again', async () => {
+    await aLibrary();
+    const made = await call('bootstrapFile', {});
+
+    assert.match(made.name, /\.tar$/);
+    assert.ok(made.size > 0);
+    //THE MANIFEST AND EVERY BODY, which is 3 documents, 3 skills and the
+    //manifest itself.
+    assert.equal(made.files, 7);
+
+    //READ BACK BY THE READER THIS APP ALREADY HAD. If these two ever disagree,
+    //the app can produce something it cannot open.
+    const seen = archiveOf().inside(Buffer.from(made.bytes, 'base64'));
+    assert.equal(seen.unreadable, null);
+    assert.ok(seen.entries.some((e) => e.name === 'library.json'));
+    assert.ok(seen.entries.some((e) => e.name === 'contracts/rules.md'));
+    assert.ok(seen.entries.some((e) => e.name === 'jobs/sweep.js'));
+    assert.ok(seen.entries.some((e) => e.name === 'skills/judge.md'));
+});
+
+test('a file holds no more about approvals than a folder does', async () => {
+    await aLibrary();
+    await call('contractApprove', { id: 'rules' });
+
+    const made = await call('bootstrapFile', {});
+    const whole = Buffer.from(made.bytes, 'base64').toString('utf8');
+    assert.doesNotMatch(whole, /approvedBy|"approval"/);
+});
+
+test('the data directory is gone and a saved file puts it all back', async () => {
+    await aLibrary();
+    await call('contractApprove', { id: 'rules' });
+    const made = await call('bootstrapFile', {});
+
+    await library.contracts.write([]);
+    await library.prompts.write([]);
+    await library.jobs.write([]);
+
+    const said = await call('bootstrapFromFile', { bytes: made.bytes });
+    assert.deepEqual(said.wrote, { contract: 1, prompt: 1, job: 1, skill: 3 });
+
+    assert.equal((await call('contract', { id: 'rules' })).text, 'do not push');
+    assert.equal((await library.prompts.get('brief')).contractId, 'rules');
+    assert.match((await call('job', { id: 'sweep' })).code, /module\.exports/);
+
+    //AND STILL WAITING TO BE READ, the same as through a folder. The claim is
+    //about what a bundle MEANS, so it has to hold whichever way it travelled.
+    assert.equal((await call('contract', { id: 'rules' })).approved, false);
+});
+
+test('a file that is not a bundle is refused rather than half-read', async () => {
+    await assert.rejects(
+        () => call('bootstrapFromFile', { bytes: Buffer.from('not a tar at all').toString('base64') }),
+        /not a bundle/
+    );
+
+    //A REAL TAR WITH NO MANIFEST IN IT is the more interesting one: it opens
+    //perfectly and still is not a bundle, and reading the folders inside it
+    //would be trusting whatever somebody put there.
+    const notOurs = archiveOf().make([{ name: 'hello.txt', data: 'hi' }]);
+    await assert.rejects(
+        () => call('bootstrapFromFile', { bytes: notOurs.toString('base64') }),
+        /no library\.json/
+    );
+});
+
+test('a manifest naming a body that is not in the file is refused', async () => {
+    await aLibrary();
+    const made = await call('bootstrapFile', {});
+
+    //REBUILT WITHOUT ONE OF THE BODIES, which is what a truncated or
+    //hand-edited file looks like. Importing it as an empty contract — no rules
+    //at all — is the worst available reading of a mistake.
+    const seen = archiveOf().inside(Buffer.from(made.bytes, 'base64'));
+    const short = archiveOf().make(
+        seen.entries
+            .filter((e) => e.name !== 'contracts/rules.md')
+            .map((e) => ({ name: e.name, data: Buffer.from(e.data) }))
+    );
+
+    await assert.rejects(() => call('bootstrapFromFile', { bytes: short.toString('base64') }), /no contracts/);
 });

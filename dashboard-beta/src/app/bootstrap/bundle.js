@@ -157,4 +157,13 @@ function read(at, readFile, exists) {
     return out;
 }
 
-module.exports = { write: write, read: read, CARRIES: CARRIES, FOLDER: FOLDER, SUFFIX: SUFFIX };
+//HANDED OUT SO A SECOND WAY OF CARRYING A BUNDLE — a single file rather than a
+//folder — uses the same names in the same places. See ../bootstrap/server.js:
+//two lists of what a bundle looks like is where a folder and a tar would start
+//to mean different things.
+module.exports = {
+    write: write, read: read,
+    CARRIES: CARRIES, FOLDER: FOLDER, SUFFIX: SUFFIX,
+    safe: safe,
+    carried: function (kind, entry) { return only(entry, CARRIES[kind]); }
+};
