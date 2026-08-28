@@ -758,7 +758,8 @@ test('a change that is out and not merged is waiting on somebody', async () => {
     assert.match(waiting[0].why, /anowner\/two#9 → version2/);
 
     //AND IT LANDS ON THE CUT, not on a list to go and find it in.
-    assert.deepEqual(waiting[0].where, { tab: 'Repositories', pane: 'PR cuts', pick: 'a' });
+    //THE PICK IS THE PANE'S OWN ID, source -> target, or Go to lands on nothing.
+    assert.deepEqual(waiting[0].where, { tab: 'Repositories', pane: 'PR cuts', pick: 'a -> b' });
 });
 
 test('and one that has landed is not waiting on anybody', async () => {

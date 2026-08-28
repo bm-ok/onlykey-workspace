@@ -1782,7 +1782,10 @@ async function plugin(imports, register) {
                         c.source + ' into ' + c.target,
                         'Open and waiting on a merge, as last read from GitHub — and merging is a person\'s '
                             + 'press. ' + where.join(', '),
-                        imports.inbox.at('Repositories', 'PR cuts', c.source),
+                        //THE PANE PICKS A CUT BY `source -> target`, the same
+                        //id it draws with, and this handed it the source alone
+                        //-- so Go to landed on the pane with nothing picked.
+                        imports.inbox.at('Repositories', 'PR cuts', c.source + ' -> ' + c.target),
                         { since: c.opened || null, id: c.source + ' -> ' + c.target }
                     );
                 });
