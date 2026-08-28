@@ -269,6 +269,9 @@ module.exports = function library(theme, okc, remember) {
                             mode={which == 'job' ? 'javascript' : 'markdown'} height={300} />
                     ],
                     fields: [{ name: 'note', label: 'A note, if it needs one', placeholder: 'what you checked' }],
+                    //TWO COLUMNS TO READ, so the box is the wider one. See
+                    //../ui/theme/dialog.js.
+                    wide: true,
                     cost: which == 'job'
                         ? 'Approved, it can be sent to a machine and run.'
                         : 'Approved, it can be handed to a worker.',

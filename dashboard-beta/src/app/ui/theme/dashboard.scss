@@ -420,6 +420,14 @@ h2:first-child { margin-top: 0; }
   max-height: 100%;
   min-height: 0;
 }
+/* A DIALOG THAT CARRIES A COMPARISON, which needs two readable columns rather
+   than one. 560 halves to about thirty characters a side — narrow enough that
+   every line of the thing somebody is being asked to approve is cut off, with a
+   horizontal scrollbar under the question.
+
+   A CEILING, NOT A WIDTH. `width: 100%` above still holds, so on a narrow window
+   this is the ordinary dialog and nothing overflows the overlay's padding. */
+.dlg.wide { max-width: 1100px; }
 /* The part that moves. What is being READ scrolls; the title above it and the
    buttons below it stay where they are, because they are the question. */
 /* Padded on both sides, because the scrolling half is the only part of a dialog

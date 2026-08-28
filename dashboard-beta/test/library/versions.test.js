@@ -97,6 +97,53 @@ test('a version is kept when a person approves, and never down the pipe', async 
     assert.equal(said.newest.changed, null);
 });
 
+//---- PRESSING THE BUTTON, WHICH IS ITS OWN PATH ----------------------------
+//
+//EVERY OTHER TEST IN THIS FILE WENT THROUGH `save`, AND SO DID THE FEATURE. A
+//save at the window stamps an approval of its own, so a `contractApprove` after
+//one is re-approving text a copy has already been kept of — identical, so
+//deduplicated, so a test that proves nothing while passing. `approve` kept
+//nothing at all and every assertion here was still green.
+//
+//SO THE ENTRY IS WRITTEN DOWN THE PIPE FIRST. That approves nothing, which
+//leaves the button as the only thing that can have kept anything.
+test('pressing approve keeps a copy, with nothing having been saved at the window', async () => {
+    await call('contractSave', { id: 'rules', name: 'rules', text: 'do not push', _overTheWire: true });
+    assert.equal((await call('contractVersions', { id: 'rules' })).versions.length, 0);
+
+    await call('contractApprove', { id: 'rules' });
+
+    const said = await call('contractVersions', { id: 'rules' });
+    assert.equal(said.versions.length, 1, 'the button that the library is named for kept nothing');
+    assert.equal(said.newest.text, 'do not push');
+    assert.equal(said.newest.by, 'the window');
+});
+
+test('a rewrite down the pipe and a press keeps what changed since the last press', async () => {
+    await call('contractSave', { id: 'rules', name: 'rules', text: 'do not push', _overTheWire: true });
+    await call('contractApprove', { id: 'rules' });
+
+    //A MODEL REWRITES IT, WHICH CLEARS THE APPROVAL rather than lapsing it —
+    //this is the ordinary way a contract comes to differ from the copy somebody
+    //last read, and the state the approval dialog actually meets.
+    await call('contractSave', { id: 'rules', name: 'rules', text: 'do not push\nask first', _overTheWire: true });
+    const now = await call('contract', { id: 'rules' });
+    assert.equal(now.approved, false);
+    assert.equal(now.lapsed, false);
+
+    //AND THE DIALOG STILL HAS SOMETHING TO COMPARE AGAINST, which is the whole
+    //point: what is on the left is the last thing a person said yes to.
+    const said = await call('contractVersions', { id: 'rules' });
+    assert.equal(said.newest.text, 'do not push');
+    assert.notEqual(said.newest.text, now.text);
+
+    await call('contractApprove', { id: 'rules' });
+    const after = await call('contractVersions', { id: 'rules' });
+    assert.equal(after.versions.length, 2);
+    assert.equal(after.newest.added, 1);
+    assert.match(after.newest.changed, /^\+ ask first$/m);
+});
+
 //---- and what changed to reach each one after that -------------------------
 
 test('an edit and a second approval keeps what changed, against what was approved before', async () => {

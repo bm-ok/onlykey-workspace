@@ -252,7 +252,18 @@ function Dialog({ id, spec }) {
 
     return (
         <div className="dlg-overlay" onClick={function (e) { if (e.target === e.currentTarget) drop(id, false); }}>
-            <div className="dlg">
+            {/* WIDER, WHERE WHAT IS BEING READ IS TWO THINGS SIDE BY SIDE.
+                A dialog is 560px because that is a comfortable measure for a
+                sentence, and half of 560 is not a comfortable measure for
+                anything: a diff in one is two columns of about thirty
+                characters, which cuts every line somebody is being asked to
+                read and puts a horizontal scrollbar under the question.
+
+                ASKED FOR BY THE CALLER, NOT WORKED OUT FROM WHAT IS INSIDE.
+                Only whoever wrote the dialog knows whether its content is a
+                paragraph or a comparison, and a dialog that measured itself
+                would be a different width each time it opened. */}
+            <div className={'dlg' + (spec.wide ? ' wide' : '')}>
                 <div className="dlg-title">{spec.title}</div>
 
                 {tabs ? (

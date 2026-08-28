@@ -295,14 +295,36 @@ module.exports = function library(what, doc, opts) {
         var list = await read();
         var ctx = await context();
         var at = mustFind(list, id);
-        list[at] = Object.assign({}, list[at], {
+        var body = bodyOf(list[at], ctx);
+
+        var made = Object.assign({}, list[at], {
             approval: {
                 at: new Date().toISOString(),
                 by: 'the window',
                 note: String(note == null ? '' : note).trim() || null,
-                hash: hash(bodyOf(list[at], ctx))
+                hash: hash(body)
             }
         });
+        list[at] = made;
+
+        //---- AND A COPY OF WHAT WAS APPROVED --------------------------------
+        //
+        //THIS IS THE APPROVAL, AND IT KEPT NOTHING. `keepApproved` was hung on
+        //`save` alone — where it is also right, because writing at the window IS
+        //the reading — and the button the whole library is named for went
+        //straight past it. So a person who read something, pressed Approve, and
+        //went looking for what they had approved found an empty history, which
+        //reads exactly like the feature not existing.
+        //
+        //THE TESTS PASSED THROUGH IT. A window save stamps an approval of its
+        //own, so every `contractApprove` in ../../test/library/versions.test.js
+        //was re-approving text a copy had already been kept of — identical, so
+        //deduplicated, so invisible. Found by somebody pressing the button.
+        if (keepApproved) {
+            try { await keepApproved(made, body); }
+            catch (e) { /* ../core/versions says so in the log */ }
+        }
+
         await write(list);
         return await get(id);
     }
