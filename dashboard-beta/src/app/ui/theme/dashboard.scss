@@ -1632,7 +1632,14 @@ table.kv.where .sub:last-child { margin-bottom: 0; }
   align-self: stretch;
   align-items: stretch;
 }
-.msg.woke /* Somebody else's words, drawn as somebody else's -- see `Quoted` in bits.js.
+.msg.woke .msg-body {
+  background: none;
+  border: 1px solid var(--warn);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Somebody else's words, drawn as somebody else's -- see `Quoted` in bits.js.
    The left edge is the whole point: it has to read as a quotation at a glance,
    because the failure this guards against is text from outside arriving
    indistinguishable from what this app says for itself. Muted rather than
@@ -1653,13 +1660,6 @@ table.kv.where .sub:last-child { margin-bottom: 0; }
      off the bottom of the pane. */
   max-height: 320px;
   overflow-y: auto;
-}
-
-.msg-body {
-  background: none;
-  border: 1px solid var(--warn);
-  color: var(--muted);
-  font-size: 12px;
 }
 .msg.woke .msg-who { color: var(--warn); }
 .msg-who {
