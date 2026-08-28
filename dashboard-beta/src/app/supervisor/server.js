@@ -583,6 +583,32 @@ async function plugin(imports, register) {
     //ASKED OF THE TABLE, NOT OF A SERVICE. `judging` and `tasks` are actions
     //this app already answers, and going through them keeps this plugin from
     //growing an edge into the judge and the queue to read two lists.
+    //WHAT ARRIVED, SINCE THE SUPERVISOR LAST LOOKED. Everything stamped after
+    //`readAt`; the stamp moves only when the reader is a machine, so a person
+    //reading `whatsNew` on the command line does not silently consume what the
+    //supervisor was about to be told.
+    async function arrivedSince(a) {
+        try {
+            var box = await imports.state.here.doc('github-arrived');
+            var kept = box.read({}) || {};
+            var since = kept.readAt || '';
+            var fresh = function (x) { return String(x.seenAt || '') > since; };
+            var out = {
+                watching: !!(await imports.settings.read()).watchGitHub,
+                lookedAt: kept.lookedAt || null,
+                issues: (kept.issues || []).filter(fresh),
+                pulls: (kept.pulls || []).filter(fresh)
+            };
+            if (a && a._fromMachine && (out.issues.length || out.pulls.length)) {
+                kept.readAt = new Date().toISOString();
+                box.write(kept);
+            }
+            return out;
+        } catch (e) {
+            return { watching: false, lookedAt: null, issues: [], pulls: [], why: e.message };
+        }
+    }
+
     async function whereIsIt(about) {
         var what = String(about == null ? '' : about).trim();
 
@@ -866,8 +892,16 @@ async function plugin(imports, register) {
                 //SAID IN THE ANSWER, so a model reads it rather than inferring
                 //silence. An empty `arrived` would be a claim that nothing has
                 //arrived.
-                arrived: null,
-                notRead: ['arrived — nothing here watches GitHub yet, so ask `issues` and `pulls` directly']
+                //---- WHAT ARRIVED FROM GITHUB SINCE THIS WAS LAST READ ------
+                //
+                //THIS WAS `null` WITH A NOTE SAYING SO, because nothing watched
+                //GitHub. The sweep now diffs its own two lists and keeps a
+                //bookmark in `github-arrived`; this reads it since the last read
+                //and, when the reader is the supervisor, marks it read -- the
+                //same moment `talk.markRead` fires above. `kind: 'asked'` is a
+                //person tagging an issue on purpose; `kind: 'new'` is something
+                //that turned up.
+                arrived: await arrivedSince(a)
             };
 
             //AND WHAT THIS HOST DID, when asked for. Off by default because it is

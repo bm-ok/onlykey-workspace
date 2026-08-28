@@ -296,6 +296,15 @@ module.exports = function issues(theme, okc, remember, shell) {
         })[0] || null;
 
         var [said2, setSaid2] = useState(null);
+        var [handed, setHanded] = useState(null);
+
+        function hand() {
+            setHanded(null);
+            okc.call('issueHand', { on: i.on, number: i.number }).then(
+                function (r) { setHanded({ text: r.note || 'Handed over.' }); },
+                function (e) { setHanded({ bad: true, text: e.message }); }
+            );
+        }
 
         function release(what) {
             setSaid2(null);
@@ -363,7 +372,16 @@ module.exports = function issues(theme, okc, remember, shell) {
                         Write a task from it
                     </Button>
                     <Button onClick={function () { openOut(i.url); }}>Read it on GitHub</Button>
+                    {/* THE OTHER WAY TO FLAG IT. A tag on GitHub is a public
+                        reply on somebody else's repository; this hands the whole
+                        conversation to the supervisor from here, quietly. Purple:
+                        it starts a machine turn, and a supervisor handing itself
+                        work is deciding what it works on. */}
+                    <Button protect onClick={function () { hand(); }} title="Puts the whole conversation into the chat and wakes the supervisor">
+                        Hand it to the supervisor
+                    </Button>
                 </div>
+                {handed ? <Note kind={handed.bad ? 'bad' : 'ok'}>{handed.text}</Note> : null}
 
                 {/* WAITING TO BE SENT, AND THIS IS THE ONLY PLACE IT CAN GO OUT
                     FROM. `issueApprove` refuses the pipe, a drill and a driven

@@ -1,0 +1,54 @@
+const { test } = require('node:test');
+const assert = require('node:assert');
+
+const { diffArrived } = require('../../src/app/repositories/repos/arrived');
+
+//---------------------------------------------------------------------------
+//WHAT ARRIVED, worked out from two of GitHub's own lists rather than kept as a
+//fact of this app's own. The sweep overwrote every answer and compared nothing,
+//so "what is new" had no answer and `whatsNew.arrived` said so.
+//---------------------------------------------------------------------------
+
+const ISSUE = (n, over) => Object.assign({ on: 'them/repo', number: n, title: 'issue ' + n, by: 'someone', url: 'u' + n, asked: null }, over || {});
+const PULL = (n) => ({ on: 'them/repo', number: n, title: 'pr ' + n, by: 'someone', url: 'p' + n });
+
+test('an issue not in the previous sweep is new', () => {
+    const out = diffArrived({ issues: [ISSUE(1)], pulls: [] }, { issues: [ISSUE(1), ISSUE(2)], pulls: [] });
+    assert.deepEqual(out.issues.map((i) => [i.number, i.kind]), [[2, 'new']]);
+});
+
+test('an issue that has been tagged since is the one worth waking for', () => {
+    //NULL BEFORE, SET NOW. This is the thing a person did on purpose.
+    const asked = { where: 'a reply', by: 'bmatusiak' };
+    const out = diffArrived({ issues: [ISSUE(1)], pulls: [] }, { issues: [ISSUE(1, { asked })], pulls: [] });
+    assert.deepEqual(out.issues.map((i) => [i.number, i.kind]), [[1, 'asked']]);
+    assert.deepEqual(out.issues[0].asked, asked);
+});
+
+test('a tag that was already there is not news, and one withdrawn is not an arrival', () => {
+    const asked = { where: 'a reply', by: 'bmatusiak' };
+    const same = diffArrived({ issues: [ISSUE(1, { asked })], pulls: [] }, { issues: [ISSUE(1, { asked })], pulls: [] });
+    assert.deepEqual(same.issues, []);
+    const gone = diffArrived({ issues: [ISSUE(1, { asked })], pulls: [] }, { issues: [ISSUE(1)], pulls: [] });
+    assert.deepEqual(gone.issues, []);
+});
+
+test('a pull request not seen before is new; a closed issue is nothing', () => {
+    const out = diffArrived({ issues: [ISSUE(1), ISSUE(2)], pulls: [PULL(7)] }, { issues: [ISSUE(1)], pulls: [PULL(7), PULL(8)] });
+    assert.deepEqual(out.issues, [], 'an issue that closed was reported as arriving');
+    assert.deepEqual(out.pulls.map((p) => [p.number, p.kind]), [[8, 'new']]);
+});
+
+test('the first sweep reports nothing at all', () => {
+    //WITH NO PREVIOUS LIST EVERY OPEN ISSUE IS "NEW", and reporting a hundred
+    //arrivals the moment the watch is turned on is the opposite of arriving.
+    const out = diffArrived(null, { issues: [ISSUE(1), ISSUE(2)], pulls: [PULL(7)] });
+    assert.deepEqual(out, { issues: [], pulls: [] });
+    assert.deepEqual(diffArrived(undefined, { issues: [ISSUE(1)] }), { issues: [], pulls: [] });
+});
+
+test('the same number on two repositories is two issues', () => {
+    const out = diffArrived({ issues: [ISSUE(1)], pulls: [] },
+        { issues: [ISSUE(1), ISSUE(1, { on: 'other/repo' })], pulls: [] });
+    assert.deepEqual(out.issues.map((i) => i.on), ['other/repo']);
+});

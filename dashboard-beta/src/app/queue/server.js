@@ -94,6 +94,8 @@ var makeDispatching = require('./dispatching');
 //NOTHING CONSUMES `queue`, so none of these can be a cycle — which is worth
 //saying out loud, because an unresolved name takes down the whole graph and a
 //cycle means nothing builds at all.
+var makeWatching = require('./watching');
+
 plugin.consumes = ['app', 'log', 'state', 'dataDir', 'secret', 'artifact', 'archive', 'cron', 'busy',
     'guests', 'judge', 'ours', 'refs', 'channel', 'workspace', 'settings', 'repositories', 'meter'];
 plugin.provides = ['queue'];
@@ -445,8 +447,44 @@ async function plugin(imports, register) {
     //ASSEMBLED IN ./dispatching, which is nothing but wiring — every rule it
     //joins up lives in a file of its own and is tested there. What is decided
     //HERE is only which service answers which question.
+    //---- THE GITHUB WATCH, WHICH THE TICK HAS CALLED SINCE IT WAS WRITTEN ----
+    //
+    //`tick.js` calls `watch()` at the top of every tick and this plugin never
+    //supplied one, so it was the no-op default for the whole of that time, and
+    //`watchGitHub` was a setting with a rationale and no consumer. See
+    //./watching.js for the whether; the sweep itself is `repositoriesCheck`,
+    //which already knows how to page and how to stop with room in the budget.
+    var watch = makeWatching({
+        on: async function () { return !!(await imports.settings.read()).watchGitHub; },
+        sweep: function () { return actions.call('repositoriesCheck', {}); },
+        warn: function (t) { imports.log.on('github').warn(t); }
+    });
+
+    //ON ITS OWN TIMER, NOT THE QUEUE'S. The queue job is armed and stopped by
+    //default and stays that way until somebody starts it -- so a watch that
+    //lived only on the queue's tick would never fire on a host that is not
+    //dispatching, which is exactly the host somebody left to watch an issue
+    //tracker. Same shape as `channel-silence`: from startup, every fifteen
+    //seconds, and a no-op nineteen times out of twenty because ./watching.js
+    //says no until five minutes have passed and the setting is on.
+    //
+    //THE TICK STILL CALLS `watch()` TOO. Harmless -- the same guards make the
+    //second caller a no-op -- and it keeps the hook the tick has always had.
+    cron.add({
+        name: 'github-watch',
+        every: 15000,
+        autoStart: true,
+        about: 'Asks GitHub what arrived, every five minutes while watchGitHub is on, and wakes the supervisor for a tag'
+    });
+    //`undo` IS DECLARED FURTHER DOWN, so this is held and pushed there. A free
+    //identifier here compiles and dies at load, with every check green.
+    var stopWatching = cron.does('github-watch', function () {
+        return watch().then(function (swept) { return swept ? { swept: true } : null; });
+    });
+
     var dispatch = makeDispatching({
         call: function (name, args) { return actions.call(name, args || {}); },
+        watch: watch,
         say: function (who, machine) { return imports.log.on(who, machine); },
 
         busy: busy,
@@ -600,6 +638,7 @@ async function plugin(imports, register) {
     var artifacts = imports.archive.store('artifacts');
 
     var undo = [];
+    undo.push(stopWatching);
     if (actions) {
         //=================================================================
         //THE TASK DOORS, WHICH ARE THE QUEUE'S AND NOT THE WORKER'S.

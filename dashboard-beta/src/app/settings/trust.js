@@ -28,7 +28,7 @@ var { useState } = React;
 //---------------------------------------------------------------------------
 
 module.exports = function makeTrust(theme, okc) {
-    var { Pane, Panel, Note, Badge, Empty, Mono, Muted, Form, Field, Button, Link, Skeleton, ask } = theme;
+    var { Pane, Panel, Note, Badge, Empty, Mono, Muted, Form, Field, Button, Link, Skeleton, Toggle, ask } = theme;
 
     //A LOGIN, AS GITHUB DEFINES ONE. Checked here as well as in ../github/
     //server.js — not because the door is untrusted, but because a person who
@@ -282,6 +282,28 @@ module.exports = function makeTrust(theme, okc) {
                         This is not a password. It is visible in every comment that carries one, so anybody can
                         copy it — which is why it is never the whole test. Being trusted and having said the word
                         are two separate questions and both have to answer yes.
+                    </Note>
+                </Panel>
+
+                <Panel>
+                    <div className="card-title">
+                        <span className="grow">Watching GitHub</span>
+                        {s.watchGitHub ? <Badge kind="ok">on</Badge> : <Badge>off</Badge>}
+                    </div>
+                    {/* THE SETTING HAD A RATIONALE AND NO CONSUMER for as long as
+                        it existed. It has one now, and this is where it is said
+                        out loud: on means this host asks GitHub every five
+                        minutes, whether or not anybody is looking, and a tag left
+                        on an issue wakes the supervisor. Off means GitHub is read
+                        only while a Repositories pane is open. */}
+                    <Toggle on={!!s.watchGitHub} onChange={function (v) { save('watchGitHub', v); }}>
+                        Ask GitHub every five minutes on its own, and wake the supervisor when a trusted person tags an issue
+                    </Toggle>
+                    <Note>
+                        Off, GitHub is only read while a Repositories pane is open. On, this host sweeps the places
+                        it reads every five minutes, and an issue tagged with the marker by somebody on the list
+                        above wakes the supervisor with the whole conversation. Nothing is written to GitHub by
+                        watching it.
                     </Note>
                 </Panel>
 

@@ -18,6 +18,7 @@ var revising = require('../pr/revising');
 //WHOSE WORDS AN ISSUE CARRIES, and whether they may be read as a request. Every
 //body that leaves this file goes through it — see ../../github/trust.js.
 var trust = require('../../github/trust');
+var arrivedIn = require('./arrived');
 
 //---------------------------------------------------------------------------
 //THE REPOSITORIES IN THIS WORKSPACE, AND WHAT GITHUB SAYS ABOUT THEM.
@@ -1452,6 +1453,48 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- HANDING ONE OVER FROM HERE ---------------------------------------
+        //
+        //THE OTHER WAY TO FLAG AN ISSUE. A tag on GitHub is public: it is a
+        //reply on somebody else's repository saying this host is going to
+        //look. Sometimes a contributor would rather look quietly first. This
+        //puts the whole conversation into the chat as the person speaking, and
+        //wakes the supervisor -- the same two things the tag does, from here.
+        //
+        //A PERSON'S PRESS AND NOTHING ELSE. A supervisor handing an issue to
+        //itself is a supervisor deciding what it works on, which is the one
+        //decision this whole arrangement keeps with a person. Refused over the
+        //wire and to a driven press; a drill may, because a drill stands in for
+        //the person.
+        undo.push(actions.define('issueHand', {
+            about: 'Hand an issue to the supervisor from here: its whole conversation goes into the chat and the supervisor is woken. A person at the window only',
+            takes: ['on', 'number', 'note'],
+            run: async function (a) {
+                var args = a || {};
+                if (args._overTheWire || args._driven) {
+                    throw new Error('An issue is handed to the supervisor by a person at the window, in Repositories → '
+                        + 'Issues. Something that can hand itself work is deciding what it works on, and that '
+                        + 'decision stays with a person.');
+                }
+                var whole = await actions.call('issueRead', { on: args.on, number: args.number });
+                var lead = 'Look at ' + whole.on + '#' + whole.number + (whole.title ? ' — ' + whole.title : '') + '.'
+                    + (args.note ? ' ' + String(args.note).trim() : '')
+                    + (whole.asked ? '' : ' Nobody trusted has tagged it; I am handing it to you myself.');
+                await actions.call('chatSay', { text: lead + '\n\n' + whole.conversation });
+                //WOKEN REGARDLESS OF `supervisorWakes`. That setting gates the
+                //queue's automatic wakes; a person pressing a button is not
+                //automatic, and the chat's own door wakes the same way.
+                var woke = null;
+                try { woke = await actions.call('supervisorWake', { why: whole.on + '#' + whole.number + ' was handed over at the window' }); }
+                catch (e) { woke = { woke: false, why: e.message }; }
+                return {
+                    handed: true, on: whole.on, number: whole.number, woke: woke,
+                    note: 'Handed over. The whole conversation is on the Chat tab, and the supervisor '
+                        + (woke && woke.woke === false ? 'could not be woken: ' + (woke.why || 'it is not up') : 'has been woken') + '.'
+                };
+            }
+        }));
+
         //---- WHAT IS OPEN, AND WHICH OF IT SOMEBODY ASKED ABOUT -------------
         //
         //THE OTHER HALF OF `issueRead`, AND THE ONE THAT MAKES IT REACHABLE. A
@@ -2593,6 +2636,9 @@ async function plugin(imports, register) {
                 var doc = await kept();
                 var notes = doc.read({}) || {};
                 var rows = [];
+                //EACH PLACE'S PREVIOUS ANSWER BESIDE ITS FRESH ONE, so what arrived
+                //can be worked out after the write. See ./arrived.js.
+                var pairs = [];
 
                 for (var i = 0; i < want.length; i++) {
                     var was = notes[want[i].name] || null;
@@ -2642,6 +2688,7 @@ async function plugin(imports, register) {
 
                     rows.push(row);
                     notes[row.repo] = row;
+                    pairs.push({ was: was, row: row });
 
                     //SAID AS IT GOES, because this is the slow one — three
                     //requests per repository — and a person watching wants to
@@ -2654,6 +2701,60 @@ async function plugin(imports, register) {
                 }
 
                 doc.write(notes);
+
+                //---- WHAT ARRIVED SINCE THE LAST LOOK ---------------------------
+                //
+                //WORKED OUT FROM GITHUB'S OWN LISTS, two sweeps apart, and kept
+                //only as a bookmark for the supervisor: `whatsNew.arrived` reads
+                //this since its last read. The first sweep of a place has no
+                //`was` and reports nothing -- see ./arrived.js for why.
+                //
+                //A TAG IS THE ONE THING WORTH WAKING FOR. A person did it on
+                //purpose, and it is how they hand an issue over from GitHub
+                //rather than from this window. New issues and pull requests are
+                //noted and not woken for: a supervisor woken for every arrival
+                //is one nobody leaves on.
+                try {
+                    var seenAt = new Date().toISOString();
+                    var came = { issues: [], pulls: [] };
+                    pairs.forEach(function (p) {
+                        var d = arrivedIn.diffArrived(p.was, p.row);
+                        came.issues = came.issues.concat(d.issues);
+                        came.pulls = came.pulls.concat(d.pulls);
+                    });
+                    var box = await state.here.doc('github-arrived');
+                    var kept2 = box.read({}) || {};
+                    var stamp = function (x) { return Object.assign({}, x, { seenAt: seenAt }); };
+                    kept2.lookedAt = seenAt;
+                    //BOUNDED. A watch left on for a month must not grow a file
+                    //nothing ever reads the front of.
+                    kept2.issues = (kept2.issues || []).concat(came.issues.map(stamp)).slice(-200);
+                    kept2.pulls = (kept2.pulls || []).concat(came.pulls.map(stamp)).slice(-200);
+                    box.write(kept2);
+
+                    var asked = came.issues.filter(function (i) { return i.kind === 'asked'; });
+                    if (asked.length) {
+                        var wakes = false;
+                        try { wakes = (await imports.settings.read()).supervisorWakes === true; } catch (e) { wakes = false; }
+                        asked.forEach(function (i) {
+                            log.on('github', i.on).good(i.on + '#' + i.number + ' was tagged by ' + (i.asked && i.asked.by || 'somebody'));
+                        });
+                        if (wakes) {
+                            //FIRE AND FORGET, the same shape ../../queue/onejudgement.js
+                            //uses: a slow supervisor is not a reason for a sweep
+                            //to hang, and one wake names all of them.
+                            var why = asked.map(function (i) {
+                                return i.on + '#' + i.number + ' was tagged by ' + (i.asked && i.asked.by || 'somebody')
+                                    + ' — "' + String(i.title || '').slice(0, 80) + '"';
+                            }).join('; ');
+                            Promise.resolve(actions.call('supervisorWake', { why: why })).catch(function (e) {
+                                log.on('github').warn('the supervisor could not be woken for a tagged issue: ' + e.message);
+                            });
+                        }
+                    }
+                } catch (e) {
+                    log.on('github').warn('could not work out what arrived: ' + e.message);
+                }
 
                 var stuck = rows.filter(function (r) { return r.reachable !== true || r.why; });
                 return {

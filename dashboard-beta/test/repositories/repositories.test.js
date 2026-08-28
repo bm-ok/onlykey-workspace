@@ -113,7 +113,7 @@ function aGitHub(answers, budget) {
     };
 }
 
-async function anApp(answers, open, budget) {
+async function anApp(answers, open, budget, extra) {
     let actions = null;
     await actionsPlugin({}, async (_e, s) => { actions = s.actions; });
 
@@ -166,10 +166,13 @@ async function anApp(answers, open, budget) {
             source: (spec) => { sources.push(spec); return () => {}; },
             item: (kind, which, why, where2, more) => Object.assign({ kind, which, why, where: where2 }, more || {}),
             at: (tab, pane, pick) => ({ tab, pane, pick })
-        }
+        },
+        //SETTINGS, WHEN A TEST NEEDS THEM. Absent, the plugin fails shut -- nobody
+        //trusted, no marker, no wakes -- which is what every older test relies on.
+        settings: (extra && extra.settings) || { read: async () => ({}) }
     }, async () => {});
 
-    return { actions, asked: gh.asked, said, git: git_, refs, stop, sources, go: (to) => { where = to; } };
+    return { actions, asked: gh.asked, said, git: git_, refs, stop, sources, state, go: (to) => { where = to; } };
 }
 
 const REPO_OK = {
@@ -1185,4 +1188,104 @@ test('and settling on your own remote answers the errand without pointing anywhe
 
     assert.deepEqual(await forkErrand(app).waiting(), [],
         'the decision was recorded and it is still asking to be pointed somewhere');
+});
+
+//---------------------------------------------------------------------------
+//WHAT ARRIVED, AND WHO IS WOKEN FOR IT.
+//
+//The sweep diffs its own two lists and keeps a bookmark; a tag is the one
+//arrival worth waking for. Read from GitHub's lists both times -- nothing here
+//is a fact of this app's own.
+//---------------------------------------------------------------------------
+
+const ISSUE_ROW = (n, over) => Object.assign({ number: n, title: 'issue ' + n, user: { login: 'someone', type: 'User' }, comments: 0 }, over || {});
+const WAKING = { settings: { read: async () => ({ githubMarker: 'okc', githubTrusted: ['bmatusiak'], supervisorWakes: true }) } };
+
+test('a tag that appears between two sweeps is an arrival, and wakes the supervisor once', async () => {
+    const answers = Object.assign({}, REPO_OK, { '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(7)] } });
+    const woke = [];
+    const { actions, state } = await anApp(answers, undefined, undefined, WAKING);
+    actions.define('supervisorWake', { about: 'a stand-in', run: async (a) => { woke.push(a.why); return { woke: true }; } });
+
+    //FIRST SWEEP: nothing arrives, however much is open. Then the same again:
+    //still nothing, because nothing changed.
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    let box = (await state.here.doc('github-arrived')).read({});
+    assert.deepEqual(box.issues, [], 'the first sweep reported every open issue as arriving');
+    assert.deepEqual(woke, []);
+
+    //THEN SOMEBODY TRUSTED TAGS IT.
+    answers['/repos/anowner/arepo/issues'] = {
+        status: 200, body: [ISSUE_ROW(7, { body: 'okc: please look', user: { login: 'bmatusiak', type: 'User' } })]
+    };
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    box = (await state.here.doc('github-arrived')).read({});
+    assert.deepEqual(box.issues.map((i) => [i.number, i.kind]), [[7, 'asked']]);
+    assert.equal(woke.length, 1, 'the supervisor was not woken for a tag, or was woken more than once');
+    assert.match(woke[0], /anowner\/arepo#7 was tagged by bmatusiak/);
+
+    //AND NOT AGAIN NEXT SWEEP: a tag that was already there is not news.
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    assert.equal(woke.length, 1, 'an old tag woke the supervisor again');
+    assert.equal((await state.here.doc('github-arrived')).read({}).issues.length, 1);
+});
+
+test('a new issue is noted but does not wake anybody', async () => {
+    const answers = Object.assign({}, REPO_OK, { '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(7)] } });
+    const woke = [];
+    const { actions, state } = await anApp(answers, undefined, undefined, WAKING);
+    actions.define('supervisorWake', { about: 'a stand-in', run: async (a) => { woke.push(a.why); return { woke: true }; } });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    answers['/repos/anowner/arepo/issues'] = { status: 200, body: [ISSUE_ROW(7), ISSUE_ROW(8)] };
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const box = (await state.here.doc('github-arrived')).read({});
+    assert.deepEqual(box.issues.map((i) => [i.number, i.kind]), [[8, 'new']]);
+    assert.deepEqual(woke, [], 'a supervisor woken for every arrival is one nobody leaves on');
+});
+
+test('with supervisorWakes off a tag is noted and nobody is woken', async () => {
+    const answers = Object.assign({}, REPO_OK, { '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(7)] } });
+    const woke = [];
+    const { actions, state } = await anApp(answers, undefined, undefined, {
+        settings: { read: async () => ({ githubMarker: 'okc', githubTrusted: ['bmatusiak'], supervisorWakes: false }) }
+    });
+    actions.define('supervisorWake', { about: 'a stand-in', run: async (a) => { woke.push(a.why); return { woke: true }; } });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    answers['/repos/anowner/arepo/issues'] = {
+        status: 200, body: [ISSUE_ROW(7, { body: 'okc: please look', user: { login: 'bmatusiak', type: 'User' } })]
+    };
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    assert.equal((await state.here.doc('github-arrived')).read({}).issues.length, 1, 'the arrival was not noted');
+    assert.deepEqual(woke, []);
+});
+
+test("handing an issue over is a person's press, and it puts the whole conversation in the chat", async () => {
+    const answers = Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/issues/7/comments': { status: 200, body: [] },
+        '/repos/anowner/arepo/issues/7': { status: 200, body: ISSUE_ROW(7, { body: 'the header wraps', html_url: 'u', state: 'open', labels: [] }) },
+        '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(7)] }
+    });
+    const chat = [];
+    const woke = [];
+    const { actions } = await anApp(answers, undefined, undefined, { settings: { read: async () => ({}) } });
+    actions.define('chatSay', { about: 'a stand-in', run: async (a) => { chat.push(a.text); return {}; } });
+    actions.define('supervisorWake', { about: 'a stand-in', run: async (a) => { woke.push(a.why); return { woke: true }; } });
+
+    //NOT FROM THE PIPE, NOT FROM A DRIVEN PRESS. Something that can hand itself
+    //work is deciding what it works on.
+    await assert.rejects(() => actions.call('issueHand', { on: 'anowner/arepo', number: 7, _overTheWire: true }), /by a person at the window/);
+    await assert.rejects(() => actions.call('issueHand', { on: 'anowner/arepo', number: 7, _driven: true }), /by a person at the window/);
+    assert.deepEqual(chat, []);
+
+    const said = await actions.call('issueHand', { on: 'anowner/arepo', number: 7 });
+    assert.equal(said.handed, true);
+    assert.equal(chat.length, 1);
+    assert.match(chat[0], /Look at anowner\/arepo#7/);
+    assert.match(chat[0], /okc-issue-7/, 'the conversation was not the fenced whole');
+    assert.match(chat[0], /the header wraps/);
+    //NOBODY TAGGED IT, AND THE HAND-OVER SAYS SO rather than letting the
+    //supervisor infer a request that was never made.
+    assert.match(chat[0], /handing it to you myself/);
+    assert.equal(woke.length, 1);
 });
