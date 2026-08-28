@@ -179,6 +179,13 @@ module.exports = function library(theme, okc, remember) {
             //without a second read and without a moment of empty panel.
             var showing = atVer ? older.state : ((kept.state && kept.state.newest) || null);
 
+            //AND WHETHER IT HAS MOVED SINCE. Text against text, not the `lapsed`
+            //flag: an entry rewritten down the pipe has had its approval CLEARED
+            //rather than lapsed, and that is the ordinary way a contract comes
+            //to differ from the copy somebody last read.
+            var newestKept = (kept.state && kept.state.newest) || null;
+            var drifted = !!(newestKept && on && String(newestKept.text) !== String(on[K.body] == null ? '' : on[K.body]));
+
             function tell(p) {
                 return p.then(
                     function (r) { setSaid({ text: r.note || 'Done.' }); again(); },
@@ -205,10 +212,22 @@ module.exports = function library(theme, okc, remember) {
                 //about it — and finding that by reading four pages and
                 //remembering is how the edit nobody meant gets approved.
                 //
-                //ONLY WHEN THERE IS ONE TO COMPARE AGAINST. A copy is kept from
-                //the first approval on, so anything approved before this app
-                //could keep them is honestly lapsed with nothing behind it.
-                var was = x.lapsed && kept.state && kept.state.newest ? kept.state.newest : null;
+                //NOT GATED ON `lapsed`, WHICH IS THE MISTAKE THIS WAS BUILT
+                //WITH. `lapsed` means an approval is still stamped and the body
+                //no longer matches it, and for a contract or a prompt that is
+                //nearly unreachable: saving at the window IS approving, so a
+                //window edit re-approves, and a save down the pipe CLEARS the
+                //approval outright. The state a person actually meets after a
+                //model has rewritten a contract is "waiting to be read" — the
+                //one case the gate excluded.
+                //
+                //THE QUESTION IS WHETHER THERE IS SOMETHING TO COMPARE, and the
+                //answer is a kept version whose text is not what it says now.
+                //Whether the record still carries an approval is a different
+                //question and belongs to the badge, not to this.
+                var was = newestKept && String(newestKept.text) !== String(body == null ? '' : body)
+                    ? newestKept
+                    : null;
 
                 ask({
                     title: 'Approve "' + (x.name || x.id) + '"?',
@@ -219,22 +238,35 @@ module.exports = function library(theme, okc, remember) {
                             : which == 'prompt'
                                 ? 'It is what a worker is told, word for word.'
                                 : 'It is the rules a worker is given — what it may do and what it may not.',
-                        x.lapsed
-                            ? (was
-                                ? 'It was approved before and has been edited since. On the left is what you read on '
-                                    + day(was.at) + '; on the right is what you would be approving now.'
-                                : 'It was approved before and has been edited since. No copy of what was read is '
-                                    + 'kept — it was approved before this app kept them — so what follows is only '
-                                    + 'the version as it stands now.')
-                            : null,
-                        //THE THING ITSELF, IN THE DIALOG — as a difference where
-                        //there is something to differ from, and whole where
-                        //there is not. A first approval is not a change to
-                        //anything and drawing it as one would mark every line.
                         was
-                            ? <Diff key="body" left={was.text} right={body || ''}
-                                mode={which == 'job' ? 'javascript' : 'markdown'} height={300} />
-                            : (body ? <Code key="body" text={body} mode={which == 'job' ? 'javascript' : undefined} /> : null)
+                            ? 'It has changed since it was last approved. On the left is what you approved on '
+                                + day(was.at) + '; on the right is what you would be approving now, and only the '
+                                + 'marked lines are different.'
+                            : (newestKept
+                                ? 'It is word for word what you approved on ' + day(newestKept.at)
+                                    + '. Nothing is marked because nothing has changed.'
+                                : 'Nothing has been approved for this before, so there is nothing on the left and '
+                                    + 'every line on the right is new.'),
+                        //---- THE THING ITSELF, AS A DIFFERENCE, ALWAYS -------
+                        //
+                        //THIS WAS A BLOCK OF TEXT AND THE BLOCK WAS THE PROBLEM.
+                        //Nobody approving something is asking what it says — they
+                        //are asking what is different about it since they last
+                        //looked, and a hundred undifferentiated lines is what
+                        //somebody scrolls past and approves anyway.
+                        //
+                        //AND NOT ONLY WHEN THERE IS A BASELINE, which is how this
+                        //was built first and is why it never appeared: the
+                        //dialog would quietly fall back to the block for a first
+                        //approval, for anything approved before copies were
+                        //kept, and for every entry in a library that has not
+                        //been through this once. An empty left is an honest
+                        //left — it says every line is new, which is what a first
+                        //approval IS — and one surface that is always the same
+                        //surface beats one that is a difference on the days it
+                        //happens to be able to be.
+                        <Diff key="body" left={was ? was.text : ''} right={body || ''}
+                            mode={which == 'job' ? 'javascript' : 'markdown'} height={300} />
                     ],
                     fields: [{ name: 'note', label: 'A note, if it needs one', placeholder: 'what you checked' }],
                     cost: which == 'job'
@@ -514,12 +546,12 @@ module.exports = function library(theme, okc, remember) {
                                                         question somebody is actually asking when
                                                         the badge says "edited since it was
                                                         read". */}
-                                                    {kept.state.lapsed && !atVer && on[K.body] ? (
+                                                    {drifted && !atVer ? (
                                                         <div>
                                                             <Note kind="warn">
-                                                                And it has been edited since. What was approved is on
-                                                                the left; what it says now is on the right, and only
-                                                                that is what approving it again would agree to.
+                                                                And it has changed since. What was approved is on the
+                                                                left; what it says now is on the right, and only that
+                                                                is what approving it again would agree to.
                                                             </Note>
                                                             <Diff left={showing.text} right={on[K.body]}
                                                                 mode={which == 'job' ? 'javascript' : 'markdown'}
