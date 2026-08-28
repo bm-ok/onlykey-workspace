@@ -33,6 +33,24 @@ test('a tag that was already there is not news, and one withdrawn is not an arri
     assert.deepEqual(gone.issues, []);
 });
 
+test('a newer marked reply on an issue already tagged is a new ask', () => {
+    //THE ISSUE WAS TAGGED IN ITS BODY, so it was `asked` from the first sweep;
+    //the maintainer then answered with another marked comment. That is a
+    //person continuing a conversation with the supervisor, and it went
+    //unheard once because only "null before" counted.
+    const first = { where: 'the issue', by: 'bmatusiak', at: '2026-08-28T07:00:00Z' };
+    const later = { where: 'a reply', by: 'bmatusiak', at: '2026-08-28T20:13:18Z' };
+    const out = diffArrived({ issues: [ISSUE(17, { asked: first })], pulls: [] },
+        { issues: [ISSUE(17, { asked: later })], pulls: [] });
+    assert.deepEqual(out.issues.map((i) => [i.number, i.kind]), [[17, 'asked']]);
+    assert.deepEqual(out.issues[0].asked, later);
+
+    //THE SAME STAMP TWICE IS THE SAME ASK, however many sweeps see it.
+    const same = diffArrived({ issues: [ISSUE(17, { asked: later })], pulls: [] },
+        { issues: [ISSUE(17, { asked: later })], pulls: [] });
+    assert.deepEqual(same.issues, []);
+});
+
 test('a pull request not seen before is new; a closed issue is nothing', () => {
     const out = diffArrived({ issues: [ISSUE(1), ISSUE(2)], pulls: [PULL(7)] }, { issues: [ISSUE(1)], pulls: [PULL(7), PULL(8)] });
     assert.deepEqual(out.issues, [], 'an issue that closed was reported as arriving');

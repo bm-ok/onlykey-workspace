@@ -11,8 +11,17 @@
 //
 //  new     an issue or pull request not in the previous sweep at all
 //  asked   an issue that was there before and has NOW been tagged -- `asked`
-//          was null and is set. This is the one a person did on purpose, and
-//          the only one worth waking anything for.
+//          was null and is set, OR it names a newer turn than it did. This is
+//          the one a person did on purpose, and the only one worth waking
+//          anything for.
+//
+//          THE SECOND HALF WAS MISSING AND A CONVERSATION WENT UNHEARD. An
+//          issue tagged in its body is `asked` from the first sweep; when the
+//          maintainer then answered the reply with another marked comment,
+//          `asked` moved to that comment and nothing counted it, because
+//          "null before" was the whole test. A person talking to the
+//          supervisor through GitHub is exactly what a tag is for, and every
+//          turn of it after the first was silent.
 //
 //NOT: a closed issue, an edit, a reply that carries no marker. Those are the
 //ordinary churn of a project and a supervisor woken for each would be a
@@ -43,9 +52,11 @@ function diffArrived(was, now) {
             out.issues.push(Object.assign(pick(i), { kind: 'new', asked: i.asked || null }));
             return;
         }
-        //TAGGED SINCE. Null before, set now. A tag that was already there is
-        //not news, and one that was withdrawn is not an arrival either.
-        if (!before.asked && i.asked) {
+        //TAGGED SINCE. Null before and set now, or set to a NEWER turn than
+        //before -- `asked` follows the latest marked comment, so a new one
+        //moves its `at`. A tag that was already there is not news, and one
+        //that was withdrawn is not an arrival either.
+        if (i.asked && (!before.asked || (i.asked.at && before.asked.at !== i.asked.at))) {
             out.issues.push(Object.assign(pick(i), { kind: 'asked', asked: i.asked }));
         }
     });
