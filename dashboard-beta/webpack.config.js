@@ -20,7 +20,16 @@ module.exports = (env, argv = {}) => {
 
     const babel = {
         test: /\.jsx?$/,
-        exclude: /node_modules/,
+        //AND EVERY `vendor/` FOLDER, WHICH IS THE SAME ARGUMENT AS node_modules
+        //made against a folder this app happens to track. What is vendored is a
+        //SHIPPED BUILD — already down-levelled by whoever published it — so the
+        //only thing babel can do to one is change it.
+        //
+        //AND IT CAN. Babel's default sourceType is `module`, so a file it
+        //decides is a module gets its top-level `this` rewritten to `undefined`
+        //— which is how a UMD wrapper stops finding the global it was written
+        //to attach to, at run time, with no build error anywhere.
+        exclude: /node_modules|[\\/]vendor[\\/]/,
         use: {
             loader: 'babel-loader',
             options: {

@@ -232,6 +232,13 @@ async function plugin(imports, register, config) {
         //See ../../THEME.md for which is which.
         theme: Object.assign({ Topbar, Dot, Pane }, layout, bits, dialog, {
             Code: Code, Editor: imports.editor.Editor, Markdown: Markdown,
+            //THE SECOND THING READ CLOSELY ENOUGH FOR A DECISION TO HANG ON IT.
+            //`Code` answers "what does this say"; `Diff` answers "what is
+            //DIFFERENT about it", and a pane asking somebody to approve a change
+            //is asking the second question. Reading two documents side by side
+            //and spotting the changed paragraph yourself is how a change gets
+            //approved unread.
+            Diff: imports.editor.Diff,
             //A TERMINAL IS A SURFACE LIKE THE OTHER TWO, and folded in for the
             //same reason: a pane asks the theme for what it draws with, and
             //asking a different plugin for one thing would be a second door.

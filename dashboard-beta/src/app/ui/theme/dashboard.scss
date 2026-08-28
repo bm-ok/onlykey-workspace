@@ -450,6 +450,21 @@ h2:first-child { margin-top: 0; }
    initialises. */
 .code .ace_gutter { background: #0a0d12; }
 .code .ace_scroller { background: #0a0d12; }
+/* THE OTHER THING READ CLOSELY ENOUGH FOR A DECISION TO HANG ON IT: a change,
+   side by side. The frame matches .code because they are the same act — text
+   somebody has to read every line of before pressing something.
+
+   NO HEIGHT HERE, AND THAT IS THE POINT. ace-diff's own wrapper is
+   `position: absolute; top: 0; bottom: 0`, so a box sized by its content gives
+   it nothing to be absolute inside and the whole diff collapses to nothing at
+   all. The plugin sets a definite one inline; a second owner of that height is
+   the defect the comment above .code was written about. */
+.diff {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 0 0 12px;
+}
 .dlg-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 .dlg-heading {
   font-size: 10px;

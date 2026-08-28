@@ -3,7 +3,7 @@ var React = require('react');
 module.exports = function skill(theme, okc, remember) {
     var {
         Pane, Panel, Cols, Col, Stack, Card, CardTitle, CardSub, Badge, Button,
-        Chips, Chip, Finder, Skeleton, Empty, Note, Mono, Kv, KvRow, Notice, Code, ask
+        Chips, Chip, Finder, Skeleton, Empty, Note, Mono, Kv, KvRow, Notice, Code, Diff, ask
     } = theme;
 
     function Skill() {
@@ -158,10 +158,23 @@ module.exports = function skill(theme, okc, remember) {
                         </Kv>
 
                         <Note>
-                            Nothing is served from this. The document above is what the next waking is
-                            given, until this is approved.
+                            Nothing is served from this. What is served is on the left, the proposal is
+                            on the right, and only the changed lines are marked. Nothing here is
+                            editable — this is a decision about somebody else's document, not a place
+                            to redraft it.
                         </Note>
-                        <Code text={proposed.text} mode="markdown" tall />
+                        {/*---- WHAT IS DIFFERENT, NOT WHAT IT SAYS ------------
+
+                            THIS PANEL USED TO BE THE WHOLE PROPOSED DOCUMENT and
+                            nothing else, which meant finding a changed paragraph
+                            in four pages of instructions by reading both and
+                            remembering. That is how a change gets approved
+                            unread, which is the one failure this panel exists to
+                            prevent.
+
+                            SERVED ON THE LEFT, AND THE LEFT IS NEVER EDITABLE —
+                            what is being judged is the change FROM it. */}
+                        <Diff left={text} right={proposed.text} mode="markdown" height={520} />
                     </Panel>
                 ) : null}
             </Pane>

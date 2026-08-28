@@ -16,7 +16,7 @@ module.exports = function kit(theme) {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Row,
         Card, CardTitle, CardSub, Badge, Badges, Chips, Chip,
         Button, Toggle, Views, Linky, Plus, Cog, Dot, Finder, Sorter, Form, Field, Skeleton, Notice, Banner, Link, Spec,
-        Empty, Note, Mono, Muted, Kv, KvRow, Part, PartWhy, Group, Head, Markdown, Code, Term, ask
+        Empty, Note, Mono, Muted, Kv, KvRow, Part, PartWhy, Group, Head, Markdown, Code, Diff, Term, ask
     } = theme;
 
     //NAMED Shelf RATHER THAN Group, and the rename is the point. The theme now
@@ -511,6 +511,58 @@ module.exports = function kit(theme) {
                                 <Mono>do</Mono> and <Mono>in</Mono> at random. On a contract about what a
                                 judge may not do, that is false emphasis on the one document somebody has
                                 to read every line of.
+                            </Note>
+                        </Shelf>
+                        {/* AND THE OTHER HALF OF THE SAME ARGUMENT. `Code`
+                            answers "what does this say"; this answers "what is
+                            DIFFERENT about it", and every approval in this app
+                            is the second question wearing the first one's
+                            clothes. */}
+                        <Shelf title="A difference, where a decision hangs on it"
+                            about="reading two documents and spotting the changed line yourself is how a change gets approved unread">
+                            <Diff mode="markdown" height={260}
+                                left={[
+                                    '## What it may do',
+                                    '',
+                                    '- read the queue, and say what it thinks',
+                                    '- ask for a judgement on a branch it has read',
+                                    '- commission work, once, with a reason',
+                                    '',
+                                    '## What it may never do',
+                                    '',
+                                    '- push to a branch line',
+                                    '- merge anything'
+                                ].join('\n')}
+                                right={[
+                                    '## What it may do',
+                                    '',
+                                    '- read the queue, and say what it thinks',
+                                    '- ask for a judgement on a branch it has read',
+                                    '- commission work, with a reason it can point at',
+                                    '- propose a change to this document',
+                                    '',
+                                    '## What it may never do',
+                                    '',
+                                    '- push to a branch line',
+                                    '- merge anything'
+                                ].join('\n')} />
+                            <Note>
+                                What is served is on the left and it is <strong>never</strong> editable,
+                                in either job &mdash; what is being judged is the change <em>from</em> the
+                                left, so a left that can be edited is a difference that can be made to say
+                                anything.
+                            </Note>
+                            <Note>
+                                It takes a definite <Mono>height</Mono> rather than sizing to its content,
+                                which is the one way it differs from <Mono>Code</Mono> above. The bands and
+                                connectors are drawn absolutely, so a box sized by what is in it gives them
+                                nothing to sit inside and the whole thing collapses to nothing at all.
+                            </Note>
+                            <Note>
+                                <Mono>editable</Mono> turns the right side into a place to resolve a change
+                                rather than only look at one, and grows the copy arrows in the gutter. Same
+                                component, because it is the same geometry &mdash; the difference is whether
+                                anything may move.
                             </Note>
                         </Shelf>
                         <Shelf title="A terminal, which is not text"
