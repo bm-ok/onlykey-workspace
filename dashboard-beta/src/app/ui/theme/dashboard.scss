@@ -1618,6 +1618,27 @@ table.kv.where .sub:last-child { margin-bottom: 0; }
 .msg { max-width: 74%; display: flex; flex-direction: column; gap: 3px; }
 .msg.mine { align-self: flex-end; align-items: flex-end; }
 .msg.theirs { align-self: flex-start; align-items: flex-start; }
+/* ---- AND WHAT WOKE IT, WHICH IS NEITHER SIDE OF THE CONVERSATION -------
+   A task finished, or a judgement came back, and the app started a turn about
+   it. Nobody said that, so it is not a bubble on either side: it sits in the
+   middle, full width, outlined rather than filled.
+
+   YELLOW BECAUSE IT IS THE COLOUR THIS APP ALREADY USES for "something is
+   happening that you did not ask for" -- the testing-mode banner and every
+   `warn` note. It is not a fault and must not read as one, so it is an outline
+   with no fill: present, and quiet. */
+.msg.woke {
+  max-width: 100%;
+  align-self: stretch;
+  align-items: stretch;
+}
+.msg.woke .msg-body {
+  background: none;
+  border: 1px solid var(--warn);
+  color: var(--muted);
+  font-size: 12px;
+}
+.msg.woke .msg-who { color: var(--warn); }
 .msg-who {
   font-size: 11px;
   color: var(--muted);

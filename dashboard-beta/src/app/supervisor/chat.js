@@ -775,22 +775,30 @@ module.exports = function chat(theme, okc, markdown) {
                 {msgs.map(function (m) {
                     var mine = m.who == 'person' || m.who == 'you' || m.who == 'the person';
 
+                    //---- AND THE APP ITSELF, WHICH IS NEITHER --------------
+                    //
+                    //A wake is not somebody speaking: something happened and a
+                    //turn was started about it. Read as a bubble on one side or
+                    //the other it would be the app putting words in somebody's
+                    //mouth — so it is a line across the middle instead.
+                    var woke = m.who == 'app';
+
                     //FADED UNTIL THE SUPERVISOR HAS ACTUALLY BEEN HANDED IT.
                     //It is switched off most of the time, so "written down" and
                     //"delivered" are hours apart and look identical from here —
                     //which is what made this tab read as a chat where the other
                     //end is ignoring you. Only YOUR messages: the supervisor's
                     //own are read by definition, being on your screen.
-                    var waiting = mine && Number(m.n) > Number(readTo || 0);
+                    var waiting = mine && !woke && Number(m.n) > Number(readTo || 0);
 
                     return (
-                        <div className={'msg ' + (mine ? 'mine' : 'theirs') + (waiting ? ' waiting' : '')} key={m.n}>
+                        <div className={'msg ' + (woke ? 'woke' : mine ? 'mine' : 'theirs') + (waiting ? ' waiting' : '')} key={m.n}>
                             <div className="msg-who">
                                 {/* "you" AND "the supervisor", not `person` and
                                     `supervisor`. The row above a bubble is read
                                     at a glance and the raw field names read as
                                     data rather than as a conversation. */}
-                                <span>{mine ? 'you' : 'the supervisor'}</span>
+                                <span>{woke ? 'it was woken' : mine ? 'you' : 'the supervisor'}</span>
 
                                 {/* WHERE IT CAME FROM, when it was not somebody
                                     typing here. A line written by a drill or from

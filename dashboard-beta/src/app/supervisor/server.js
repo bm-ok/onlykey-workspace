@@ -944,6 +944,28 @@ async function plugin(imports, register) {
             //WHICH MACHINE IS ../../runners/guests's ANSWER — the same one the
             //sign-in desk uses. Not decided here: "which supervisor" is a
             //decision, and a second copy of it drifts.
+            //---- WHAT WOKE IT, WHERE A PERSON WILL SEE IT ------------------
+            //
+            //A WAKING IS AN EVENT AND THE CONVERSATION SHOWED ONLY SPEECH. A
+            //task finishes, a judgement comes back, and the supervisor answers
+            //something nobody asked — which is unreadable without the line that
+            //says what asked. It was in the event log, which is not where
+            //anybody reads a conversation.
+            //
+            //`who: 'app'` BECAUSE IT IS NEITHER OF THEM. Filed as a person it
+            //would be the app putting words in somebody's mouth; filed as the
+            //supervisor it would read as the model having said why it woke, and
+            //it cannot know that — it is told it is awake, not why.
+            //
+            //NOT WHEN A PERSON SAID SOMETHING. Their message is already the line
+            //above it, and "it was woken because you said something" under the
+            //thing you just typed is noise.
+            var because = String(a.why == null ? '' : a.why).trim();
+            if (because && !/^you said something/i.test(because)) {
+                try { talk.say({ who: 'app', via: 'wire', text: because }); }
+                catch (e) { /* a waking that could not be written down still happens */ }
+            }
+
             var on = guests.whichSupervisor(a.name);
 
             //STARTED IF IT IS DOWN, and that is this caller's step rather than

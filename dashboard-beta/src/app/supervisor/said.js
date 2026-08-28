@@ -42,7 +42,16 @@
 
 //WHO MAY SPEAK, and there are exactly two kinds. A third would need a reason and
 //a column, and neither exists yet.
-var WHO = { person: true, supervisor: true };
+//AND THE APP ITSELF, WHICH IS NEITHER OF THEM. A wake is not somebody
+//speaking: a task finished, or a judgement came back, and the app started a
+//turn about it. Recording that as a person would be the app putting words in
+//somebody's mouth, and recording it as the supervisor would be worse — it would
+//read as the model having said why it woke up, which it cannot know.
+//
+//IT IS IN THE CONVERSATION RATHER THAN ONLY IN THE LOG because the conversation
+//is what a person reads to understand what happened, and "it answered something
+//nobody asked" is unreadable without the line that says what asked.
+var WHO = { person: true, supervisor: true, app: true };
 
 //AND WHERE IT CAME FROM, which is a different question from who said it.
 //
