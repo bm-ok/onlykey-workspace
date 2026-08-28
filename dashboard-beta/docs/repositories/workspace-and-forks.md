@@ -1,0 +1,44 @@
+# Workspace, forks and the chain
+
+A workspace is a folder of repositories. Each repository here is a clone
+with a GitHub remote, and that remote is usually a **fork** of something —
+which is usually a fork of the project. The Repositories tab keeps the whole
+chain straight, because two questions depend on it.
+
+## Where work is sent
+
+A pull request has to open *into* somewhere. For a fork of a fork the
+choices are: your own remote, the one above yours, or the project. **Send
+work to** on the Repos pane (`repoTargetSet --repo X --on owner/name`)
+records the choice; it is the one setting here with somebody else's name on
+it, so a failed check never drops it. `repoChain --repo X` walks the chain
+one link at a time and says which of them this token may open a pull
+request on.
+
+## Where issues and pull requests are read from
+
+Issues are filed where people file them, which for a fork of a fork can be
+any of three trackers — and one may have issues switched off. **Read issues
+from** (`repoReadsSet --repo X --issues ... --pulls ...`) chooses which
+places are read. The Issues pane names every place it read from, and says
+when one could not be read whole rather than passing a short list off as a
+complete one.
+
+## Keeping in step
+
+- `repoSync` fetches and fast-forwards every default branch; only
+  fast-forwards, never merges.
+- `repoForkSync` pulls each fork's default up from its parent on GitHub —
+  the *Sync fork* button.
+- `repoBranches --repo X` says where each branch is here, where origin has
+  it, and which are out of step.
+- `lineSync --name L` does the same for every branch a line names, as one
+  act.
+
+## What is known, and how fresh
+
+`repositoriesCheck` asks GitHub; `repositories` answers from what was last
+learnt and says when. Reads are fingerprinted (a 304 is free), pooled eight
+at a time, and stop early with room left in the hourly budget so a press
+still works. Three repositories with their forks, issues, threads and pull
+requests come back in about ten seconds.
