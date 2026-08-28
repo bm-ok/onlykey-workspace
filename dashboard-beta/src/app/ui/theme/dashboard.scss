@@ -1002,15 +1002,6 @@ input.protected, select.protected, textarea.protected {
 
    The background matches the theme handed to xterm in ../xterm/window.js, so the
    two cannot disagree about what colour a terminal is. */
-.term {
-  height: 260px;
-  padding: 6px 8px;
-  background: #0a0d12;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
 .linky.protected {
   color: var(--human);
   text-decoration: underline;
@@ -1149,7 +1140,17 @@ table.kv td .ok { color: var(--ok); }
   background: #0a0d12;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 8px;
+  /* NO PADDING, AND THAT IS NOT A LOOK. xterm's fit addon measures THIS box to
+     decide how many rows to draw, then draws them from its top edge — so any
+     padding here is height it was counted for and cannot use, and the last row
+     is clipped by the `overflow: hidden` below. One row, always, on every
+     terminal in the app.
+
+     There were also TWO `.term` rules in this file and the other one set a
+     different height and a different padding. The later one won, so the first
+     was dead and every reading of it was wrong about what a terminal looks
+     like. The inset it was after is xterm's own `padding` on its screen, which
+     is inside the measurement rather than outside it. */
   overflow: hidden;
 }
 
