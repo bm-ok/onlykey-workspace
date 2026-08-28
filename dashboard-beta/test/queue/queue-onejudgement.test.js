@@ -283,6 +283,18 @@ test('the conclusion is read out of what it handed back', async () => {
     assert.ok(said.some((m) => /J36 concluded: accept/.test(m)), said.join(' | '));
 });
 
+test('the drawer answers with a promise, and the conclusion is still read', async () => {
+    //THE REAL DRAWER IS ASYNC -- ../core/archive's store.list -- and for as
+    //long as this read it without awaiting, every judgement that ever ran was
+    //logged "nothing handed back" and concluded nothing, with the report in
+    //the drawer ending RECOMMENDATION: accept. A stand-in that answered
+    //synchronously could not see that.
+    const files = handed;
+    await onejudgement({ handedBack: () => Promise.resolve(files) }).run(snapshot(rec = JUDGEMENT()), 'kit-1');
+    assert.equal(rec.concluded, 'accept');
+    assert.ok(said.some((m) => /GOOD J36 done — finished \(exit 0\) — 1 file\(s\) handed back/.test(m)), said.join(' | '));
+});
+
 test('a reading that would not say is done with no conclusion, not a failure', async () => {
     //"NOBODY HAS LOOKED" AND "SOMEBODY LOOKED AND WOULD NOT SAY" are different,
     //and both are useful to see.

@@ -172,7 +172,13 @@ module.exports = function onejudgement(deps) {
 
             //WHAT CAME BACK, before the machine is touched again — it is about
             //to be rolled back, which is exactly when nobody is watching.
-            var handed = handedBack(judgement.uid) || [];
+            //AWAITED. The drawer this reads is ../core/archive's store and its
+            //`list` is async; read without the await it is a Promise, whose
+            //`.length` is undefined -- so every judgement that ever ran here
+            //was logged "nothing handed back" and concluded nothing, while the
+            //report sat in the drawer ending RECOMMENDATION: accept. ./papers.js
+            //awaits the same function; this did not.
+            var handed = (await handedBack(judgement.uid)) || [];
             var concluded = await concludedAcross(handed, async function (file) {
                 return String(((await readHanded(judgement.uid, file)) || {}).text || '');
             });
