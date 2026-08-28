@@ -220,6 +220,23 @@ module.exports = function issues(theme, okc, remember, shell) {
                                                     {i.comments
                                                         ? <span className="muted">{i.comments + ' reply(s)'}</span>
                                                         : null}
+                                                    {/* GITHUB LINKS ISSUES INTO A TREE and a flat
+                                                        list hides which is which. An issue with
+                                                        sub-issues is PLANNING — the work is in the
+                                                        ones under it — and a sub-issue read on its
+                                                        own is a fragment of a job whose shape is
+                                                        somewhere else. Both change what "do this"
+                                                        means, so both belong on the row. */}
+                                                    {i.subs
+                                                        ? <Badge kind="muted" title="The work is likely in the issues under this one">
+                                                            {i.subs.done + '/' + i.subs.total + ' sub-issues'}
+                                                        </Badge>
+                                                        : null}
+                                                    {i.parent
+                                                        ? <Badge kind="muted" title="This is part of a larger piece of work">
+                                                            {'under #' + i.parent.number}
+                                                        </Badge>
+                                                        : null}
                                                 </Badges>
                                             </Card>
                                         );
@@ -269,6 +286,22 @@ module.exports = function issues(theme, okc, remember, shell) {
                     {'opened by ' + (i.by || 'somebody') + ' on ' + (i.on || repo) + ', ' + ago(i.at)
                         + (said.length ? ' · ' + said.length + (said.length === 1 ? ' reply' : ' replies') : ' · no replies')}
                 </Note>
+
+                {/* WHAT IT IS PART OF, SAID BEFORE THE WORDS. Reading the
+                    thread of a planning issue and acting on it is acting on the
+                    summary of work that lives somewhere else — and reading a
+                    sub-issue alone is reading a fragment. Either way the words
+                    below are not the whole of what is being asked. */}
+                {i.subs || i.parent
+                    ? <Note kind="warn">
+                        {(i.parent ? 'Part of ' + (i.parent.on || repo) + '#' + i.parent.number + '. ' : '')
+                            + (i.subs
+                                ? 'It has ' + i.subs.total + ' sub-issue' + (i.subs.total === 1 ? '' : 's')
+                                    + (i.subs.done ? ' (' + i.subs.done + ' closed)' : '')
+                                    + ' — the work is likely in those rather than in this one.'
+                                : '')}
+                    </Note>
+                    : null}
 
                 {/* WHO ASKED, WHEN, AND WHY IT COUNTED. The badge says that
                     somebody did; this says which of them, in which reply, and on
