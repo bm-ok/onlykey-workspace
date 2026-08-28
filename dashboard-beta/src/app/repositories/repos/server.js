@@ -512,6 +512,11 @@ async function plugin(imports, register) {
                         //vanished from a list that said it had one.
                         state: x.state || 'open',
                         labels: (x.labels || []).map(function (l) { return typeof l == 'string' ? l : l.name; }),
+                        //HOW MANY REPLIES, WHICH IS WHY THIS IS CARRIED AT ALL.
+                        //It decides whether the thread is worth a second
+                        //request, and it is the only way to know that without
+                        //making the request.
+                        comments: Number(x.comments || 0),
                         //---- THE WORDS, AND WHOSE THEY ARE -----------------
                         //
                         //CARRIED so a task can be written from the Overview list
@@ -538,6 +543,83 @@ async function plugin(imports, register) {
                     };
                 }));
             }
+        }
+
+        //---- AND THE REPLIES, WHICH ARE WHERE PEOPLE ACTUALLY SAY THINGS ------
+        //
+        //AN ISSUE BODY IS WHAT SOMEBODY OPENED WITH. The conversation is
+        //underneath it, and that is where a person says "yes, do this" — the
+        //body was written before anybody had agreed to anything.
+        //
+        //IT IS ALSO WHERE THE AUTHORS DIVERGE. One issue has one author; a
+        //thread under it has as many as have replied, and a reply from a
+        //stranger sits in the same list as one from the owner. So every comment
+        //carries its own `by` and its own fence, decided on its own — reading
+        //them as "the issue's text" would let anybody who can comment write in
+        //somebody else's name.
+        //
+        //ONLY WHERE THERE ARE ANY, and only for issues, which is why the count
+        //above is carried: a request per issue is a request per issue, and most
+        //have nothing under them.
+        for (var ci = 0; ci < (issues || []).length; ci++) {
+            var one = issues[ci];
+            if (!one.comments) { one.said = []; continue; }
+
+            var where = String(one.on || '').split('/');
+            if (where.length !== 2) { one.said = []; continue; }
+
+            var replies = await github.call('GET',
+                '/repos/' + where[0] + '/' + where[1] + '/issues/' + one.number + '/comments?per_page=100');
+
+            //A THREAD THAT COULD NOT BE READ IS SAID, not silently empty. "No
+            //replies" and "the replies could not be fetched" are different
+            //answers, and one of them means somebody should look.
+            if (replies.status !== 200 || !Array.isArray(replies.body)) {
+                one.said = null;
+                one.saidWhy = 'the replies could not be read: ' + (replies.status || 'no answer');
+                continue;
+            }
+
+            one.said = replies.body.map(function (c) {
+                var asItself = {
+                    number: one.number, on: one.on,
+                    by: c.user && c.user.login,
+                    body: c.body || null,
+                    //A COMMENT CARRIES NO LABELS. The marker has to be in what
+                    //was written, which is the point: a label is the issue's and
+                    //a comment is one person's.
+                    labels: []
+                };
+                var reading = readingOf(asItself);
+                return {
+                    at: c.created_at, by: asItself.by, url: c.html_url,
+                    reading: reading,
+                    body: trust.fenced(asItself, reading)
+                };
+            });
+        }
+
+        //---- AND WHETHER ANYBODY ACTUALLY ASKED FOR ANYTHING -----------------
+        //
+        //ONE FIELD TO LOOK AT rather than a rule to re-derive. A request can be
+        //in the body or in any reply, and something reading this should not have
+        //to work out the precedence — nor be tempted to invent its own.
+        for (var ai = 0; ai < (issues || []).length; ai++) {
+            var it = issues[ai];
+            var asked = it.reading && it.reading.kind === 'request'
+                ? { where: 'the issue', by: it.reading.by, why: it.reading.why }
+                : null;
+
+            //THE LAST ONE WINS, because a thread is read in order and the most
+            //recent word is the current one. Somebody who asked and then said
+            //"actually, no" has said the second thing.
+            (it.said || []).forEach(function (c) {
+                if (c.reading && c.reading.kind === 'request') {
+                    asked = { where: 'a reply', by: c.reading.by, at: c.at, why: c.reading.why };
+                }
+            });
+
+            it.asked = asked;
         }
 
         //FROM EVERY PLACE THIS REPOSITORY READS PULL REQUESTS FROM, the same set
