@@ -1219,6 +1219,100 @@ async function plugin(imports, register) {
             }
         }));
 
+        //---- WHY A RUN DID WHAT IT DID --------------------------------------
+        //
+        //`taskProgress` AND `judgementFindings` ANSWER WHAT HAPPENED. This
+        //answers why, and it is the only thing that does: the transcript of the
+        //run itself, kept on this host so it survives the machine being rolled
+        //back underneath it.
+        //
+        //THE DRAWER IS ALREADY FULL AND NOTHING COULD READ IT. Every run's
+        //output has been kept — see ./onetask.js and ./onejudgement.js, which
+        //fetch it before the machine is put away, exactly so this question can
+        //be asked later — and no door opened it. The logs were being written for
+        //a reader that did not exist.
+        //
+        //ONE DRAWER, TWO KINDS, TWO DOORS. A judgement's log is a run's log and
+        //is filed the same way; what differs is only which record holds the uid,
+        //so somebody looking for it should not have to know which kind of work
+        //produced it. Two doors rather than one taking a kind, because the ids
+        //are different vocabularies — #32 is a task and J29 is a judgement, and
+        //a single door would have to guess which was meant.
+        function aLog(what, uidOf) {
+            return async function (args) {
+                var a = args || {};
+                var it = await uidOf(a);
+
+                var kept = archive.list(it.uid);
+
+                if (!a.run) {
+                    return Object.assign({}, it.said, {
+                        attempts: kept,
+                        //NOTHING KEPT IS NOT THE SAME AS NOTHING SAID, and the
+                        //difference is worth a sentence: anything that ran
+                        //before this app started keeping logs has none, and no
+                        //amount of asking will produce one.
+                        note: kept.length
+                            ? kept.length + ' attempt(s) kept. Ask again with `run` for one of them.'
+                            : 'Nothing was kept for this. Anything that ran before this app began keeping '
+                                + 'logs has none — the machine was rolled back and the output went with it.'
+                    });
+                }
+
+                var one = archive.read(it.uid, a.run, { lines: a.lines == null ? 200 : Number(a.lines) });
+
+                //`found: false` RATHER THAN A THROW, which is this drawer's
+                //shape — see ./archive.js. Turned into a refusal here because a
+                //caller that asked for one run by name wants to be told it is
+                //not there, not handed an object that reads as an empty log.
+                if (!one.found) {
+                    throw new Error('Nothing was kept for "' + a.run + '" — ' + one.why + '. Ask without a '
+                        + 'run to see which attempts there are.');
+                }
+                return Object.assign({}, it.said, one);
+            };
+        }
+
+        undo.push(actions.define('taskLog', {
+            about: "One attempt's output from a task, kept on this host so it survives the machine",
+            needs: 'workspace',
+            takes: ['id', 'run', 'lines'],
+            run: aLog('task', async function (a) {
+                var task = await store.get(a.id);
+                if (!task) {
+                    throw new Error('There is no task "' + a.id + '". Ask for "tasks" to see what there is.');
+                }
+                return { uid: task.uid, said: { task: task.id, number: task.number, title: task.title } };
+            })
+        }));
+
+        undo.push(actions.define('judgementLog', {
+            about: "One attempt's output from a judgement, kept on this host — the only thing that says why "
+                + 'one came back empty',
+            needs: 'workspace',
+            takes: ['id', 'ref', 'run', 'lines'],
+            //IT EXISTS BECAUSE ITS ABSENCE WAS EXPENSIVE, and twice. In the app
+            //this is ported from, a supervisor looking for why J41 came back
+            //empty asked `taskLog` three times and was refused three times: a
+            //judgement is not a task, and that was the only log-reading tool
+            //there was. Here it was worse — the verb was on the supervisor's
+            //list, so it was offered as a tool, and answered nothing at all.
+            //
+            //AND J26 IS WHAT IT IS FOR. That judgement came back empty on 27
+            //August because the runner started `claude` with no input and gave
+            //up in sixteen seconds. From outside, that is identical to a judge
+            //that read the change and found nothing — and the second is an
+            //answer while the first is a machine fault that will happen again.
+            run: aLog('judgement', async function (a) {
+                var it = await imports.judge.get(a.ref || a.id);
+                if (!it) {
+                    throw new Error('There is no judgement "' + (a.ref || a.id) + '". Ask for "judging" to '
+                        + 'see what there is.');
+                }
+                return { uid: it.uid, said: { judgement: it.id, ref: it.ref || imports.judge.refOf(it.number) } };
+            })
+        }));
+
         //---- AND WHAT ARRIVED ON ITS BRANCH ---------------------------------
         //
         //NEVER CACHED, and that is the whole note. This is what somebody judges

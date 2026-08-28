@@ -99,7 +99,7 @@ var MAY = {
   // ---- what it may see -----------------------------------------------------
   tasks: 'the board: every task, and whether its branch has anything on it yet',
   taskProgress: 'every attempt at one task, and what its worker is doing now',
-  // taskLog: NOT PORTED YET -- see the note at the foot of this file.
+  taskLog: "one attempt's output from a task, so it can read why a run did what it did",
   branchBoard: 'every branch, who claims it, and what is on it',
   lines: 'the named lines, which are what a branch is cut from',
   jobs: 'the jobs it may write a task under — a job is a script a person approved',
@@ -145,7 +145,7 @@ var MAY = {
   // is, and it exists because a supervisor went looking for one and had nowhere
   // to look: it asked `taskLog` three times and was refused three times, because
   // a judgement is not a task.
-  // judgementLog: NOT PORTED YET -- see the note at the foot of this file.
+  judgementLog: "the output of a judgement's run, kept on this host — the only thing that says WHY one came back empty",
   // WHAT KINDS OF MACHINE THERE ARE, which is what a task's tag names. Without
   // this it could put a tag on a task and had no way to know which tags exist —
   // and the queue WAITS for a tagged machine rather than falling back, so a
@@ -404,10 +404,14 @@ module.exports = {
 
 // ---- WHAT IS NOT HERE YET, AND WHY IT IS COMMENTED OUT RATHER THAN LEFT IN --
 //
-// `taskLog`, `judgementLog`, `issues` and `pulls` are on the old app's list and
-// nothing in this one answers them. They are commented out rather than deleted
-// because each is a real gap in the port and the line is where somebody will
-// look for it.
+// `issues` and `pulls` are on the old app's list and nothing in this one answers
+// them. They are commented out rather than deleted because each is a real gap in
+// the port and the line is where somebody will look for it.
+//
+// `taskLog` and `judgementLog` WERE HERE TOO AND ARE BACK. The logs had been
+// kept the whole time — every run's output is fetched before its machine is put
+// away, exactly so the question can be asked later — and no door opened them.
+// They were being written for a reader that did not exist.
 //
 // LEAVING THEM IN WAS THE WORSE OPTION, AND IT WAS THE ONE IN PLACE. A name on
 // this list is an MCP tool in front of the model — see the scripts folder's
@@ -423,6 +427,5 @@ module.exports = {
 // have caught that: the tool list IS this list, so "no tool it names is missing"
 // was true and meant nothing.
 //
-// `judgementLog` IS THE ONE WORTH PORTING FIRST. It is what separates a
-// judgement that found nothing from a run that died — and this app has already
-// had the second read as the first, on J26.
+// WHAT IS LEFT IS `issues` AND `pulls`, which is also why `whatsNew` reports
+// nothing ever arriving: there is nothing here for it to arrive from.
