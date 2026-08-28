@@ -81,6 +81,15 @@ module.exports = function library(what, doc, opts) {
     //anything worked out here reaches every caller — which is the point: the
     //runner asks `get` and the panes ask `all`, and they were disagreeing.
     var alsoOf = o.alsoOf || null;
+
+    //WHAT TO DO WHEN A PERSON APPROVES ONE. Handed in, so this file goes on
+    //knowing nothing about where a copy is kept — and so it stays testable
+    //without one. See ../core/versions: the text somebody approved is the one
+    //worth being able to go back to, and it was overwritten by the next save.
+    //
+    //ONLY WHEN AN APPROVAL IS STAMPED, which is the whole rule. A draft saved
+    //down the pipe is not approved and is not a version of anything.
+    var keepApproved = o.keepApproved || null;
     var writes = o.writes || [];
 
     async function read() {
@@ -231,6 +240,21 @@ module.exports = function library(what, doc, opts) {
                 : (changed ? null : was.approval || null);
 
             list[at] = made;
+        }
+
+        //---- AND A COPY OF WHAT WAS APPROVED --------------------------------
+        //
+        //AFTER THE RECORD IS SETTLED AND BEFORE IT IS WRITTEN, so the text kept
+        //is the text that is about to stand. Awaited: a version that is kept
+        //after the caller has been told "approved" is one that can go missing
+        //without anybody noticing.
+        //
+        //ITS FAILURE IS NOT THE SAVE'S. Approving is the act; keeping a copy is
+        //a service to whoever reads later, and losing that must not stop
+        //somebody approving a contract.
+        if (made.approval && keepApproved) {
+            try { await keepApproved(made, bodyOf(made, ctx)); }
+            catch (e) { /* ../core/versions says so in the log */ }
         }
 
         //WRITTEN FIRST, so anything the body lives outside the record in — a

@@ -41,6 +41,7 @@ var allowed = require('./allowed');
 //..\vms\provision is the one thing that knows where that path is, and asking it
 //is cheaper than being right about the two environment variables twice.
 plugin.consumes = ['app', 'log', 'state', 'ours', 'guestApi', 'provision', 'guests', 'channel', 'dispatch',
+    'versions',
     //`settings` FOR ONE FLAG: whether saying something wakes it. Read at the
     //moment it would be rather than remembered, the same way ../queue reads it.
     'settings'];
@@ -1584,6 +1585,17 @@ async function plugin(imports, register) {
 
             delete all[which];
             proposals.write(all);
+
+            //KEPT AS IT WAS APPROVED, before anything else can edit it. See
+            //../core/versions: what a person approved is the one text worth
+            //being able to go back to, and until now it was overwritten.
+            try {
+                imports.versions.keep('skill', which, it.text, { by: it.by, why: it.why });
+            } catch (e) {
+                //NOT FATAL, AND SAID. Approving is the act; keeping a copy is a
+                //service to whoever reads later.
+                log.on('supervisor').warn('approved, but a version could not be kept: ' + e.message);
+            }
 
             log.on('supervisor').good('the proposed change to ' + which + ' was approved and is now what is served'
                 + ' — it was proposed because: ' + String(it.why).slice(0, 160));

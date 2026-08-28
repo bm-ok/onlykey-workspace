@@ -46,7 +46,7 @@ var starters = require('./starters');
 //pane chosen -- which looks like the row simply not working.
 function capital(word) { return String(word).charAt(0).toUpperCase() + String(word).slice(1); }
 
-plugin.consumes = ['app', 'log', 'state', 'inbox'];
+plugin.consumes = ['app', 'log', 'state', 'inbox', 'versions'];
 plugin.provides = ['library'];
 async function plugin(imports, register) {
     var host = imports.app.host;
@@ -74,12 +74,34 @@ async function plugin(imports, register) {
         catch (e) { return ''; }
     }
 
+    //---- WHERE AN APPROVED COPY GOES, PER KIND --------------------------
+    //
+    //A PROMPT AND A CONTRACT ARE THE HOST'S; A JOB IS THE WORKSPACE'S. So a job
+    //is filed under the workspace it belongs to, and without that two
+    //workspaces with a job of the same name would share one history and each
+    //would look as though the other had been editing it.
+    function keeping(kind, scoped) {
+        return async function (entry, body) {
+            var where = '';
+            if (scoped) {
+                try { where = path.basename(await state.here.where()) + '--'; }
+                catch (e) { where = ''; }
+            }
+            imports.versions.keep(kind, where + entry.id, body, {
+                by: entry.approval && entry.approval.by,
+                at: entry.approval && entry.approval.at
+            });
+        };
+    }
+
     var contracts = makeLibrary('contract', function () { return state.app.doc('contracts'); }, {
+        keepApproved: keeping('contract', false),
         writes: ['text'],
         needsBody: 'Write the rules. An empty contract would be handed to a worker as no limits at all.'
     });
 
     var prompts = makeLibrary('prompt', function () { return state.app.doc('prompts'); }, {
+        keepApproved: keeping('prompt', false),
         writes: ['text', 'contractId'],
         //THE CONTRACT IS PART OF WHAT WAS APPROVED. See ./entries.js.
         approvedWith: ['contractId'],
@@ -87,6 +109,7 @@ async function plugin(imports, register) {
     });
 
     var jobs = makeLibrary('job', async function () { return await state.here.doc('jobs'); }, {
+        keepApproved: keeping('job', true),
         writes: ['promptId', 'tags'],
         approvedWith: ['promptId'],
         //THE BODY IS THE CODE, AND THE CODE IS ON DISK. The approval is against
