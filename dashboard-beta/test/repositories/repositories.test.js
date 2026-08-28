@@ -1296,6 +1296,42 @@ test('a pull request reads whole through issueRead, and says it is one', async (
     assert.ok(!asked.some((a) => /sub_issues/.test(a)), 'it went looking for sub-issues under a pull request');
 });
 
+test('what arrived is recorded before the note is filed, so a sweep cut short between them is not lost', async () => {
+    //IT WAS LOST ONCE. The note went first, with the tag in it; the server
+    //half reloaded before the arrival was worked out; every later sweep saw
+    //the tag on both sides and the maintainer's comment went unheard.
+    const answers = Object.assign({}, REPO_OK, { '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(7)] } });
+    const woke = [];
+    const { actions, state } = await anApp(answers, undefined, undefined, WAKING);
+    actions.define('supervisorWake', { about: 'a stand-in', run: async (a) => { woke.push(a.why); return { woke: true }; } });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    answers['/repos/anowner/arepo/issues'] = {
+        status: 200, body: [ISSUE_ROW(7, { body: 'okc: please look', user: { login: 'bmatusiak', type: 'User' } })]
+    };
+    //THE SWEEP IS CUT SHORT AT THE NOTE: the arrival must already be in the box.
+    //`doc()` HANDS OUT A WRAPPER EACH TIME, so the sweep's own is the one to
+    //cut: answer the note's name with one whose write dies.
+    const docOf = state.here.doc;
+    state.here.doc = async function (name) {
+        const d = await docOf.call(state.here, name);
+        if (name !== 'repositories') return d;
+        return Object.assign(Object.create(d), { write: () => { throw new Error('the host is shutting down'); } });
+    };
+    await assert.rejects(() => actions.call('repositoriesCheck', { repo: 'repo-one' }), /shutting down/);
+    state.here.doc = docOf;
+    let box = (await state.here.doc('github-arrived')).read({});
+    assert.deepEqual(box.issues.map((i) => [i.number, i.kind]), [[7, 'asked']], 'the arrival was lost with the sweep');
+    assert.equal(woke.length, 1);
+
+    //THE NEXT SWEEP SEES THE TAG AS NEW AGAIN -- the note never said it -- and
+    //the box refuses the duplicate, so nothing is woken twice.
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    box = (await state.here.doc('github-arrived')).read({});
+    assert.deepEqual(box.issues.map((i) => [i.number, i.kind]), [[7, 'asked']], 'the same arrival was recorded twice');
+    assert.equal(woke.length, 1, 'the supervisor was woken twice for one tag');
+});
+
 test('a new issue is noted but does not wake anybody', async () => {
     const answers = Object.assign({}, REPO_OK, { '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(7)] } });
     const woke = [];

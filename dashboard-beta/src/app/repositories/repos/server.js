@@ -2984,9 +2984,17 @@ async function plugin(imports, register) {
                     else to.info(row.why);
                 }
 
-                doc.write(notes);
-
                 //---- WHAT ARRIVED SINCE THE LAST LOOK ---------------------------
+                //
+                //WORKED OUT AND RECORDED BEFORE THE NOTE IS FILED. It was the
+                //other way round, and an arrival was lost for good: a sweep
+                //wrote the note -- with the tag in it -- and the server half
+                //was reloaded before this block ran, so every later sweep saw
+                //the tag on both sides and reported nothing. The maintainer's
+                //comment sat under the pull request unheard. Filing the note
+                //last means a sweep cut short between the two re-reports the
+                //arrival next time instead; the box below refuses a duplicate,
+                //so re-reporting costs nothing.
                 //
                 //WORKED OUT FROM GITHUB'S OWN LISTS, two sweeps apart, and kept
                 //only as a bookmark for the supervisor: `whatsNew.arrived` reads
@@ -3008,6 +3016,15 @@ async function plugin(imports, register) {
                     });
                     var box = await state.here.doc('github-arrived');
                     var kept2 = box.read({}) || {};
+                    //THE SAME ARRIVAL TWICE IS ONE ARRIVAL. A sweep cut short
+                    //after this write and before the note's re-reports it.
+                    var seenKey = function (x) {
+                        return arrivedIn.keyOf(x) + '|' + x.kind + '|' + ((x.asked && x.asked.at) || '');
+                    };
+                    var already = {};
+                    (kept2.issues || []).concat(kept2.pulls || []).forEach(function (x) { already[seenKey(x)] = true; });
+                    came.issues = came.issues.filter(function (x) { return !already[seenKey(x)]; });
+                    came.pulls = came.pulls.filter(function (x) { return !already[seenKey(x)]; });
                     var stamp = function (x) { return Object.assign({}, x, { seenAt: seenAt }); };
                     kept2.lookedAt = seenAt;
                     //BOUNDED. A watch left on for a month must not grow a file
@@ -3046,6 +3063,10 @@ async function plugin(imports, register) {
                 } catch (e) {
                     log.on('github').warn('could not work out what arrived: ' + e.message);
                 }
+
+                //THE NOTE, LAST. See above: what arrived is safe before this is.
+                doc.write(notes);
+
 
                 var stuck = rows.filter(function (r) { return r.reachable !== true || r.why; });
                 return {
