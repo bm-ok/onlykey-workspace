@@ -1322,6 +1322,19 @@ async function plugin(imports, register) {
             title: "a worker's skill",
             about: 'What a worker is told when it runs a job on a machine that will be rolled back '
                 + 'underneath it.'
+        },
+        //---- AND A JUDGE'S, WHICH WAS THE WORKER'S UNTIL IT WAS NOTICED -----
+        //
+        //TWO CHIPS ON THIS PANE MEANT TWO SKILLS AND THERE ARE THREE ROLES. The
+        //worker's file went to judges as well — ../vms/dispatch/script.js
+        //fetched it for any run with a way back, without asking what the run was
+        //— and it opens by telling the reader its branch is the deliverable and
+        //to push it. A judge may not push at all.
+        judge: {
+            stage: 'judgeSkill',
+            title: "a judge's skill",
+            about: 'What a judge is told when it reads a branch somebody else wrote. It may not push, '
+                + 'and its judgement is handed back as an artifact rather than as a commit.'
         }
     };
 

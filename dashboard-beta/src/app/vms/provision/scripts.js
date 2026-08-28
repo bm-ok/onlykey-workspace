@@ -73,6 +73,14 @@ var STAGES = {
     //about deciding what work there is, this one is about doing a piece of it on
     //a machine that will be rolled back underneath you.
     workerSkill: 'runner-skill.md',
+    //AND A JUDGE'S, WHICH IS NOT THE WORKER'S WITH A NOTE ON IT. The two
+    //deliverables are exactly inverted: a worker's is the branch and an artifact
+    //is the footnote; a judge's IS the artifact, and the branch is somebody
+    //else's work it must not touch. One file was going to both, and it was the
+    //worker's — so a judge was being told, in the one document that says what it
+    //is, to commit and push. The host refused it, which made the fault cost
+    //turns instead of damage, and taught it nothing about what to do instead.
+    judgeSkill: 'judge-skill.md',
     //AND THE GATE IN FRONT OF EVERY TOOL CALL. Deny by default: only the
     //dashboard's own tools are let through, so anything a future Claude Code
     //adds is refused the day it ships rather than the day somebody notices.

@@ -136,7 +136,7 @@ module.exports = function script(deps) {
             out.push('fi');
         }
 
-        if (it.base) out.push(theWayBack(dir, it.base));
+        if (it.base) out.push(theWayBack(dir, it.base, !!it.judging));
         if (it.job) out.push(theJob(dir, it));
 
         //---- what actually runs ------------------------------------------
@@ -193,7 +193,7 @@ module.exports = function script(deps) {
     //THE CREDENTIAL IS THE MACHINE'S OWN TOKEN, which is exactly what it already
     //uses to push commits — git replays it from the remote URL on every push.
     //This adds no exposure that pushing did not already have.
-    function theWayBack(dir, base) {
+    function theWayBack(dir, base, judging) {
         var lines = [];
 
         lines.push(heredoc(dir + '/okc-artifact', [
@@ -255,10 +255,35 @@ module.exports = function script(deps) {
         //Best effort. A worker with no skill is a worker that has to be told
         //everything in its brief — which is where this project started, and is
         //survivable.
+        //
+        //---- AND WHICH ONE DEPENDS ON WHAT THE MACHINE IS BEING ASKED TO DO ---
+        //
+        //ONE FILE WENT TO BOTH, AND IT IS A WORKER'S. It opens with "your branch
+        //is the deliverable — commit to it and push it", and a judge may not push
+        //at all: it reads a branch somebody else wrote and hands back a verdict.
+        //So a judge was being told, in the one document that says what it is, to
+        //do the single thing this host refuses it.
+        //
+        //THE REFUSAL CAUGHT IT, which is the only reason this was survivable and
+        //is not a reason to leave it: a guard turning away a bad instruction
+        //costs a judge turns and teaches it nothing about what it should have
+        //done instead.
+        //
+        //AND THE TWO DELIVERABLES ARE EXACTLY INVERTED. A worker's is the branch
+        //and `okc-artifact` is the footnote for what a branch cannot hold; a
+        //judge's IS the artifact — see ../../queue/onejudgement.js, which reads
+        //what it concluded out of what was handed back — and the branch is
+        //somebody else's work that it must not touch. One document cannot lead
+        //with both.
+        //
+        //THE MACHINE IS THE SAME MACHINE. This is about the WORK, not about the
+        //tags it carries — `beta-worker1` is tagged both, and does both.
+        var skill = judging ? 'judge-skill.md' : 'runner-skill.md';
+
         lines.push('mkdir -p "$HOME/.claude/skills/working-here"');
         lines.push('curl -fsS --cacert "${OKC_CA:-/etc/okc/ca.pem}" -u "${OKC_VM}:${OKC_TOKEN}" \\');
         lines.push('  -o "$HOME/.claude/skills/working-here/SKILL.md" \\');
-        lines.push('  "' + base + '/provision/runner-skill.md?vm=${OKC_VM}" 2>/dev/null || true');
+        lines.push('  "' + base + '/provision/' + skill + '?vm=${OKC_VM}" 2>/dev/null || true');
 
         return lines.join('\n');
     }

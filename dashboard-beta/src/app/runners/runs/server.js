@@ -410,6 +410,13 @@ async function plugin(imports, register) {
                     contractName: told.contract ? told.contract.name : null,
                     contractId: told.contract ? told.contract.id : null,
                     folder: where,
+                    //WHAT THIS MACHINE IS ABOUT TO BE, WHICH DECIDES WHICH SKILL
+                    //IT IS GIVEN. A judgement is the only thing that arrives
+                    //here carrying one, and ../../queue/onejudgement.js is the
+                    //only caller that does — so this is the fact rather than a
+                    //guess from the machine's tags, which say what it MAY do and
+                    //not what it is doing. `beta-worker1` is tagged both.
+                    judging: !!a.judgement,
                     base: base
                 }), { what: 'dispatching the job ' + a.id, timeout: 60000 });
 

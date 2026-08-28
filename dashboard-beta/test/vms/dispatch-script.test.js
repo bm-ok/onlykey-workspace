@@ -341,3 +341,48 @@ test('a folder with a space in it survives, which is the bug that started all th
 
     assert.equal(s.indexOf('bash -c'), -1, s);
 });
+
+//---- which skill the machine is given --------------------------------------
+//
+//ONE FILE WENT TO BOTH ROLES AND IT IS A WORKER'S. It opens by telling its
+//reader that its branch is the deliverable and to commit and push it, and a
+//judge may not push at all — it reads a branch somebody else wrote and hands
+//back a judgement. So a judge was being told, in the one document that says
+//what it is, to do the single thing this host refuses it.
+//
+//SURVIVABLE ONLY BECAUSE THE PUSH IS REFUSED BY NAME, which is a guard turning
+//away a bad instruction: it costs a judge turns and teaches it nothing about
+//what it should have done instead.
+//
+//ASSERTED ON THE SCRIPT because that is where the choice is made, and it is one
+//word in a URL — the shape of thing that is read past in review and cannot be
+//seen at all from anywhere else.
+
+test('a worker is given the worker skill', () => {
+    const s = of({});
+    assert.match(s, /provision\/runner-skill\.md/);
+    assert.doesNotMatch(s, /judge-skill\.md/);
+});
+
+test('a judgement is given the judge skill, and not the worker one', () => {
+    const s = of({ judging: true });
+    assert.match(s, /provision\/judge-skill\.md/);
+    assert.doesNotMatch(s, /runner-skill\.md/,
+        'a judge was handed the document that tells it to push the branch it is judging');
+});
+
+test('either way it lands in the same place, because it is the same slot', () => {
+    for (const judging of [false, true]) {
+        const s = of({ judging });
+        assert.match(s, /-o "\$HOME\/\.claude\/skills\/working-here\/SKILL\.md"/);
+    }
+});
+
+test('no way back means no skill either, rather than a fetch that cannot work', () => {
+    //`base` IS THE HOST'S ADDRESS. Without one there is nothing to fetch from —
+    //see ../../src/app/runners/runs/server.js, which leaves it null when the
+    //address cannot be worked out, and says the run still runs.
+    const s = of({ base: null, judging: true });
+    assert.doesNotMatch(s, /judge-skill\.md/);
+    assert.doesNotMatch(s, /runner-skill\.md/);
+});

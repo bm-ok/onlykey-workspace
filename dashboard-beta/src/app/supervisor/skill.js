@@ -96,6 +96,13 @@ module.exports = function skill(theme, okc, remember) {
                                 onClick={function () { setWhich('supervisor'); }}>the supervisor&apos;s skill</Chip>
                             <Chip on={which == 'worker'}
                                 onClick={function () { setWhich('worker'); }}>a worker&apos;s skill</Chip>
+                            {/* THREE ROLES, AND THERE WERE TWO CHIPS. The
+                                worker's file was going to judges as well, and it
+                                opens by telling its reader that its branch is
+                                the deliverable and to push it — which is the one
+                                thing a judge may not do. */}
+                            <Chip on={which == 'judge'}
+                                onClick={function () { setWhich('judge'); }}>a judge&apos;s skill</Chip>
                         </div>
                     </div>
                     <CardSub>
