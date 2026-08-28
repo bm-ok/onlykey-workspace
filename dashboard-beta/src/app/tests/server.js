@@ -1205,6 +1205,11 @@ async function plugin(imports, register) {
         notReading: ['drills that are broken rather than failing — they are one port gap, not many errands'],
 
         waiting: async function () {
+            //OFF MEANS OFF HERE TOO. With the drills switched off, a drill that
+            //failed or is asking is not an errand -- the Test tab it would send
+            //a person to is not in the row -- and the inbox counted them anyway.
+            var may = await imports.settings.allowed();
+            if (!may || !may.allowed) return [];
             var said = await board();
             var out = [];
 
