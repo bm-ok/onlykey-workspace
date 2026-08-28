@@ -129,12 +129,45 @@ async function plugin(imports, register) {
         stopped[name] = why; poke();
     }
 
+    //HIDDEN IS DIFFERENT FROM STOPPED. A stopped tab is one this workspace
+    //cannot use and should still see; a hidden one is one that does not
+    //exist while a switch is off. The Test tab is the case: with testing
+    //mode off there is nothing in it that may run, and a tab of refusals is
+    //an invitation to find the switch. Off means gone.
+    var hidden = {};
+    function setHidden(name, on) {
+        if (!!hidden[name] === !!on) return;
+        hidden[name] = !!on; poke();
+    }
+
+    //HIDDEN IS DIFFERENT FROM STOPPED. A stopped tab is one this workspace
+    //cannot use and should still see; a hidden one is one that does not
+    //exist while a switch is off. The Test tab is the case: with testing
+    //mode off there is nothing in it that may run, and a tab of refusals is
+    //an invitation to find the switch. Off means gone.
+    var hidden = {};
+    function setHidden(name, on) {
+        if (!!hidden[name] === !!on) return;
+        hidden[name] = !!on; poke();
+    }
+
+    //HIDDEN IS DIFFERENT FROM STOPPED. A stopped tab is one this workspace
+    //cannot use and should still see; a hidden one is one that does not
+    //exist while a switch is off. The Test tab is the case: with testing
+    //mode off there is nothing in it that may run, and a tab of refusals is
+    //an invitation to find the switch. Off means gone.
+    var hidden = {};
+    function setHidden(name, on) {
+        if (!!hidden[name] === !!on) return;
+        hidden[name] = !!on; poke();
+    }
+
     //`chrome: true` KEEPS A TAB OUT OF THE ROW WITHOUT MAKING IT UNREACHABLE.
     //The Inbox is not one of the tabs over there — it is behind the brand, at
     //the far left, badged with what is waiting. It is somewhere you are SENT
     //rather than somewhere you browse to, and putting it in the row beside
     //Repositories would say the opposite.
-    function inRow(t) { return !t.chrome; }
+    function inRow(t) { return !t.chrome && !hidden[t.name]; }
 
     //`order: 0` IS FALSY AND `|| 50` ATE IT. The Inbox asked for 0 to be first
     //and was given 50, so the workspace tab — asking for 1 — came out ahead of
@@ -380,6 +413,30 @@ async function plugin(imports, register) {
             if (home) setOn(home.name);
         }, [on, stopped[on]]);
 
+        //A TAB HIDDEN WHILE IT IS ON SCREEN goes the same way a stopped one
+        //does: home, rather than a blank where a tab was.
+        useEffect(function () {
+            if (!hidden[on]) return;
+            var home = tabs.filter(function (t) { return t.chrome && t.home; })[0];
+            setOn(home ? home.name : (tabs.filter(inRow)[0] || {}).name || null);
+        }, [on, hidden[on]]);
+
+        //A TAB HIDDEN WHILE IT IS ON SCREEN goes the same way a stopped one
+        //does: home, rather than a blank where a tab was.
+        useEffect(function () {
+            if (!hidden[on]) return;
+            var home = tabs.filter(function (t) { return t.chrome && t.home; })[0];
+            setOn(home ? home.name : (tabs.filter(inRow)[0] || {}).name || null);
+        }, [on, hidden[on]]);
+
+        //A TAB HIDDEN WHILE IT IS ON SCREEN goes the same way a stopped one
+        //does: home, rather than a blank where a tab was.
+        useEffect(function () {
+            if (!hidden[on]) return;
+            var home = tabs.filter(function (t) { return t.chrome && t.home; })[0];
+            setOn(home ? home.name : (tabs.filter(inRow)[0] || {}).name || null);
+        }, [on, hidden[on]]);
+
         var showing = tabs.find(function (t) { return t.name == on; });
         var mine = panesIn(on);
 
@@ -512,6 +569,15 @@ async function plugin(imports, register) {
             //either knowing about the other. Ties fall back to the name.
             tab: function (t) { tabs.push(t); },
             pane: function (p) { panes.push(p); },
+            //TAKE A TAB OUT OF THE ROW WHILE SOMETHING IS OFF, and put it back
+            //when it is on. Whoever knows the switch calls this.
+            hide: setHidden,
+            //TAKE A TAB OUT OF THE ROW WHILE SOMETHING IS OFF, and put it back
+            //when it is on. Whoever knows the switch calls this.
+            hide: setHidden,
+            //TAKE A TAB OUT OF THE ROW WHILE SOMETHING IS OFF, and put it back
+            //when it is on. Whoever knows the switch calls this.
+            hide: setHidden,
 
             //ORDER, BECAUSE THE STACKING IS AN ARGUMENT. Over there the running
             //banner sits above testing mode deliberately: that one says this

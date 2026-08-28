@@ -128,6 +128,31 @@ async function plugin(imports, register) {
     //Button belongs to the theme — which consumes this. Composing the pair here
     //would make the cycle. So this owns the one thing that must not be got
     //wrong, and the theme owns the two buttons around it.
-    await register(null, { markdown: { Frame: MarkdownFrame } });
+    //---- THE SAME MARKDOWN, INLINE, WITH ITS LINKS CAUGHT --------------------
+    //
+    //THE FRAME CAN DO NOTHING, ON PURPOSE: a policy of default-src none is
+    //what makes it safe to hand a stranger's issue text. A wiki page is the
+    //repository's own file and wants the one thing the frame cannot give -- a
+    //link to another page that opens that page. So this renders the same
+    //html into a div and listens for clicks on anchors: `onLink(href)` for a
+    //relative one, `onOpen(url)` for an absolute one. Nothing else runs: the
+    //html is marked's, from a file in this repository.
+    function MarkdownInline({ text, onLink, onOpen }) {
+        var html;
+        try { html = marked.parse(String(text == null ? '' : text)); }
+        catch (e) { html = '<p>This could not be rendered as markdown: ' + escapeBits(e.message) + '</p>'; }
+        function clicked(e) {
+            var a = e.target && e.target.closest ? e.target.closest('a') : null;
+            if (!a) return;
+            var href = a.getAttribute('href') || '';
+            if (!href || href[0] === '#') return;
+            e.preventDefault();
+            if (/^[a-z]+:/i.test(href)) { if (onOpen) onOpen(href); return; }
+            if (onLink) onLink(href);
+        }
+        return <div className="md-inline" onClick={clicked} dangerouslySetInnerHTML={{ __html: html }} />;
+    }
+
+    await register(null, { markdown: { Frame: MarkdownFrame, Inline: MarkdownInline } });
 }
 module.exports = plugin;

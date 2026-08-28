@@ -56,7 +56,19 @@ module.exports = function testing(theme, okc, shell) {
         //UNDEFINED IS NOT "no". Until the read lands there is no answer, and no
         //answer is not a permission — so nothing is drawn rather than a banner
         //that flickers on and off with the poll.
-        if (!where.state || !t.allowed) return null;
+        var allowed = !!(where.state && t.allowed);
+
+        //THE TEST TAB FOLLOWS THE SWITCH. This banner already reads it -- it is
+        //the one component in the window that does -- so it is the one that
+        //takes the tab out of the row when the drills are off and puts it
+        //back when they are on. Nothing is known until the first answer, and
+        //until then the tab stays: hiding on a guess would flicker.
+        React.useEffect(function () {
+            if (!where.state) return;
+            shell.hide('Test', !allowed);
+        }, [where.state, allowed]);
+
+        if (!allowed) return null;
 
         var dir = t.forDir || t.openDir || '';
         var name = dir ? dir.split(/[\\/]/).filter(Boolean).pop() : 'this workspace';

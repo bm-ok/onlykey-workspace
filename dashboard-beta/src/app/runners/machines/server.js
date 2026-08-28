@@ -87,6 +87,22 @@ function stamp() {
 //../../repositories/repos' — every gate of it, decided with nothing run and no
 //machine touched. What is left here is the three acts that touch something, and
 //the machine's own token, which this plugin has and that one must not.
+//WHAT A LISTING MAY NOT SAY. The token is the machine's way in to this host
+//and the password is its login; both live on the spec so a rebuild can use
+//them, and neither belongs in an answer. Pure, and exported for the test.
+function withoutSecrets(said) {
+    function shown(vm) {
+        if (!vm || !vm.spec) return vm;
+        var spec = Object.assign({}, vm.spec);
+        delete spec.token;
+        delete spec.password;
+        return Object.assign({}, vm, { spec: spec });
+    }
+    if (Array.isArray(said)) return said.map(shown);
+    if (said && Array.isArray(said.vms)) return Object.assign({}, said, { vms: said.vms.map(shown) });
+    return shown(said);
+}
+
 plugin.consumes = ['app', 'log', 'vbox', 'ours', 'busy', 'channel', 'dataDir',
     'repoWorkspaces', 'tls', 'guestApi',
     //`provision` OWNS MAKING ONE, including the refusal of a name VirtualBox
@@ -717,7 +733,12 @@ async function plugin(imports, register) {
 
         undo.push(actions.define('vmList', {
             about: 'The virtual machines this app made, with live state and stage',
-            run: function () { return ours.all(); }
+            //A SPEC CARRIES THE MACHINE'S BOOTSTRAP TOKEN AND ITS LOGIN, and a
+            //listing carried both out -- into a --json answer, a capture, a
+            //log line. Neither is anything a person asks vmList for. Stripped
+            //here rather than in the store, because the store is what builds
+            //and rebuilds the machine and needs them.
+            run: async function () { return withoutSecrets(await ours.all()); }
         }));
 
         undo.push(actions.define('vmStart', {
@@ -1254,4 +1275,5 @@ async function plugin(imports, register) {
 
     await register(null, { onDestroy: function () { while (undo.length) undo.pop()(); } });
 }
+plugin.withoutSecrets = withoutSecrets;
 module.exports = plugin;

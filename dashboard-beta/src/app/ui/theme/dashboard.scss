@@ -511,6 +511,36 @@ h2:first-child { margin-top: 0; }
   margin: 0 0 12px;
 }
 
+/* The same markdown, rendered inline rather than framed, so a link inside it
+   can open another page. The rules mirror the frame's stylesheet so the two
+   look alike; the frame stays for text from outside. */
+.md-inline {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0a0d12;
+  color: #d7dee8;
+  padding: 14px 16px;
+  font: 13px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow-x: auto;
+  h1, h2, h3, h4 { color: #fff; line-height: 1.25; margin: 1.2em 0 .5em; }
+  h1 { font-size: 1.5em; border-bottom: 1px solid #2a323d; padding-bottom: .3em; }
+  h2 { font-size: 1.25em; border-bottom: 1px solid #2a323d; padding-bottom: .3em; }
+  h1:first-child, h2:first-child { margin-top: .2em; }
+  p { margin: 0 0 1em; }
+  a { color: #4aa3ff; cursor: pointer; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: #161b22; padding: .15em .4em; border-radius: 4px; }
+  pre { background: #161b22; border: 1px solid #2a323d; border-radius: 8px; padding: 12px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  blockquote { margin: 0 0 1em; padding: .2em 0 .2em 14px; border-left: 3px solid #2a323d; color: #9aa6b5; }
+  table { border-collapse: collapse; margin: 0 0 1em; display: block; overflow-x: auto; }
+  th, td { border: 1px solid #2a323d; padding: 6px 10px; text-align: left; }
+  th { background: #161b22; }
+  hr { border: 0; border-top: 1px solid #2a323d; margin: 1.5em 0; }
+  img { max-width: 100%; }
+  ul, ol { padding-left: 22px; }
+  li { margin: .2em 0; }
+}
+
 /* FORM CONTROLS, WHEREVER A FORM IS. These were .dlg-only, from when every
    form in this window was a modal. Writing a task is a pane now, and without
    this its inputs fell back to the browser's defaults -- a title box sized to

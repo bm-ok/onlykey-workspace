@@ -1,5 +1,6 @@
 var React = require('react');
 var { useState, useEffect } = React;
+var links = require('./links');
 
 //---------------------------------------------------------------------------
 //THE DOCS PANE: pages on the left, one page on the right, read or edited.
@@ -16,7 +17,7 @@ var { useState, useEffect } = React;
 module.exports = function docs(theme, okc, remember, markdown) {
     var { Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Badges, Button, Empty, Note, Notice, Skeleton, Editor, Finder, ask } = theme;
-    var Frame = markdown.Frame;
+    var Inline = markdown.Inline;
 
     function ago(when) {
         if (!when) return '';
@@ -32,7 +33,7 @@ module.exports = function docs(theme, okc, remember, markdown) {
         return at < 0 ? '' : name.slice(0, at);
     }
 
-    function Reading({ name, list }) {
+    function Reading({ name, list, go }) {
         var one = okc.use('docRead', { name: name }, 0);
         var [look, setLook] = useState('Read');
         var [draft, setDraft] = useState(null);
@@ -107,7 +108,12 @@ module.exports = function docs(theme, okc, remember, markdown) {
                         <Editor text={writing} mode="markdown" min={24} max={900} editable onChange={setDraft} />
                     </div>
                     : <div style={{ marginTop: '8px' }}>
-                        <Frame text={page.text} height="70vh" />
+                        {/* A LINK TO ANOTHER PAGE OPENS IT HERE. Relative to the
+                            page it is on, the way the file is written; an absolute
+                            one goes to the person's own browser. */}
+                        <Inline text={page.text}
+                            onLink={function (href) { var to = links.resolve(page.name, href); if (to) go(to); }}
+                            onOpen={function (url) { okc.call('openExternally', { url: url }); }} />
                     </div>}
             </Panel>
         );
@@ -241,7 +247,8 @@ module.exports = function docs(theme, okc, remember, markdown) {
                     <Col wide>
                         <TitleRow>Page</TitleRow>
                         {picked && known
-                            ? <Reading name={picked} list={list} />
+                            ? <Reading name={picked} list={list}
+                                go={function (to) { setSuite(suiteOf(to)); setPicked(to); }} />
                             : <Panel><Empty>{picked ? '"' + picked + '" is not here any more.' : 'Pick a page, or make one.'}</Empty></Panel>}
                     </Col>
                 </Cols>

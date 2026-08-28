@@ -752,6 +752,22 @@ async function plugin(imports, register) {
 
     //---- the surface -------------------------------------------------------
 
+    //---- OFF MEANS OFF, FOR THE WHOLE PLUGIN --------------------------------
+    //
+    //THE SWITCH GATED RUNNING A DRILL AND NOTHING ELSE. With testing mode off
+    //the tab still drew, the suites still listed, a drill's source could be
+    //read and its results forgotten -- a plugin half asleep, whose one live
+    //half is the half that writes to somebody's repository. The person's rule
+    //is simpler than that: the setting is the plugin. Off, nothing in it
+    //answers, and the tab is gone (see ../ui/banners/testing.js).
+    async function mustBeOn() {
+        var may = await imports.settings.allowed();
+        if (!may || !may.allowed) {
+            throw new Error((may && may.why) || 'The drills are switched off.'
+                + ' Everything in the Test tab is off with them.');
+        }
+    }
+
     var undo = [];
     //---- AND A PAGE THAT ARRIVES MID-RUN ----------------------------------
     //
@@ -803,6 +819,8 @@ async function plugin(imports, register) {
             about: 'What the drills left behind — drill/ branches and drill: tasks. Pass remove to take them away',
             takes: ['remove'],
             run: async function (args) {
+                await mustBeOn();
+                await mustBeOn();
                 var a = args || {};
                 var doIt = a.remove === true || a.remove === 'true';
 
@@ -1046,6 +1064,7 @@ async function plugin(imports, register) {
             about: 'Put a commit on a drill branch, so a drill has a change to send out. Refused off a drill branch',
             takes: ['branch', 'repo', 'file', 'text', 'message'],
             run: async function (args) {
+                await mustBeOn();
                 var a = args || {};
 
                 var may = await imports.settings.allowed();
@@ -1117,7 +1136,10 @@ async function plugin(imports, register) {
 
         undo.push(actions.define('suiteStop', {
             about: 'Ask the run to stop after the check it is on',
-            run: function () {
+            run: async function () {
+                await mustBeOn();
+                await mustBeOn();
+                await mustBeOn();
                 if (!going) return { stopping: false, note: 'Nothing is running.' };
                 stopAsked = true;
                 //IT FINISHES THE CHECK IT IS ON. A check killed mid-way leaves
@@ -1131,7 +1153,8 @@ async function plugin(imports, register) {
         undo.push(actions.define('testsForget', {
             about: 'Forget remembered drill results, all of them or one',
             takes: ['suite', 'test', 'check'],
-            run: function (args) {
+            run: async function (args) {
+                await mustBeOn();
                 var a = args || {};
                 return runs.forget({ group: a.suite, test: a.test, check: a.check })
                     .then(function (n) { return { forgotten: n }; });
