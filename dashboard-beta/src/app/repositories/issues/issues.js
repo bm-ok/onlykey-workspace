@@ -263,6 +263,27 @@ module.exports = function issues(theme, okc, remember, shell) {
         var said = i.said || [];
         var words = i.text || i.body;
 
+        //WHAT IS WAITING TO BE SENT ABOUT THIS ONE.
+        //
+        //POLLED HERE RATHER THAN CARRIED ON THE SWEEP, because a draft is
+        //written between sweeps and the whole point of it is that somebody sees
+        //it soon. The sweep is every few minutes and goes to GitHub; this is a
+        //local read.
+        var { state: box } = okc.use('issueDrafts', {}, 4000);
+        var mine = ((box && box.drafts) || []).filter(function (d) {
+            return d.on === i.on && d.number === i.number;
+        })[0] || null;
+
+        var [said2, setSaid2] = useState(null);
+
+        function release(what) {
+            setSaid2(null);
+            return okc.call(what, { on: i.on, number: i.number }).then(
+                function (r) { setSaid2({ text: r.note || 'Done.' }); },
+                function (e) { setSaid2({ bad: true, text: e.message }); }
+            );
+        }
+
         return (
             <Panel>
                 {/* NOT A HEADING. `Head`, `TitleRow` and a bare `h2` are all
@@ -322,6 +343,54 @@ module.exports = function issues(theme, okc, remember, shell) {
                     </Button>
                     <Button onClick={function () { openOut(i.url); }}>Read it on GitHub</Button>
                 </div>
+
+                {/* WAITING TO BE SENT, AND THIS IS THE ONLY PLACE IT CAN GO OUT
+                    FROM. `issueApprove` refuses the pipe, a drill and a driven
+                    press: something that can approve what it wrote has not
+                    written a draft, it has posted with extra steps.
+
+                    THE WORDS ARE SHOWN AS WORDS, not summarised. What is being
+                    approved is the sentence a stranger will read on somebody
+                    else's repository, under this host's token — so it reads as
+                    the person who owns the token said it. Approving a summary of
+                    that is approving something else. */}
+                {mine
+                    ? <Panel>
+                        <CardTitle>
+                            <span className="grow">
+                                {mine.kind === 'close' ? 'Waiting to close this issue' : 'Waiting to be sent'}
+                            </span>
+                            <Badge kind="warn">not sent</Badge>
+                        </CardTitle>
+                        <Note>
+                            {'Written ' + ago(mine.at) + ' by ' + (mine.by || 'something')
+                                + (mine.answering
+                                    ? ', answering ' + mine.answering.where + ' from ' + (mine.answering.by || 'somebody')
+                                    : '')
+                                + '. Nothing has gone out.'}
+                        </Note>
+                        {mine.text
+                            ? <Quoted>{mine.text}</Quoted>
+                            : <Empty>Closing it with nothing said.</Empty>}
+                        <div className="row" style={{ marginTop: '6px' }}>
+                            {/* PURPLE. This is the press that puts words on
+                                somebody else's repository in your name — the
+                                exact act the draft exists to keep a person in
+                                front of. */}
+                            <Button kind="ok" protect onClick={function () { release('issueApprove'); }}>
+                                {mine.kind === 'close' ? 'Close it' : 'Send it'}
+                            </Button>
+                            {/* NOT PURPLE, AND THE SAME REASONING AS EVERY OTHER
+                                REFUSAL HERE: throwing a draft away sends
+                                nothing. The safe direction needs no guard. It is
+                                still refused down the pipe, because the door
+                                cannot tell the two presses apart — see
+                                `releasing` in ../repos/server.js. */}
+                            <Button onClick={function () { release('issueDiscard'); }}>Throw it away</Button>
+                        </div>
+                        {said2 ? <Note kind={said2.bad ? 'bad' : 'ok'}>{said2.text}</Note> : null}
+                    </Panel>
+                    : null}
 
                 {/* A THREAD READ ONLY IN PART SAYS SO, and this is the one place
                     it can be said: the marker is most likely in the most recent

@@ -171,9 +171,35 @@ var MAY = {
   // Being trusted means somebody's asking counts; it does not make their
   // sentences part of what a supervisor was told to do.
   issueRead: 'one issue in full: what it says, every reply in order, and whether anybody trusted asked for something',
+  issueDrafts: 'replies and closes already written and waiting for a person to release them — so the same thing is not written twice',
   // pulls: NOT PORTED YET -- see the note at the foot of this file.
   repositories: 'the repositories this workspace holds, and where each points',
   repoBranches: "one repository's branches: where each is here, where origin has it, and which are out of step",
+
+  // ---- and answering one, which is the direction that leaves this host -----
+  //
+  // EVERYTHING ABOVE READS. These two write, on somebody else's repository,
+  // under this host's token — so whoever sees it reads it as the person who owns
+  // the token having said it. That is why they are shaped differently from every
+  // other verb on this list.
+  //
+  // THREE GATES, AND ONLY ONE IS A SETTING. The issue must be TAGGED by somebody
+  // trusted; the tag is RE-READ FROM GITHUB at the moment of writing, so a
+  // request withdrawn in a reply five minutes ago stops it; and by default a
+  // person reads the words before a stranger does. The first two are not
+  // switchable and never will be — an untagged issue is one nobody asked about.
+  //
+  // SO CALLING THESE USUALLY WRITES A DRAFT rather than posting. That is not a
+  // failure and there is nothing to retry: it is waiting in Repositories →
+  // Issues for somebody to read it. `issueDrafts` says what is already waiting,
+  // which is how not to write the same thing twice while nobody has looked.
+  issueSay: 'answer an issue somebody trusted has tagged — drafted for a person to release, unless this host has been set to post directly',
+  issueClose: 'close an issue somebody trusted has tagged — drafted for a person to release, unless this host has been set to close directly',
+
+  // `issueApprove` AND `issueDiscard` ARE NOT HERE AND MUST NOT BE. A draft that
+  // the thing which wrote it can also release is not a draft; it is a post with
+  // extra steps. They refuse the pipe, a drill and a driven press at the door as
+  // well — this list is the second half of that, not the whole of it.
 
   // ---- what it may do ------------------------------------------------------
   //

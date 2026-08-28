@@ -1111,6 +1111,343 @@ async function plugin(imports, register) {
     }
 
     if (actions) {
+        //---- ANSWERING ONE, WHICH IS THE DIRECTION THAT LEAVES THIS HOST ----
+        //
+        //EVERYTHING ABOVE READS. This writes, on somebody else's repository,
+        //under this host's token -- so it reads to whoever sees it as the person
+        //who owns the token having said it. That is the whole reason these two
+        //are shaped differently from the rest of this file.
+        //
+        //---- three gates, and they are not the same gate --------------------
+        //
+        //  TAGGED      only an issue somebody trusted has marked. Not a
+        //              preference and not switchable: an untagged issue is one
+        //              nobody asked about, and answering it is this host walking
+        //              into a stranger's conversation uninvited.
+        //  READ NOW    the tag is re-checked against GitHub at the moment of
+        //              writing, never taken from the last sweep. A request
+        //              withdrawn in a reply five minutes ago is exactly the case
+        //              a cached answer gets wrong, and it is the case that
+        //              matters -- "actually, no" has to be able to stop this.
+        //  APPROVED    a person reads the words before a stranger does, unless
+        //              somebody has deliberately turned that off in the window.
+        //
+        //THE THIRD IS A SETTING AND THE FIRST TWO ARE NOT. Turning off the
+        //reading step is a decision about how much to trust this host's own
+        //judgement; the tag is a decision somebody else made about one issue, and
+        //no switch here may stand in for it.
+
+        async function mayAnswer(on, number) {
+            var bits = String(on || '').split('/');
+            if (bits.length !== 2 || !bits[0] || !bits[1]) {
+                throw new Error('Say which repository, as owner/name — "' + on + '" is not one.');
+            }
+            if (!(number > 0)) throw new Error('Say which issue, by number.');
+
+            await readSettings();
+
+            var got = await github.call('GET', '/repos/' + bits[0] + '/' + bits[1] + '/issues/' + number,
+                //FRESH, NOT FROM THE DRAWER. The point of re-reading is that the
+                //answer may have changed since the sweep; a fingerprinted read
+                //would hand back the sweep's copy and call it current.
+                null, { fresh: true });
+            if (got.status !== 200 || !got.body) {
+                throw new Error('Could not read ' + on + '#' + number + ' to check it: '
+                    + ((got.body && got.body.message) || got.status));
+            }
+            var x = got.body;
+
+            var asIssue = {
+                number: number, on: on, title: x.title || null, body: x.body || null,
+                by: x.user && x.user.login, byId: x.user && x.user.id,
+                labels: (x.labels || []).map(function (l) { return typeof l == 'string' ? l : l.name; })
+            };
+            var asked = readingOf(asIssue).kind === 'request'
+                ? { where: 'the issue', by: asIssue.by }
+                : null;
+
+            var replies = await github.all('/repos/' + bits[0] + '/' + bits[1] + '/issues/' + number + '/comments',
+                { fresh: true });
+            (replies.ok && replies.items ? replies.items : []).forEach(function (c) {
+                var how = readingOf({
+                    number: number, on: on, by: c.user && c.user.login,
+                    byId: c.user && c.user.id, body: c.body || null, labels: []
+                });
+                //THE LAST WORD WINS, the same rule the sweep uses -- which is
+                //what makes "actually, no" work: it is a later request or it is
+                //a later non-request, and either way it is the current one.
+                if (how.kind === 'request') asked = { where: 'a reply', by: c.user && c.user.login };
+            });
+
+            if (!asked) {
+                throw new Error('Nobody trusted here has asked for anything on ' + on + '#' + number + '. '
+                    + 'This host answers issues somebody tagged and no others — an untagged issue is one '
+                    + 'nobody asked about, and answering it would be walking into a stranger\'s conversation '
+                    + 'uninvited. Checked against GitHub just now, not against the last sweep.');
+            }
+
+            //WHETHER THIS HOST OPENED IT, which decides whether closing is
+            //housekeeping or is telling a stranger their report is finished
+            //with. Asked of the token rather than assumed: the account a token
+            //signs in as is not something this plugin can know, and guessing it
+            //wrong in the permissive direction is the whole risk.
+            //
+            //FAILING SHUT. If the token cannot be checked, nothing is "its own".
+            var whoWeAre = null;
+            try { whoWeAre = await github.check(); } catch (e) { whoWeAre = null; }
+            var mine = !!(whoWeAre && whoWeAre.ok && whoWeAre.login && x.user && x.user.login
+                && String(x.user.login).toLowerCase() === String(whoWeAre.login).toLowerCase());
+
+            return { bits: bits, issue: x, asked: asked, mine: mine };
+        }
+
+        //WHERE A DRAFT WAITS. Per workspace, keyed `owner/name#number` -- one
+        //per issue, because a second draft for the same issue REPLACES the
+        //first: two answers to one question is not a queue, it is a person
+        //having to work out which is current.
+        async function drafts() { return state.here.doc('github-drafts'); }
+
+        undo.push(actions.define('issueSay', {
+            about: 'Answer an issue somebody trusted has tagged — drafted for approval, or posted if the window has been set to allow it',
+            takes: ['on', 'number', 'text'],
+            run: async function (a) {
+                var args = a || {};
+                var text = String(args.text == null ? '' : args.text).trim();
+                if (!text) throw new Error('Say what to write.');
+
+                var ok = await mayAnswer(args.on, Number(args.number));
+                var kept2 = await drafts();
+                var all = kept2.read({}) || {};
+                var key = args.on + '#' + Number(args.number);
+
+                var direct = !!(await imports.settings.read()).githubReplyDirect;
+
+                if (!direct) {
+                    all[key] = {
+                        kind: 'reply', on: args.on, number: Number(args.number), text: text,
+                        at: new Date().toISOString(), by: actions.whoAsked(a),
+                        //WHY IT WAS ALLOWED TO BE WRITTEN AT ALL, kept with it:
+                        //the person approving should see whose tag this answers
+                        //without going back to the thread to work it out.
+                        answering: ok.asked
+                    };
+                    kept2.write(all);
+                    log.on('github', args.on).info('a reply to #' + args.number + ' is waiting to be approved');
+                    return {
+                        posted: false, waiting: true, on: args.on, number: Number(args.number),
+                        note: 'Written and waiting. Nothing has been sent: a person reads it in '
+                            + 'Repositories → Issues and approves it, the same as a job or a contract. '
+                            + 'Turning that step off is done in the window, in Settings → Trust.'
+                    };
+                }
+
+                var sent = await github.call('POST',
+                    '/repos/' + ok.bits[0] + '/' + ok.bits[1] + '/issues/' + Number(args.number) + '/comments',
+                    { body: text });
+                if (sent.status !== 201) {
+                    throw new Error('GitHub would not take the reply: '
+                        + ((sent.body && sent.body.message) || sent.status));
+                }
+
+                //A DRAFT THAT WAS WAITING IS GONE, because the thing it was
+                //waiting for has happened -- leaving it would offer a person the
+                //chance to approve something already said.
+                if (all[key]) { delete all[key]; kept2.write(all); }
+
+                log.on('github', args.on).good('replied on #' + args.number);
+                return {
+                    posted: true, waiting: false, on: args.on, number: Number(args.number),
+                    url: (sent.body && sent.body.html_url) || null,
+                    note: 'Posted. Settings → Trust has direct replies switched on, so nobody read it first.'
+                };
+            }
+        }));
+
+        undo.push(actions.define('issueClose', {
+            about: 'Close an issue somebody trusted has tagged — drafted for approval, or closed if the window has been set to allow it',
+            takes: ['on', 'number', 'why'],
+            run: async function (a) {
+                var args = a || {};
+                var ok = await mayAnswer(args.on, Number(args.number));
+                var why = String(args.why == null ? '' : args.why).trim();
+
+                if (ok.issue.state === 'closed') {
+                    return {
+                        posted: false, waiting: false, already: true,
+                        note: String(args.on) + '#' + Number(args.number) + ' is already closed.'
+                    };
+                }
+
+                var settings = await imports.settings.read();
+                //---- ITS OWN IS DIFFERENT, AND THAT IS THE POINT -----------
+                //
+                //CLOSING SOMETHING THIS HOST OPENED IS HOUSEKEEPING. Closing
+                //somebody else's is telling a person their report is finished
+                //with, and re-opening does not unsay it. Most of what a project
+                //manager actually does is the first kind, and collapsing the two
+                //into one permission means paying the price of the second to get
+                //the first.
+                //
+                //NOTHING OPENS AN ISSUE HERE YET, so this branch is currently
+                //unreachable. Written now because it is the rule either way, and
+                //because the moment an `issueOpen` lands the alternative is
+                //somebody remembering this distinction existed.
+                var direct = !!settings.githubCloseDirect || ok.mine;
+
+                if (!direct) {
+                    var kept3 = await drafts();
+                    var all2 = kept3.read({}) || {};
+                    all2[args.on + '#' + Number(args.number)] = {
+                        kind: 'close', on: args.on, number: Number(args.number), text: why || null,
+                        at: new Date().toISOString(), by: actions.whoAsked(a), answering: ok.asked
+                    };
+                    kept3.write(all2);
+                    log.on('github', args.on).info('closing #' + args.number + ' is waiting to be approved');
+                    return {
+                        posted: false, waiting: true, on: args.on, number: Number(args.number),
+                        note: 'Waiting. Nothing has been closed: closing tells somebody outside that their '
+                            + 'report is finished with, so a person approves it in Repositories → Issues.'
+                    };
+                }
+
+                if (why) {
+                    var said = await github.call('POST',
+                        '/repos/' + ok.bits[0] + '/' + ok.bits[1] + '/issues/' + Number(args.number) + '/comments',
+                        { body: why });
+                    //SAID BEFORE CLOSED, and not treated as fatal if it fails.
+                    //A closed issue with no reason is worse than a reason with
+                    //no close, and the close is what the caller asked for.
+                    if (said.status !== 201) {
+                        log.on('github', args.on).warn('could not leave a reason on #' + args.number);
+                    }
+                }
+
+                var shut = await github.call('PATCH',
+                    '/repos/' + ok.bits[0] + '/' + ok.bits[1] + '/issues/' + Number(args.number),
+                    { state: 'closed' });
+                if (shut.status !== 200) {
+                    throw new Error('GitHub would not close it: '
+                        + ((shut.body && shut.body.message) || shut.status));
+                }
+
+                log.on('github', args.on).good('closed #' + args.number);
+                return {
+                    posted: true, waiting: false, on: args.on, number: Number(args.number),
+                    mine: ok.mine,
+                    note: ok.mine
+                        ? 'Closed. This host opened it, so closing it is its own housekeeping.'
+                        : 'Closed. Settings → Trust has direct closing switched on, so nobody read it first.'
+                };
+            }
+        }));
+
+        //---- AND THE PERSON WHO RELEASES ONE --------------------------------
+        //
+        //THE HALF THAT MAKES THE DRAFT MEAN ANYTHING. A pending reply that the
+        //thing which wrote it can also approve is not pending; it is posted with
+        //extra steps. So these two refuse the pipe, a drill and a driven press
+        //-- the same three marks `settingSet` watches, for the same reason.
+        //
+        //IT IS NOT THE SETTING. Turning direct replies on is a standing decision
+        //made once; this is a person reading THESE WORDS and releasing them.
+        //Something able to do the second does not need the first.
+
+        undo.push(actions.define('issueDrafts', {
+            about: 'Replies and closes waiting to be approved before they reach GitHub',
+            run: async function () {
+                var kept4 = await drafts();
+                if (!kept4) return { drafts: [], note: 'No workspace is open.' };
+                var all = kept4.read({}) || {};
+                var rows = Object.keys(all).map(function (k) { return all[k]; });
+                rows.sort(function (p2, q) { return String(q.at || '').localeCompare(String(p2.at || '')); });
+                return {
+                    drafts: rows,
+                    note: rows.length
+                        ? rows.length + ' waiting. Each is read and released by a person in Repositories → Issues.'
+                        : 'Nothing is waiting.'
+                };
+            }
+        }));
+
+        async function releasing(a, doIt) {
+            var args = a || {};
+            //THE THREE MARKS. ../core/drive refuses a protected button before it
+            //reaches here, which is a real guard -- but this is the one that
+            //holds when the button is not painted, or when the call arrives some
+            //other way.
+            if (args._overTheWire || args._driven || args._fromTest) {
+                throw new Error('A waiting reply is released by a person at the window, in Repositories → '
+                    + 'Issues. Something that can approve what it wrote has not written a draft, it has '
+                    + 'posted with extra steps — which is the whole of why the draft exists.');
+            }
+
+            var key = String(args.on) + '#' + Number(args.number);
+            var kept5 = await drafts();
+            var all = kept5.read({}) || {};
+            var one = all[key];
+            if (!one) throw new Error('Nothing is waiting on ' + key + '.');
+
+            var out = await doIt(one);
+
+            //TAKEN OUT ONLY AFTER IT WENT, so a failure leaves it waiting rather
+            //than losing the words and the fact that somebody wanted them said.
+            delete all[key];
+            kept5.write(all);
+            return out;
+        }
+
+        undo.push(actions.define('issueApprove', {
+            about: 'Send a waiting reply, or make a waiting close happen. A person at the window only',
+            takes: ['on', 'number'],
+            run: async function (a) {
+                return releasing(a, async function (one) {
+                    //RE-CHECKED ON THE WAY OUT. The draft may have been written
+                    //an hour ago and the tag withdrawn since; a person approving
+                    //is approving the words, not re-deciding whether anybody
+                    //asked.
+                    var ok = await mayAnswer(one.on, one.number);
+
+                    if (one.kind === 'close') {
+                        if (one.text) {
+                            await github.call('POST', '/repos/' + ok.bits[0] + '/' + ok.bits[1]
+                                + '/issues/' + one.number + '/comments', { body: one.text });
+                        }
+                        var shut = await github.call('PATCH', '/repos/' + ok.bits[0] + '/' + ok.bits[1]
+                            + '/issues/' + one.number, { state: 'closed' });
+                        if (shut.status !== 200) {
+                            throw new Error('GitHub would not close it: '
+                                + ((shut.body && shut.body.message) || shut.status));
+                        }
+                        log.on('github', one.on).good('closed #' + one.number + ', approved at the window');
+                        return { closed: true, on: one.on, number: one.number, note: 'Closed.' };
+                    }
+
+                    var sent = await github.call('POST', '/repos/' + ok.bits[0] + '/' + ok.bits[1]
+                        + '/issues/' + one.number + '/comments', { body: one.text });
+                    if (sent.status !== 201) {
+                        throw new Error('GitHub would not take the reply: '
+                            + ((sent.body && sent.body.message) || sent.status));
+                    }
+                    log.on('github', one.on).good('replied on #' + one.number + ', approved at the window');
+                    return {
+                        posted: true, on: one.on, number: one.number,
+                        url: (sent.body && sent.body.html_url) || null, note: 'Posted.'
+                    };
+                });
+            }
+        }));
+
+        undo.push(actions.define('issueDiscard', {
+            about: 'Throw away a waiting reply or close without sending it. A person at the window only',
+            takes: ['on', 'number'],
+            run: async function (a) {
+                return releasing(a, async function (one) {
+                    log.on('github', one.on).info('a waiting ' + one.kind + ' on #' + one.number + ' was discarded');
+                    return { discarded: true, on: one.on, number: one.number, note: 'Thrown away. Nothing was sent.' };
+                });
+            }
+        }));
+
         //---- WHAT IS OPEN, AND WHICH OF IT SOMEBODY ASKED ABOUT -------------
         //
         //THE OTHER HALF OF `issueRead`, AND THE ONE THAT MAKES IT REACHABLE. A

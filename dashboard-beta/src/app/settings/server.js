@@ -123,6 +123,29 @@ var DEFAULTS = {
     githubTrusted: [],
     githubMarker: '',
 
+    //---- AND WHETHER IT SPEAKS WITHOUT BEING ASKED TWICE ------------------
+    //
+    //TRUST DECIDES WHAT MAY BE READ AS A REQUEST. These two decide what happens
+    //when this host answers one — and answering is the direction that leaves the
+    //machine. A reply goes on somebody else's repository under this host's
+    //token, which means it reads as the person who owns the token said it.
+    //
+    //OFF MEANS DRAFT AND APPROVE, WHICH IS THE SAME SHAPE AS EVERY OTHER
+    //OUTWARD ACT HERE: a job, a contract, a prompt and a pull request are all
+    //written by something and released by a person. A reply is not a smaller
+    //thing than those; it is the only one a stranger reads.
+    //
+    //ON MEANS IT POSTS. Still only on an issue somebody trusted has tagged --
+    //that gate is in the door and is not what these switch. What they switch is
+    //whether a person sees the words first.
+    //
+    //THEY ARE SEPARATE BECAUSE THE TWO ACTS ARE NOT ALIKE. A reply can be
+    //followed by another reply saying "ignore that, I was wrong". Closing tells
+    //somebody outside that their report is finished with, and re-opening does
+    //not unsay it.
+    githubReplyDirect: false,
+    githubCloseDirect: false,
+
     //WHETHER THE QUEUE COMES UP RUNNING, and it is off until somebody says
     //otherwise.
     //
@@ -196,7 +219,8 @@ var DEFAULTS = {
 //written becomes a request, retroactively, without anybody writing a word. The
 //people are half the permission and the word is the other half; guarding one is
 //the mistake this list was already made to correct once.
-var ATTHEWINDOW = ['testsEnabled', 'testsFor', 'testsAsked', 'githubTrusted', 'githubMarker'];
+var ATTHEWINDOW = ['testsEnabled', 'testsFor', 'testsAsked', 'githubTrusted', 'githubMarker',
+    'githubReplyDirect', 'githubCloseDirect'];
 
 //WHY EACH ONE IS REFUSED, IN ITS OWN WORDS. It was a ternary on `testsEnabled`
 //while there was one permission here; with two, the second branch -- written for
@@ -211,7 +235,9 @@ var WHYREFUSED = {
     testsFor: '"testsFor" is the other half of that same permission. The drills are allowed when testsEnabled is on AND testsFor is the folder open now — so moving the folder arms them against whatever is in front of you without the switch ever being touched. It is decided in the same place, in the window, by somebody who can see which folder that is. Ask with testsAsk instead.',
     testsAsked: '"testsAsked" is the other half of that same permission seen from the other side: it is a raised hand, and forging one puts a question in front of a person that nobody actually asked. It is written by testsAsk, which takes a reason and stamps the folder itself, and answered in the window.',
     githubTrusted: 'Naming somebody trusted opens a channel from the internet into what this host acts on: from then on their marked words are read as somebody asking for something. A caller able to add a name could add one it controls and commission its own work through an issue. It is done in the window, in Settings → Trust, where the account is looked up and its picture shown first.',
-    githubMarker: 'The marker is the other half of that same permission, and it is applied to text that already exists — set it to a word a trusted person writes habitually and their old comments become requests, with nobody having written anything new. It is chosen in Settings → Trust, in the window.'
+    githubMarker: 'The marker is the other half of that same permission, and it is applied to text that already exists — set it to a word a trusted person writes habitually and their old comments become requests, with nobody having written anything new. It is chosen in Settings → Trust, in the window.',
+    githubReplyDirect: 'That switch is what stands between a model writing a reply and a stranger reading it, on somebody else\'s repository, under this host\'s token. A caller able to turn it on could approve its own words by removing the step where somebody reads them. It is turned on in the window, in Settings → Trust, by a person who has decided to let that happen.',
+    githubCloseDirect: 'Closing tells somebody outside that their report is finished with, and re-opening does not unsay it. The switch that removes the person from that decision is not one a caller may reach — it is turned on in the window, in Settings → Trust.'
 };
 
 function truth(v) {
