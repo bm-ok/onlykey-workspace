@@ -157,7 +157,20 @@ var MAY = {
   // somebody writing a task. A supervisor deciding what to do next is mostly
   // reading this. Paged on purpose: a busy tracker has thousands, and a hundred
   // of five thousand is not a short list, it is a wrong one.
-  // issues: NOT PORTED YET -- see the note at the foot of this file.
+  issues: 'open issues across the places this workspace reads, and which of them somebody trusted has asked about',
+  // AND ONE OF THEM WHOLE, which is the half that matters and the half that did
+  // not exist. `issues` is a list to scan; an issue is a CONVERSATION, and it
+  // was only ever available as fields scattered across the `repositories`
+  // answer -- the opening post here, the replies there. Somebody points at an
+  // issue and says "do this"; what they mean is the whole thread, because the
+  // opening post was written before anybody had agreed to anything.
+  //
+  // WHAT COMES BACK IS FENCED AND SAYS WHOSE WORDS IT IS, every turn. See
+  // ../github/trust.js: text from GitHub is written by anybody on the internet
+  // and arrives on the same answer as everything this host knows for certain.
+  // Being trusted means somebody's asking counts; it does not make their
+  // sentences part of what a supervisor was told to do.
+  issueRead: 'one issue in full: what it says, every reply in order, and whether anybody trusted asked for something',
   // pulls: NOT PORTED YET -- see the note at the foot of this file.
   repositories: 'the repositories this workspace holds, and where each points',
   repoBranches: "one repository's branches: where each is here, where origin has it, and which are out of step",
@@ -427,5 +440,16 @@ module.exports = {
 // have caught that: the tool list IS this list, so "no tool it names is missing"
 // was true and meant nothing.
 //
-// WHAT IS LEFT IS `issues` AND `pulls`, which is also why `whatsNew` reports
-// nothing ever arriving: there is nothing here for it to arrive from.
+// `issues` IS BACK, AND SO IS THE THING IT WAS MISSING. The list existed in
+// the sweep the whole time and no door opened it -- the same shape as `taskLog`
+// above. Worse in one way: the workaround was `repositories`, every repository
+// and branch and pull request, read to find the words of one issue somewhere
+// inside it.
+//
+// AND A LIST WAS NEVER THE ASK. `issueRead` is the verb that hands over a
+// conversation, in order, fenced, with every turn saying who wrote it. A
+// supervisor that can only see "there is an issue and somebody tagged it" knows
+// that something was asked for and not what.
+//
+// WHAT IS LEFT IS `pulls`, which is also why `whatsNew` reports nothing ever
+// arriving from that side.

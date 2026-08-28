@@ -31,8 +31,8 @@ var { useState } = React;
 
 module.exports = function issues(theme, okc, remember, shell) {
     var {
-        Panel, Stack, Head, Card, CardTitle, CardSub, Badge, Button,
-        Empty, Note, Mono, Quoted, ago, openOut
+        Panel, Stack, Head, Card, CardTitle, CardSub, Badge, Badges, Button,
+        Cols, Col, Empty, Note, Mono, Quoted, TitleRow, Grow, ago, openOut
     } = theme;
 
     //---- WHETHER ANYBODY ASKED FOR ANYTHING, ON THE ROW --------------------
@@ -47,9 +47,13 @@ module.exports = function issues(theme, okc, remember, shell) {
     //report from a stranger is honest and ordinary — so marking every one of
     //them would be marking the normal state, which is how a badge stops meaning
     //anything. Silence is evidence; a badge is somebody asking.
-    function Asking({ i }) {
+    //`short` FOR THE NARROW COLUMN. "asked in a reply" wraps to two lines in a
+    //260px card and comes out as a squashed pill; the column beside it says
+    //which reply, when, and on what grounds, so the list only has to say THAT
+    //somebody did.
+    function Asking({ i, short }) {
         if (i.asked) {
-            return <Badge kind="ok" title={i.asked.why}>{'asked in ' + i.asked.where}</Badge>;
+            return <Badge kind="ok" title={i.asked.why}>{short ? 'asked' : 'asked in ' + i.asked.where}</Badge>;
         }
         //SOMEBODY USED THE MARKER AND IT DID NOT COUNT. Worth seeing, and worth
         //being careful about how it is said: it is a FACT, not an accusation.
@@ -66,53 +70,6 @@ module.exports = function issues(theme, okc, remember, shell) {
         return null;
     }
 
-    //---- AND THE THREAD, WHICH IS WHERE PEOPLE ACTUALLY SAY THINGS ---------
-    //
-    //THE PANE SAID "1 comment(s)" AND SHOWED NONE OF THEM. An issue body is what
-    //somebody opened with, written before anybody had agreed to anything; the
-    //agreeing happens underneath. So the count pointed at exactly the place the
-    //request lives and then sent you to GitHub to read it.
-    //
-    //FOLDED AWAY BY DEFAULT. A list of issues is a list, and thirty threads
-    //opened at once is not one.
-    function Thread({ said }) {
-        var [open, setOpen] = useState(false);
-        if (!said || !said.length) return null;
-
-        return (
-            <div>
-                <Button onClick={function () { setOpen(!open); }}>
-                    {(open ? 'Hide' : 'Show') + ' the ' + (said.length === 1 ? 'reply' : said.length + ' replies')}
-                </Button>
-                {open
-                    ? <Stack>
-                        {said.map(function (c, n) {
-                            return (
-                                <Card key={n}>
-                                    <CardTitle>
-                                        <Mono>{c.by || 'somebody'}</Mono>
-                                        <span className="muted">{ago(c.at)}</span>
-                                        {c.reading && c.reading.kind === 'request'
-                                            ? <Badge kind="ok" title={c.reading.why}>a request</Badge>
-                                            : c.reading && c.reading.markedIt
-                                                ? <Badge kind="warn" title={c.reading.why}>marker, not trusted</Badge>
-                                                : null}
-                                    </CardTitle>
-                                    {/* THE FENCED FORM, WHICH IS WHAT THE SERVER
-                                        CARRIES. It reads as a quotation on the
-                                        screen too, and that is not a cost worth
-                                        paying to avoid: what a person sees and
-                                        what a model is handed being the same
-                                        text is the point. */}
-                                    <Quoted>{c.body || '(nothing written)'}</Quoted>
-                                </Card>
-                            );
-                        })}
-                    </Stack>
-                    : null}
-            </div>
-        );
-    }
 
     //AN ISSUE, TURNED INTO THE THING THIS APP ACTUALLY RUNS ON. The brief is
     //what the issue SAYS, because that is what somebody asked for — a task
@@ -156,6 +113,11 @@ module.exports = function issues(theme, okc, remember, shell) {
         var said = r.issuesFrom || [];
         var mine = (r.target && r.target.self) || null;
 
+        //WHICH ONE IS BEING READ. Kept by its whole name, `on#number`, because
+        //two forks in a chain both have a #1 and a bare number picks whichever
+        //came first.
+        var [picked, setPicked] = useState(null);
+
         //WHAT TO CALL A PLACE IN ONE WORD. The full name is what GitHub knows it
         //by and is never dropped; this is the extra word that says WHY it is in
         //the list — the fork you work in, or the project everything ends up in.
@@ -166,29 +128,32 @@ module.exports = function issues(theme, okc, remember, shell) {
             return null;
         }
 
-        return (
-            <Panel>
-                <Head>
-                    <span>Issues</span>
-                    {/* EVERY PLACE THEY WERE READ FROM, because it is a set now
-                        and was one value. Issues arrive where people file them,
-                        which for a fork of a fork can be two repositories at
-                        once — and a heading naming one of them made the other
-                        one's issues look like they came from somewhere they did
-                        not. Picked on Repos → Repositories → read from. */}
-                    <span className="muted">{from.length ? 'on ' + from.join(', ') : r.repo}</span>
-                    <span className="muted">{r.gathered ? ago(r.gathered) : ''}</span>
-                </Head>
-                {/* AND THE OLD SENTENCE IS GONE. "Read from <parent>, which is
-                    where a pull request from this fork would go" said two things
-                    and both could be false: it named the PARENT when reading
-                    follows a chosen set, and it tied reading to sending, which
-                    are now separate decisions on purpose. */}
+        function keyOf(i) { return (i.on || r.repo) + '#' + i.number; }
 
-                {/* WHAT EACH PLACE ANSWERED, before the list rather than
-                    instead of it. A place with issues switched off contributes
-                    nothing and has no row to say so in, which is exactly the
-                    case that reads as "nobody has filed anything". */}
+        //THE PICK FOLLOWS THE LIST RATHER THAN OUTLIVING IT. Switching repository
+        //in the first column leaves a key that names an issue on somewhere else,
+        //and a detail column showing an issue that is not in the list beside it
+        //is worse than an empty one.
+        var one = (list || []).filter(function (i) { return keyOf(i) === picked; })[0] || null;
+
+        return (
+            //---- THREE PEER COLUMNS, NOT A PANEL WITH TWO INSIDE IT ---------
+            //
+            //THE SHAPE ../pr/pr-cut.js ALREADY USES: `Cols`, each `Col` opening
+            //with its own title row, and NO panel wrapped round the set. The
+            //chassis gives the first column — the repositories — so these two
+            //land beside it and the pane reads as three across the window.
+            //
+            //THE WRAPPING PANEL WAS THE WHOLE DIFFERENCE. Nested inside one, the
+            //same two columns draw a box around themselves and read as a
+            //sub-layout of the Issues panel rather than as peers of the
+            //repository list. Same flexbox, entirely different page.
+            <div>
+                {/* WHAT EACH PLACE ANSWERED, above the columns because it is
+                    about the read and not about any one issue. A place with
+                    issues switched off contributes nothing and has no row to say
+                    so in — which is exactly the case that reads as "nobody has
+                    filed anything". */}
                 {said.length
                     ? <Note>
                         {said.map(function (x) {
@@ -200,100 +165,178 @@ module.exports = function issues(theme, okc, remember, shell) {
                     </Note>
                     : null}
 
-                {/* A LIST THAT IS NOT ALL OF THEM SAYS SO, LOUDLY.
-                    This whole list used to be the first hundred of whatever was
-                    there, reported as the list — no error, no warning, because
-                    from inside one request a full page and a last page look
-                    identical. It is paged now, and the page cap is a bound the
-                    plugin decides; a bound nobody is told about is the same
-                    defect with a nicer implementation.
-
-                    `bad` RATHER THAN MUTED. Somebody points at an issue, it is
-                    not on the list, and the answer they get is that it does not
-                    exist — that is not a footnote. */}
+                {/* A LIST THAT IS NOT ALL OF THEM SAYS SO, LOUDLY. This list used
+                    to be the first hundred of whatever was there, reported as the
+                    list — no error and no warning, because from inside one
+                    request a full page and a last page look identical. `bad`
+                    rather than muted: somebody points at an issue, it is not on
+                    the list, and the answer they get is that it does not
+                    exist. */}
                 {said.filter(function (x) { return x.more; }).map(function (x) {
                     return <Note key={x.on} kind="bad">{x.on + ': ' + x.why}</Note>;
                 })}
 
-                {list == null
-                    ? <Empty>Not asked yet — this reads issues from the places chosen under Repos.</Empty>
-                    : list.length
-                        ? <Stack>
-                            {list.map(function (i) {
-                                return (
-                                    <Card key={(i.on || '') + '#' + i.number}>
-                                        <CardTitle>
-                                            {/* WHICH REPOSITORY IT IS ON, on the
-                                                row rather than only in the
-                                                heading. With more than one place
-                                                read, "#1" alone names nothing —
-                                                two repositories both have one. */}
-                                            {/* THE WHOLE NAME, ALWAYS. Not only
-                                                when more than one place is read:
-                                                which fork an issue is on is the
-                                                first thing somebody wants and it
-                                                should not appear and disappear
-                                                depending on a setting two panes
-                                                away. */}
-                                            <span className="mono muted">
-                                                {(i.on || r.repo) + '#' + i.number}
-                                            </span>
-                                            <span>{i.title}</span>
-                                            {whatItIs(i.on)
-                                                ? <Badge kind="muted">{whatItIs(i.on)}</Badge>
-                                                : null}
-                                            {/* FOUR LABELS AND NO MORE. A card
-                                                headed by eleven badges is a card
-                                                whose title cannot be read. */}
-                                            {(i.labels || []).slice(0, 4).map(function (l) {
-                                                return <Badge key={l} kind="muted">{l}</Badge>;
-                                            })}
-                                            <Asking i={i} />
-                                        </CardTitle>
-                                        <CardSub>
-                                            {/* WHO ASKED, AND WHERE. "opened by
-                                                X on owner/name" is the sentence
-                                                somebody says out loud about an
-                                                issue, and the second half was
-                                                missing while the pane assumed
-                                                every row came from one place. */}
-                                            <span className="muted">
-                                                {'opened by ' + (i.by || 'somebody')
-                                                    + ' on ' + (i.on || r.repo)
-                                                    + ', ' + ago(i.at)
-                                                    + (i.comments ? ' · ' + i.comments + ' comment(s)' : '')}
-                                            </span>
-                                        </CardSub>
+                <Cols>
+                    <Col narrow>
+                        <TitleRow>
+                            Issues<Grow />
+                            <span className="muted">{list == null ? '' : list.length}</span>
+                        </TitleRow>
+                        {/* EVERY PLACE THEY WERE READ FROM. Issues arrive where
+                            people file them, which for a fork of a fork is two
+                            repositories at once — and a heading naming one made
+                            the other one's issues look like they came from
+                            somewhere they did not. Picked on Repos. */}
+                        <Note>
+                            {(from.length ? 'on ' + from.join(', ') : r.repo)
+                                + (r.gathered ? ' · ' + ago(r.gathered) : '')}
+                        </Note>
 
-                                        {/* WHO ASKED, WHEN, AND WHY IT COUNTED.
-                                            The badge says that somebody did; this
-                                            says which of them, in which reply,
-                                            and on what grounds — which is the
-                                            sentence a person needs before acting
-                                            on it, and the one they would
-                                            otherwise have to reconstruct. */}
-                                        {i.asked
-                                            ? <div className="authline ok">
-                                                <strong>{'Asked in ' + i.asked.where + ' by ' + (i.asked.by || 'somebody')
-                                                    + (i.asked.at ? ', ' + ago(i.asked.at) : '') + ': '}</strong>
-                                                <span>{i.asked.why}</span>
-                                            </div>
-                                            : null}
+                        {list == null
+                            ? <Empty>Not asked yet — this reads issues from the places chosen under Repos.</Empty>
+                            : !list.length
+                                ? <Empty>Nothing open.</Empty>
+                                : <Stack>
+                                    {list.map(function (i) {
+                                        var k = keyOf(i);
+                                        return (
+                                            <Card key={k} pick on={k === picked}
+                                                onClick={function () { setPicked(k); }}>
+                                                <CardTitle>
+                                                    {/* THE WHOLE NAME, ALWAYS. Which fork an
+                                                        issue is on is the first thing somebody
+                                                        wants, and it should not appear and
+                                                        disappear depending on a setting two panes
+                                                        away. */}
+                                                    <span className="mono muted">{k}</span>
+                                                    <Asking i={i} short />
+                                                </CardTitle>
+                                                <CardSub><span>{i.title}</span></CardSub>
+                                                <Badges>
+                                                    {whatItIs(i.on)
+                                                        ? <Badge kind="muted">{whatItIs(i.on)}</Badge>
+                                                        : null}
+                                                    <span className="muted">{ago(i.at)}</span>
+                                                    {i.comments
+                                                        ? <span className="muted">{i.comments + ' reply(s)'}</span>
+                                                        : null}
+                                                </Badges>
+                                            </Card>
+                                        );
+                                    })}
+                                </Stack>}
+                    </Col>
 
-                                        <div className="row" style={{ marginTop: '6px' }}>
-                                            <Button kind="ok" onClick={function () { writeTaskFrom(i); }}
-                                                title="Opens Add task with this issue as the brief">
-                                                Write a task from it
-                                            </Button>
-                                            <Button onClick={function () { openOut(i.url); }}>Read it on GitHub</Button>
-                                            <Thread said={i.said} />
-                                        </div>
-                                    </Card>
-                                );
-                            })}
-                        </Stack>
-                        : <Empty>Nothing open.</Empty>}
-            </Panel>
+                    <Col wide>
+                        <h2>What it says</h2>
+                        {one ? <Reading i={one} where={whatItIs(one.on)} repo={r.repo} />
+                            : <Panel><Empty>Pick an issue on the left.</Empty></Panel>}
+                    </Col>
+                </Cols>
+            </div>
         );
     };
+
+    //---- ONE ISSUE, READ ---------------------------------------------------
+    //
+    //THE WHOLE THING AND NOT A DISCLOSURE. In its own column there is nothing
+    //below it to push down, so folding it away would be hiding the answer to the
+    //question somebody asked by clicking.
+    function Reading({ i, where, repo }) {
+        var said = i.said || [];
+        var words = i.text || i.body;
+
+        return (
+            <Panel>
+                {/* NOT A HEADING. `Head`, `TitleRow` and a bare `h2` are all
+                    the COLUMN-LABEL style in this stylesheet, and it uppercases
+                    — right for "What it says", wrong for somebody's issue title,
+                    which came out as "TEST ISSUE 2". That is not what they
+                    wrote, and this pane's whole job is showing what they wrote.
+                    ../pr/pr-cut.js does the same thing: `h2` for the column, and
+                    the picked item's own identity inside the panel. */}
+                <CardTitle>
+                    <span className="mono muted">{(i.on || repo) + '#' + i.number}</span>
+                    <span>{i.title}</span>
+                    {where ? <Badge kind="muted">{where}</Badge> : null}
+                    {(i.labels || []).slice(0, 4).map(function (l) {
+                        return <Badge key={l} kind="muted">{l}</Badge>;
+                    })}
+                    <Asking i={i} />
+                </CardTitle>
+
+                <Note>
+                    {'opened by ' + (i.by || 'somebody') + ' on ' + (i.on || repo) + ', ' + ago(i.at)
+                        + (said.length ? ' · ' + said.length + (said.length === 1 ? ' reply' : ' replies') : ' · no replies')}
+                </Note>
+
+                {/* WHO ASKED, WHEN, AND WHY IT COUNTED. The badge says that
+                    somebody did; this says which of them, in which reply, and on
+                    what grounds — the sentence a person needs before acting on
+                    it, and the one they would otherwise have to reconstruct. */}
+                {i.asked
+                    ? <div className="authline ok">
+                        <strong>{'Asked in ' + i.asked.where + ' by ' + (i.asked.by || 'somebody')
+                            + (i.asked.at ? ', ' + ago(i.asked.at) : '') + ': '}</strong>
+                        <span>{i.asked.why}</span>
+                    </div>
+                    : null}
+
+                <div className="row" style={{ marginTop: '6px' }}>
+                    <Button kind="ok" onClick={function () { writeTaskFrom(i); }}
+                        title="Opens Add task with this issue as the brief">
+                        Write a task from it
+                    </Button>
+                    <Button onClick={function () { openOut(i.url); }}>Read it on GitHub</Button>
+                </div>
+
+                {/* A THREAD READ ONLY IN PART SAYS SO, and this is the one place
+                    it can be said: the marker is most likely in the most recent
+                    reply, which is exactly the one a truncated read is missing. */}
+                {i.saidWhy ? <Note kind="bad">{i.saidWhy}</Note> : null}
+
+                <Stack>
+                    {words
+                        ? <Card>
+                            <CardTitle>
+                                <Mono>{i.by || 'somebody'}</Mono>
+                                <span className="muted">{'opened it ' + ago(i.at)}</span>
+                                {i.reading && i.reading.kind === 'request'
+                                    ? <Badge kind="ok" title={i.reading.why}>a request</Badge>
+                                    : i.reading && i.reading.markedIt
+                                        ? <Badge kind="warn" title={i.reading.why}>marker, not trusted</Badge>
+                                        : null}
+                            </CardTitle>
+                            <Quoted>{words}</Quoted>
+                        </Card>
+                        : <Empty>Nothing was written in the issue itself.</Empty>}
+
+                    {said.map(function (c, n) {
+                        return (
+                            <Card key={n}>
+                                <CardTitle>
+                                    <Mono>{c.by || 'somebody'}</Mono>
+                                    <span className="muted">{ago(c.at)}</span>
+                                    {c.reading && c.reading.kind === 'request'
+                                        ? <Badge kind="ok" title={c.reading.why}>a request</Badge>
+                                        : c.reading && c.reading.markedIt
+                                            ? <Badge kind="warn" title={c.reading.why}>marker, not trusted</Badge>
+                                            : null}
+                                </CardTitle>
+                                {/* THE WORDS, NOT THE FENCE. `body` is the fenced
+                                    form and it is what a model is handed; drawn
+                                    here it repeated two sentences of
+                                    boundary-marking before every reply, saying
+                                    what the card title above it already says. A
+                                    thread nobody can read is the opposite of the
+                                    reason this pane shows one — and the quotation
+                                    is still marked, by `Quoted` in the theme. */}
+                                <Quoted>{c.text || c.body || '(nothing written)'}</Quoted>
+                            </Card>
+                        );
+                    })}
+                </Stack>
+            </Panel>
+        );
+    }
 };
