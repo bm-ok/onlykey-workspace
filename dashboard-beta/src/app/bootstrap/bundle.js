@@ -161,8 +161,38 @@ function read(at, readFile, exists) {
 //folder — uses the same names in the same places. See ../bootstrap/server.js:
 //two lists of what a bundle looks like is where a folder and a tar would start
 //to mean different things.
+//---- WHAT MOVED BETWEEN TWO BUNDLES -----------------------------------------
+//
+//A TAR REWRITTEN FROM THE LIVE SET IS A DIFF NOBODY CAN READ: one binary blob
+//became another. The question somebody asks before committing it is "what
+//actually changed", and the answer that was worth writing into a commit
+//message was "one of twenty-five entries moved: skills/judge.md, 5,248 bytes
+//to 6,727". So that is the shape: by name, with both sizes.
+//
+//    was, now   [{ name, data }] as `archive.make` takes them
+//    ->         { added, changed, removed, same, moved }  names in order, and
+//               `moved` as the count of everything not the same
+function changes(was, now) {
+    var before = {}, after = {};
+    (was || []).forEach(function (f) { before[f.name] = String(f.data == null ? '' : f.data); });
+    (now || []).forEach(function (f) { after[f.name] = String(f.data == null ? '' : f.data); });
+
+    var out = { added: [], changed: [], removed: [], same: [] };
+    Object.keys(after).forEach(function (name) {
+        if (!(name in before)) out.added.push({ name: name, now: after[name].length });
+        else if (before[name] !== after[name]) {
+            out.changed.push({ name: name, was: before[name].length, now: after[name].length });
+        } else out.same.push(name);
+    });
+    Object.keys(before).forEach(function (name) {
+        if (!(name in after)) out.removed.push({ name: name, was: before[name].length });
+    });
+    out.moved = out.added.length + out.changed.length + out.removed.length;
+    return out;
+}
+
 module.exports = {
-    write: write, read: read,
+    write: write, read: read, changes: changes,
     CARRIES: CARRIES, FOLDER: FOLDER, SUFFIX: SUFFIX,
     safe: safe,
     carried: function (kind, entry) { return only(entry, CARRIES[kind]); }

@@ -296,34 +296,52 @@ async function plugin(imports, register) {
         //BASE64 OVER THE PIPE. The action table carries JSON; bytes on it are
         //bytes in a string, and a hundred and seventy kilobytes of documents is
         //not worth a second transport.
+        //THE FILES OF A BUNDLE, once, for the two actions that write one. The
+        //manifest is built alongside and goes last, after everything it names.
+        async function bundleFiles() {
+            var here = await whatThereIs();
+
+            var files = [];
+            var manifest = { made: 'okc', kinds: {}, skills: [] };
+
+            Object.keys(FOLDERS).forEach(function (kind) {
+                manifest.kinds[kind] = (here.sets[kind] || []).map(function (e) {
+                    var body = kind === 'job' ? here.code[e.id] : e.text;
+                    files.push({
+                        name: FOLDERS[kind] + '/' + safe(e.id) + SUFFIXES[kind],
+                        data: String(body == null ? '' : body)
+                    });
+                    return carried(kind, e);
+                });
+            });
+
+            here.skills.forEach(function (sk) {
+                files.push({ name: 'skills/' + safe(sk.which) + '.md', data: sk.text });
+                manifest.skills.push({ which: sk.which, title: sk.title });
+            });
+
+            files.push({ name: 'library.json', data: JSON.stringify(manifest, null, 2) + '\n' });
+            return files;
+        }
+
+        //THE FILES INSIDE A TAR THAT IS ALREADY THERE, in the same shape, so the
+        //two can be compared by name. Nothing, rather than an error, when there
+        //is no file: the first ship of a repo is the whole set added.
+        function filesInside(at) {
+            var raw;
+            try { raw = fs.readFileSync(at); } catch (e) { return null; }
+            var seen = imports.archive.inside(raw);
+            if (seen.unreadable) return null;
+            return seen.entries.map(function (e) {
+                return { name: e.name, data: imports.archive.text(e) };
+            });
+        }
+
         undo.push(actions.define('bootstrapFile', {
             about: 'The whole set as a single file, to save wherever you keep things',
             takes: [],
             run: async function () {
-                var here = await whatThereIs();
-
-                var files = [];
-                var manifest = { made: 'okc', kinds: {}, skills: [] };
-
-                Object.keys(FOLDERS).forEach(function (kind) {
-                    manifest.kinds[kind] = (here.sets[kind] || []).map(function (e) {
-                        var body = kind === 'job' ? here.code[e.id] : e.text;
-                        files.push({
-                            name: FOLDERS[kind] + '/' + safe(e.id) + SUFFIXES[kind],
-                            data: String(body == null ? '' : body)
-                        });
-                        return carried(kind, e);
-                    });
-                });
-
-                here.skills.forEach(function (sk) {
-                    files.push({ name: 'skills/' + safe(sk.which) + '.md', data: sk.text });
-                    manifest.skills.push({ which: sk.which, title: sk.title });
-                });
-
-                //THE MANIFEST LAST, so it is written after everything it names.
-                files.push({ name: 'library.json', data: JSON.stringify(manifest, null, 2) + '\n' });
-
+                var files = await bundleFiles();
                 var bytes = imports.archive.make(files);
                 log.good('made a bundle of ' + files.length + ' file(s), ' + bytes.length + ' bytes');
 
@@ -333,6 +351,77 @@ async function plugin(imports, register) {
                     files: files.length,
                     size: bytes.length,
                     note: 'One file holding every document. Nothing about approvals is in it.'
+                };
+            }
+        }));
+
+        //---- THE TAR THE REPO KEEPS, REWRITTEN FROM WHAT IS LIVE -------------
+        //
+        //THE SHIPPED SET WENT STALE BY FOURTEEN THOUSAND CHARACTERS AND NOTHING
+        //SAID SO. A skill is approved here, the judge is retaught here, and the
+        //copy a fresh workspace starts from is the one in the repo -- which
+        //was last written by pressing "as a file" in the window, saving the
+        //download over the checked-in one by hand, and remembering to. That
+        //is a step with no receipt, and it was skipped for a week.
+        //
+        //THIS IS THAT STEP AS A COMMAND, for development: the same bytes
+        //`bootstrapFile` hands the window, written onto the tar the repo keeps,
+        //and an account of what moved -- by name, both sizes -- because a tar
+        //rewritten is a diff git cannot show and the commit message has to.
+        //
+        //WHERE IT GOES. In development the server bundle runs from dist/ and
+        //the tar it was copied from is one level up, in the repo; that is the
+        //file that is true, so it is the default. A packaged app has no repo
+        //above it, and writing into its own dist would be a change nothing
+        //could commit -- so there the path has to be given.
+        //
+        //FROM THE COMMAND LINE, WHICH IS THE PIPE -- that is the whole ask, so
+        //`_overTheWire` is not refused here the way an import is. What is
+        //refused is a MACHINE's press: a supervisor's reach ends at
+        //../supervisor/allowed.js, which does not list this, and `_driven` is
+        //the mark of a window the drills are steering.
+        undo.push(actions.define('bootstrapShip', {
+            about: 'Rewrite the bundle the repo ships from what is approved here, and say what moved. '
+                + 'For development; the tar is what a fresh workspace starts from',
+            takes: ['to'],
+            run: async function (args) {
+                var a = args || {};
+                if (a._driven) {
+                    throw new Error('Rewriting the shipped bundle is done at this host, by a person or a '
+                        + 'script they ran. It writes a file that gets committed.');
+                }
+
+                var to = String(a.to == null ? '' : a.to).trim();
+                if (!to) {
+                    var dev = process.env.NODE_ENV !== 'production';
+                    var above = path.join(path.dirname(shipped), '..', 'okc-bootstrap.tar');
+                    if (dev && fs.existsSync(above)) to = above;
+                    else {
+                        throw new Error('This is not a development boot with a repository above it, so there '
+                            + 'is no tar to rewrite by default. Say where with --to.');
+                    }
+                }
+
+                var files = await bundleFiles();
+                var moved = bundle.changes(filesInside(to) || [], files);
+                var bytes = imports.archive.make(files);
+
+                if (!moved.moved) {
+                    return {
+                        to: to, files: files.length, size: bytes.length, wrote: false, moved: moved,
+                        note: 'The tar already holds exactly what is here. Nothing was written.'
+                    };
+                }
+
+                fs.mkdirSync(path.dirname(to), { recursive: true });
+                fs.writeFileSync(to, bytes);
+                log.good('shipped a bundle of ' + files.length + ' file(s) to ' + to + ' -- '
+                    + moved.moved + ' of ' + files.length + ' moved');
+
+                return {
+                    to: to, files: files.length, size: bytes.length, wrote: true, moved: moved,
+                    note: moved.moved + ' of ' + files.length + ' entries moved. Read them before committing: '
+                        + 'the tar is what a fresh workspace starts from, and nothing about approvals is in it.'
                 };
             }
         }));

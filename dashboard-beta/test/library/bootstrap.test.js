@@ -402,3 +402,81 @@ test('a path with nothing at it says so, rather than reading as an empty bundle'
         /nothing at/
     );
 });
+
+//---------------------------------------------------------------------------
+//THE TAR THE REPO SHIPS, REWRITTEN FROM WHAT IS LIVE.
+//
+//It went stale by fourteen thousand characters because refreshing it was a
+//window press plus a save-as over the checked-in file, with no receipt. The
+//command is the same bytes onto that file, and an account of what moved --
+//which is the thing the commit message needs and a tar diff cannot show.
+//---------------------------------------------------------------------------
+
+const bundleModule = require('../../src/app/bootstrap/bundle');
+
+test('what moved between two bundles is said by name, with both sizes', () => {
+    const was = [{ name: 'a.md', data: 'one' }, { name: 'b.md', data: 'two' }, { name: 'gone.md', data: 'x' }];
+    const now = [{ name: 'a.md', data: 'one' }, { name: 'b.md', data: 'two, longer' }, { name: 'new.md', data: 'y' }];
+    const m = bundleModule.changes(was, now);
+    assert.deepEqual(m.same, ['a.md']);
+    assert.deepEqual(m.changed, [{ name: 'b.md', was: 3, now: 11 }]);
+    assert.deepEqual(m.added, [{ name: 'new.md', now: 1 }]);
+    assert.deepEqual(m.removed, [{ name: 'gone.md', was: 1 }]);
+    assert.equal(m.moved, 3);
+    //NOTHING BEFORE IS EVERYTHING ADDED, which is what the first ship of a
+    //repository looks like.
+    assert.equal(bundleModule.changes(null, now).added.length, 3);
+});
+
+test('shipping writes the tar and says what moved; shipping again writes nothing', async () => {
+    await aLibrary();
+    const to = path.join(bundleAt, 'ship', 'okc-bootstrap.tar');
+
+    const first = await call('bootstrapShip', { to });
+    assert.equal(first.wrote, true);
+    assert.equal(first.moved.added.length, 7, 'the whole set is new the first time');
+    assert.equal(first.moved.moved, 7);
+    assert.ok(fs.statSync(to).isFile());
+
+    //THE SAME AGAIN IS A NO-OP, AND SAID: a tar that is rewritten identically
+    //still shows as changed to anything watching the file.
+    const again = await call('bootstrapShip', { to });
+    assert.equal(again.wrote, false);
+    assert.equal(again.moved.moved, 0);
+
+    //ONE DOCUMENT EDITED, ONE ENTRY NAMED, both sizes on it.
+    await call('contractSave', { id: 'rules', name: 'rules', text: 'do not push, and do not force' });
+    const third = await call('bootstrapShip', { to });
+    assert.equal(third.wrote, true);
+    assert.deepEqual(third.moved.changed.map((e) => e.name), ['contracts/rules.md']);
+    assert.equal(third.moved.changed[0].was, 'do not push'.length);
+    assert.equal(third.moved.changed[0].now, 'do not push, and do not force'.length);
+
+    //AND WHAT WAS WRITTEN IS A BUNDLE THIS APP READS BACK, the same as the
+    //file the window hands out.
+    const seen = archiveOf().inside(fs.readFileSync(to));
+    assert.equal(seen.unreadable, null);
+    assert.ok(seen.entries.some((e) => e.name === 'library.json'));
+});
+
+test('shipping is a command-line act, and a driven window is refused it', async () => {
+    await aLibrary();
+    const to = path.join(bundleAt, 'ship2', 'okc-bootstrap.tar');
+    await assert.rejects(() => call('bootstrapShip', { to, _driven: true }), /at this host/);
+    assert.ok(!fs.existsSync(to));
+
+    //THE COMMAND LINE IS THE PIPE, and it is the caller this exists for.
+    const out = await call('bootstrapShip', { to, _overTheWire: true });
+    assert.equal(out.wrote, true);
+});
+
+test('with no path and no repository above it, shipping says so rather than writing into the app', async () => {
+    await aLibrary();
+    const was = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+        await assert.rejects(() => call('bootstrapShip', {}), /--to/);
+    } finally {
+        if (was === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = was;
+    }
+});
