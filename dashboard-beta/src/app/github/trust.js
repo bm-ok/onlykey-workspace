@@ -251,6 +251,52 @@ function quoting(entry) {
     return edge + '\n' + body + '\n' + edge;
 }
 
+//---- WHO IS SPEAKING: THE PROJECT, THE COMMUNITY, OR A MACHINE -------------
+//
+//A PROJECT IS SEVERAL REPOSITORIES WITH DIFFERENT MAINTAINERS, and the threads
+//on them hold maintainers, passers-by and bots in the same list. Whose word
+//carries the project's authority is a different question from whose word this
+//host trusts -- and it is a GITHUB FACT, not one this app decides:
+//`author_association` on every issue, comment and pull request, and
+//`user.type` for a bot.
+//
+//READ FROM THE API AND NEVER FROM THE TEXT. A body that says "I am the
+//maintainer" says nothing about who wrote it; the association beside it does.
+//That is the same boundary the fence draws, applied to a claim about identity.
+//
+//THIS IS NOT TRUST. A maintainer is not on this host's list by being one, and
+//a bot with an OWNER association is still a bot. What it is for is a
+//supervisor being able to tell "the maintainer said do X" from "somebody said
+//do X" when deciding what the project actually wants -- which is the whole of
+//what helping somebody else's project means.
+var ROLES = {
+    OWNER: 'maintainer', MEMBER: 'maintainer',
+    COLLABORATOR: 'collaborator', CONTRIBUTOR: 'contributor',
+    NONE: 'community', FIRST_TIMER: 'community', FIRST_TIME_CONTRIBUTOR: 'community',
+    MANNEQUIN: 'community'
+};
+
+function roleOf(user, association) {
+    var kind = String((user && user.type) || '');
+    var assoc = String(association || '').toUpperCase() || null;
+    //A BOT IS A BOT WHATEVER ITS ASSOCIATION SAYS. Dependabot is a MEMBER of
+    //every repository it is installed on; nobody means "the maintainer said"
+    //by that.
+    if (/^bot$/i.test(kind)) return { role: 'bot', association: assoc, bot: true };
+    return { role: ROLES[assoc] || 'community', association: assoc, bot: false };
+}
+
+//HOW A ROLE READS BESIDE A NAME, in the quotation and on a card. A bot says it
+//is one; a person says what they are to the project; the ordinary case says
+//nothing extra, because most voices in most threads are the community and a
+//label on every one of them is a label on none.
+function roleWord(role) {
+    if (!role) return '';
+    if (role.role === 'bot') return 'bot';
+    if (role.role === 'community') return '';
+    return role.role;
+}
+
 //---- THE WHOLE THING, IN ORDER ---------------------------------------------
 //
 //AN ISSUE IS A CONVERSATION AND WAS BEING HANDED OVER AS FIELDS. `body` here,
@@ -293,7 +339,8 @@ function conversationOf(entry, turns, reading, links) {
     var lines = [];
 
     //---- the issue as it was opened -------------------------------------
-    var opened = 'Opened by ' + ((entry && entry.by) || 'somebody')
+    var who0 = roleWord(entry && entry.role);
+    var opened = 'Opened by ' + ((entry && entry.by) || 'somebody') + (who0 ? ' (' + who0 + ')' : '')
         + (entry && entry.at ? ' on ' + entry.at : '')
         + ' — ' + say.why + '.';
     lines.push('[1] ' + opened);
@@ -331,7 +378,8 @@ function conversationOf(entry, turns, reading, links) {
     rows.forEach(function (c, i) {
         var how = c.reading || readingOf(c, {});
         lines.push('');
-        lines.push('[' + (i + 2) + '] Reply by ' + (c.by || 'somebody')
+        var whoN = roleWord(c.role);
+        lines.push('[' + (i + 2) + '] Reply by ' + (c.by || 'somebody') + (whoN ? ' (' + whoN + ')' : '')
             + (c.at ? ' on ' + c.at : '') + ' — ' + how.why + '.');
         lines.push('');
         lines.push(safely(c.body || '(nothing written)'));
@@ -363,4 +411,7 @@ function conversationOf(entry, turns, reading, links) {
     return head + '\n' + edge + '\n' + lines.join('\n') + '\n' + edge;
 }
 
-module.exports = { readingOf: readingOf, fenced: fenced, quoting: quoting, conversationOf: conversationOf, marked: marked, same: same, trusts: trusts };
+module.exports = {
+    readingOf: readingOf, fenced: fenced, quoting: quoting, conversationOf: conversationOf,
+    marked: marked, same: same, trusts: trusts, roleOf: roleOf, roleWord: roleWord
+};

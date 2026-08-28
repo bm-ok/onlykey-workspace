@@ -35,6 +35,19 @@ module.exports = function issues(theme, okc, remember, shell) {
         Cols, Col, Empty, Note, Mono, Quoted, TitleRow, Grow, ago, openOut
     } = theme;
 
+    //---- WHAT A VOICE IS TO THE PROJECT ------------------------------------
+    //
+    //A THREAD ON SOMEBODY ELSE'S PROJECT HOLDS THE MAINTAINER, PASSERS-BY AND
+    //BOTS in one list, and a contributor reads them differently: the
+    //maintainer's word is what the project wants, a bot is a machine talking.
+    //From GitHub's `author_association` and `user.type`, never from what the
+    //text claims about itself. The ordinary case -- community -- is silent,
+    //because a badge on every voice is a badge on none.
+    function Role({ r }) {
+        if (!r || r.role === 'community') return null;
+        return <Badge kind={r.role === 'bot' ? 'muted' : 'ok'} title={r.association ? 'GitHub says: ' + r.association : undefined}>{r.role}</Badge>;
+    }
+
     //---- WHETHER ANYBODY ASKED FOR ANYTHING, ON THE ROW --------------------
     //
     //THE PANE READ AS IF EVERY ISSUE WERE THE SAME KIND OF THING, and since
@@ -410,6 +423,7 @@ module.exports = function issues(theme, okc, remember, shell) {
                         ? <Card>
                             <CardTitle>
                                 <Mono>{i.by || 'somebody'}</Mono>
+                                <Role r={i.role} />
                                 <span className="muted">{'opened it ' + ago(i.at)}</span>
                                 {i.reading && i.reading.kind === 'request'
                                     ? <Badge kind="ok" title={i.reading.why}>a request</Badge>
@@ -426,6 +440,7 @@ module.exports = function issues(theme, okc, remember, shell) {
                             <Card key={n}>
                                 <CardTitle>
                                     <Mono>{c.by || 'somebody'}</Mono>
+                                    <Role r={c.role} />
                                     <span className="muted">{ago(c.at)}</span>
                                     {c.reading && c.reading.kind === 'request'
                                         ? <Badge kind="ok" title={c.reading.why}>a request</Badge>

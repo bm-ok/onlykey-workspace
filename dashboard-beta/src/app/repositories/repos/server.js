@@ -577,6 +577,9 @@ async function plugin(imports, register) {
                     return {
                         number: x.number, title: x.title, at: x.created_at, updated: x.updated_at,
                         by: x.user && x.user.login, url: x.html_url, on: on,
+                        //WHAT THEY ARE TO THE PROJECT, from the API and never
+                        //from the text. See roleOf in ../../github/trust.js.
+                        role: trust.roleOf(x.user, x.author_association),
                         //ONLY OPEN ONES ARE ASKED FOR, which is exactly why the
                         //state has to be written down rather than assumed. A row
                         //with no state is not "open" to anything reading it
@@ -763,6 +766,7 @@ async function plugin(imports, register) {
                 var reading = readingOf(asItself);
                 return {
                     at: c.created_at, by: asItself.by, url: c.html_url,
+                    role: trust.roleOf(c.user, c.author_association),
                     reading: reading,
                     //AS WRITTEN, FOR A PERSON. See the note on the issue's own
                     //`text` above: `body` is what a model is handed, and its
@@ -1605,6 +1609,7 @@ async function plugin(imports, register) {
                 var asIssue = {
                     number: number, on: on, title: x.title || null, body: x.body || null,
                     by: x.user && x.user.login, byId: x.user && x.user.id, at: x.created_at,
+                    role: trust.roleOf(x.user, x.author_association),
                     labels: (x.labels || []).map(function (l) { return typeof l == 'string' ? l : l.name; })
                 };
                 var reading = readingOf(asIssue);
@@ -1666,6 +1671,7 @@ async function plugin(imports, register) {
                         var how = readingOf(asItself);
                         return {
                             at: c.created_at, by: asItself.by, url: c.html_url,
+                    role: trust.roleOf(c.user, c.author_association),
                             reading: how, body: asItself.body
                         };
                     });

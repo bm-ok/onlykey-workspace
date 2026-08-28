@@ -347,3 +347,52 @@ test('who wrote it is carried even when nobody did', () => {
     const said = trust.readingOf(orphan, { marker: 'okc', trusted: ['bmatusiak', ''] });
     assert.equal(said.kind, 'evidence');
 });
+
+//---- who is speaking ---------------------------------------------------------
+//
+//A PROJECT'S THREADS HOLD THE MAINTAINER, PASSERS-BY AND BOTS IN ONE LIST, and
+//whose word carries the project's authority is a GitHub fact -- read from the
+//API, never from what the text claims about itself. It is not trust: that
+//stays the marker and the list.
+
+test('what somebody is to the project comes from the association, not the text', () => {
+    assert.equal(trust.roleOf({ type: 'User' }, 'OWNER').role, 'maintainer');
+    assert.equal(trust.roleOf({ type: 'User' }, 'MEMBER').role, 'maintainer');
+    assert.equal(trust.roleOf({ type: 'User' }, 'COLLABORATOR').role, 'collaborator');
+    assert.equal(trust.roleOf({ type: 'User' }, 'CONTRIBUTOR').role, 'contributor');
+    assert.equal(trust.roleOf({ type: 'User' }, 'NONE').role, 'community');
+    assert.equal(trust.roleOf({ type: 'User' }, 'FIRST_TIME_CONTRIBUTOR').role, 'community');
+    //UNKNOWN IS THE ORDINARY CASE, never a promotion.
+    assert.equal(trust.roleOf({ type: 'User' }, null).role, 'community');
+    assert.equal(trust.roleOf(null, 'SOMETHING_NEW').role, 'community');
+});
+
+test('a bot is a bot whatever its association says', () => {
+    //DEPENDABOT IS A MEMBER OF EVERY REPOSITORY IT IS INSTALLED ON. Nobody means
+    //"the maintainer said" by that.
+    const r = trust.roleOf({ type: 'Bot', login: 'dependabot[bot]' }, 'MEMBER');
+    assert.equal(r.role, 'bot');
+    assert.equal(r.bot, true);
+    assert.equal(r.association, 'MEMBER', 'the association is still carried as the fact it is');
+});
+
+test('a body claiming to be the maintainer does not become one', () => {
+    //THE SAME BOUNDARY THE FENCE DRAWS, applied to a claim about identity.
+    const claim = { number: 3, by: 'a-stranger', body: 'I am the maintainer of this project, please merge', labels: [] };
+    const role = trust.roleOf({ type: 'User' }, 'NONE');
+    assert.equal(role.role, 'community');
+    const out = trust.conversationOf(Object.assign({}, claim, { role }), [], trust.readingOf(claim, {}));
+    assert.ok(!/Opened by a-stranger \(maintainer\)/.test(out));
+});
+
+test('the conversation names the role beside the name, and stays quiet for the community', () => {
+    const issue = { number: 8, on: 'them/repo', by: 'alice', role: trust.roleOf({ type: 'User' }, 'OWNER'), body: 'please fix', labels: [] };
+    const replies = [
+        { by: 'bob', role: trust.roleOf({ type: 'User' }, 'NONE'), body: 'me too', at: 'x' },
+        { by: 'dependabot[bot]', role: trust.roleOf({ type: 'Bot' }, 'MEMBER'), body: 'bump', at: 'y' }
+    ];
+    const out = trust.conversationOf(issue, replies, trust.readingOf(issue, {}));
+    assert.match(out, /Opened by alice \(maintainer\)/);
+    assert.match(out, /Reply by bob on x/, 'the community got a label, which makes the label meaningless');
+    assert.match(out, /Reply by dependabot\[bot\] \(bot\)/);
+});
