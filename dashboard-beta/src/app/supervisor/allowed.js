@@ -278,6 +278,23 @@ var MAY = {
   // skill itself is already in front of it — the CLI loads it at the head of
   // every waking — so a verb that hands it over again widens what a model can
   // reach and buys nothing.
+  // AND THE DOCUMENT ITSELF, WHICH IT COULD NOT READ.
+  //
+  // `skills` IS STILL OFF THIS LIST and the reason given for that was wrong: it
+  // said the document is already in front of a supervisor, because the CLI
+  // fetches it at the head of every waking. Fetching is not reading. Claude Code
+  // keeps a skill's name and description in context and loads the body when the
+  // skill is INVOKED, so a turn that never invokes it never sees a word.
+  //
+  // Asked to review its own instructions, it said exactly that, and declined to
+  // propose a change rather than guess at wording it could not read. A thing
+  // that cannot read what governs it cannot say what is wrong with it, and
+  // "propose an improvement" is then a request to invent one.
+  //
+  // `skillReading` HANDS BACK ONE DOCUMENT and nothing around it — not what is
+  // proposed, not the approval machinery, which is what `skills` is for and why
+  // that one stays off.
+  skillReading: 'the instructions you are working to, in full, so you can say what is wrong with them',
   skillAsked: 'whether a change you proposed is still waiting, and how the last few were answered',
   skillHistory: 'what a skill has been: when it changed, by how much, and the argument made for each change',
 

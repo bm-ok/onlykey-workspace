@@ -597,7 +597,10 @@ test('with nothing asked, it says so rather than looking like a refusal', async 
 
     assert.equal(said.waiting, null);
     assert.deepEqual(said.decided, []);
-    assert.match(said.note, /nothing has been asked/i);
+    //NOT "NOTHING HAS BEEN ASKED", which is more than this knows. Answers are
+    //recorded from the day recording started, and a supervisor reading this
+    //beside a conversation that held two refusals caught it saying otherwise.
+    assert.match(said.note, /no answer has been recorded here/i);
 });
 
 test('a proposal that is waiting says so, and says since when', async () => {
@@ -705,6 +708,86 @@ test('a supervisor may ask both, and still may not read or ratify the document',
     assert.equal(allowed.may('skillAsked'), true);
     assert.equal(allowed.may('skillHistory'), true);
 
+    ['skills', 'skillSave', 'skillApprove', 'skillHolding'].forEach((name) => {
+        assert.equal(allowed.may(name), false, name + ' is on the supervisor\'s list');
+    });
+});
+
+//---------------------------------------------------------------------------
+//WHAT A SUPERVISOR FOUND WHEN IT WAS ASKED TO READ ITS OWN INSTRUCTIONS.
+//
+//It could not. Asked to compare the document it works to against the tools it
+//has, it answered: "the 28,040-character supervisor skill was not handed to me
+//this waking — all I got was the harness prompt and a one-line 'use the
+//supervising skill' — and no tool will show me its text". Then it declined to
+//propose a change, rather than guess at wording it could not read.
+//
+//THE REASON `skills` WAS KEPT OFF THE ALLOWLIST WAS WRONG. It said the document
+//is already in front of a supervisor because the CLI fetches it at the head of
+//every waking — and fetching is not reading. A skill's name and description sit
+//in context; the body loads when the skill is INVOKED, so a turn that never
+//invokes it never sees a word.
+//
+//AND THE NAME IT KNOWS ITSELF BY WAS REFUSED. The frontmatter says
+//`name: supervising` and the wake brief says "use the supervising skill", while
+//this door took only `supervisor`. The one name it had was the one name that
+//did not work.
+//---------------------------------------------------------------------------
+
+test('it can read the document it is governed by', async () => {
+    const skills = await loaded(ALL);
+    const said = defined.get('skillReading').run({ which: 'supervisor' });
+
+    assert.match(said.text, /You decide what work there is/);
+    assert.equal(said.characters, said.text.length);
+    //AND IS TOLD WHAT TO DO ABOUT IT, since reading it is only useful if
+    //saying what is wrong with it goes somewhere.
+    assert.match(said.note, /skillPropose/);
+});
+
+test('the name in its own frontmatter is a name this app answers to', async () => {
+    const skills = await loaded(ALL);
+
+    //`supervising` IS WHAT THE WAKE BRIEF SAYS AND WHAT THE FILE CALLS ITSELF.
+    //A refusal that is correct and unguessable reads as the feature not being
+    //there — which is how it was reported.
+    assert.equal(defined.get('skillReading').run({ which: 'supervising' }).which, 'supervisor');
+    assert.equal(defined.get('skillAsked').run({ which: 'supervising' }).which, 'supervisor');
+    assert.equal(defined.get('skillHistory').run({ which: 'supervising' }).which, 'supervisor');
+});
+
+test('an alias files under one name, so a history is not split in two', async () => {
+    const skills = await loaded(ALL);
+    defined.get('skillPropose').run({
+        which: 'supervising', text: A_SKILL, why: 'asked for by the name it knows', _overTheWire: true
+    });
+
+    //ASKED FOR UNDER EITHER NAME, IT IS THE SAME ONE THING. Filing under the
+    //alias would put half of a skill's history in a drawer nothing else reads.
+    assert.ok(defined.get('skillAsked').run({ which: 'supervisor' }).waiting);
+    assert.ok(defined.get('skillAsked').run({ which: 'supervising' }).waiting);
+});
+
+test('a name that is neither a skill nor an alias is still refused', async () => {
+    const skills = await loaded(ALL);
+    assert.throws(() => defined.get('skillReading').run({ which: 'operator' }), /not a skill/);
+});
+
+test('with no answers recorded it says so without claiming none were ever asked', async () => {
+    const skills = await loaded(ALL);
+    const said = defined.get('skillAsked').run({ which: 'supervisor' });
+
+    //IT CAUGHT THIS TOO: the window had turned two proposals down and this read
+    //said nothing had ever been asked, because answers are recorded from the day
+    //recording started. Honest is "nothing recorded here", not "nothing asked".
+    assert.match(said.note, /no answer has been recorded here/);
+    assert.doesNotMatch(said.note, /nothing has been asked/);
+});
+
+test('a supervisor may read what governs it, and still may not change or ratify it', async () => {
+    const allowed = require('../../src/app/supervisor/allowed');
+
+    assert.equal(allowed.may('skillReading'), true);
     ['skills', 'skillSave', 'skillApprove', 'skillHolding'].forEach((name) => {
         assert.equal(allowed.may(name), false, name + ' is on the supervisor\'s list');
     });

@@ -1384,13 +1384,33 @@ async function plugin(imports, register) {
     //not about what one machine happened to be built with.
     function skillFile(stage) { return imports.provision.fileFor(null, stage); }
 
+    //---- WHAT EACH DOCUMENT CALLS ITSELF -----------------------------------
+    //
+    //A SKILL'S FRONTMATTER CARRIES A NAME and the CLI loads it under that name —
+    //`supervising`, not `supervisor`. So the name a supervisor knows itself by is
+    //the one the wake brief uses ("use the supervising skill"), and it was the
+    //one name this door refused.
+    //
+    //IT FOUND THIS ITSELF, asked to read its own instructions: the tool it would
+    //reach for turned down the only name it had. A refusal that is correct and
+    //unguessable is a refusal that reads as the feature not existing.
+    var ALSO = { supervising: 'supervisor', working: 'worker', judging: 'judge' };
+
     function skillNamed(which) {
-        var one = WHICH[String(which || 'supervisor')];
+        var asked = String(which || 'supervisor');
+        var one = WHICH[asked] || WHICH[ALSO[asked]];
         if (!one) {
             throw new Error('"' + which + '" is not a skill this app keeps. One of: '
                 + Object.keys(WHICH).join(', ') + '.');
         }
         return one;
+    }
+
+    //THE NAME THE REST OF THIS FILE FILES THINGS UNDER, so an alias does not
+    //become a second drawer holding half of one skill's history.
+    function keyFor(which) {
+        var asked = String(which || 'supervisor');
+        return WHICH[asked] ? asked : (ALSO[asked] || asked);
     }
 
     undo.push(actions.define('skills', {
@@ -1536,7 +1556,7 @@ async function plugin(imports, register) {
         takes: ['which'],
         run: function (args) {
             var a = args || {};
-            var which = String(a.which || 'supervisor');
+            var which = keyFor(a.which);
             var one = skillNamed(which);
 
             var all = imports.versions.list('skill', which);
@@ -1561,7 +1581,7 @@ async function plugin(imports, register) {
         takes: ['which', 'at'],
         run: function (args) {
             var a = args || {};
-            var which = String(a.which || 'supervisor');
+            var which = keyFor(a.which);
             skillNamed(which);
 
             var it = a.at ? imports.versions.read('skill', which, a.at) : imports.versions.newest('skill', which);
@@ -1574,6 +1594,48 @@ async function plugin(imports, register) {
             return Object.assign({}, it, {
                 changed: it.rows ? imports.versions.asText({ rows: it.rows }) : null
             });
+        }
+    }));
+
+    //---- THE DOCUMENT IT IS GOVERNED BY, WHICH IT COULD NOT READ -----------
+    //
+    //`skills` IS OFF THE ALLOWLIST AND THE REASON GIVEN WAS WRONG. It said the
+    //document is already in front of a supervisor because the CLI fetches it at
+    //the head of every waking — and fetching is not reading. Claude Code keeps a
+    //skill's NAME and DESCRIPTION in context and loads the body when the skill
+    //is invoked, so a turn that never invokes it never sees a word of it.
+    //
+    //ASKED TO REVIEW ITS OWN INSTRUCTIONS, IT SAID SO: "the 28,040-character
+    //supervisor skill was not handed to me this waking — all I got was the
+    //harness prompt and a one-line 'use the supervising skill' — and no tool
+    //will show me its text". It declined to propose a change rather than guess
+    //at wording it could not read, which is the right answer and is also the
+    //whole argument for this door.
+    //
+    //NARROW, AND NOT `skills`. That one is the window's read: it carries what is
+    //proposed and the approval machinery around it. This hands back one
+    //document — the one being obeyed — and nothing else.
+    undo.push(actions.define('skillReading', {
+        about: 'The instructions you are working to, in full, so you can say what is wrong with them',
+        takes: ['which'],
+        run: function (args) {
+            var a = args || {};
+            var which = keyFor(a.which);
+            var one = skillNamed(which);
+
+            var text;
+            try { text = fs.readFileSync(skillFile(one.stage), 'utf8'); }
+            catch (e) { throw new Error('Could not read ' + one.title + ': ' + e.message); }
+
+            return {
+                which: which,
+                title: one.title,
+                text: text,
+                characters: text.length,
+                lines: text.split('\n').length,
+                note: 'This is what is served. Changing it is `skillPropose`, which waits for a person — '
+                    + 'nothing here is served from a proposal.'
+            };
         }
     }));
 
@@ -1599,7 +1661,7 @@ async function plugin(imports, register) {
         takes: ['which'],
         run: function (args) {
             var a = args || {};
-            var which = String(a.which || 'supervisor');
+            var which = keyFor(a.which);
             var one = skillNamed(which);
 
             var pending = (proposals.read({}) || {})[which] || null;
@@ -1624,7 +1686,14 @@ async function plugin(imports, register) {
                     : (lately.length
                         ? 'Nothing is waiting. The last answer was "' + lately[0].what + '" on '
                             + lately[0].at + '.'
-                        : 'Nothing is waiting and nothing has been answered, so nothing has been asked.')
+                        //NOT "NOTHING HAS BEEN ASKED", WHICH IS MORE THAN THIS
+                        //KNOWS. Answers are recorded from the day recording
+                        //started; anything decided before that is in the
+                        //conversation and not here, and a supervisor reading
+                        //both at once caught this saying otherwise.
+                        : 'Nothing is waiting, and no answer has been recorded here. Answers are kept from '
+                            + 'the first one decided after this app started keeping them — anything older '
+                            + 'is in the conversation instead.')
             };
         }
     }));
@@ -1642,7 +1711,7 @@ async function plugin(imports, register) {
         takes: ['which'],
         run: function (args) {
             var a = args || {};
-            var which = String(a.which || 'supervisor');
+            var which = keyFor(a.which);
             var one = skillNamed(which);
 
             var all = imports.versions.list('skill', which).map(function (v) {
@@ -1658,7 +1727,7 @@ async function plugin(imports, register) {
                 which: which, title: one.title, versions: all,
                 note: all.length
                     ? all.length + ' version(s) kept, newest first. The text of each is not here — this is '
-                        + 'about how it has changed, not what it says, which you already have.'
+                        + 'about how it has changed. What it says now is `skillReading`.'
                     : 'Nothing has been kept for this yet. Versions start at the first save or approval made '
                         + 'through the app, not at the first time the file existed.'
             };
@@ -1707,7 +1776,7 @@ async function plugin(imports, register) {
         takes: ['which', 'text', 'from', 'why'],
         run: function (args) {
             var a = args || {};
-            var which = String(a.which || 'supervisor');
+            var which = keyFor(a.which);
             var one = skillNamed(which);
 
             var text = a.text;
@@ -1779,7 +1848,7 @@ async function plugin(imports, register) {
         takes: ['which', 'force'],
         run: async function (args) {
             var a = args || {};
-            var which = String(a.which || 'supervisor');
+            var which = keyFor(a.which);
             skillNamed(which);
 
             //---- A PERSON'S PRESS, AND ONLY A PERSON'S -------------------
@@ -1854,7 +1923,7 @@ async function plugin(imports, register) {
         takes: ['which', 'why'],
         run: function (args) {
             var a = args || {};
-            var which = String(a.which || 'supervisor');
+            var which = keyFor(a.which);
             skillNamed(which);
 
             var why = String(a.why == null ? '' : a.why).trim();
@@ -1910,7 +1979,7 @@ async function plugin(imports, register) {
         //answer is refreshed rather than held.
         run: async function (args) {
             var a = args || {};
-            var which = String(a.which || 'supervisor');
+            var which = keyFor(a.which);
             var one = skillNamed(which);
             var text = a.text;
 
