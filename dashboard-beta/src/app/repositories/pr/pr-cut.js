@@ -4,7 +4,7 @@ var { useState, useEffect, useCallback } = React;
 module.exports = function cuts(theme, okc, remember, shell) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
-        Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Link,
+        Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Link, openOut,
         Kv, KvRow, Notice, Markdown, ask
     } = theme;
 
@@ -81,6 +81,17 @@ module.exports = function cuts(theme, okc, remember, shell) {
 
     //---- the right column --------------------------------------------------
 
+    //A MOMENT ON THE TIMELINE: the day and the minute, local, because the
+    //story is read as a sequence and a relative "3 hours ago" hides the order
+    //two entries an hour apart actually happened in.
+    function moment(at) {
+        if (!at) return '';
+        var d = new Date(at);
+        if (isNaN(d.getTime())) return String(at);
+        var two = function (n) { return (n < 10 ? '0' : '') + n; };
+        return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + ' ' + two(d.getHours()) + ':' + two(d.getMinutes());
+    }
+
     function Pull({ p }) {
         var kind = p.merged ? 'ok' : p.state == 'closed' ? 'bad' : p.draft ? 'warn' : '';
         var word = p.merged ? 'merged' : p.state == 'closed' ? 'closed without merging' : p.draft ? 'draft on GitHub' : 'open';
@@ -139,6 +150,12 @@ module.exports = function cuts(theme, okc, remember, shell) {
         //merge it, so coming back to a blank panel is starting the read again
         //from the top.
         var [picked, setPicked] = remember.use('cuts', 'picked', null);
+        //THE STORY OF THE PICKED CUT, newest first. A hook, so it sits here with
+        //the others and above every early return -- below one it is "Rendered
+        //more hooks than during the previous render", which the walk catches.
+        //Keyed by the pick rather than by `on`, which is computed further down.
+        var storyOf = (picked || '').split(' -> ');
+        var story = okc.use('prCutStory', storyOf.length === 2 ? { source: storyOf[0], target: storyOf[1] } : {}, 15000);
 
         //DRAFTS ARE LOCAL AND ANSWER INSTANTLY; cuts are a network call. Asked
         //separately so the one row on the screen that wants a person is not
@@ -574,9 +591,7 @@ module.exports = function cuts(theme, okc, remember, shell) {
                                 </React.Fragment>
                                 : null}
                         </Panel>
-                    </Col>
 
-                    <Col wide>
                         <h2>What it is</h2>
                         {!on ? <Panel><Empty>nothing picked</Empty></Panel> : (
                             <div>
@@ -641,6 +656,50 @@ module.exports = function cuts(theme, okc, remember, shell) {
                                         </Panel>
                                     )}
                             </div>
+                        )}
+                    </Col>
+
+                    <Col wide>
+                        <h2>The story <span className="muted">{on ? '— newest first' : ''}</span></h2>
+                        {!on ? <Panel><Empty>nothing picked</Empty></Panel> : (
+                            <Panel>
+                                {/* A VERTICAL TIMELINE: what came IN from GitHub (a
+                                    tag, a maintainer's comment), what went OUT in the
+                                    person's name (a reply, the pull request, a push),
+                                    what the supervisor said at each waking, and the
+                                    tasks and judgements between. Newest at the top --
+                                    where it stands now -- and the initiator at the
+                                    bottom. The composer is beside the server, in the pr plugin. */}
+                                {story.error ? <Note kind="bad">{story.error}</Note> : null}
+                                {!story.state
+                                    ? <Skeleton rows={5} />
+                                    : !(story.state.entries || []).length
+                                        ? <Empty>{story.state.note || 'Nothing is recorded about this cut yet.'}</Empty>
+                                        : <Stack>
+                                            {story.state.entries.map(function (e, i) {
+                                                var tone = e.dir === 'in' ? 'warn' : e.dir === 'out' ? 'ok' : 'muted';
+                                                var word = e.dir === 'in' ? 'in' : e.dir === 'out' ? 'out' : e.kind;
+                                                return (
+                                                    <Card key={i}>
+                                                        <CardTitle>
+                                                            <Badge kind={tone}>{word}</Badge>
+                                                            <span className="muted">{moment(e.at)}</span>
+                                                            {e.who ? <Mono>{e.who}</Mono> : null}
+                                                            {e.ref ? <span className="muted">{e.ref}</span> : null}
+                                                        </CardTitle>
+                                                        <CardSub>
+                                                            {e.url
+                                                                ? <Link onClick={function () { openOut(e.url); }}>{e.text}</Link>
+                                                                : <span>{e.text}</span>}
+                                                        </CardSub>
+                                                    </Card>
+                                                );
+                                            })}
+                                        </Stack>}
+                                {story.state && story.state.note && (story.state.entries || []).length
+                                    ? <Note>{story.state.note}</Note>
+                                    : null}
+                            </Panel>
                         )}
                         {got && got.note ? <Note>{got.note}</Note> : null}
                     </Col>

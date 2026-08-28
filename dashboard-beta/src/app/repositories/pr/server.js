@@ -26,6 +26,7 @@
 //belongs beside the pane that uses it — the same arrangement ./revising.js has.
 var allowing = require('./allowing');
 var reviewsIn = require('./reviews');
+var storyOf = require('./story');
 
 plugin.consumes = ['app', 'log', 'git', 'github', 'keys', 'workspace', 'state', 'settings', 'refs',
     //`inbox` FOR ONE ERRAND: a change that is out and has not been merged. See
@@ -835,6 +836,66 @@ async function plugin(imports, register) {
         //`landed: null` FOR A PAIR NOBODY SENT, which is a third answer and not a
         //no. "It has not landed" about a change that was never sent out reads as
         //a failure to land rather than as nothing having happened.
+        //---- THE STORY OF A CUT ---------------------------------------------
+        //
+        //EVERYTHING THAT TOUCHED IT, IN TIME, NEWEST FIRST -- what came in from
+        //GitHub, what went out in the person's name, what the supervisor said
+        //at each waking, and the tasks and judgements between. Gathered from
+        //the records and the events log; ./story.js is the composition and
+        //is pure. Asked for by the pane while a cut is picked.
+        undo.push(actions.define('prCutStory', {
+            about: 'Everything that touched a cut, in time, newest first: what arrived from GitHub, what went out, '
+                + 'what the supervisor said, and the tasks and judgements between',
+            takes: ['source', 'target'],
+            run: async function (args) {
+                var a = args || {};
+                var source = String(a.source || '').trim();
+                var target = String(a.target || '').trim();
+                if (!source || !target) return { source: source || null, target: target || null, entries: [], note: 'Say which cut: source and target.' };
+
+                var all = (await read(landings)) || {};
+                var rec = all[key(source, target)] || null;
+
+                var board = (await relayed('branchBoard')) || {};
+                var row = ((board.branches) || []).filter(function (b) { return b.name === source; })[0] || null;
+                var note = row ? row.note : null;
+
+                var issue = null;
+                if (note && note.issue) issue = await relayed('issueRead', { on: note.issue.on, number: note.issue.number });
+
+                var tasks = (((await relayed('tasks')) || {}).tasks || []).filter(function (t) { return t.branch === source; });
+                var judgements = (((await relayed('judging')) || {}).judgements || []).filter(function (j) {
+                    var s = j.subject || {};
+                    return s.branch === source || (s.kind === 'cut' && s.source === source);
+                });
+                var events = (((await relayed('events', { limit: 3000 })) || {}).events || []);
+                var held = (await relayed('githubHeld')) || {};
+
+                //THE PULL REQUESTS AS GITHUB HAS THEM NOW, reviews included,
+                //over what the record remembers.
+                var live = rec ? await relayed('prCutState', { source: source, target: target }) : null;
+                var merged = rec ? Object.assign({}, rec) : { source: source, target: target };
+                if (live && Array.isArray(live.pulls) && live.pulls.length) {
+                    merged.pulls = (rec.pulls || []).map(function (p) {
+                        var now = live.pulls.filter(function (x) { return x.repo === p.repo; })[0];
+                        return now ? Object.assign({}, p, now) : p;
+                    });
+                }
+
+                var entries = storyOf.compose({
+                    rec: merged, note: note, issue: issue, tasks: tasks, judgements: judgements,
+                    events: events, hostLogin: held.login || null
+                });
+                return {
+                    source: source, target: target, entries: entries,
+                    issue: note && note.issue ? note.issue : null,
+                    note: entries.length
+                        ? entries.length + ' moment(s), newest first. The last one is where it started.'
+                        : 'Nothing is recorded about this cut yet.'
+                };
+            }
+        }));
+
         undo.push(actions.define('prCutState', {
             about: 'What became of a change that was sent out: each pull request, read from GitHub',
             takes: ['source', 'target'],

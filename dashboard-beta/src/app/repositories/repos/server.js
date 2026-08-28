@@ -2042,7 +2042,11 @@ async function plugin(imports, register) {
                     //anything that wants to walk them rather than read them.
                     said: said.map(function (c) {
                         return {
-                            at: c.at, by: c.by, url: c.url, reading: c.reading,
+                            at: c.at, by: c.by, url: c.url, reading: c.reading, role: c.role || null,
+                            //AS WRITTEN, BESIDE THE FENCED FORM: `body` is what a
+                            //model is handed; `text` is for a person, or a line on
+                            //a timeline, neither of which wants the header.
+                            text: c.body,
                             body: trust.fenced({ number: number, on: on, by: c.by, body: c.body }, c.reading)
                         };
                     }),
