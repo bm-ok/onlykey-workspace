@@ -35,6 +35,22 @@ touches, tracked here as one landing. It needs a **line** to cut from and a
   repository's default branch. Across repositories it links; close the
   issue with the drafted `issueClose`.
 
+## After the merge
+
+The change is upstream and two copies are behind it. The next sweep says so,
+in the inbox:
+
+1. **fork behind where its work goes** — your fork's default branch is N
+   commits behind the repository you merged into. Repositories → Repos →
+   **Sync fork** (`repoForkSync --repo X`) brings it up on GitHub.
+2. **this host behind origin** — this copy has not fetched what the fork
+   now has. **Sync** (`repoSync`) fetches and fast-forwards.
+3. **line to retire** — the line the cut came from has done its job;
+   retire it, and its branches if you want them gone.
+
+In that order: the fork first, then this host, or the host fast-forwards to
+a fork that is itself behind.
+
 ## Command line
 
     node tools/okc.js prDraftSave --source fix/x --target test-bc1 --title "..." --body "..."

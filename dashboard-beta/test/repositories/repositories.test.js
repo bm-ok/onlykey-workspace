@@ -1234,6 +1234,53 @@ test('a tag that appears between two sweeps is an arrival, and wakes the supervi
     assert.equal((await state.here.doc('github-arrived')).read({}).issues.length, 1);
 });
 
+//---------------------------------------------------------------------------
+//AFTER A MERGE: the fork is behind where its work goes, and this host behind
+//the fork. Both are errands, read from the sweep.
+//---------------------------------------------------------------------------
+
+const BEHIND = {
+    '/repos/anowner/arepo': { status: 200, body: { fork: true, default_branch: 'main', parent: { full_name: 'up/arepo', default_branch: 'main' }, source: { full_name: 'up/arepo', default_branch: 'main' } } },
+    '/repos/anowner/arepo/branches': { status: 200, body: [{ name: 'main', commit: { sha: 'aaaaaaa' } }] },
+    '/repos/anowner/arepo/pulls': { status: 200, body: [] },
+    '/repos/anowner/arepo/issues': { status: 200, body: [] },
+    '/repos/up/arepo': { status: 200, body: { default_branch: 'main' } },
+    '/repos/up/arepo/pulls': { status: 200, body: [] },
+    '/repos/up/arepo/compare/main...anowner%3Amain': { status: 200, body: { behind_by: 1, ahead_by: 0 } }
+};
+
+test('a fork behind where its work goes is an errand: sync the fork', async () => {
+    const { actions, state, sources, asked } = await anApp(BEHIND, undefined, undefined, { settings: { read: async () => ({}) } });
+    //WORK GOES TO THE PARENT, chosen at the window.
+    await actions.call('repoTargetSet', { repo: 'repo-one', on: 'up/arepo', why: 'the project' });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    assert.ok(asked.some((a) => /\/repos\/up\/arepo\/compare\/main\.\.\.anowner(%3A|:)main/.test(a)), 'GitHub was not asked to compare: ' + asked.join(' | '));
+
+    const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
+    assert.deepEqual({ on: row.behindTarget.on, behind: row.behindTarget.behind, ahead: row.behindTarget.ahead }, { on: 'up/arepo', behind: 1, ahead: 0 });
+
+    const source = sources.find((x) => x.name === 'forks behind where their work goes');
+    assert.ok(source, 'no inbox source for forks behind');
+    const items = await source.waiting();
+    assert.equal(items.length, 1);
+    assert.match(JSON.stringify(items[0]), /1 commit\(s\) behind up\/arepo main/);
+    assert.match(JSON.stringify(items[0]), /Sync the fork/);
+    void state;
+});
+
+test('a fork level with where its work goes is no errand, and a fork that sends work to itself is not asked', async () => {
+    const level = Object.assign({}, BEHIND, { '/repos/up/arepo/compare/main...anowner%3Amain': { status: 200, body: { behind_by: 0, ahead_by: 2 } } });
+    const { actions, sources } = await anApp(level, undefined, undefined, { settings: { read: async () => ({}) } });
+    await actions.call('repoTargetSet', { repo: 'repo-one', on: 'up/arepo', why: 'the project' });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const source = sources.find((x) => x.name === 'forks behind where their work goes');
+    assert.deepEqual(await source.waiting(), []);
+
+    const { actions: a2, asked: asked2 } = await anApp(BEHIND, undefined, undefined, { settings: { read: async () => ({}) } });
+    await a2.call('repositoriesCheck', { repo: 'repo-one' });
+    assert.ok(!asked2.some((a) => /\/compare\//.test(a)), 'a fork sending work to itself was compared against itself');
+});
+
 test('a marked comment under a pull request is an ask, and wakes the supervisor', async () => {
     //THE CONVERSATION MOVED TO THE CODE. The person sent the reply, the
     //supervisor cut the pull request, and the maintainer answered UNDER THE

@@ -478,6 +478,39 @@ async function plugin(imports, register) {
             missing.push('Pull requests on ' + wantOn);
         }
 
+        //---- HOW FAR BEHIND WHERE ITS WORK GOES ----------------------------
+        //
+        //A CHANGE LANDS UPSTREAM AND THE FORK STAYS WHERE IT WAS. After the
+        //person merges a pull request into the repository their work goes to,
+        //their own fork's default branch is behind it by that merge, and
+        //everything cut from the fork after that is cut from before the
+        //change. GitHub's compare answers it in one fingerprinted call: how
+        //many commits the target's default has that the fork's does not.
+        //Asked only for a fork with somewhere to send work that is not itself.
+        var selfFull = remote && remote.owner ? remote.owner + '/' + remote.repo : null;
+        var behindTarget = null;
+        if (wantOn && selfFull && wantOn !== selfFull && r.body.default_branch) {
+            var targetDefault = wantOn === parent ? (intoParent && intoParent.defaultBranch)
+                : wantOn === source ? (intoSource && intoSource.defaultBranch)
+                : null;
+            if (!targetDefault) {
+                var tb = String(wantOn).split('/');
+                var tr = await github.call('GET', '/repos/' + tb[0] + '/' + tb[1]);
+                targetDefault = tr.status === 200 && tr.body ? (tr.body.default_branch || null) : null;
+            }
+            if (targetDefault) {
+                var cb = String(wantOn).split('/');
+                var cmp = await github.call('GET', '/repos/' + cb[0] + '/' + cb[1] + '/compare/'
+                    + encodeURIComponent(targetDefault) + '...' + encodeURIComponent(remote.owner + ':' + r.body.default_branch));
+                behindTarget = {
+                    on: wantOn, base: targetDefault, self: selfFull, head: r.body.default_branch,
+                    behind: cmp.status === 200 && cmp.body ? Number(cmp.body.behind_by || 0) : null,
+                    ahead: cmp.status === 200 && cmp.body ? Number(cmp.body.ahead_by || 0) : null,
+                    why: cmp.status === 200 ? null : ((cmp.body && cmp.body.message) || ('GitHub answered ' + cmp.status))
+                };
+            }
+        }
+
         //---- WHAT IS OPEN ---------------------------------------------------
         //
         //ISSUES ARE READ FROM THE TARGET, NOT THE FORK. Work arrives where people
@@ -1028,6 +1061,7 @@ async function plugin(imports, register) {
             intoParent: intoParent,
             intoSource: intoSource,
             intoTarget: intoTarget,
+            behindTarget: behindTarget,
             upstreamDefault: r.body.default_branch || null,
             upstreamHead: headOfList(branchList, r.body.default_branch),
             branchesThere: canReadCode && Array.isArray(branchList.body) ? branchList.body.length : null,
@@ -1265,6 +1299,70 @@ async function plugin(imports, register) {
                         { since: d.at || null, id: k }
                     );
                 });
+            }
+        }));
+
+        //---- WHAT IS BEHIND, AFTER A MERGE ----------------------------------
+        //
+        //THE STEP AFTER "Merge it" HAD NO ERRAND. The change lands upstream,
+        //the person's fork is behind it, this host's copy is behind the fork,
+        //and the only word about either was a note on the cut card. Two items:
+        //the fork behind where its work goes (Sync fork brings it up), and
+        //this host behind its own origin (Sync fetches and fast-forwards).
+        //Both read from the last sweep, which is what says so.
+        undo.push(imports.inbox.source({
+            name: 'forks behind where their work goes',
+            waiting: async function () {
+                var notes = await read();
+                if (notes === null) return [];
+                var found = [];
+                try { found = await workspace.repos(); } catch (e) { return []; }
+                var out = [];
+                for (var i = 0; i < found.length; i++) {
+                    var name = found[i].name;
+                    var bt = (notes[name] || {}).behindTarget;
+                    if (!bt || !(bt.behind > 0)) continue;
+                    out.push(imports.inbox.item(
+                        'fork behind where its work goes',
+                        name,
+                        bt.self + ' ' + bt.head + ' is ' + bt.behind + ' commit(s) behind ' + bt.on + ' ' + bt.base
+                            + (bt.ahead ? ', and ' + bt.ahead + ' ahead' : '')
+                            + ' — a change that landed there is not on the fork, so anything cut from it now starts '
+                            + 'from before it. Sync the fork to bring ' + bt.head + ' up.',
+                        imports.inbox.at('Repositories', 'Repos', name),
+                        { since: (notes[name] || {}).checked || null, id: name }
+                    ));
+                }
+                return out;
+            }
+        }));
+
+        undo.push(imports.inbox.source({
+            name: 'this host behind its origin',
+            waiting: async function () {
+                var notes = await read();
+                if (notes === null) return [];
+                var found = [];
+                try { found = await workspace.repos(); } catch (e) { return []; }
+                var out = [];
+                for (var i = 0; i < found.length; i++) {
+                    var name = found[i].name;
+                    var note = notes[name] || {};
+                    if (!note.upstreamHead) continue;
+                    var here = await localOf(name);
+                    if (!here.head || here.head === note.upstreamHead) continue;
+                    out.push(imports.inbox.item(
+                        'this host behind origin',
+                        name,
+                        'Its ' + (here.default || 'default branch') + ' here is at ' + String(here.head).slice(0, 7)
+                            + ' and origin\'s is at ' + String(note.upstreamHead).slice(0, 7)
+                            + ' — something landed that this copy has not fetched, and a machine set up from here '
+                            + 'would clone the old one. Sync fetches and fast-forwards.',
+                        imports.inbox.at('Repositories', 'Repos', name),
+                        { since: note.checked || null, id: name }
+                    ));
+                }
+                return out;
             }
         }));
 
@@ -2128,6 +2226,7 @@ async function plugin(imports, register) {
                         fork: note.fork == null ? null : note.fork,
                         upstreamDefault: note.upstreamDefault || null,
                         upstreamHead: note.upstreamHead || null,
+                        behindTarget: note.behindTarget || null,
 
                         //COUNTED FROM THE LIST THAT IS SHOWN, not from a separate
                         //number. The check counted pull requests on the FORK and

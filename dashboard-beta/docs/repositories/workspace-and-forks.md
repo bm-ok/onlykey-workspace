@@ -35,6 +35,16 @@ complete one.
 - `lineSync --name L` does the same for every branch a line names, as one
   act.
 
+## Behind, and said so
+
+Each sweep asks GitHub how far a fork's default branch is behind the
+repository its work goes to (one `compare` call, fingerprinted), and
+compares this host's local default with origin's head. Both become inbox
+errands the moment they are true — *fork behind where its work goes*, *this
+host behind origin* — because the step after a merge used to have no word
+anywhere but a note on the cut card. `repositories` carries them as
+`behindTarget` and `inStep`.
+
 ## What is known, and how fresh
 
 `repositoriesCheck` asks GitHub; `repositories` answers from what was last
