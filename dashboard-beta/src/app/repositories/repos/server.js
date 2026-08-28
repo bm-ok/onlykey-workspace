@@ -15,6 +15,9 @@ var makeSettingUp = require('./setting-up');
 var makeFreeing = require('../branches/freeing');
 var reach = require('../branches/reach');
 var revising = require('../pr/revising');
+//WHOSE WORDS AN ISSUE CARRIES, and whether they may be read as a request. Every
+//body that leaves this file goes through it — see ../../github/trust.js.
+var trust = require('../../github/trust');
 
 //---------------------------------------------------------------------------
 //THE REPOSITORIES IN THIS WORKSPACE, AND WHAT GITHUB SAYS ABOUT THEM.
@@ -311,6 +314,12 @@ async function plugin(imports, register) {
     }
 
     async function ask(name, note) {
+        //HOW TEXT FROM GITHUB IS TO BE READ, asked at the head of every answer.
+        //Settings change while this app runs, and the direction a stale one is
+        //wrong in is the bad one: a host whose owner has just withdrawn trust
+        //would go on treating a stranger's words as a request.
+        await readSettings();
+
         var remote = null;
         try { remote = await refs.origin(name); }
         catch (e) { return unasked(name, null, 'this is not a repository this workspace knows about: ' + e.message, false); }
@@ -503,10 +512,29 @@ async function plugin(imports, register) {
                         //vanished from a list that said it had one.
                         state: x.state || 'open',
                         labels: (x.labels || []).map(function (l) { return typeof l == 'string' ? l : l.name; }),
-                        //Carried so a task can be written from the Overview list
-                        //without going back to the per-repository tab to find the
-                        //words again.
-                        body: x.body || null
+                        //---- THE WORDS, AND WHOSE THEY ARE -----------------
+                        //
+                        //CARRIED so a task can be written from the Overview list
+                        //without going back to the per-repository tab to find
+                        //them again — and NEVER carried bare, because this is
+                        //text written by anybody on the internet arriving on the
+                        //same answer as everything this host knows for certain.
+                        //
+                        //See ../../github/trust.js. `body` is the fenced form,
+                        //which says who wrote it and what may be done about it;
+                        //`reading` says which of the two it is. Both blank
+                        //settings means everything here is a quotation, which is
+                        //what this ships as.
+                        reading: readingOf({
+                            number: x.number, on: on, body: x.body || null,
+                            by: x.user && x.user.login,
+                            labels: (x.labels || []).map(function (l) { return typeof l == 'string' ? l : l.name; })
+                        }),
+                        body: fencedBody({
+                            number: x.number, on: on, body: x.body || null,
+                            by: x.user && x.user.login,
+                            labels: (x.labels || []).map(function (l) { return typeof l == 'string' ? l : l.name; })
+                        })
                     };
                 }));
             }
@@ -701,6 +729,31 @@ async function plugin(imports, register) {
         mayRevise: mayRevise,
         reach: reach
     });
+
+    //---- HOW TEXT FROM GITHUB IS READ HERE ---------------------------------
+    //
+    //ASKED PER ANSWER RATHER THAN HELD, because these are settings and a value
+    //read once at startup is the old answer for the rest of the run — and the
+    //direction it would be wrong in is the bad one: a host whose owner has just
+    //turned trust OFF would go on treating text as a request.
+    //
+    //FAILING SHUT. If the settings cannot be read, nobody is trusted and no
+    //marker is set, which is the state that makes everything a quotation.
+    var howToRead = { trusted: [], marker: '' };
+
+    async function readSettings() {
+        try {
+            var kept = await imports.settings.read();
+            howToRead = {
+                trusted: Array.isArray(kept.githubTrusted) ? kept.githubTrusted : [],
+                marker: typeof kept.githubMarker == 'string' ? kept.githubMarker : ''
+            };
+        } catch (e) { howToRead = { trusted: [], marker: '' }; }
+        return howToRead;
+    }
+
+    function readingOf(entry) { return trust.readingOf(entry, howToRead); }
+    function fencedBody(entry) { return trust.fenced(entry, trust.readingOf(entry, howToRead)); }
 
     var undo = [];
     //---- AND A FORK NOBODY HAS SAID WHERE TO SEND WORK FROM ----------------

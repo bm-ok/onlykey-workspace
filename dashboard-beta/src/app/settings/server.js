@@ -103,6 +103,26 @@ var DEFAULTS = {
     //turns up", which is a sentence somebody should say out loud.
     watchGitHub: false,
 
+    //---- WHOSE WORDS FROM GITHUB MAY BE READ AS A REQUEST ------------------
+    //
+    //AN ISSUE BODY IS TEXT WRITTEN BY ANYBODY ON THE INTERNET, and it arrives on
+    //the same answer as everything this host knows for certain. See
+    //../github/trust.js for what is done about that; these two are what a person
+    //sets, and both are BLANK.
+    //
+    //BLANK IS OFF, AND THAT IS THE WHOLE DESIGN OF THE DEFAULT. With no marker
+    //set, nothing that ever arrives from GitHub can be a request — every issue
+    //and every pull request is a quotation, always. A host that has not been
+    //told whose word to take should not be guessing, and the safe state is the
+    //one it ships in rather than one somebody has to remember to choose.
+    //
+    //SO TURNING IT ON IS TWO DELIBERATE ACTS: naming the people, and choosing
+    //the word. Neither has a sensible default and neither should be invented
+    //here — a marker this app picked would be one an attacker could read out of
+    //the source.
+    githubTrusted: [],
+    githubMarker: '',
+
     //WHETHER THE QUEUE COMES UP RUNNING, and it is off until somebody says
     //otherwise.
     //
