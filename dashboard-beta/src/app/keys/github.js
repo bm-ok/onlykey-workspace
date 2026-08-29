@@ -33,6 +33,9 @@ module.exports = function github(theme, okc) {
 
     return function GitHub() {
         var token = okc.use('githubHeld', {}, 30000);
+        //WHERE WORK GOES AND WHETHER THIS ACCOUNT MAY SEND IT THERE. Read from
+        //the last sweep -- this pane asks GitHub nothing of its own.
+        var where = okc.use('repositories', {}, 30000);
         var [said, setSaid] = useState(null);
 
         if (!token.state && token.error) return <Pane><Note kind="bad">{token.error}</Note></Pane>;
@@ -147,6 +150,28 @@ module.exports = function github(theme, okc) {
                             </Row>
                             <Row label="expires">{t.expires || 'no expiry'}</Row>
                             <Row label="added">{day(t.added) || 'unknown'}</Row>
+                            {/* WHAT THAT ACCOUNT CAN ACTUALLY DO WITH THE WORK,
+                                from what the sweep PROBED rather than from what
+                                GitHub says the account's permissions are — see
+                                the header of ../repositories/repos/server.js for
+                                why those are different answers. A token swapped
+                                for one that cannot open a pull request where
+                                work goes is the failure this line exists to
+                                bring forward from an hour later. */}
+                            {(where.state && (where.state.repos || []).length) ? (
+                                <Row label="may send work">
+                                    {(where.state.repos || []).map(function (r) {
+                                        var into = r.intoTarget || null;
+                                        var to = (r.target && r.target.on) || r.repo;
+                                        var mine = r.asWho && t.login && r.asWho !== t.login;
+                                        var kind = mine ? 'warn' : into && into.mayOpen === false ? 'bad' : into && into.mayOpen ? 'ok' : 'muted';
+                                        var word = mine ? 'read as ' + r.asWho
+                                            : !into ? 'not asked yet'
+                                                : into.mayOpen ? 'to ' + to : 'NOT to ' + to;
+                                        return <span key={r.repo}><Badge kind={kind}>{r.repo + ': ' + word}</Badge>{' '}</span>;
+                                    })}
+                                </Row>
+                            ) : null}
                         </tbody></table>
                     ) : (
                         <div>
