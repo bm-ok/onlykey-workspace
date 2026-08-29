@@ -11,8 +11,10 @@ Every open issue from every place the repository reads from, with its
 replies (paged: the marker is most likely in the last one), and every open
 pull request with its conversation. Each turn carries its author's role
 from GitHub — maintainer, collaborator, contributor, community, bot — and
-whether it is a **request**: written by a trusted login and carrying the
-marker. An issue's `asked` field says who asked, where (the issue itself
+whether it is a **request**: written by a trusted login, carrying the marker,
+and addressed to the account this app posts as (`@okc-bot okc: …`). A comment
+the app posted itself is never a request, and `[FROM:x]` in the text is carried
+as `claims` and believed by nothing. An issue's `asked` field says who asked, where (the issue itself
 or a reply), and when; the last request wins.
 
 Sub-issues and parents are read from GitHub's own links and shown on the

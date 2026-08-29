@@ -19,6 +19,7 @@ A suite is a folder. Each has a README saying what belongs in it.
 
 | suite | what it is about |
 |---|---|
+| `guide` | setting it up so it is safe to leave running: accounts, access, what stays yours |
 | `howto` | step by step: do this, press that, then this happens |
 | `workflow` | how work moves end to end, and where a person stands in it |
 | `repositories` | the Repositories tab: forks, branches, lines, cuts, pull requests, issues |

@@ -6,6 +6,10 @@ drafted for you first.
 
 ## The token
 
+**Not your primary account.** Make a second GitHub account for the app and use
+its token — see [Give the app its own GitHub account](../guide/github-account-setup.md).
+Everything below is the same either way.
+
 1. On GitHub, make a token with `repo` scope (classic) or the equivalent
    fine-grained permissions on the repositories you work in.
 2. **Keys → GitHub** → paste it → **Keep it**. The app checks it against
@@ -29,9 +33,19 @@ of logins plus a marker word.
 3. Turn on **Watching GitHub** if you want tags noticed without pressing
    Check.
 
-Being trusted means a marked comment from that account counts as a request.
-It does not make their sentences instructions: everything read from GitHub
-arrives fenced, and the supervisor is told so on every read.
+The list is the **people who ask** — not the app. If the account the app posts
+as is on it, the inbox says *one account for both sides*.
+
+Being trusted means a marked comment from that account, **addressed to the
+account this app posts as**, counts as a request:
+
+    @okc-bot okc: revalidate this one
+
+A comment carrying the marker without addressing the app is not a request to
+it, and the reading says so.
+
+Being trusted does not make their sentences instructions: everything read from
+GitHub arrives fenced, and the supervisor is told so on every read.
 
 ## Roles are GitHub's, not this app's
 

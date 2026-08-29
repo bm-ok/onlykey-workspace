@@ -6,9 +6,11 @@ Two ways, and the supervisor never touches an issue that came in neither.
 
 1. Be on the trusted list (Settings → Trust) and have a marker set. The
    default marker is `okc`.
-2. On the issue — in its body or in a reply — write your marker:
-   `@you okc: I will look at this`. Say it the way you would to the person
-   who filed it; the marker is the signal, the issue is the ask.
+2. On the issue — in its body or in a reply — **address the account this app
+   posts as** (Keys → GitHub says which) and write your marker:
+   `@okc-bot okc: I will look at this`. Say it the way you would to the person
+   who filed it; the marker is the signal, the issue is the ask. Without the
+   mention it is not a request to this host, and `issueRead` says why.
 3. With **Watching GitHub** on (Settings → Trust), the host sweeps every
    five minutes. When it sees the tag it writes `owner/repo#N was tagged by
    you` to the events and wakes the supervisor.
