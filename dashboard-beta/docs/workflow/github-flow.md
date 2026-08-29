@@ -39,8 +39,17 @@ request — wakes it again. That is how you talk to it.
 - A pull request from outside cannot be judged until you allow it at its
   commit (Repositories → Overview).
 - `Closes` only auto-closes when the pull request merges into the issue's own
-  repository. Across repositories it links and stops; `issueClose` is the
-  drafted way to close it then.
+  repository, or when the person merging has write access there — which is
+  what happened on 28 Aug: the merge into sandbox-b closed #17 on sandbox-c.
+  Without either, it links and stops; `issueClose` is the drafted way then.
+
+## After the merge
+
+The change is upstream and two copies are behind it. The sweep says so in
+the inbox — *fork behind where its work goes*, then *this host behind
+origin* — and **Repositories → Sync** is where both are put right, in that
+order, or with **Catch up everything**. The line the cut came from shows as
+*line to retire*. When the inbox is empty the loop is closed.
 
 ## Where things show
 
