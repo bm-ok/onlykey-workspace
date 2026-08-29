@@ -1860,3 +1860,51 @@ test('a reply, a close and a review waiting to go out are each an inbox errand',
     assert.equal(byKind['a reply is waiting to be sent'].where.pick, 'them/repo#3');
     assert.match(byKind['a review is waiting to be posted'].why, /APPROVE review/);
 });
+
+//---------------------------------------------------------------------------
+//WHERE WORK GOES AND WHERE A FORK SYNCS FROM ARE NOT THE SAME QUESTION.
+//
+//`repoForkSync` refused when the chosen target was not the immediate parent,
+//and the test it used was "somebody chose something". That was the same test by
+//accident, for exactly as long as nothing-picked fell back to your own remote:
+//there was no way to CHOOSE yourself, so `chosen` implied "somewhere upstream".
+//
+//The moment picking your own fork became a recordable decision -- which is the
+//ordinary setup for working in a fork and opening pull requests inside it --
+//every one of those repositories refused to sync from its parent. That is what
+//the Sync fork button is for, and it has nothing to do with where work is sent.
+//---------------------------------------------------------------------------
+
+test('a fork whose work stays in itself still syncs from its parent', async () => {
+    const answers = Object.assign({}, BEHIND, {
+        '/repos/anowner/arepo/merge-upstream': { status: 200, body: { merge_type: 'fast-forward', message: 'ok' } }
+    });
+    const { actions } = await anApp(answers, undefined, undefined, { settings: { read: async () => ({}) } });
+
+    //PICKING YOUR OWN REMOTE, on purpose -- work is opened inside the fork.
+    await actions.call('repoTargetSet', { repo: 'repo-one', on: 'anowner/arepo', why: 'I review my own first' });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    const said = await actions.call('repoForkSync', { repo: 'repo-one' });
+    const row = said.repos.find((r) => r.repo === 'repo-one');
+    assert.equal(row.how, 'fast-forward', 'a fork that keeps its work refused to sync from its parent: ' + row.why);
+    assert.equal(row.already, false);
+    assert.equal(row.from, 'up/arepo', 'it synced from something other than its parent');
+});
+
+test('but one pointed past its parent still refuses, and says why', async () => {
+    const { actions } = await anApp(BEHIND, undefined, undefined, { settings: { read: async () => ({}) } });
+
+    //THE ROOT OF THE NETWORK, which is not the immediate parent -- GitHub's
+    //one-call merge-upstream cannot do this and substituting the parent would
+    //be a different act.
+    await actions.call('repoTargetSet', { repo: 'repo-one', on: 'someone/far-above' });
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    //REFUSED PER ROW, NOT THROWN: one repository that cannot be synced must
+    //not stop the others, so the reason travels on its row.
+    const said = await actions.call('repoForkSync', { repo: 'repo-one' });
+    const row = said.repos.find((r) => r.repo === 'repo-one');
+    assert.equal(row.moved, false);
+    assert.match(row.why, /can only sync a fork from its own immediate parent/);
+});

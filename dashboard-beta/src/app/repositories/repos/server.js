@@ -3297,8 +3297,24 @@ async function plugin(imports, register) {
                                 + 'is nothing upstream to pull from. Ask GitHub about it first.');
                         }
 
+                        //WHERE WORK GOES AND WHERE A FORK SYNCS FROM ARE NOT THE
+                        //SAME QUESTION, and this asked the wrong one.
+                        //
+                        //`chosen` MEANT "SOMEBODY PICKED SOMEWHERE UPSTREAM"
+                        //while nothing-picked fell back to your own remote, so
+                        //the two were the same test by accident. They stopped
+                        //being the same the moment picking your OWN fork became
+                        //a decision somebody could record — which is the
+                        //ordinary setup for working in a fork and opening pull
+                        //requests inside it. Every one of those repositories
+                        //then refused to sync from its parent, which is exactly
+                        //what the Sync fork button is for and has nothing to do
+                        //with where the work is sent.
+                        //
+                        //`upstream` IS THE QUESTION: chosen, AND somewhere other
+                        //than yourself.
                         var sends = targetOf(note, remote);
-                        if (sends.chosen && sends.on !== note.parent) {
+                        if (sends.upstream && sends.on !== note.parent) {
                             throw new Error('"' + name + '" sends work to ' + sends.on + ', and GitHub can only sync a '
                                 + 'fork from its own immediate parent, which is ' + note.parent + '. Syncing from '
                                 + sends.on + ' means fetching and merging through this host — a different act, and one '
