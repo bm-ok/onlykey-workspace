@@ -761,7 +761,12 @@ async function plugin(imports, register) {
     //is simpler than that: the setting is the plugin. Off, nothing in it
     //answers, and the tab is gone (see ../ui/banners/testing.js).
     async function mustBeOn() {
-        var may = await imports.settings.allowed();
+        //THROUGH THE ACTION, NOT THE SERVICE: the action is the one that
+        //knows the repositories' owners, and the sandbox list is checked
+        //there. The drive plugin reads the same answer, so one wording.
+        var may = null;
+        try { may = ((await actions.call('settings', {})) || {}).tests; } catch (e) { may = null; }
+        if (!may) may = await imports.settings.allowed();
         if (!may || !may.allowed) {
             throw new Error((may && may.why) || 'The drills are switched off.'
                 + ' Everything in the Test tab is off with them.');

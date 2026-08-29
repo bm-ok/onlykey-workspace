@@ -396,3 +396,55 @@ test('a list setting is stored as a list, whatever it was typed as', async () =>
     assert.deepEqual(settings.read().githubTrusted, [{ login: 'bmatusiak', id: 1822932 }],
         'the account number was dropped on the way in');
 });
+
+
+//---------------------------------------------------------------------------
+//ONLY AGAINST A SANDBOX. Testing mode is per folder and remembers nothing
+//about what the folder's remotes are; the sandbox list is what does.
+//---------------------------------------------------------------------------
+
+function withRepos(app, rows) {
+    app.actions.define('repositories', { about: 'a stand-in', run: async () => ({ repos: rows }) });
+}
+
+test('with nothing on the sandbox list the switch alone decides', async () => {
+    const app = await anApp();
+    app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha' });
+    withRepos(app, [{ repo: 'one', remote: { owner: 'real-project' }, parent: 'upstream/thing' }]);
+    const said = await app.actions.call('settings', {});
+    assert.equal(said.tests.allowed, true);
+    assert.deepEqual(said.tests.sandbox.list, []);
+});
+
+test('a remote whose owner is not on the list refuses, and the refusal names it', async () => {
+    const app = await anApp();
+    app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha', testsSandbox: ['bm-sandbox-a', 'bm-sandbox-b'] });
+    withRepos(app, [
+        { repo: 'one', remote: { owner: 'bm-sandbox-a' } },
+        { repo: 'two', remote: { owner: 'real-project' } }
+    ]);
+    const said = await app.actions.call('settings', {});
+    assert.equal(said.tests.allowed, false);
+    assert.match(said.tests.why, /two's remote is real-project, which is not on the sandbox list \(bm-sandbox-a, bm-sandbox-b\)/);
+});
+
+test('an owner in the chain work goes through must be on the list too', async () => {
+    const app = await anApp();
+    app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha', testsSandbox: ['bm-sandbox-a'] });
+    withRepos(app, [{ repo: 'one', remote: { owner: 'bm-sandbox-a' }, parent: 'the-project/thing', target: { on: 'the-project/thing' } }]);
+    const said = await app.actions.call('settings', {});
+    assert.equal(said.tests.allowed, false);
+    assert.match(said.tests.why, /one sends work through the-project/);
+
+    //AND LEVEL WHEN THE CHAIN IS NAMED. Case does not matter: GitHub's does not.
+    app.settings.write({ testsSandbox: ['BM-Sandbox-A', 'The-Project'] });
+    assert.equal((await app.actions.call('settings', {})).tests.allowed, true);
+});
+
+test('the sandbox list cannot be set down the pipe', async () => {
+    const { actions, settings } = await anApp();
+    await assert.rejects(
+        () => actions.call('settingSet', { name: 'testsSandbox', value: ['anything'], _overTheWire: true }),
+        /set in the window/);
+    assert.deepEqual(settings.read().testsSandbox, []);
+});

@@ -40,6 +40,55 @@ module.exports = function general(theme, okc, shell) {
     //repositories that is what they are for; against somebody's actual work it
     //is a stranger typing into their repository, and nothing here can tell the
     //two apart. So the card leads with the folder.
+    function Sandbox({ t }) {
+        var sb = t.sandbox || { list: [], owners: [] };
+        var [adding, setAdding] = useState('');
+        var [note, setNote] = useState(null);
+        function write(list) {
+            setNote(null);
+            return okc.call('settingSet', { name: 'testsSandbox', value: list }).then(
+                function () { setAdding(''); },
+                function (e) { setNote({ bad: true, text: e.message }); }
+            );
+        }
+        var seen = {};
+        (sb.owners || []).forEach(function (o) { [o.owner].concat(o.chain || []).forEach(function (n) { if (n) seen[n] = true; }); });
+        var here = Object.keys(seen).sort();
+        return (
+            <div style={{ marginTop: '10px' }}>
+                <div className="card-title">
+                    <span className="grow">Sandbox owners</span>
+                    <Badge kind={sb.list.length ? 'ok' : 'warn'}>{sb.list.length ? sb.list.length + ' named' : 'nothing named — any remote'}</Badge>
+                </div>
+                <div className="muted" style={{ fontSize: '12px', margin: '4px 0 6px' }}>
+                    GitHub owners a drill may touch. With names here, every repository's remote and its whole chain must belong to one, or the drills refuse and say which does not.
+                    {here.length ? ' This workspace reaches: ' + here.join(', ') + '.' : ''}
+                </div>
+                <div className="row">
+                    {sb.list.map(function (n) {
+                        return (
+                            <span key={n} className="badge">
+                                <Mono>{n}</Mono>
+                                <button className="btn" style={{ marginLeft: '6px', padding: '0 6px' }} title={'Take ' + n + ' off the list'}
+                                    onClick={function () { write(sb.list.filter(function (x) { return x !== n; })); }}>×</button>
+                            </span>
+                        );
+                    })}
+                </div>
+                <div className="row" style={{ marginTop: '6px' }}>
+                    <input value={adding} placeholder="a GitHub owner, e.g. bm-sandbox-a"
+                        onChange={function (e) { setAdding(e.target.value); }}
+                        onKeyDown={function (e) { if (e.key === 'Enter' && adding.trim()) write(sb.list.concat([adding.trim()])); }} />
+                    <button className="btn" disabled={!adding.trim()} onClick={function () { write(sb.list.concat([adding.trim()])); }}>Add owner</button>
+                    {here.length && !sb.list.length
+                        ? <button className="btn" title="Name every owner this workspace reaches today" onClick={function () { write(here); }}>Name what is here</button>
+                        : null}
+                </div>
+                {note ? <Line kind="bad">{note.text}</Line> : null}
+            </div>
+        );
+    }
+
     function TestCard({ t, asked, onOff, onAsk, said }) {
         var on = !!t.enabled;
         //TAKEN FROM THE ACTION RATHER THAN RECOMPUTED. It is the same string
@@ -120,6 +169,12 @@ module.exports = function general(theme, okc, shell) {
                     refusal is a sentence worth reading rather than a button that
                     silently does nothing. */}
                 {said ? <Line kind={said.bad ? 'bad' : 'ok'}>{said.text}</Line> : null}
+
+                {/* THE SANDBOX LIST, BESIDE THE SWITCH. With names on it the
+                    drills may only touch repositories whose remote, and whose
+                    whole chain, belong to one of them; the refusal above names
+                    the offender. Empty checks nothing. */}
+                <Sandbox t={t} said={said} />
 
                 <div className="row" style={{ marginTop: '8px' }}>
                     {on

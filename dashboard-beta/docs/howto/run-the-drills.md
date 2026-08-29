@@ -11,6 +11,13 @@ General → *Testing mode*, which names the folder it is on for. The yellow
 banner says so while it is. From the command line `testsAsk --why ...`
 asks; a person answers in the window (`testsAnswer`).
 
+**Only against a sandbox.** Settings → General → *Sandbox owners*: a list of
+GitHub owners (`bm-sandbox-a`, `bm-sandbox-b`, `bm-sandbox-c`). With names
+on it, the drills refuse unless every repository's remote — and every
+repository in the chain it sends work to — belongs to one of them, and the
+refusal names the offender. Empty, the list checks nothing. Window-only,
+like the switch.
+
 **Off, the plugin is off.** The Test tab is not in the row, and every
 action in it — `suites`, `suiteRun`, `suiteSource`, `drillSweep`,
 `drillCommit`, `testsForget` — answers with the switch's own sentence.

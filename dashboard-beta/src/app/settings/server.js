@@ -123,6 +123,18 @@ var DEFAULTS = {
     githubTrusted: [],
     githubMarker: '',
 
+    //---- AND WHERE THE DRILLS MAY RUN AT ALL ---------------------------------
+    //
+    //TESTING MODE IS PER FOLDER AND REMEMBERS NOTHING ABOUT WHAT THE FOLDER'S
+    //REMOTES ARE. A real project's workspace with the switch on is one press
+    //from a drill pushing branches and opening pull requests on somebody's
+    //repository. This is the list of GitHub owners a drill may touch; with
+    //names on it, every repository's remote and every repository in the chain
+    //it sends work to must belong to one, or the drills refuse and name the
+    //offender. Empty, it checks nothing -- opt-in, so an existing host is
+    //not switched off by an upgrade; a person adds the sandbox owners once.
+    testsSandbox: [],
+
     //---- AND WHETHER IT SPEAKS WITHOUT BEING ASKED TWICE ------------------
     //
     //TRUST DECIDES WHAT MAY BE READ AS A REQUEST. These two decide what happens
@@ -222,7 +234,7 @@ var DEFAULTS = {
 //written becomes a request, retroactively, without anybody writing a word. The
 //people are half the permission and the word is the other half; guarding one is
 //the mistake this list was already made to correct once.
-var ATTHEWINDOW = ['testsEnabled', 'testsFor', 'testsAsked', 'githubTrusted', 'githubMarker',
+var ATTHEWINDOW = ['testsEnabled', 'testsFor', 'testsAsked', 'testsSandbox', 'githubTrusted', 'githubMarker',
     'githubReplyDirect', 'githubCloseDirect', 'githubReviewDirect'];
 
 //WHY EACH ONE IS REFUSED, IN ITS OWN WORDS. It was a ternary on `testsEnabled`
@@ -237,6 +249,7 @@ var WHYREFUSED = {
     testsEnabled: 'The drills are switched on in the window, by somebody who knows what folder is open. They write a task and take a credential off a machine — that is a decision about somebody\'s repository, not a flag to be set down a pipe.',
     testsFor: '"testsFor" is the other half of that same permission. The drills are allowed when testsEnabled is on AND testsFor is the folder open now — so moving the folder arms them against whatever is in front of you without the switch ever being touched. It is decided in the same place, in the window, by somebody who can see which folder that is. Ask with testsAsk instead.',
     testsAsked: '"testsAsked" is the other half of that same permission seen from the other side: it is a raised hand, and forging one puts a question in front of a person that nobody actually asked. It is written by testsAsk, which takes a reason and stamps the folder itself, and answered in the window.',
+    testsSandbox: 'The sandbox list is the other half of the drills switch: it says which GitHub owners a drill may touch at all, and a caller able to add a name could add a real project to it. It is set in the window, in Settings → General, beside the switch.',
     githubTrusted: 'Naming somebody trusted opens a channel from the internet into what this host acts on: from then on their marked words are read as somebody asking for something. A caller able to add a name could add one it controls and commission its own work through an issue. It is done in the window, in Settings → Trust, where the account is looked up and its picture shown first.',
     githubMarker: 'The marker is the other half of that same permission, and it is applied to text that already exists — set it to a word a trusted person writes habitually and their old comments become requests, with nobody having written anything new. It is chosen in Settings → Trust, in the window.',
     githubReplyDirect: 'That switch is what stands between a model writing a reply and a stranger reading it, on somebody else\'s repository, under this host\'s token. A caller able to turn it on could approve its own words by removing the step where somebody reads them. It is turned on in the window, in Settings → Trust, by a person who has decided to let that happen.',
@@ -370,7 +383,7 @@ async function plugin(imports, register) {
     //BOTH HALVES ARE REQUIRED. Enabled but for a different folder is not enabled
     //— it is the state somebody left behind on Tuesday, pointed at work they
     //care about today.
-    function allowed(open) {
+    function allowed(open, owners) {
         var s = read();
         if (!s.testsEnabled) {
             return { allowed: false, why: 'The drills are switched off. They drive this app for real — they write a task, and one of them takes a credential off a machine — so they are off until somebody turns them on for a workspace they do not mind that happening to.' };
@@ -382,7 +395,46 @@ async function plugin(imports, register) {
                 why: 'The drills were turned on for ' + (s.testsFor || 'another folder') + ', and the folder open now is ' + open + '. Switching workspace switches them off — turn them on again here if this is a folder you do not mind them touching.'
             };
         }
+        //---- AND ONLY AGAINST A SANDBOX, WHEN ONE IS NAMED -----------------
+        //
+        //`owners` IS HANDED IN BY THE CALLER -- this plugin does not know
+        //repositories -- as [{repo, owner, chain: [owners…]}]. Every owner in
+        //every entry must be on the list; the refusal names the first that is
+        //not, because "not a sandbox" with no name sends somebody to guess.
+        var list = (s.testsSandbox || []).map(function (n) { return String(n).toLowerCase(); });
+        if (list.length && Array.isArray(owners)) {
+            for (var i = 0; i < owners.length; i++) {
+                var o = owners[i] || {};
+                var all = [o.owner].concat(o.chain || []).filter(Boolean);
+                var bad = all.filter(function (n) { return list.indexOf(String(n).toLowerCase()) < 0; });
+                if (bad.length) {
+                    return {
+                        allowed: false,
+                        why: 'The drills are switched on here, but ' + (o.repo || 'a repository') + (bad[0] === o.owner ? "'s remote is " : ' sends work through ')
+                            + bad[0] + ', which is not on the sandbox list (' + (s.testsSandbox || []).join(', ') + '). A drill writes '
+                            + 'to a repository; it may only write to one on that list.'
+                    };
+                }
+            }
+        }
         return { allowed: true, why: null };
+    }
+
+    //THE OWNERS OF EVERY REMOTE AND ITS CHAIN, from the repositories plugin
+    //when it is here, and null when it is not (a bare host in a test), which
+    //`allowed` reads as "nothing to check against".
+    async function ownersNow() {
+        if (!actions) return null;
+        var said = null;
+        try { said = await actions.call('repositories', {}); } catch (e) { return null; }
+        var rows = (said && said.repos) || [];
+        return rows.map(function (r) {
+            var chain = [];
+            ['parent', 'source'].forEach(function (k) { if (r[k]) chain.push(String(r[k]).split('/')[0]); });
+            if (r.target && r.target.on) chain.push(String(r.target.on).split('/')[0]);
+            (r.reads && r.reads.issues || []).concat(r.reads && r.reads.pulls || []).forEach(function (p) { chain.push(String(p).split('/')[0]); });
+            return { repo: r.repo, owner: r.remote && r.remote.owner ? r.remote.owner : null, chain: chain };
+        });
     }
 
     var undo = [];
@@ -392,15 +444,17 @@ async function plugin(imports, register) {
             run: async function () {
                 var now = read();
                 var open = await openDir();
+                var owners = await ownersNow();
                 return {
                     settings: now,
                     //THE DERIVED ANSWER AS WELL AS THE TWO FIELDS IT COMES FROM,
                     //because "enabled" alone is not the question anything
                     //actually asks — enabled for somewhere else is not enabled.
-                    tests: Object.assign(allowed(open), {
+                    tests: Object.assign(allowed(open, owners), {
                         enabled: now.testsEnabled,
                         forDir: now.testsFor,
-                        openDir: open
+                        openDir: open,
+                        sandbox: { list: now.testsSandbox || [], owners: owners || [] }
                     }),
                     //THE STANDING REQUEST COMES BACK HERE RATHER THAN FROM
                     //`status`, and that is a change from the app being ported
