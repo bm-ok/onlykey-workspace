@@ -1320,6 +1320,12 @@ test('a marked comment under a pull request is an ask, and wakes the supervisor'
     await actions.call('repositoriesCheck', { repo: 'repo-one' });
     await actions.call('repositoriesCheck', { repo: 'repo-one' });
     assert.ok(asked.some((a) => /\/issues\/5\/comments/.test(a)), 'the conversation under the pull request was never read: ' + asked.join(' | '));
+    //ONCE PER SWEEP, NOT TWICE. The block that reads it was in the file twice
+    //for a day -- an edit script re-run against a file it had already changed
+    //-- so every open pull request's comments were fetched twice against the
+    //hourly budget and the second pass overwrote the first.
+    const perSweep = asked.filter((a) => /\/issues\/5\/comments/.test(a)).length;
+    assert.equal(perSweep, 2, 'two sweeps ran, so there should be two reads of that thread, not ' + perSweep);
     assert.deepEqual(woke, []);
     const row = (await actions.call('repositories', {})).repos.find((r) => r.repo === 'repo-one');
     assert.equal(row.pulls[0].asked, null);
