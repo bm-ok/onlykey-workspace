@@ -68,6 +68,13 @@ test('a marked comment under a pull request is an ask, and a second one is a sec
     assert.deepEqual(same.pulls, []);
 });
 
+test('a pull request that was open and is not listed now is gone, so somebody can ask whether it merged', () => {
+    const PULL = (n) => ({ on: 'o/r', number: n, title: 'change ' + n, url: 'u' + n });
+    const out = diffArrived({ issues: [], pulls: [PULL(2), PULL(3)] }, { issues: [], pulls: [PULL(3)] });
+    assert.deepEqual(out.pulls.map((p) => [p.number, p.kind]), [[2, 'gone']]);
+    assert.equal(out.pulls[0].url, 'u2', 'the gone entry lost what was known about it');
+});
+
 test('a pull request not seen before is new; a closed issue is nothing', () => {
     const out = diffArrived({ issues: [ISSUE(1), ISSUE(2)], pulls: [PULL(7)] }, { issues: [ISSUE(1)], pulls: [PULL(7), PULL(8)] });
     assert.deepEqual(out.issues, [], 'an issue that closed was reported as arriving');

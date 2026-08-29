@@ -14,6 +14,7 @@ thing to you, and stops. It does nothing between turns.
 | a judgement finishes | `supervisorWakes` |
 | a trusted person's `okc:` tag on an issue or pull request | `watchGitHub` and `supervisorWakes` |
 | *Hand it to the supervisor* | always |
+| a pull request this host cut merges | `watchGitHub` and `supervisorWakes` — the sweep reads it as gone, asks GitHub, and says `landed` |
 
 Every wake is one line in the events: `waking it — J34 finished — it
 concluded "reject"`. The reason is what it reads first.

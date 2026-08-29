@@ -67,7 +67,12 @@ Wake, read, decide, act, say, stop. Every time:
    ended in a way its record does not explain, not every time.
 2. **`triage`** — what you are in the middle of, and which of those things
    finished while you were away. Read this second, every time, before deciding
-   anything. See below.
+   anything. See below. **Then check it against what is true now**: `issueDrafts`
+   for a draft, `prCutState` for a pull request, `issueRead` for an issue's
+   state. What is released, merged or closed is finished — `triageForget` it
+   and mark its todo done. Triage is what you are in the middle of, not a
+   diary. `kind: 'merged'` on `arrived.pulls[]` is your change landing: retire
+   the line, say so, and expect the person to catch the forks up.
 3. **Read before deciding.** `tasks`, `branchBoard`, `issues`, `pulls`,
    `prCuts`, `judging`. A decision made without reading is a guess, and a guess
    here becomes a machine spending twenty minutes on the wrong thing. What is in

@@ -66,8 +66,10 @@ function diffArrived(was, now) {
     //once because only the reviews were read.
     var hadPull = {};
     (was.pulls || []).forEach(function (p) { hadPull[keyOf(p)] = p; });
+    var stillPull = {};
     (now.pulls || []).forEach(function (p) {
         var k = keyOf(p);
+        stillPull[k] = true;
         var before = hadPull[k];
         if (!before) {
             out.pulls.push(Object.assign(pick(p), { kind: 'new', asked: p.asked || null }));
@@ -76,6 +78,15 @@ function diffArrived(was, now) {
         if (p.asked && (!before.asked || (p.asked.at && before.asked.at !== p.asked.at))) {
             out.pulls.push(Object.assign(pick(p), { kind: 'asked', asked: p.asked }));
         }
+    });
+    //A PULL REQUEST THAT WAS OPEN AND IS NOT ON THE LIST NOW IS GONE -- the
+    //list is open ones only, so gone means merged or closed, and which is a
+    //question for GitHub (../repos/server.js asks it and says `merged` or
+    //`closed` in this entry's place). This is the last step of the loop,
+    //and until it was an arrival nobody was told of it.
+    Object.keys(hadPull).forEach(function (k) {
+        if (stillPull[k]) return;
+        out.pulls.push(Object.assign(pick(hadPull[k]), { kind: 'gone' }));
     });
 
     return out;

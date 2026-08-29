@@ -1424,6 +1424,46 @@ test('what arrived is recorded before the note is filed, so a sweep cut short be
     assert.equal(woke.length, 1, 'the supervisor was woken twice for one tag');
 });
 
+test('a pull request this host cut that vanishes from the open list is read from GitHub: merged wakes, closed only logs', async () => {
+    const OPEN = { number: 5, title: 'a change', state: 'open', user: { login: 'beta-super1', type: 'User' }, head: { sha: 'abc' }, body: 'x' };
+    const answers = Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/pulls': { status: 200, body: [OPEN] },
+        '/repos/anowner/arepo/pulls/5/reviews': { status: 200, body: [] },
+        '/repos/anowner/arepo/issues/5/comments': { status: 200, body: [] }
+    });
+    const woke = [];
+    let merged = true;
+    const { actions, state, said } = await anApp(answers, undefined, undefined, WAKING);
+    actions.define('supervisorWake', { about: 'a stand-in', run: async (a) => { woke.push(a.why); return { woke: true }; } });
+    //THE CUT THIS HOST MADE, AND WHAT GITHUB SAYS OF IT NOW -- stand-ins for the pr plugin.
+    let cuts = [{ source: 'fix/x', target: 'main', pulls: [{ repo: 'repo-one', number: 5, into: 'anowner/arepo' }] }];
+    actions.define('prCuts', { about: 'a stand-in', run: async () => ({ cuts }) });
+    actions.define('prCutState', { about: 'a stand-in', run: async () => ({ pulls: [{ repo: 'repo-one', number: 5, state: merged ? 'merged' : 'closed', merged: merged }] }) });
+
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    answers['/repos/anowner/arepo/pulls'] = { status: 200, body: [] };
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    await new Promise((r) => setImmediate(r));
+
+    const box = (await state.here.doc('github-arrived')).read({});
+    assert.deepEqual(box.pulls.map((p) => [p.number, p.kind]), [[5, 'merged']]);
+    assert.equal(woke.length, 1, 'a landing did not wake the supervisor');
+    assert.match(woke[0], /cut "fix\/x" landed — anowner\/arepo #5 merged into main/);
+    assert.ok(said.some((s) => /cut "fix\/x" landed/.test(s)), said.join(' | '));
+
+    //CLOSED WITHOUT MERGING: recorded, logged, nobody woken.
+    merged = false;
+    answers['/repos/anowner/arepo/pulls'] = { status: 200, body: [Object.assign({}, OPEN, { number: 6 })] };
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    answers['/repos/anowner/arepo/pulls'] = { status: 200, body: [] };
+    cuts = [{ source: 'fix/y', target: 'main', pulls: [{ repo: 'repo-one', number: 6, into: 'anowner/arepo' }] }];
+    await actions.call('repositoriesCheck', { repo: 'repo-one' });
+    await new Promise((r) => setImmediate(r));
+    const box2 = (await state.here.doc('github-arrived')).read({});
+    assert.ok(box2.pulls.some((p) => p.number === 6 && p.kind === 'closed'));
+    assert.equal(woke.length, 1, 'a closed pull request woke the supervisor');
+});
+
 test('a new issue is noted but does not wake anybody', async () => {
     const answers = Object.assign({}, REPO_OK, { '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_ROW(7)] } });
     const woke = [];

@@ -3197,6 +3197,38 @@ async function plugin(imports, register) {
                         came.issues = came.issues.concat(d.issues);
                         came.pulls = came.pulls.concat(d.pulls);
                     });
+                    //---- A PULL REQUEST THAT WENT: MERGED, OR CLOSED --------
+                    //
+                    //THE LIST IS OPEN ONES, so a pull request that is gone from
+                    //it has merged or closed, and which is GitHub's to say.
+                    //For one this host cut, prCutState reads it; a merge is the
+                    //last step of the loop and the one nobody was told of.
+                    //Kept in the box as `merged` or `closed` in place of `gone`;
+                    //a pull request this host did not cut is dropped -- it was
+                    //never this host's to narrate.
+                    var landed = [];
+                    var gone = came.pulls.filter(function (p) { return p.kind === 'gone'; });
+                    came.pulls = came.pulls.filter(function (p) { return p.kind !== 'gone'; });
+                    if (gone.length) {
+                        var cutsNow = ((await actions.call('prCuts', {})) || {}).cuts || [];
+                        for (var gi = 0; gi < gone.length; gi++) {
+                            var g = gone[gi];
+                            var cut = cutsNow.filter(function (c) {
+                                return (c.pulls || []).some(function (p) { return p.number === g.number && (p.into === g.on || !p.into); });
+                            })[0];
+                            if (!cut) continue;
+                            var st = null;
+                            try { st = await actions.call('prCutState', { source: cut.source, target: cut.target }); } catch (e) { st = null; }
+                            var live = st && (st.pulls || []).filter(function (p) { return p.number === g.number; })[0];
+                            var how = live && (live.merged || live.state === 'merged') ? 'merged' : 'closed';
+                            var entry = Object.assign({}, g, { kind: how, source: cut.source, target: cut.target });
+                            came.pulls.push(entry);
+                            if (how === 'merged') landed.push(entry);
+                            log.on('github', g.on)[how === 'merged' ? 'good' : 'warn'](
+                                'cut "' + cut.source + '" ' + (how === 'merged' ? 'landed' : 'was closed') + ' — #' + g.number + ' ' + how + ' into ' + cut.target);
+                        }
+                    }
+
                     var box = await state.here.doc('github-arrived');
                     var kept2 = box.read({}) || {};
                     //THE SAME ARRIVAL TWICE IS ONE ARRIVAL. A sweep cut short
@@ -3222,6 +3254,21 @@ async function plugin(imports, register) {
                     var asked = came.issues.filter(function (i) { return i.kind === 'asked'; })
                         .concat(came.pulls.filter(function (p) { return p.kind === 'asked'; })
                             .map(function (p) { return Object.assign({}, p, { pull: true }); }));
+                    //A LANDING WAKES IT TOO: the loop's last step, said by the
+                    //host that saw it. Same gate, same shape as a tag.
+                    if (landed.length) {
+                        var wakes2 = false;
+                        try { wakes2 = (await imports.settings.read()).supervisorWakes === true; } catch (e) { wakes2 = false; }
+                        if (wakes2) {
+                            var why2 = landed.map(function (l) {
+                                return 'cut "' + l.source + '" landed — ' + (l.on || '') + ' #' + l.number + ' merged into ' + l.target;
+                            }).join('; ');
+                            Promise.resolve(actions.call('supervisorWake', { why: why2 })).catch(function (e) {
+                                log.on('github').warn('the supervisor could not be woken for a landing: ' + e.message);
+                            });
+                        }
+                    }
+
                     if (asked.length) {
                         var wakes = false;
                         try { wakes = (await imports.settings.read()).supervisorWakes === true; } catch (e) { wakes = false; }
