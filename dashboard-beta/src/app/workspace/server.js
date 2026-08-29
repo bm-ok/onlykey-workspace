@@ -1,4 +1,5 @@
 var fs = require('fs');
+var os = require('os');
 var path = require('path');
 
 //---------------------------------------------------------------------------
@@ -184,6 +185,87 @@ async function plugin(imports, register) {
         } catch (e) { return null; }
     }
 
+    //---- looking around the disk for one ------------------------------------
+    //
+    //THE PLACES A LOOK STARTS FROM. Every drive that answers on Windows, and the
+    //one root everywhere else. Asked by trying each letter rather than by
+    //shelling out to anything: a drive that is not there simply does not answer,
+    //and a mapped drive that has gone away answers the same as one that never
+    //existed, which is the honest result.
+    function roots() {
+        var out = [];
+        if (path.sep === '\\') {
+            'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(function (letter) {
+                var drive = letter + ':\\';
+                try { if (fs.existsSync(drive)) out.push({ name: letter + ':', dir: drive }); }
+                catch (e) { /* a drive that refuses to be asked is not one to offer */ }
+            });
+        }
+        if (!out.length) out.push({ name: '/', dir: path.sep });
+        return out;
+    }
+
+    //WHERE A LOOK STARTS WHEN NOBODY SAID. Beside the workspace that is open,
+    //because the next one is very often its neighbour; the home folder when
+    //there is none, because that is where somebody's work usually is.
+    function startsAt() {
+        var mine = shaped(kept.read({}));
+        var known = mine.dir || (mine.known.length ? mine.known[mine.known.length - 1].dir : null);
+        if (known) {
+            var up = path.dirname(known);
+            if (up && up !== known && fs.existsSync(up)) return up;
+        }
+        return os.homedir();
+    }
+
+    //ONE FOLDER, LISTED, WITH THE ONLY FACT THAT MATTERS FOR THIS CHOICE.
+    //
+    //`repos` is the count a folder WOULD have as a workspace, which is what
+    //makes this better than the desktop's own dialog rather than merely a
+    //replacement for it: the answer to "is this the folder?" is on screen before
+    //anything is chosen. `isRepo` catches the other mistake — pointing at a
+    //repository instead of at the folder that holds several.
+    function browse(where) {
+        var at = String(where == null ? '' : where).trim() || startsAt();
+        var stat;
+        try { stat = fs.statSync(at); }
+        catch (e) { throw new Error('There is nothing at "' + at + '" to look in.'); }
+        if (!stat.isDirectory()) throw new Error('"' + at + '" is a file, not a folder.');
+
+        var entries;
+        try { entries = fs.readdirSync(at, { withFileTypes: true }); }
+        catch (e) { throw new Error('That folder cannot be read: ' + e.message); }
+
+        var out = [];
+        entries.forEach(function (entry) {
+            //A DIRENT THAT IS A LINK says it is neither a file nor a directory,
+            //so a junction — which is most of what is interesting on Windows —
+            //would be missing from the list entirely.
+            var full = path.join(at, entry.name);
+            var isDir = entry.isDirectory();
+            if (!isDir && entry.isSymbolicLink()) {
+                try { isDir = fs.statSync(full).isDirectory(); } catch (e) { isDir = false; }
+            }
+            if (!isDir || entry.name[0] === '.') return;
+            var repos = null, isRepo = false;
+            try { isRepo = fs.existsSync(path.join(full, '.git')); } catch (e) { isRepo = false; }
+            repos = reposIn(full);
+            out.push({ name: entry.name, dir: full, repos: repos, isRepo: isRepo });
+        });
+        out.sort(function (a, b) { return a.name.localeCompare(b.name); });
+
+        var up = path.dirname(at);
+        return {
+            at: at,
+            //A ROOT IS ITS OWN PARENT, which is how a list of drives ends up
+            //offering to go up into itself forever.
+            up: (up && up !== at) ? up : null,
+            here: reposIn(at),
+            entries: out,
+            roots: roots()
+        };
+    }
+
     //EVERY ONE THIS APP KNOWS, AND WHICH IS OPEN.
     //
     //`borrowed` IS ON THE ANSWER, and it is the field this whole thing was
@@ -333,6 +415,40 @@ async function plugin(imports, register) {
                     + (out.already ? ', which was already on the list' : '')
                     + '. The workspace that is open did not change.');
                 return Object.assign(out, await all());
+            }
+        }));
+
+        //---- LOOKING FOR ONE, WHICH IS NOT THE SAME AS KNOWING ITS PATH ------
+        //
+        //A WORKSPACE USED TO BE CHOSEN BY TYPING AN ABSOLUTE PATH into the one
+        //field in this window that cannot be checked as it is typed — a trailing
+        //slash, a backslash eaten by something on the way, the wrong drive. The
+        //app being ported from opens the desktop's own folder dialog, and that
+        //cannot be ported: this window is served over http, so it is a REMOTE
+        //page and nw injects nothing into it (../core/shot/main.js says why that
+        //is worth keeping). ../core/window/main.js reaches the native dialog from
+        //the node side, and this is the other half — the one that also works in
+        //an ordinary browser tab, where there is no nw to reach.
+        //
+        //AND IT ANSWERS THE QUESTION THE NATIVE DIALOG CANNOT. What makes a
+        //folder the right one here is what is INSIDE it, so every candidate is
+        //listed with the number of git repositories one level down. Choosing
+        //stops being a guess followed by a pane that says nothing is there.
+        //
+        //REFUSED DOWN THE PIPE. This enumerates the person's disk. Nothing on a
+        //machine, in a script or in a model needs to go looking through it, and
+        //the one caller is a person deciding where their work is.
+        undo.push(actions.define('folderList', {
+            about: 'What is inside a folder, for choosing a workspace: subfolders, and how many git repositories each holds',
+            takes: ['at'],
+            run: async function (args) {
+                var a = args || {};
+                if (a._overTheWire || a._driven) {
+                    throw new Error('Looking through this computer\'s folders is done at the window, by the person '
+                        + 'whose computer it is. What a workspace IS can be asked for down the pipe — `workspaces` '
+                        + 'lists the ones this app knows.');
+                }
+                return browse(a.at);
             }
         }));
 

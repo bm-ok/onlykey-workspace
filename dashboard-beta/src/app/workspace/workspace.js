@@ -23,6 +23,11 @@ module.exports = function workspace(theme, okc) {
         var { state, error, reads, again } = okc.use('workspaces', {}, 15000);
         var [said, setSaid] = useState(null);
         var [where, setWhere] = useState('');
+        //WHAT IS BEING LOOKED THROUGH, or null for "not looking". The answer from
+        //`folderList` is kept whole rather than picked apart, because every field
+        //on it — where we are, what is above, the drives — is a place to go next.
+        var [browsing, setBrowsing] = useState(null);
+        var [busy, setBusy] = useState(false);
 
         var open = state ? state.open : null;
         var cur = state && state.current ? state.current : null;
@@ -103,11 +108,59 @@ module.exports = function workspace(theme, okc) {
         //`remember` — where somebody was looking, kept across restarts — and
         //this is a button that files a folder with the dashboard. Two unrelated
         //things under one word in one app is how the wrong one gets reached for.
+        //---- FINDING ONE ----------------------------------------------------
+        //
+        //TWO WAYS, AND THE FIRST IS THE DESKTOP'S OWN. `folderPick` is answered
+        //by the node half, which is the only part of this app with an nw to
+        //reach — see ../core/window/main.js. It answers three ways and each is
+        //different: a path, nothing at all (somebody backed out, which is an
+        //answer and not a failure), or `unavailable`, which is what a browser tab
+        //gets because there is no desktop to ask. Only the last one falls
+        //through to the list below.
+        function look(at) {
+            setBusy(true);
+            return okc.call('folderList', at ? { at: at } : {}).then(function (d) {
+                setBrowsing(d);
+                setBusy(false);
+            }, function (e) {
+                setBusy(false);
+                setSaid({ bad: true, text: e.message });
+            });
+        }
+
+        //BOTH AT ONCE, AND THAT IS DELIBERATE.
+        //
+        //The obvious shape is: ask for the dialog, and open the list only if the
+        //dialog says it is not there. It has one failure nobody can see coming —
+        //a dialog that opens and never answers, or never opens at all, is
+        //indistinguishable from a person taking their time looking, so the only
+        //way out of it is a clock, and until the clock runs out the button is a
+        //button that did nothing.
+        //
+        //So the list opens IMMEDIATELY and the dialog is asked for beside it. If
+        //the dialog answers, its path wins and the list goes away; if it never
+        //does, nothing was waiting on it. The window is never in the state of
+        //having nothing to show.
+        function choose() {
+            look(browsing ? browsing.at : null);
+            okc.call('folderPick', { startAt: browsing ? browsing.at : null }).then(function (d) {
+                if (d && d.path) { setBrowsing(null); setWhere(d.path); }
+                //`unavailable`, or backed out. The list is already up, and
+                //saying "nothing was chosen" to somebody who chose nothing on
+                //purpose is noise.
+            }, function () {
+                //THE ACTION MAY NOT EXIST AT ALL — under plain node, or a main
+                //half from before it did. "No such action" is the same fact as
+                //`unavailable` wearing a refusal, and the list covers both.
+            });
+        }
+
         function rememberFolder(andOpen, folder) {
             var d = String(folder == null ? where : folder).trim();
             if (!d) { setSaid({ bad: true, text: 'Say which folder.' }); return; }
             tell(okc.call('workspaceAdd', { dir: d })).then(function () {
                 setWhere('');
+                setBrowsing(null);
                 if (andOpen) use({ name: nameOf(d), dir: d });
             }).catch(function () { /* already reported */ });
         }
@@ -130,6 +183,74 @@ module.exports = function workspace(theme, okc) {
 
                 <Cols>
                     <Col wide>
+                        {/* LOOKING FOR ONE HAPPENS WHERE THERE IS ROOM FOR IT.
+                            The panel that starts the search is narrow, because
+                            it is three buttons; a list of somebody's disk is
+                            not, and cramming it beside them is how a list ends
+                            up two words wide. */}
+                        {browsing ? (
+                            <Panel>
+                                <CardTitle>
+                                    Looking for a folder
+                                    <Grow />
+                                    <Button onClick={function () { setBrowsing(null); }}>Stop looking</Button>
+                                </CardTitle>
+                                <CardSub><Mono>{browsing.at}</Mono></CardSub>
+
+                                <div className="row" style={{ marginTop: '6px' }}>
+                                    <Button disabled={!browsing.up || busy}
+                                        title={browsing.up ? 'up to ' + browsing.up : 'this is as far up as it goes'}
+                                        onClick={function () { look(browsing.up); }}>Up</Button>
+                                    {(browsing.roots || []).map(function (r) {
+                                        return <Button key={r.dir} disabled={busy}
+                                            onClick={function () { look(r.dir); }}>{r.name}</Button>;
+                                    })}
+                                </div>
+
+                                {/* THE FOLDER SOMEBODY IS STANDING IN IS A
+                                    CANDIDATE TOO, and the count says whether it
+                                    is the right one before anything is chosen —
+                                    which is the thing the desktop's own dialog
+                                    cannot tell them. */}
+                                <div className="row" style={{ marginTop: '6px' }}>
+                                    <span className="muted">
+                                        {browsing.here == null
+                                            ? 'this folder could not be counted'
+                                            : browsing.here + ' git repositor' + (browsing.here == 1 ? 'y' : 'ies') + ' in this folder'}
+                                    </span>
+                                    <Grow />
+                                    <Button kind="ok" disabled={busy}
+                                        onClick={function () { rememberFolder(false, browsing.at); }}>Remember this one</Button>
+                                    <Button disabled={busy}
+                                        onClick={function () { rememberFolder(true, browsing.at); }}>Remember and open it</Button>
+                                </div>
+
+                                <Stack>
+                                    {(browsing.entries || []).length ? browsing.entries.map(function (e) {
+                                        return (
+                                            <Card key={e.dir}>
+                                                <CardTitle>
+                                                    <Mono>{e.name}</Mono>
+                                                    {/* POINTING AT A REPOSITORY INSTEAD OF AT THE
+                                                        FOLDER THAT HOLDS SEVERAL is the other way
+                                                        to get this wrong, and it looks identical
+                                                        from a path. */}
+                                                    {e.isRepo ? <Badge kind="warn">a repository itself</Badge> : null}
+                                                    {e.repos ? <Badge kind="ok">{e.repos + ' inside'}</Badge> : null}
+                                                    <Grow />
+                                                    <Button disabled={busy}
+                                                        onClick={function () { look(e.dir); }}>Look inside</Button>
+                                                    <Button kind="ok" disabled={busy}
+                                                        title={e.repos ? 'remember this folder' : 'it holds no git repositories'}
+                                                        onClick={function () { rememberFolder(false, e.dir); }}>Remember it</Button>
+                                                </CardTitle>
+                                            </Card>
+                                        );
+                                    }) : <Empty>nothing but files in here</Empty>}
+                                </Stack>
+                            </Panel>
+                        ) : null}
+
                         <Stack>
                             {known.length ? known.map(function (w) {
                                 return (
@@ -189,8 +310,20 @@ module.exports = function workspace(theme, okc) {
                                 it — what this app learns about a workspace is kept beside its own state,
                                 out of reach of a <Mono>git clean</Mono>.
                             </CardSub>
+                            {/* THE BUTTON COMES FIRST BECAUSE IT IS THE ANSWER.
+                                Typing an absolute path is the one input in this
+                                window that cannot be checked as it is typed —
+                                a trailing slash, a backslash eaten on the way,
+                                the wrong drive — and it was the only way in. */}
+                            <div className="row">
+                                <Button kind="ok" disabled={busy}
+                                    onClick={choose}>{busy ? 'waiting…' : 'Choose a folder…'}</Button>
+                                <Button disabled={busy}
+                                    onClick={function () { look(browsing ? browsing.at : null); }}>Look through this computer</Button>
+                            </div>
+
                             <Form>
-                                <Field f={{ name: 'dir', label: 'The folder', placeholder: 'path to a folder of repositories' }}
+                                <Field f={{ name: 'dir', label: 'Or type the path', placeholder: 'path to a folder of repositories' }}
                                     value={where} onChange={setWhere} />
                             </Form>
                             <div className="row">
@@ -201,13 +334,13 @@ module.exports = function workspace(theme, okc) {
                                 are. They were the same act for long enough that
                                 the difference is worth a sentence. */}
                             <Note>Remembering puts it on the list and changes nothing else. Opening is the act that makes every other tab a statement about that folder, and it asks first.</Note>
-                            {/* THE FOLDER PICKER IS NOT PORTED. Over there a
-                                Choose button opens the native dialog, which is an
-                                nw.js affordance a browser tab does not have —
-                                and this app is meant to work in both. Typing a
-                                path works everywhere; saying so beats a button
-                                that exists in one of the two places. */}
-                            <Note>Type the path. The native folder picker is not built here yet.</Note>
+                            {/* WHY THERE ARE TWO BUTTONS AND NOT ONE. The
+                                desktop's dialog is not reachable from a browser
+                                tab — this page is served over http, so it has no
+                                nw at all and the node half has to be asked. When
+                                there is nothing to ask, the second one is the
+                                answer rather than a message saying so. */}
+                            <Note>Choose opens this computer's own folder dialog. In a browser tab there is none, so the list is used instead — and it says how many repositories each folder holds, which the dialog cannot.</Note>
                         </Panel>
 
                         <Panel>

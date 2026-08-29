@@ -83,6 +83,120 @@ async function plugin(imports, register, config) {
         }
     });
 
+    //---- A FOLDER, CHOSEN THE WAY EVERY OTHER PROGRAM ON THIS COMPUTER --------
+    //
+    //THE PAGE CANNOT DO THIS, for the same reason it cannot open a link or take
+    //its own photograph: this app serves its window over http, so the page is
+    //REMOTE and nw injects nothing into it. The app being ported from builds a
+    //`<input type=file nwdirectory>` in its own document, which works there
+    //because that page is loaded from the package — see dashboard/ui/nwjs.js.
+    //
+    //SO THE DIALOG IS OPENED FROM HERE, in a page that does have nw: a hidden
+    //`about:blank` window, exactly the one the keepalive above is. The input goes
+    //into that document, and the real path comes back.
+    //
+    //CANCELLING IS AN ANSWER, AND IT IS THE ONE THAT ARRIVES AS SILENCE. A
+    //dialog somebody backs out of fires no `change`, and an unsettled promise
+    //here is a button that never comes back for the life of the window. Three
+    //ways out, because each of them is a build or a platform where the others do
+    //not fire:
+    //
+    //  change   somebody chose. The value is a real path, not the sandboxed
+    //           half-name a browser would hand over.
+    //  cancel   the modern event, when the build has it.
+    //  focus    the app's own window coming back, which is what a dialog closing
+    //           looks like from out here. It is an nw-level event on the window
+    //           shell rather than a DOM one, so it works on a remote page. A
+    //           beat behind it, because `change` arrives after the focus does
+    //           and answering first would call every choice a cancellation.
+    //  the clock  none of the above. Two minutes is longer than anybody spends
+    //           looking, and it answers `unavailable` rather than null so the
+    //           window knows to offer its own list instead of reporting that the
+    //           person chose nothing.
+    var picking = null;
+    function pickFolder(startAt) {
+        if (picking) return picking;
+
+        picking = new Promise(function (resolve) {
+            var done = false;
+            var page = null;
+            var timer = null;
+            var offFocus = null;
+
+            function finish(answer) {
+                if (done) return;
+                done = true;
+                if (timer) clearTimeout(timer);
+                if (offFocus) { try { offFocus(); } catch (e) { /* the window may have gone */ } }
+                try { if (page) page.close(true); } catch (e) { /* likewise */ }
+                picking = null;
+                resolve(answer);
+            }
+
+            timer = setTimeout(function () {
+                finish({ unavailable: 'the folder dialog did not answer' });
+            }, 120000);
+
+            try {
+                nw.Window.open('about:blank', { id: 'folder-pick', show: false }, function (w) {
+                    if (done) { try { w.close(true); } catch (e) { /* raced the clock */ } return; }
+                    if (!w || !w.window || !w.window.document) {
+                        return finish({ unavailable: 'this build cannot open a folder dialog' });
+                    }
+                    page = w;
+
+                    var doc = w.window.document;
+                    var input = doc.createElement('input');
+                    input.type = 'file';
+                    input.setAttribute('nwdirectory', '');
+                    if (startAt) input.setAttribute('nwworkingdir', String(startAt));
+                    input.style.display = 'none';
+
+                    input.addEventListener('change', function () { finish({ path: input.value || null }); });
+                    input.addEventListener('cancel', function () { finish({ path: null }); });
+
+                    if (win) {
+                        var back = function () {
+                            setTimeout(function () { finish({ path: input.value || null }); }, 300);
+                        };
+                        try {
+                            win.on('focus', back);
+                            offFocus = function () { win.removeListener('focus', back); };
+                        } catch (e) { /* no focus path on this build; the clock still holds */ }
+                    }
+
+                    doc.body.appendChild(input);
+                    input.click();
+                });
+            } catch (e) {
+                finish({ unavailable: 'the folder dialog could not be opened: ' + e.message });
+            }
+        });
+
+        return picking;
+    }
+
+    var stopPicking = actions.define('folderPick', {
+        about: "Ask this computer's own folder dialog for a folder. Answers nothing at all if there is none to ask",
+        takes: ['startAt'],
+        run: function (args) {
+            var a = args || {};
+            //A MODAL DIALOG IN FRONT OF SOMEBODY, FROM A SCRIPT. This one puts a
+            //window on the person's screen and takes their focus away from
+            //whatever they were doing, so it belongs to the person at the
+            //window and to nothing else.
+            if (a._overTheWire || a._driven) {
+                throw new Error('Opening a folder dialog puts a window in front of whoever is sitting there, '
+                    + 'so it is a press at the window. `workspaceAdd` takes a path from anywhere.');
+            }
+            //NEVER THROWS OTHERWISE. "There is no dialog here" is an answer the
+            //window acts on -- it offers its own list instead -- and a refusal
+            //would read to it as a failure worth reporting to somebody.
+            return pickFolder(a.startAt).then(function (said) { return said; },
+                function (e) { return { unavailable: e.message }; });
+        }
+    });
+
     //NAMED SO THE ACTION ABOVE CAN REACH IT before `register` has handed it out.
     var theWindow = {
             get isOpen() { return !!win; },
@@ -137,6 +251,7 @@ async function plugin(imports, register, config) {
         window: theWindow,
         onDestroy: function () {
             stopOpening();
+            stopPicking();
             try { if (keepAlive) keepAlive.close(true); } catch (e) { /* already gone */ }
             keepAlive = null;
         }
