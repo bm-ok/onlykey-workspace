@@ -174,7 +174,17 @@ module.exports = function graph(theme, okc, shell) {
         //None of them may render as a blank area: a pane that has not loaded and
         //a pane whose answer is "none" look identical, and one of them is an
         //answer.
-        var shut = error && /^No workspace is open/.test(error);
+        //CLOSED IS NOT BROKEN, AND THIS TELLS THEM APART BY READING THE
+        //SENTENCE — which works for exactly as long as nobody rewrites it.
+        //
+        //IT ALREADY DID NOT. The refusals for a workspace that is open and holds
+        //no repositories say "There are no repositories in this workspace", not
+        //"No workspace is open", so every one of them drew red: an ordinary
+        //empty folder reported as a fault. Both are the same kind of answer —
+        //this pane is about a folder and the folder cannot answer — so both are
+        //matched, and the anchor is gone because a refusal is allowed to have a
+        //sentence in front of it.
+        var shut = error && /No workspace is open|no repositories in this workspace|There are no repositories/i.test(error);
 
         if (!state && error) return <Note kind={shut ? 'warn' : 'bad'}>{error}</Note>;
         if (!state) return <Skeleton rows={4} />;

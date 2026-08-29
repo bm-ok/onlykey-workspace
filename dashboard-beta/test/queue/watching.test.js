@@ -99,3 +99,68 @@ test('a sweep that fails is warned about and does not wedge the watch', async ()
     o.t = 2000;
     assert.equal(await watch(), true, 'a failed sweep left the watch marked as running for ever');
 });
+
+//---------------------------------------------------------------------------
+//A COMPLAINT REPEATED FOREVER IS NOT INFORMATION.
+//
+//A workspace with no repositories in it refuses the sweep, and goes on refusing
+//it: nothing about the next tick is different. At one line every five minutes
+//that is two hundred and eighty-eight identical lines a day, in the log
+//somebody reads to find out what happened -- which is the same as burying it.
+//---------------------------------------------------------------------------
+
+test('the same refusal is said once, however long it goes on refusing', async () => {
+    const w = aWatch({});
+    w.o.hang = false;
+    const watch = makeWatching({
+        on: () => true,
+        now: () => w.o.t,
+        every: w.o.every,
+        sweep: () => Promise.reject(new Error('There are no repositories in this workspace to ask about.')),
+        warn: (t) => (w.o.warned = w.o.warned || []).push(t)
+    });
+
+    for (let i = 0; i < 5; i++) {
+        w.o.t += 6 * 60 * 1000;
+        await watch();
+        await new Promise((res) => setImmediate(res));
+    }
+
+    assert.equal((w.o.warned || []).length, 1,
+        'five sweeps refused for the same reason said it five times');
+    assert.match(w.o.warned[0], /no repositories in this workspace/);
+    assert.match(w.o.warned[0], /said once/, 'it did not say that it would stop repeating');
+});
+
+test('but a different reason is news, and a failure after a good sweep is heard again', async () => {
+    const o = { t: 0, every: 5 * 60 * 1000, warned: [] };
+    let answer = () => Promise.reject(new Error('first reason'));
+    const watch = makeWatching({
+        on: () => true,
+        now: () => o.t,
+        every: o.every,
+        sweep: () => answer(),
+        warn: (t) => o.warned.push(t)
+    });
+    const step = async () => {
+        o.t += 6 * 60 * 1000;
+        await watch();
+        await new Promise((res) => setImmediate(res));
+    };
+
+    await step();
+    await step();
+    assert.equal(o.warned.length, 1, 'the same reason was reported twice');
+
+    answer = () => Promise.reject(new Error('second reason'));
+    await step();
+    assert.equal(o.warned.length, 2, 'a NEW reason was swallowed as though already mentioned');
+
+    //A SWEEP THAT WORKS CLEARS IT, so the same failure coming back later is
+    //reported rather than remembered as already said.
+    answer = () => Promise.resolve();
+    await step();
+    answer = () => Promise.reject(new Error('second reason'));
+    await step();
+    assert.equal(o.warned.length, 3, 'a failure that came back after a good sweep went unsaid');
+});

@@ -29,6 +29,37 @@ module.exports = function workspace(theme, okc) {
         var [browsing, setBrowsing] = useState(null);
         var [busy, setBusy] = useState(false);
 
+        //WHAT THIS FOLDER IS ARMED TO DO, asked of the settings themselves
+        //rather than described here. Every one of these follows the folder, so
+        //the answer is about the workspace open now and changes when it does.
+        //
+        //ABOVE THE EARLY RETURNS, like every hook. Two panes in this app have
+        //already been broken by a `use` that sat below one — React counts them
+        //and the count has to be the same every render.
+        var set = okc.use('settings', {}, 20000);
+        var armed = set.state && set.state.settings ? (function (s) {
+            var t = set.state.tests || {};
+            return [
+                { what: 'Watching GitHub', on: s.watchGitHub === true,
+                    said: s.watchGitHub ? 'yes — issues and pull requests here are swept every five minutes' : 'no' },
+                { what: 'Supervisor may wake itself', on: s.supervisorWakes === true,
+                    said: s.supervisorWakes ? 'yes — it starts a machine and spends tokens on its own' : 'no' },
+                { what: 'Queue starts by itself', on: s.queueAutoStart === true,
+                    said: s.queueAutoStart ? 'yes' : 'no' },
+                { what: 'Whose word counts', on: (s.githubTrusted || []).length > 0,
+                    said: (s.githubTrusted || []).length
+                        ? (s.githubTrusted || []).map(function (x) { return x && x.login ? x.login : x; }).join(', ')
+                        : 'nobody — nothing arriving from GitHub can be a request' },
+                { what: 'The tag', on: !!s.githubMarker,
+                    said: s.githubMarker ? s.githubMarker + ':' : 'none set' },
+                { what: 'Sent without being read', on: !!(s.githubReplyDirect || s.githubCloseDirect || s.githubReviewDirect),
+                    said: [s.githubReplyDirect ? 'replies' : null, s.githubCloseDirect ? 'closes' : null,
+                        s.githubReviewDirect ? 'reviews' : null].filter(Boolean).join(', ') || 'nothing — every one is drafted for you' },
+                { what: 'The drills', on: t.allowed === true,
+                    said: t.allowed ? 'ON here — they write to repositories' : 'off' }
+            ];
+        })(set.state.settings) : null;
+
         var open = state ? state.open : null;
         var cur = state && state.current ? state.current : null;
         //THE COUNT LIVES ON THE KNOWN ENTRY, NOT ON `current`, which is how the
@@ -59,8 +90,15 @@ module.exports = function workspace(theme, okc) {
                 title: 'Open "' + w.name + '"?',
                 plain: [
                     'Everything on the other tabs becomes a statement about this folder instead.',
-                    state.note || null,
-                    'Testing mode, if it is on, is on for one named folder and switches off when the folder changes.'
+                    //WHAT IS ARMED DOES NOT COME WITH YOU, and this is the
+                    //moment to say it: watching GitHub, the supervisor waking
+                    //itself, whose word counts, what goes out unread and the
+                    //drills are each set for one folder. A workspace opened for
+                    //the first time can do none of them.
+                    'Nothing that arms this app comes with you. Watching GitHub, waking the supervisor, '
+                        + 'whose comments count, what is sent without being read and the drills are all set '
+                        + 'for one folder — a new one starts able to do none of it.',
+                    'What was set for this folder before is still there, and what is set for the one you are leaving stays with it.'
                 ],
                 confirm: 'Open it',
                 onYes: function () { return tell(okc.call('workspaceUse', { dir: w.dir })); }
@@ -72,7 +110,7 @@ module.exports = function workspace(theme, okc) {
                 title: 'Close "' + name + '"?',
                 plain: [
                     'Nothing is forgotten and nothing on disk is touched. This app simply stops being about that folder.',
-                    'Repositories and Tasks switch off until one is open again, because they are questions about a folder and there would be none.'
+                    'Repositories, Worker, Queue, Judge and Supervisor switch off until one is open again, because they are questions about a folder and there would be none.'
                 ],
                 confirm: 'Close it',
                 danger: true,
@@ -179,7 +217,22 @@ module.exports = function workspace(theme, okc) {
                 {/* WHAT FOLLOWS THE FOLDER AND WHAT STAYS WITH THE HOST. This is
                     the thing everyone gets wrong the first time, so it leads
                     rather than sitting in a footnote. */}
-                {state.note ? <Note>{state.note}</Note> : null}
+                {/* `state.note` was read here and never answered — see the note
+                    where "In the way" used to be. What it was for is below, in
+                    two panels that read the settings rather than a field.
+
+                    BORROWED WAS ON THE ANSWER ALL ALONG AND NOTHING READ IT.
+                    This app can end up serving the folder the app it was ported
+                    from has open, which looks exactly like having chosen one —
+                    and everything kept per workspace then depends on that other
+                    app still answering. */}
+                {state.borrowed ? (
+                    <Note kind="warn">
+                        This folder was not chosen here — it is the one the dashboard this app is being
+                        ported from has open, and everything kept per workspace depends on that app
+                        answering. Open it below to stand on its own.
+                    </Note>
+                ) : null}
 
                 <Cols>
                     <Col wide>
@@ -263,9 +316,21 @@ module.exports = function workspace(theme, okc) {
                                                 and saying so beats a refusal when
                                                 somebody clicks. */}
                                             {w.there === false ? <Badge kind="bad">not where it was</Badge> : null}
+                                            {/* NOTHING IN IT IS A STATE, AND IT
+                                                DREW AS A HEALTHY ONE. `0
+                                                repositories` in the same grey as
+                                                `3 repositories` is the difference
+                                                between a workspace and a folder
+                                                somebody picked by mistake, said
+                                                in a way nobody reads. */}
+                                            {w.repos === 0 ? <Badge kind="warn">nothing in it</Badge> : null}
                                             <Grow />
                                             <span className="muted">
-                                                {w.repos == null ? 'not counted' : w.repos + ' repositor' + (w.repos == 1 ? 'y' : 'ies')}
+                                                {w.repos == null
+                                                    ? 'not counted'
+                                                    : (w.repos === 0
+                                                        ? 'no git repositories one level down'
+                                                        : w.repos + ' repositor' + (w.repos == 1 ? 'y' : 'ies'))}
                                             </span>
                                         </CardTitle>
                                         <CardSub><Mono>{w.dir}</Mono></CardSub>
@@ -286,17 +351,56 @@ module.exports = function workspace(theme, okc) {
                             }) : <Empty>no folder is known yet — remember one on the right</Empty>}
                         </Stack>
 
-                        {(state.inTheWay || []).length ? (
-                            <Panel>
-                                <CardTitle>In the way</CardTitle>
-                                <CardSub>Folders that would clash with one of the above.</CardSub>
+                        {/* "IN THE WAY" WAS HERE AND WAS NEVER GOING TO DRAW.
+                            It read `state.inTheWay`, which this app's
+                            `workspaces` has never answered with — it belongs to
+                            the shape of the app being ported FROM. Markup
+                            guarded by a field that is always undefined is not a
+                            feature waiting to work; it is a paragraph nobody can
+                            tell is dead by looking at the screen, which is the
+                            only place most of this gets checked. */}
+                        <Panel>
+                            <CardTitle>
+                                What this workspace is armed to do
+                                {armed && !armed.some(function (a) { return a.on; })
+                                    ? <Badge kind="ok">nothing</Badge> : null}
+                            </CardTitle>
+                            <CardSub>
+                                Every switch that arms this app follows the folder it was set for, so a
+                                workspace opened for the first time can do none of this until somebody says so.
+                            </CardSub>
+                            {armed ? (
                                 <Kv>
-                                    {state.inTheWay.map(function (x, i) {
-                                        return <KvRow key={i} label={x.name || x.dir}>{x.why || ''}</KvRow>;
+                                    {armed.map(function (a) {
+                                        return <KvRow key={a.what} label={a.what}>{a.said}</KvRow>;
                                     })}
                                 </Kv>
-                            </Panel>
-                        ) : null}
+                            ) : <Note>reading…</Note>}
+                        </Panel>
+
+                        <Panel>
+                            <CardTitle>What follows the folder</CardTitle>
+                            {/* KEPT TRUE BY HAND, and the two places that decide
+                                it are named so the next person can check rather
+                                than trust this. */}
+                            <CardSub>
+                                Switching workspace switches all of this to the new folder&rsquo;s own, and back
+                                again on returning &mdash; nothing is thrown away. What is set for one folder is
+                                not set for the next.
+                            </CardSub>
+                            <Kv>
+                                <KvRow label="Follows the folder">
+                                    the repositories and what was learnt about them, tasks, judgements, lines,
+                                    PR cuts, drafts and what was sent, the jobs, and every switch on Settings
+                                    except the supervisor sign-in
+                                </KvRow>
+                                <KvRow label="Stays with this computer">
+                                    the machines, the keys and sign-ins, the guards, the supervisor&rsquo;s chat,
+                                    todo and triage, its proposed skills, and the contract and prompt library
+                                </KvRow>
+                            </Kv>
+                            <Note>Kept here: <Mono>{state.where || '?'}</Mono></Note>
+                        </Panel>
                     </Col>
 
                     <Col narrow>
@@ -343,24 +447,19 @@ module.exports = function workspace(theme, okc) {
                             <Note>Choose opens this computer's own folder dialog. In a browser tab there is none, so the list is used instead — and it says how many repositories each folder holds, which the dialog cannot.</Note>
                         </Panel>
 
-                        <Panel>
-                            <CardTitle>What belongs to a workspace</CardTitle>
-                            {/* THE COUNT IS THE ARGUMENT. "Some tabs need a
-                                folder" is a rule somebody takes on trust; "92 of
-                                this app's actions are refused by name while none
-                                is open" is a fact they can check. */}
-                            <CardSub>
-                                {(state.gated ? state.gated.length : 0) + ' of this app’s actions are questions about a '
-                                    + 'folder of repositories, and are refused by name while none is open — everything '
-                                    + 'under Repositories, Branches, PR cuts and Tasks.'}
-                            </CardSub>
-                            <CardSub>
-                                The rest are about this computer: virtual machines, the terminal, the keys
-                                and the live log. They keep working, because putting a machine away is how
-                                you get to close a workspace.
-                            </CardSub>
-                            <Note><Mono>{state.where || '?'}</Mono></Note>
-                        </Panel>
+                        {/* WHAT THIS FOLDER IS ALLOWED TO DO, READ RATHER THAN
+                            DESCRIBED.
+
+                            This panel used to open with "0 of this app's actions
+                            are questions about a folder of repositories" — a
+                            count of a field the server has never answered with,
+                            so the sentence arguing that a fact beats a rule was
+                            itself printing a number that was not one.
+
+                            Every switch that arms this app follows the folder
+                            now, so what is armed HERE is a real question with a
+                            real answer, and it is the one somebody opening a
+                            workspace for the first time actually has. */}
                     </Col>
                 </Cols>
 

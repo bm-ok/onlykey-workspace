@@ -444,7 +444,16 @@ async function plugin(imports, register) {
             about: 'Every branch that may not be built on, and whether that could be changed',
             run: async function () {
                 var guarded = await protectedOf();
+                //HOW MANY REPOSITORIES THERE WERE TO ASK, because the pane calls
+                //an empty answer an alarm — "no repository here has a default
+                //branch, which should not be possible". In a workspace with no
+                //repositories in it that is not impossible, it is arithmetic,
+                //and the pane cannot tell the two apart from the list alone.
+                var many = 0;
+                try { many = (await workspace.repos()).length; }
+                catch (e) { many = 0; }
                 return {
+                    repos: many,
                     protected: Object.keys(guarded).sort().map(function (b) { return guarded[b]; })
                 };
             }

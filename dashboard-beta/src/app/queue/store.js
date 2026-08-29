@@ -190,7 +190,17 @@ module.exports = function makeTasks(docs, log) {
     async function read() {
         var doc;
         try { doc = await board(); }
-        catch (e) { return []; }
+        catch (e) {
+            //NO WORKSPACE IS NOT AN EMPTY BOARD, and this used to answer as
+            //though it were. ../queue/server.js writes the rule out in full
+            //where it refuses a judgement for the right reason: "nothing to ask"
+            //and "nothing there" are different answers and only one of them is
+            //true. An empty list here is read by a pane as "no work has been
+            //written down", which is a claim about a folder nobody has opened.
+            throw new Error('No workspace is open, so there is no board to read. '
+                + 'Work is written down against a folder of repositories — open one, '
+                + 'and what was queued there is still queued. (' + e.message + ')');
+        }
         if (!doc) return [];
 
         var raw;

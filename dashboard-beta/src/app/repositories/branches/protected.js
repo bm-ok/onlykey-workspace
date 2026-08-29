@@ -97,10 +97,17 @@ module.exports = function protectedPane(theme, okc) {
                     in afterwards &mdash; the rule the rest of this rests on.
                 </Note>
 
+                {/* AN EMPTY WORKSPACE IS NOT AN IMPOSSIBLE ONE. "No repository
+                    here has a default branch" is alarming because it should not
+                    be able to happen — with no repositories at all it is
+                    arithmetic, and drawing it in red sends somebody looking for
+                    a fault in a folder that is simply empty. */}
                 {!all.length ? (
-                    <Empty bad>
-                        Nothing is protected, which means no repository here has a default branch &mdash; worth looking at.
-                    </Empty>
+                    q.state.repos === 0
+                        ? <Empty>There are no repositories in this workspace, so there is nothing to protect. Put some git repositories in the folder, or open a different one.</Empty>
+                        : <Empty bad>
+                            Nothing is protected, which means no repository here has a default branch &mdash; worth looking at.
+                        </Empty>
                 ) : (
                     <React.Fragment>
                         <Group>
@@ -114,7 +121,9 @@ module.exports = function protectedPane(theme, okc) {
                             </Note>
                             {facts.length
                                 ? <Stack>{facts.map(function (p) { return <One key={p.branch} p={p} fact />; })}</Stack>
-                                : <Empty bad>No repository here has a default branch, which should not be possible and is worth looking at.</Empty>}
+                                : (q.state.repos === 0
+                                    ? <Empty>There are no repositories in this workspace.</Empty>
+                                    : <Empty bad>No repository here has a default branch, which should not be possible and is worth looking at.</Empty>)}
                         </Group>
 
                         <Group>

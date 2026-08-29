@@ -95,8 +95,32 @@ async function plugin(imports, register) {
         return [v, set];
     }
 
+    //---- AND WHEN WHAT WAS BEING LOOKED AT STOPS EXISTING --------------------
+    //
+    //EVERY SLOT IN HERE NAMES SOMETHING IN A WORKSPACE — the repository that was
+    //picked, the cut, the task, the branch. Switch folder and every one of them
+    //names something that is not there, and a pane holding a selection that
+    //resolves to nothing draws the same as a pane that is broken.
+    //
+    //THE WHOLE NAMESPACE, NOT A LIST OF KEYS. This has no register of what has
+    //been written — the point of `slot` is that a pane asks for what it wants
+    //and nothing has to be declared — so the only honest way to drop the lot is
+    //by prefix. `localStorage` directly rather than through `config`, which
+    //hands back one named object at a time and cannot enumerate.
+    function forget() {
+        var mine = [];
+        try {
+            for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                if (k && k.indexOf('okc.') === 0) mine.push(k);
+            }
+            mine.forEach(function (k) { localStorage.removeItem(k); });
+        } catch (e) { /* private mode, or a full disk */ }
+        return mine.length;
+    }
+
     await register(null, {
-        remember: { use: use, read: read, write: write }
+        remember: { use: use, read: read, write: write, forget: forget }
     });
 }
 module.exports = plugin;

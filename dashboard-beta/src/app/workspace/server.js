@@ -92,7 +92,11 @@ async function plugin(imports, register) {
         var mine = kept.read({});
         var open = mine && mine.dir;
 
-        if (!open) open = await borrowed();
+        //A CLOSE IS NOT AN ABSENCE. See `close()`: borrowing is what this app
+        //does when it has never chosen one, and somebody who has just closed one
+        //has chosen. Without this, closing put the other app's folder back
+        //within three seconds.
+        if (!open && !(mine && mine.closed)) open = await borrowed();
         if (!open) throw new Error('no workspace is open, so there is nothing to read');
 
         was = open;
@@ -147,7 +151,7 @@ async function plugin(imports, register) {
 
         var mine = shaped(kept.read({}));
         var had = mine.known.some(function (k) { return k && k.dir === want; });
-        kept.write({ dir: mine.dir, at: mine.at, known: withOne(mine.known, want) });
+        kept.write({ dir: mine.dir, at: mine.at, closed: mine.closed, known: withOne(mine.known, want) });
         //`stillOpen` AND NOT `open`, because the action answers with `all()`
         //merged over this and `all().open` is a BOOLEAN. Two fields describing
         //different things under one name, and the more useful one loses — which
@@ -164,6 +168,11 @@ async function plugin(imports, register) {
         return {
             dir: (raw && raw.dir) || null,
             at: (raw && raw.at) || null,
+            //WHETHER SOMEBODY CLOSED IT ON PURPOSE. On the shape rather than
+            //read ad hoc, so a writer that goes through here cannot drop it —
+            //`add` did, which turned "remember a folder" into "start borrowing
+            //the other app's again".
+            closed: !!(raw && raw.closed),
             known: (raw && Array.isArray(raw.known)) ? raw.known : []
         };
     }
@@ -310,9 +319,22 @@ async function plugin(imports, register) {
     //CLOSING IS NOT FORGETTING. It puts down the folder that is open and leaves
     //it on the list, because the ordinary reason to close one is to open another
     //and come back.
+    //CLOSING IS A DECISION, AND FOR A WHILE IT DID NOT STICK.
+    //
+    //`close()` wrote `dir: null`, and the very next `dir()` found nothing chosen
+    //and fell through to `borrowed()` — which asks the app being ported from
+    //what IT has open and adopts that. So closing a workspace put the window
+    //back to "serving …" within three seconds, on a folder nobody had chosen
+    //here, with every gated tab enabled again and `state.here` pointing at that
+    //folder's drawer. The one way to tell was the `borrowed` field, which
+    //nothing read.
+    //
+    //BORROWING IS FOR HAVING NEVER CHOSEN, not for having chosen to stop. So a
+    //deliberate close is recorded as one, and the borrow is skipped while it
+    //stands. Opening anything clears it, because opening is the other decision.
     function close() {
         var mine = shaped(kept.read({}));
-        kept.write({ dir: null, at: new Date().toISOString(), known: mine.known });
+        kept.write({ dir: null, at: new Date().toISOString(), known: mine.known, closed: true });
         was = null;
         at = 0;
         return { open: false };
@@ -326,7 +348,13 @@ async function plugin(imports, register) {
         //FORGETTING THE ONE THAT IS OPEN CLOSES IT TOO, because a workspace that
         //is open and not on the list is a state with no way back to it.
         var stillOpen = mine.dir === want ? null : mine.dir;
-        kept.write({ dir: stillOpen, at: new Date().toISOString(), known: left });
+        //FORGETTING THE OPEN ONE CLOSES IT, and closing it is a decision — same
+        //as `close()`, or the borrow would put another folder in its place.
+        kept.write({
+            dir: stillOpen, at: new Date().toISOString(),
+            closed: stillOpen ? mine.closed : true,
+            known: left
+        });
         if (!stillOpen) { was = null; at = 0; }
         return { forgotten: mine.known.length - left.length, open: !!stillOpen };
     }

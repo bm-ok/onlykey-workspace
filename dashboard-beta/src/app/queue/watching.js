@@ -36,6 +36,10 @@ module.exports = function makeWatching(d) {
     var last = null;
     var running = false;
     var deciding = false;
+    //THE LAST THING SAID ABOUT A FAILED SWEEP, so the same sentence is not
+    //repeated every five minutes for as long as the app is up. Cleared when a
+    //sweep works, so the next failure is heard even if it reads the same.
+    var saidLast = null;
 
     //ANSWERS WITH WHETHER IT STARTED A SWEEP. Fired and let go by the tick,
     //exactly as that file's comment asks: a slow GitHub is not a reason for the
@@ -52,8 +56,32 @@ module.exports = function makeWatching(d) {
 
             last = t;
             running = true;
-            Promise.resolve().then(sweep).catch(function (e) {
-                warn('the GitHub watch could not sweep: ' + (e && e.message ? e.message : e));
+            Promise.resolve().then(function () {
+                return Promise.resolve(sweep()).then(function (said) {
+                    //A SWEEP THAT WORKED CLEARS WHAT WAS SAID, so a failure that
+                    //comes back later is reported rather than remembered as
+                    //already mentioned.
+                    saidLast = null;
+                    return said;
+                });
+            }).catch(function (e) {
+                //THE SAME COMPLAINT EVERY FIVE MINUTES IS NOT INFORMATION.
+                //
+                //A workspace with no repositories in it refuses this sweep, and
+                //will go on refusing it: nothing about the next tick is
+                //different. That is two hundred and eighty-eight identical lines
+                //a day in a log somebody reads to find out what happened —
+                //which is the same as burying it.
+                //
+                //ONE LINE PER REASON, AND IT SAYS IT AGAIN WHEN THE REASON
+                //CHANGES. Not a flag that latches: a sweep that starts failing
+                //for a NEW reason is news, and would be swallowed by anything
+                //cruder than remembering which sentence was said.
+                var why = (e && e.message ? e.message : String(e));
+                if (why === saidLast) return;
+                saidLast = why;
+                warn('the GitHub watch could not sweep: ' + why
+                    + ' — said once; it is tried again every ' + Math.round(every / 60000) + ' minutes.');
             }).then(function () { running = false; });
             return true;
         }, function (e) {
