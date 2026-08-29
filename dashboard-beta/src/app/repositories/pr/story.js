@@ -31,6 +31,9 @@ function refsOf(tasks, judgements) {
 function compose(bits) {
     var b = bits || {};
     var rec = b.rec || {};
+    //SEVERAL CUTS FOR ONE ISSUE: an issue's story takes `cuts: [rec…]` and
+    //tells each cut's opening, refresh and standing in turn.
+    var cuts = Array.isArray(b.cuts) ? b.cuts : (rec.source ? [rec] : []);
     var note = b.note || null;
     var issue = b.issue || null;
     var tasks = b.tasks || [];
@@ -101,29 +104,33 @@ function compose(bits) {
     });
 
     //---- the pull requests: opened, refreshed, where they stand -----------
-    var pulls = (rec.pulls || []).filter(function (p) { return p.number; });
-    if (rec.opened) {
-        add({
-            at: rec.opened, kind: 'pull', dir: 'out', who: rec.by || null,
-            ref: rec.source + ' -> ' + rec.target,
-            text: 'opened ' + (pulls.length ? pulls.map(function (p) { return p.repo + ' #' + p.number; }).join(', ') : 'the pull request(s)')
-                + ' into ' + rec.target
-        });
-    }
-    if (rec.refreshed) {
-        add({
-            at: rec.refreshed, kind: 'pull', dir: 'out', who: null, ref: rec.source + ' -> ' + rec.target,
-            text: 'pushed the branch onto the open pull request(s) as it now stands'
-        });
-    }
-    pulls.forEach(function (p) {
-        var r = p.reviews || null;
-        var standing = p.merged ? 'merged' : (p.state || 'open');
-        add({
-            at: rec.touched || rec.opened, kind: 'pull', dir: null, who: null, ref: p.repo + ' #' + p.number, url: p.url,
-            text: p.repo + ' #' + p.number + ' is ' + standing
-                + (r ? ' — reviews: ' + (r.approved || 0) + ' approved, ' + (r.changesRequested || 0) + ' changes requested' : '')
-                + (p.head ? ' — head ' + String(p.head).replace(/^[^:]+:/, '') : '')
+    var pulls = [];
+    cuts.forEach(function (c) {
+        var mine = (c.pulls || []).filter(function (p) { return p.number; });
+        mine.forEach(function (p) { pulls.push(Object.assign({}, p, { cutSource: c.source, cutTarget: c.target })); });
+        if (c.opened) {
+            add({
+                at: c.opened, kind: 'pull', dir: 'out', who: c.by || null,
+                ref: c.source + ' -> ' + c.target,
+                text: 'opened ' + (mine.length ? mine.map(function (p) { return p.repo + ' #' + p.number; }).join(', ') : 'the pull request(s)')
+                    + ' into ' + c.target
+            });
+        }
+        if (c.refreshed) {
+            add({
+                at: c.refreshed, kind: 'pull', dir: 'out', who: null, ref: c.source + ' -> ' + c.target,
+                text: 'pushed the branch onto the open pull request(s) as it now stands'
+            });
+        }
+        mine.forEach(function (p) {
+            var r = p.reviews || null;
+            var standing = p.merged || p.state === 'merged' ? 'merged' : (p.state || 'open');
+            add({
+                at: c.touched || c.opened, kind: 'pull', dir: null, who: null, ref: p.repo + ' #' + p.number, url: p.url,
+                text: p.repo + ' #' + p.number + ' is ' + standing
+                    + (r ? ' — reviews: ' + (r.approved || 0) + ' approved, ' + (r.changesRequested || 0) + ' changes requested' : '')
+                    + (p.head ? ' — head ' + String(p.head).replace(/^[^:]+:/, '') : '')
+            });
         });
     });
 
@@ -134,7 +141,7 @@ function compose(bits) {
     function about(text, tags) {
         var t = String(text || '');
         var tg = (tags || []).join(' ');
-        if (rec.source && t.indexOf(rec.source) >= 0) return true;
+        if (cuts.some(function (c) { return c.source && t.indexOf(c.source) >= 0; })) return true;
         if (issueKey && t.indexOf(issueKey) >= 0) return true;
         if (refs.some(function (r) { return new RegExp('(^|[^A-Za-z0-9])' + r.replace('#', '#') + '(?![0-9])').test(t); })) return true;
         //A PULL REQUEST NUMBER ONLY WHERE THE TAG NAMES ITS PLACE, since #2 is

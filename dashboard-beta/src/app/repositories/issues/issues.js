@@ -34,6 +34,12 @@ module.exports = function issues(theme, okc, remember, shell) {
         Panel, Stack, Head, Card, CardTitle, CardSub, Badge, Badges, Button,
         Cols, Col, Empty, Note, Mono, Quoted, TitleRow, Grow, ago, openOut
     } = theme;
+    //THE STORY LIST IS SHARED WITH PR CUTS, and declared here, above the
+    //pane's return -- below it a `var` is hoisted and never assigned.
+    var StoryList = require('../story-list')(theme).StoryList;
+    function StoryHead() { return <TitleRow>The story<Grow /><span className="muted">newest first</span></TitleRow>; }
+    function StoryThreadHead() { return <TitleRow>The thread</TitleRow>; }
+
 
     //---- WHAT A VOICE IS TO THE PROJECT ------------------------------------
     //
@@ -310,6 +316,10 @@ module.exports = function issues(theme, okc, remember, shell) {
         //it soon. The sweep is every few minutes and goes to GitHub; this is a
         //local read.
         var { state: box } = okc.use('issueDrafts', {}, 4000);
+        //THE STORY BEHIND THE THREAD, the same timeline PR cuts draws: what
+        //came in and went out, and the branch, task, judgement and pull
+        //request work behind this issue. A hook, here with the others.
+        var story = okc.use('issueStory', { on: i.on, number: i.number }, 15000);
         var mine = ((box && box.drafts) || []).filter(function (d) {
             return d.on === i.on && d.number === i.number;
         })[0] || null;
@@ -483,6 +493,13 @@ module.exports = function issues(theme, okc, remember, shell) {
                         </Card>
                         : <Empty>Nothing was written in the issue itself.</Empty>}
 
+                    {/* THE STORY, UNDER THE THREAD. The thread is what was said;
+                        the story is what was done about it -- newest first, the
+                        initiator at the bottom, drawn by the same list as PR cuts. */}
+                    <StoryHead />
+                    <StoryList story={story} empty="Nothing has been done about this beyond the thread." />
+
+                    <StoryThreadHead />
                     {said.map(function (c, n) {
                         return (
                             <Card key={n}>

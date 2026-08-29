@@ -2,6 +2,7 @@ var React = require('react');
 var { useState, useEffect, useCallback } = React;
 
 module.exports = function cuts(theme, okc, remember, shell) {
+    var StoryList = require('../story-list')(theme).StoryList;
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
         Badge, Chips, Chip, Button, Finder, Skeleton, Empty, Note, Mono, Link, openOut,
@@ -80,17 +81,6 @@ module.exports = function cuts(theme, okc, remember, shell) {
     }
 
     //---- the right column --------------------------------------------------
-
-    //A MOMENT ON THE TIMELINE: the day and the minute, local, because the
-    //story is read as a sequence and a relative "3 hours ago" hides the order
-    //two entries an hour apart actually happened in.
-    function moment(at) {
-        if (!at) return '';
-        var d = new Date(at);
-        if (isNaN(d.getTime())) return String(at);
-        var two = function (n) { return (n < 10 ? '0' : '') + n; };
-        return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + ' ' + two(d.getHours()) + ':' + two(d.getMinutes());
-    }
 
     function Pull({ p }) {
         var kind = p.merged ? 'ok' : p.state == 'closed' ? 'bad' : p.draft ? 'warn' : '';
@@ -670,35 +660,7 @@ module.exports = function cuts(theme, okc, remember, shell) {
                                     tasks and judgements between. Newest at the top --
                                     where it stands now -- and the initiator at the
                                     bottom. The composer is beside the server, in the pr plugin. */}
-                                {story.error ? <Note kind="bad">{story.error}</Note> : null}
-                                {!story.state
-                                    ? <Skeleton rows={5} />
-                                    : !(story.state.entries || []).length
-                                        ? <Empty>{story.state.note || 'Nothing is recorded about this cut yet.'}</Empty>
-                                        : <Stack>
-                                            {story.state.entries.map(function (e, i) {
-                                                var tone = e.dir === 'in' ? 'warn' : e.dir === 'out' ? 'ok' : 'muted';
-                                                var word = e.dir === 'in' ? 'in' : e.dir === 'out' ? 'out' : e.kind;
-                                                return (
-                                                    <Card key={i}>
-                                                        <CardTitle>
-                                                            <Badge kind={tone}>{word}</Badge>
-                                                            <span className="muted">{moment(e.at)}</span>
-                                                            {e.who ? <Mono>{e.who}</Mono> : null}
-                                                            {e.ref ? <span className="muted">{e.ref}</span> : null}
-                                                        </CardTitle>
-                                                        <CardSub>
-                                                            {e.url
-                                                                ? <Link onClick={function () { openOut(e.url); }}>{e.text}</Link>
-                                                                : <span>{e.text}</span>}
-                                                        </CardSub>
-                                                    </Card>
-                                                );
-                                            })}
-                                        </Stack>}
-                                {story.state && story.state.note && (story.state.entries || []).length
-                                    ? <Note>{story.state.note}</Note>
-                                    : null}
+                                <StoryList story={story} empty="Nothing is recorded about this cut yet." />
                             </Panel>
                         )}
                         {got && got.note ? <Note>{got.note}</Note> : null}

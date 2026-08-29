@@ -1365,6 +1365,30 @@ test('an open pull request is on the issues list, marked, so its draft has somew
     assert.deepEqual(only.issues.map((r) => r.number), [5]);
 });
 
+test('the story of an issue gathers the branch cut for it, its task, and the thread, newest first', async () => {
+    const answers = Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/issues/7': { status: 200, body: ISSUE_ROW(7, { body: 'okc: make it blue', user: { login: 'bmatusiak', type: 'User' }, html_url: 'u', state: 'open', labels: [], created_at: '2026-08-28T06:00:00Z' }) },
+        '/repos/anowner/arepo/issues/7/comments': { status: 200, body: [] }
+    });
+    const { actions } = await anApp(answers, undefined, undefined, WAKING);
+    actions.define('branchBoard', { about: 'a stand-in', run: async () => ({ branches: [{ name: 'fix/blue', note: { issue: { on: 'anowner/arepo', number: 7 }, made: '2026-08-28T07:00:00Z', by: 'super1', reason: 'blue' } }] }) });
+    actions.define('tasks', { about: 'a stand-in', run: async () => ({ tasks: [{ number: 3, title: 'make it blue', branch: 'fix/blue', created: '2026-08-28T07:10:00Z', updated: '2026-08-28T07:20:00Z', state: 'done', commits: 1, issue: { on: 'anowner/arepo', number: 7 } }] }) });
+    actions.define('judging', { about: 'a stand-in', run: async () => ({ judgements: [{ ref: 'J1', written: '2026-08-28T07:21:00Z', read: '2026-08-28T07:25:00Z', state: 'done', concluded: 'accept', subject: { kind: 'branch', branch: 'fix/blue' } }] }) });
+    actions.define('prCuts', { about: 'a stand-in', run: async () => ({ cuts: [{ source: 'fix/blue', target: 'main', opened: '2026-08-28T07:30:00Z', touched: '2026-08-28T07:40:00Z', by: 'super1', pulls: [{ repo: 'repo-one', number: 4, into: 'anowner/arepo', state: 'open', url: 'p4' }] }] }) });
+    actions.define('events', { about: 'a stand-in', run: async () => ({ events: [] }) });
+    actions.define('githubHeld', { about: 'a stand-in', run: async () => ({ login: 'bmatusiak' }) });
+
+    const said = await actions.call('issueStory', { on: 'anowner/arepo', number: 7 });
+    assert.deepEqual(said.branches, ['fix/blue']);
+    const texts = said.entries.map((e) => e.text);
+    assert.match(texts[0], /^repo-one #4 is open/);
+    assert.match(texts[texts.length - 1], /^opened anowner\/arepo#7/);
+    assert.ok(texts.some((t) => /^cut the branch/.test(t)));
+    assert.ok(texts.some((t) => /^task #3 landed/.test(t)));
+    assert.ok(texts.some((t) => t === 'J1 concluded: accept'));
+    for (let i = 1; i < said.entries.length; i++) assert.ok(said.entries[i - 1].at >= said.entries[i].at);
+});
+
 test('a pull request reads whole through issueRead, and says it is one', async () => {
     const answers = Object.assign({}, REPO_OK, {
         '/repos/anowner/arepo/issues/5': {

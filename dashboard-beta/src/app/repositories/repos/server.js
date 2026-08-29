@@ -19,6 +19,9 @@ var revising = require('../pr/revising');
 //body that leaves this file goes through it — see ../../github/trust.js.
 var trust = require('../../github/trust');
 var arrivedIn = require('./arrived');
+//THE STORY COMPOSER IS THE PR PLUGIN'S, and pure; required across the line
+//the way ../../github/trust.js is, so an issue's story and a cut's are one.
+var storyOf = require('../pr/story');
 
 //---------------------------------------------------------------------------
 //THE REPOSITORIES IN THIS WORKSPACE, AND WHAT GITHUB SAYS ABOUT THEM.
@@ -1952,6 +1955,68 @@ async function plugin(imports, register) {
                         + rows.length + ' open, ' + asked + ' that somebody trusted has asked about'
                         + (asked ? ' — read one whole with issueRead.' : '.')
                         + (short.length ? ' NOT ALL OF THEM: ' + short.join('; ') : '')
+                };
+            }
+        }));
+
+        //---- THE STORY OF AN ISSUE ---------------------------------------
+        //
+        //THE SAME TIMELINE PR CUTS TELLS, FROM THE ISSUE'S SIDE: the thread
+        //in and out, and behind it every branch cut for the issue, the tasks
+        //that carried it, the judgements of those branches, the cuts made
+        //from them, and what the supervisor said. ../pr/story.js composes;
+        //this gathers. Read from the records that exist and the events log.
+        //ASKED THROUGH THE TABLE AND NULL ON FAILURE, so a plugin that is not
+        //here (a bare host in a test) leaves a hole in the story, not a throw.
+        async function relayedTo(name, args) {
+            try { return await actions.call(name, args || {}); } catch (e) { return null; }
+        }
+
+        undo.push(actions.define('issueStory', {
+            about: 'Everything that touched an issue, in time, newest first: the thread in and out, and behind it '
+                + 'the branches cut for it, the tasks, the judgements, the pull requests, and what the supervisor said',
+            takes: ['on', 'number'],
+            run: async function (args) {
+                var a = args || {};
+                var on = String(a.on || '').trim();
+                var number = Number(a.number);
+                if (!on || !(number > 0)) return { on: on || null, number: number || null, entries: [], note: 'Say which issue: on and number.' };
+                var key = on + '#' + number;
+
+                var issue = await actions.call('issueRead', { on: on, number: number });
+                var board = (await relayedTo('branchBoard')) || {};
+                var branches = ((board.branches) || []).filter(function (b) {
+                    var it = b.note && b.note.issue;
+                    return it && it.on === on && Number(it.number) === number;
+                });
+                var names = branches.map(function (b) { return b.name; });
+                var tasks = (((await relayedTo('tasks')) || {}).tasks || []).filter(function (t) {
+                    return (t.issue && t.issue.on === on && Number(t.issue.number) === number) || names.indexOf(t.branch) >= 0;
+                });
+                var judgements = (((await relayedTo('judging')) || {}).judgements || []).filter(function (j) {
+                    var s = j.subject || {};
+                    return names.indexOf(s.branch) >= 0 || (s.kind === 'cut' && names.indexOf(s.source) >= 0);
+                });
+                var cuts = (((await relayedTo('prCuts')) || {}).cuts || []).filter(function (c) { return names.indexOf(c.source) >= 0; });
+                var events = (((await relayedTo('events', { limit: 3000 })) || {}).events || []);
+                var held = (await relayedTo('githubHeld')) || {};
+
+                var entries = storyOf.compose({
+                    issue: issue, note: branches.length ? branches[0].note : null, cuts: cuts,
+                    tasks: tasks, judgements: judgements, events: events, hostLogin: held.login || null
+                });
+                //EVERY BRANCH CUT FOR IT, not only the first: the composer
+                //takes one note; the rest are told here.
+                branches.slice(1).forEach(function (b) {
+                    if (b.note && b.note.made) entries.push({ at: b.note.made, kind: 'cut', dir: null, who: b.note.by || null, ref: b.name,
+                        text: 'cut the branch ' + b.name + (b.note.reason ? ' — ' + storyOf.short(b.note.reason, 160) : '') });
+                });
+                entries.sort(function (x, y) { return String(y.at).localeCompare(String(x.at)); });
+                return {
+                    on: on, number: number, key: key, branches: names, entries: entries,
+                    note: entries.length
+                        ? entries.length + ' moment(s), newest first. The last one is where it started.'
+                        : 'Nothing is recorded about ' + key + ' beyond the thread.'
                 };
             }
         }));

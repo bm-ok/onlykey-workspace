@@ -76,6 +76,20 @@ test('only the events about this cut, and a pull request number only under its o
     assert.ok(!s.some((e) => /reachable/.test(e.text)));
 });
 
+test('several cuts for one issue each tell their opening and standing', () => {
+    const two = Object.assign({}, BITS, {
+        rec: undefined,
+        cuts: [
+            BITS.rec,
+            { source: 'fix/x2', target: 'main', opened: '2026-08-28T23:00:00Z', by: 'super1', pulls: [{ repo: 'b', number: 9, into: 'o/b', state: 'open', url: 'u9' }] }
+        ]
+    });
+    const s = compose(two).map((e) => e.text);
+    assert.ok(s.some((t) => /^opened b #2 into main/.test(t)));
+    assert.ok(s.some((t) => /^opened b #9 into main/.test(t)));
+    assert.ok(s.some((t) => /^b #9 is open/.test(t)));
+});
+
 test('nothing in, nothing out', () => {
     assert.deepEqual(compose({}), []);
     assert.deepEqual(compose(null), []);
