@@ -23,6 +23,14 @@ sent by you. Three kinds: a **reply** on an issue or pull request, a
 3. A review pinned to a commit the author has since pushed over is refused
    at release: judge again first.
 
+## Sending everything at once
+
+Repositories → Issues → **Send all N waiting** (purple) releases every
+waiting draft through the same door as sending them one at a time: the
+thread must still have been addressed and tagged, a review pinned to a
+commit the author has pushed over is still refused, and one that refuses is
+named while the rest go.
+
 ## Making it automatic
 
 Settings → Trust → **Speaking in your name**: three purple switches, one per

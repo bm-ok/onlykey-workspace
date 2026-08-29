@@ -14,15 +14,31 @@ its Send / Close / Post button — purple. `issueApprove` releases,
 `issueDiscard` throws away; both are a person's. A review is pinned to the
 commit the judge read and refused at release if the author pushed since.
 
-## Direct
+## Direct — auto respond
 
-Settings → Trust → *Speaking in your name*: `githubReplyDirect`,
-`githubCloseDirect`, `githubReviewDirect`. Each purple. With one on, that
-kind goes out the moment it is written — the supervisor answering under a
-pull request by itself is the teammate feel; the draft stays for the kinds
-left off. The three are separate because their blast radius differs: a
-reply is words, a close is a state, a review is something a maintainer may
-merge on.
+Settings → Trust → *Speaking in your name — auto respond*:
+`githubReplyDirect`, `githubCloseDirect`, `githubReviewDirect`. Each purple.
+With one on, that kind goes out the moment it is written — the supervisor
+answering under a pull request by itself is the teammate feel; the draft
+stays for the kinds left off. The three are separate because their blast
+radius differs: a reply is words, a close is a state, a review is something
+a maintainer may merge on.
+
+**The tag and the address still apply.** `mayAnswer` runs before the
+direct-or-draft branch, so even with auto respond on this host only answers a
+thread where somebody trusted addressed the account it posts as and used the
+marker. It cannot answer a stranger's issue, and it cannot answer itself.
+
+**What goes out unread says so.** The events line reads *"replied on #7 —
+sent directly, nobody read it first"*, the story timeline carries that, and
+each one is recorded (`spokenFor`, the last 200) and counted on the Trust
+card — because with drafts off the inbox is empty by design, and that was
+the only thing saying what was about to happen.
+
+**Switching it on does not release what is already drafted**, and should
+not: you have not read those. Repositories → Issues has **Send all N
+waiting** for that, and each one goes through the ordinary release door —
+same checks, one refusing does not stop the rest.
 
 ## Who may ask
 

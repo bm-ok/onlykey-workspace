@@ -78,9 +78,15 @@ one; the inbox says so until you do (*checked as somebody else*).
 - **The trusted list is the people who ask** — you, and anyone else whose word
   should count. It is not the app. If the app's own account is on it, the inbox
   says *one account for both sides* and you should take it off.
-- **Approvals stay at the window.** The account changes who speaks; it does not
-  change who decides. Replies, closes and reviews are still drafted for you, and
-  merging is still yours.
+- **Approvals stay at the window** — until you decide otherwise. The account
+  changes who speaks; it does not change who decides. Replies, closes and
+  reviews are drafted for you, and merging is always yours.
+- **Auto respond is reasonable now, and was not before.** Settings → Trust
+  turns the draft step off per kind. On a separate account that is the app
+  speaking as itself; on your primary account it would have been the app
+  speaking as you. Even then it can only answer a thread where somebody
+  trusted addressed it and used the tag, and what goes out unread is recorded
+  and counted on that card.
 - **Your own account still merges.** `Closes owner/repo#N` closes the issue when
   the merge lands in the issue's own repository, or when the person merging has
   write access there — which is you, whichever account opened the pull request.
