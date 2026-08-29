@@ -5,8 +5,12 @@ tab, every task and every machine's clone is about the one that is open.
 
 ## Steps
 
-1. **Workspace** (top left) → add a folder. It must hold git repositories
-   one level down; the app lists them and opens it.
+1. **Workspace** (top left) → **Choose a folder…**, which opens this
+   computer's own folder dialog; in a browser tab there is none, so a list
+   of the disk is used instead and says how many git repositories each
+   folder holds. Then **Remember and open it** — *Remember it* files the
+   folder without switching to it. Repositories are looked for one level
+   down.
 2. **Repositories → Repos** → **Check** (or wait: the sweep runs by itself
    every five minutes while *Watching GitHub* is on). The check asks GitHub
    about each repository: reachable, what the token may do there, its
@@ -35,3 +39,9 @@ tab, every task and every machine's clone is about the one that is open.
   so a press still works. `caches` shows what is being reused.
 - Per-workspace state (tasks, judgements, cuts, drafts) lives in the app's
   data folder under the workspace's name, not in the repositories.
+- **A new workspace is inert.** Every switch that arms this app follows the
+  folder it was set for — watching GitHub, the supervisor waking itself,
+  whose word counts, what is sent without being read, the drills — so a
+  folder opened for the first time can do none of it until you say so.
+  [Switching workspaces](switch-workspaces.md) has the whole list and what
+  stays with this computer instead.

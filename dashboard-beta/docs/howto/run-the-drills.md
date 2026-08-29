@@ -9,7 +9,14 @@ off them. Half of them pass by being refused. They are on the **Test** tab.
 Drills are switched on **per workspace, at the window** — Settings →
 General → *Testing mode*, which names the folder it is on for. The yellow
 banner says so while it is. From the command line `testsAsk --why ...`
-asks; a person answers in the window (`testsAnswer`).
+asks; a person answers in the window (`testsAnswer`), standing in front of
+the folder the request was raised about — a request raised elsewhere is not
+on the table here, and answering yes where nothing was asked is refused.
+
+Switching workspace switches them off, because the switch is the new
+folder's own and it has never been pressed. Switching back turns them on
+again — nothing was cleared. The refusal names the folder they *are* on for,
+so "off" never reads as a switch that did not work.
 
 **Only against a sandbox.** Settings → General → *Sandbox owners*: a list of
 GitHub owners (`bm-sandbox-a`, `bm-sandbox-b`, `bm-sandbox-c`). With names

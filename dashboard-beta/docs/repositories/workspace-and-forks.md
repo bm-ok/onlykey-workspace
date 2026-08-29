@@ -1,6 +1,9 @@
 # Workspace, forks and the chain
 
-A workspace is a folder of repositories. Each repository here is a clone
+A workspace is a folder of repositories. Everything below is set for **that
+folder** and does not come with you to the next one — see
+[switching workspaces](../howto/switch-workspaces.md) for the whole list of
+what follows and what stays with this computer. Each repository here is a clone
 with a GitHub remote, and that remote is usually a **fork** of something —
 which is usually a fork of the project. The Repositories tab keeps the whole
 chain straight, because two questions depend on it.

@@ -23,9 +23,26 @@ answer with a sentence instead, and the sentence is the reason.
 | `queueAutoStart` | whether the queue starts with the app |
 | `supervisorKey` | which sign-in the supervisor uses |
 
-## Where
+## Every one of these is set for one folder
+
+Both tables above — all of them except `supervisorKey` — follow the open
+workspace. A folder opened for the first time reads them all at their
+defaults: nothing watching, nobody trusted, no marker, nothing sent unread,
+no drills. **A new workspace is inert**, whatever the last one was allowed
+to do.
+
+Nothing is thrown away by switching: what is set for one folder stays with
+it and is there on returning. `settings` answers for the folder open now,
+and `settingSet` refuses a folder-scoped setting while no workspace is open
+rather than applying it to whichever is opened next.
+
+`supervisorKey` — which sign-in on this computer the supervisor uses — is
+the one that does not follow, because it is a fact about the keyring.
 
 Settings → General for the drills and the queue; Settings → Trust for
-everything about GitHub and speaking in your name. The file is
-`state/settings.json` in the app's data folder, and `settings` prints its
-path.
+everything about GitHub and speaking in your name; Workspace → *What this
+workspace is armed to do* for all of it at once. The file is
+`state/settings.json` in the app's data folder, under `forFolder`, and
+`settings` prints its path.
+
+See [switching workspaces](../howto/switch-workspaces.md).

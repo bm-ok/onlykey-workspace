@@ -7,6 +7,7 @@ as the window.
 
 - [Use the command line](use-the-command-line.md)
 - [Open a workspace and check the repositories](open-a-workspace.md)
+- [Switch to a different workspace](switch-workspaces.md)
 - [Add a GitHub token and trust somebody](add-a-github-token-and-trust.md)
 - [Build a machine](build-a-machine.md)
 - [Sign a machine in to Claude](sign-in-a-machine.md)
