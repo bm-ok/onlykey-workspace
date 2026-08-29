@@ -122,6 +122,38 @@ async function plugin(imports, register) {
         return want;
     }
 
+    //REMEMBERING A FOLDER IS NOT MOVING INTO IT, and for a while it was.
+    //
+    //`workspaceAdd` called `use`, so the pane's two buttons — "Remember it" and
+    //"Remember and open it" — did the same thing, and the first of them switched
+    //the entire app to another folder with no confirm dialog in front of it.
+    //Everything on every other tab became a statement about somewhere else
+    //because somebody filed a path for later.
+    //
+    //THE TWO ACTS ARE SEPARATE BECAUSE SETTING UP IS SEPARATE FROM MOVING. Three
+    //folders can be lined up in one sitting while the one being worked in stays
+    //open; and the act that DOES change what this app is about is then a single
+    //act with a single dialog, which is what makes it possible to warn about.
+    //
+    //THE CHECKS ARE `use`'s, deliberately. A path that is not a folder is worth
+    //refusing at the moment it is typed rather than at the moment it is opened,
+    //which may be days later and somewhere else in the window.
+    function add(open) {
+        var want = String(open == null ? '' : open).trim();
+        if (!want) throw new Error('Which folder?');
+        if (!fs.existsSync(want)) throw new Error('There is no folder at "' + want + '".');
+        if (!fs.statSync(want).isDirectory()) throw new Error('"' + want + '" is a file, not a folder.');
+
+        var mine = shaped(kept.read({}));
+        var had = mine.known.some(function (k) { return k && k.dir === want; });
+        kept.write({ dir: mine.dir, at: mine.at, known: withOne(mine.known, want) });
+        //`stillOpen` AND NOT `open`, because the action answers with `all()`
+        //merged over this and `all().open` is a BOOLEAN. Two fields describing
+        //different things under one name, and the more useful one loses — which
+        //is how the caller ends up reading `true` as a path.
+        return { added: want, already: had, stillOpen: mine.dir || null };
+    }
+
     //---- the ones this app knows about --------------------------------------
     //
     //A LIST OF FOLDERS SOMEBODY CHOSE, not a scan of the disk. Nothing goes
@@ -290,17 +322,17 @@ async function plugin(imports, register) {
             }
         }));
 
-        //ADDING IS OPENING. There is no state where a folder is on the list and
-        //not the one being used, because nobody adds a workspace they did not
-        //want to look at.
+        //ADDING IS NOT OPENING, and the answer says which happened. See `add`.
         undo.push(actions.define('workspaceAdd', {
-            about: 'Add a folder of repositories and open it',
+            about: 'Remember a folder of repositories, leaving the open one alone. workspaceUse opens it',
             takes: ['dir'],
             run: async function (args) {
                 var a = args || {};
-                var open = use(a.dir);
-                log.good('workspace: ' + open);
-                return all();
+                var out = add(a.dir);
+                log.info('remembered "' + out.added + '"'
+                    + (out.already ? ', which was already on the list' : '')
+                    + '. The workspace that is open did not change.');
+                return Object.assign(out, await all());
             }
         }));
 
@@ -327,6 +359,7 @@ async function plugin(imports, register) {
         workspace: {
             dir: dir,
             use: use,
+            add: add,
             all: all,
             close: close,
             repos: repos,

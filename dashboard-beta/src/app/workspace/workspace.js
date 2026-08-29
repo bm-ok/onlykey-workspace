@@ -1,6 +1,14 @@
 var React = require('react');
 var { useState } = React;
 
+//THE LAST PART OF A PATH, EITHER SEPARATOR. The server puts `name` on every row
+//it answers with, but a folder somebody has this second chosen is not a row yet
+//and the confirm dialog still has to call it something.
+function nameOf(dir) {
+    var parts = String(dir == null ? '' : dir).replace(/[\\/]+$/, '').split(/[\\/]/);
+    return parts[parts.length - 1] || String(dir || '');
+}
+
 module.exports = function workspace(theme, okc) {
     var {
         Pane, Panel, Cols, Col, Stack, TitleRow, Grow, Card, CardTitle, CardSub,
@@ -37,6 +45,10 @@ module.exports = function workspace(theme, okc) {
             );
         }
 
+        //ONE DIALOG FOR EVERY WAY OF OPENING ONE. It takes a `{name, dir}` rather
+        //than a row off the list, because the folder somebody has just chosen is
+        //not on the list yet and was the one path that switched workspace
+        //without asking.
         function use(w) {
             ask({
                 title: 'Open "' + w.name + '"?',
@@ -79,16 +91,24 @@ module.exports = function workspace(theme, okc) {
         //Adding a folder you are not switching to is an ordinary thing — you are
         //setting up, not moving — and one button that always switches makes that
         //impossible to say.
+        //
+        //AND FOR A WHILE BOTH BUTTONS DID THE SAME THING, because `workspaceAdd`
+        //called the same function `workspaceUse` does: "Remember it" moved the
+        //whole app to another folder with no dialog. ../workspace/server.js says
+        //what changed. Here the consequence is that the opening path now goes
+        //through `use()` — the same confirm as the "Open it" on every card —
+        //rather than calling the action itself.
+        //
         //NAMED rememberFolder AND NOT remember. There is a service called
         //`remember` — where somebody was looking, kept across restarts — and
         //this is a button that files a folder with the dashboard. Two unrelated
         //things under one word in one app is how the wrong one gets reached for.
-        function rememberFolder(andOpen) {
-            var d = where.trim();
+        function rememberFolder(andOpen, folder) {
+            var d = String(folder == null ? where : folder).trim();
             if (!d) { setSaid({ bad: true, text: 'Say which folder.' }); return; }
             tell(okc.call('workspaceAdd', { dir: d })).then(function () {
                 setWhere('');
-                if (andOpen) return tell(okc.call('workspaceUse', { dir: d }));
+                if (andOpen) use({ name: nameOf(d), dir: d });
             }).catch(function () { /* already reported */ });
         }
 
@@ -177,6 +197,10 @@ module.exports = function workspace(theme, okc) {
                                 <Button kind="ok" onClick={function () { rememberFolder(false); }}>Remember it</Button>
                                 <Button onClick={function () { rememberFolder(true); }}>Remember and open it</Button>
                             </div>
+                            {/* WHICH OF THE TWO DOES WHAT, said where the two
+                                are. They were the same act for long enough that
+                                the difference is worth a sentence. */}
+                            <Note>Remembering puts it on the list and changes nothing else. Opening is the act that makes every other tab a statement about that folder, and it asks first.</Note>
                             {/* THE FOLDER PICKER IS NOT PORTED. Over there a
                                 Choose button opens the native dialog, which is an
                                 nw.js affordance a browser tab does not have —
