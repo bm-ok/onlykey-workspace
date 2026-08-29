@@ -37,8 +37,11 @@ do none of it:
 | The drills | off, and the sandbox owner list is empty |
 
 Also per folder: the repositories and everything learnt about them, tasks,
-judgements, lines, PR cuts, drafts and what was sent, the jobs, and the
-caches.
+judgements, lines, PR cuts, drafts and what was sent, the jobs, the caches,
+and **everything the supervisor keeps** — its conversation, its todo list,
+its notebook and any skill it has proposed. A todo reading "#12 needs a
+judge" names a task that exists in one workspace and is somebody else's
+number in the next.
 
 **Nothing is thrown away.** What is set for one folder stays with it —
 switch back and it is as you left it. The Workspace tab shows the live
@@ -46,11 +49,14 @@ answer for the folder open now, under *What this workspace is armed to do*.
 
 ## What stays with this computer
 
-The machines, the keys and sign-ins, the guards, the supervisor's chat, todo
-and triage, its proposed skills, and the contract and prompt library. Those
-are facts about this installation rather than about the work, so they are
-there whichever folder is open — including the supervisor's todo list, which
-will still be showing the last project's when you open a new one.
+The machines, the keys and sign-ins, the guards, and the contract and prompt
+library. Those are facts about this installation rather than about the work,
+so they are there whichever folder is open.
+
+The supervisor's own state used to be on that list, and it was wrong: a
+second workspace opened with the first one's todo list waiting in it, and
+its conversation still on screen. The machine is one per host; what it was
+asked to do is about a folder.
 
 ## What happens on screen
 

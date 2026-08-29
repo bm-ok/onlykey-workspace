@@ -35,6 +35,12 @@ async function anApp() {
 
     let state = null;
     await statePlugin({ dataDir: { at: (...p) => path.join(dir, ...p) } }, async (_e, s) => { state = s.state; });
+    //WHERE WE ARE, said the way ../../src/app/workspace says it. Without
+    //this the supervisor's documents have nowhere to go: they follow the
+    //open folder, and nothing here would have opened one.
+    const here = path.join(dir, 'a-workspace');
+    state.follow(async () => here);
+    state.at(here);
 
     await supervisorPlugin(
         {
@@ -48,7 +54,13 @@ async function anApp() {
         },
         async () => {}
     );
-    return { actions, dir, said };
+    return {
+        actions, dir, said,
+        //MOVED BY THE TEST, the way ../../src/app/workspace moves it: both
+        //doors, because a reader that waits and a reader that cannot must
+        //agree about where they are.
+        go: (to) => { state.follow(async () => to); state.at(to); }
+    };
 }
 
 //COUNTED, NOT RANDOM — and taken from the highest ever used, so removing one does
@@ -194,4 +206,55 @@ test('the record says when something moved, and not when it was reworded', async
     await actions.call('todoSet', { id: 'T1', state: 'doing' });
     assert.equal(said.length, 2);
     assert.match(said[1], /open to doing, by the window/);
+});
+
+//---------------------------------------------------------------------------
+//A TODO IS ABOUT A FOLDER OF REPOSITORIES.
+//
+//All of this was in the host's drawer, on the argument that a supervisor is one
+//machine for this host rather than one per folder. That is true of the MACHINE
+//and says nothing about what it was asked to do: "#12 needs a judge" names a
+//task that exists in one workspace and is somebody else's number in the next.
+//
+//THE WAY IT SHOWED was somebody opening a second workspace, finding the first
+//one's list waiting for them, and reaching for Clear on a conversation that
+//belonged to a project they were no longer in.
+//---------------------------------------------------------------------------
+
+test('a list belongs to the folder it was written in, and does not follow', async () => {
+    const app = await anApp();
+
+    await app.actions.call('todoAdd', { what: 'judge the cut on #12' });
+    await app.actions.call('todoAdd', { what: 'answer the maintainer' });
+    assert.equal((await app.actions.call('todos', {})).todos.length, 2);
+
+    app.go(path.join(app.dir, 'another-project'));
+    const next = await app.actions.call('todos', {});
+    assert.equal(next.todos.length, 0,
+        'the last project’s todo list was waiting in a folder it says nothing about');
+
+    //AND WRITING HERE DOES NOT REACH BACK, which is the other half: two lists,
+    //not one list with two projects in it.
+    await app.actions.call('todoAdd', { what: 'set this one up' });
+    assert.equal((await app.actions.call('todos', {})).todos.length, 1);
+
+    app.go(path.join(app.dir, 'a-workspace'));
+    const back = await app.actions.call('todos', {});
+    assert.equal(back.todos.length, 2, 'coming back did not find what was left here');
+    assert.deepEqual(back.todos.map((t) => t.what).sort(),
+        ['answer the maintainer', 'judge the cut on #12']);
+});
+
+test('with no workspace open, the list is empty and nothing can be written to it', async () => {
+    const app = await anApp();
+    await app.actions.call('todoAdd', { what: 'something' });
+
+    app.go(null);
+    assert.equal((await app.actions.call('todos', {})).todos.length, 0,
+        'a list was shown for a folder that is not open');
+
+    //A READ WITH NOWHERE TO READ FROM IS EMPTY; A WRITE REFUSES. Somewhere
+    //quietly is how a message ends up kept against the wrong project.
+    await assert.rejects(() => app.actions.call('todoAdd', { what: 'nowhere' }),
+        /No workspace is open/);
 });

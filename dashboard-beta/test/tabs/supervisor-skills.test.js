@@ -73,18 +73,33 @@ function aHostWith(files) {
         //this file had ever asked one for anything. `skillPropose` keeps what
         //is waiting in one, so the fake now answers the interface the real one
         //has rather than a shape nobody checked.
-        state: {
-            app: {
+        //A DOC KEPT BY NAME, AND THE SAME ONE EVERY TIME IT IS ASKED FOR.
+        //
+        //This handed back a NEW empty store on every call, so two reads of the
+        //same document disagreed and nothing written could be read back. It
+        //passed because the supervisor asked once at startup and held on to what
+        //it got. It does not any more: what it keeps follows the open workspace,
+        //so the document is resolved per read and per write — which is exactly
+        //the shape this stub could not answer.
+        state: (function () {
+            const held = {};
+            const doc = (name) => ({
+                read: (or) => (name in held ? held[name] : (or === undefined ? {} : or)),
+                write: (v) => { held[name] = v; return v; },
+                forget: () => { delete held[name]; return true; },
+                path: kept + '/' + name + '.json'
+            });
+            return {
                 //WHERE COPIES OF WHAT WAS APPROVED GO. ../../src/app/core/versions
                 //roots itself here, so without it every version is dropped with a
                 //warning and this file would prove nothing about keeping any.
-                where: kept,
-                doc: () => {
-                    let held = {};
-                    return { read: (or) => (held === null ? (or || {}) : held), write: (v) => { held = v; } };
-                }
-            }
-        },
+                app: { where: kept, doc },
+                //AND THE OPEN FOLDER'S OWN, which is where the supervisor keeps
+                //everything now. `now` is the synchronous door; see
+                //../../src/app/core/state/main.js for why it had to exist.
+                here: { now: doc, doc: async (n) => doc(n), open: async () => true }
+            };
+        })(),
         ours: {},
         guestApi: { api: () => () => {} },
         //THE REAL ONE, NOT A FAKE. What has to hold is that a save and an

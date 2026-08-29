@@ -68,11 +68,67 @@ async function plugin(imports, register) {
     //suite does exactly that. See ../core/okc/server.js.
     if (!actions) return register(null, {});
 
-    //IN THE HOST'S DRAWER, NOT THE WORKSPACE'S. What somebody is carrying spans
-    //whatever folder they happened to be looking at — the same reasoning the app
-    //being ported from gives for keeping this beside the triage notebook rather
-    //than per workspace. ../core/state has both; this one is `app`.
-    var todos = makeTodos(imports.state.app.doc('todo'));
+    //---- EVERYTHING THE SUPERVISOR KEEPS IS ABOUT A FOLDER OF REPOSITORIES ----
+    //
+    //EVERY ONE OF THESE WAS IN THE HOST'S DRAWER, and each had an argument for
+    //it: a supervisor is one machine for this host, a skill is what it IS, a
+    //train of thought spans whatever folder it was looking at. They read well
+    //and they were wrong, and the way that showed was somebody opening a second
+    //workspace and finding the first one's todo list waiting for them — then
+    //reaching for Clear, on a conversation belonging to a project they were no
+    //longer in.
+    //
+    //A TODO IS "#12 needs a judge", A NOTEBOOK LINE IS ABOUT A BRANCH, AND THE
+    //CONVERSATION IS ABOUT WORK. Every one of them names something that only
+    //exists in one workspace. Carrying them across is not continuity, it is two
+    //projects' worth of work in one list with nothing saying which is which.
+    //
+    //`here.now` RATHER THAN `here.doc`, and see ../core/state for why that had to
+    //be built: these are handed to helpers at startup and every read and write
+    //through them is synchronous, so a promise cannot be threaded through
+    //without rewriting three files that have nothing to do with workspaces.
+    //
+    //A READ WITH NOWHERE TO READ FROM ANSWERS EMPTY; A WRITE REFUSES. The
+    //Supervisor tab is switched off while no workspace is open, so an empty read
+    //is a pane nobody can reach — but a write that went somewhere quietly would
+    //be a message kept in the wrong project, which is the whole defect again.
+    //ONLY THE TWO REFUSALS IT KNOWS ARE SWALLOWED, and this is not fussiness —
+    //it is the whole difference between "nothing kept here" and "this is broken".
+    //
+    //THE FIRST VERSION CAUGHT EVERYTHING, and the first thing it hid was real:
+    //`here.now` did not exist yet, because it lives in a MAIN half and the app
+    //had not been restarted. Every read threw a TypeError, every TypeError
+    //became the fallback, and the conversation read as empty — a structural
+    //failure wearing the appearance of data. It took a restart to find, and
+    //nothing on the way said anything at all.
+    function nothingKept(e) {
+        var why = String((e && e.message) || e);
+        return /No workspace is open/i.test(why) || /has not been worked out yet/i.test(why);
+    }
+
+    function following(name) {
+        function doc() { return imports.state.here.now(name); }
+        return {
+            get path() {
+                try { return doc().path; }
+                catch (e) { if (nothingKept(e)) return null; throw e; }
+            },
+            read: function (fallback) {
+                try { return doc().read(fallback); }
+                catch (e) { if (nothingKept(e)) return fallback; throw e; }
+            },
+            //A WRITE NEVER SWALLOWS. Somewhere quietly is how a message ends up
+            //kept against the wrong project, which is the defect this whole
+            //change is about.
+            write: function (value) { return doc().write(value); },
+            forget: function () {
+                try { return doc().forget(); }
+                catch (e) { if (nothingKept(e)) return false; throw e; }
+            }
+        };
+    }
+
+    var todos = makeTodos(following('todo'));
 
     //THE REGISTER AND THE SIGN-INS, which is what "can it run" is made of. See
     //`supervisorState` below: a supervisor with no credential is not a broken
@@ -80,15 +136,20 @@ async function plugin(imports, register) {
     var ours = imports.ours;
     var guests = imports.guests;
 
-    //AND THE CONVERSATION, in the host's drawer beside the list. It is host-wide
-    //in the app being ported from too — a supervisor is one machine for this
-    //host, not one per folder somebody happens to be looking at.
-    var talk = makeSaid(imports.state.app.doc('chat'), imports.state.app.doc('chat-read'),
-        imports.state.app.doc('chat-from'));
+    //AND THE CONVERSATION, beside the list, in the same folder's drawer.
+    //
+    //IT WAS HOST-WIDE, on the argument that a supervisor is one machine for this
+    //host rather than one per folder. That is true of the MACHINE and says
+    //nothing about what was said to it: every line here is about work, and work
+    //is about a workspace. Three of the four things the conversation refers to —
+    //a task number, a branch, a cut — do not exist in the next folder along.
+    var talk = makeSaid(following('chat'), following('chat-read'), following('chat-from'));
 
-    //AND THE NOTEBOOK, in the host's drawer for the reason ./carrying.js gives:
-    //a supervisor's train of thought spans whatever folder it was looking at.
-    var notebook = makeCarrying(imports.state.app.doc('triage'));
+    //AND THE NOTEBOOK, in the same folder's drawer. ./carrying.js argued that a
+    //supervisor's train of thought spans whatever folder it was looking at —
+    //but what it is carrying is lines like "#12 is waiting on a judge", and #12
+    //is a number in one workspace and somebody else's task in the next.
+    var notebook = makeCarrying(following('triage'));
 
     //---- WHERE A PROPOSED SKILL WAITS --------------------------------------
     //
@@ -101,10 +162,14 @@ async function plugin(imports, register) {
     //So a proposal lives in this app's own drawer, which nothing serves, and
     //becomes the served file only when a person moves it there.
     //
-    //IN THE HOST'S DRAWER RATHER THAN THE WORKSPACE'S. A skill is what the
-    //supervisor IS; it does not change because somebody opened a different
-    //folder of repositories.
-    var proposals = imports.state.app.doc('skill-proposals');
+    //IN THE OPEN FOLDER'S DRAWER. The argument for the host's was that a skill
+    //is what the supervisor IS and does not change because somebody opened a
+    //different folder — but ../bootstrap already keeps the APPROVED skill per
+    //workspace ("no workspace is open, so there is nowhere to keep a skill"), so
+    //a proposal kept host-wide was a proposal for a file it could not name. The
+    //two now live in the same place, which is the only way the pane can show a
+    //proposal beside the thing it proposes changing.
+    var proposals = following('skill-proposals');
 
 
     //---- AND WHAT WAS DECIDED ABOUT THEM -----------------------------------
@@ -123,7 +188,7 @@ async function plugin(imports, register) {
     //THE LAST FEW, AND NOT A LOG. What is useful is the shape of recent answers
     //— that three were turned down for the same reason is worth knowing, and the
     //one from March is not.
-    var decided = imports.state.app.doc('skill-decided');
+    var decided = following('skill-decided');
     var KEEPS = 12;
 
     function decide(which, what, why, because) {

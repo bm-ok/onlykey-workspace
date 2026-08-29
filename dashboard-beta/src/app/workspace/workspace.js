@@ -391,12 +391,13 @@ module.exports = function workspace(theme, okc) {
                             <Kv>
                                 <KvRow label="Follows the folder">
                                     the repositories and what was learnt about them, tasks, judgements, lines,
-                                    PR cuts, drafts and what was sent, the jobs, and every switch on Settings
-                                    except the supervisor sign-in
+                                    PR cuts, drafts and what was sent, the jobs, the supervisor&rsquo;s
+                                    conversation, todo list, notebook and proposed skills, and every switch on
+                                    Settings except the supervisor sign-in
                                 </KvRow>
                                 <KvRow label="Stays with this computer">
-                                    the machines, the keys and sign-ins, the guards, the supervisor&rsquo;s chat,
-                                    todo and triage, its proposed skills, and the contract and prompt library
+                                    the machines, the keys and sign-ins, the guards, and the contract and
+                                    prompt library
                                 </KvRow>
                             </Kv>
                             <Note>Kept here: <Mono>{state.where || '?'}</Mono></Note>

@@ -97,8 +97,17 @@ module.exports = function todos(doc) {
         return { next: 0, rows: [] };
     }
 
+    //A WRITE THAT DID NOT HAPPEN IS NOT A WRITE.
+    //
+    //THIS SWALLOWED THE FAILURE — "the answer still stands for this call" — and
+    //it was defensible while the only way to fail was a disk hiccup: the caller
+    //got its answer and the next read simply had one fewer row. It stopped being
+    //defensible when this list started following the open folder, because now
+    //there is a failure that means "there is nowhere to keep this", and
+    //swallowing it makes `todoAdd` answer "T4, added" having kept nothing at
+    //all. A list that reports success and forgets is worse than one that refuses.
     function write(kept) {
-        try { doc.write(kept); } catch (e) { /* the answer still stands for this call */ }
+        doc.write(kept);
         return kept;
     }
 

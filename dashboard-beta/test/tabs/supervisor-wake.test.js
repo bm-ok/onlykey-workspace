@@ -63,7 +63,17 @@ function aWorld(over) {
                 }
             },
             log: { on: () => ({ good() {}, warn() {}, bad() {}, info() {} }) },
-            state: { app: { doc: () => makeDoc() } },
+            //ONE DOC PER NAME, AND THE SAME ONE EACH TIME. `() => makeDoc()`
+            //handed back a fresh empty store on every call, which was invisible
+            //while the supervisor asked once at startup and held what it got.
+            //What it keeps follows the open workspace now, so the document is
+            //resolved per read and per write — and a stub that forgets between
+            //them makes every conversation empty.
+            state: (function () {
+                const docs = {};
+                const doc = (name) => (docs[name] || (docs[name] = makeDoc()));
+                return { app: { doc }, here: { now: doc, doc: async (n) => doc(n), open: async () => true } };
+            })(),
             ours: { read: () => [], canBe: () => true },
             guests: {
                 whichSupervisor: (name) => {

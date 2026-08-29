@@ -167,7 +167,24 @@ test('the pane is shown exactly what the supervisor is told', async () => {
     await plugin({
         app: { host: { actions: { define: (name, spec) => { defined.set(name, spec); return () => {}; } } } },
         log: { on: () => ({ good() {}, warn() {}, bad() {}, info() {} }) },
-        state: { app: { doc: () => ({ get: () => ({}), set() {} }) } },
+        //A DOC IS read/write, KEPT BY NAME. This answered `get`/`set`, which is
+        //not the interface a document has -- it never mattered because nothing in
+        //this file ever read one. The supervisor keeps what it keeps in the open
+        //workspace now and resolves the document per call, so a stub of the wrong
+        //shape stops being invisible the moment anything asks it for anything.
+        state: (function () {
+            const held = {};
+            const doc = (name) => ({
+                read: (or) => (name in held ? held[name] : (or === undefined ? {} : or)),
+                write: (v) => { held[name] = v; return v; },
+                forget: () => { delete held[name]; return true; },
+                path: null
+            });
+            return {
+                app: { doc, where: null },
+                here: { now: doc, doc: async (n) => doc(n), open: async () => true }
+            };
+        })(),
         ours: {},
         //REGISTERING THE DOOR IS NOT WHAT THIS IS ABOUT, so it is accepted and
         //dropped. A stub that threw would make this a test of the door.

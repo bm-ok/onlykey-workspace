@@ -41,10 +41,20 @@ async function plugin(imports, register) {
                 app: { doc: function () { return blank; }, where: null },
                 here: {
                     doc: async function () { return blank; },
+                    //THE SYNCHRONOUS DOOR REFUSES RATHER THAN ANSWERING BLANK.
+                    //Its callers keep a conversation and a todo list, and the
+                    //one thing worse than "there is nowhere to keep this" is a
+                    //store that takes what it is given and forgets it.
+                    now: nowhere,
                     open: async function () { return false; },
                     where: async function () { return null; }
                 },
                 follow: function () { return function () {}; },
+                //NOTHING TO TELL, AND SAYING SO COSTS NOTHING. ../../workspace
+                //pushes the open folder here on every change; with no main half
+                //there is nowhere for it to land, and that is not a failure
+                //worth propagating into a workspace being opened.
+                at: function () { },
                 slugFor: function (d) { return String(d); },
                 where: null
             }

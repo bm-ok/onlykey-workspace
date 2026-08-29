@@ -124,6 +124,7 @@ async function plugin(imports, register) {
         was = want;
         at = Date.now();
         saidBorrowing = false;
+        tell(want);
         return want;
     }
 
@@ -337,6 +338,7 @@ async function plugin(imports, register) {
         kept.write({ dir: null, at: new Date().toISOString(), known: mine.known, closed: true });
         was = null;
         at = 0;
+        tell(null);
         return { open: false };
     }
 
@@ -355,7 +357,7 @@ async function plugin(imports, register) {
             closed: stillOpen ? mine.closed : true,
             known: left
         });
-        if (!stillOpen) { was = null; at = 0; }
+        if (!stillOpen) { was = null; at = 0; tell(null); }
         return { forgotten: mine.known.length - left.length, open: !!stillOpen };
     }
 
@@ -408,6 +410,16 @@ async function plugin(imports, register) {
     //it on every call, changing workspace changes the drawer with nothing
     //subscribing and nothing reloading.
     imports.state.follow(function () { return dir().catch(function () { return null; }); });
+
+    //AND TOLD SYNCHRONOUSLY AS WELL, because some of what is kept per workspace
+    //cannot wait to find out where it goes — see `here.now` in ../core/state.
+    //Every path that changes the folder says so; this is the one that says it at
+    //startup, when nothing has changed yet and the answer is still needed.
+    function tell(open) {
+        if (imports.state.at) imports.state.at(open || null);
+        return open;
+    }
+    dir().then(tell, function () { tell(null); });
 
     //---- the surface --------------------------------------------------------
     //

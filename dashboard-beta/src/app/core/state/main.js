@@ -141,9 +141,39 @@ async function plugin(imports, register) {
     //it arrives this way round rather than being asked for.
     var asking = null;
 
+    //---- AND THE SAME ANSWER, SYNCHRONOUSLY --------------------------------
+    //
+    //WHY THIS HAS TO EXIST. `here.doc` is async because working out which folder
+    //is open can go down a relay, and that is right for anything that can wait.
+    //Plenty cannot: ../../supervisor hands one document each to three helpers
+    //built at startup, and every read and write through them is synchronous —
+    //`talk.say`, `todos.all`, the notebook. Those were `state.app`, so the
+    //supervisor's conversation, its todo list and its notebook were the HOST'S,
+    //and somebody who opened a second workspace found the first one's todos
+    //waiting for them.
+    //
+    //`undefined` MEANS NOT WORKED OUT YET, WHICH IS NOT `null`. Falling back to
+    //the app's drawer while the answer is unknown would write a workspace's
+    //conversation into the host's — the exact contamination this file exists to
+    //stop — so it refuses instead, and the refusal is a moment at startup rather
+    //than a state anything stays in.
+    var atNow;
+
+    //PUSHED BY ../../workspace THE MOMENT IT CHANGES, rather than polled. It is
+    //the only thing that can change it from inside this app, it knows
+    //synchronously, and a cache that lags a switch would write into the folder
+    //before last.
+    function at(dir) { atNow = dir || null; }
+
     async function openDir() {
         if (!asking) return null;
-        try { return (await asking()) || null; }
+        try {
+            var open = (await asking()) || null;
+            //EVERY RESOLVE KEEPS THE SYNCHRONOUS ANSWER HONEST, which covers the
+            //borrow: nobody here chose that folder, so nobody pushed it.
+            atNow = open;
+            return open;
+        }
         catch (e) {
             //A WORKSPACE THAT CANNOT BE DETERMINED IS NOT AN EMPTY ONE. Falling
             //back to the app drawer here would write a workspace's tasks into
@@ -177,6 +207,24 @@ async function plugin(imports, register) {
                     return docIn(ready(path.join(whereWorkspaces, slugFor(open))), name);
                 },
 
+                //THE SAME DRAWER, WITHOUT WAITING. For a caller that cannot —
+                //see `atNow` above. It refuses in two different ways on purpose:
+                //"not worked out yet" is a moment, "none open" is a state, and
+                //treating the first as the second is how the host's drawer ends
+                //up holding a workspace's conversation.
+                now: function (name) {
+                    if (atNow === undefined) {
+                        throw new Error('Which workspace is open has not been worked out yet, so there is '
+                            + 'nowhere to keep "' + name + '" — ask again in a moment.');
+                    }
+                    if (!atNow) {
+                        throw new Error(
+                            'No workspace is open, so there is nowhere to keep "' + name + '". '
+                            + 'This is about a workspace rather than about this host — see state.app for what is not.');
+                    }
+                    return docIn(ready(path.join(whereWorkspaces, slugFor(atNow))), name);
+                },
+
                 //WHETHER THERE IS ONE AT ALL, so a caller can ask before it
                 //decides — rather than reading a refusal as a fault.
                 open: async function () { return !!(await openDir()); },
@@ -193,6 +241,12 @@ async function plugin(imports, register) {
                 asking = fn;
                 return function () { if (asking === fn) asking = null; };
             },
+
+            //AND SAYS SO THE MOMENT IT CHANGES, for `here.now` above. Pushed
+            //rather than polled: ../../workspace is the only thing that can
+            //change it from inside this app and knows synchronously, and a cache
+            //that lags a switch writes into the folder before last.
+            at: at,
 
             slugFor: slugFor,
             where: appDir
