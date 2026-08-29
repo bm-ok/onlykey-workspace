@@ -1151,16 +1151,25 @@ async function plugin(imports, register) {
     //
     //FAILING SHUT. If the settings cannot be read, nobody is trusted and no
     //marker is set, which is the state that makes everything a quotation.
-    var howToRead = { trusted: [], marker: '' };
+    var howToRead = { trusted: [], marker: '', as: null };
 
     async function readSettings() {
+        //AND WHICH ACCOUNT THIS HOST POSTS AS, which is the third question a
+        //request has to answer (see ../../github/trust.js). Asked of
+        //`githubHeld` rather than of GitHub: it reads what was recorded when
+        //the token was last checked, so this costs nothing and follows a token
+        //swap the moment one happens. Not through `keys` — this plugin may not
+        //reach a credential, and test/repositories holds it to that.
+        var as = null;
+        try { as = (((actions && await actions.call('githubHeld', {})) || {}).login) || null; } catch (e) { as = null; }
         try {
             var kept = await imports.settings.read();
             howToRead = {
                 trusted: Array.isArray(kept.githubTrusted) ? kept.githubTrusted : [],
-                marker: typeof kept.githubMarker == 'string' ? kept.githubMarker : ''
+                marker: typeof kept.githubMarker == 'string' ? kept.githubMarker : '',
+                as: as
             };
-        } catch (e) { howToRead = { trusted: [], marker: '' }; }
+        } catch (e) { howToRead = { trusted: [], marker: '', as: as }; }
         return howToRead;
     }
 

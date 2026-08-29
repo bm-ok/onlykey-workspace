@@ -396,3 +396,78 @@ test('the conversation names the role beside the name, and stays quiet for the c
     assert.match(out, /Reply by bob on x/, 'the community got a label, which makes the label meaningless');
     assert.match(out, /Reply by dependabot\[bot\] \(bot\)/);
 });
+
+//---------------------------------------------------------------------------
+//AND WHETHER IT WAS SAID TO THIS HOST AT ALL.
+//
+//The marker alone said "somebody used the word", and with one account for both
+//sides that read this host's own comments back as requests. A request is
+//addressed: it names the account this host posts as.
+//---------------------------------------------------------------------------
+
+const ADDRESSED = { trusted: ['bmatusiak'], marker: 'okc', as: 'okc-bot' };
+const reading = (body, over) => trust.readingOf(
+    Object.assign({ number: 9, on: 'me/repo', by: 'bmatusiak', body: body, labels: [] }, (over || {}).entry),
+    Object.assign({}, ADDRESSED, (over || {}).how)
+);
+
+test('trusted, marked and addressed to this host is a request, and it says which tag', () => {
+    const r = reading('[FROM:bmatusiak] @okc-bot okc: revalidate this one');
+    assert.equal(r.kind, 'request');
+    assert.equal(r.tag, 'okc');
+    assert.match(r.why, /addressed to "@okc-bot"/);
+    //THE CLAIM AGREES WITH THE AUTHOR, so there is nothing to say about it.
+    assert.equal(r.claims, undefined);
+});
+
+test('the marker without the address is not a request, and the sentence says what one reads like', () => {
+    const r = reading('okc: revalidate this one');
+    assert.equal(r.kind, 'evidence');
+    assert.equal(r.markedIt, true);
+    assert.match(r.why, /not addressed to "@okc-bot"/);
+    assert.match(r.why, /reads "@okc-bot okc: …"/);
+});
+
+test('the address is a whole word: another account whose name starts the same is not this host', () => {
+    assert.equal(reading('@okc-bots okc: do it').kind, 'evidence');
+    assert.equal(reading('@okc-bot-2 okc: do it').kind, 'evidence');
+    //AND CASE DOES NOT MATTER, because GitHub logins do not care either.
+    assert.equal(reading('@OKC-Bot okc: do it').kind, 'request');
+    //IN THE TITLE COUNTS TOO -- a title is text somebody wrote.
+    assert.equal(reading('okc: do it', { entry: { title: 'hey @okc-bot' } }).kind, 'request');
+});
+
+test('with no account known, the two older questions stand on their own', () => {
+    const r = reading('okc: do it', { how: { as: null } });
+    assert.equal(r.kind, 'request', 'an unanswerable third question became a refusal');
+    assert.equal(r.tag, 'okc');
+});
+
+test('the account this host posts as is never the one asking', () => {
+    //NOT TRUSTED -- the ordinary state once the app has its own account.
+    const r = reading('@okc-bot okc: do it', { entry: { by: 'okc-bot' } });
+    assert.equal(r.kind, 'evidence');
+    assert.match(r.why, /is the account this host posts as/);
+    assert.match(r.why, /never a request to itself/);
+
+    //AND WHEN A PERSON HAS DELIBERATELY TRUSTED IT -- one account for both
+    //sides, which is what the inbox warns about rather than what this breaks.
+    const both = reading('@okc-bot okc: do it', {
+        entry: { by: 'okc-bot' },
+        how: { trusted: ['okc-bot'] }
+    });
+    assert.equal(both.kind, 'request');
+});
+
+test('what the text claims about who wrote it is carried and decides nothing', () => {
+    const r = reading('[FROM:bmatusiak] @okc-bot okc: do it', { entry: { by: 'a-stranger' } });
+    assert.equal(r.kind, 'evidence', 'a line of text made somebody trusted');
+    assert.equal(r.claims, 'bmatusiak');
+    assert.match(r.why, /says it is from "bmatusiak"/);
+    assert.match(r.why, /"a-stranger" wrote it/);
+
+    //A CLAIM THAT AGREES IS NOT A DISAGREEMENT, and is not mentioned.
+    const same = reading('[FROM: @bmatusiak ] @okc-bot okc: do it');
+    assert.equal(same.kind, 'request');
+    assert.equal(same.claims, undefined);
+});

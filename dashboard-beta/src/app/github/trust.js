@@ -86,6 +86,41 @@ function marked(entry, marker) {
     return new RegExp('(^|[^A-Za-z0-9_])' + safe + '\\s*:', 'i').test(text);
 }
 
+//---- AND WHETHER IT WAS SAID TO THIS HOST AT ALL ---------------------------
+//
+//A REQUEST IS ADDRESSED. The marker alone said "somebody used the word", and
+//with one account for both sides that was enough to read this host's OWN
+//comments back as requests: everything it posts is written by a trusted login,
+//and nothing on the way out strips the marker. The address closes that by
+//construction — a comment is for this host when it names the account this host
+//posts as, which GitHub tells us and this app already shows on Keys.
+//
+//    [FROM:bmatusiak] @okc-bot okc: revalidate this one
+//                     ^^^^^^^^ ^^^^
+//                     the address, and the tag
+//
+//WHOLE WORD, because `@okc-bots` is a different account, and case-insensitively
+//because GitHub logins are. `null` when there is no account to check against.
+function addressed(entry, as) {
+    var who = String(as == null ? '' : as).trim();
+    if (!who) return null;
+    var safe = who.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var text = String((entry && entry.body) || '') + '\n' + String((entry && entry.title) || '');
+    return new RegExp('@' + safe + '(?![A-Za-z0-9-])', 'i').test(text);
+}
+
+//---- AND WHAT THE TEXT CLAIMS ABOUT WHO WROTE IT ---------------------------
+//
+//`[FROM:somebody]` IS A CONVENIENCE, NEVER A FACT. A person relaying a message
+//may write it, and this app reads it the way it reads everything else that
+//arrives as text: it is carried and it decides nothing. The author is the one
+//GitHub named. Saying so on the reading is worth more than dropping it, because
+//somebody looking at a thread wants to know when the two disagree.
+function claimsFrom(entry) {
+    var m = /\[\s*FROM\s*:\s*@?([A-Za-z0-9][A-Za-z0-9-]*)\s*\]/i.exec(String((entry && entry.body) || ''));
+    return m ? m[1] : null;
+}
+
 //---- AND WHETHER ONE OF THEM IS THE PERSON WHO WROTE THIS ------------------
 //
 //AN ENTRY IS EITHER A LOGIN OR `{login, id}`, and the second is what the window
@@ -139,6 +174,22 @@ function readingOf(entry, how) {
     var who = (entry && entry.by) || null;
     var trusted = trusts(o.trusted, who, entry && entry.byId);
 
+    //WHO THE TEXT SAYS IT IS FROM, when that is not who wrote it. Carried on
+    //every answer below and deciding none of them.
+    var claimed = claimsFrom(entry);
+    var claims = (claimed && !same(claimed, who)) ? claimed : null;
+    function said(r) {
+        if (!claims) return r;
+        r.claims = claims;
+        r.why = r.why + '. The text says it is from "' + claims + '"; GitHub says "'
+            + (who || 'nobody') + '" wrote it, and the author is the one GitHub named';
+        return r;
+    }
+
+    //AND WHETHER THE WRITER IS THIS HOST ITSELF, which is a different sentence
+    //from "not on the list" and the only one of the two worth reading twice.
+    var self = same(who, o.as);
+
     //WHETHER THE MARKER WAS USED, SEPARATELY FROM WHETHER IT COUNTED. Carried
     //because a person should be able to SEE somebody untrusted using their
     //marker — that is the closest thing to a signal that anybody is trying this
@@ -150,32 +201,54 @@ function readingOf(entry, how) {
     var saidIt = marked(entry, o.marker);
 
     if (!trusted) {
-        return {
+        return said({
             kind: 'evidence',
             by: who,
             markedIt: saidIt,
-            why: who
-                ? '"' + who + '" is not on this host\'s list of people whose words may be read as a request'
-                : 'nobody is recorded as having written it'
-        };
+            why: self
+                ? '"' + who + '" is the account this host posts as — its own words are never a request to itself'
+                : who
+                    ? '"' + who + '" is not on this host\'s list of people whose words may be read as a request'
+                    : 'nobody is recorded as having written it'
+        });
     }
 
     if (!saidIt) {
-        return {
+        return said({
             kind: 'evidence',
             by: who,
             markedIt: false,
             why: '"' + who + '" is trusted, and this does not carry the "' + String(o.marker || '')
                 + '" marker — so it is something they wrote, not something they asked for'
-        };
+        });
     }
 
-    return {
+    //ADDRESSED, WHEN THERE IS AN ADDRESS TO CHECK AGAINST. `null` is "this host
+    //does not know what account it posts as" — no token, or a check that never
+    //ran — and an unanswerable question is not a refusal: the two older
+    //questions stand on their own, as they did before there was a third.
+    var to = addressed(entry, o.as);
+    if (to === false) {
+        return said({
+            kind: 'evidence',
+            by: who,
+            markedIt: true,
+            why: '"' + who + '" is trusted and used the "' + String(o.marker || '') + '" marker, but this is not '
+                + 'addressed to "@' + String(o.as) + '", the account this host posts as — a request to this host '
+                + 'reads "@' + String(o.as) + ' ' + String(o.marker || '') + ': …"'
+        });
+    }
+
+    return said({
         kind: 'request',
         by: who,
         markedIt: true,
+        //WHICH TAG IT WAS. One today; the day there are several meaning
+        //different things, this answer already says which was used.
+        tag: String(o.marker || '') || null,
         why: '"' + who + '" is trusted and marked it with "' + String(o.marker || '') + '"'
-    };
+            + (to ? ', addressed to "@' + String(o.as) + '"' : '')
+    });
 }
 
 //---- AND THE WORDS THEMSELVES, WRAPPED SO THEY CANNOT BE MISTAKEN ----------
