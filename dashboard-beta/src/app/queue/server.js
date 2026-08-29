@@ -201,7 +201,7 @@ async function plugin(imports, register) {
     //read must not be the thing that stops the queue existing. Off is the
     //answer that needs no explanation.
     var autoStart = false;
-    try { autoStart = imports.settings.read().queueAutoStart === true; }
+    try { autoStart = (await imports.settings.read()).queueAutoStart === true; }
     catch (e) { autoStart = false; }
 
     cron.add({
@@ -1561,6 +1561,15 @@ async function plugin(imports, register) {
             about: 'What the queue is doing: what is waiting, in what order, and which machines could take it',
             run: async function () {
                 unreachable = [];
+
+                //READ UP HERE BECAUSE IT IS A QUESTION ABOUT THE OPEN FOLDER
+                //NOW. The switch followed the workspace, so answering it means
+                //resolving which one is open — which cannot be done in the
+                //middle of building an object literal.
+                var willAutoStart = false;
+                try { willAutoStart = (await imports.settings.read()).queueAutoStart === true; }
+                catch (e) { willAutoStart = false; }
+
                 var machines = await relayed('vmList');
                 var vms = (machines && machines.vms) || [];
 
@@ -1709,10 +1718,7 @@ async function plugin(imports, register) {
                     //happening now. Switching it on does not start the queue —
                     //there is a Start for that, and conflating them would make
                     //one press mean two things.
-                    autoStart: (function () {
-                        try { return imports.settings.read().queueAutoStart === true; }
-                        catch (e) { return false; }
-                    })(),
+                    autoStart: willAutoStart,
 
                     //AND WHAT COULD NOT BE READ, NAMED. An empty board with this
                     //list on it is a different sentence from an empty board

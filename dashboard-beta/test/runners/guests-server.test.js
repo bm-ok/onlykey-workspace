@@ -60,7 +60,13 @@ async function aHost() {
         secret,
         dataDir: { at: (...p) => path.join(home, ...p) },
         settings: {
-            read: () => written,
+            //THE SHAPE THE REAL ONE HAS, and both halves matter. `read` is async
+            //because most settings follow the open folder now; `host` is the
+            //synchronous half for the few that do not, and it is the one this
+            //plugin uses — a stand-in without it made "which sign-in" answer
+            //null, which reads exactly like nothing having been chosen.
+            read: async () => written,
+            host: () => written,
             write: async (patch) => { Object.assign(written, patch); return written; }
         },
 

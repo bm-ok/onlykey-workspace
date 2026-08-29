@@ -61,8 +61,12 @@ async function plugin(imports, register) {
         secret: imports.secret,
         //WHICH SUPERVISOR SIGN-IN IS CHOSEN is a setting, and this is the one
         //place that turns a name into an identity to use.
+        //`host()` AND NOT `read()`. Which sign-in the supervisor uses is about
+        //this computer's keyring, so it is one of the few settings that does not
+        //follow the open folder — and `read` is async now that most of them do.
+        //This store is synchronous and has nothing to wait for.
         chosen: function () {
-            try { return settings.read().supervisorKey || null; }
+            try { return settings.host().supervisorKey || null; }
             catch (e) { return null; }
         }
     });

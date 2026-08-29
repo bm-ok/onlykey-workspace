@@ -57,29 +57,29 @@ async function anApp() {
 
 test('nothing kept reads as every default, and the drills are off', async () => {
     const { settings } = await anApp();
-    assert.equal(settings.read().testsEnabled, false);
-    assert.equal(settings.read().watchGitHub, false);
-    assert.equal(settings.read().supervisorKey, null);
+    assert.equal((await settings.read()).testsEnabled, false);
+    assert.equal((await settings.read()).watchGitHub, false);
+    assert.equal((await settings.read()).supervisorKey, null);
 });
 
 test('a key that is not declared cannot be kept', async () => {
     const { settings } = await anApp();
-    assert.throws(() => settings.write({ nonsense: true }), /is not a setting/);
+    assert.rejects(() => settings.write({ nonsense: true }), /is not a setting/);
 });
 
 //A SETTING THAT HAS SINCE BEEN REMOVED IS NOT CARRIED FORWARD as though it still
 //meant something — the file is merged ONTO the declared list, not beside it.
 test('a leftover key on disk is not read back', async () => {
     const { settings, dir } = await anApp();
-    settings.write({ watchGitHub: true });
+    await settings.write({ watchGitHub: true });
 
     const file = path.join(dir, 'state', 'settings.json');
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     raw.somethingRemovedLastYear = 'still here';
     fs.writeFileSync(file, JSON.stringify(raw));
 
-    assert.equal(settings.read().watchGitHub, true, 'the real setting did not survive');
-    assert.ok(!('somethingRemovedLastYear' in settings.read()), 'a removed setting was carried forward');
+    assert.equal((await settings.read()).watchGitHub, true, 'the real setting did not survive');
+    assert.ok(!('somethingRemovedLastYear' in (await settings.read())), 'a removed setting was carried forward');
 });
 
 //---------------------------------------------------------------------------
@@ -98,18 +98,18 @@ test('a value is put into the shape its default declares', async () => {
 
     for (const off of ['false', 'off', 'no', false]) {
         await actions.call('settingSet', { name: 'watchGitHub', value: off, _overTheWire: true });
-        assert.equal(settings.read().watchGitHub, false, JSON.stringify(off) + ' did not read as off');
+        assert.equal((await settings.read()).watchGitHub, false, JSON.stringify(off) + ' did not read as off');
     }
     for (const on of ['true', 'on', '1', 1, true]) {
         await actions.call('settingSet', { name: 'watchGitHub', value: on, _overTheWire: true });
-        assert.equal(settings.read().watchGitHub, true, JSON.stringify(on) + ' did not read as on');
+        assert.equal((await settings.read()).watchGitHub, true, JSON.stringify(on) + ' did not read as on');
     }
 
     //a name is a name, and an empty one is nothing rather than ""
     await actions.call('settingSet', { name: 'supervisorKey', value: '  bench  ', _overTheWire: true });
-    assert.equal(settings.read().supervisorKey, 'bench');
+    assert.equal((await settings.read()).supervisorKey, 'bench');
     await actions.call('settingSet', { name: 'supervisorKey', value: '', _overTheWire: true });
-    assert.equal(settings.read().supervisorKey, null, 'an empty name was kept as a name');
+    assert.equal((await settings.read()).supervisorKey, null, 'an empty name was kept as a name');
 });
 
 //---- the predicate ---------------------------------------------------------
@@ -119,7 +119,7 @@ test('both halves are required, and the third state is the interesting one', asy
 
     assert.equal((await settings.allowed()).allowed, false, 'off is not allowed');
 
-    settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha' });
+    await settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha' });
     assert.equal((await settings.allowed()).allowed, true);
 
     //ON, FOR SOMEWHERE THAT IS NOT HERE. This is the state the whole design
@@ -137,7 +137,7 @@ test('both halves are required, and the third state is the interesting one', asy
 
 test('no workspace open is not allowed, whatever is set', async () => {
     const { settings, go } = await anApp();
-    settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha' });
+    await settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha' });
     go(null);
     assert.equal((await settings.allowed()).allowed, false);
 });
@@ -159,7 +159,7 @@ test('the drills cannot be switched on down the pipe', async () => {
         () => actions.call('settingSet', { name: 'testsEnabled', value: true, _overTheWire: true }),
         /switched on in the window/);
 
-    assert.equal(settings.read().testsEnabled, false, 'it went on anyway — the refusal came after the write');
+    assert.equal((await settings.read()).testsEnabled, false, 'it went on anyway — the refusal came after the write');
 });
 
 test('a request to run them cannot be answered down the pipe', async () => {
@@ -170,8 +170,8 @@ test('a request to run them cannot be answered down the pipe', async () => {
         () => actions.call('testsAnswer', { allow: true, _overTheWire: true }),
         /answered in the window/);
 
-    assert.equal(settings.read().testsEnabled, false);
-    assert.ok(settings.read().testsAsked, 'the refused answer cleared the request as a side effect');
+    assert.equal((await settings.read()).testsEnabled, false);
+    assert.ok((await settings.read()).testsAsked, 'the refused answer cleared the request as a side effect');
 });
 
 test('a person at the window may do both', async () => {
@@ -182,7 +182,7 @@ test('a person at the window may do both', async () => {
     assert.equal((await settings.allowed()).allowed, true);
 
     await actions.call('settingSet', { name: 'testsEnabled', value: false });
-    assert.equal(settings.read().testsFor, null, 'turning them off left them pointed at a folder');
+    assert.equal((await settings.read()).testsFor, null, 'turning them off left them pointed at a folder');
 });
 
 //---- asking ----------------------------------------------------------------
@@ -197,7 +197,7 @@ test('asking is the one thing the pipe may do, and it must say what for', async 
     const asked = await actions.call('testsAsk', { why: 'the branch drill', _overTheWire: true });
     assert.equal(asked.asked, true);
     assert.equal(asked.request.forDir, where());
-    assert.equal(settings.read().testsEnabled, false, 'asking turned them on');
+    assert.equal((await settings.read()).testsEnabled, false, 'asking turned them on');
 });
 
 test('asking when they are already allowed changes nothing', async () => {
@@ -216,15 +216,29 @@ test('asking when they are already allowed changes nothing', async () => {
 //is CLEARED rather than honoured — answering the wrong question is worse than
 //having to ask again.
 //---------------------------------------------------------------------------
+//A REQUEST IS RAISED ABOUT A FOLDER, AND IT STAYS THERE.
+//
+//It used to be one value for the whole app, and the answer compared the folder
+//it named against the folder open now. Now it follows the folder — so from
+//anywhere else there is no request at all, and the thing worth testing is that
+//answering "yes" to a question nobody asked here does not arm anything. That
+//check had to be written: every step after the comparison used to be reached
+//only with a live request in hand, and without one they all still ran.
 test('a yes does not follow you to a different workspace', async () => {
     const { actions, settings, go } = await anApp();
     await actions.call('testsAsk', { why: 'against the scaffolding', _overTheWire: true });
 
     go('C:\\somebody\\real-work');
-    await assert.rejects(() => actions.call('testsAnswer', { allow: true }), /asked about/);
+    await assert.rejects(() => actions.call('testsAnswer', { allow: true }), /asked about this folder/);
 
-    assert.equal(settings.read().testsEnabled, false, 'the drills were armed against the wrong folder');
-    assert.equal(settings.read().testsAsked, null, 'the request stood, ready to be answered wrongly again');
+    assert.equal((await settings.read()).testsEnabled, false, 'the drills were armed against the wrong folder');
+    assert.equal((await settings.read()).testsAsked, null, 'a request raised elsewhere was visible here');
+
+    //AND IT IS STILL THERE WHERE IT WAS ASKED, waiting for somebody standing in
+    //front of the folder it is about. Refusing it and clearing it would be two
+    //different things, and only one of them was wanted.
+    go('C:\\work\\alpha');
+    assert.ok((await settings.read()).testsAsked, 'answering it from the wrong folder threw the request away');
 });
 
 test('answering yes here arms them here, in one act', async () => {
@@ -233,8 +247,8 @@ test('answering yes here arms them here, in one act', async () => {
 
     const yes = await actions.call('testsAnswer', { allow: true });
     assert.equal(yes.allowed, true);
-    assert.equal(settings.read().testsFor, where(), 'armed without recording what for');
-    assert.equal(settings.read().testsAsked, null, 'the request outlived being answered');
+    assert.equal((await settings.read()).testsFor, where(), 'armed without recording what for');
+    assert.equal((await settings.read()).testsAsked, null, 'the request outlived being answered');
     assert.equal((await settings.allowed()).allowed, true);
 });
 
@@ -244,8 +258,8 @@ test('declining clears the request and changes nothing else', async () => {
 
     const no = await actions.call('testsAnswer', { allow: false });
     assert.equal(no.allowed, false);
-    assert.equal(settings.read().testsAsked, null);
-    assert.equal(settings.read().testsEnabled, false);
+    assert.equal((await settings.read()).testsAsked, null);
+    assert.equal((await settings.read()).testsEnabled, false);
 });
 
 //---- what the pane reads ---------------------------------------------------
@@ -271,10 +285,16 @@ test('the answer carries the derived state, not just the two fields', async () =
 
     go('C:\\work\\beta');
     const said = await actions.call('settings');
-    assert.equal(said.tests.enabled, true, 'the raw field went missing');
+    //`enabled` IS THIS FOLDER'S ANSWER. It was alpha's switch that was pressed,
+    //and beta never had one pressed — which is the whole change.
+    assert.equal(said.tests.enabled, false, 'a switch pressed in another folder read as pressed here');
     assert.equal(said.tests.allowed, false, 'the pane would have to recompute this and could disagree');
-    assert.equal(said.tests.forDir, 'C:\\work\\alpha');
     assert.equal(said.tests.openDir, 'C:\\work\\beta');
+    //AND WHERE IT IS ON, so a pane can say "not here, but there" rather than a
+    //bare off that reads like a switch that did not work.
+    assert.deepEqual(said.tests.elsewhere, ['C:\\work\\alpha']);
+    assert.match(said.tests.why, /alpha/);
+    assert.match(said.tests.why, /beta/);
 });
 
 //---------------------------------------------------------------------------
@@ -334,7 +354,7 @@ test('the standing request is written by asking, not by setting', async () => {
 
 test('nothing from GitHub can be a request until somebody says who and what', async () => {
     const { settings } = await anApp();
-    const now = settings.read();
+    const now = (await settings.read());
     //THE STATE THIS SHIPS IN, asserted rather than assumed. A default this app
     //picked for the marker would be a word an attacker could read out of the
     //source.
@@ -365,7 +385,7 @@ test('the pipe cannot decide whose words count, in either half', async () => {
         () => actions.call('settingSet', { name: 'githubTrusted', value: ['x'], _driven: true }),
         /window/);
 
-    const now = settings.read();
+    const now = (await settings.read());
     assert.deepEqual(now.githubTrusted, [], 'the list moved anyway');
     assert.equal(now.githubMarker, '', 'the marker moved anyway');
 });
@@ -378,7 +398,7 @@ test('a list setting is stored as a list, whatever it was typed as', async () =>
     //stored as a string it is not an array, so trust.js reads it as nobody being
     //trusted while this reports "Saved."
     await actions.call('settingSet', { name: 'githubTrusted', value: 'someone, another ,' });
-    assert.deepEqual(settings.read().githubTrusted, ['someone', 'another'],
+    assert.deepEqual((await settings.read()).githubTrusted, ['someone', 'another'],
         'a typed list was kept as whatever came in');
 
     //THE TRAILING COMMA IS THE POINT OF THE THIRD ENTRY ABOVE. An empty name in
@@ -387,13 +407,13 @@ test('a list setting is stored as a list, whatever it was typed as', async () =>
 
     //JSON TOO, because that is what a script hands over.
     await actions.call('settingSet', { name: 'githubTrusted', value: '["a-person","a-person"]' });
-    assert.deepEqual(settings.read().githubTrusted, ['a-person'], 'the same name was kept twice');
+    assert.deepEqual((await settings.read()).githubTrusted, ['a-person'], 'the same name was kept twice');
 
     //AND A SHAPE SURVIVES BEING A SHAPE. The window looks the account up before
     //adding it, so it has the number — which is what makes the entry survive a
     //rename, and is worth nothing if this flattens it back to a string.
     await actions.call('settingSet', { name: 'githubTrusted', value: [{ login: 'bmatusiak', id: 1822932 }] });
-    assert.deepEqual(settings.read().githubTrusted, [{ login: 'bmatusiak', id: 1822932 }],
+    assert.deepEqual((await settings.read()).githubTrusted, [{ login: 'bmatusiak', id: 1822932 }],
         'the account number was dropped on the way in');
 });
 
@@ -409,7 +429,7 @@ function withRepos(app, rows) {
 
 test('with nothing on the sandbox list the switch alone decides', async () => {
     const app = await anApp();
-    app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha' });
+    await app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha' });
     withRepos(app, [{ repo: 'one', remote: { owner: 'real-project' }, parent: 'upstream/thing' }]);
     const said = await app.actions.call('settings', {});
     assert.equal(said.tests.allowed, true);
@@ -418,7 +438,7 @@ test('with nothing on the sandbox list the switch alone decides', async () => {
 
 test('a remote whose owner is not on the list refuses, and the refusal names it', async () => {
     const app = await anApp();
-    app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha', testsSandbox: ['bm-sandbox-a', 'bm-sandbox-b'] });
+    await app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha', testsSandbox: ['bm-sandbox-a', 'bm-sandbox-b'] });
     withRepos(app, [
         { repo: 'one', remote: { owner: 'bm-sandbox-a' } },
         { repo: 'two', remote: { owner: 'real-project' } }
@@ -430,14 +450,14 @@ test('a remote whose owner is not on the list refuses, and the refusal names it'
 
 test('an owner in the chain work goes through must be on the list too', async () => {
     const app = await anApp();
-    app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha', testsSandbox: ['bm-sandbox-a'] });
+    await app.settings.write({ testsEnabled: true, testsFor: 'C:\\work\\alpha', testsSandbox: ['bm-sandbox-a'] });
     withRepos(app, [{ repo: 'one', remote: { owner: 'bm-sandbox-a' }, parent: 'the-project/thing', target: { on: 'the-project/thing' } }]);
     const said = await app.actions.call('settings', {});
     assert.equal(said.tests.allowed, false);
     assert.match(said.tests.why, /one sends work through the-project/);
 
     //AND LEVEL WHEN THE CHAIN IS NAMED. Case does not matter: GitHub's does not.
-    app.settings.write({ testsSandbox: ['BM-Sandbox-A', 'The-Project'] });
+    await app.settings.write({ testsSandbox: ['BM-Sandbox-A', 'The-Project'] });
     assert.equal((await app.actions.call('settings', {})).tests.allowed, true);
 });
 
@@ -446,5 +466,130 @@ test('the sandbox list cannot be set down the pipe', async () => {
     await assert.rejects(
         () => actions.call('settingSet', { name: 'testsSandbox', value: ['anything'], _overTheWire: true }),
         /set in the window/);
-    assert.deepEqual(settings.read().testsSandbox, []);
+    assert.deepEqual((await settings.read()).testsSandbox, []);
+});
+
+//---------------------------------------------------------------------------
+//A NEW WORKSPACE IS INERT.
+//
+//Every switch that arms this app lived in one document, so a folder opened for
+//the first time arrived already watching somebody's repositories, already
+//allowed to wake a supervisor, already sending replies nobody had read, and
+//already holding a list of people whose marked words are read as instructions.
+//None of that was decided about the folder now open; all of it was decided
+//about the last one.
+//
+//`FOLLOWS_THE_FOLDER` in the plugin is the list, and these are the claims that
+//list is making.
+
+test('a switch armed in one folder is off in the next, and comes back on returning', async () => {
+    const { settings, go } = await anApp();
+
+    await settings.write({
+        watchGitHub: true, supervisorWakes: true, queueAutoStart: true,
+        githubReplyDirect: true, githubMarker: 'okc', githubTrusted: ['bmatusiak']
+    });
+    const armed = await settings.read();
+    assert.equal(armed.watchGitHub, true);
+    assert.equal(armed.githubMarker, 'okc');
+
+    go('C:\\somebody\\real-work');
+    const fresh = await settings.read();
+    assert.equal(fresh.watchGitHub, false, 'the new folder arrived watching GitHub');
+    assert.equal(fresh.supervisorWakes, false, 'the new folder arrived able to wake a supervisor');
+    assert.equal(fresh.queueAutoStart, false);
+    assert.equal(fresh.githubReplyDirect, false, 'the new folder arrived sending replies nobody reads');
+    assert.equal(fresh.githubMarker, '', 'a marker set for another project made its comments requests here');
+    assert.deepEqual(fresh.githubTrusted, [], 'a trusted list decided elsewhere applied here');
+
+    //NOTHING WAS CLEARED, IT WAS KEPT SOMEWHERE ELSE. Switching back is not
+    //re-arming: the first folder's answers are still its own.
+    go('C:\\work\\alpha');
+    const back = await settings.read();
+    assert.equal(back.watchGitHub, true, 'coming back did not restore what was set here');
+    assert.deepEqual(back.githubTrusted, ['bmatusiak']);
+});
+
+test('what is about this computer does not follow the folder', async () => {
+    const { settings, go } = await anApp();
+    await settings.write({ supervisorKey: 'bench' });
+
+    go('C:\\somebody\\real-work');
+    assert.equal((await settings.read()).supervisorKey, 'bench',
+        'which sign-in this host uses is a fact about the keyring, not about the work');
+
+    //AND THE SYNCHRONOUS DOOR ANSWERS THE SAME, which is what ../runners/guests
+    //reads it through — it has nothing to wait for and should not have to.
+    assert.equal(settings.host().supervisorKey, 'bench');
+    assert.equal('watchGitHub' in settings.host(), false,
+        'the host half offered a setting whose value belongs to no particular folder');
+});
+
+test('arming something with no workspace open is refused rather than applied to the next one', async () => {
+    const { settings, go } = await anApp();
+    go(null);
+
+    await assert.rejects(() => settings.write({ watchGitHub: true }), /nothing to set that for/);
+    //THE HOST'S OWN STILL WORK, because they are about this computer and there
+    //is always one of those.
+    await settings.write({ supervisorKey: 'bench' });
+    assert.equal(settings.host().supervisorKey, 'bench');
+});
+
+//---- and what happens to a host that was already set up ---------------------
+//
+//THE FOLDER OPEN AT THE UPGRADE INHERITS IT, AND NOTHING ELSE EVER DOES.
+//Somebody who has already set this app up should not come back to find it
+//switched off; somebody opening a second folder should not find it switched on.
+
+test('what was already set carries over to the folder open at the time, and no further', async () => {
+    const dir = somewhere();
+    const legacy = {
+        watchGitHub: true, supervisorWakes: true, githubMarker: 'okc',
+        githubTrusted: ['bmatusiak'], supervisorKey: 'bench'
+    };
+
+    //WRITTEN IN THE OLD SHAPE — flat, with no `forFolder` — which is what every
+    //host that has ever run this app has on disk.
+    let state = null;
+    await statePlugin({ dataDir: { at: (...p) => path.join(dir, ...p) } }, async (_e, s) => { state = s.state; });
+    state.app.doc('settings').write(legacy);
+
+    let open = 'C:\\work\\alpha';
+    let settings = null;
+    let actions = null;
+    await actionsPlugin({}, async (_e, s) => { actions = s.actions; });
+    await settingsPlugin({
+        app: { host: { actions } },
+        log: { on: () => ({ warn: () => {}, info: () => {}, good: () => {}, bad: () => {} }) },
+        state,
+        workspace: { dir: async () => open }
+    }, async (_e, s) => { settings = s.settings; });
+
+    const here = await settings.read();
+    assert.equal(here.watchGitHub, true, 'a host that was already watching came back switched off');
+    assert.equal(here.githubMarker, 'okc');
+    assert.deepEqual(here.githubTrusted, ['bmatusiak']);
+
+    open = 'C:\\somebody\\real-work';
+    const next = await settings.read();
+    assert.equal(next.watchGitHub, false, 'the inheritance followed them into a folder it was never decided about');
+    assert.equal(next.githubMarker, '');
+    assert.equal(next.supervisorKey, 'bench', 'the host half was not inherited at all');
+
+    //AND THE OLD FLAT KEYS ARE GONE FROM THE DOCUMENT, rather than sitting there
+    //looking like they still mean something to whoever opens the file next.
+    const raw = state.app.doc('settings').read({});
+    assert.equal('watchGitHub' in raw, false, 'the value that no longer decides anything was left in place');
+    assert.equal(raw.supervisorKey, 'bench');
+    assert.ok(raw.forFolder['C:\\work\\alpha']);
+});
+
+test('a host with nothing set up inherits nothing, and says so by being empty', async () => {
+    const { settings, go } = await anApp();
+    go('C:\\anywhere');
+    const said = await settings.read();
+    assert.equal(said.watchGitHub, false);
+    assert.deepEqual(said.githubTrusted, []);
+    assert.equal(said.testsEnabled, false);
 });

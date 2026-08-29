@@ -104,8 +104,12 @@ module.exports = function dispatching(deps) {
     //WHETHER THE SUPERVISOR IS MEANT TO BE WOKEN, read at the moment it would
     //be rather than remembered — a setting somebody changed while a run was
     //going should take effect on that run.
-    function wakes() {
-        try { return settings.read().supervisorWakes === true; }
+    //ASYNC SINCE THE SWITCH FOLLOWED THE FOLDER. Whether the supervisor may wake
+    //itself is now a decision about the workspace it would be waking about, so
+    //answering it means knowing which one is open. Awaited at both call sites; a
+    //promise read as a boolean is truthy, which would wake it always.
+    async function wakes() {
+        try { return (await settings.read()).supervisorWakes === true; }
         catch (e) { return false; }
     }
 

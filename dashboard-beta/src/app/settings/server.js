@@ -2,10 +2,23 @@
 //WHAT THIS APP IS SET TO, as opposed to what a workspace contains.
 //
 //A branch, a task and a line are statements about a folder of repositories.
-//These are statements about this INSTALLATION — so they survive switching
-//workspace, closing one, and having none open at all. That is why this is
-//`state.app` and not `state.here`, and it is the clearest example of the split
-//in ../core/state: the two are one keystroke apart and mean opposite things.
+//These were all taken to be statements about this INSTALLATION — surviving
+//switching workspace, closing one, and having none open at all.
+//
+//MOST OF THEM WERE NOT, AND THE ONES THAT WERE NOT ARE THE DANGEROUS ONES.
+//Every switch that ARMS this app was in here: watching somebody's repositories,
+//a supervisor allowed to wake itself, replies going out unread, whose marked
+//words count as instructions, and whether the drills may run. Opening a folder
+//for the first time armed it with all of that, decided about somewhere else.
+//
+//So the document is now in two parts and `FOLLOWS_THE_FOLDER` below is the
+//list — the answer to "what should carry between workspaces", written in one
+//place so that it can be changed by editing a list rather than by finding every
+//reader. One key does not follow: `supervisorKey`, which credential on this
+//computer the supervisor signs in with. A NEW WORKSPACE IS INERT.
+//
+//It is still one document, in `state.app`, keyed by folder — a second file
+//would be two halves that can disagree about which one a key is in.
 //
 //SMALL ON PURPOSE. Anything belonging to a workspace belongs in the workspace's
 //drawer, and anything belonging to a machine belongs in the registry. What is
@@ -348,26 +361,118 @@ async function plugin(imports, register) {
 
     var kept = imports.state.app.doc('settings');
 
+    //---- WHAT IS ABOUT THE WORK, AND WHAT IS ABOUT THIS COMPUTER -------------
+    //
+    //EVERY SWITCH THAT ARMS THIS APP FOLLOWS THE FOLDER, and it did not. One
+    //document said what this host does, so a workspace opened for the first time
+    //arrived pre-armed with whatever the last one was set to: watching somebody
+    //else's repositories, a supervisor allowed to wake itself, replies going out
+    //unread, and a list of people whose marked words are read as instructions.
+    //Every one of those was decided about three scaffolding repositories, and
+    //none of it was decided about the project now open.
+    //
+    //A NEW WORKSPACE IS INERT. Nothing watching, nobody trusted, nothing sent
+    //without being read, no drills — whatever the folder before it was allowed
+    //to do. Arming it is a thing somebody does on purpose, in front of the
+    //folder it is about.
+    //
+    //ONE DOCUMENT STILL, KEYED BY FOLDER. Splitting the file would mean the two
+    //halves can disagree about which one a key is in, and every reader would
+    //have to know. `forFolder` is a map from the workspace's path to the keys
+    //below; the rest of the document stays what it always was.
+    //
+    //THE ONE THING THAT DOES NOT FOLLOW is `supervisorKey` — which credential on
+    //this computer the supervisor signs in with. That is a fact about this
+    //machine and its keyring, and it is the same fact whichever folder is open.
+    var FOLLOWS_THE_FOLDER = [
+        'testsEnabled', 'testsFor', 'testsAsked', 'testsSandbox',
+        'supervisorWakes', 'watchGitHub', 'queueAutoStart',
+        'githubTrusted', 'githubMarker',
+        'githubReplyDirect', 'githubCloseDirect', 'githubReviewDirect'
+    ];
+    function follows(key) { return FOLLOWS_THE_FOLDER.indexOf(key) >= 0; }
+
+    //---- AND WHAT HAPPENS TO WHAT WAS ALREADY SET ---------------------------
+    //
+    //THE FOLDER THAT IS OPEN WHEN THIS FIRST RUNS INHERITS IT, and nothing else
+    //ever does. Somebody who has already set this app up should not come back to
+    //find it switched off; somebody opening a second folder should not find it
+    //switched on. Those are the same requirement seen from two ends, and the
+    //only moment that can tell them apart is the first one.
+    //
+    //ONCE, AND PROVABLY ONCE. `forFolder` existing at all is the mark — not a
+    //flag beside it, which is a second fact that can disagree with the first.
+    //Seeding at startup rather than on the first read is deliberate: a read
+    //happens after somebody has opened something, and by then the folder that
+    //was open at the upgrade is no longer knowable.
+    async function seedOnce() {
+        var was = kept.read({}) || {};
+        if (was.forFolder && typeof was.forFolder === 'object') return;
+
+        var open = await openDir();
+        var mine = {};
+        Object.keys(was).forEach(function (k) { if (!follows(k)) mine[k] = was[k]; });
+
+        var forFolder = {};
+        if (open) {
+            var here = {};
+            FOLLOWS_THE_FOLDER.forEach(function (k) { if (k in was) here[k] = was[k]; });
+            if (Object.keys(here).length) forFolder[open] = here;
+            log.info('settings that arm this app now follow the folder. What was set carried over to '
+                + open + '; any other workspace starts with nothing armed.');
+        }
+        mine.forFolder = forFolder;
+        kept.write(mine);
+    }
+
     //ONLY WHAT IS DECLARED ABOVE. A key left over from a setting that has since
     //been removed is not carried forward as though it still meant something.
-    function read() {
+    //
+    //ASYNC, BECAUSE HALF THE ANSWER DEPENDS ON WHICH FOLDER IS OPEN, and that is
+    //not a constant. Almost every caller already awaited it.
+    async function read() {
         var was = kept.read({}) || {};
+        var open = await openDir();
+        var here = (open && was.forFolder && was.forFolder[open]) || {};
         var out = {};
         Object.keys(DEFAULTS).forEach(function (k) {
-            out[k] = (k in was) ? was[k] : DEFAULTS[k];
+            var from = follows(k) ? here : was;
+            out[k] = (k in from) ? from[k] : DEFAULTS[k];
         });
         return out;
     }
 
-    function write(patch) {
-        var now = Object.assign({}, read(), patch || {});
-        Object.keys(now).forEach(function (k) {
+    async function write(patch) {
+        var p = patch || {};
+        Object.keys(p).forEach(function (k) {
             if (!(k in DEFAULTS)) {
                 throw new Error('"' + k + '" is not a setting. See DEFAULTS in settings/server.js — a setting that is not declared cannot be listed or explained.');
             }
         });
-        kept.write(now);
-        return now;
+
+        var open = await openDir();
+        var wantsFolder = Object.keys(p).some(follows);
+        //ARMING SOMETHING WITH NOTHING TO ARM IT AGAINST. Written into the host's
+        //half it would apply to whatever folder is opened next, which is the
+        //thing this whole split exists to stop.
+        if (wantsFolder && !open) {
+            throw new Error('No workspace is open, so there is nothing to set that for. '
+                + Object.keys(p).filter(follows).join(', ')
+                + ' is about the folder being worked on — open one first.');
+        }
+
+        var was = kept.read({}) || {};
+        var mine = Object.assign({}, was);
+        var forFolder = Object.assign({}, was.forFolder || {});
+        var here = Object.assign({}, (open && forFolder[open]) || {});
+
+        Object.keys(p).forEach(function (k) {
+            if (follows(k)) here[k] = p[k]; else mine[k] = p[k];
+        });
+        if (open) forFolder[open] = here;
+        mine.forFolder = forFolder;
+        kept.write(mine);
+        return read();
     }
 
     //A WORKSPACE THAT CANNOT BE DETERMINED IS NOT AN OPEN ONE, and the drills
@@ -383,9 +488,35 @@ async function plugin(imports, register) {
     //BOTH HALVES ARE REQUIRED. Enabled but for a different folder is not enabled
     //— it is the state somebody left behind on Tuesday, pointed at work they
     //care about today.
-    function allowed(open, owners) {
-        var s = read();
+    //WHICH OTHER FOLDERS HAVE THEM ARMED, so "off" can say why rather than
+    //leaving somebody who switched them on last week to wonder what happened.
+    //
+    //IT USED TO BE ABLE TO SAY THIS AND THEN COULD NOT. When the switch lived in
+    //one document, "on for alpha, and you are in beta" was a comparison of two
+    //fields. Now the switch is beta's own and reads plainly false — which is the
+    //behaviour that was wanted and a worse sentence, so the sentence is put back
+    //by looking at the other folders on purpose.
+    function armedElsewhere(open) {
+        var was = kept.read({}) || {};
+        var all = was.forFolder || {};
+        return Object.keys(all).filter(function (dir) {
+            return dir !== open && all[dir] && all[dir].testsEnabled === true;
+        });
+    }
+
+    async function allowed(open, owners) {
+        var s = await read();
         if (!s.testsEnabled) {
+            var others = armedElsewhere(open);
+            if (others.length) {
+                return {
+                    allowed: false,
+                    why: 'The drills are off for ' + (open || 'this folder') + '. They are on for ' + others.join(' and ')
+                        + ' — every switch that arms this app follows the folder it was set for, so opening a '
+                        + 'different one does not bring them with it. Turn them on here if this is a folder you '
+                        + 'do not mind them touching.'
+                };
+            }
             return { allowed: false, why: 'The drills are switched off. They drive this app for real — they write a task, and one of them takes a credential off a machine — so they are off until somebody turns them on for a workspace they do not mind that happening to.' };
         }
         if (!open) return { allowed: false, why: 'No workspace is open, so there is nothing for the drills to run against.' };
@@ -437,12 +568,23 @@ async function plugin(imports, register) {
         });
     }
 
+    //BEFORE ANYTHING CAN READ. The folder open at this moment is the one that
+    //inherits what was already set, and after the first read nobody can tell
+    //which folder that was. It is awaited rather than left running, so no reader
+    //can arrive at a half-seeded document.
+    //
+    //A FAILURE HERE IS NOT A REASON NOT TO START. The worst it costs is a
+    //workspace that reads as unarmed, which is the safe direction and the one
+    //somebody can put right with two switches.
+    try { await seedOnce(); }
+    catch (e) { log.warn('the settings could not be worked out per folder: ' + e.message); }
+
     var undo = [];
     if (actions) {
         undo.push(actions.define('settings', {
             about: 'What this app is set to, and why each one is where it is',
             run: async function () {
-                var now = read();
+                var now = await read();
                 var open = await openDir();
                 var owners = await ownersNow();
                 return {
@@ -450,10 +592,17 @@ async function plugin(imports, register) {
                     //THE DERIVED ANSWER AS WELL AS THE TWO FIELDS IT COMES FROM,
                     //because "enabled" alone is not the question anything
                     //actually asks — enabled for somewhere else is not enabled.
-                    tests: Object.assign(allowed(open, owners), {
+                    tests: Object.assign(await allowed(open, owners), {
+                        //`enabled` IS THIS FOLDER'S ANSWER, and since the switch
+                        //started following the folder that is the only kind of
+                        //answer there is. `elsewhere` is what used to be
+                        //readable off `forDir` when there was one switch: the
+                        //folders that DO have them on, so a pane can say "not
+                        //here, but there" rather than a bare off.
                         enabled: now.testsEnabled,
                         forDir: now.testsFor,
                         openDir: open,
+                        elsewhere: armedElsewhere(open),
                         sandbox: { list: now.testsSandbox || [], owners: owners || [] }
                     }),
                     //THE STANDING REQUEST COMES BACK HERE RATHER THAN FROM
@@ -538,7 +687,7 @@ async function plugin(imports, register) {
                     patch[key] = shaped(key, a.value);
                 }
 
-                var now = write(patch);
+                var now = await write(patch);
                 if (key === 'testsEnabled') {
                     log.warn(on
                         ? 'the drills are ON for ' + now.testsFor + ' — they write a task and take a credential off a machine'
@@ -570,13 +719,13 @@ async function plugin(imports, register) {
                 var open = await openDir();
                 if (!open) throw new Error('No workspace is open, so there is nothing to ask about.');
 
-                var already = allowed(open);
+                var already = await allowed(open);
                 if (already.allowed) return { asked: false, note: 'The drills are already allowed here. Nothing to ask.' };
 
                 var reason = String(a.why || '').trim();
                 if (!reason) throw new Error('Say what they are wanted for. A request with no reason is one somebody has to interrupt you to understand, which is the thing this exists to avoid.');
 
-                var now = write({ testsAsked: { at: new Date().toISOString(), why: reason, forDir: open } });
+                var now = await write({ testsAsked: { at: new Date().toISOString(), why: reason, forDir: open } });
                 log.warn('asked to run the drills against ' + open + ': ' + reason);
                 return { asked: true, request: now.testsAsked, note: 'Asked. The window will put the question up; nothing runs until somebody answers it.' };
             }
@@ -601,13 +750,29 @@ async function plugin(imports, register) {
                 }
 
                 var yes = truth(a.allow);
-                var asked = read().testsAsked;
+                var asked = (await read()).testsAsked;
                 var open = await openDir();
 
                 if (!yes) {
-                    write({ testsAsked: null });
+                    await write({ testsAsked: null });
                     log.info('the request to run the drills was declined');
                     return { allowed: false, note: 'Declined. Nothing changed, and the request is cleared.' };
+                }
+
+                //AND THERE HAS TO HAVE BEEN A QUESTION.
+                //
+                //THIS WAS COVERED BY ACCIDENT AND THEN WAS NOT. `testsAsked` was
+                //one value for the whole app, so a request raised in another
+                //folder was still visible here and the mismatch below caught it.
+                //Now the request follows the folder it was raised about, which
+                //is right — and it means that standing anywhere else there is no
+                //request at all, so the check below has nothing to compare and
+                //every step after it arms the drills. Answering a question
+                //nobody asked is not an answer.
+                if (!asked) {
+                    throw new Error('Nothing was asked about this folder' + (open ? ' (' + open + ')' : '')
+                        + '. A request to run the drills is raised against the workspace it is about, so one '
+                        + 'raised somewhere else is not on the table here — ask again with this folder open.');
                 }
 
                 //THE FOLDER IS CHECKED RATHER THAN TAKEN FROM THE REQUEST. A
@@ -615,12 +780,12 @@ async function plugin(imports, register) {
                 //switching to another would otherwise turn the drills on
                 //somewhere nobody was asked about.
                 if (asked && asked.forDir && open && asked.forDir !== open) {
-                    write({ testsAsked: null });
+                    await write({ testsAsked: null });
                     throw new Error('That was asked about ' + asked.forDir + ', and the folder open now is ' + open + '. The request is cleared rather than answered — ask again here if that is what is wanted.');
                 }
                 if (!open) throw new Error('No workspace is open, so there is nothing to allow.');
 
-                var now = write({ testsEnabled: true, testsFor: open, testsAsked: null });
+                var now = await write({ testsEnabled: true, testsFor: open, testsAsked: null });
                 log.warn('the drills are ON for ' + now.testsFor + ' — they write a task and take a credential off a machine');
                 return { allowed: true, settings: now, note: 'On for ' + now.testsFor + '. Opening a different workspace switches them off.' };
             }
@@ -631,11 +796,33 @@ async function plugin(imports, register) {
         settings: {
             read: read,
             write: write,
+
+            //---- THE HOST'S HALF, WITHOUT ASKING WHICH FOLDER IS OPEN --------
+            //
+            //`read` became async when the arming switches started following the
+            //workspace, and most callers already awaited it. One did not and
+            //should not have to: ../runners/guests asks which sign-in the
+            //supervisor uses from inside a synchronous store, and that key is
+            //about this computer's keyring — it means the same thing whatever
+            //folder is open, so there is nothing to wait for.
+            //
+            //IT ANSWERS ONLY THE KEYS THAT DO NOT FOLLOW. Reaching for
+            //`watchGitHub` through here would get the value of no particular
+            //workspace, which is worse than not being able to ask.
+            host: function () {
+                var was = kept.read({}) || {};
+                var out = {};
+                Object.keys(DEFAULTS).forEach(function (k) {
+                    if (follows(k)) return;
+                    out[k] = (k in was) ? was[k] : DEFAULTS[k];
+                });
+                return out;
+            },
             //ASKED WITH NO ARGUMENT IT WORKS THE FOLDER OUT ITSELF, which is what
             //every caller wants and is why it is async. A caller that already
             //holds the folder may pass it.
             allowed: async function (open) {
-                return allowed(open === undefined ? await openDir() : open);
+                return await allowed(open === undefined ? await openDir() : open);
             },
             DEFAULTS: DEFAULTS,
             where: kept.path

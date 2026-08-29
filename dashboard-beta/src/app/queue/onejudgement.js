@@ -298,7 +298,7 @@ module.exports = function onejudgement(deps) {
             //finishing produces work to look at; a judgement finishing produces
             //a DECISION to make.
             try {
-                if (wakes() === true) {
+                if ((await wakes()) === true) {
                     Promise.resolve(call('supervisorWake', {
                         why: ref + ' finished — '
                             + (concluded ? 'it concluded "' + concluded + '"' : 'it reached no conclusion')

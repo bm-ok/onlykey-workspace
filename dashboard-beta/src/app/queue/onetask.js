@@ -228,7 +228,7 @@ module.exports = function onetask(deps) {
             //never fatal: waking one is a convenience, and a task that finished
             //must not be reported as failed because nothing answered.
             try {
-                if (wakes() === true) {
+                if ((await wakes()) === true) {
                     Promise.resolve(call('supervisorWake', {
                         why: '#' + task.number + ' finished — ' + outcome.state
                     })).catch(function (e) {
