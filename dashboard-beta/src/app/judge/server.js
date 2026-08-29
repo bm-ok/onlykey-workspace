@@ -1,6 +1,10 @@
 var makeJudgements = require('./store');
 var reviewing = require('./reviewing');
 var gate = require('./gate');
+//THE VERDICT PARSER IS THE QUEUE'S, and it is pure; required across the
+//plugin line the way ../github/trust.js is, so the two never disagree about
+//what a last line means.
+var concluding = require('../queue/concluding');
 
 //---------------------------------------------------------------------------
 //THE JUDGE: a set of jobs, prompts and contracts, and the record of what was
@@ -505,6 +509,55 @@ async function plugin(imports, register) {
         //THE SAME DRAWER ../queue OPENS. Filed under a uid by ../core/archive,
         //which owns where these are kept and every refusal about reading one.
         //=================================================================
+        //---- RE-READ A VERDICT THE PARSER MISSED ----------------------------
+        //
+        //FOR A WHILE THE QUEUE READ EVERY DRAWER AS EMPTY (8a9dc86), so
+        //judgements that had handed back a report ending RECOMMENDATION or
+        //CLAIM were recorded as having concluded nothing. The reports are
+        //still in the drawer. This reads them again, with the same parser,
+        //and records what the judge already said -- the same fact
+        //judgementFindings shows, written where the board and the story read
+        //it. Nothing is decided here; a verdict a person recorded is not
+        //touched.
+        undo.push(actions.define('judgementReconclude', {
+            about: 'Read a judgement\'s handed-back report again and record the conclusion its last line says — '
+                + 'for judgements recorded as having concluded nothing while the drawer was misread',
+            takes: ['ref', 'id', 'all'],
+            run: async function (args) {
+                var a = args || {};
+                var want = [];
+                if (a.all === true || a.all === 'true' || (!a.ref && !a.id)) {
+                    want = (await store.all()).filter(function (j) {
+                        return j.state === 'done' && !j.concluded;
+                    });
+                } else {
+                    want = [await store.get(a.ref || a.id)];
+                }
+                var done = [];
+                for (var i = 0; i < want.length; i++) {
+                    var it = want[i];
+                    var handed = await artifacts.list(it.uid);
+                    var said = await concluding.concludedAcross(handed, async function (file) {
+                        return String(((await artifacts.read(it.uid, file)) || {}).text || '');
+                    });
+                    if (said && said !== it.concluded) {
+                        await store.update(it.ref, { concluded: said });
+                        log.on('judge').good(it.ref + ' re-read: it concluded ' + said);
+                        done.push({ ref: it.ref, was: it.concluded || null, concluded: said, files: handed.length });
+                    } else {
+                        done.push({ ref: it.ref, was: it.concluded || null, concluded: it.concluded || null, files: handed.length, unchanged: true });
+                    }
+                }
+                var moved = done.filter(function (d) { return !d.unchanged; });
+                return {
+                    judgements: done, changed: moved.length,
+                    note: moved.length
+                        ? moved.map(function (d) { return d.ref + ' now says ' + d.concluded; }).join(', ') + '.'
+                        : (done.length ? 'Nothing to change: ' + done.map(function (d) { return d.ref + (d.files ? ' handed back no verdict line' : ' handed nothing back'); }).join(', ') + '.' : 'No judgement is waiting on a conclusion.')
+                };
+            }
+        }));
+
         undo.push(actions.define('judgementFindings', {
             about: 'What a judgement handed back: the files it wrote, and one of them in full',
             takes: ['ref', 'id', 'file'],

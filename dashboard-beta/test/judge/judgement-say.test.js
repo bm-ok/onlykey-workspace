@@ -255,3 +255,36 @@ test('a preview is still a preview', async () => {
     assert.equal(said.posted, false);
     assert.deepEqual(w.did.posted, []);
 });
+
+//---------------------------------------------------------------------------
+//RE-READING A VERDICT THE PARSER MISSED. For a while the queue read every
+//drawer as empty, so judgements that had handed back RECOMMENDATION or CLAIM
+//were recorded as having concluded nothing. The report is still there.
+//---------------------------------------------------------------------------
+
+test('a done judgement with a report but no conclusion is re-read, and the last line is recorded', async () => {
+    const w = await withJudgement({ judgement: { subject: { kind: 'branch', branch: 'fix/x', name: 'fix/x' } } });
+    const again = w.defined.get('judgementReconclude');
+    assert.ok(again, 'judgementReconclude is not defined');
+    assert.equal((await w.service.judge.get(w.ref)).concluded, null);
+
+    const said = await again.run({ all: true });
+    assert.equal(said.changed, 1);
+    assert.equal(said.judgements[0].concluded, 'accept');
+    assert.equal((await w.service.judge.get(w.ref)).concluded, 'accept');
+
+    //AND NOT TWICE: a judgement that already says so is left alone.
+    const twice = await again.run({ ref: w.ref });
+    assert.equal(twice.changed, 0);
+});
+
+test('a judgement whose report has no verdict line stays unconcluded, and says so', async () => {
+    const w = await withJudgement({
+        judgement: { subject: { kind: 'branch', branch: 'fix/y', name: 'fix/y' } },
+        bodies: { 'REVIEW.md': 'I read it and I am not sure.' }
+    });
+    const said = await w.defined.get('judgementReconclude').run({ ref: w.ref });
+    assert.equal(said.changed, 0);
+    assert.match(said.note, /handed back no verdict line/);
+    assert.equal((await w.service.judge.get(w.ref)).concluded, null);
+});

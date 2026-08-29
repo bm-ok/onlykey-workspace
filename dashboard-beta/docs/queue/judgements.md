@@ -48,6 +48,14 @@ refuses on a stale one. Re-judging after a verdict is allowed — that is the
 sequence the record is built for; two open judgements of one subject are
 not.
 
+## Re-reading a verdict
+
+`judgementReconclude --ref J9` (or `--all`) reads a done judgement's
+handed-back report again and records the conclusion its last line says. It
+exists because for a while the queue read every drawer as empty and recorded
+nothing; the reports were there the whole time. A verdict a person recorded
+is not touched.
+
 ## By hand
 
 `judgementVerdict --ref J9 --verdict accepted --note ...` records what a
