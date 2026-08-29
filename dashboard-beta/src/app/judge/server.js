@@ -839,7 +839,21 @@ async function plugin(imports, register) {
                             url: (r.body && r.body.html_url) || null, at: new Date().toISOString()
                         }]) });
                         log.on('github', tg.on).good(ref + ' reviewed ' + tg.on + '#' + tg.number + ' — ' + plan.event
-                            + ' (Settings → Trust has direct reviews on)');
+                            + ' — posted directly, nobody read it first');
+                        //THE SAME RECORD ../repositories/repos KEEPS for a reply
+                        //or a close sent without a person. Written here rather
+                        //than relayed because it is one line and a failed
+                        //bookkeeping write must not fail a review that has
+                        //already gone out; the drawer is a log, and both
+                        //writers append to it the same shape.
+                        try {
+                            var spokenBox = await imports.state.here.doc('github-spoken');
+                            var spokenAll = spokenBox.read({ said: [] }) || { said: [] };
+                            spokenBox.write({ said: (spokenAll.said || []).concat([{
+                                at: new Date().toISOString(), kind: 'review', on: tg.on, number: tg.number,
+                                direct: true, by: ref, url: (r.body && r.body.html_url) || null
+                            }]).slice(-200) });
+                        } catch (e) { /* worth having, not worth failing over */ }
                         out.push({ ref: ref, on: tg.on, number: tg.number, recommend: plan.call, event: plan.event,
                             url: (r.body && r.body.html_url) || null, posted: true, waiting: false,
                             note: 'Posted as a ' + plan.event + ' review. Settings → Trust has direct reviews switched on, so nobody read it first.' });

@@ -1259,6 +1259,94 @@ const asAccount = (app, login) => app.actions.define('githubHeld', {
 });
 const errand = (app, name) => app.sources.find((x) => x.name === name);
 
+//---------------------------------------------------------------------------
+//AUTO RESPOND: what goes out with nobody reading it says so and is recorded,
+//and what was drafted before the switch was flipped can be sent in one press.
+//---------------------------------------------------------------------------
+
+const ISSUE_TAGGED = (n) => ISSUE_ROW(n, {
+    body: '@okc-bot okc: have a look',
+    user: { login: 'bmatusiak', type: 'User' }
+});
+
+async function withTag(direct) {
+    const answers = Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo/issues': { status: 200, body: [ISSUE_TAGGED(7)] },
+        '/repos/anowner/arepo/issues/7': { status: 200, body: ISSUE_TAGGED(7) },
+        //THE COMMENT POST, which GitHub answers 201 to. This harness matches by
+        //path and not by method, and nothing in these tests reads the thread.
+        '/repos/anowner/arepo/issues/7/comments': { status: 201, body: { html_url: 'https://github.com/anowner/arepo/issues/7#c1' } }
+    });
+    const app = await anApp(answers, undefined, undefined, {
+        settings: { read: async () => ({ githubTrusted: ['bmatusiak'], githubMarker: 'okc', githubReplyDirect: direct }) }
+    });
+    app.actions.define('githubHeld', { about: 'a stand-in', run: async () => ({ held: true, login: 'okc-bot' }) });
+    return app;
+}
+
+test('with replies direct, the reply goes out, says nobody read it, and is recorded', async () => {
+    const app = await withTag(true);
+    const said = await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'reading it' });
+    assert.equal(said.posted, true);
+    assert.equal(said.waiting, false);
+
+    //THE LOG SAYS WHICH KIND OF SEND IT WAS -- the events are where a person
+    //looks afterwards, and "replied on #7" alone reads like an approved one.
+    assert.ok(app.said.some((l) => /replied on #7 — sent directly, nobody read it first/.test(l)), app.said.join(' | '));
+
+    //AND THE RECORD, which the Trust card counts back.
+    const spoken = (await app.state.here.doc('github-spoken')).read({ said: [] });
+    assert.equal(spoken.said.length, 1);
+    assert.equal(spoken.said[0].kind, 'reply');
+    assert.equal(spoken.said[0].direct, true);
+    assert.equal(spoken.said[0].number, 7);
+
+    //NOTHING IS WAITING: the point of the switch.
+    assert.deepEqual((await app.actions.call('issueDrafts', {})).drafts, []);
+});
+
+test('with replies drafted, nothing is posted and nothing is recorded as spoken', async () => {
+    const app = await withTag(false);
+    const said = await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'reading it' });
+    assert.equal(said.posted, false);
+    assert.equal(said.waiting, true);
+    assert.deepEqual((await app.state.here.doc('github-spoken')).read({ said: [] }).said, []);
+    assert.equal((await app.actions.call('issueDrafts', {})).drafts.length, 1);
+});
+
+test('everything waiting goes in one press, each through the same door, and one refusing does not stop the rest', async () => {
+    const app = await withTag(false);
+    await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'the first' });
+    //A SECOND DRAFT ON A THREAD NOBODY TAGGED: mayAnswer refuses it at release,
+    //which is exactly the check that must not be skipped by sending in bulk.
+    const box = await app.state.here.doc('github-drafts');
+    const all = box.read({});
+    all['anowner/arepo#9'] = { kind: 'reply', on: 'anowner/arepo', number: 9, text: 'unasked', at: 'x', by: 'a test' };
+    box.write(all);
+
+    const out = await app.actions.call('issueApproveAll', {});
+    assert.equal(out.sent, 1, out.note);
+    assert.equal(out.refused, 1);
+    assert.match(out.note, /anowner\/arepo#9/);
+    //THE ONE THAT WENT IS GONE; THE ONE THAT REFUSED IS STILL THERE.
+    const left = (await app.actions.call('issueDrafts', {})).drafts;
+    assert.deepEqual(left.map((d) => d.number), [9]);
+});
+
+test('sending everything waiting is a press only a person makes', async () => {
+    const app = await withTag(false);
+    await app.actions.call('issueSay', { on: 'anowner/arepo', number: 7, text: 'the first' });
+    for (const mark of ['_overTheWire', '_driven', '_fromTest']) {
+        await assert.rejects(() => app.actions.call('issueApproveAll', { [mark]: true }), /by a person at the window/, mark);
+    }
+    assert.equal((await app.actions.call('issueDrafts', {})).drafts.length, 1);
+    //AND WITH NOTHING WAITING IT SAYS SO RATHER THAN PRETENDING TO WORK.
+    await app.actions.call('issueApproveAll', {});
+    const none = await app.actions.call('issueApproveAll', {});
+    assert.equal(none.sent, 0);
+    assert.match(none.note, /Nothing is waiting/);
+});
+
 test('an app that posts as an account it trusts is an errand, and it clears when they differ', async () => {
     const app = await anApp(REPO_OK, undefined, undefined, {
         settings: { read: async () => ({ githubTrusted: ['bmatusiak'], githubMarker: 'okc' }) }

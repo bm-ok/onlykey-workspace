@@ -1555,6 +1555,27 @@ async function plugin(imports, register) {
         //having to work out which is current.
         async function drafts() { return state.here.doc('github-drafts'); }
 
+        //---- AND WHAT WENT OUT WITH NOBODY READING IT ----------------------
+        //
+        //A DRAFT IS ITS OWN RECORD until it is released; a message sent
+        //directly has none -- the draft is never written, and the only trace
+        //is a log line that reads almost exactly like the approved one. That
+        //is the real cost of switching the draft step off: not that a message
+        //goes out, which is the point, but that nothing afterwards can say
+        //WHICH messages nobody read. This is that record, and the switch's own
+        //card counts it back.
+        async function spoken() { return state.here.doc('github-spoken'); }
+        async function noteSpoken(one) {
+            try {
+                var box = await spoken();
+                var all = box.read({ said: [] }) || { said: [] };
+                var said = (all.said || []).concat([Object.assign({ at: new Date().toISOString() }, one)]);
+                //BOUNDED. A host left on for a month must not grow a file
+                //nothing ever reads the front of.
+                box.write({ said: said.slice(-200) });
+            } catch (e) { /* the record is worth having and not worth failing a send over */ }
+        }
+
         undo.push(actions.define('issueSay', {
             about: 'Answer an issue somebody trusted has tagged — drafted for approval, or posted if the window has been set to allow it',
             takes: ['on', 'number', 'text'],
@@ -1602,7 +1623,12 @@ async function plugin(imports, register) {
                 //chance to approve something already said.
                 if (all[key]) { delete all[key]; kept2.write(all); }
 
-                log.on('github', args.on).good('replied on #' + args.number);
+                log.on('github', args.on).good('replied on #' + args.number
+                    + ' — sent directly, nobody read it first');
+                await noteSpoken({
+                    kind: 'reply', on: args.on, number: Number(args.number), direct: true,
+                    by: actions.whoAsked(a), url: (sent.body && sent.body.html_url) || null
+                });
                 return {
                     posted: true, waiting: false, on: args.on, number: Number(args.number),
                     url: (sent.body && sent.body.html_url) || null,
@@ -1678,7 +1704,12 @@ async function plugin(imports, register) {
                         + ((shut.body && shut.body.message) || shut.status));
                 }
 
-                log.on('github', args.on).good('closed #' + args.number);
+                log.on('github', args.on).good('closed #' + args.number
+                    + ' — closed directly, nobody read it first');
+                await noteSpoken({
+                    kind: 'close', on: args.on, number: Number(args.number), direct: true,
+                    by: actions.whoAsked(a), url: null
+                });
                 return {
                     posted: true, waiting: false, on: args.on, number: Number(args.number),
                     mine: ok.mine,
@@ -1699,6 +1730,33 @@ async function plugin(imports, register) {
         //IT IS NOT THE SETTING. Turning direct replies on is a standing decision
         //made once; this is a person reading THESE WORDS and releasing them.
         //Something able to do the second does not need the first.
+
+        //---- AND WHAT WENT WITHOUT ONE ---------------------------------------
+        //
+        //THE COUNTERPART OF `issueDrafts`. With the draft step switched off the
+        //inbox is empty by design, and the thing it used to say -- "this is
+        //about to go out in your name" -- has to be sayable afterwards instead.
+        //Read where the switch is, on Settings → Trust.
+        undo.push(actions.define('spokenFor', {
+            about: 'What has gone out on GitHub in your name without a person reading it first',
+            takes: ['days'],
+            run: async function (args) {
+                var a2 = args || {};
+                var days = Number(a2.days) > 0 ? Number(a2.days) : 7;
+                var box = null;
+                try { box = await spoken(); } catch (e) { box = null; }
+                if (!box) return { said: [], count: 0, days: days, note: 'No workspace is open.' };
+                var all = (box.read({ said: [] }) || {}).said || [];
+                var since = new Date(Date.now() - days * 86400000).toISOString();
+                var recent = all.filter(function (x) { return String(x.at || '') >= since; });
+                return {
+                    said: recent.slice(-50).reverse(), count: recent.length, kept: all.length, days: days,
+                    note: recent.length
+                        ? recent.length + ' went out unread in the last ' + days + ' day(s). Every one is on GitHub under your account.'
+                        : 'Nothing has gone out unread in the last ' + days + ' day(s).'
+                };
+            }
+        }));
 
         undo.push(actions.define('issueDrafts', {
             about: 'Replies and closes waiting to be approved before they reach GitHub',
@@ -1743,6 +1801,58 @@ async function plugin(imports, register) {
             kept5.write(all);
             return out;
         }
+
+        //---- AND EVERYTHING THAT IS WAITING, IN ONE PRESS -------------------
+        //
+        //SWITCHING THE DRAFT STEP OFF DOES NOT RELEASE WHAT IS ALREADY DRAFTED,
+        //and it should not: a person turning auto-respond on has not read the
+        //things written before they did. But then those sit there, one press
+        //each, one issue at a time, and the sensible act -- "I have read them,
+        //send them" -- was the tedious one.
+        //
+        //EVERY ONE GOES THROUGH `issueApprove` ITSELF, so nothing here is a
+        //second way to send: the same `mayAnswer`, the same refusal when a
+        //review's commit has moved, the same forcing of an own-author review to
+        //a comment. One that refuses is named and the rest still go.
+        undo.push(actions.define('issueApproveAll', {
+            about: 'Send everything waiting — every reply, close and review written and not sent. A person at the window only',
+            takes: [],
+            run: async function (a) {
+                var args = a || {};
+                if (args._overTheWire || args._driven || args._fromTest) {
+                    throw new Error('Waiting replies are released by a person at the window, in Repositories → '
+                        + 'Issues. Something that can approve what it wrote has not written a draft, it has '
+                        + 'posted with extra steps — which is the whole of why the draft exists.');
+                }
+
+                var box = await drafts();
+                var all = box.read({}) || {};
+                var keys = Object.keys(all);
+                if (!keys.length) return { sent: 0, refused: 0, on: [], note: 'Nothing is waiting to be sent.' };
+
+                var done = [];
+                for (var i = 0; i < keys.length; i++) {
+                    var one = all[keys[i]] || {};
+                    var row = { on: one.on, number: one.number, kind: one.kind || 'reply' };
+                    try {
+                        var said = await actions.call('issueApprove', { on: one.on, number: one.number });
+                        done.push(Object.assign(row, { sent: true, url: (said && said.url) || null }));
+                    } catch (e) {
+                        done.push(Object.assign(row, { sent: false, why: e.message }));
+                    }
+                }
+
+                var went = done.filter(function (d) { return d.sent; });
+                var stuck = done.filter(function (d) { return !d.sent; });
+                return {
+                    on: done, sent: went.length, refused: stuck.length,
+                    note: went.length + ' of ' + done.length + ' sent.'
+                        + (stuck.length
+                            ? ' ' + stuck.map(function (d) { return d.on + '#' + d.number + ' — ' + d.why; }).join('; ')
+                            : '')
+                };
+            }
+        }));
 
         undo.push(actions.define('issueApprove', {
             about: 'Send a waiting reply, or make a waiting close happen. A person at the window only',

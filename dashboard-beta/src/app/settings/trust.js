@@ -74,6 +74,9 @@ module.exports = function makeTrust(theme, okc) {
 
     function Trust() {
         var { state, error } = okc.use('settings', {}, 5000);
+        //WHAT WENT OUT UNREAD, read here because this is where the switch that
+        //allows it lives. A hook, with the others, above every early return.
+        var spoken = okc.use('spokenFor', { days: 7 }, 20000);
 
         var [marker, setMarker] = useState(null);   //null = not being edited
         var [typed, setTyped] = useState('');
@@ -309,7 +312,7 @@ module.exports = function makeTrust(theme, okc) {
 
                 <Panel>
                     <div className="card-title">
-                        <span className="grow">Speaking in your name</span>
+                        <span className="grow">Speaking in your name — auto respond</span>
                         {s.githubReplyDirect || s.githubCloseDirect || s.githubReviewDirect
                             ? <Badge kind="warn">some go out unread</Badge>
                             : <Badge kind="ok">everything is read first</Badge>}
@@ -317,23 +320,44 @@ module.exports = function makeTrust(theme, okc) {
                     <Note>
                         A reply, a close and a review each go on somebody else's repository under this host's
                         token, so they read as you having said it. Off, each is written as a draft and waits for
-                        you to read the whole thing and release it. On, it goes out the moment it is written.
-                        The tag is still required either way — an untagged issue is one nobody asked about.
+                        you to read the whole thing and release it. On, it goes out the moment it is written —
+                        which is the auto-respond people look for. The tag is still required either way, and so
+                        is the address: this host only ever answers a thread where somebody trusted addressed
+                        the account it posts as and wrote "{(s.githubMarker || 'okc') + ': …'}" — never a
+                        stranger's issue, and never itself.
                     </Note>
+                    {/* WHAT REPLACED THE INBOX ITEM. Switching the draft step
+                        off empties the inbox by design, and then nothing says
+                        what went out unread. It is said here, where the switch
+                        is, because this is the card somebody is standing on
+                        when they decide. */}
+                    {spoken.state && spoken.state.count
+                        ? <Note kind="warn">
+                            {spoken.state.count + ' went out unread in the last ' + spoken.state.days + ' day(s): '
+                                + (spoken.state.said || []).slice(0, 4).map(function (x) {
+                                    return x.kind + ' on ' + x.on + '#' + x.number;
+                                }).join(' · ')
+                                + ((spoken.state.said || []).length > 4 ? ' …' : '')}
+                        </Note>
+                        : null}
                     {/* PURPLE, ALL THREE. Each is the switch between a model
                         writing something and a stranger reading it in your
                         name; ../settings/server.js refuses them down the pipe
                         with their own sentence, and this is the half a person
                         can see. */}
                     <div className="stack">
+                        {/* THE THREE ARE SEPARATE BECAUSE WHAT THEY RISK IS.
+                            Words, a state change on somebody's tracker, and a
+                            thing a maintainer may merge on are not one decision
+                            and were never offered as one switch. */}
                         <Toggle protect on={!!s.githubReplyDirect} onChange={function (v) { save('githubReplyDirect', v); }}>
-                            Post replies to issues without me reading them first
+                            Post replies to issues without me reading them first — a reply is words
                         </Toggle>
                         <Toggle protect on={!!s.githubCloseDirect} onChange={function (v) { save('githubCloseDirect', v); }}>
-                            Close issues without me reading the close first
+                            Close issues without me reading the close first — a close changes the state of somebody's tracker
                         </Toggle>
                         <Toggle protect on={!!s.githubReviewDirect} onChange={function (v) { save('githubReviewDirect', v); }}>
-                            Post a judge's review on a pull request without me reading it first
+                            Post a judge's review without me reading it first — a review is something a maintainer may merge on
                         </Toggle>
                     </div>
                 </Panel>

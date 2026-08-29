@@ -32,7 +32,7 @@ var { useState } = React;
 module.exports = function issues(theme, okc, remember, shell) {
     var {
         Panel, Stack, Head, Card, CardTitle, CardSub, Badge, Badges, Button,
-        Cols, Col, Empty, Note, Mono, Quoted, TitleRow, Grow, ago, openOut
+        Cols, Col, Empty, Note, Notice, Mono, Quoted, TitleRow, Grow, ago, openOut
     } = theme;
     //THE STORY LIST IS SHARED WITH PR CUTS, and declared here, above the
     //pane's return -- below it a `var` is hoisted and never assigned.
@@ -156,6 +156,23 @@ module.exports = function issues(theme, okc, remember, shell) {
         //component state arrives at the top of its list every time.
         var [picked, setPicked] = remember.use('issues', 'picked', null);
 
+        //EVERYTHING WAITING, ABOVE THE COLUMNS, because it is about the pane
+        //rather than about whichever issue is picked -- and because the case it
+        //is for is somebody having just switched auto-respond on and finding
+        //what was drafted before still sitting there.
+        var waiting = okc.use('issueDrafts', {}, 6000);
+        var [sending, setSending] = useState(false);
+        var [sentSaid, setSentSaid] = useState(null);
+        var allWaiting = ((waiting.state && waiting.state.drafts) || []);
+        function sendAll() {
+            setSending(true);
+            setSentSaid(null);
+            okc.call('issueApproveAll', {}).then(
+                function (x) { setSending(false); setSentSaid({ text: x.note, bad: !!x.refused }); waiting.again(); },
+                function (e) { setSending(false); setSentSaid({ bad: true, text: e.message }); }
+            );
+        }
+
         //WHAT TO CALL A PLACE IN ONE WORD. The full name is what GitHub knows it
         //by and is never dropped; this is the extra word that says WHY it is in
         //the list — the fork you work in, or the project everything ends up in.
@@ -192,6 +209,25 @@ module.exports = function issues(theme, okc, remember, shell) {
                     issues switched off contributes nothing and has no row to say
                     so in — which is exactly the case that reads as "nobody has
                     filed anything". */}
+                {sentSaid
+                    ? <Notice kind={sentSaid.bad ? 'bad' : 'ok'} onClose={function () { setSentSaid(null); }}>{sentSaid.text}</Notice>
+                    : null}
+
+                {/* PURPLE, and one press for the lot: every one goes out under
+                    the person's account, through the same door as sending them
+                    one at a time. */}
+                {allWaiting.length
+                    ? <div className="row" style={{ marginBottom: '8px' }}>
+                        <Button kind="ok" protect disabled={sending} onClick={sendAll}
+                            title="Sends every waiting reply, close and review, each through the same checks as sending it on its own">
+                            {sending ? 'sending…' : 'Send all ' + allWaiting.length + ' waiting'}
+                        </Button>
+                        <span className="muted">
+                            {allWaiting.map(function (d) { return (d.kind || 'reply') + ' on ' + d.on + '#' + d.number; }).join(' · ')}
+                        </span>
+                    </div>
+                    : null}
+
                 {said.length
                     ? <Note>
                         {said.map(function (x) {
