@@ -1249,6 +1249,78 @@ const BEHIND = {
     '/repos/up/arepo/compare/main...anowner%3Amain': { status: 200, body: { behind_by: 1, ahead_by: 0 } }
 };
 
+//---------------------------------------------------------------------------
+//THE ACCOUNT THIS HOST POSTS AS: one for both sides, whether it can send work
+//where work goes, and whether what is recorded was probed as somebody else.
+//---------------------------------------------------------------------------
+
+const asAccount = (app, login) => app.actions.define('githubHeld', {
+    about: 'a stand-in', run: async () => (login ? { held: true, login } : { held: false })
+});
+const errand = (app, name) => app.sources.find((x) => x.name === name);
+
+test('an app that posts as an account it trusts is an errand, and it clears when they differ', async () => {
+    const app = await anApp(REPO_OK, undefined, undefined, {
+        settings: { read: async () => ({ githubTrusted: ['bmatusiak'], githubMarker: 'okc' }) }
+    });
+    asAccount(app, 'bmatusiak');
+    const one = errand(app, 'this app posts as an account it trusts');
+    assert.ok(one, 'no source for one account on both sides');
+    const items = await one.waiting();
+    assert.equal(items.length, 1);
+    assert.match(items[0].why, /posts to GitHub as "bmatusiak"/);
+    assert.match(items[0].why, /account of its own/);
+
+    //THE SWAP DONE: the app posts as somebody nobody trusts, which is the point.
+    asAccount(app, 'okc-bot');
+    assert.deepEqual(await one.waiting(), []);
+    //AND WITH NO TOKEN AT ALL THERE IS NOTHING TO SAY.
+    asAccount(app, null);
+    assert.deepEqual(await one.waiting(), []);
+});
+
+test('a token that cannot open a pull request where work goes is an errand', async () => {
+    //THE TARGET REFUSES THE PROBE -- canOpenIn asks for the thing itself.
+    const answers = Object.assign({}, REPO_OK, {
+        '/repos/anowner/arepo': { status: 200, body: { fork: true, default_branch: 'main', parent: { full_name: 'up/arepo', default_branch: 'main' } } },
+        '/repos/anowner/arepo/issues': { status: 200, body: [] },
+        '/repos/up/arepo': { status: 200, body: { default_branch: 'main' } },
+        '/repos/up/arepo/pulls': { status: 403, body: { message: 'Resource not accessible by personal access token' } },
+        '/repos/up/arepo/compare': { status: 200, body: { behind_by: 0, ahead_by: 0 } }
+    });
+    const app = await anApp(answers, undefined, undefined, { settings: { read: async () => ({}) } });
+    asAccount(app, 'okc-bot');
+    await app.actions.call('repoTargetSet', { repo: 'repo-one', on: 'up/arepo', why: 'the project' });
+    await app.actions.call('repositoriesCheck', { repo: 'repo-one' });
+
+    const items = await errand(app, 'the token cannot send work where it goes').waiting();
+    assert.equal(items.length, 1);
+    const said = items[0].why;
+    assert.match(said, /"okc-bot"/);
+    assert.match(said, /up\/arepo/);
+    assert.match(said, /would fail at the push/);
+});
+
+test('what was probed as one account is not a fact about another', async () => {
+    const app = await anApp(REPO_OK, undefined, undefined, { settings: { read: async () => ({}) } });
+    asAccount(app, 'bmatusiak');
+    await app.actions.call('repositoriesCheck', { repo: 'repo-one' });
+    const one = errand(app, 'the token changed since the repositories were read');
+    assert.deepEqual(await one.waiting(), [], 'the account has not changed');
+
+    //THE TOKEN IS SWAPPED.
+    asAccount(app, 'okc-bot');
+    const items = await one.waiting();
+    assert.equal(items.length, 1);
+    const said = items[0].why;
+    assert.match(said, /now posts as "okc-bot"/);
+    assert.match(said, /probed as "bmatusiak"/);
+
+    //AND IT GOES ONCE THE REPOSITORIES ARE READ AGAIN.
+    await app.actions.call('repositoriesCheck', { repo: 'repo-one' });
+    assert.deepEqual(await one.waiting(), []);
+});
+
 test('a fork behind where its work goes is an errand: sync the fork', async () => {
     const { actions, state, sources, asked } = await anApp(BEHIND, undefined, undefined, { settings: { read: async () => ({}) } });
     //WORK GOES TO THE PARENT, chosen at the window.

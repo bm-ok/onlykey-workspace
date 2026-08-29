@@ -1029,6 +1029,11 @@ async function plugin(imports, register) {
             //the button.
             target: (note && note.target) || null,
             checked: now,
+            //AND WHO IT WAS CHECKED AS. Every capability on this row was probed
+            //with one account's token; swap the token and none of them is a
+            //fact about the new one. Recorded so the difference can be noticed
+            //rather than assumed away — see the errand in the inbox.
+            asWho: howToRead.as || null,
             gathered: now,
             at: now
         };
@@ -1247,6 +1252,104 @@ async function plugin(imports, register) {
                         { since: d.at || null, id: k }
                     );
                 });
+            }
+        }));
+
+        //---- ONE ACCOUNT FOR BOTH SIDES -------------------------------------
+        //
+        //THE APP POSTS AS SOMEBODY, and if that somebody is also on the trusted
+        //list then the app is a person this host takes requests from. Its own
+        //replies are written by a trusted login; nothing on the way out strips
+        //the marker; and ../../github/trust.js will read a comment it posted as
+        //a request the moment one is addressed to that account. The address
+        //makes it unlikely and this makes it visible — the answer is a separate
+        //account for the app, which is what the guide is about.
+        undo.push(imports.inbox.source({
+            name: 'this app posts as an account it trusts',
+            waiting: async function () {
+                var as = null;
+                try { as = (((actions && await actions.call('githubHeld', {})) || {}).login) || null; } catch (e) { as = null; }
+                if (!as) return [];
+                var kept = null;
+                try { kept = await imports.settings.read(); } catch (e) { return []; }
+                if (!trust.trusts(kept.githubTrusted || [], as, null)) return [];
+                return [imports.inbox.item(
+                    'one account for both sides',
+                    as,
+                    'This app posts to GitHub as "' + as + '", and "' + as + '" is on the trusted list — so its own '
+                        + 'comments are written by somebody this host takes requests from, and nothing it sends out '
+                        + 'strips the "' + (kept.githubMarker || 'okc') + '" marker. Give the app a GitHub account of '
+                        + 'its own and leave the list to the people who ask.',
+                    //NO PICK: the Trust pane is a list with a form, not a pane that picks a row.
+                    imports.inbox.at('Settings', 'Trust'),
+                    { id: 'as:' + as }
+                )];
+            }
+        }));
+
+        //---- AND WHETHER THAT ACCOUNT CAN DO THE WORK -----------------------
+        //
+        //TWO THINGS A TOKEN SWAP CHANGES AND NOTHING SAID: whether the new
+        //account may open a pull request where work goes, and that every
+        //capability recorded on a row was probed as somebody else. The first is
+        //already probed on the sweep (`intoTarget.mayOpen` asks GitHub for the
+        //thing itself, which is the only evidence this file trusts — see the
+        //header). The second is `asWho` against the login held now.
+        undo.push(imports.inbox.source({
+            name: 'the token cannot send work where it goes',
+            waiting: async function () {
+                var notes = await read();
+                if (notes === null) return [];
+                var as = null;
+                try { as = (((actions && await actions.call('githubHeld', {})) || {}).login) || null; } catch (e) { as = null; }
+                var found = [];
+                try { found = await workspace.repos(); } catch (e) { return []; }
+                var out = [];
+                for (var i = 0; i < found.length; i++) {
+                    var name = found[i].name;
+                    var note = notes[name] || {};
+                    var into = note.intoTarget;
+                    if (!into || into.mayOpen !== false) continue;
+                    out.push(imports.inbox.item(
+                        'the token cannot send work there',
+                        name,
+                        'The token this host holds' + (as ? ' ("' + as + '")' : '') + ' cannot open a pull request on '
+                            + ((note.target && note.target.on) || 'where this repository sends work')
+                            + (into.why ? ' — ' + into.why : '') + '. A cut from this repository would fail at the push. '
+                            + 'Add that account to the repository, or send work to a fork it owns.',
+                        imports.inbox.at('Repositories', 'Repos', name),
+                        { since: note.checked || null, id: 'mayopen:' + name }
+                    ));
+                }
+                return out;
+            }
+        }));
+
+        undo.push(imports.inbox.source({
+            name: 'the token changed since the repositories were read',
+            waiting: async function () {
+                var notes = await read();
+                if (notes === null) return [];
+                var as = null;
+                try { as = (((actions && await actions.call('githubHeld', {})) || {}).login) || null; } catch (e) { as = null; }
+                if (!as) return [];
+                var found = [];
+                try { found = await workspace.repos(); } catch (e) { return []; }
+                var stale = found.map(function (r) { return r.name; }).filter(function (name) {
+                    var was = (notes[name] || {}).asWho;
+                    return was && was !== as;
+                });
+                if (!stale.length) return [];
+                var was = (notes[stale[0]] || {}).asWho;
+                return [imports.inbox.item(
+                    'checked as somebody else',
+                    stale.length + ' repositor' + (stale.length === 1 ? 'y' : 'ies'),
+                    'This host now posts as "' + as + '", and what is recorded about ' + stale.join(', ')
+                        + ' was probed as "' + was + '" — what that account could read, open and push says nothing '
+                        + 'about this one. Check the repositories again.',
+                    imports.inbox.at('Repositories', 'Repos', stale[0]),
+                    { id: 'aswho:' + as }
+                )];
             }
         }));
 
@@ -2237,6 +2340,9 @@ async function plugin(imports, register) {
                         upstreamDefault: note.upstreamDefault || null,
                         upstreamHead: note.upstreamHead || null,
                         behindTarget: note.behindTarget || null,
+                        //WHICH ACCOUNT PROBED ALL OF THIS. Every capability
+                        //above is what one token could do; the row says whose.
+                        asWho: note.asWho || null,
 
                         //COUNTED FROM THE LIST THAT IS SHOWN, not from a separate
                         //number. The check counted pull requests on the FORK and
