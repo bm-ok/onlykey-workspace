@@ -17,6 +17,25 @@ test('an issue not in the previous sweep is new', () => {
     assert.deepEqual(out.issues.map((i) => [i.number, i.kind]), [[2, 'new']]);
 });
 
+test('an issue that arrives already tagged is asking, not merely new', () => {
+    //WHAT SOMEBODY OPENING AN ISSUE TO ASK FOR SOMETHING LOOKS LIKE: the body
+    //is "@okc-bot okc: reading this one" and it is tagged from its first
+    //breath. This was called `new` -- because "new" was decided before
+    //"tagged" was looked at -- and new issues are deliberately not woken for,
+    //so the first real ask on a fresh account went unheard.
+    const asked = { where: 'the issue', by: 'bmatusiak', at: '2026-08-29T17:43:36Z' };
+    const out = diffArrived({ issues: [ISSUE(1)], pulls: [] }, { issues: [ISSUE(1), ISSUE(2, { asked })], pulls: [] });
+    assert.deepEqual(out.issues.map((i) => [i.number, i.kind]), [[2, 'asked']]);
+    assert.deepEqual(out.issues[0].asked, asked);
+
+    //AND ONE THAT ARRIVES SAYING NOTHING IS STILL ONLY NEW.
+    const quiet = diffArrived({ issues: [ISSUE(1)], pulls: [] }, { issues: [ISSUE(1), ISSUE(3)], pulls: [] });
+    assert.deepEqual(quiet.issues.map((i) => [i.number, i.kind]), [[3, 'new']]);
+
+    //AND THE FIRST SWEEP OF ALL STILL REPORTS NOTHING, tagged or not.
+    assert.deepEqual(diffArrived(null, { issues: [ISSUE(2, { asked })], pulls: [] }).issues, []);
+});
+
 test('an issue that has been tagged since is the one worth waking for', () => {
     //NULL BEFORE, SET NOW. This is the thing a person did on purpose.
     const asked = { where: 'a reply', by: 'bmatusiak' };

@@ -9,11 +9,22 @@
 //
 //---- what counts as arriving --------------------------------------------
 //
-//  new     an issue or pull request not in the previous sweep at all
-//  asked   an issue that was there before and has NOW been tagged -- `asked`
-//          was null and is set, OR it names a newer turn than it did. This is
-//          the one a person did on purpose, and the only one worth waking
-//          anything for.
+//  new     an issue or pull request not in the previous sweep at all, and
+//          carrying no tag: something turned up, which is worth recording and
+//          is nobody's emergency.
+//  asked   somebody addressed this host and used the tag. Either it was there
+//          before and is tagged NOW -- `asked` was null and is set, or it
+//          names a newer turn than it did -- or it ARRIVED already tagged,
+//          which is what somebody opening an issue to ask for something looks
+//          like. This is the one a person did on purpose and the only one
+//          worth waking anything for.
+//
+//          THE THIRD CASE WAS MISSING AND THE FIRST REAL ASK WENT UNHEARD.
+//          The person opened an issue whose body was "@okc-bot okc: reading
+//          this one" -- tagged from its first breath -- and the diff called it
+//          `new`, because "new" was decided before "tagged" was looked at.
+//          New issues are deliberately not woken for; a new issue that is
+//          ASKING is a different thing and always was.
 //
 //          THE SECOND HALF WAS MISSING AND A CONVERSATION WENT UNHEARD. An
 //          issue tagged in its body is `asked` from the first sweep; when the
@@ -49,7 +60,11 @@ function diffArrived(was, now) {
         var k = keyOf(i);
         var before = hadIssue[k];
         if (!before) {
-            out.issues.push(Object.assign(pick(i), { kind: 'new', asked: i.asked || null }));
+            //ARRIVED ALREADY ASKING is an ask, not an arrival. See the header.
+            out.issues.push(Object.assign(pick(i), {
+                kind: i.asked ? 'asked' : 'new',
+                asked: i.asked || null
+            }));
             return;
         }
         //TAGGED SINCE. Null before and set now, or set to a NEWER turn than
